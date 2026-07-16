@@ -1,5 +1,4 @@
 import { submitTransportForPlacement } from "@/platform/runtime/transport"
-import { SIGNED_WORKSPACE_DEFAULT_MODEL } from "./signed-workspace-model"
 
 export function createSignedWorkspaceRuntimeFallback(input: {
   serverUrl: () => string
@@ -18,10 +17,7 @@ export function createSignedWorkspaceRuntimeFallback(input: {
     }).workspaceRuntimeSession
 
   return {
-    model: () => {
-      if (!active(input.directory())) return undefined
-      return { ...SIGNED_WORKSPACE_DEFAULT_MODEL }
-    },
+    model: () => undefined,
     agent: () => active(input.directory()) ? { name: "build" } : undefined,
   }
 }

@@ -2,6 +2,7 @@ import type * as Providers from "@/app/providers/use-providers"
 import type * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
+import type * as ConnectAI from "@/app/dialogs/connect-ai"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as CustomProvider from "@/app/dialogs/custom-provider"
 import type * as Models from "@/features/session/providers/models"
@@ -17,6 +18,7 @@ export type SettingsAppPorts = {
   useGlobalSDK: typeof GlobalSDK.useGlobalSDK
   useShellQueryOptions: typeof QueryOptions.useShellQueryOptions
   DialogConnectProvider: typeof ConnectProvider.DialogConnectProvider
+  DialogAIConnect: typeof ConnectAI.DialogAIConnect
   DialogSelectProvider: typeof SelectProvider.DialogSelectProvider
   DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
   useModels: typeof Models.useModels
@@ -26,6 +28,9 @@ export type SettingsAppPorts = {
   DialogConnectIntegration: typeof ConnectIntegration.DialogConnectIntegration
   Link: typeof LinkModule.Link
   useSettingsSourceViews: typeof SettingsSourceViews.useSettingsSourceViews
+  useSandboxOnboardingFunnel: () => {
+    emit(event: { name: "sandbox_provider_configured"; provider: string }): void
+  }
 }
 
 let ports: SettingsAppPorts | undefined
@@ -47,6 +52,7 @@ export const useProviders = bind("useProviders")
 export const useGlobalSDK = bind("useGlobalSDK")
 export const useShellQueryOptions = bind("useShellQueryOptions")
 export const DialogConnectProvider = bind("DialogConnectProvider")
+export const DialogAIConnect = bind("DialogAIConnect")
 export const DialogSelectProvider = bind("DialogSelectProvider")
 export const DialogCustomProvider = bind("DialogCustomProvider")
 export const useModels = bind("useModels")
@@ -56,3 +62,4 @@ export const useCommand = bind("useCommand")
 export const DialogConnectIntegration = bind("DialogConnectIntegration")
 export const Link = bind("Link")
 export const useSettingsSourceViews = bind("useSettingsSourceViews")
+export const useSandboxOnboardingFunnel = bind("useSandboxOnboardingFunnel")

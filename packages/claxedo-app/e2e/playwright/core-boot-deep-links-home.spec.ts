@@ -60,30 +60,16 @@
  *
  * ANATOMY —
  *   `[data-claxedo]` — shell root; presence == app painted past `ConnectionGate`.
- *   FINDING (verified by reading source, not a selector-drift issue): the route-matched
- *     `/` component (`src/pages/home.tsx`, with its `home.empty.title`/
- *     `home.empty.description` copy, "Recent projects" heading, and sandbox-gated
- *     `chooseProject()` → `DialogCreateCloudProject`/`DialogSelectDirectory` branch) is
- *     mounted but UNCONDITIONALLY invisible: `RailWorkbenchShell`
- *     (`src/claxedo-ui/layouts/rail-workbench-shell.tsx:96`,
- *     `<div class="hidden">{props.children}</div>`) wraps every routed page — including
- *     `/` — in `display:none`, "to mount route content (DirectoryLayout + providers)
- *     without rendering it visually." `pages/home.tsx` is therefore dead code; no build
- *     configuration makes it paint. The REAL empty-workbench surface a user sees at `/`
- *     is `RailWorkbenchCanvas`'s `renderEmpty()` fallback
- *     (`src/claxedo-ui/layouts/rail-workbench-canvas.tsx:41-51`): zero projects → "No
- *     projects yet. Create one to get started." + a "New Project" button wired to
- *     `handleNewProject` (`src/claxedo-ui/claxedo-layout-actions/project-actions.tsx:96-150`),
- *     which ALWAYS opens `DialogSelectDirectory` — never gated by `sandboxEnabled`,
- *     unlike the dead `chooseProject()`. With ≥1 project registered,
+ *   The route-matched `/` component remains mounted invisibly so its providers stay
+ *     available. The visible zero-project surface is `RailWorkbenchCanvas`'s
+ *     `OnboardingEmptyState`: a four-step setup shell whose project action delegates to
+ *     the existing `handleNewProject`. With ≥1 project registered,
  *     `useRailEmptyDraftController`'s `emptyDraftDirectory` memo
  *     (`src/claxedo-ui/layouts/rail-empty-draft-controller.ts:40`) resolves to
  *     `activeWorkspaceId() ?? projects()[0]?.worktree`, so the canvas instead renders a
  *     live `EmptyDraftSessionComposer` for that project (and `shouldOpenEmptyDraftSession`
- *     can auto-navigate away from `/` entirely) — there is no reachable "Recent
- *     projects" list anywhere in the current UI. Tests below that pin behaviors 2/3
- *     assert against this REAL surface; behavior 3's original claim (recents list +
- *     sandbox-gated dialog) is `test.fixme()`'d — see that test for the full citation.
+ *     can auto-navigate away from `/` entirely). Tests below assert against the visible
+ *     workbench surface; the historical recents-list expectation remains `test.fixme()`.
  *   `ConnectionError` (`src/app.tsx`): "Could not reach {server name}" +
  *     "Retrying automatically…" copy; no interactive retry control.
  *   `[data-testid="session-content"][data-session-id]` — a workspace-backed session
@@ -103,10 +89,8 @@
  *      with zero console errors/exceptions and zero failed/bad network requests
  *      (Clerk's dev-key CORS noise excluded — it is an always-on side effect of
  *      `VITE_AUTH_ENABLED=true`, unrelated to this app's own code paths).
- *   2. With zero projects ever registered, the workbench's empty-state fallback renders
- *      ("No projects yet. Create one to get started." + a "New Project" button) — see
- *      the ANATOMY finding: this is `RailWorkbenchCanvas`'s fallback, not
- *      `pages/home.tsx`'s empty state, which is unreachable.
+ *   2. With zero projects ever registered, the workbench renders the setup shell with
+ *      four visible steps, live lock state, and a project action.
  *   3. [test.fixme — see ANATOMY finding] As originally specified: with ≥1 project
  *      registered, Home renders a recents list, and "Open project" opens the
  *      platform-appropriate dialog. Not reachable in the current build — `pages/home.tsx`
@@ -390,16 +374,27 @@ test.describe("core boot, deep links, and home @core", () => {
       if (type !== "fetch" && type !== "xhr") return route.continue()
       return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
     })
+    await page.route("**/api/claxedo/credentials", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ credentials: [] }) }),
+    )
 
     await seedNoProjects(page)
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // Behavior 2: the REAL zero-project empty state (RailWorkbenchCanvas's fallback —
-    // see the ANATOMY finding: pages/home.tsx's "No recent projects" copy never paints,
-    // it is permanently wrapped `display:none` by rail-workbench-shell.tsx:96).
-    await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByRole("button", { name: "New Project", exact: true })).toBeVisible()
+    // Behavior 2: the real zero-project owner renders the onboarding shell,
+    // driven by the same registry used by checklist/JIT surfaces.
+    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole("listitem")).toHaveCount(4)
+    await expect(page.getByRole("button", { name: "Pick a repository", exact: true }).first()).toBeEnabled()
+    await expect(page.getByRole("button", { name: "Connect your AI", exact: true }).first()).toBeDisabled()
+    await expect(page.getByText("Connect working AI credentials first.")).toBeVisible()
+    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-empty.png", fullPage: true })
+    await page.getByRole("button", { name: "Do this later" }).click()
+    await expect(page.getByRole("heading", { name: "Finish setup" })).toBeVisible()
+    await expect(page.getByText("0 of 4 proven")).toBeVisible()
+    await expect(page.getByTestId("setup-content-pane")).toHaveCount(0)
+    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-checklist.png", fullPage: true })
     // Not `.toHaveCount(0)`: the dead, permanently-hidden `pages/home.tsx` (see ANATOMY
     // finding) can still transiently mount a "Recent projects" text node inside its own
     // hidden subtree during a query-cache race — that is invisible DOM structure of dead

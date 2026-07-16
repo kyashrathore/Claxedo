@@ -276,7 +276,7 @@ function setup(executionPort: WorkspaceExecutionPort, executionCapabilities: Exe
 function connectedCapabilities(connectionId: string): ExecutionCapabilitiesPort {
   return {
     read: async (context) => {
-      const capabilities = await testExecutionCapabilities.read(context)
+      const capabilities = await testExecutionCapabilities.read(context, {})
       return {
         ...capabilities,
         tools: [...capabilities.tools, {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { constants } from "node:fs"
 import fs from "node:fs/promises"
 import type { FileHandle } from "node:fs/promises"
@@ -71,6 +72,7 @@ export type LocalManagedOptions = Readonly<{
     beforeReadOpen?: (input: FaultTarget) => void | Promise<void>
     beforeAuthorityClaim?: (input: FaultTarget) => void | Promise<void>
     afterAuthorityClaimed?: (input: ClaimedFaultTarget) => void | Promise<void>
+    afterArchiveClaimed?: (input: ClaimedFaultTarget) => void | Promise<void>
     afterReplacementInstalled?: (input: ClaimedFaultTarget) => void | Promise<void>
     beforeDirectoryFsync?: (input: FaultTarget) => void | Promise<void>
   }>
@@ -93,6 +95,10 @@ type LocalManagedEntry = Readonly<{
 export type LocalManagedDocumentWorkspace = DocumentWorkspace<LocalManagedDocumentHandle> &
   Readonly<{
     create(entry: DocumentEntry, request: CreateRequest): Promise<WriteResult>
+    archiveExact(
+      handle: LocalManagedDocumentHandle,
+      request: Readonly<{ archivePath: string; expectedVersion: DocumentVersion }>,
+    ): Promise<void>
   }>
 
 export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions = {}): LocalManagedDocumentWorkspace {
@@ -156,6 +162,18 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
         return { ...read, snapshot }
       })
     },
+
+    archiveExact: (handle, request) =>
+      withDocumentLock(root, handle.documentId, options.locking, () =>
+        archiveExact(
+          handle,
+          documentsRoot,
+          request.archivePath,
+          request.expectedVersion,
+          maxDocumentBytes,
+          options.faults,
+        ),
+      ),
 
     snapshot: (handle, request) =>
       withDocumentLock(root, handle.documentId, options.locking, async () => {
@@ -235,6 +253,148 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
       relativePath: entry.relativePath,
       canonicalPath: await resolvePinnedPath(documentsRoot, entry.relativePath),
     }
+  }
+}
+
+async function archiveExact(
+  handle: LocalManagedDocumentHandle,
+  documentsRoot: string,
+  archivePath: string,
+  expectedVersion: DocumentVersion,
+  maxDocumentBytes: number,
+  faults: LocalManagedOptions["faults"],
+) {
+  validateHandle(handle)
+  const archive = path.resolve(archivePath)
+  const pinned = await pinDocumentTarget(documentsRoot, handle.relativePath)
+  if (archive === pinned.target) {
+    await pinned.parentHandle.close()
+    throw new DocumentInvalidEntryError("Managed document archive must differ from its canonical path")
+  }
+  const claimedPath = path.join(
+    pinned.parent,
+    `.${path.basename(pinned.target)}.${createHash("sha256").update(expectedVersion).digest("hex")}.archive-claim`,
+  )
+  let authority: "canonical" | "claimed" | "archived" = "canonical"
+  try {
+    await fs.mkdir(path.dirname(archive), { recursive: true, mode: 0o700 })
+    if (await exists(archive)) {
+      const current = await currentVersion(pinned, maxDocumentBytes)
+      if (current !== null) throw new DocumentVersionConflictError(current)
+      const archivedVersion = await standaloneFileVersion(archive, handle.documentId, maxDocumentBytes)
+      if (!documentVersionsMatch(expectedVersion, archivedVersion)) {
+        throw new DocumentVersionConflictError(archivedVersion)
+      }
+      return
+    }
+
+    await verifyPinnedParent(pinned)
+    if (!(await exists(claimedPath))) {
+      await fs.rename(pinned.target, claimedPath).catch((error: unknown) => {
+        if (nodeErrorCode(error) === "ENOENT") throw new DocumentVersionConflictError(null)
+        throw error
+      })
+    }
+    authority = "claimed"
+    await faults?.afterArchiveClaimed?.({ target: pinned.target, parent: pinned.parent, claimedPath })
+    const claimed = await readPinnedFile(pinned, claimedPath, handle.documentId, maxDocumentBytes)
+    const claimedVersion = localDocumentVersion(claimed.content, claimed.stat)
+    if (!documentVersionsMatch(expectedVersion, claimedVersion)) {
+      throw new DocumentVersionConflictError(claimedVersion)
+    }
+    const competingVersion = await currentVersion(pinned, maxDocumentBytes)
+    if (competingVersion !== null) throw new DocumentVersionConflictError(competingVersion)
+
+    const revalidated = await readPinnedFile(pinned, claimedPath, handle.documentId, maxDocumentBytes)
+    const revalidatedVersion = localDocumentVersion(revalidated.content, revalidated.stat)
+    if (
+      claimed.stat.dev !== revalidated.stat.dev ||
+      claimed.stat.ino !== revalidated.stat.ino ||
+      !documentVersionsMatch(claimedVersion, revalidatedVersion)
+    ) {
+      throw new DocumentVersionConflictError(revalidatedVersion)
+    }
+    await fs.rename(claimedPath, archive)
+    authority = "archived"
+    await Promise.all([syncDirectory(pinned.parent), syncDirectory(path.dirname(archive))])
+
+    const archivedVersion = await standaloneFileVersion(archive, handle.documentId, maxDocumentBytes)
+    if (!documentVersionsMatch(expectedVersion, archivedVersion)) {
+      throw new DocumentVersionConflictError(archivedVersion)
+    }
+    const replacementVersion = await currentVersion(pinned, maxDocumentBytes)
+    if (replacementVersion !== null) throw new DocumentVersionConflictError(replacementVersion)
+  } catch (error) {
+    const current = authority === "canonical"
+      ? error instanceof DocumentVersionConflictError
+        ? error.currentVersion
+        : undefined
+      : await restoreArchivedAuthority(
+          pinned,
+          authority === "claimed" ? claimedPath : archive,
+          archive,
+          expectedVersion,
+          maxDocumentBytes,
+        )
+    if (error instanceof DocumentVersionConflictError) throw new DocumentVersionConflictError(current ?? null)
+    throw documentErrorFromCause(error, `archiving document ${handle.documentId}`, handle.documentId)
+  } finally {
+    await pinned.parentHandle.close().catch((error: unknown) => {
+      console.warn(`[claxedo-server] failed to close document ${handle.documentId} parent handle`, error)
+    })
+  }
+}
+
+async function restoreArchivedAuthority(
+  pinned: PinnedTarget,
+  claimedPath: string,
+  archivePath: string,
+  expectedVersion: DocumentVersion,
+  maxDocumentBytes: number,
+) {
+  await verifyPinnedParent(pinned)
+  const current = await currentVersion(pinned, maxDocumentBytes)
+  if (current === null) {
+    await fs.link(claimedPath, pinned.target).catch((error: unknown) => {
+      if (nodeErrorCode(error) !== "EEXIST") throw error
+    })
+    if (await sameFile(claimedPath, pinned.target)) await removeIfPresent(claimedPath)
+    await syncDirectory(pinned.parent)
+    return await currentVersion(pinned, maxDocumentBytes)
+  }
+
+  const claimedVersion = await standaloneFileVersion(claimedPath, "archive-recovery", maxDocumentBytes)
+  if (documentVersionsMatch(expectedVersion, claimedVersion)) {
+    await removeIfPresent(claimedPath)
+  } else {
+    await fs.mkdir(path.dirname(archivePath), { recursive: true, mode: 0o700 })
+    await fs.rename(claimedPath, `${archivePath}.conflict-${crypto.randomUUID()}`)
+    await syncDirectory(path.dirname(archivePath))
+  }
+  await syncDirectory(pinned.parent)
+  return current
+}
+
+async function standaloneFileVersion(file: string, documentId: string, maxDocumentBytes: number) {
+  const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
+    throw documentErrorFromCause(error, `reading archived document ${documentId}`, documentId)
+  })
+  try {
+    const before = await handle.stat()
+    if (before.size > maxDocumentBytes) throw new DocumentTooLargeError(before.size, maxDocumentBytes)
+    const content = await handle.readFile()
+    const after = await handle.stat()
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs
+    ) {
+      throw new DocumentVersionConflictError(localDocumentVersion(content, after))
+    }
+    return localDocumentVersion(content, after)
+  } finally {
+    await handle.close()
   }
 }
 

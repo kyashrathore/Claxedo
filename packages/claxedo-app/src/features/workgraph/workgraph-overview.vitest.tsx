@@ -591,6 +591,34 @@ describe("WorkGraph project grouping", () => {
     expect(screen.queryByRole("region", { name: "Project billing" })).toBeNull()
   })
 
+  test("orders a card's task preview by lifecycle bucket and summarizes it in the footer", async () => {
+    const staged = { ...pendingItem, id: "item_staged", title: "Draft the plan", outcomeId: undefined }
+    const secondStaged = { ...staged, id: "item_staged_2", title: "Write the docs" }
+    const running = { ...staged, id: "item_running", title: "Ship the API", state: "active" as const }
+    const blocked = { ...staged, id: "item_blocked", title: "Unblock the deploy", state: "blocked" as const }
+    const done = { ...staged, id: "item_done", title: "Land the schema", state: "completed" as const }
+    const request = workGraphRequest({
+      records: () => [stream, done, staged, running, secondStaged, blocked],
+      command: () => success(),
+    })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    // Preview order: needs-you, in progress, then the staged queue — the done
+    // task is pushed past the 4-row preview and lives behind "+1 more".
+    await screen.findByText("Unblock the deploy")
+    const rows = screen.getAllByRole("button", { name: /^Open task / })
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Open task Unblock the deploy",
+      "Open task Ship the API",
+      "Open task Draft the plan",
+      "Open task Write the docs",
+    ])
+    expect(screen.getByText("2 staged · 1 in progress · 1 done")).toBeInTheDocument()
+    expect(screen.getByText("1 need you")).toBeInTheDocument()
+  })
+
   test("each Project ends with an empty New stream card that opens the create dialog", async () => {
     const request = workGraphRequest({ records: () => [leadStream], command: () => success() })
     render(() =>

@@ -86,6 +86,7 @@ const DENY_LIST = new Set([
   "NODE_OPTIONS",
   "ELECTRON_RUN_AS_NODE",
   "NODE_PATH",
+  "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN",
 ])
 
 const DEFAULT_PREFIXES = ["OPENCODE_", "CLAXEDO_"]
@@ -119,7 +120,7 @@ export function buildSafeEnv(
     const checkKey = isWindows ? key.toUpperCase() : key
 
     // Deny list takes priority
-    if (isWindows ? denyUpper!.has(checkKey) : DENY_LIST.has(key)) continue
+    if (isWindows ? denyUpper!.has(checkKey) : DENY_LIST.has(key) || DENY_LIST.has(key.toUpperCase())) continue
 
     // Check allowlist
     if (isWindows ? allowedUpper!.has(checkKey) : ALLOWED_VARS.has(key)) {

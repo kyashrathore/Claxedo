@@ -33,6 +33,7 @@ describe("prompt input submit UI state", () => {
       let promptValue: Prompt = [{ type: "text", content: "first", start: 0, end: 5 }]
       let mode: "normal" | "shell" = "shell"
       let rawCalls = 0
+      let registeredRetry: (() => void) | undefined
       const rawPrompts: Prompt[] = []
       const rawModes: Array<"normal" | "shell"> = []
       const retry = createPromptInputSubmitRetry({
@@ -59,15 +60,19 @@ describe("prompt input submit UI state", () => {
         promptLength: (prompt) =>
           prompt.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
         clearBoot: () => undefined,
+        registerRetry: (next) => {
+          registeredRetry = next
+        },
       })
 
       expect(retry.onRetry()).toBeUndefined()
       await retry.handleSubmit(new Event("submit", { cancelable: true }))
       expect(rawCalls).toBe(1)
       expect(retry.onRetry()).toBeFunction()
+      expect(registeredRetry).toBeFunction()
 
       mode = "normal"
-      retry.onRetry()?.()
+      registeredRetry?.()
 
       expect(rawCalls).toBe(2)
       expect(rawPrompts[1]).toEqual([{ type: "text", content: "first", start: 0, end: 5 }])

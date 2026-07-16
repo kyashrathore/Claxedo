@@ -1,26 +1,28 @@
 import { describe, expect, test } from "bun:test"
 import { hash } from "@/lib/encode"
 import { createWorkGraphClient } from "@/features/workgraph/api"
-import { createDocsApi } from "@/features/documents/data/docs-api"
-import { createDocumentWorkGraphHandoff, createTurnDocumentRevisionIntoWork } from "./doc-workgraph"
+import { createDocumentSnapshotApi, createDocumentWorkGraphHandoff, createTurnDocumentIntoWork } from "./doc-workgraph"
 
 const actor = { type: "user" as const, id: "user_1" }
 
-describe("Docs v2 WorkGraph handoff", () => {
-  test("loads the selected durable Docs revision before creating its Work Source and proposal", async () => {
+describe("Documents WorkGraph handoff", () => {
+  test("creates an exact pinned document snapshot before creating its Work Source and proposal", async () => {
     const markdown = "# Exact durable revision"
     const contentHash = await hash(markdown)
     const calls: string[] = []
     const request = async (requestInput: string | URL | Request, init?: RequestInit) => {
       const url = requestUrl(requestInput)
       calls.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`)
-      if (url.pathname.startsWith("/api/claxedo/docs/")) {
+      if (url.pathname.endsWith("/work-source-pin")) return Response.json({})
+      if (url.pathname.endsWith("/documents/document_1/work-source")) {
         return Response.json({
-          projectId: "project_1",
-          documentId: "document_1",
+          locator: {
+            projectId: "project_1",
+            documentId: "document_1",
+            snapshotId: "snapshot_1",
+            placement: "local",
+          },
           documentTitle: "Exact durable revision",
-          revisionId: "document_revision_1",
-          revisionNumber: 1,
           markdown,
           contentHash,
           authoredAt: 100,
@@ -34,23 +36,27 @@ describe("Docs v2 WorkGraph handoff", () => {
       }
       return success(body.operationId, { proposalId: "proposal_1", state: "planning" })
     }
-    const docs = createDocsApi({ baseUrl: "https://control.test", request })
-    const turnIntoWork = createTurnDocumentRevisionIntoWork({
-      readRevision: docs.revisionForWork,
+    const snapshots = createDocumentSnapshotApi({ baseUrl: "https://control.test", request })
+    const turnIntoWork = createTurnDocumentIntoWork({
+      snapshot: snapshots.create,
       handoff: createDocumentWorkGraphHandoff({
         client: createWorkGraphClient({ baseUrl: "https://control.test", request }),
+        onSource: snapshots.pin,
       }),
     })
 
-    await expect(turnIntoWork({
-      projectId: "project_1",
-      documentId: "document_1",
-      revisionId: "document_revision_1",
-    })).resolves.toMatchObject({ proposalId: "proposal_1" })
+    await expect(
+      turnIntoWork({
+        projectId: "project_1",
+        documentId: "document_1",
+        placement: "local",
+      }),
+    ).resolves.toMatchObject({ proposalId: "proposal_1" })
     expect(calls).toEqual([
-      "GET /api/claxedo/docs/document_1/revisions/document_revision_1?project_id=project_1",
+      "POST /documents/document_1/work-source",
       "GET /api/workgraph/sources?limit=100",
       "POST /api/workgraph/commands",
+      "POST /documents/document_1/snapshots/snapshot_1/work-source-pin",
       "POST /api/workgraph/commands",
     ])
   })
@@ -90,8 +96,8 @@ describe("Docs v2 WorkGraph handoff", () => {
           adapterId: "claxedo_docs",
           projectId: "project_1",
           documentId: "document_1",
-          documentRevisionId: "document_revision_1",
-          documentRevisionNumber: 1,
+          snapshotId: "snapshot_1",
+          placement: "local",
           authoredAt: 100,
           authoredBy: actor,
           contentHash: revision.contentHash,
@@ -115,16 +121,15 @@ describe("Docs v2 WorkGraph handoff", () => {
     const revision = await documentRevision({
       markdown,
       contentHash: await hash(markdown),
-      revisionId: "document_revision_2",
-      revisionNumber: 2,
-      parentRevisionId: "document_revision_1",
+      snapshotId: "snapshot_2",
       authoredAt: 200,
       authoredBy: { type: "agent", id: "agent_1" },
     })
     const commands: Array<Record<string, unknown>> = []
     const request = async (requestInput: string | URL | Request, init?: RequestInit) => {
       const url = requestUrl(requestInput)
-      if (url.pathname.endsWith("/sources")) return Response.json({ sources: [workSource("source_1", "source_revision_1")], hasMore: false })
+      if (url.pathname.endsWith("/sources"))
+        return Response.json({ sources: [workSource("source_1", "source_revision_1")], hasMore: false })
       if (url.pathname.endsWith("/sources/source_1/revisions/source_revision_1")) {
         return Response.json(workSourceRevision({ content: previousMarkdown, contentHash: previousHash }))
       }
@@ -153,8 +158,7 @@ describe("Docs v2 WorkGraph handoff", () => {
         expectedRevisionId: "source_revision_1",
         content: markdown,
         authoring: expect.objectContaining({
-          documentRevisionId: "document_revision_2",
-          parentDocumentRevisionId: "document_revision_1",
+          snapshotId: "snapshot_2",
           authoredBy: { type: "agent", id: "agent_1" },
           contentHash: revision.contentHash,
         }),
@@ -183,7 +187,7 @@ describe("Docs v2 WorkGraph handoff", () => {
     await expect(handoff(await documentRevision({ contentHash: "0".repeat(64) }))).rejects.toMatchObject({
       name: "DocumentWorkGraphHandoffError",
       code: "content_hash_mismatch",
-      stage: "revision",
+      stage: "snapshot",
     })
     expect(requests).toBe(0)
   })
@@ -205,9 +209,11 @@ describe("Docs v2 WorkGraph handoff", () => {
       })
     }
 
-    await expect(createDocumentWorkGraphHandoff({
-      client: createWorkGraphClient({ baseUrl: "https://control.test", request }),
-    })(revision)).rejects.toMatchObject({
+    await expect(
+      createDocumentWorkGraphHandoff({
+        client: createWorkGraphClient({ baseUrl: "https://control.test", request }),
+      })(revision),
+    ).rejects.toMatchObject({
       name: "DocumentWorkGraphHandoffError",
       code: "command_rejected",
       stage: "planning",
@@ -225,14 +231,13 @@ describe("Docs v2 WorkGraph handoff", () => {
     const revision = await documentRevision({
       markdown,
       contentHash: await hash(markdown),
-      revisionId: "document_revision_2",
-      revisionNumber: 2,
-      parentRevisionId: "document_revision_1",
+      snapshotId: "snapshot_2",
     })
     let commands = 0
     const request = async (requestInput: string | URL | Request) => {
       const url = requestUrl(requestInput)
-      if (url.pathname.endsWith("/sources")) return Response.json({ sources: [workSource("source_1", "source_revision_1")], hasMore: false })
+      if (url.pathname.endsWith("/sources"))
+        return Response.json({ sources: [workSource("source_1", "source_revision_1")], hasMore: false })
       if (url.pathname.endsWith("/sources/source_1/revisions/source_revision_1")) {
         return Response.json(workSourceRevision({ content: previousMarkdown, contentHash: previousHash }))
       }
@@ -241,46 +246,48 @@ describe("Docs v2 WorkGraph handoff", () => {
         return Response.json({
           ...value,
           records: [value.records[0], { ...value.records[0], id: "stream_2", title: "Second Stream" }],
-          references: [
-            value.references[0],
-            { sequence: 2, resource: { type: "stream", id: "stream_2" }, version: 1 },
-          ],
+          references: [value.references[0], { sequence: 2, resource: { type: "stream", id: "stream_2" }, version: 1 }],
         })
       }
       commands++
       return Response.json({})
     }
 
-    await expect(createDocumentWorkGraphHandoff({
-      client: createWorkGraphClient({ baseUrl: "https://control.test", request }),
-    })(revision)).rejects.toEqual(expect.objectContaining({
-      name: "DocumentWorkGraphHandoffError",
-      code: "target_stream_required",
-      stage: "placement",
-    }))
+    await expect(
+      createDocumentWorkGraphHandoff({
+        client: createWorkGraphClient({ baseUrl: "https://control.test", request }),
+      })(revision),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: "DocumentWorkGraphHandoffError",
+        code: "target_stream_required",
+        stage: "placement",
+      }),
+    )
     expect(commands).toBe(0)
   })
 })
 
-async function documentRevision(overrides: Partial<{
-  markdown: string
-  contentHash: string
-  revisionId: string
-  revisionNumber: number
-  parentRevisionId: string
-  authoredAt: number
-  authoredBy: { type: "user" | "agent" | "system"; id: string }
-}> = {}) {
+async function documentRevision(
+  overrides: Partial<{
+    markdown: string
+    contentHash: string
+    snapshotId: string
+    authoredAt: number
+    authoredBy: { type: "user" | "agent" | "system"; id: string }
+  }> = {},
+) {
   const markdown = overrides.markdown ?? "# Launch"
   return {
-    projectId: "project_1",
-    documentId: "document_1",
+    locator: {
+      projectId: "project_1",
+      documentId: "document_1",
+      snapshotId: overrides.snapshotId ?? "snapshot_1",
+      placement: "local" as const,
+    },
     documentTitle: "Launch Claxedo",
-    revisionId: overrides.revisionId ?? "document_revision_1",
-    revisionNumber: overrides.revisionNumber ?? 1,
-    ...(overrides.parentRevisionId ? { parentRevisionId: overrides.parentRevisionId } : {}),
     markdown,
-    contentHash: overrides.contentHash ?? await hash(markdown),
+    contentHash: overrides.contentHash ?? (await hash(markdown)),
     authoredAt: overrides.authoredAt ?? 100,
     authoredBy: overrides.authoredBy ?? actor,
   }
@@ -318,8 +325,8 @@ function workSourceRevision(input: { content: string; contentHash: string }) {
       adapterId: "claxedo_docs",
       projectId: "project_1",
       documentId: "document_1",
-      documentRevisionId: "document_revision_1",
-      documentRevisionNumber: 1,
+      snapshotId: "snapshot_1",
+      placement: "local",
       authoredAt: 100,
       authoredBy: actor,
       contentHash: input.contentHash,

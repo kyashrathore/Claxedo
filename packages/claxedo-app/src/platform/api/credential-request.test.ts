@@ -34,4 +34,16 @@ describe("claxedoCredentialRequest", () => {
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe("http://127.0.0.1:3001/api/claxedo/credentials/provider/openrouter%2Fcustom")
   })
+
+  test("requests discover, save, and verification credential routes", async () => {
+    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "discover" }, { method: "POST" })
+    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "save-discovered" }, { method: "POST" })
+    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", credentialId: "cred/id", action: "verify" }, { method: "POST" })
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://127.0.0.1:3001/api/claxedo/credentials/discover",
+      "http://127.0.0.1:3001/api/claxedo/credentials/save-discovered",
+      "http://127.0.0.1:3001/api/claxedo/credentials/cred%2Fid/verify",
+    ])
+  })
 })

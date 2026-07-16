@@ -84,6 +84,32 @@ async function settle() {
 }
 
 describe("document persistence controller", () => {
+  test("recovery drafts rewrite content on each edit without rewriting an unchanged version index", () => {
+    const storage = memoryStorage()
+    const setItem = storage.setItem
+    let versionIndexWrites = 0
+    storage.setItem = (key, value) => {
+      if (key.endsWith(":versions")) versionIndexWrites++
+      setItem(key, value)
+    }
+    const recovery = createRecoveryDraftStore(storage)
+    const draft = {
+      documentId: "doc-1",
+      version: "opaque-v1",
+      displayName: "Plan",
+      markdown: "one",
+      updatedAt: 1,
+    }
+
+    expect(recovery.write(draft)).toEqual({ ok: true, value: undefined })
+    expect(recovery.write({ ...draft, markdown: "two", updatedAt: 2 })).toEqual({ ok: true, value: undefined })
+    expect(versionIndexWrites).toBe(1)
+    expect(recovery.read("doc-1", "opaque-v1")).toEqual({
+      ok: true,
+      value: { ...draft, markdown: "two", updatedAt: 2 },
+    })
+  })
+
   test("EC-B1 serializes rapid alternating display-name and Markdown edits through one version", async () => {
     const test = setup()
     test.controller.editDisplayName("One")
@@ -420,6 +446,42 @@ describe("document persistence controller", () => {
       },
     })
     expect(dirty.scheduler.delays()).toEqual([])
+  })
+
+  test("an unchanged focus reread does not turn a dirty draft into a conflict", () => {
+    const test = setup()
+    test.controller.editMarkdown("human")
+    const before = test.controller.snapshot()
+    test.controller.applyExternalChange({
+      displayName: "Initial",
+      markdown: "initial body",
+      version: "opaque-v1",
+    })
+    expect(test.controller.snapshot()).toMatchObject({
+      status: "dirty",
+      expectedVersion: "opaque-v1",
+      draft: { displayName: "Initial", markdown: "human" },
+      conflict: undefined,
+    })
+    expect(test.controller.snapshot().draft).toEqual(before.draft)
+    expect(test.scheduler.delays()).toEqual([50])
+  })
+
+  test("an identical-byte rewrite advances the base token without conflicting a dirty draft", () => {
+    const test = setup()
+    test.controller.editMarkdown("human")
+    test.controller.applyExternalChange({
+      displayName: "Initial",
+      markdown: "initial body",
+      version: "opaque-v1-new-mtime",
+    })
+    expect(test.controller.snapshot()).toMatchObject({
+      status: "dirty",
+      expectedVersion: "opaque-v1-new-mtime",
+      draft: { displayName: "Initial", markdown: "human" },
+      conflict: undefined,
+    })
+    expect(test.scheduler.delays()).toEqual([50])
   })
 
   test("an in-flight success cannot erase a conflict discovered by an external reread", async () => {

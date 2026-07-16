@@ -1,0 +1,160 @@
+/* Contextual card shell — Cursor/Codex-style quiet side context.
+   The shell owns the look (chromeless inline, raised floating surface,
+   collapsed rail chip, head, sections, generic rows). Consumers own
+   placement — sticky/fixed coordinates and width — via their own class. */
+
+.ui-context-card {
+  padding: 0.35rem 0.1rem;
+}
+
+.ui-context-card.is-floating {
+  padding: 0.6rem 0.6rem 0.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-lg-border-base);
+}
+
+/* Collapsed, the rail chip carries its own border — drop any variant surface. */
+.ui-context-card.is-collapsed {
+  width: auto;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* ── Head: muted label, count, controls ─────────────────── */
+
+.ui-context-card-head {
+  display: flex;
+  align-items: center;
+  min-height: 1.6rem;
+  gap: 0.5rem;
+  padding: 0 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.ui-context-card-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.ui-context-card-count {
+  min-width: 1rem;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-weaker);
+  text-align: right;
+}
+
+.ui-context-card-gap {
+  flex: 1;
+}
+
+.ui-context-card-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--icon-critical-base);
+}
+
+/* ── Collapsed rail: item buttons + expand, Cursor-style ── */
+
+.ui-context-card-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+}
+
+.ui-context-card-rail-item {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-md);
+  color: var(--icon-weak-base);
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.ui-context-card-rail-item:hover,
+.ui-context-card-rail-item:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--icon-base);
+}
+
+.ui-context-card-rail-item.is-unread {
+  color: var(--icon-critical-base);
+}
+
+/* The expand control sits under a hairline, always last. */
+.ui-context-card-rail-expand {
+  margin-top: 0.15rem;
+  border-top: 1px solid var(--border-weak-base);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding-top: 0.15rem;
+  height: 1.9rem;
+}
+
+/* ── Sections (Environment / Subagents / Browser stacks) ── */
+
+.ui-context-card-section {
+  padding-top: 0.55rem;
+}
+
+.ui-context-card-section-label {
+  padding: 0 0.35rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ── Generic rows ───────────────────────────────────────── */
+
+.ui-context-card-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.1rem;
+  padding: 0.4rem 0.35rem;
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.ui-context-card-row.is-selectable {
+  transition: background 110ms ease;
+}
+
+.ui-context-card-row.is-selectable:hover,
+.ui-context-card-row.is-selectable:focus-visible {
+  background: var(--surface-base-hover);
+}
+
+.ui-context-card-row-glyph {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+}
+
+.ui-context-card-row-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-context-card-row-meta {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}

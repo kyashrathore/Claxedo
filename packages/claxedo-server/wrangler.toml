@@ -76,15 +76,27 @@ CLAXEDO_SIGNED_CLOUD_AUTH = "1"
 # Never set this for self-host; absent mode = self-host by design.
 CLAXEDO_DEPLOYMENT_MODE = "hosted"
 
+[[r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = "claxedo-documents"
+
 [env.staging]
 name = "claxedo-control-plane-staging"
 
 [env.staging.triggers]
-crons = ["*/15 * * * *"]
+# Two lanes: the every-minute lane runs ONLY the bounded WorkGraph reconciler
+# (deletion finalization / execution placement must land within the client's
+# live sync window); the 15-minute lane runs the full sweep (sandbox GC,
+# billing, reconcile) per the D13 truth-keeper band.
+crons = ["*/15 * * * *", "* * * * *"]
 
 [env.staging.vars]
 CLAXEDO_SIGNED_CLOUD_AUTH = "1"
 CLAXEDO_DEPLOYMENT_MODE = "hosted"
+
+[[env.staging.r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = "claxedo-documents-staging"
 
 # KV namespace for the Cloudflare credential backend (only needed once the hosted
 # surface manages provider credentials; the first surface does not).

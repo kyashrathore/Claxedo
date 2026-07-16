@@ -1,7 +1,9 @@
 export type ControlPlaneCredentials = {
   listCredentials: () => Promise<unknown[]>
   getCredentialByProvider: (providerId: string) => Promise<unknown | undefined>
+  getCredential?: (id: string) => Promise<unknown | undefined>
   resolveCredentialSecret?: (providerId: string) => Promise<string | null>
+  resolveCredentialSecretById?: (id: string) => Promise<string | null>
   putCredential: (input: {
     provider_id: string
     kind: "sandbox_driver" | "agent_provider" | "mcp_server" | "oauth_token" | string
@@ -19,6 +21,11 @@ export type ControlPlaneCredentials = {
   deleteCredential: (id: string) => Promise<boolean>
   deleteCredentialsByProvider: (providerId: string) => Promise<number>
   updateCredentialStatus: (id: string, status: string, error?: string) => Promise<void>
+  updateCredentialHealth?: (
+    id: string,
+    health: "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired",
+    validatedAt: number,
+  ) => Promise<void>
   syncLocalCredentials: (providerIds?: string[]) => Promise<{
     synced: string[]
     existing: string[]

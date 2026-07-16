@@ -1,4 +1,5 @@
 import { selectRuntimeModel } from "@/features/session/composer/model-strategy"
+import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
@@ -116,9 +117,10 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     sessionFetch(dir)(usesWorkspaceRuntimeSession(dir) ? path : `${input.serverUrl()}${path}`, init)
 
   const modelForSubmit = async (dir: SubmitDirectory, selected: SubmitModel | undefined) => {
+    if (isSignedWorkspaceDefaultModel(selected)) return undefined
     if (!workspaceRuntimeRef(dir)) return selected
     if (centralTransportForServer(input.serverUrl()) === "loopback") {
-      return selected ?? { id: "big-pickle", provider: { id: "opencode" } }
+      return selected
     }
     const res = await sessionRequest(dir, opencodeProviderPath({
       directory: dir,

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 
 const mocks = vi.hoisted(() => ({
   ensureEmbeddedWorkspaceRuntime: vi.fn(),
@@ -18,6 +21,13 @@ import type { SandboxFetchOptions } from "../sandbox-target-fetch"
 import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
 import type { Workspace } from "../workspace-store"
 import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../connections-host/turn-credentials"
+import {
+  disposeHydratedSessionDocuments,
+  forgetHydratedSessionRuntime,
+  hydrateSessionDocument,
+  hydratedSessionDocumentPaths,
+} from "../documents/session-hydration"
+import { sessionEnvBashTool } from "../../../agent-sdk-runtime/src/harnesses/pi/model-backend"
 
 // Embedded (local) workspace — dispatches in-process via
 // ensureEmbeddedWorkspaceRuntime(...).app.fetch. Used by the behaviour tests
@@ -161,6 +171,96 @@ describe("createClaxedoSessionEnvFactory", () => {
     expect(env.kind).toBe("workspace-runtime")
     expect(injected).toHaveBeenCalledWith({ workspaceId: "ws-1" })
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a real session bash turn syncs its hydrated document edit and disposes the session copy", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-session-roundtrip-"))
+    const canonicalFile = path.join(root, "canonical.md")
+    const sessionRoot = path.join(root, "workspace")
+    await fs.mkdir(sessionRoot)
+    await fs.writeFile(canonicalFile, "before")
+    const hydrated = await hydrateSessionDocument({
+      sessionId: "session-roundtrip",
+      workspaceRoot: sessionRoot,
+      documentId: "document-a",
+      displayName: "Plan",
+      markdown: "before",
+      baseVersion: "version-1",
+      sync: async (markdown) => {
+        await fs.writeFile(canonicalFile, markdown)
+        return "version-2"
+      },
+    })
+    const env = await createClaxedoSessionEnvFactory({ fetchOptions })({
+      sessionId: "session-roundtrip",
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1" },
+    })
+    mocks.ensureEmbeddedWorkspaceRuntime.mockResolvedValue({ app: { fetch: async () => {
+      await fs.writeFile(hydrated, "agent edit")
+      return ndjsonResponse([{ type: "exit", exitCode: 0 }])
+    } } })
+
+    await sessionEnvBashTool(env).execute(
+      "tool-call-document-edit",
+      { command: `printf 'agent edit' > '${hydrated}'` },
+      new AbortController().signal,
+    )
+    expect(await fs.readFile(canonicalFile, "utf8")).toBe("agent edit")
+    expect(hydratedSessionDocumentPaths("session-roundtrip")).toEqual([hydrated])
+    await env.dispose?.()
+    expect(hydratedSessionDocumentPaths("session-roundtrip")).toEqual([])
+    await disposeHydratedSessionDocuments("session-roundtrip")
+    await fs.rm(root, { recursive: true, force: true })
+  })
+
+  test("reports end-turn and disposal sync failures without replacing a successful bash result", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-session-sync-failure-"))
+    const sessionRoot = path.join(root, "workspace")
+    await fs.mkdir(sessionRoot)
+    const hydrated = await hydrateSessionDocument({
+      sessionId: "session-sync-failure",
+      workspaceRoot: sessionRoot,
+      documentId: "document-a",
+      displayName: "Plan",
+      markdown: "before",
+      baseVersion: "version-1",
+      sync: async () => { throw new Error("version conflict") },
+    })
+    const failures = vi.fn()
+    const env = await createClaxedoSessionEnvFactory({ fetchOptions, onHydrationFailure: failures })({
+      sessionId: "session-sync-failure",
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1" },
+    })
+    mocks.ensureEmbeddedWorkspaceRuntime.mockResolvedValue({ app: { fetch: async () => {
+      await fs.writeFile(hydrated, "preserve this edit")
+      return ndjsonResponse([{ type: "exit", exitCode: 0 }])
+    } } })
+
+    await expect(sessionEnvBashTool(env).execute(
+      "tool-call-document-conflict",
+      { command: `printf 'preserve this edit' > '${hydrated}'` },
+      new AbortController().signal,
+    )).resolves.toBeDefined()
+    expect(failures).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "end-turn",
+      sessionId: "session-sync-failure",
+      error: expect.objectContaining({ message: "version conflict" }),
+    }))
+    await expect(env.dispose?.()).resolves.toBeUndefined()
+    expect(failures).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "dispose",
+      sessionId: "session-sync-failure",
+      documentId: "document-a",
+      path: hydrated,
+      error: expect.objectContaining({ message: "version conflict" }),
+    }))
+    expect(await fs.readFile(hydrated, "utf8")).toBe("preserve this edit")
+    forgetHydratedSessionRuntime("session-sync-failure")
+    await fs.rm(root, { recursive: true, force: true })
   })
 })
 

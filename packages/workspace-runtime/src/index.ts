@@ -36,6 +36,7 @@ export {
   from "./routes/manifest"
 export type { WorkspaceRuntimeRouteFamily }
   from "./routes/manifest"
+export { flushRuntimeDocument, forgetRuntimeDocuments } from "./routes/document-hydration"
 export {
   WORKGRAPH_CONNECTION_BINDING_PATH,
   WORKGRAPH_CONNECTION_TOOL_NAMES,

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -12,7 +13,7 @@ import {
 } from "./errors"
 import { createDocumentHistory } from "./history"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "./local-managed"
-import type { DocumentActor, DocumentEntry } from "./port"
+import type { DocumentActor, DocumentEntry, SnapshotRef } from "./port"
 import { documentWorkspaceConformance } from "./port-conformance"
 
 const actor: DocumentActor = { type: "user", id: "user_1" }
@@ -184,9 +185,9 @@ describe("local managed document file semantics", () => {
   })
 
   test("EC-A12 rejects case-folding project and document identifiers", () => {
-    expect(() => managedDocumentRelativePath({ projectId: "Project", documentId: "document_a", slug: "notes" })).toThrow(
-      "Invalid project id",
-    )
+    expect(() =>
+      managedDocumentRelativePath({ projectId: "Project", documentId: "document_a", slug: "notes" }),
+    ).toThrow("Invalid project id")
     expect(() => managedDocumentRelativePath({ projectId: "project", documentId: "Document", slug: "notes" })).toThrow(
       "Invalid document id",
     )
@@ -240,6 +241,69 @@ describe("local managed concurrency and versioning", () => {
       value.workspace.write(handle, { markdown: "human loser", expectedVersion: current.version, actor }),
     ).rejects.toBeInstanceOf(DocumentVersionConflictError)
     expect(await fs.readFile(handle.canonicalPath, "utf8")).toBe("agent winner")
+  })
+
+  test("an external pathname writer during an exact archive keeps managed authority active", async () => {
+    let race = false
+    const value = await fixture({
+      faults: {
+        async afterArchiveClaimed(input) {
+          if (race) await fs.writeFile(input.target, "agent winner")
+        },
+      },
+    })
+    const handle = await value.workspace.resolve(value.entry)
+    const current = await value.workspace.read(handle)
+    const archivePath = path.join(value.dataRoot, "archive", "initial.md")
+    race = true
+
+    await expect(
+      value.workspace.archiveExact(handle, { archivePath, expectedVersion: current.version }),
+    ).rejects.toBeInstanceOf(DocumentVersionConflictError)
+    expect(await fs.readFile(handle.canonicalPath, "utf8")).toBe("agent winner")
+    await expect(fs.stat(archivePath)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  test("an archive claim changed through an old authority is restored to the canonical path", async () => {
+    let race = false
+    const value = await fixture({
+      faults: {
+        async afterArchiveClaimed(input) {
+          if (race) await fs.writeFile(input.claimedPath, "agent through old authority")
+        },
+      },
+    })
+    const handle = await value.workspace.resolve(value.entry)
+    const current = await value.workspace.read(handle)
+    const archivePath = path.join(value.dataRoot, "archive", "initial.md")
+    race = true
+
+    await expect(
+      value.workspace.archiveExact(handle, { archivePath, expectedVersion: current.version }),
+    ).rejects.toBeInstanceOf(DocumentVersionConflictError)
+    expect(await fs.readFile(handle.canonicalPath, "utf8")).toBe("agent through old authority")
+    await expect(fs.stat(archivePath)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  test("an exact archive resumes a durable claim left before its final rename", async () => {
+    const value = await fixture()
+    const handle = await value.workspace.resolve(value.entry)
+    const current = await value.workspace.read(handle)
+    const archivePath = path.join(value.dataRoot, "archive", "initial.md")
+    const claimedPath = path.join(
+      path.dirname(handle.canonicalPath),
+      `.${path.basename(handle.canonicalPath)}.${createHash("sha256").update(current.version).digest("hex")}.archive-claim`,
+    )
+    await fs.rename(handle.canonicalPath, claimedPath)
+
+    const restarted = createLocalManagedDocumentWorkspace({ dataRoot: value.dataRoot })
+    await restarted.archiveExact(await restarted.resolve(value.entry), {
+      archivePath,
+      expectedVersion: current.version,
+    })
+
+    await expect(fs.stat(handle.canonicalPath)).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await fs.readFile(archivePath, "utf8")).toBe("# Initial\n")
   })
 
   test("an old open-FD writer is detected after install and restored as authority", async () => {
@@ -328,7 +392,9 @@ describe("local managed concurrency and versioning", () => {
     await expect(
       value.workspace.write(handle, { markdown: "must not escape", expectedVersion: current.version, actor }),
     ).rejects.toBeInstanceOf(DocumentPathError)
-    expect(await fs.readFile(path.join(value.dataRoot, "outside-write", "initial.md"), "utf8")).toBe("outside authority")
+    expect(await fs.readFile(path.join(value.dataRoot, "outside-write", "initial.md"), "utf8")).toBe(
+      "outside authority",
+    )
     expect(await fs.readFile(insideAuthority, "utf8")).toBe("# Initial\n")
     await restoreParent()
   })
@@ -352,7 +418,9 @@ describe("local managed concurrency and versioning", () => {
       value.workspace.write(handle, { markdown: "not durable", expectedVersion: current.version, actor }),
     ).rejects.toBeInstanceOf(DocumentStorageError)
     expect(await fs.readFile(handle.canonicalPath, "utf8")).toBe("# Initial\n")
-    expect((await fs.readdir(path.dirname(handle.canonicalPath))).filter((name) => /\.(tmp|claim)$/.test(name))).toEqual([])
+    expect(
+      (await fs.readdir(path.dirname(handle.canonicalPath))).filter((name) => /\.(tmp|claim)$/.test(name)),
+    ).toEqual([])
   })
 })
 
@@ -366,13 +434,16 @@ describe("local managed lock ownership", () => {
     const handle = await workspace.resolve(value.entry)
     const current = await workspace.read(handle)
     const lock = path.join(value.dataRoot, "document-history", handle.documentId, ".write.lock")
-    await fs.writeFile(lock, JSON.stringify({
-      pid: process.pid,
-      hostname: os.hostname(),
-      token: "live-owner",
-      createdAt: 1,
-      heartbeatAt: 1,
-    }))
+    await fs.writeFile(
+      lock,
+      JSON.stringify({
+        pid: process.pid,
+        hostname: os.hostname(),
+        token: "live-owner",
+        createdAt: 1,
+        heartbeatAt: 1,
+      }),
+    )
     await fs.utimes(lock, new Date(0), new Date(0))
 
     await expect(
@@ -390,13 +461,16 @@ describe("local managed lock ownership", () => {
     const handle = await workspace.resolve(value.entry)
     const current = await workspace.read(handle)
     const lock = path.join(value.dataRoot, "document-history", handle.documentId, ".write.lock")
-    await fs.writeFile(lock, JSON.stringify({
-      pid: 2_147_483_647,
-      hostname: os.hostname(),
-      token: "crashed-owner",
-      createdAt: 1,
-      heartbeatAt: 1,
-    }))
+    await fs.writeFile(
+      lock,
+      JSON.stringify({
+        pid: 2_147_483_647,
+        hostname: os.hostname(),
+        token: "crashed-owner",
+        createdAt: 1,
+        heartbeatAt: 1,
+      }),
+    )
     await fs.utimes(lock, new Date(0), new Date(0))
 
     await expect(
@@ -407,8 +481,12 @@ describe("local managed lock ownership", () => {
   test("an active lock carries an ownership token and advances its heartbeat", async () => {
     let enter!: () => void
     let release!: () => void
-    const entered = new Promise<void>((resolve) => { enter = resolve })
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
     let block = false
     const value = await fixture({
       locking: { staleMs: 100, waitMs: 200, heartbeatMs: 5 },
@@ -440,6 +518,74 @@ describe("local managed lock ownership", () => {
 })
 
 describe("local managed history", () => {
+  test("snapshot metadata reads are bounded without truncating ordered or pinned results", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-history-metadata-concurrency-"))
+    roots.add(dataRoot)
+    let now = 1
+    const history = createDocumentHistory({
+      root: dataRoot,
+      maxSnapshots: 20,
+      maxAgeMs: Number.POSITIVE_INFINITY,
+      now: () => now,
+    })
+    const created: SnapshotRef[] = []
+    for (let index = 0; index < 12; index++) {
+      now++
+      created.push(
+        await history.create("document_metadata", {
+          markdown: `snapshot ${index}`,
+          reason: `snapshot ${index}`,
+          actor,
+        }),
+      )
+    }
+    await history.pin("document_metadata", created[0]!.id, "work-source:metadata-concurrency")
+
+    let active = 0
+    let maximum = 0
+    const observed = createDocumentHistory({
+      root: dataRoot,
+      maxSnapshots: 20,
+      maxAgeMs: Number.POSITIVE_INFINITY,
+      now: () => now,
+      faults: {
+        async beforeMetadataRead() {
+          active++
+          maximum = Math.max(maximum, active)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          active--
+        },
+      },
+    })
+
+    const snapshots = await observed.list("document_metadata")
+    expect(maximum).toBeGreaterThan(1)
+    expect(maximum).toBeLessThanOrEqual(8)
+    expect(snapshots).toHaveLength(12)
+    expect(snapshots.map((snapshot) => snapshot.createdAt)).toEqual(
+      [...snapshots].map((snapshot) => snapshot.createdAt).sort((left, right) => right - left),
+    )
+    expect(snapshots.find((snapshot) => snapshot.id === created[0]!.id)?.pins).toEqual([
+      "work-source:metadata-concurrency",
+    ])
+  })
+
+  test("repeated intake renewals replace one bounded lease and permanent pins cannot exceed the cap", async () => {
+    const value = await fixture()
+    const handle = await value.workspace.resolve(value.entry)
+    const [snapshot] = await value.workspace.listSnapshots(handle)
+    for (let index = 0; index < 200; index++) {
+      await value.workspace.pinSnapshot(handle, snapshot!.id, `lease:${Date.now() + 60_000 + index}:work-source`)
+    }
+    expect(
+      (await value.workspace.listSnapshots(handle))[0]!.pins.filter((pin) => pin.startsWith("lease:")),
+    ).toHaveLength(1)
+    for (let index = 0; index < 127; index++)
+      await value.workspace.pinSnapshot(handle, snapshot!.id, `permanent:${index}`)
+    await expect(value.workspace.pinSnapshot(handle, snapshot!.id, "permanent:overflow")).rejects.toThrow("pin limit")
+    expect((await value.workspace.listSnapshots(handle))[0]!.pins).toHaveLength(128)
+  })
+
   test("snapshots are immutable and content-hash verified", async () => {
     const value = await fixture()
     const handle = await value.workspace.resolve(value.entry)
@@ -510,9 +656,9 @@ describe("local managed history", () => {
         },
       },
     })
-    await expect(
-      history.create("document_error", { markdown: "one", reason: "mkdir", actor }),
-    ).rejects.toMatchObject({ code: "document_permission_denied" })
+    await expect(history.create("document_error", { markdown: "one", reason: "mkdir", actor })).rejects.toMatchObject({
+      code: "document_permission_denied",
+    })
 
     const cleanupHistory = createDocumentHistory({
       root: dataRoot,
@@ -531,7 +677,7 @@ describe("local managed history", () => {
     ).rejects.toMatchObject({ code: "document_permission_denied" })
   })
 
-  test("partial GC removes metadata before content so an orphan is never listed as restorable", async () => {
+  test("partial GC restart sweeps content orphaned after metadata-first deletion", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-history-partial-gc-"))
     roots.add(dataRoot)
     let fail = false
@@ -548,9 +694,9 @@ describe("local managed history", () => {
     const first = await history.create("document_partial", { markdown: "one", reason: "one", actor })
     fail = true
 
-    await expect(
-      history.create("document_partial", { markdown: "two", reason: "two", actor }),
-    ).rejects.toMatchObject({ code: "document_permission_denied" })
+    await expect(history.create("document_partial", { markdown: "two", reason: "two", actor })).rejects.toMatchObject({
+      code: "document_permission_denied",
+    })
     expect((await history.list("document_partial")).map((snapshot) => snapshot.sha256)).toHaveLength(1)
     await expect(
       fs.stat(path.join(dataRoot, "document-history", "document_partial", `${first.id}.json`)),
@@ -558,6 +704,16 @@ describe("local managed history", () => {
     await expect(
       fs.stat(path.join(dataRoot, "document-history", "document_partial", `${first.id}.md`)),
     ).resolves.toBeDefined()
+
+    const restarted = createDocumentHistory({
+      root: dataRoot,
+      maxSnapshots: 1,
+      maxAgeMs: Number.POSITIVE_INFINITY,
+    })
+    await restarted.collect("document_partial")
+    await expect(
+      fs.stat(path.join(dataRoot, "document-history", "document_partial", `${first.id}.md`)),
+    ).rejects.toMatchObject({ code: "ENOENT" })
   })
 })
 

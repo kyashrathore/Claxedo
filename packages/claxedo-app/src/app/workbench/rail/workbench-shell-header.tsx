@@ -46,7 +46,7 @@ export function WorkspacePanelChrome(props: {
 
 export function WorkbenchShellHeader(props: {
   activeGlobal: () => boolean
-  canUsePages?: boolean
+  canUseDocuments?: boolean
   canUseTerminal: () => boolean
   onCloseSurface: (contentId: string) => void
   onNewPage: () => void
@@ -104,7 +104,7 @@ export function WorkbenchShellHeader(props: {
           canUseTerminal={props.canUseTerminal()}
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
-          canUsePages={props.canUsePages === true}
+          canUseDocuments={props.canUseDocuments === true}
           onNewPage={props.onNewPage}
           onSettings={props.onSettings}
         />

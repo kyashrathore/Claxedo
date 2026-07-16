@@ -25,7 +25,9 @@ type PromptCustomCommand = {
 
 export function promptAtOptionKey(x: AtOption | undefined) {
   if (!x) return ""
-  return x.type === "agent" ? `agent:${x.name}` : `file:${x.path}`
+  if (x.type === "agent") return `agent:${x.name}`
+  if (x.type === "document") return `document:${x.documentId}`
+  return `file:${x.path}`
 }
 
 export async function promptAtOptions(input: {
@@ -48,6 +50,7 @@ export async function promptAtOptions(input: {
 
 export function promptAtOptionGroup(item: AtOption) {
   if (item.type === "agent") return "agent"
+  if (item.type === "document") return "document"
   if (item.recent) return "recent"
   return "file"
 }
@@ -86,21 +89,44 @@ export function promptSlashCommands(input: {
     source: cmd.source,
   }))
 
-  return [...custom, ...builtin]
+  return [
+    {
+      id: "documents.open",
+      trigger: "docs",
+      title: "Documents",
+      description: "Attach a document as an editable file",
+      type: "builtin" as const,
+    },
+    ...custom,
+    ...builtin,
+  ]
 }
 
-export function activeAtOption(input: {
-  items: AtOption[]
-  active?: string
-}) {
+export function promptDocumentOptions(
+  documents: ReadonlyArray<{
+    documentId: string
+    displayName: string
+    originKind: "managed" | "repository"
+    placementKind: "local" | "hosted"
+    status: string
+  }>,
+): AtOption[] {
+  return documents.map((document) => ({
+    type: "document",
+    documentId: document.documentId,
+    display: document.displayName,
+    originKind: document.originKind,
+    placementKind: document.placementKind,
+    status: document.status,
+  }))
+}
+
+export function activeAtOption(input: { items: AtOption[]; active?: string }) {
   if (input.items.length === 0) return
   return input.items.find((entry) => promptAtOptionKey(entry) === input.active) ?? input.items[0]
 }
 
-export function activeSlashCommand(input: {
-  items: SlashCommand[]
-  active?: string
-}) {
+export function activeSlashCommand(input: { items: SlashCommand[]; active?: string }) {
   if (input.items.length === 0) return
   return input.items.find((entry) => entry.id === input.active) ?? input.items[0]
 }
@@ -112,6 +138,8 @@ export function createPromptPopoverController(props: {
   searchFilesAndDirectories: (query: string) => Promise<string[]>
   commandOptions: Accessor<PromptCommandOption[]>
   customCommands: Accessor<PromptCustomCommand[] | undefined>
+  documentPicker: Accessor<boolean>
+  documents: Accessor<Parameters<typeof promptDocumentOptions>[0]>
   onAtSelect: (option: AtOption | undefined) => void
   onSlashSelect: (command: SlashCommand | undefined) => void
 }) {
@@ -126,10 +154,12 @@ export function createPromptPopoverController(props: {
 
   const atList = useFilteredList<AtOption>({
     items: (query) =>
-      promptAtOptions({
-        agents: agentOptions(),
-        recentFiles: props.recentFiles(),
-        query,
+      props.documentPicker()
+        ? promptDocumentOptions(props.documents())
+        : promptAtOptions({
+            agents: agentOptions(),
+            recentFiles: props.recentFiles(),
+            query,
         searchFilesAndDirectories: props.searchFilesAndDirectories,
       }),
     key: promptAtOptionKey,
@@ -186,6 +216,7 @@ export function createPromptPopoverController(props: {
 }
 
 function promptAtGroupRank(category: string) {
+  if (category === "document") return 0
   if (category === "agent") return 0
   if (category === "recent") return 1
   return 2

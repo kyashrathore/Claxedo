@@ -16,6 +16,7 @@ export type WorkspaceRelayHostTunnelOptions = {
   hostId: string
   workspaceIds: string[]
   localBaseUrl: string
+  resolveLocalUrl?: (input: { workspaceId: string; path: string }) => URL | undefined
   headers?: Record<string, string>
   tokenProvider?: () => Promise<string>
   onEvent?: (event: WorkspaceRelayHostTunnelEvent) => void
@@ -34,6 +35,7 @@ export type WorkspaceRelayHostTunnelOptions = {
 
 export type WorkspaceRelayHostTunnel = {
   close(): void
+  updateRegistration(input: { workspaceIds: string[]; token: string }): Promise<void>
 }
 
 // `attempt` is the 1-based total connection attempt: the initial connect is 1,
@@ -84,6 +86,10 @@ function tunnelUrl(input: WorkspaceRelayHostTunnelOptions) {
 
 function targetUrl(baseUrl: string, path: string) {
   return new URL(path.replace(/^\/+/, ""), `${normalized(baseUrl)}/`)
+}
+
+function localTarget(input: WorkspaceRelayHostTunnelOptions, workspaceId: string, path: string) {
+  return input.resolveLocalUrl?.({ workspaceId, path }) ?? (input.resolveLocalUrl ? undefined : targetUrl(input.localBaseUrl, path))
 }
 
 function headers(input: TunnelHeaderMap) {
@@ -272,7 +278,23 @@ async function forwardHttp(
   flowControls: Map<string, HttpFlowControl>,
 ) {
   try {
-    const res = await (input.request ?? fetch)(targetUrl(input.localBaseUrl, message.path), {
+    const target = localTarget(input, message.workspace_id, message.path)
+    if (!target) {
+      send(ws, {
+        type: "http.response.start",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        request_id: message.request_id,
+        status: 403,
+        headers: { "content-type": "application/json" },
+      })
+      send(ws, {
+        type: "http.response.end",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        request_id: message.request_id,
+      })
+      return
+    }
+    const res = await (input.request ?? fetch)(target, {
       method: message.method,
       headers: headers(message.headers),
       body: message.body_base64 ? decoded(message.body_base64) : undefined,
@@ -337,10 +359,15 @@ function openChannel(
   channels: Map<string, TunnelChannel>,
   message: TunnelWsOpen,
 ) {
+  const target = localTarget(input, message.workspace_id, message.path)
+  if (!target) {
+    sendWsClose(tunnel, message.channel_id, 1008, "Workspace route is not remotely accessible")
+    return
+  }
   const WebSocketCtor = input.webSocket ?? WebSocket
   const upstream = new (WebSocketCtor as unknown as {
     new(url: string, options: { headers?: Record<string, string> }): WebSocket
-  })(targetUrl(input.localBaseUrl, message.path).toString().replace(/^http/, "ws"), {
+  })(target.toString().replace(/^http/, "ws"), {
     headers: message.headers,
   })
   const channel: TunnelChannel = {
@@ -419,6 +446,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
   let reconnectAttempt = 0
   const httpControllers = new Set<AbortController>()
   const httpFlowControls = new Map<string, HttpFlowControl>()
+  let registrationUpdate: { workspaceIds: string[]; token: string } | undefined
 
   const emit = (event: WorkspaceRelayHostTunnelEvent) => {
     options.onEvent?.(event)
@@ -480,6 +508,14 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
       reconnectAttempt = 0
       lastInboundAt = Date.now()
       emit({ type: "open" })
+      if (registrationUpdate) {
+        send(socket, {
+          type: "host.registration.update",
+          protocol: TUNNEL_PROTOCOL_VERSION,
+          workspace_ids: registrationUpdate.workspaceIds,
+          token: registrationUpdate.token,
+        })
+      }
       const pingIntervalMs = options.pingIntervalMs ?? 15_000
       pingTimer = setInterval(() => {
         if (Date.now() - lastInboundAt > pingIntervalMs * 3) {
@@ -594,6 +630,18 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
   connect()
 
   return {
+    async updateRegistration(input) {
+      const workspaceIds = [...new Set(input.workspaceIds)]
+      if (!workspaceIds.length) throw new Error("At least one workspace is required")
+      registrationUpdate = { workspaceIds, token: input.token }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      send(ws, {
+        type: "host.registration.update",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        workspace_ids: workspaceIds,
+        token: input.token,
+      })
+    },
     close() {
       closed = true
       if (reconnectTimer) clearTimeoutFn(reconnectTimer)

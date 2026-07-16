@@ -106,10 +106,10 @@ export function WaitingRow(props: { view: WaitingRowView; onSelect: (element: HT
   )
 }
 
-function WaitingRowGlyph(props: { view: WaitingRowView }) {
+export function WaitingRowGlyph(props: { view: WaitingRowView }) {
   return (
-    <span class="workgraph-waiting-row-glyph" aria-hidden="true">
-      <Switch fallback={<span class="workgraph-status-dot" data-tone={props.view.critical ? "critical" : "info"} />}>
+    <span class="workgraph-waiting-row-glyph" classList={{ "is-critical": props.view.critical }} aria-hidden="true">
+      <Switch fallback={<Icon name="circle-alert" size="small" />}>
         <Match when={props.view.kind === "recap_notification"}>
           <Icon name="bullet-list" size="small" class="text-icon-weak-base" />
         </Match>

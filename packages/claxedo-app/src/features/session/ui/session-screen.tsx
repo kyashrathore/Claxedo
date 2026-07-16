@@ -96,6 +96,7 @@ import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
+import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 
 export default function SessionPage() {
   const sessionParams = useSessionParams()
@@ -605,6 +606,13 @@ export default function SessionPage() {
     emptyUserMessages,
     { equals: same },
   )
+  const firstTurnOnboarding = createFirstTurnOnboarding({
+    directory: dir,
+    completedTurns: () => directorySessions().filter((session) => session.lastTurn?.status === "completed").length,
+    sentTurns: () => userMessages().length + directorySessions().filter((session) => session.id !== sessionID() && session.lastTurn).length,
+    messages,
+    cloud: () => resolvedWorkspaceKind() === "cloud",
+  })
   const visibleUserMessages = createMemo(
     () => {
       const revert = revertMessageID()
@@ -1417,6 +1425,8 @@ export default function SessionPage() {
                           captureHistoryAnchor = handlers.capture
                           restoreHistoryAnchor = handlers.restore
                         }}
+                        onFirstTurnRecovery={firstTurnOnboarding.recover}
+                        firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
                       />
                     )}
                   </Show>
@@ -1491,6 +1501,8 @@ export default function SessionPage() {
               canAbort={() => supports("abort")}
               status={sessionController.status}
               activeTurn={sessionController.activeTurn}
+              beforeInput={firstTurnOnboarding.beforeInput()}
+              registerRetry={firstTurnOnboarding.registerRetry}
               sessionDirectory={dir()}
               sessionRef={activeSessionRef}
               signedControlPlane={signedControlPlane}

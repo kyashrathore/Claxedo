@@ -1,13 +1,7 @@
 // target-layer: data — Phase 1/2 will absorb
 import { createEffect, createMemo, createSignal, on, onCleanup, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import {
-  useGlobalSDK,
-  useLayout,
-  usePlatform,
-  useServer,
-  type LocalProject,
-} from "@claxedo/app"
+import { useGlobalSDK, useLayout, usePlatform, useServer, type LocalProject } from "@claxedo/app"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
@@ -23,14 +17,10 @@ import {
   type DirectorySessionCacheValue,
 } from "../../../features/session/data/sync/queries"
 import { useDirectorySessionCacheActions } from "../../../features/session/data/sync/directory-session-cache"
-import {
-  parseShellRoute,
-  shellRouteDirectory,
-  workspaceSessionRoute,
-  workspaceRoute,
-} from "@/platform/identity/route"
+import { parseShellRoute, shellRouteDirectory, workspaceSessionRoute, workspaceRoute } from "@/platform/identity/route"
 import { hasBacking, sessionRefForWorkspaceSession, type HarnessRef } from "@/platform/identity/session-ref"
-import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { usePrincipal } from "@/platform/auth/identity-provider"
+import { documentsAccess } from "@/features/documents/access"
 import { queryClient } from "@/platform/query/query-client"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { ensureLocalProject } from "../../../features/workspaces/data/query/project-ensure"
@@ -74,12 +64,7 @@ export function projectToProjectItem(project: LocalProject): ProjectItem {
 
 // Pure resolution + session-probe helpers now live in ./route-bridge-resolution.
 // Re-exported below to keep this module's public surface unchanged.
-export {
-  probeRouteSessionDirectory,
-  routeKnownSessionDirectory,
-  routeSessionDirectory,
-  routeSessionWorkspaceBacking,
-}
+export { probeRouteSessionDirectory, routeKnownSessionDirectory, routeSessionDirectory, routeSessionWorkspaceBacking }
 
 export function ClaxedoRouteStateBridge(props: ParentProps) {
   const state = useClaxedoState()
@@ -95,14 +80,12 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       baseUrl: globalSDK.url,
     }),
   )
-  const sessionInventory = createMemo(() =>
-    sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
-  )
+  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
   const principal = usePrincipal()
-  const canUsePages = () => principalHasSignedAccess(principal())
+  const canUseDocuments = () => documentsAccess({ principal: principal(), serverUrl: server.url })
 
   useAgentHooks()
   const events = useClaxedoEventsOptional()
@@ -111,21 +94,24 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (!events) return
     const unsubscribe = events.on("session.lifecycle", (event) => {
       if (event.phase !== "created" || !event.draftId || !event.sessionID) return
-      const fastSwitch = typeof window === "undefined"
-        ? undefined
-        : (window as typeof window & {
-          __claxedoFastSessionSwitch?: { sessionId: string; until: number }
-        }).__claxedoFastSessionSwitch
+      const fastSwitch =
+        typeof window === "undefined"
+          ? undefined
+          : (
+              window as typeof window & {
+                __claxedoFastSessionSwitch?: { sessionId: string; until: number }
+              }
+            ).__claxedoFastSessionSwitch
       if (fastSwitch && Date.now() <= fastSwitch.until && event.sessionID !== fastSwitch.sessionId) return
       if (wasRolledBackDraft(event.draftId)) return
-      const info = event.info && typeof event.info === "object"
-        ? event.info as { title?: unknown }
-        : undefined
+      const info = event.info && typeof event.info === "object" ? (event.info as { title?: unknown }) : undefined
       const draft = state.meta.find((meta) => meta.type === "draft-session" && meta.draftId === event.draftId)
-      const sessionRef = draft?.content?.sessionRef ?? sessionRefForWorkspaceSession({
-        sessionId: event.sessionID,
-        directory: event.directory,
-      })
+      const sessionRef =
+        draft?.content?.sessionRef ??
+        sessionRefForWorkspaceSession({
+          sessionId: event.sessionID,
+          directory: event.directory,
+        })
       state.layout.completeDraftSession({
         draftId: event.draftId,
         directory: event.directory,
@@ -142,11 +128,14 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       listen: globalSDK.event.listen as any, // as-any: auto-tab listener consumes only the SDK event.listen subset.
       adapters: {
         addSession: (dir, sid, title) => {
-          const fastSwitch = typeof window === "undefined"
-            ? undefined
-            : (window as typeof window & {
-              __claxedoFastSessionSwitch?: { sessionId: string; until: number }
-            }).__claxedoFastSessionSwitch
+          const fastSwitch =
+            typeof window === "undefined"
+              ? undefined
+              : (
+                  window as typeof window & {
+                    __claxedoFastSessionSwitch?: { sessionId: string; until: number }
+                  }
+                ).__claxedoFastSessionSwitch
           if (fastSwitch && Date.now() <= fastSwitch.until && sid !== fastSwitch.sessionId) return ""
           const workspace = routeSessionWorkspaceBacking({
             projects: projectsQuery.data ?? [],
@@ -161,16 +150,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
             }),
           })
         },
-        addTerminal: (dir, tid, title) =>
-          state.layout.openTerminal(dir, tid, title, { focus: false }),
+        addTerminal: (dir, tid, title) => state.layout.openTerminal(dir, tid, title, { focus: false }),
         findSession: (dir, sid) =>
-          state.meta.find(
-            (m) => m.type === "session" && m.directory === dir && m.sessionId === sid,
-          ),
+          state.meta.find((m) => m.type === "session" && m.directory === dir && m.sessionId === sid),
         findTerminal: (dir, tid) =>
-          state.meta.find(
-            (m) => m.type === "terminal" && m.directory === dir && m.terminalId === tid,
-          ),
+          state.meta.find((m) => m.type === "terminal" && m.directory === dir && m.terminalId === tid),
       },
       projects: () => {
         return (projectsQuery.data ?? []).map((p) => ({ worktree: p.worktree, sandboxes: p.sandboxes }))
@@ -218,8 +202,8 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   const shellRoute = createMemo(() => parseShellRoute(location.pathname))
   const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
-  const routeDirectory = createMemo(() =>
-    workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())?.directory ?? routeWorkspaceKey()
+  const routeDirectory = createMemo(
+    () => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())?.directory ?? routeWorkspaceKey(),
   )
   const routeSessionId = createMemo(() => {
     const route = shellRoute()
@@ -244,9 +228,8 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     return routeSessionCacheQuery.data?.session.find((s) => s.id === id)
   })
   const directorySessions = (directory: string) =>
-    queryClient.getQueryData<DirectorySessionCacheValue>(
-      directorySessionCacheQueryOptions({ directory }).queryKey,
-    )?.session ?? []
+    queryClient.getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory }).queryKey)
+      ?.session ?? []
   const sessionTitleFromInventory = (sessionId: string, directory?: string) => {
     return sessionTitleFromSources({
       sessionId,
@@ -263,10 +246,9 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     [
       ...(projectsQuery.data ?? []).flatMap(projectWorkspaceDirectories),
       ...state.meta.all().map((meta) => meta.directory),
-    ].filter((directory, index, all): directory is string =>
-      !!directory &&
-      directory !== "/workspace" &&
-      all.indexOf(directory) === index
+    ].filter(
+      (directory, index, all): directory is string =>
+        !!directory && directory !== "/workspace" && all.indexOf(directory) === index,
     )
   const cachedRouteSessionTarget = (sessionId: string) => {
     for (const directory of routeResolutionDirectories()) {
@@ -343,13 +325,15 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           }),
         }
       }
-      const session = await authFetch(routeBridgeClaxedoSessionMetaUrl({
-        serverUrl: getClaxedoServerUrl(),
-        sessionID: id,
-      }))
+      const session = await authFetch(
+        routeBridgeClaxedoSessionMetaUrl({
+          serverUrl: getClaxedoServerUrl(),
+          sessionID: id,
+        }),
+      )
         .then((response) =>
           response.ok
-            ? response.json() as Promise<{
+            ? (response.json() as Promise<{
                 directory?: unknown
                 title?: unknown
                 workspaceID?: unknown
@@ -358,29 +342,34 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
                 runner?: unknown
                 harnessType?: unknown
                 config?: unknown
-              }>
-            : undefined
+              }>)
+            : undefined,
         )
         .catch(() => undefined)
       const sessionWorkspaceId =
-        typeof session?.workspaceID === "string" ? session.workspaceID :
-        typeof session?.workspaceId === "string" ? session.workspaceId :
-        undefined
-      const directory = routeKnownSessionDirectory(
-        typeof session?.directory === "string" ? session.directory : undefined,
-        routeResolutionDirectories(),
-      ) ?? sessionWorkspaceId
+        typeof session?.workspaceID === "string"
+          ? session.workspaceID
+          : typeof session?.workspaceId === "string"
+            ? session.workspaceId
+            : undefined
+      const directory =
+        routeKnownSessionDirectory(
+          typeof session?.directory === "string" ? session.directory : undefined,
+          routeResolutionDirectories(),
+        ) ?? sessionWorkspaceId
       if (!directory || directory === "/workspace") return
       const workspace = routeSessionWorkspaceBacking({
         projects: projectsQuery.data ?? [],
         directory,
         workspaceId: sessionWorkspaceId,
       })
-      const harness = routeSessionHarness(session) ?? await routeBridgeSessionConfigHarness({
-        serverUrl: getClaxedoServerUrl(),
-        sessionID: id,
-        workspaceDirectory: directory,
-      })
+      const harness =
+        routeSessionHarness(session) ??
+        (await routeBridgeSessionConfigHarness({
+          serverUrl: getClaxedoServerUrl(),
+          sessionID: id,
+          workspaceDirectory: directory,
+        }))
       return {
         directory,
         title: typeof session?.title === "string" ? session.title : undefined,
@@ -392,7 +381,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         }),
       }
     },
-    canUsePages,
+    canUseDocuments,
     navigate,
   })
 
@@ -453,13 +442,15 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (routeSessionMetaLookupDone.has(sessionId)) return false
     routeSessionMetaLookups.add(sessionId)
     markRouteSessionMetaLookupChanged()
-    void authFetch(routeBridgeClaxedoSessionMetaUrl({
-      serverUrl: getClaxedoServerUrl(),
-      sessionID: sessionId,
-    }))
+    void authFetch(
+      routeBridgeClaxedoSessionMetaUrl({
+        serverUrl: getClaxedoServerUrl(),
+        sessionID: sessionId,
+      }),
+    )
       .then((response) =>
         response.ok
-          ? response.json() as Promise<{
+          ? (response.json() as Promise<{
               directory?: unknown
               title?: unknown
               workspaceID?: unknown
@@ -468,29 +459,36 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
               runner?: unknown
               harnessType?: unknown
               config?: unknown
-            }>
-          : undefined
+            }>)
+          : undefined,
       )
       .then(async (session) => {
         const workspaceId =
-          typeof session?.workspaceID === "string" ? session.workspaceID :
-          typeof session?.workspaceId === "string" ? session.workspaceId :
-          undefined
-        const directory = routeKnownSessionDirectory(
-          typeof session?.directory === "string" ? session.directory : undefined,
-          directories,
-        ) ?? await probeRouteSessionDirectory(sessionId, directories) ?? workspaceId
+          typeof session?.workspaceID === "string"
+            ? session.workspaceID
+            : typeof session?.workspaceId === "string"
+              ? session.workspaceId
+              : undefined
+        const directory =
+          routeKnownSessionDirectory(
+            typeof session?.directory === "string" ? session.directory : undefined,
+            directories,
+          ) ??
+          (await probeRouteSessionDirectory(sessionId, directories)) ??
+          workspaceId
         if (!directory || directory === "/workspace") return
         const workspace = routeSessionWorkspaceBacking({
           projects: projectsQuery.data ?? [],
           directory,
           workspaceId,
         })
-        const harness = routeSessionHarness(session) ?? await routeBridgeSessionConfigHarness({
-          serverUrl: getClaxedoServerUrl(),
-          sessionID: sessionId,
-          workspaceDirectory: directory,
-        })
+        const harness =
+          routeSessionHarness(session) ??
+          (await routeBridgeSessionConfigHarness({
+            serverUrl: getClaxedoServerUrl(),
+            sessionID: sessionId,
+            workspaceDirectory: directory,
+          }))
         if (directSessionRouteId() !== sessionId) return
         if (isRouteIntentClosed({ sessionId })) return
         const surface = activeSurface()
@@ -498,20 +496,16 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           (surface?.type === "session" || surface?.type === "context") &&
           surface.sessionId === sessionId &&
           sameWorkspaceDirectory(surface.directory, directory)
-        ) return
-        state.layout.openSession(
-          directory,
-          sessionId,
-          typeof session?.title === "string" ? session.title : "Session",
-          {
-            sessionRef: sessionRefForWorkspaceSession({
-              sessionId,
-              directory,
-              ...(workspace ? { workspace } : {}),
-              ...(harness ? { harness } : {}),
-            }),
-          },
         )
+          return
+        state.layout.openSession(directory, sessionId, typeof session?.title === "string" ? session.title : "Session", {
+          sessionRef: sessionRefForWorkspaceSession({
+            sessionId,
+            directory,
+            ...(workspace ? { workspace } : {}),
+            ...(harness ? { harness } : {}),
+          }),
+        })
       })
       .catch(() => undefined)
       .finally(() => {
@@ -556,17 +550,21 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const sessionBadgeAdditions = createMemo(() => sessionBadge()?.badge.additions ?? 0)
   const sessionBadgeDeletions = createMemo(() => sessionBadge()?.badge.deletions ?? 0)
   const sessionHasBadge = createMemo(() => !!sessionBadge()?.badge)
-  const routeInventorySignature = createMemo(() => [
-    `loaded:${sessionInventory().loaded}`,
-    `global:${sessionInventory().global.map(sessionTitleSignature).join(",")}`,
-    `directory:${routeResolutionDirectories().map((directory) =>
-      `${directory}:${directorySessions(directory).map(sessionTitleSignature).join(",")}`
-    ).join("|")}`,
-    ...Object.entries(sessionInventory().byWorkspace).map(([key, group]) =>
-      `${key}:${group.sessions.map(sessionTitleSignature).join(",")}`),
-    ...Object.entries(sessionInventory().byProject).map(([key, sessions]) =>
-      `${key}:${sessions.map(sessionTitleSignature).join(",")}`),
-  ].join("|"))
+  const routeInventorySignature = createMemo(() =>
+    [
+      `loaded:${sessionInventory().loaded}`,
+      `global:${sessionInventory().global.map(sessionTitleSignature).join(",")}`,
+      `directory:${routeResolutionDirectories()
+        .map((directory) => `${directory}:${directorySessions(directory).map(sessionTitleSignature).join(",")}`)
+        .join("|")}`,
+      ...Object.entries(sessionInventory().byWorkspace).map(
+        ([key, group]) => `${key}:${group.sessions.map(sessionTitleSignature).join(",")}`,
+      ),
+      ...Object.entries(sessionInventory().byProject).map(
+        ([key, sessions]) => `${key}:${sessions.map(sessionTitleSignature).join(",")}`,
+      ),
+    ].join("|"),
+  )
 
   createEffect(
     on(
@@ -604,19 +602,24 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   createEffect(
     on(
-      () => [
-        directSessionRouteId(),
-        activeSurface()?.sessionId,
-        activeSurfaceSessionRefHost(),
-        activeSurface()?.directory,
-        sessionInventory().loaded,
-        routeSessionMetaLookupVersion(),
-        sessionInventory().global.map((session) => session.id).join(","),
-        Object.entries(sessionInventory().byWorkspace).map(([key, group]) =>
-          `${key}:${group.sessions.map((session) => session.id).join(",")}`).join("|"),
-        Object.entries(sessionInventory().byProject).map(([key, sessions]) =>
-          `${key}:${sessions.map((session) => session.id).join(",")}`).join("|"),
-      ] as const,
+      () =>
+        [
+          directSessionRouteId(),
+          activeSurface()?.sessionId,
+          activeSurfaceSessionRefHost(),
+          activeSurface()?.directory,
+          sessionInventory().loaded,
+          routeSessionMetaLookupVersion(),
+          sessionInventory()
+            .global.map((session) => session.id)
+            .join(","),
+          Object.entries(sessionInventory().byWorkspace)
+            .map(([key, group]) => `${key}:${group.sessions.map((session) => session.id).join(",")}`)
+            .join("|"),
+          Object.entries(sessionInventory().byProject)
+            .map(([key, sessions]) => `${key}:${sessions.map((session) => session.id).join(",")}`)
+            .join("|"),
+        ] as const,
       ([sessionId]) => {
         if (!sessionId) return
         if (suppressedByFastSessionSwitch(sessionId)) return
@@ -630,9 +633,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         })
         const directories = routeResolutionDirectories()
         const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
-        const metaLookupInFlight = cachedTarget
-          ? false
-          : resolveRouteSessionFromMeta(sessionId, directories)
+        const metaLookupInFlight = cachedTarget ? false : resolveRouteSessionFromMeta(sessionId, directories)
         const matchesActiveWorkspaceSurface =
           !!routeDirectory() &&
           surface?.type === "session" &&
@@ -643,32 +644,26 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           hasBacking(surface.content.sessionRef)
         const matchesActiveSurface =
           matchesActiveWorkspaceSurface ||
-          (surface?.type === "session" || surface?.type === "context") &&
-          surface.sessionId === sessionId &&
-          (
-            target
-              ? surface.directory === target.directory && surface.content?.type === "session" && surface.content.sessionRef?.host === "workspace"
-              : !cachedTarget && sessionInventory().loaded && directories.length === 0
-          )
+          ((surface?.type === "session" || surface?.type === "context") &&
+            surface.sessionId === sessionId &&
+            (target
+              ? surface.directory === target.directory &&
+                surface.content?.type === "session" &&
+                surface.content.sessionRef?.host === "workspace"
+              : !cachedTarget && sessionInventory().loaded && directories.length === 0))
         if (matchesActiveSurface) return
         if (metaLookupInFlight) return
         if (target) {
           void directorySessionCacheActions.ensure({ directory: target.directory })
-          state.layout.openSession(
-            target.directory,
-            sessionId,
-            target.title || "Session",
-            { sessionRef: target.sessionRef },
-          )
+          state.layout.openSession(target.directory, sessionId, target.title || "Session", {
+            sessionRef: target.sessionRef,
+          })
           return
         }
         if (cachedTarget) {
-          state.layout.openSession(
-            cachedTarget.directory,
-            sessionId,
-            cachedTarget.title || "Session",
-            { sessionRef: cachedTarget.sessionRef },
-          )
+          state.layout.openSession(cachedTarget.directory, sessionId, cachedTarget.title || "Session", {
+            sessionRef: cachedTarget.sessionRef,
+          })
           return
         }
         const resolutionKey = `${sessionId}\0${directories.join("\0")}`
@@ -678,17 +673,12 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         if (!sessionInventory().loaded) return
         const fallbackDirectory = unresolvedRouteWorkspaceTarget(directories)
         if (fallbackDirectory) {
-          state.layout.openSession(
-            fallbackDirectory,
-            sessionId,
-            "Session",
-            {
-              sessionRef: sessionRefForWorkspaceSession({
-                sessionId,
-                directory: fallbackDirectory,
-              }),
-            },
-          )
+          state.layout.openSession(fallbackDirectory, sessionId, "Session", {
+            sessionRef: sessionRefForWorkspaceSession({
+              sessionId,
+              directory: fallbackDirectory,
+            }),
+          })
           return
         }
         state.layout.openCentralSession(sessionId, "Session")

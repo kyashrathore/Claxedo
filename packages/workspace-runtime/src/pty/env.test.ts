@@ -40,6 +40,14 @@ describe("buildSafeEnv", () => {
     expect(result.CLAXEDO_WORKSPACE_ID).toBe("ws_123")
   })
 
+  test("never exposes the local document installation credential", () => {
+    expect(buildSafeEnv({
+      CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "secret",
+      claxedo_local_document_broker_token: "secret-lower",
+      CLAXEDO_WORKSPACE_ID: "ws_1",
+    })).toEqual({ CLAXEDO_WORKSPACE_ID: "ws_1" })
+  })
+
   test("passes through common process port vars", () => {
     const result = buildSafeEnv({ PORT: "3000" })
     expect(result.PORT).toBe("3000")

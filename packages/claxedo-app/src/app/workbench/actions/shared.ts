@@ -39,7 +39,7 @@ export type ActionProps = {
   routeDirectory: Accessor<string | undefined>
   activeDirectory: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
-  canUsePages?: Accessor<boolean>
+  canUseDocuments?: Accessor<boolean>
   flowLog: (...args: unknown[]) => void
 }
 

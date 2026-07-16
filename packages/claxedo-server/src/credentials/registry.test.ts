@@ -18,7 +18,10 @@ const {
   getCredentialByProvider,
   getCredential,
   resolveSecret,
+  resolveSecretById,
   updateCredentialStatus,
+  updateCredentialHealth,
+  updateCredentialScope,
   deleteCredential,
   deleteCredentialsByProvider,
   resolveAllSecrets,
@@ -64,6 +67,73 @@ describe("credential registry", () => {
     // Secret is in the backend, not in the metadata
     const raw = await backend.get(cred.secure_ref!)
     expect(raw).toBe("sk-test-12345")
+  })
+
+  test("requires consent for an explicitly shared credential", async () => {
+    await expect(putCredential({
+      provider_id: "shared-without-consent",
+      kind: "api_key",
+      source: "managed",
+      scope: "shared",
+      secret: "must-not-store",
+    })).rejects.toThrow("Shared credentials require explicit consent")
+
+    const credential = await putCredential({
+      provider_id: "shared-with-consent",
+      kind: "api_key",
+      source: "managed",
+      scope: "shared",
+      consent: { at: 123, surface: "desktop_discovery" },
+      secret: "stored",
+    })
+    expect(credential).toMatchObject({
+      scope: "shared",
+      consent: { at: 123, surface: "desktop_discovery" },
+    })
+  })
+
+  test("stores multiple accounts for the same provider independently", async () => {
+    const first = await putCredential({
+      provider_id: "multi-account",
+      kind: "oauth_token",
+      source: "local_only",
+      account_id: "account-one",
+      secret: "first",
+    })
+    const second = await putCredential({
+      provider_id: "multi-account",
+      kind: "oauth_token",
+      source: "local_only",
+      account_id: "account-two",
+      secret: "second",
+    })
+
+    expect(first.id).not.toBe(second.id)
+    expect(listCredentials().filter((credential) => credential.provider_id === "multi-account"))
+      .toHaveLength(2)
+    await expect(resolveSecretById(first.id)).resolves.toBe("first")
+    await expect(resolveSecretById(second.id)).resolves.toBe("second")
+  })
+
+  test("records scope changes and last use", async () => {
+    const credential = await putCredential({
+      provider_id: "scope-and-use",
+      kind: "api_key",
+      source: "local_only",
+      scope: "local",
+      consent: { at: 1, surface: "desktop_discovery" },
+      secret: "secret",
+    })
+
+    expect(updateCredentialScope(credential.id, "shared", 456)).toBe(true)
+    expect(getCredential(credential.id)).toMatchObject({
+      scope: "shared",
+      source: "managed",
+      consent: { at: 456, surface: "scope_change" },
+      last_used_at: null,
+    })
+    await expect(resolveSecretById(credential.id)).resolves.toBe("secret")
+    expect(getCredential(credential.id)?.last_used_at).toEqual(expect.any(Number))
   })
 
   test("Pi credential mapping validates aliases, status, and credential kind", async () => {
@@ -199,6 +269,62 @@ describe("credential registry", () => {
     // Mark as expired
     updateCredentialStatus(cred.id, "expired")
     expect(await resolveSecret("resolve-test")).toBeNull()
+  })
+
+  test("persists provider verification health and keeps failed credentials retryable by id", async () => {
+    const cred = await putCredential({
+      provider_id: "verify-persistence-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "verify-secret",
+    })
+
+    updateCredentialHealth(cred.id, "no_billing", 1234)
+
+    expect(getCredential(cred.id)).toMatchObject({
+      health: "no_billing",
+      status: "error",
+      last_validated_at: 1234,
+      last_error: "no_billing",
+    })
+    expect(await resolveSecret("verify-persistence-test")).toBeNull()
+    expect(await resolveSecretById(cred.id)).toBe("verify-secret")
+  })
+
+  test("clears stale verification health when a credential is replaced", async () => {
+    const cred = await putCredential({
+      provider_id: "verify-reconnect-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "old-secret",
+    })
+    updateCredentialHealth(cred.id, "auth_failed", 1234)
+
+    const reconnected = await putCredential({
+      provider_id: "verify-reconnect-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "new-secret",
+    })
+
+    expect(reconnected).toMatchObject({ health: null, status: "available", last_validated_at: null })
+    expect(getCredential(cred.id)).toMatchObject({ health: null, status: "available", last_validated_at: null })
+  })
+
+  test("keeps lifecycle status updates from exposing stale provider health", async () => {
+    const cred = await putCredential({
+      provider_id: "verify-status-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "status-secret",
+    })
+    updateCredentialHealth(cred.id, "ok", 1234)
+
+    updateCredentialStatus(cred.id, "revoked", "removed")
+    expect(getCredential(cred.id)).toMatchObject({ status: "revoked", health: null })
+
+    updateCredentialStatus(cred.id, "expired")
+    expect(getCredential(cred.id)).toMatchObject({ status: "expired", health: "expired" })
   })
 
   test("deleteCredential removes metadata and backend secret", async () => {

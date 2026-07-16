@@ -10,6 +10,8 @@ export type DocumentEntry =
   | Readonly<{
       origin: "managed"
       placement: "local" | "hosted"
+      /** Authenticated tenant scope. Required by hosted storage adapters. */
+      orgId?: string
       projectId: string
       documentId: string
       relativePath: string
@@ -17,6 +19,8 @@ export type DocumentEntry =
   | Readonly<{
       origin: "repository"
       placement: "local" | "hosted"
+      /** Authenticated tenant scope. Required by hosted storage adapters. */
+      orgId?: string
       projectId: string
       documentId: string
       workspaceId: string

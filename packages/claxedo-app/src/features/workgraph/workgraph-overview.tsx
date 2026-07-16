@@ -10,8 +10,9 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { createResource, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { SemanticIcon } from "@/ui/semantic-icon"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
-import { InlineAddTask, isRetryable, KeyedById, WorkItemLeaf, type Mutate } from "./work-item-rows"
+import { InlineAddTask, isRetryable, KeyedById, sortByStatusBucket, taskStatusBucket, WorkItemLeaf, type Mutate } from "./work-item-rows"
 
 /** How many tasks a Stream card previews before deferring to the panel's Tasks tab. */
 export const STREAM_CARD_TASK_PREVIEW = 4
@@ -119,7 +120,7 @@ function ProjectSection(props: {
   return (
     <section class="workgraph-project" aria-label={`Project ${props.project.label}`}>
       <div class="workgraph-project-row">
-        <Icon name="folder" size="small" class="workgraph-project-icon" />
+        <SemanticIcon concept="project" size="small" class="workgraph-project-icon" />
         <span class="workgraph-project-name text-text-strong">{props.project.label}</span>
         <Show when={needsAttention()}>
           <span class="workgraph-status-dot" data-tone="critical" aria-hidden="true" />
@@ -129,6 +130,15 @@ function ProjectSection(props: {
         </Show>
       </div>
       <div class="workgraph-project-cards">
+        <button
+          type="button"
+          class="workgraph-streamcard-new"
+          aria-label={`New stream in ${props.project.label}`}
+          onClick={() => props.onNewStream(props.project)}
+        >
+          <Icon name="plus-small" size="small" />
+          New stream
+        </button>
         <KeyedById records={props.streams}>
           {(stream) => (
             <StreamCard
@@ -146,15 +156,6 @@ function ProjectSection(props: {
             />
           )}
         </KeyedById>
-        <button
-          type="button"
-          class="workgraph-streamcard-new"
-          aria-label={`New stream in ${props.project.label}`}
-          onClick={() => props.onNewStream(props.project)}
-        >
-          <Icon name="plus-small" size="small" />
-          New stream
-        </button>
       </div>
     </section>
   )
@@ -175,8 +176,15 @@ function StreamCard(props: {
 }) {
   const liveAttempts = () =>
     props.attempts.filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state))
-  const previewItems = () => props.items.slice(0, STREAM_CARD_TASK_PREVIEW)
+  // The preview honors the lifecycle: what needs you first, then in-progress
+  // work, then the staged queue, with done tasks last (and first to clip).
+  const previewItems = () => sortByStatusBucket(props.items).slice(0, STREAM_CARD_TASK_PREVIEW)
   const hiddenCount = () => Math.max(0, props.items.length - STREAM_CARD_TASK_PREVIEW)
+  const bucketCounts = () => {
+    const counts = { attention: 0, in_progress: 0, staged: 0, done: 0 }
+    for (const item of props.items) counts[taskStatusBucket(item.state)] += 1
+    return counts
+  }
   // The execution target itself is the Project header's job; the card only
   // flags the one actionable problem — a Stream with no usable target.
   const targetMissing = () => {
@@ -187,20 +195,6 @@ function StreamCard(props: {
     if (environment.kind === "hosted_workspace" && !environment.repositoryUrl) return true
     return false
   }
-  const needsAttention = () =>
-    props.items.some((item) =>
-      ["blocked", "failed", "verification_failed", "review_needed", "integration_needed", "attention"].includes(
-        item.state,
-      ),
-    )
-  const streamTone = (): "critical" | "active" | "info" | undefined =>
-    props.stream.lifecycleState === "paused" || props.stream.lifecycleState === "closed"
-      ? "info"
-      : needsAttention()
-        ? "critical"
-        : liveAttempts().length
-          ? "active"
-          : undefined
   const [confirming, setConfirming] = createSignal(false)
   const [removing, setRemoving] = createSignal(false)
   // Recap is Stream-owned: the icon shows only when the stream has a latest recap,
@@ -293,9 +287,7 @@ function StreamCard(props: {
   }
 
   return (
-    // Tone (attention/running/paused) renders as the card's left edge accent,
-    // driven by data-tone — one quiet signal instead of a second status dot.
-    <article class="workgraph-streamcard" data-tone={streamTone()} aria-label={`Stream ${props.stream.title}`}>
+    <article class="workgraph-streamcard" aria-label={`Stream ${props.stream.title}`}>
       <div class="workgraph-streamcard-head">
         <span class="workgraph-stream-title">{props.stream.title}</span>
         <Show when={props.stream.activity.lastRecapId}>
@@ -451,11 +443,19 @@ function StreamCard(props: {
         </div>
       </Show>
       <div class="workgraph-streamcard-foot">
+        {/* The lifecycle at a glance: staged → in progress → done, plus a red
+            needs-you count when the stream is waiting on the owner. */}
         <span class="text-text-weaker">
-          {props.items.length} {props.items.length === 1 ? "task" : "tasks"}
+          {[
+            bucketCounts().staged ? `${bucketCounts().staged} staged` : "",
+            bucketCounts().in_progress ? `${bucketCounts().in_progress} in progress` : "",
+            bucketCounts().done ? `${bucketCounts().done} done` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
-        <Show when={liveAttempts().length}>
-          <span class="workgraph-running">{liveAttempts().length} running</span>
+        <Show when={bucketCounts().attention}>
+          <span class="workgraph-streamcard-needs-you">{bucketCounts().attention} need you</span>
         </Show>
         <span class="workgraph-streamcard-gap" aria-hidden="true" />
         <Show when={hiddenCount()}>

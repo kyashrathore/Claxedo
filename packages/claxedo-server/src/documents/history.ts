@@ -8,6 +8,8 @@ import {
   documentErrorFromCause,
   nodeErrorCode,
 } from "./errors"
+import { mapBounded } from "./map-bounded"
+import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetadata } from "./snapshot-pins"
 import type { DocumentActor, SnapshotID, SnapshotRef } from "./port"
 import { contentHash } from "./version"
 
@@ -22,6 +24,7 @@ export type HistoryOptions = Readonly<{
     beforeMkdir?: () => void | Promise<void>
     beforeCleanup?: () => void | Promise<void>
     beforeContentCleanup?: (snapshotId: SnapshotID) => void | Promise<void>
+    beforeMetadataRead?: (snapshotId: SnapshotID) => void | Promise<void>
   }>
 }>
 
@@ -133,10 +136,14 @@ export function createDocumentHistory(options: HistoryOptions) {
       throw documentErrorFromCause(error, `listing document ${documentId} snapshots`)
     })
     return (
-      await Promise.all(
-        names
-          .filter((name) => name.endsWith(".json"))
-          .map((name) => readMetadata(directory, name.slice(0, -5) as SnapshotID)),
+      await mapBounded(
+        names.filter((name) => name.endsWith(".json")),
+        (name) => {
+          const snapshotId = name.slice(0, -5) as SnapshotID
+          return Promise.resolve(options.faults?.beforeMetadataRead?.(snapshotId)).then(() =>
+            readMetadata(directory, snapshotId),
+          )
+        },
       )
     ).sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
   }
@@ -148,9 +155,10 @@ export function createDocumentHistory(options: HistoryOptions) {
   ) {
     const directory = historyDirectory(options.root, documentId)
     const metadata = await readMetadata(directory, snapshotId)
-    const pins = [...new Set(update(metadata.pins))].sort()
+    const pins = boundedSnapshotPins(update(metadata.pins), now())
     const updated = { ...metadata, pins }
-    await atomicWrite(metadataPath(directory, snapshotId), JSON.stringify(updated), 0o600).catch((error: unknown) => {
+    const body = new TextDecoder().decode(requireBoundedSnapshotMetadata(updated))
+    await atomicWrite(metadataPath(directory, snapshotId), body, 0o600).catch((error: unknown) => {
       throw documentErrorFromCause(error, `updating snapshot ${snapshotId} pins`)
     })
     return updated
@@ -158,23 +166,34 @@ export function createDocumentHistory(options: HistoryOptions) {
 
   async function collect(documentId: string) {
     const snapshots = await list(documentId)
-    const unpinned = snapshots.filter((snapshot) => snapshot.pins.length === 0)
+    const unpinned = snapshots.filter((snapshot) => snapshot.pins.every((pin) => expiredSnapshotLease(pin, now())))
     const expiredBefore = now() - options.maxAgeMs
+    const directory = historyDirectory(options.root, documentId)
     await Promise.resolve()
       .then(() => options.faults?.beforeCleanup?.())
-      .then(() =>
-        unpinned
-          .filter((snapshot, index) => index >= options.maxSnapshots || (index > 0 && snapshot.createdAt < expiredBefore))
-          .reduce(
-            async (previous, snapshot) => {
-              await previous
-              await removeIfPresent(metadataPath(historyDirectory(options.root, documentId), snapshot.id))
-              await options.faults?.beforeContentCleanup?.(snapshot.id)
-              await removeIfPresent(path.join(historyDirectory(options.root, documentId), `${snapshot.id}.md`))
-            },
-            Promise.resolve(),
-          ),
-      )
+      .then(async () => {
+        await unpinned
+          .filter(
+            (snapshot, index) => index >= options.maxSnapshots || (index > 0 && snapshot.createdAt < expiredBefore),
+          )
+          .reduce(async (previous, snapshot) => {
+            await previous
+            await removeIfPresent(metadataPath(directory, snapshot.id))
+            await syncDirectory(directory)
+            await options.faults?.beforeContentCleanup?.(snapshot.id)
+            await removeIfPresent(path.join(directory, `${snapshot.id}.md`))
+            await syncDirectory(directory)
+          }, Promise.resolve())
+
+        const names = await fs.readdir(directory).catch((error: unknown) => {
+          if (nodeErrorCode(error) === "ENOENT") return []
+          throw error
+        })
+        const metadata = new Set(names.filter((name) => name.endsWith(".json")).map((name) => name.slice(0, -5)))
+        const orphans = names.filter((name) => name.endsWith(".md") && !metadata.has(name.slice(0, -3)))
+        await mapBounded(orphans, (name) => removeIfPresent(path.join(directory, name)))
+        if (orphans.length) await syncDirectory(directory)
+      })
       .catch((error: unknown) => {
         throw documentErrorFromCause(error, `collecting document ${documentId} snapshots`)
       })
@@ -207,10 +226,12 @@ function isSnapshotRef(value: unknown): value is SnapshotRef {
   if (!value || typeof value !== "object") return false
   if (!("id" in value) || typeof value.id !== "string" || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(value.id)) return false
   if (!("sha256" in value) || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(value.sha256)) return false
-  if (!("size" in value) || typeof value.size !== "number" || !Number.isSafeInteger(value.size) || value.size < 0) return false
+  if (!("size" in value) || typeof value.size !== "number" || !Number.isSafeInteger(value.size) || value.size < 0)
+    return false
   if (!("reason" in value) || typeof value.reason !== "string" || !value.reason) return false
   if (!("createdAt" in value) || typeof value.createdAt !== "number" || !Number.isFinite(value.createdAt)) return false
-  if (!("pins" in value) || !Array.isArray(value.pins) || !value.pins.every((pin) => typeof pin === "string" && !!pin)) return false
+  if (!("pins" in value) || !Array.isArray(value.pins) || !value.pins.every((pin) => typeof pin === "string" && !!pin))
+    return false
   if (!("actor" in value) || !isActor(value.actor)) return false
   if ("sessionId" in value && value.sessionId !== undefined && typeof value.sessionId !== "string") return false
   return true
@@ -266,7 +287,9 @@ async function removeIfPresent(file: string) {
 }
 
 function ulid(timestamp: number) {
-  return encodeBase32(BigInt(Math.floor(timestamp)), 10) + encodeBase32(BigInt(`0x${randomBytes(10).toString("hex")}`), 16)
+  return (
+    encodeBase32(BigInt(Math.floor(timestamp)), 10) + encodeBase32(BigInt(`0x${randomBytes(10).toString("hex")}`), 16)
+  )
 }
 
 function encodeBase32(value: bigint, length: number) {

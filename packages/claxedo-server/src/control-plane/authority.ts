@@ -148,9 +148,13 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<
-    | { active: true; host_id: string; workspace_id: string; expires_at: number; last_seen_at: number }
+    | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
     | { active: false }
   >
+  markSecondDeviceOpen?: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<{ recorded: boolean; second_device_open_at: number }>
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
   createCloudWorkspace: (
     auth: SignedControlPlaneAuth,

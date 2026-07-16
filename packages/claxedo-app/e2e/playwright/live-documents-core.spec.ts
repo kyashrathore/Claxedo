@@ -1,0 +1,554 @@
+/**
+ * SPEC: Documents core against the real local backend (Tier L)
+ *
+ * This file complements `documents-core.spec.ts`: it installs no request routes and
+ * starts a real isolated claxedo-server with a scratch CLAXEDO_DATA_DIR. The browser
+ * creates and edits through the production Documents UI and the production HTTP,
+ * SQLite, filesystem, watcher, SSE, CAS, and snapshot implementations. Restart uses
+ * the same scratch data directory and a new server process.
+ *
+ * The integrated agent journey uses the real `/docs` picker to grant a real Session
+ * path, then drives the embedded OpenCode build agent and asserts its completed bash
+ * tool call before checking the open editor, dirty conflict, parked session draft,
+ * and visible version restore. This is deliberately Tier L: provider/model health is
+ * a release prerequisite for the claimed agent journey, not a mocked substitute.
+ */
+import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { createHash } from "node:crypto"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
+const LIVE = process.env.CLAXEDO_E2E_LIVE === "1"
+const APP_DIR = path.resolve(import.meta.dirname, "../..")
+const REPO_ROOT = path.resolve(APP_DIR, "../..")
+const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
+const BACKEND_PORT = Number(process.env.CLAXEDO_E2E_LIVE_BACKEND_PORT ?? 3001)
+const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
+
+type DocumentSummary = {
+  id: string
+  project_id: string
+  display_name: string
+  managed_relative_path: string | null
+}
+
+let server: ChildProcess | undefined
+let serverLog = ""
+let dataDir = ""
+let scratchHome = ""
+let workspace = ""
+let workspaceId = ""
+let createdDocument: DocumentSummary | undefined
+
+function slug(value: string) {
+  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+
+function indexUrl() {
+  return `/w/${encodeURIComponent(workspace)}/page/__index__`
+}
+
+function documentUrl(id: string) {
+  return `/w/${encodeURIComponent(workspace)}/page/${encodeURIComponent(id)}`
+}
+
+async function assertBackendPortFree() {
+  const found = await execFileAsync("lsof", ["-i", `:${BACKEND_PORT}`, "-sTCP:LISTEN", "-t"]).catch(() => undefined)
+  const pids =
+    found?.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean) ?? []
+  if (!pids.length) return
+  throw new Error(
+    `GATING: port ${BACKEND_PORT} is already owned by PID(s) ${pids.join(", ")}. ` +
+      "The shared Vite server bakes in this backend port, so using it would mutate an ambient server rather than " +
+      "the isolated scratch Documents backend. Stop that process, or restart Vite and this spec with matching " +
+      "VITE_CLAXEDO_SERVER_URL and CLAXEDO_E2E_LIVE_BACKEND_PORT values.",
+  )
+}
+
+async function waitForHealth(timeoutMs = 60_000) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    const ready = await fetch(`${BACKEND_URL}/api/claxedo/health`)
+      .then((response) => response.ok)
+      .catch(() => false)
+    if (ready) return
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+  throw new Error(
+    `GATING: isolated claxedo-server did not become healthy within ${timeoutMs}ms. Server log tail:\n` +
+      serverLog.split("\n").slice(-60).join("\n"),
+  )
+}
+
+async function startServer() {
+  serverLog = ""
+  server = spawn("bun", ["run", "start"], {
+    cwd: SERVER_DIR,
+    env: {
+      ...process.env,
+      CLAXEDO_DATA_DIR: dataDir,
+      CLAXEDO_SERVER_PORT: String(BACKEND_PORT),
+      CLAXEDO_SERVER_URL: BACKEND_URL,
+      CLAXEDO_WORKGRAPH_REPOSITORY: REPO_ROOT,
+      HOME: scratchHome,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+  server.stdout?.on("data", (chunk) => (serverLog += chunk.toString()))
+  server.stderr?.on("data", (chunk) => (serverLog += chunk.toString()))
+  await waitForHealth()
+}
+
+async function stopServer() {
+  const current = server
+  if (!current || current.exitCode !== null) {
+    server = undefined
+    return
+  }
+  current.kill("SIGTERM")
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      if (current.exitCode === null) current.kill("SIGKILL")
+      resolve()
+    }, 5_000)
+    current.once("exit", () => {
+      clearTimeout(timeout)
+      resolve()
+    })
+  })
+  server = undefined
+}
+
+async function makeWorkspace() {
+  workspace = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-documents-workspace-")))
+  await initializeWorkspaceCheckout()
+  await registerWorkspace()
+}
+
+async function initializeWorkspaceCheckout() {
+  await execFileAsync("git", ["init"], { cwd: workspace })
+  await fs.writeFile(path.join(workspace, "README.md"), "live Documents core workspace\n")
+  await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "add", "-A"], {
+    cwd: workspace,
+  })
+  await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"], {
+    cwd: workspace,
+  })
+}
+
+async function registerWorkspace() {
+  const response = await fetch(
+    `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(workspace)}&create=true`,
+  )
+  expect(response.ok, await response.clone().text()).toBe(true)
+  workspaceId = ((await response.json()) as { workspaceId: string }).workspaceId
+}
+
+async function seedProject(page: Page) {
+  await page.addInitScript(
+    ({ dir, backendUrl }) => {
+      localStorage.clear()
+      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+        serverUrl: backendUrl,
+        activeDirectory: dir,
+      }
+      localStorage.setItem(
+        "opencode.global.dat:server",
+        JSON.stringify({
+          list: [],
+          projects: { local: [{ worktree: dir, workspaceId: dir, expanded: true }] },
+          lastProject: {},
+          workspaceServer: {},
+          closedProjects: {},
+        }),
+      )
+    },
+    { dir: workspace, backendUrl: BACKEND_URL },
+  )
+}
+
+async function requestJson<T>(pathname: string, init?: RequestInit) {
+  const response = await fetch(`${BACKEND_URL}${pathname}`, init)
+  if (!response.ok)
+    throw new Error(`${init?.method ?? "GET"} ${pathname} failed (${response.status}): ${await response.text()}`)
+  return (await response.json()) as T
+}
+
+async function listDocuments() {
+  return await requestJson<DocumentSummary[]>(`/documents?directory=${encodeURIComponent(workspace)}`)
+}
+
+async function createSession() {
+  return await requestJson<{ id: string }>(`/session?directory=${encodeURIComponent(workspace)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-opencode-directory": workspace },
+    body: JSON.stringify({ title: "Documents integrated live agent" }),
+  })
+}
+
+async function runAgentBash(sessionId: string, file: string, markdown: string) {
+  const providers = await requestJson<{ default?: Record<string, string> }>(
+    `/config/providers?directory=${encodeURIComponent(workspace)}&runner=opencode`,
+  )
+  const response = await requestJson<{
+    parts: Array<{
+      type: string
+      tool?: string
+      state?: { status?: string; input?: { command?: string }; metadata?: { exit?: number; truncated?: boolean } }
+    }>
+  }>(`/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-opencode-directory": workspace },
+    body: JSON.stringify({
+      messageID: `msg_documents_live_${Date.now()}`,
+      agent: "build",
+      model: { providerID: "opencode", modelID: providers.default?.opencode ?? "big-pickle" },
+      parts: [
+        {
+          type: "text",
+          text:
+            `Use your bash tool to overwrite ${file} with exactly the Markdown below. Do not modify any other file.\n` +
+            `${markdown}\nAfter the tool succeeds, reply with exactly DOCUMENT_AGENT_OK.`,
+        },
+      ],
+    }),
+  })
+  const tool = response.parts.find((part) => part.type === "tool" && part.tool === "bash")
+  expect(tool?.state).toMatchObject({ status: "completed", metadata: { exit: 0, truncated: false } })
+  expect(tool?.state?.input?.command).toContain(file)
+  return tool
+}
+
+async function sourceEditor(page: Page) {
+  const source = page.getByRole("textbox", { name: "Document Markdown source" })
+  if (await source.count()) return source
+  await page.getByRole("button", { name: "Edit source" }).click()
+  await expect(source).toBeVisible()
+  return source
+}
+
+async function saveSource(page: Page, markdown: string) {
+  const source = await sourceEditor(page)
+  await source.fill(markdown)
+  await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
+  await page.getByRole("button", { name: "Save now" }).click()
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
+  return source
+}
+
+function evidenceName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
+async function proveGeometry(page: Page, locator: Locator, testInfo: TestInfo, name: string) {
+  await expect(locator).toBeVisible()
+  await locator.scrollIntoViewIfNeeded()
+  const bounds = await locator.boundingBox()
+  expect(bounds, `${name} must have a rendered box`).not.toBeNull()
+  expect(bounds!.width, `${name} width`).toBeGreaterThan(0)
+  expect(bounds!.height, `${name} height`).toBeGreaterThan(0)
+  const viewport = page.viewportSize()
+  expect(viewport, `${name} requires a viewport`).not.toBeNull()
+  expect(bounds!.x + bounds!.width).toBeGreaterThan(0)
+  expect(bounds!.y + bounds!.height).toBeGreaterThan(0)
+  expect(bounds!.x).toBeLessThan(viewport!.width)
+  expect(bounds!.y).toBeLessThan(viewport!.height)
+  expect(
+    await locator.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const x = Math.max(0, Math.min(innerWidth - 1, box.left + box.width / 2))
+      const y = Math.max(0, Math.min(innerHeight - 1, box.top + box.height / 2))
+      const hit = document.elementFromPoint(x, y)
+      return hit === element || element.contains(hit)
+    }),
+    `${name} center must survive document.elementFromPoint`,
+  ).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`evidence-${evidenceName(name)}.png`) })
+}
+
+test.describe.serial("live Documents core backend @live", () => {
+  test.skip(
+    !LIVE,
+    "Tier L: set CLAXEDO_E2E_LIVE=1 to run live-documents-core against an isolated real claxedo-server, " +
+      "SQLite index, managed filesystem, watcher/SSE stream, and snapshot history.",
+  )
+
+  test.beforeAll(async () => {
+    if (!LIVE) return
+    await assertBackendPortFree()
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-documents-data-"))
+    scratchHome = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-documents-home-"))
+    await startServer()
+    await makeWorkspace()
+  })
+
+  test.afterAll(async () => {
+    if (!LIVE) return
+    await stopServer()
+    await Promise.all(
+      [dataDir, scratchHome, workspace]
+        .filter(Boolean)
+        .map((directory) => fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)),
+    )
+  })
+
+  test.beforeEach(async ({}, testInfo) => {
+    testInfo.setTimeout(120_000)
+    testInfo.annotations.push({
+      type: "evidence-tier",
+      description: "Tier L real browser + real Documents HTTP/filesystem backend; zero route interception",
+    })
+  })
+
+  test("real create/edit survives a full server restart with exact bytes", async ({ page }, testInfo) => {
+    const documentRequests: string[] = []
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/documents")) documentRequests.push(request.url())
+    })
+    await seedProject(page)
+    await page.goto(indexUrl())
+    await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole("button", { name: "New document" }).click()
+    await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
+
+    const exact = "Heading\n=======\n\nreal managed bytes survive restart\n"
+    const source = await saveSource(page, exact)
+    createdDocument = (await listDocuments()).find((entry) => entry.display_name === "Untitled document")
+    expect(createdDocument?.managed_relative_path).toBeTruthy()
+    const content = await requestJson<{ markdown: string }>(
+      `/documents/${encodeURIComponent(createdDocument!.id)}/content`,
+    )
+    expect(content.markdown).toBe(exact)
+    expect(await fs.readFile(path.join(dataDir, "documents", createdDocument!.managed_relative_path!), "utf8")).toBe(
+      exact,
+    )
+    expect(documentRequests.length).toBeGreaterThan(0)
+    expect(documentRequests.every((url) => new URL(url).origin === BACKEND_URL)).toBe(true)
+    await proveGeometry(page, source, testInfo, "real-managed-document-saved")
+
+    await stopServer()
+    await fs.rm(workspace, { recursive: true, force: true })
+    await fs.mkdir(workspace, { recursive: true })
+    await initializeWorkspaceCheckout()
+    await startServer()
+    await registerWorkspace()
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
+    const reopened = await sourceEditor(page)
+    await expect(reopened).toHaveValue(exact)
+    expect((await listDocuments()).map((entry) => entry.id)).toContain(createdDocument!.id)
+    await proveGeometry(page, reopened, testInfo, "real-managed-document-reopened-after-server-restart")
+  })
+
+  test("real external writes live-refresh, preserve dirty conflict, and restore a version", async ({
+    page,
+  }, testInfo) => {
+    expect(createdDocument).toBeTruthy()
+    await seedProject(page)
+    const eventRequest = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === "/documents/events" &&
+        new URL(request.url()).searchParams.get("document_id") === createdDocument!.id,
+    )
+    await page.goto(documentUrl(createdDocument!.id))
+    await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
+    let source = await sourceEditor(page)
+    await eventRequest
+
+    const canonical = path.join(dataDir, "documents", createdDocument!.managed_relative_path!)
+    const cleanExternal = "Heading\n=======\n\nreal external clean refresh\n"
+    await fs.writeFile(canonical, cleanExternal)
+    await expect(source).toHaveValue(cleanExternal, { timeout: 20_000 })
+    await proveGeometry(page, source, testInfo, "real-external-clean-live-refresh")
+
+    const dirtyDraft = "Heading\n=======\n\nhuman unsaved draft\n"
+    await source.fill(dirtyDraft)
+    await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
+    const competingExternal = "Heading\n=======\n\nreal external competing edit\n"
+    await fs.writeFile(canonical, competingExternal)
+    const conflict = page
+      .getByRole("alert")
+      .filter({ has: page.getByRole("heading", { name: "Document changed on disk" }) })
+    await expect(conflict).toBeVisible({ timeout: 20_000 })
+    await conflict.getByText("Compare versions").click()
+    await expect(conflict.getByLabel("Your draft")).toContainText("human unsaved draft")
+    await expect(conflict.getByLabel("Current disk version")).toContainText("real external competing edit")
+    expect(await fs.readFile(canonical, "utf8")).toBe(competingExternal)
+    await proveGeometry(page, conflict, testInfo, "real-external-dirty-conflict-preserves-both-sides")
+
+    await conflict.getByRole("button", { name: "Reload disk" }).click()
+    source = await sourceEditor(page)
+    await expect(source).toHaveValue(competingExternal)
+    await page.getByText("Version history", { exact: true }).click()
+    const versions = page.getByRole("list", { name: "Document versions" })
+    await expect(versions).toBeVisible()
+    const savedVersion = versions.getByRole("listitem").filter({ hasText: "document.written" }).first()
+    await expect(savedVersion).toBeVisible()
+    await savedVersion.getByRole("button", { name: "Restore" }).click()
+    await expect(source).toHaveValue("Heading\n=======\n\nreal managed bytes survive restart\n")
+    expect(await fs.readFile(canonical, "utf8")).toBe("Heading\n=======\n\nreal managed bytes survive restart\n")
+    await proveGeometry(page, source, testInfo, "real-version-restored-exact-bytes")
+  })
+
+  test("/docs grants a real agent tool path; live refresh, parked write-back, dirty recovery, restore, and follow-up retain identity", async ({
+    page,
+    context,
+  }, testInfo) => {
+    expect(createdDocument).toBeTruthy()
+    testInfo.setTimeout(300_000)
+    const preAgent = "Heading\n=======\n\nreal managed bytes survive restart\n"
+    const session = await createSession()
+    const editorPage = await context.newPage()
+    await seedProject(page)
+    await seedProject(editorPage)
+    await editorPage.goto(documentUrl(createdDocument!.id))
+    let editor = await sourceEditor(editorPage)
+    await expect(editor).toHaveValue(preAgent)
+
+    await page.goto(`/w/${encodeURIComponent(workspace)}/session/${encodeURIComponent(session.id)}`)
+    const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await composer.fill("/docs")
+    const slash = page.getByRole("listbox").last()
+    await expect(slash).toBeVisible()
+    await slash.getByRole("option", { name: /Documents/ }).click()
+    const picker = page.getByRole("listbox", { name: "Documents" })
+    await expect(picker).toBeVisible()
+    await picker.getByRole("option", { name: new RegExp(createdDocument!.display_name) }).click()
+    await expect(composer).toContainText(`document_id: ${createdDocument!.id}`)
+    const mention = (await composer.textContent()) ?? ""
+    const grantedPath = mention.match(/ at (.+?) \(document_id:/)?.[1]
+    expect(grantedPath).toBeTruthy()
+    expect(await fs.realpath(grantedPath!)).toBe(grantedPath)
+    expect(grantedPath).toContain(
+      `${path.sep}.claxedo${path.sep}sessions${path.sep}${session.id}${path.sep}docs${path.sep}${createdDocument!.id}`,
+    )
+    await proveGeometry(page, composer, testInfo, "real-docs-mention-grants-honest-session-file")
+
+    const agentEdit = "Heading\n=======\n\nreal agent ordinary bash edit\n"
+    await runAgentBash(session.id, grantedPath!, agentEdit)
+    await expect(editor).toHaveValue(agentEdit, { timeout: 30_000 })
+    expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
+      agentEdit,
+    )
+    await proveGeometry(editorPage, editor, testInfo, "real-agent-bash-live-refreshes-open-editor")
+
+    const dirtyDraft = "Heading\n=======\n\nhuman draft during agent session\n"
+    await editor.fill(dirtyDraft)
+    await expect(editorPage.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
+    const current = await requestJson<{ version: string }>(`/documents/${createdDocument!.id}/content`)
+    const durableWinner = "Heading\n=======\n\nnewer durable winner\n"
+    await requestJson(`/documents/${createdDocument!.id}/content`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": current.version },
+      body: JSON.stringify({ markdown: durableWinner }),
+    })
+    const conflict = editorPage
+      .getByRole("alert")
+      .filter({ has: editorPage.getByRole("heading", { name: "Document changed on disk" }) })
+    await expect(conflict).toBeVisible({ timeout: 30_000 })
+
+    const parkedAgentDraft = "Heading\n=======\n\nparked stale-base agent draft\n"
+    await runAgentBash(session.id, grantedPath!, parkedAgentDraft)
+    await expect.poll(async () => await fs.readFile(grantedPath!, "utf8"), { timeout: 30_000 }).toBe(parkedAgentDraft)
+    const manifestPath = path.join(path.dirname(path.dirname(grantedPath!)), "manifest.json")
+    await expect
+      .poll(
+        async () => {
+          const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as {
+            documents?: Array<{ documentId?: string; state?: string }>
+          }
+          return manifest.documents?.find((document) => document.documentId === createdDocument!.id)?.state
+        },
+        { timeout: 30_000 },
+      )
+      .toBe("conflicted")
+    expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
+      durableWinner,
+    )
+    await conflict.getByText("Compare versions").click()
+    await expect(conflict.getByLabel("Your draft")).toContainText("human draft during agent session")
+    await expect(conflict.getByLabel("Current disk version")).toContainText("newer durable winner")
+    await proveGeometry(
+      editorPage,
+      conflict,
+      testInfo,
+      "real-dirty-conflict-and-parked-session-copy-preserve-all-versions",
+    )
+
+    await conflict.getByRole("button", { name: "Reload disk" }).click()
+    editor = await sourceEditor(editorPage)
+    await expect(editor).toHaveValue(durableWinner)
+    const snapshots = await requestJson<Array<{ id: string }>>(`/documents/${createdDocument!.id}/snapshots`)
+    const preAgentSnapshot = snapshots.findIndex(
+      (snapshot) => snapshot.id === createHash("sha256").update(preAgent).digest("hex"),
+    )
+    expect(preAgentSnapshot).toBeGreaterThanOrEqual(0)
+    await editorPage.getByText("Version history", { exact: true }).click()
+    const versions = editorPage.getByRole("list", { name: "Document versions" })
+    await expect(versions).toBeVisible()
+    await versions.getByRole("listitem").nth(preAgentSnapshot).getByRole("button", { name: "Restore" }).click()
+    await expect(editor).toHaveValue(preAgent)
+    await proveGeometry(editorPage, editor, testInfo, "real-pre-agent-version-restored-after-parked-conflict")
+
+    const followUp = await requestJson<{ parts: Array<{ type: string; text?: string }> }>(
+      `/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(workspace)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-opencode-directory": workspace },
+        body: JSON.stringify({
+          parts: [{ type: "text", text: "Reply with exactly DOCUMENT_FOLLOWUP_OK and do not use tools." }],
+        }),
+      },
+    )
+    expect(followUp.parts.some((part) => part.type === "text" && part.text?.includes("DOCUMENT_FOLLOWUP_OK"))).toBe(
+      true,
+    )
+    await saveSource(editorPage, "Heading\n=======\n\nhuman continues after real agent\n")
+    expect((await listDocuments()).filter((document) => document.id === createdDocument!.id)).toHaveLength(1)
+    await proveGeometry(editorPage, editor, testInfo, "real-human-follow-up-retains-document-identity")
+    await editorPage.close()
+  })
+
+  test("repository file deleted externally renders an actionable EC-C1 recovery state", async ({ page }, testInfo) => {
+    const relativePath = "docs/repository-recovery.md"
+    await fs.mkdir(path.join(workspace, "docs"), { recursive: true })
+    await fs.writeFile(path.join(workspace, relativePath), "# Repository recovery\n")
+    await execFileAsync("git", ["add", relativePath], { cwd: workspace })
+    await execFileAsync(
+      "git",
+      ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "add recovery document"],
+      { cwd: workspace },
+    )
+    const repository = await requestJson<DocumentSummary>("/documents/from-repo", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-opencode-directory": workspace },
+      body: JSON.stringify({
+        directory: workspace,
+        workspace_id: workspaceId,
+        path: relativePath,
+        display_name: "Repository recovery",
+      }),
+    })
+    await fs.unlink(path.join(workspace, relativePath))
+
+    await seedProject(page)
+    await page.goto(documentUrl(repository.id))
+    const recovery = page.getByRole("alert")
+    await expect(recovery).toBeVisible({ timeout: 30_000 })
+    await expect(recovery.getByRole("heading", { name: "Document not found" })).toBeVisible()
+    await expect(recovery.getByRole("button", { name: "Try again" })).toBeVisible()
+    await expect(recovery.getByRole("button", { name: "Back to Documents" })).toBeVisible()
+    await proveGeometry(page, recovery, testInfo, "real-repository-deleted-recovery-state")
+  })
+})

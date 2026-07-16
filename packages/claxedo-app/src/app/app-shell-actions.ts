@@ -38,7 +38,7 @@ export function useAppShellActions(input: {
       routeDirectory: input.shell.routeDirectory,
       activeDirectory: input.shell.activeDirectory,
       activeProjectId: input.shell.activeProjectId,
-      canUsePages: input.shell.canUsePages,
+      canUseDocuments: input.shell.canUseDocuments,
       flowLog: input.shell.flowLog,
     }),
     handleOpenMarketplace,

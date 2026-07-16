@@ -1,7 +1,7 @@
 /**
  * Shared `bun.mock.module` fixture for `../api.ts`.
  *
- * Four suites (api.test.ts, pages-api.test.ts, persist.test.ts,
+ * API client suites, persist.test.ts,
  * living-apps-api.test.ts) used to hand-copy a full mock of every export of
  * `./api` — and their own comments documented a real hazard: Bun's module
  * cache is process-wide across a `bun test` run, so one file's
@@ -36,10 +36,10 @@
  *   import { createMockApi } from "../architecture/test-support/mock-api"
  *   const fixture = createMockApi({ baseUrl: "http://test.local" })
  *   mock.module("./api", () => fixture.module)
- *   const { pagesApi } = await import("./pages-api")
+ *   const { documentsApi } = await import("@/features/documents/data/documents-api")
  *   beforeEach(() => fixture.reset())
  *   // ...
- *   expect(fixture.calls).toEqual([{ url: "http://test.local/pages", init: undefined }])
+ *   expect(fixture.calls).toEqual([{ url: "http://test.local/documents", init: undefined }])
  *
  * For scenarios that need response routing keyed off the request (e.g. a
  * mock that returns different bodies per pathname), pass a full

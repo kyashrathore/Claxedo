@@ -184,6 +184,8 @@ type HostLinkRow = {
   workspace_id: string
   host_id: string
   public_key: string
+  display_name: string | null
+  second_device_open_at: number | null
   last_seen_at: number
   expires_at: number
   paused_at: number | null
@@ -781,9 +783,23 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
         active: true as const,
         host_id: link.host_id,
         workspace_id: args.workspaceId,
+        ...(link.display_name ? { display_name: link.display_name } : {}),
+        ...(link.second_device_open_at ? { second_device_open_at: link.second_device_open_at } : {}),
         expires_at: link.expires_at,
         last_seen_at: link.last_seen_at,
       }
+    },
+    async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
+      const now = Date.now()
+      const result = db.prepare(`
+        UPDATE local_host_links SET second_device_open_at = COALESCE(second_device_open_at, ?), updated_at = ?
+        WHERE workspace_id = ? AND owner_token_identifier = ? AND revoked_at IS NULL
+      `).run(now, now, args.workspaceId, who.token_identifier)
+      return { recorded: result.changes > 0, second_device_open_at: now }
     },
 
     // --- sessions (convex/sessions.ts) --------------------------------------

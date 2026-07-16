@@ -58,7 +58,7 @@ function createHarness(input: {
     loaded?: boolean
   }
   resolveSession?: (sessionId: string) => Promise<{ directory: string; title?: string; workspaceId?: string; environment?: { kind?: string }; sessionRef?: SessionRef } | undefined>
-  canUsePages?: boolean
+  canUseDocuments?: boolean
 } = {}) {
   let focused = input.focused ?? null
   let sessionInventory = input.sessionInventory
@@ -277,7 +277,7 @@ function createHarness(input: {
     }),
     resolveSession: input.resolveSession,
     currentSessionId: () => undefined,
-    canUsePages: () => input.canUsePages,
+    canUseDocuments: () => input.canUseDocuments,
     navigate: (path, options) => navigateCalls.push({ path, replace: options?.replace }),
   })
 
@@ -1352,7 +1352,7 @@ describe("state route intent", () => {
 
   test("session deep-links reuse an existing content instead of creating a duplicate", () => {
     const harness = createHarness({
-      canUsePages: true,
+      canUseDocuments: true,
       focused: null,
       meta: [
         {
@@ -1468,7 +1468,7 @@ describe("state route intent", () => {
 
   test("page deep-links reuse a page by id and clear stale session focus", () => {
     const harness = createHarness({
-      canUsePages: true,
+      canUseDocuments: true,
       focused: null,
       meta: [
         {
@@ -1499,7 +1499,7 @@ describe("state route intent", () => {
   })
 
   test("page index deep-links open pages-index when pages are unavailable", async () => {
-    const harness = createHarness({ canUsePages: false })
+    const harness = createHarness({ canUseDocuments: false })
 
     harness.receive({ pageId: "__index__" })
     await new Promise<void>((resolve) => queueMicrotask(resolve))
@@ -1525,7 +1525,7 @@ describe("state route intent", () => {
   })
 
   test("page deep-links redirect when pages are unavailable", async () => {
-    const harness = createHarness({ canUsePages: false })
+    const harness = createHarness({ canUseDocuments: false })
 
     harness.receive({ pageId: "page-1" })
     await new Promise<void>((resolve) => queueMicrotask(resolve))

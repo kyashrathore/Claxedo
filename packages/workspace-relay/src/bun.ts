@@ -3,6 +3,7 @@ import {
   TUNNEL_PROTOCOL_VERSION,
   validateTunnelMessage,
   type TunnelHeaderMap,
+  type TunnelHostRegistrationUpdate,
   type TunnelHttpResponseChunk,
   type TunnelHttpResponseEnd,
   type TunnelHttpResponseStart,
@@ -1273,6 +1274,29 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           if (parsed?.type === "pong") {
             ws.data.missedPongs = 0
             options.directory?.recordPong(ws.data.hostId)
+          }
+          if (parsed?.type === "host.registration.update") {
+            const update = parsed as TunnelHostRegistrationUpdate
+            const workspaceIds = [...new Set(update.workspace_ids)]
+            const hostSocket = ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
+            const hostId = hostSocket.data.hostId
+            const authorizationRequest = new Request(
+              `http://relay.local/host-tunnels/${encodeURIComponent(hostId)}`,
+              { headers: { authorization: `Bearer ${update.token}` } },
+            )
+            void authorizeHostTunnel(options, bunOptions, authorizationRequest, {
+              hostId,
+              workspaceIds,
+            }).then((authorized) => {
+              if (!authorized) {
+                closeWebSocket(hostSocket, 1008, "Host tunnel registration update denied", 1008)
+                return
+              }
+              if (hostTunnels.get(hostId) !== hostSocket || hostSocket.readyState !== WebSocket.OPEN) return
+              hostSocket.data.workspaceIds = workspaceIds
+              options.directory?.registerHostTunnel({ hostId, workspaceIds })
+            }).catch(() => closeWebSocket(hostSocket, 1008, "Host tunnel registration update denied", 1008))
+            return
           }
           if (parsed?.type === "error") {
             if (parsed.request_id) {

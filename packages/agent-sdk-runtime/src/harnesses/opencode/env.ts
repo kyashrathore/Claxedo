@@ -1,6 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import { dataDir } from "../../paths"
+import { harnessSpawnEnv } from "../shared/spawn-env"
 
 const OPENCODE_CONFIG_DIR = path.join(dataDir(), "opencode-config")
 const OPENCODE_XDG_CONFIG_HOME = path.join(dataDir(), "opencode-xdg-config")
@@ -8,22 +9,13 @@ const OPENCODE_XDG_DATA_HOME = path.join(dataDir(), "opencode-xdg-data")
 const OPENCODE_XDG_CACHE_HOME = path.join(dataDir(), "opencode-xdg-cache")
 
 export function spawnEnv(base = process.env) {
-  const env: Record<string, string | undefined> = {
+  return harnessSpawnEnv({
     ...base,
     OPENCODE_CONFIG_DIR: base.OPENCODE_CONFIG_DIR ?? OPENCODE_CONFIG_DIR,
     XDG_CONFIG_HOME: base.XDG_CONFIG_HOME ?? OPENCODE_XDG_CONFIG_HOME,
     XDG_DATA_HOME: base.XDG_DATA_HOME ?? OPENCODE_XDG_DATA_HOME,
     XDG_CACHE_HOME: base.XDG_CACHE_HOME ?? OPENCODE_XDG_CACHE_HOME,
-  }
-  delete env.CLAXEDO_WR_RELAY_HOST_PUBLIC_KEY_JWK
-  delete env.CLAXEDO_WR_RELAY_JWT_ALG
-  delete env.CLAXEDO_RELAY_JWKS_URL
-  delete env.CLAXEDO_RELAY_HOST_VERIFY_PEM
-  delete env.WORKSPACE_RUNTIME_CONFIG_TOKEN
-  delete env.CLAXEDO_WR_TRUSTED_DIRECT_TOKEN
-  delete env.CLAXEDO_CONTROL_PLANE_URL
-  delete env.CLAXEDO_CONTROL_PLANE_JWKS_URL
-  return env
+  })
 }
 
 export async function prepareSpawnEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>) {

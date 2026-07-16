@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPut: vi.fn(),
   baseUrl: "http://127.0.0.1:3001",
+  funnelEmit: vi.fn(),
   toast: vi.fn(),
 }))
 
@@ -80,11 +81,16 @@ vi.mock("./network-policy", () => ({
   NetworkPolicySettings: () => <div data-testid="network-policy" />,
 }))
 
+vi.mock("../app-ports", () => ({
+  useSandboxOnboardingFunnel: () => ({ emit: mocks.funnelEmit }),
+}))
+
 beforeEach(() => {
   mocks.apiDelete.mockReset()
   mocks.apiGet.mockReset()
   mocks.apiPut.mockReset()
   mocks.baseUrl = "http://127.0.0.1:3001"
+  mocks.funnelEmit.mockReset()
   mocks.toast.mockReset()
 })
 
@@ -93,6 +99,24 @@ afterEach(() => {
 })
 
 describe("SandboxSettingsSection", () => {
+  test("emits the configured-provider onboarding milestone after a successful save", async () => {
+    mocks.apiGet.mockResolvedValue({ default_provider: "daytona", providers: [provider(false)] })
+    mocks.apiPut.mockResolvedValue({ default_provider: "daytona", providers: [provider(true)] })
+
+    const { SandboxSettingsSection } = await import("./sandbox-section")
+    render(() => <SandboxSettingsSection />)
+
+    await waitFor(() => expect(screen.getByText("Not configured")).toBeInTheDocument())
+    fireEvent.click(screen.getByRole("button", { name: "Configure" }))
+    fireEvent.input(screen.getByPlaceholderText("API Key"), { target: { value: "secret" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(mocks.funnelEmit).toHaveBeenCalledWith({
+      name: "sandbox_provider_configured",
+      provider: "daytona",
+    }))
+  })
+
   test("refreshes provider state after credentials are removed", async () => {
     mocks.apiGet
       .mockResolvedValueOnce({ default_provider: "daytona", providers: [provider(true)] })

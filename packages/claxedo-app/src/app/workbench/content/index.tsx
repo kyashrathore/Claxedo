@@ -5,7 +5,9 @@ import { Show, createMemo, type JSX } from "solid-js"
 import type { PaneCtx } from "../workbench/index"
 import { useClaxedoState } from "../state/index"
 import { contentSurface } from "../../integrations/first-party-content-surfaces"
-import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { usePrincipal } from "@/platform/auth/identity-provider"
+import { documentsAccess } from "@/features/documents/access"
+import { useServer } from "@claxedo/app"
 
 export type ContentRendererProps = {
   id: string
@@ -24,6 +26,7 @@ export type ContentRendererProps = {
 export function ContentRenderer(props: ContentRendererProps): JSX.Element {
   const state = useClaxedoState()
   const principal = usePrincipal()
+  const server = useServer()
   const meta = createMemo(() => {
     state.meta.ids()
     return state.meta.get(props.id)
@@ -52,7 +55,7 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
             meta: current,
             ctx: props.ctx,
             fallbackDirectory: props.fallbackDirectory,
-            canUsePages: principalHasSignedAccess(principal()),
+            canUseDocuments: documentsAccess({ principal: principal(), serverUrl: server.url }),
           })
         }
         return (

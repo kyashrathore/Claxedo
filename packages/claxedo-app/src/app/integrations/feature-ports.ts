@@ -37,6 +37,7 @@ import * as ConnectIntegration from "@/app/dialogs/connect-integration"
 import * as LinkModule from "@/app/controls/link"
 import * as SessionModels from "@/features/session/providers/models"
 import * as ConnectProvider from "@/app/dialogs/connect-provider"
+import * as ConnectAI from "@/app/dialogs/connect-ai"
 import * as SelectProvider from "@/app/dialogs/select-provider"
 import * as CustomProvider from "@/app/dialogs/custom-provider"
 import * as SessionSync from "@/features/session/providers/session-sync"
@@ -55,6 +56,20 @@ import * as SessionCache from "@/features/session/data/sync/directory-session-ca
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 import * as SettingsSourceViews from "@/app/integrations/settings-source-views"
+import * as DocumentMentions from "@/app/integrations/document-mentions"
+import * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
+import { usePlatform } from "@/platform/runtime/platform-provider"
+import { createOnboardingFunnel } from "@/features/onboarding"
+import { capture as captureTelemetry } from "@/platform/telemetry/analytics"
+
+function useOnboardingFunnel() {
+  const platform = usePlatform()
+  const config = Config.useConfigOptional()
+  return createOnboardingFunnel({
+    deployment: platform.platform === "desktop" || config?.sandboxEnabled ? "hosted" : "self-host",
+    capture: captureTelemetry,
+  })
+}
 
 configureSessionAppPorts({
   useSDK: SDK.useSDK,
@@ -68,6 +83,7 @@ configureSessionAppPorts({
   useGlobalSync: GlobalSync.useGlobalSync,
   useTerminal: Terminal.useTerminal,
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
+  useFirstTurnFunnel: useOnboardingFunnel,
   useConfigOptional: Config.useConfigOptional,
   useShellQueryOptions: QueryOptions.useShellQueryOptions,
   useGlobalBootstrapActions: GlobalBootstrap.useGlobalBootstrapActions,
@@ -95,6 +111,8 @@ configureSessionAppPorts({
   loadManageModelsDialog: () => import("@/app/dialogs/manage-models"),
   loadSelectProviderDialog: () => import("@/app/dialogs/select-provider"),
   loadConnectProviderDialog: () => import("@/app/dialogs/connect-provider"),
+  loadAIConnectDialog: () => import("@/app/dialogs/connect-ai"),
+  applyAIConnectionResults: AIConnectResolution.applyAIConnectionResults,
   filterMcpCatalogEntries: Marketplace.filterMcpCatalogEntries,
   installDisabledReasonForEntry: Marketplace.installDisabledReasonForEntry,
   installMcpDialogEntry: Marketplace.installMcpDialogEntry,
@@ -103,6 +121,9 @@ configureSessionAppPorts({
   sourceLabel: Marketplace.sourceLabel,
   targetLabel: Marketplace.targetLabel,
   uninstallMcpDialogEntry: Marketplace.uninstallMcpDialogEntry,
+  listDocumentMentions: DocumentMentions.listDocumentMentions,
+  openDocumentMention: DocumentMentions.openDocumentMention,
+  documentMentionText: DocumentMentions.documentMentionText,
 })
 
 configureTerminalAppPorts({
@@ -121,6 +142,7 @@ configureSettingsAppPorts({
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   useShellQueryOptions: QueryOptions.useShellQueryOptions,
   DialogConnectProvider: ConnectProvider.DialogConnectProvider,
+  DialogAIConnect: ConnectAI.DialogAIConnect,
   DialogSelectProvider: SelectProvider.DialogSelectProvider,
   DialogCustomProvider: CustomProvider.DialogCustomProvider,
   useModels: SessionModels.useModels,
@@ -130,6 +152,7 @@ configureSettingsAppPorts({
   DialogConnectIntegration: ConnectIntegration.DialogConnectIntegration,
   Link: LinkModule.Link,
   useSettingsSourceViews: SettingsSourceViews.useSettingsSourceViews,
+  useSandboxOnboardingFunnel: useOnboardingFunnel,
 })
 
 configureDocumentsAppPorts({
@@ -142,7 +165,7 @@ configureDocumentsAppPorts({
   ensureLocalProject: ProjectEnsure.ensureLocalProject,
   surfaceRoute: SurfaceRoute.surfaceRoute,
   SessionPaneScope: SessionScope.SessionPaneScope,
-  turnDocumentRevisionIntoWork: DocWorkGraph.turnDocumentRevisionIntoWork,
+  turnDocumentIntoWork: DocWorkGraph.turnDocumentIntoWork,
 })
 
 configureReviewAppPorts({

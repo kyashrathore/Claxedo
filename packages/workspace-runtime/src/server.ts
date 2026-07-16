@@ -17,6 +17,8 @@ import {
 } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes, type RuntimeRunner } from "./routes/config"
 import { SessionEnvRoutes } from "./routes/session-env"
+import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
+import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
 import {
   WorkGraphConnectionToolRoutes,
   type WorkGraphConnectionBrokerRequestLimits,
@@ -38,6 +40,7 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText } from "./env"
+import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
 
 type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
@@ -95,6 +98,8 @@ export type WorkspaceRuntimeServerOptions = {
   /** Trusted Attempt command broker; hosted runtimes use the exact central origin below. */
   workgraphAttemptBroker?: WorkGraphAttemptOperationBroker
   workgraphAttemptBrokerOrigin?: string
+  /** Process-retained authority. It is never projected into a Session or child environment. */
+  internalSecrets?: WorkspaceRuntimeInternalSecrets
 }
 
 type ListenPolicyEnv = {
@@ -381,6 +386,7 @@ function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions) {
 }
 
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions = {}): WorkspaceRuntimeApp {
+  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
     hostname: workspaceRuntimeListenHostname(),
@@ -463,6 +469,21 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
   app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes())
+  app.route("/", RuntimeDocumentHydrationRoutes({
+    trustedTransport: options.exposure?.kind === "relay",
+    ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
+  }))
+  if (options.exposure?.kind === "relay") {
+    app.route("/", LocalDocumentBrokerRoutes({
+      trustedTransport: true,
+      ...(internalSecrets.localDocumentBrokerToken
+        ? { installationToken: internalSecrets.localDocumentBrokerToken }
+        : {}),
+      ...(process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL
+        ? { localControlPlaneUrl: process.env.CLAXEDO_LOCAL_CONTROL_PLANE_URL }
+        : {}),
+    }))
+  }
   type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
   const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
   const registerSessionToolGroup = (group: string) => async (registration: SessionToolRegistration) => {
@@ -554,6 +575,7 @@ export function startServer(
   options: WorkspaceRuntimeServerOptions = {},
   lifecycle: WorkspaceRuntimeLifecycleOptions = {},
 ) {
+  const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   const hostname = workspaceRuntimeListenHostname()
   assertWorkspaceRuntimeExposure({
     exposure: options.exposure,
@@ -562,7 +584,7 @@ export function startServer(
     env: process.env,
   })
   assertWorkspaceRuntimeListenPolicy(options, hostname)
-  const runtime = createWorkspaceRuntimeApp(options)
+  const runtime = createWorkspaceRuntimeApp({ ...options, internalSecrets })
 
   const server = serve({
     fetch: runtime.app.fetch,

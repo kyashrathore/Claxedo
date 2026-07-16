@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { createComponent, createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { Persist, setPersisted } from "@/platform/persistence/persist"
 import { createWorkGraphClient } from "./api"
 import { WorkGraphContent, type WorkGraphPanelBridge } from "./workgraph-content"
 
@@ -8,9 +9,13 @@ import { WorkGraphContent, type WorkGraphPanelBridge } from "./workgraph-content
 // calls it while opening, so shim it to a no-op for the New-stream chip tests.
 window.scrollTo = (() => {}) as typeof window.scrollTo
 
-// The route-restorable expanded-Stream set persists to localStorage; reset it so
-// each test starts from the first-visit default rather than a prior test's set.
-beforeEach(() => localStorage.clear())
+// Persisted UI state lives in localStorage AND the persistence layer's
+// module-level memory cache; `localStorage.clear()` alone does not reset the
+// cache, so explicitly write the first-visit defaults back per test.
+beforeEach(() => {
+  localStorage.clear()
+  setPersisted(Persist.global("workgraph.attention-card-pinned.v1"), { pinned: true })
+})
 afterEach(() => {
   cleanup()
   document.querySelectorAll("[data-test-slot]").forEach((node) => node.remove())
@@ -54,10 +59,12 @@ function mount(request: typeof fetch, options?: {
 }
 
 const streamStat = () => screen.getByText("Needs you", { selector: ".workgraph-stat-label" })
+// The panel path from the card is its head's expand action — it opens the
+// full Waiting list in the shared panel.
 const openWaitingPanelFromCard = async () => {
   const card = await screen.findByRole("complementary", { name: "Waiting on you" })
-  await fireEvent.click(within(card).getByRole("button", { name: /Which auth strategy/ }))
-  await waitFor(() => expect(document.activeElement).toHaveClass("workgraph-waiting-row"))
+  await fireEvent.click(within(card).getByRole("button", { name: "Open Needs you panel" }))
+  await waitFor(() => expect(screen.queryAllByRole("button", { name: /Which auth strategy/ }).length).toBeGreaterThan(0))
 }
 
 describe("WorkGraph screen", () => {
@@ -75,7 +82,7 @@ describe("WorkGraph screen", () => {
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument()
   })
 
-  test("shows attention inline and opens the matching item in the shared panel", async () => {
+  test("shows attention inline and the card's expand action opens the shared panel", async () => {
     const { body } = mount(workGraphRequest({ records: () => [stream], attention: () => attentionPage }))
     const needsYou = await screen.findByRole("button", { name: /Needs you — 2 waiting on you/ })
     expect(needsYou).toHaveAttribute("aria-pressed", "true")
@@ -85,7 +92,15 @@ describe("WorkGraph screen", () => {
     await openWaitingPanelFromCard()
     expect(await within(body).findByText("Which auth strategy for the new gateway?")).toBeInTheDocument()
     expect(within(body).getByText("Backfill historical invoices")).toBeInTheDocument()
-    expect(document.activeElement).toBe(within(body).getByRole("button", { name: /Which auth strategy/ }))
+  })
+
+  test("an expanded card row opens the item's dialog right there — no panel detour", async () => {
+    mount(workGraphRequest({ records: () => [stream], attention: () => attentionPage }))
+    const card = await screen.findByRole("complementary", { name: "Waiting on you" })
+    await fireEvent.click(within(card).getByRole("button", { name: /Which auth strategy/ }))
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+    // The shared panel was never opened for this.
+    expect(screen.queryByRole("tab", { name: "Needs you" })).toBeNull()
   })
 
   test("hides the inline context for the main panel and floats it when explicitly reopened", async () => {
@@ -113,6 +128,26 @@ describe("WorkGraph screen", () => {
     await fireEvent.click(needsYou)
     expect(screen.getByRole("complementary", { name: "Waiting on you" })).toHaveClass("is-inline")
     expect(needsYou).toHaveAttribute("aria-pressed", "true")
+  })
+
+  test("the pinned-summary toggle is route-restorable across a reload", async () => {
+    const request = workGraphRequest({ records: () => [stream], attention: () => attentionPage })
+    const first = mount(request)
+    // Unpin from the header control: the card disappears entirely — no rail,
+    // no leftover chrome.
+    await fireEvent.click(await screen.findByRole("button", { name: /Needs you — 2 waiting on you/ }))
+    expect(screen.queryByRole("complementary", { name: "Waiting on you" })).toBeNull()
+
+    // The preference survives a reload…
+    first.unmount()
+    document.querySelectorAll("[data-test-slot]").forEach((node) => node.remove())
+    mount(request)
+    await screen.findByText("Ship Claxedo cloud")
+    expect(screen.queryByRole("complementary", { name: "Waiting on you" })).toBeNull()
+
+    // …and the header control pins it back.
+    await fireEvent.click(screen.getByRole("button", { name: /Needs you — 2 waiting on you/ }))
+    expect(await screen.findByRole("complementary", { name: "Waiting on you" })).toBeInTheDocument()
   })
 
   test("switches between the Needs you and Settings panel tabs", async () => {

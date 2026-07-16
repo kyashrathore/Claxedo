@@ -69,9 +69,7 @@ import {
   createHostedAttemptOperationHandler,
 } from "./workgraph-host/hosted-attempt-operation"
 import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
-import { DocsRoutes } from "./routes/docs"
-import { createConvexDocumentStore } from "./document-host/convex-store"
-import type { DocumentStore } from "./document-store"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/documents"
 import { workGraphHttpTelemetry } from "./workgraph-host/operational-telemetry"
 
 export type HostedAppOverrides = {
@@ -87,8 +85,8 @@ export type HostedAppOverrides = {
   workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
   /** Deterministic hosted capability gate for component tests. */
   entitlementGate?: EntitlementGate
-  /** Test/custom storage seam; production composes Convex from env. */
-  documentStore?: (auth: SignedControlPlaneAuth) => DocumentStore
+  /** D11 supplies hosted document index/blob storage through this Worker-safe seam. */
+  documentsBackend?: DocumentsRouteBackend
 }
 
 // Deployment-configured app origins (CLAXEDO_APP_ORIGINS, comma-separated).
@@ -326,32 +324,19 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
 
-  app.all("/api/workgraph", (context) => forwardWorkGraph(context.req.raw))
-  app.all("/api/workgraph/*", (context) => forwardWorkGraph(context.req.raw))
   app.route(
-    "/api/claxedo/docs",
-    DocsRoutes({
+    "/documents",
+    DocumentsRoutes({
+      ...(overrides.documentsBackend ? { backend: overrides.documentsBackend } : {}),
       services,
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       ...(services.authority ? { authority: services.authority } : {}),
-      store: (auth) => {
-        if (!auth) {
-          throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed Control Plane auth is required")
-        }
-        if (overrides.documentStore) return overrides.documentStore(auth)
-        const url = plane.env.CLAXEDO_WORKSPACE_AUTHORITY_URL?.trim()
-        const serviceToken = plane.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-        if (!url || !serviceToken) {
-          throw new HostedWorkerCompositionError(
-            "hosted_dependency_missing",
-            "Hosted document storage requires Convex authority URL and Control Plane service token",
-          )
-        }
-        return createConvexDocumentStore({ url, serviceToken, auth })
-      },
     }),
   )
+
+  app.all("/api/workgraph", (context) => forwardWorkGraph(context.req.raw))
+  app.all("/api/workgraph/*", (context) => forwardWorkGraph(context.req.raw))
   app.route("/api/claxedo/integrations", connectionsSetup)
   if (connectionOperationHandler) {
     if (workgraph.operationalTelemetry) {

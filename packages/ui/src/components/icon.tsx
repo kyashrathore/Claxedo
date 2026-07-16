@@ -20,6 +20,7 @@ const icons = {
   "chevron-right": `<path d="M8 15L13 10L8 5" stroke="currentColor" stroke-linecap="square"/>`,
   "chevron-grabber-vertical": `<path d="M6.66675 12.4998L10.0001 15.8332L13.3334 12.4998M6.66675 7.49984L10.0001 4.1665L13.3334 7.49984" stroke="currentColor" stroke-linecap="square"/>`,
   "chevron-double-right": `<path d="M11.6654 13.3346L14.9987 10.0013L11.6654 6.66797M5.83203 13.3346L9.16536 10.0013L5.83203 6.66797" stroke="currentColor" stroke-linecap="square"/>`,
+  "chevron-double-left": `<path d="M8.33463 13.3346L5.0013 10.0013L8.33463 6.66797M14.168 13.3346L10.8346 10.0013L14.168 6.66797" stroke="currentColor" stroke-linecap="square"/>`,
   "circle-x": `<path fill-rule="evenodd" clip-rule="evenodd" d="M1.6665 10.0003C1.6665 5.39795 5.39746 1.66699 9.99984 1.66699C14.6022 1.66699 18.3332 5.39795 18.3332 10.0003C18.3332 14.6027 14.6022 18.3337 9.99984 18.3337C5.39746 18.3337 1.6665 14.6027 1.6665 10.0003ZM7.49984 6.91107L6.91058 7.50033L9.41058 10.0003L6.91058 12.5003L7.49984 13.0896L9.99984 10.5896L12.4998 13.0896L13.0891 12.5003L10.5891 10.0003L13.0891 7.50033L12.4998 6.91107L9.99984 9.41107L7.49984 6.91107Z" fill="currentColor"/>`,
   close: `<path d="M3.75 3.75L16.25 16.25M16.25 3.75L3.75 16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "close-small": `<path d="M6 6L14 14M14 6L6 14" stroke="currentColor" stroke-linecap="square"/>`,
@@ -81,6 +82,10 @@ const icons = {
   "layout-bottom-full": `<path d="M2.91732 12.0827L17.084 12.0827L17.084 17.0827H2.91732L2.91732 12.0827Z" fill="currentColor"/><path d="M2.91732 2.91602L17.084 2.91602M2.91732 2.91602L2.91732 17.0827M17.084 2.91602L17.084 17.0827M17.084 17.0827L2.91732 17.0827M2.91732 12.0827L17.084 12.0827" stroke="currentColor" stroke-linecap="square"/>`,
   "dot-grid": `<path d="M2.08398 9.16602H3.75065V10.8327H2.08398V9.16602Z" fill="currentColor"/><path d="M10.834 9.16602H9.16732V10.8327H10.834V9.16602Z" fill="currentColor"/><path d="M16.2507 9.16602H17.9173V10.8327H16.2507V9.16602Z" fill="currentColor"/><path d="M2.08398 9.16602H3.75065V10.8327H2.08398V9.16602Z" stroke="currentColor"/><path d="M10.834 9.16602H9.16732V10.8327H10.834V9.16602Z" stroke="currentColor"/><path d="M16.2507 9.16602H17.9173V10.8327H16.2507V9.16602Z" stroke="currentColor"/>`,
   "circle-check": `<path d="M12.4987 7.91732L8.7487 12.5007L7.08203 10.834M17.9154 10.0007C17.9154 14.3729 14.371 17.9173 9.9987 17.9173C5.62644 17.9173 2.08203 14.3729 2.08203 10.0007C2.08203 5.6284 5.62644 2.08398 9.9987 2.08398C14.371 2.08398 17.9154 5.6284 17.9154 10.0007Z" stroke="currentColor" stroke-linecap="square"/>`,
+  file: `<path d="M11.6667 2.08301H4.58333V17.9163H15.4167V5.83301M11.6667 2.08301L15.4167 5.83301M11.6667 2.08301V5.83301H15.4167" stroke="currentColor" stroke-linejoin="round"/>`,
+  "circle-dashed": `<circle cx="10" cy="10" r="7.917" stroke="currentColor" stroke-dasharray="2.5 2.72" stroke-linecap="round"/>`,
+  "circle-half": `<circle cx="10" cy="10" r="7.917" stroke="currentColor"/><path d="M10 5.625C12.4162 5.625 14.375 7.58375 14.375 10C14.375 12.4162 12.4162 14.375 10 14.375V5.625Z" fill="currentColor"/>`,
+  "circle-alert": `<circle cx="10" cy="10" r="7.917" stroke="currentColor"/><path d="M10 6.25V11.05" stroke="currentColor" stroke-linecap="round"/><circle cx="10" cy="13.55" r="0.85" fill="currentColor"/>`,
   copy: `<path d="M6.2513 6.24935V2.91602H17.0846V13.7493H13.7513M13.7513 6.24935V17.0827H2.91797V6.24935H13.7513Z" stroke="currentColor" stroke-linecap="round"/>`,
   check: `<path d="M5 11.9657L8.37838 14.7529L15 5.83398" stroke="currentColor" stroke-linecap="square"/>`,
   photo: `<path d="M16.6665 16.6666L11.6665 11.6666L9.99984 13.3333L6.6665 9.99996L3.08317 13.5833M2.9165 2.91663H17.0832V17.0833H2.9165V2.91663ZM13.3332 7.49996C13.3332 8.30537 12.6803 8.95829 11.8748 8.95829C11.0694 8.95829 10.4165 8.30537 10.4165 7.49996C10.4165 6.69454 11.0694 6.04163 11.8748 6.04163C12.6803 6.04163 13.3332 6.69454 13.3332 7.49996Z" stroke="currentColor" stroke-linecap="square"/>`,
@@ -119,9 +124,16 @@ function viewBox(name: keyof typeof icons) {
 function ensureSprite() {
   if (spriteInserted) return
   if (typeof document === "undefined") return
-  if (document.getElementById(spriteID)) {
-    spriteInserted = true
-    return
+  const existing = document.getElementById(spriteID)
+  if (existing) {
+    // HMR replays this module with a fresh `spriteInserted`, but the DOM keeps
+    // the sprite from the OLD icon set — an icon added during dev silently
+    // renders as nothing until a full reload. Rebuild when the set drifted.
+    if (existing.querySelectorAll("symbol").length === Object.keys(icons).length) {
+      spriteInserted = true
+      return
+    }
+    existing.remove()
   }
   const body = document.body as HTMLElement | null
   if (!body) return

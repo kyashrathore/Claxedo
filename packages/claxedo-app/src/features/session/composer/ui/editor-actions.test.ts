@@ -20,6 +20,8 @@ function createHarness() {
     scroll: 0,
     slashQueries: [] as string[],
     slashTriggers: [] as string[],
+    documentPicker: 0,
+    documentSelections: [] as string[],
   }
   const actions = createPromptEditorActions({
     editor: () => editor,
@@ -45,6 +47,9 @@ function createHarness() {
     atOnInput: (query) => calls.atQueries.push(query),
     slashOnInput: (query) => calls.slashQueries.push(query),
     triggerSlashCommand: (id) => calls.slashTriggers.push(id),
+    openDocumentPicker: () => calls.documentPicker++,
+    closeDocumentPicker: () => {},
+    onDocumentSelect: (document) => calls.documentSelections.push(document.documentId),
   })
   return {
     actions,
@@ -151,6 +156,26 @@ describe("prompt editor actions", () => {
       expect(harness.editor.textContent).toBe("")
       expect(harness.prompt()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
       expect(harness.calls.slashTriggers).toEqual(["session.help"])
+      dispose()
+    })
+  })
+
+  test("/docs opens the document picker and selecting a document delegates resolution", () => {
+    createRoot((dispose) => {
+      const harness = createHarness()
+      harness.actions.handleSlashSelect({ id: "documents.open", trigger: "docs", title: "Documents", type: "builtin" })
+      expect(harness.calls.documentPicker).toBe(1)
+      expect(harness.calls.slashTriggers).toEqual([])
+
+      harness.actions.handleAtSelect({
+        type: "document",
+        documentId: "doc-1",
+        display: "Plan",
+        originKind: "managed",
+        placementKind: "local",
+        status: "draft",
+      })
+      expect(harness.calls.documentSelections).toEqual(["doc-1"])
       dispose()
     })
   })

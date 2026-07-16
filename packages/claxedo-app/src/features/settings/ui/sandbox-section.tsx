@@ -4,6 +4,7 @@ import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
 import { api, getDefaultBaseUrl } from "@/platform/api/api"
 import { NetworkPolicySettings } from "./network-policy"
+import { useSandboxOnboardingFunnel } from "../app-ports"
 import {
   shouldUseSandboxDriverMutations,
   workspaceDefaultProviderUrl,
@@ -56,6 +57,7 @@ function SettingsRow(props: { title: string; description: string | JSX.Element; 
 // ── Main component ──────────────────────────────────────────────────────────
 
 export const SandboxSettingsSection: Component = () => {
+  const onboarding = useSandboxOnboardingFunnel()
   const baseUrl = getDefaultBaseUrl()
   const [loading, setLoading] = createSignal(true)
   const [saving, setSaving] = createSignal("")
@@ -110,6 +112,7 @@ export const SandboxSettingsSection: Component = () => {
       setDef(data.default_provider)
       setServerDef(data.default_provider)
       setExpanded(null)
+      onboarding.emit({ name: "sandbox_provider_configured", provider: id })
       showToast({ variant: "success", title: `${label} credentials saved` })
     } catch (err) {
       showToast({ variant: "error", title: errorTitle(err) })

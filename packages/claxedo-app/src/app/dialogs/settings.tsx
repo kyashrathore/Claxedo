@@ -15,11 +15,17 @@ import { SandboxSettingsSection } from "@/features/settings/ui/sandbox-section"
 import { useConfigOptional } from "@/app/providers/config"
 import { BP_SM } from "@/ui/controls/breakpoints"
 import claxedoPkg from "../../../package.json"
+import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
+import { useServer } from "@/app/connection/server"
+import { useNavigate } from "@solidjs/router"
 
 export const DialogSettings: Component = () => {
   const language = useLanguage()
   const dialog = useDialog()
   const config = useConfigOptional()
+  const server = useServer()
+  const navigate = useNavigate()
+  const remoteAccess = useRemoteAccessController({ serverUrl: server.url })
   const sandboxEnabled = () => !!config?.sandboxEnabled
   const [active, setActive] = createSignal("general")
   const [mobile, setMobile] = createSignal(false)
@@ -131,6 +137,10 @@ export const DialogSettings: Component = () => {
                         <Icon name="console" />
                         Terminals
                       </Tabs.Trigger>
+                      <Tabs.Trigger value="devices">
+                        <Icon name="link" />
+                        Devices
+                      </Tabs.Trigger>
                     </div>
                   </div>
 
@@ -179,6 +189,23 @@ export const DialogSettings: Component = () => {
           </Tabs.Content>
           <Tabs.Content value="terminals" class="no-scrollbar">
             <SettingsTerminals />
+          </Tabs.Content>
+          <Tabs.Content value="devices" class="no-scrollbar">
+            <div class="p-6">
+              <RemoteAccessSurface
+                availability={remoteAccess.availability()}
+                workspaceLink={remoteAccess.workspaceLink()}
+                devices={remoteAccess.devices.data ?? []}
+                startAtLogin={remoteAccess.startAtLogin()}
+                onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
+                onEnable={() => void remoteAccess.enable()}
+                onSignIn={() => {
+                  dialog.close()
+                  navigate("/login")
+                }}
+                onRevoke={(hostId) => void remoteAccess.revoke(hostId)}
+              />
+            </div>
           </Tabs.Content>
           <Tabs.Content value="providers" class="no-scrollbar">
             <SettingsProviders />

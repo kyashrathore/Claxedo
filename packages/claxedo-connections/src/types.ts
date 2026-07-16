@@ -46,8 +46,18 @@ export type OAuthTokens = {
   expiresAt?: number
 }
 
+export type CodeHostRepository = {
+  id: string
+  name: string
+  fullName: string
+  cloneUrl: string
+  private: boolean
+  permissions: { read: boolean; write: boolean }
+}
+
 export type IntegrationImpl = {
   verify?: (fields: ConnectionFields, secret: string) => Promise<VerifyResult>
+  listRepositories?: (fields: ConnectionFields, secret: string) => Promise<CodeHostRepository[]>
   authorize?: (state: string, codeVerifier: string) => URL | Promise<URL>
   callback?: (code: string, codeVerifier: string) => Promise<OAuthTokens>
   refresh?: (refreshToken: string) => Promise<OAuthTokens>

@@ -142,6 +142,7 @@
     "@xterm/addon-webgl": "0.20.0-beta.219",
     "@xterm/xterm": "6.1.0-beta.220",
     "effect": "4.0.0-beta.66",
+    "diff": "catalog:",
     "fuzzysort": "3.1.0",
     "idb-keyval": "6.2.5",
     "luxon": "3.6.1",

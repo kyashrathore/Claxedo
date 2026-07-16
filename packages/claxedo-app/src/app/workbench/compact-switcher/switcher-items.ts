@@ -21,7 +21,7 @@ export type SwitcherItem = {
 }
 
 export type SwitcherItemOptions = {
-  canUsePages?: boolean
+  canUseDocuments?: boolean
 }
 
 /** All SwitcherKind values mapKindFromMeta can ever return, for parity testing against ContentType. */
@@ -64,7 +64,7 @@ function titleFromMeta(meta: ContentMeta): string {
       return "Context"
     case "page":
     case "pages-index":
-      return meta.filePath?.split("/").at(-1) || "Page"
+      return meta.filePath?.split("/").at(-1) || "Document"
     case "marketplace":
       return "Marketplace"
     case "workgraph":
@@ -97,7 +97,7 @@ export function buildSwitcherItemsFromStateWithOptions(
   return state.wb.selectors.aliveContents().flatMap((id) => {
     const meta = state.meta.get(id)
     if (!meta) return []
-    if (options.canUsePages !== true && (meta.type === "page" || meta.type === "pages-index")) return []
+    if (options.canUseDocuments !== true && (meta.type === "page" || meta.type === "pages-index")) return []
     return [{
       contentId: id,
       kind: mapKindFromMeta(meta.type),

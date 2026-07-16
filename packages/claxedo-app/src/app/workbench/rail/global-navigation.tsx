@@ -17,12 +17,12 @@ export function GlobalNavigation(props: {
   const path = () => location.pathname
   const isWorkGraph = () => path().startsWith("/workgraph")
   const isMarketplace = () => path().startsWith("/marketplace")
-  const isPages = () => path().includes("/page/")
+  const isDocuments = () => path().includes("/page/")
 
   return (
     <div class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15" data-testid="global-navigation">
       <NavigationRow icon="plus-small" label={props.newProjectLabel} onClick={props.onNewProject} />
-      <Show when={props.onOpenPages}><NavigationRow icon="page" label="Pages" onClick={props.onOpenPages} active={isPages()} testId="sidebar-pages-entry" ariaLabel="Open Pages" /></Show>
+      <Show when={props.onOpenPages}><NavigationRow icon="page" label="Documents" onClick={props.onOpenPages} active={isDocuments()} testId="sidebar-documents-entry" ariaLabel="Open Documents" /></Show>
       <Show when={props.onOpenMarketplace}><NavigationRow icon="marketplace" label="Marketplace" onClick={props.onOpenMarketplace} active={isMarketplace()} testId="sidebar-marketplace-entry" ariaLabel="Open Marketplace" /></Show>
       <Show when={props.onOpenWorkGraph}><NavigationRow icon="workgraph" label="WorkGraph" onClick={props.onOpenWorkGraph} active={isWorkGraph()} testId="sidebar-workgraph-entry" ariaLabel="Open WorkGraph" /></Show>
     </div>

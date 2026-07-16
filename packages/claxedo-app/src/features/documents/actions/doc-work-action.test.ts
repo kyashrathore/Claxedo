@@ -1,46 +1,32 @@
 import { describe, expect, test } from "bun:test"
-import { durableDocumentRevisionForPage, TURN_REVISION_INTO_WORK_LABEL } from "./doc-work-action"
+import { TURN_DOCUMENT_INTO_WORK_LABEL, workSourceForDocument } from "./doc-work-action"
 
-const boundFields = {
-  project_id: "project_1",
-  document_id: "document_1",
-  document_revision_id: "revision_1",
-}
-
-describe("durableDocumentRevisionForPage", () => {
-  test("returns the exact persisted revision locator when the page is Docs v2 bound", () => {
-    expect(durableDocumentRevisionForPage(boundFields)).toEqual({
+describe("workSourceForDocument", () => {
+  test("returns canonical identity and placement without fabricating a snapshot", () => {
+    expect(workSourceForDocument({ project_id: " project_1 ", id: " document_1 ", placement_kind: "local" })).toEqual({
       projectId: "project_1",
       documentId: "document_1",
-      revisionId: "revision_1",
+      placement: "local",
     })
   })
 
-  test("trims persisted identifiers", () => {
+  test("is honestly unavailable when identity is missing", () => {
+    expect(workSourceForDocument({ project_id: "", id: "document_1", placement_kind: "local" })).toBeUndefined()
+    expect(workSourceForDocument({ project_id: "project_1", id: "", placement_kind: "local" })).toBeUndefined()
+  })
+
+  test("carries target context and exposes one accessible label", () => {
     expect(
-      durableDocumentRevisionForPage({
-        project_id: "  project_1  ",
-        document_id: " document_1 ",
-        document_revision_id: " revision_1 ",
-      }),
-    ).toEqual({ projectId: "project_1", documentId: "document_1", revisionId: "revision_1" })
-  })
-
-  test("is honestly unavailable (undefined) when the durable revision id is missing", () => {
-    expect(durableDocumentRevisionForPage({ ...boundFields, document_revision_id: null })).toBeUndefined()
-    expect(durableDocumentRevisionForPage({ ...boundFields, document_revision_id: "" })).toBeUndefined()
-    expect(durableDocumentRevisionForPage({ ...boundFields, document_revision_id: "   " })).toBeUndefined()
-  })
-
-  test("is honestly unavailable when the document id is missing", () => {
-    expect(durableDocumentRevisionForPage({ ...boundFields, document_id: undefined })).toBeUndefined()
-  })
-
-  test("is honestly unavailable when the project id is missing", () => {
-    expect(durableDocumentRevisionForPage({ ...boundFields, project_id: null })).toBeUndefined()
-  })
-
-  test("exposes a stable accessible name", () => {
-    expect(TURN_REVISION_INTO_WORK_LABEL).toBe("Turn current revision into WorkGraph work")
+      workSourceForDocument(
+        { project_id: "project_1", id: "document_1", placement_kind: "hosted" },
+        { repositoryUrl: "https://git.example/repo.git" },
+      ),
+    ).toEqual({
+      projectId: "project_1",
+      documentId: "document_1",
+      placement: "hosted",
+      repositoryUrl: "https://git.example/repo.git",
+    })
+    expect(TURN_DOCUMENT_INTO_WORK_LABEL).toBe("Turn current document into WorkGraph work")
   })
 })

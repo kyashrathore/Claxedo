@@ -310,6 +310,7 @@ describe("SessionEnvRoutes", () => {
 
   test("filters exec env through the PTY safe-env policy", async () => {
     const directory = await temp()
+    process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN = "ambient-secret"
     const res = await app().request(url("/exec", directory), {
       method: "POST",
       body: JSON.stringify({
@@ -317,13 +318,15 @@ describe("SessionEnvRoutes", () => {
           "node -e 'process.stdout.write(JSON.stringify({",
           "nodeOptions: process.env.NODE_OPTIONS || null,",
           "opencode: process.env.OPENCODE_ALLOWED || null,",
-          "secret: process.env.SECRET_TOKEN || null",
+          "secret: process.env.SECRET_TOKEN || null,",
+          "installation: process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN || null",
           "}))'",
         ].join(" "),
         env: {
           NODE_OPTIONS: "--require /definitely-missing-workspace-runtime-module",
           OPENCODE_ALLOWED: "yes",
           SECRET_TOKEN: "nope",
+          CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "request-secret",
         },
       }),
       headers: { "Content-Type": "application/json" },
@@ -334,6 +337,7 @@ describe("SessionEnvRoutes", () => {
       nodeOptions: null,
       opencode: "yes",
       secret: null,
+      installation: null,
     })
     expect(events.at(-1)).toMatchObject({ type: "exit", exitCode: 0 })
   })

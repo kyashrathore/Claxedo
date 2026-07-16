@@ -1,15 +1,20 @@
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 
-export async function claxedoCredentialRequest(input?: { serverUrl?: string; providerId?: string }, init?: RequestInit) {
+export type ClaxedoCredentialRequestInput = {
+  serverUrl?: string
+  providerId?: string
+  credentialId?: string
+  action?: "discover" | "save-discovered" | "verify"
+}
+
+export async function claxedoCredentialRequest(input?: ClaxedoCredentialRequestInput, init?: RequestInit) {
   const headers = new Headers(init?.headers)
   headers.set("Accept", "application/json")
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
 
   const res = await globalThis.fetch(
     new URL(
-      input?.providerId
-        ? `/api/claxedo/credentials/provider/${encodeURIComponent(input.providerId)}`
-        : "/api/claxedo/credentials",
+      credentialRoute(input),
       normalizeUrl(input?.serverUrl) ?? getClaxedoServerUrl(),
     ),
     { ...init, headers },
@@ -17,6 +22,17 @@ export async function claxedoCredentialRequest(input?: { serverUrl?: string; pro
   if (res.ok) return res
 
   throw new Error(await claxedoCredentialErrorMessage(res))
+}
+
+function credentialRoute(input?: ClaxedoCredentialRequestInput) {
+  if (input?.credentialId && input.action === "verify") {
+    return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}/verify`
+  }
+  if (input?.action === "discover" || input?.action === "save-discovered") {
+    return `/api/claxedo/credentials/${input.action}`
+  }
+  if (input?.providerId) return `/api/claxedo/credentials/provider/${encodeURIComponent(input.providerId)}`
+  return "/api/claxedo/credentials"
 }
 
 async function claxedoCredentialErrorMessage(res: Response) {

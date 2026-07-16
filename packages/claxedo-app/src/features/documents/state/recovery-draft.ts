@@ -35,10 +35,12 @@ export function createRecoveryDraftStore(storage: RecoveryDraftStorage) {
       try {
         storage.setItem(recoveryDraftKey(draft.documentId, draft.version), JSON.stringify(draft))
         const versions = readVersions(storage, draft.documentId)
-        storage.setItem(
-          recoveryDraftVersionsKey(draft.documentId),
-          JSON.stringify([...new Set([...(versions.ok ? versions.value : []), draft.version])]),
-        )
+        if (!versions.ok || !versions.value.includes(draft.version)) {
+          storage.setItem(
+            recoveryDraftVersionsKey(draft.documentId),
+            JSON.stringify([...new Set([...(versions.ok ? versions.value : []), draft.version])]),
+          )
+        }
         return { ok: true, value: undefined }
       } catch (error) {
         return { ok: false, error }

@@ -24,11 +24,19 @@ import type { ExecutionContext, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import * as Sentry from "@sentry/cloudflare"
 import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedControlPlane, type HostedWorkerEnv } from "./control-plane/hosted-services"
-import { createHostedApp } from "./hosted-app"
+import { createHostedApp, type HostedAppOverrides } from "./hosted-app"
 import { runScheduledBillingReconciliation } from "./billing/reconcile"
 import { reportError, setErrorReporterSink } from "./observability/report"
 import { sentryInitOptions } from "./observability/sentry-config"
 import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
+import { skipOverlappingReconcile } from "./workgraph-host/reconcile-serialize"
+import type { WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
+import { createHostedDocumentsBackend } from "./documents/hosted-backend"
+import { createHostedDocumentRuntimeBroker } from "./documents/hosted-runtime-broker"
+import { createHostedLocalDocumentRelay } from "./documents/hosted-local-relay"
+import type { R2BucketBinding } from "./documents/hosted-managed"
+import type { SignedControlPlaneAuth } from "./control-plane/auth"
+import type { DocumentIndexEntry } from "./documents/index-store"
 
 // D12: route reportError/reportPaymentError (the payment page-class hook the
 // billing routes call) into the request's Sentry scope. withSentry runs the
@@ -47,6 +55,7 @@ let cached: {
   app: Hono
   plane: HostedControlPlane
   workGraphRuntime?: NonNullable<ReturnType<typeof createHostedWorkGraphRuntime>>
+  workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
 } | undefined
 
 // D9 fail-closed hosted boot: `composeHostedControlPlane` asserts every
@@ -59,8 +68,53 @@ function buildApp(env: HostedWorkerEnv): Hono {
   if (cached) return cached.app
   const plane = composeHostedControlPlane(env)
   const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
+  // Every trigger path (cron, admin route, smoke cycles) shares one per-isolate
+  // guard: overlapping reconciles have hung the Workers runtime.
+  const workGraphReconcile = workGraphRuntime ? skipOverlappingReconcile(workGraphRuntime.reconcile) : undefined
+  const documentsBucket = (env as unknown as { CLAXEDO_DOCUMENTS?: R2BucketBinding }).CLAXEDO_DOCUMENTS
   const app = createHostedApp(plane, {
-    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
+    ...(workGraphReconcile ? { workGraphReconcile } : {}),
+    ...(documentsBucket ? {
+      documentsBackend: createHostedDocumentsBackend(documentsBucket, {
+        runtime: createHostedDocumentRuntimeBroker(plane.services, env as unknown as NodeJS.ProcessEnv),
+        localRelay: createHostedLocalDocumentRelay(plane.services, env as unknown as NodeJS.ProcessEnv),
+        resolveSessionWorkspace: async (auth, sessionId) => {
+          const value = await plane.services.authority?.resolveSession?.(auth, { sessionId })
+          if (!value || typeof value !== "object") throw new Error("Session placement is unavailable")
+          const record = value as Record<string, unknown>
+          const workspaceId = typeof record.workspace_id === "string" ? record.workspace_id : record.workspaceId
+          if (typeof workspaceId !== "string" || !workspaceId) throw new Error("Session placement is unavailable")
+          return workspaceId
+        },
+        resolveLocalWorkspace: async (auth, projectId) => {
+          const rows = await plane.services.authority?.listWorkspaces(auth)
+          if (!Array.isArray(rows)) throw new Error("Local document installation is unavailable")
+          const matches = rows.filter((value): value is Record<string, unknown> => Boolean(
+            value && typeof value === "object" &&
+            (value as Record<string, unknown>).project_id === projectId &&
+            (value as Record<string, unknown>).access === "user-hosted" &&
+            (value as Record<string, unknown>).backing === "local-worktree" &&
+            typeof (value as Record<string, unknown>).workspace_id === "string",
+          ))
+          if (matches.length !== 1) throw new Error("Local document installation is unavailable or ambiguous")
+          return matches[0]!.workspace_id as string
+        },
+        listLocalWorkspaces: async (auth) => {
+          const rows = await plane.services.authority?.listWorkspaces(auth)
+          if (!Array.isArray(rows)) return []
+          return rows.flatMap((value) => {
+            if (!value || typeof value !== "object") return []
+            const workspace = value as Record<string, unknown>
+            return workspace.access === "user-hosted" && workspace.backing === "local-worktree" &&
+              typeof workspace.workspace_id === "string" && typeof workspace.project_id === "string"
+              ? [{ workspaceId: workspace.workspace_id, projectId: workspace.project_id }]
+              : []
+          })
+        },
+        reauthorizeJob: createHostedDocumentJobReauthorizer(plane.services),
+        env: env as unknown as NodeJS.ProcessEnv,
+      }) as unknown as NonNullable<HostedAppOverrides["documentsBackend"]>,
+    } : {}),
   })
   // D12: Hono converts route exceptions into 500s internally, so they never
   // escape to withSentry — report them here, keeping Hono's default response
@@ -78,8 +132,32 @@ function buildApp(env: HostedWorkerEnv): Hono {
       return c.text("Internal Server Error", 500)
     })
   }
-  cached = { app, plane, ...(workGraphRuntime ? { workGraphRuntime } : {}) }
+  cached = { app, plane, ...(workGraphRuntime ? { workGraphRuntime } : {}), ...(workGraphReconcile ? { workGraphReconcile } : {}) }
   return app
+}
+
+export function createHostedDocumentJobReauthorizer(services: Pick<HostedControlPlane["services"], "authority">) {
+  return async (input: {
+    auth: SignedControlPlaneAuth
+    entry: DocumentIndexEntry
+    sessionId: string
+    cloudWorkspaceId: string
+    localWorkspaceId: string
+  }) => {
+    const authority = services.authority
+    if (!authority) throw new Error("Document job authority is unavailable")
+    await authority.authorizeSessionRead(input.auth, {
+      sessionId: input.sessionId,
+      workspaceId: input.cloudWorkspaceId,
+    })
+    const local = await authority.openWorkspace(input.auth, { workspaceId: input.localWorkspaceId })
+    if (!local.role || !["editor", "admin", "owner"].includes(local.role)) {
+      throw new Error("Document job requires current write access")
+    }
+    if (local.workspace?.org_id !== input.entry.org_id || local.workspace.project_id !== input.entry.project_id) {
+      throw new Error("Document job workspace scope changed")
+    }
+  }
 }
 
 function compositionErrorResponse(err: HostedWorkerCompositionError): Response {
@@ -123,7 +201,16 @@ const handler = {
   // failure here (missing config, missing token, non-2xx GC) THROWS so the
   // cron invocation is recorded as failed and reaches Sentry via withSentry —
   // a silently-dead reaper is the failure mode this design exists to avoid.
-  async scheduled(_controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
+    // The every-minute staging lane settles only durable WorkGraph control
+    // effects (deletion finalization, execution placement) so clients observe
+    // command outcomes within their live sync window. The heavier sandbox GC
+    // and billing sweeps stay on the 15-minute lane below.
+    if (controller?.cron === "* * * * *") {
+      buildApp(env)
+      await cached!.workGraphReconcile?.()
+      return
+    }
     // F17 (adversarial review): the sandbox GC sweep and the billing
     // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
     // starve the billing sweep (the downgrade-recovery + deleted-org "bills
@@ -170,7 +257,7 @@ const handler = {
     try {
       const app = buildApp(env)
       void app
-      await cached!.workGraphRuntime?.reconcile()
+      await cached!.workGraphReconcile?.()
     } catch (err) {
       reportError(err, { tags: { source: "worker_scheduled", reason: "workgraph_reconcile_failed" } })
       if (!gcError) gcError = err

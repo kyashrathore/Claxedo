@@ -19,7 +19,7 @@ export type DocumentsAppPorts = {
   ensureLocalProject: typeof ProjectEnsure.ensureLocalProject
   surfaceRoute: typeof SurfaceRoute.surfaceRoute
   SessionPaneScope: typeof SessionScope.SessionPaneScope
-  turnDocumentRevisionIntoWork: typeof DocWorkGraph.turnDocumentRevisionIntoWork
+  turnDocumentIntoWork: typeof DocWorkGraph.turnDocumentIntoWork
 }
 
 let ports: DocumentsAppPorts | undefined
@@ -46,4 +46,4 @@ export const useShellQueryOptions = bind("useShellQueryOptions")
 export const ensureLocalProject = bind("ensureLocalProject")
 export const surfaceRoute = bind("surfaceRoute")
 export const SessionPaneScope = bind("SessionPaneScope")
-export const turnDocumentRevisionIntoWork = bind("turnDocumentRevisionIntoWork")
+export const turnDocumentIntoWork = bind("turnDocumentIntoWork")

@@ -62,6 +62,20 @@ describe("timeline row reuse", () => {
 
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
   })
+
+  test("only a failed first turn receives the typed recovery card row", () => {
+    const failed = assistantMessage("msg_assistant", "msg_user", { completed: 20 })
+    failed.error = {
+      name: "UnknownError",
+      data: { message: "bad key", firstTurnErrorClass: "credential" },
+    } as AssistantMessage["error"]
+
+    const first = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [failed], 0, false, "idle", false)
+    const later = Timeline.constructMessageRows(userMessage("msg_later"), () => [], [failed], 1, false, "idle", false)
+
+    expect(first.find((row) => row._tag === "Error")).toEqual(expect.objectContaining({ recoveryClass: "credential" }))
+    expect(later.find((row) => row._tag === "Error" && row.recoveryClass !== undefined)).toBeUndefined()
+  })
 })
 
 function userMessage(id: string): UserMessage {

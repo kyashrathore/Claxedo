@@ -31,6 +31,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
       CLAXEDO_WR_TRUSTED_DIRECT_TOKEN: "direct-token",
       CLAXEDO_CONTROL_PLANE_URL: "https://control.test",
       CLAXEDO_CONTROL_PLANE_JWKS_URL: "https://control.test/.well-known/jwks.json",
+      CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "installation-secret",
       OPENCODE_CONFIG_DIR: "/tmp/opencode-config",
     })
 
@@ -42,6 +43,7 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
     expect(env.CLAXEDO_WR_TRUSTED_DIRECT_TOKEN).toBeUndefined()
     expect(env.CLAXEDO_CONTROL_PLANE_URL).toBeUndefined()
     expect(env.CLAXEDO_CONTROL_PLANE_JWKS_URL).toBeUndefined()
+    expect(env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBeUndefined()
     expect(env.OPENCODE_CONFIG_DIR).toBe("/tmp/opencode-config")
   })
 

@@ -334,17 +334,6 @@ export const slashCommandItems: SlashCommandItem[] = [
     },
   },
   {
-    id: "highlight",
-    group: "Inline styles",
-    title: "Highlight",
-    description: "Yellow text highlight",
-    icon: "🖍",
-    search: "highlight marker yellow",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleHighlight({ color: "#facc15" }).run()
-    },
-  },
-  {
     id: "link",
     group: "Inline styles",
     title: "Link",

@@ -195,4 +195,69 @@ describe("DocumentEditor", () => {
     expect(save.compareDocumentPosition(rich) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite")
   })
+
+  test("accepted selection transforms flow through the editor update into the normal save queue", async () => {
+    const client = api()
+    const transformSelection = vi.fn(async () => "Improved paragraph")
+    render(() => (
+      <DocumentEditor
+        document={document("Paragraph\n")}
+        api={client}
+        storage={storage()}
+        transformSelection={transformSelection}
+      />
+    ))
+    const editor = screen.getByRole("textbox", { name: "Document rich editor" })
+    editor.focus()
+    fireEvent.focus(editor)
+    const range = window.document.createRange()
+    range.selectNodeContents(editor.querySelector("p")!)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    window.document.dispatchEvent(new Event("selectionchange"))
+    fireEvent.mouseUp(editor)
+
+    fireEvent.click(screen.getByRole("button", { name: "improve" }))
+
+    await waitFor(() => expect(transformSelection).toHaveBeenCalledWith("improve", "Paragraph"))
+    await waitFor(() => expect(editor).toHaveTextContent("Improved paragraph"))
+    fireEvent.focusOut(screen.getByLabelText("Rich Markdown editor"))
+    await waitFor(() =>
+      expect(client.save).toHaveBeenCalledWith(
+        "doc-1",
+        expect.objectContaining({ markdown: "Improved paragraph\n" }),
+      ),
+    )
+  })
+
+  test("clean external edits refresh in place while dirty edits enter the normal conflict flow", async () => {
+    let onEvent: ((event: { type: "document.changed"; document_id: string }) => void) | undefined
+    let disk = document("# Initial\n")
+    const client = {
+      ...api(),
+      open: vi.fn(async () => disk),
+      watch: vi.fn(async (_query, next: typeof onEvent, signal?: AbortSignal) => {
+        onEvent = next
+        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
+      }),
+    }
+    render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
+    await waitFor(() => expect(client.open).toHaveBeenCalled())
+
+    disk = { ...disk, markdown: "# External clean\n", version: "opaque-v2" }
+    onEvent?.({ type: "document.changed", document_id: "doc-1" })
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Document rich editor" })).toHaveTextContent("External clean"),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
+    fireEvent.input(screen.getByRole("textbox", { name: "Document Markdown source" }), {
+      target: { value: "human draft" },
+    })
+    disk = { ...disk, markdown: "external again", version: "opaque-v3" }
+    onEvent?.({ type: "document.changed", document_id: "doc-1" })
+    await screen.findByText("Document changed on disk")
+    expect(screen.getByLabelText("Your draft")).toHaveTextContent("human draft")
+    expect(screen.getByLabelText("Current disk version")).toHaveTextContent("external again")
+  })
 })

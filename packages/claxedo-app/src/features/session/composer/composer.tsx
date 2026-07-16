@@ -1,16 +1,20 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
 import { useSpring } from "@opencode-ai/ui/motion-spring"
-import {
-  createEffect, on, Component, createMemo, createResource, createSignal, onCleanup,
-} from "solid-js"
+import { createEffect, on, Component, createMemo, createResource, createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { useCommand, useFile, useLayout, useProviders, useSDK, useShellQueryOptions as useQueryOptions, useWorkspaceQuery } from "@/features/session/app-ports"
 import {
-  usePrompt,
-  ImageAttachmentPart,
-} from "@/features/session/providers/prompt"
+  documentMentionText, listDocumentMentions, loadAIConnectDialog, openDocumentMention,
+  useCommand,
+  useFile,
+  useLayout,
+  useProviders,
+  useSDK,
+  useShellQueryOptions as useQueryOptions,
+  useWorkspaceQuery,
+} from "@/features/session/app-ports"
+import { usePrompt, ImageAttachmentPart } from "@/features/session/providers/prompt"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { useComments } from "@/platform/comments/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -19,7 +23,7 @@ import { usePermission } from "@/features/session/providers/permission"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import {
-  getCursorPosition,
+  scrollPromptCursorIntoView,
   setCursorPosition,
 } from "@/features/session/composer/ui/editor-dom"
 import { createPromptEditorActions } from "@/features/session/composer/ui/editor-actions"
@@ -59,9 +63,10 @@ import { createPromptToolbarState } from "./toolbar-state"
 import { knownWorkspaceKind, signedWorkspaceForDirectory, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
-
+import { createDocumentPickerController } from "./document-picker-controller"
+import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
+import { openComposerAIConnect } from "./ai-connect"
 const idleSessionStatus = { type: "idle" as const }
-
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
   const queryOptions = useQueryOptions()
@@ -111,38 +116,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const inset = 56
 
-  const scrollCursorIntoView = () => {
-    const container = scrollRef
-    const selection = window.getSelection()
-    if (!container || !selection || selection.rangeCount === 0) return
-
-    const range = selection.getRangeAt(0)
-    if (!editorRef.contains(range.startContainer)) return
-
-    const cursor = getCursorPosition(editorRef)
-    const length = promptLength(prompt.current().filter((part) => part.type !== "image"))
-    if (cursor >= length) {
-      container.scrollTop = container.scrollHeight
-      return
-    }
-
-    const rect = range.getClientRects().item(0) ?? range.getBoundingClientRect()
-    if (!rect.height) return
-
-    const containerRect = container.getBoundingClientRect()
-    const top = rect.top - containerRect.top + container.scrollTop
-    const bottom = rect.bottom - containerRect.top + container.scrollTop
-    const padding = 12
-
-    if (top < container.scrollTop + padding) {
-      container.scrollTop = Math.max(0, top - padding)
-      return
-    }
-
-    if (bottom > container.scrollTop + container.clientHeight - inset) {
-      container.scrollTop = bottom - container.clientHeight + inset
-    }
-  }
+  const scrollCursorIntoView = () => scrollPromptCursorIntoView({
+    editor: editorRef,
+    container: scrollRef,
+    length: promptLength(prompt.current().filter((part) => part.type !== "image")),
+    bottomInset: inset,
+  })
 
   const queueScroll = () => {
     requestAnimationFrame(scrollCursorIntoView)
@@ -515,6 +494,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   let editorActions!: ReturnType<typeof createPromptEditorActions>
+  const documentPicker = createDocumentPickerController({
+    directory: commandDirectory,
+    scope,
+    sessionId: resolvedSessionId,
+    draftId: resolvedDraftId,
+    promptText: () => prompt.current().map((part) => "content" in part ? part.content : "").join(""),
+    list: listDocumentMentions,
+    openDocument: openDocumentMention,
+    mentionText: documentMentionText,
+    replaceText: (text) => editorActions.replaceText(text),
+    openPopover: () => setStore("popover", "at"),
+  })
   const popoverController = createPromptPopoverController({
     popover: () => store.popover,
     agents: () => directoryAgentsQuery.data ?? [],
@@ -522,6 +513,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     searchFilesAndDirectories: files.searchFilesAndDirectories,
     commandOptions: () => command.options,
     customCommands,
+    documentPicker: documentPicker.open,
+    documents: documentPicker.documents,
     onAtSelect: (option) => editorActions.handleAtSelect(option),
     onSlashSelect: (cmd) => editorActions.handleSlashSelect(cmd),
   })
@@ -538,6 +531,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     atOnInput: popoverController.atOnInput,
     slashOnInput: popoverController.slashOnInput,
     triggerSlashCommand: (id) => command.trigger(id, "slash"),
+    openDocumentPicker: documentPicker.show,
+    closeDocumentPicker: documentPicker.close,
+    onDocumentSelect: documentPicker.select,
   })
   const addPart = editorActions.addPart
   const closePopover = editorActions.closePopover
@@ -649,6 +645,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setMode: (mode) => setStore("mode", mode),
     promptLength,
     clearBoot: () => setBoot(undefined),
+    registerRetry: props.registerRetry,
   })
   const handleSubmit = submitRetry.handleSubmit
   const onRetry = submitRetry.onRetry
@@ -709,6 +706,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onEditorKeyDown={handleKeyDown}
       focusEditor={() => editorRef?.focus()}
       popover={store.popover}
+      documentPicker={documentPicker.open()}
+      documentNotice={documentPicker.notice()}
       setSlashPopoverRef={popoverController.setSlashPopoverRef}
       atFlat={popoverController.atFlat()}
       atActive={popoverController.atActive() ?? undefined}
@@ -760,6 +759,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       providerID={() => toolbarState.currentModel()?.provider?.id}
       modelLabel={() => toolbarState.readiness().label ?? language.t("dialog.model.select.title")}
       model={pickerModel}
+      modelConnectRequired={() => isSignedWorkspaceDefaultModel(toolbarState.currentModel())}
+      onModelConnect={() => void openComposerAIConnect({ loadDialog: loadAIConnectDialog, show: dialog.show, providers,
+        scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(), harnessSelectionController,
+        harnessSubmitController: harnessController, setModel: (model) => harnessSelectionController
+          ? harnessSelectionController.setModel(scope(), model, { directory: harnessDirectory(), sessionId: resolvedSessionId() })
+          : local.model.set(model) })}
       onModelClose={restoreFocus}
       showVariantSelector={() => !toolbarHarnessMode(scope()) && toolbarState.variants().length > 1}
       variants={toolbarState.variants}

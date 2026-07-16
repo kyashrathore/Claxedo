@@ -34,8 +34,34 @@ export type OpenDocument = DocumentContent & {
   summary: DocumentSummary
 }
 
+export type DocumentAgentOpen = {
+  document_id: string
+  display_name: string
+  path: string
+}
+
+export type DocumentSnapshot = {
+  id: string
+  sha256: string
+  size: number
+  reason: string
+  actor: { type: "user" | "agent" | "system"; id: string }
+  sessionId?: string
+  createdAt: number
+  pins: string[]
+}
+
+export type DocumentStatus = {
+  id: string
+  name: string
+  color: string
+  position: number
+  transitions: string[]
+}
+
 export type DocumentQuery = {
   projectId?: string
+  documentId?: string
   directory?: string
   archived?: "active" | "archived" | "all"
 }
@@ -59,15 +85,33 @@ export class DocumentApiError extends Error {
   }
 }
 
-function documentsUrl(input?: { id?: string; path?: string; query?: DocumentQuery }) {
+function documentsUrl(input?: { id?: string; path?: string | string[]; query?: DocumentQuery }) {
   const segments = ["documents"]
   if (input?.id) segments.push(encodeURIComponent(input.id))
-  if (input?.path) segments.push(...input.path.split("/").filter(Boolean).map(encodeURIComponent))
+  if (input?.path) {
+    const pathSegments = Array.isArray(input.path) ? input.path : input.path.split("/").filter(Boolean)
+    segments.push(...pathSegments.map(encodeURIComponent))
+  }
   const url = new URL(`/${segments.join("/")}`, normalizeUrl(getClaxedoServerUrl()) ?? getClaxedoServerUrl())
   if (input?.query?.projectId) url.searchParams.set("project_id", input.query.projectId)
+  if (input?.query?.documentId) url.searchParams.set("document_id", input.query.documentId)
   if (input?.query?.directory) url.searchParams.set("directory", input.query.directory)
   if (input?.query?.archived) url.searchParams.set("archived", input.query.archived)
   return url
+}
+
+export function documentWorkSourceUrl(baseUrl: string, documentId: string) {
+  return new URL(
+    `/documents/${encodeURIComponent(documentId)}/work-source`,
+    normalizeUrl(baseUrl) ?? baseUrl,
+  ).toString()
+}
+
+export function documentWorkSourcePinUrl(baseUrl: string, documentId: string, snapshotId: string) {
+  return new URL(
+    `/documents/${encodeURIComponent(documentId)}/snapshots/${encodeURIComponent(snapshotId)}/work-source-pin`,
+    normalizeUrl(baseUrl) ?? baseUrl,
+  ).toString()
 }
 
 async function json<T>(response: Response): Promise<T> {
@@ -118,6 +162,37 @@ export const documentsApi = {
       ...(await documentsApi.content(id)),
     }
   },
+  agentOpen(id: string, sessionId: string) {
+    return request<DocumentAgentOpen>(documentsUrl({ id, path: "agent-open" }), {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId }),
+    })
+  },
+  resolveRuntimeConflict(id: string, input: { sessionId: string; choice: "durable" | "draft" }) {
+    return request<{ path: string; preserved?: string; version: string }>(
+      documentsUrl({ id, path: ["runtime-conflict", "resolve"] }),
+      {
+        method: "POST",
+        body: JSON.stringify({ session_id: input.sessionId, choice: input.choice }),
+      },
+    )
+  },
+  snapshots(id: string) {
+    return request<DocumentSnapshot[]>(documentsUrl({ id, path: "snapshots" }))
+  },
+  restoreSnapshot(id: string, snapshotId: string, expectedVersion: string) {
+    return request<DocumentContent>(documentsUrl({ id, path: ["snapshots", snapshotId, "restore"] }), {
+      method: "POST",
+      headers: { "If-Match": expectedVersion },
+      body: JSON.stringify({}),
+    })
+  },
+  moveToRepository(id: string, destination: { workspaceId: string; path: string }) {
+    return request<DocumentSummary>(documentsUrl({ id, path: "move-to-repository" }), {
+      method: "POST",
+      body: JSON.stringify({ workspace_id: destination.workspaceId, path: destination.path }),
+    })
+  },
   async save(id: string, input: SaveRequest): Promise<SaveResponse> {
     const response = await authFetch(String(documentsUrl({ id, path: "content" })), {
       method: "PUT",
@@ -146,6 +221,44 @@ export const documentsApi = {
         display_name: input.displayName,
         markdown: input.markdown ?? "",
       }),
+    })
+  },
+  createFromRepository(input: {
+    projectId?: string
+    directory?: string
+    workspaceId: string
+    path: string
+    displayName?: string
+  }) {
+    return request<DocumentSummary>(documentsUrl({ path: "from-repo" }), {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: input.projectId,
+        directory: input.directory,
+        workspace_id: input.workspaceId,
+        path: input.path,
+        display_name: input.displayName,
+      }),
+    })
+  },
+  async exportBytes(id: string) {
+    const response = await authFetch(String(documentsUrl({ id, path: "export" })))
+    if (response.ok) return new Uint8Array(await response.arrayBuffer())
+    return await json<never>(response)
+  },
+  async listStatuses(query: DocumentQuery = {}) {
+    const rows = await request<Array<Omit<DocumentStatus, "transitions"> & { transitions: string[] | string }>>(
+      documentsUrl({ path: "statuses", query }),
+    )
+    return rows.map((row) => ({
+      ...row,
+      transitions: typeof row.transitions === "string" ? (JSON.parse(row.transitions) as string[]) : row.transitions,
+    }))
+  },
+  transitionStatus(id: string, status: string) {
+    return request<DocumentSummary>(documentsUrl({ id, path: "status" }), {
+      method: "POST",
+      body: JSON.stringify({ status }),
     })
   },
   async watch(query: DocumentQuery, onEvent: (event: DocumentEvent) => void, signal?: AbortSignal) {

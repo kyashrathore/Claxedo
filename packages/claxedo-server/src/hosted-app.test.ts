@@ -6,7 +6,6 @@ import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/hosted-device-auth"
-import type { DocumentStore } from "./document-store"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount
@@ -127,11 +126,6 @@ async function ed25519Pair() {
   }
 }
 
-async function digest(value: string) {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-}
-
 describe("hosted app", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -142,102 +136,6 @@ describe("hosted app", () => {
     const res = await app.fetch(new Request("http://cp.test/api/claxedo/health"))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ ok: true, mode: "hosted-control-plane", localExecution: false })
-  })
-
-  test("mounts the strict Docs v2 API with hosted storage and tenant-scoped reads", async () => {
-    const revision = {
-      projectId: "project_1",
-      documentId: "document_1",
-      documentTitle: "Launch",
-      revisionId: "document_revision_1",
-      revisionNumber: 1,
-      markdown: "# Launch",
-      contentHash: await digest("# Launch"),
-      authoredAt: 1,
-      authoredBy: { type: "user" as const, id: "tenant_a" },
-    }
-    const store: DocumentStore = {
-      create: vi.fn(async () => revision),
-      appendRevision: vi.fn(async () => revision),
-      list: vi.fn(async (scope) =>
-        scope.orgId === "org_tenant_a"
-          ? [
-              {
-                documentId: revision.documentId,
-                projectId: revision.projectId,
-                title: revision.documentTitle,
-                headRevisionId: revision.revisionId,
-                createdAt: revision.authoredAt,
-                updatedAt: revision.authoredAt,
-              },
-            ]
-          : [],
-      ),
-      find: vi.fn(async (scope) =>
-        scope.orgId === "org_tenant_a"
-          ? {
-              documentId: revision.documentId,
-              projectId: revision.projectId,
-              title: revision.documentTitle,
-              headRevisionId: revision.revisionId,
-              createdAt: revision.authoredAt,
-              updatedAt: revision.authoredAt,
-            }
-          : undefined,
-      ),
-      getRevision: vi.fn(async (scope) => (scope.orgId === "org_tenant_a" ? revision : undefined)),
-      getHeadRevision: vi.fn(async (scope) => (scope.orgId === "org_tenant_a" ? revision : undefined)),
-    }
-    const app = createHostedApp(fakePlane(), { documentStore: () => store })
-    const created = await app.fetch(
-      new Request("http://cp.test/api/claxedo/docs?project_id=project_1", {
-        method: "POST",
-        headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
-        body: JSON.stringify({
-          title: "Launch",
-          markdown: revision.markdown,
-          contentHash: revision.contentHash,
-          authoredBy: revision.authoredBy,
-        }),
-      }),
-    )
-    expect(created.status).toBe(201)
-    await expect(created.json()).resolves.toEqual(revision)
-
-    const exact = await app.fetch(
-      new Request(
-        `http://cp.test/api/claxedo/docs/${revision.documentId}/revisions/${revision.revisionId}?project_id=project_1`,
-        { headers: { authorization: "Bearer tenant_a" } },
-      ),
-    )
-    expect(exact.status).toBe(200)
-    await expect(exact.json()).resolves.toEqual(revision)
-
-    const listing = await app.fetch(
-      new Request("http://cp.test/api/claxedo/docs?project_id=project_1", {
-        headers: { authorization: "Bearer tenant_a" },
-      }),
-    )
-    expect(listing.status).toBe(200)
-    await expect(listing.json()).resolves.toMatchObject({
-      documents: [{ documentId: revision.documentId, headRevisionId: revision.revisionId }],
-    })
-
-    const head = await app.fetch(
-      new Request(`http://cp.test/api/claxedo/docs/${revision.documentId}?project_id=project_1`, {
-        headers: { authorization: "Bearer tenant_a" },
-      }),
-    )
-    expect(head.status).toBe(200)
-    await expect(head.json()).resolves.toEqual(revision)
-
-    const crossTenant = await app.fetch(
-      new Request(
-        `http://cp.test/api/claxedo/docs/${revision.documentId}/revisions/${revision.revisionId}?project_id=project_1`,
-        { headers: { authorization: "Bearer tenant_b" } },
-      ),
-    )
-    expect(crossTenant.status).toBe(404)
   })
 
   test("fails hosted boot when WorkGraph Convex service configuration is missing", () => {
@@ -651,12 +549,11 @@ describe("hosted app", () => {
     )
   })
 
-  test("local-only routes are absent from the hosted app", async () => {
+  test("local execution routes are absent from the hosted app", async () => {
     const app = createHostedApp(fakePlane())
-    for (const path of ["/pages", "/api/claxedo/pty/abc/connect"]) {
-      const res = await app.fetch(new Request(`http://cp.test${path}`))
-      expect(res.status, `${path} should not be mounted`).toBe(404)
-    }
+    const response = await app.fetch(new Request("http://cp.test/api/claxedo/pty/abc/connect"))
+    expect(response.status).toBe(404)
+    expect((await app.fetch(new Request("http://cp.test/documents"))).status).toBe(401)
   })
 
   test("hosted control does not expose push session sync routes", async () => {

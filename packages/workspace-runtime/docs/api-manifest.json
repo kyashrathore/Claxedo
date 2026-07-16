@@ -33,6 +33,8 @@
     "createWorkspaceRuntimeJwtManagementAuth",
     "defaultWorkspaceHarnessRegistry",
     "embeddedWorkspaceRuntimeExposure",
+    "flushRuntimeDocument",
+    "forgetRuntimeDocuments",
     "isLoopbackHostname",
     "loadWorkspaceRuntimeManagementVerificationKey",
     "loopbackWorkspaceRuntimeExposure",

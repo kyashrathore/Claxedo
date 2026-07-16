@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { SubmitMode } from "../../submit/index"
 
@@ -58,6 +58,7 @@ export function createPromptInputSubmitRetry(input: {
   readonly setMode: (mode: SubmitMode) => void
   readonly promptLength: (prompt: Prompt) => number
   readonly clearBoot: VoidFunction
+  readonly registerRetry?: (retry?: () => void) => void
 }) {
   const [lastSubmitted, setLastSubmitted] = createSignal<LastSubmittedSnapshot | undefined>(undefined)
 
@@ -67,6 +68,7 @@ export function createPromptInputSubmitRetry(input: {
       () => {
         input.clearBoot()
         setLastSubmitted(undefined)
+        input.registerRetry?.()
       },
       { defer: true },
     ),
@@ -88,6 +90,7 @@ export function createPromptInputSubmitRetry(input: {
         prompt: currentPrompt.map((part) => ({ ...part })) as Prompt,
         mode: input.mode(),
       })
+      input.registerRetry?.(retryLastPrompt)
     }
     return await input.rawHandleSubmit(event)
   }
@@ -104,6 +107,8 @@ export function createPromptInputSubmitRetry(input: {
     input.setMode(snapshot.mode)
     void input.rawHandleSubmit({ preventDefault: () => undefined } as unknown as Event) // as-any: retry submit only needs preventDefault from the Event contract.
   }
+
+  onCleanup(() => input.registerRetry?.())
 
   return {
     handleSubmit,

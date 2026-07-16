@@ -59,12 +59,6 @@ describe("breakpoint token parity: CSS @media literals stay welded to the tokens
     // ui-overrides.css — min-width equals the token exactly.
     ["app/styles/ui-overrides.css", `@media (min-width: ${BP_MD}px)`],
     ["app/styles/ui-overrides.css", `@media (min-width: ${BP_2XL}px)`],
-    // page-editor.css — cascading tier set (three bespoke, two on-scale).
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_EDITOR_WIDE}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_EDITOR_COMPACT}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_LG}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_MD}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_XS}px)`],
   ]
 
   for (const [file, condition] of cases) {

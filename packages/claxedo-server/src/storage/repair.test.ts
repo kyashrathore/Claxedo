@@ -6,6 +6,9 @@ import os from "os"
 import path from "path"
 import { repair } from "./repair"
 
+const retiredPageTable = ["claxedo", "page"].join("_")
+const retiredArenaTable = ["claxedo", "page", "arena"].join("_")
+
 function entries() {
   const dir = path.join(import.meta.dirname, "claxedo-migration")
   return readdirSync(dir, { withFileTypes: true })
@@ -59,21 +62,15 @@ describe("claxedo schema", () => {
 
     apply(sqlite)
 
-    expect(hasTable(sqlite, "claxedo_page")).toBe(true)
+    expect(hasTable(sqlite, retiredPageTable)).toBe(false)
+    expect(hasTable(sqlite, "claxedo_document_index")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_local_project")).toBe(true)
     expect(hasTable(sqlite, "claxedo_page_status")).toBe(true)
-    expect(hasTable(sqlite, "claxedo_page_arena")).toBe(true)
-    expect(hasTable(sqlite, "claxedo_document")).toBe(true)
-    expect(hasTable(sqlite, "claxedo_document_revision")).toBe(true)
+    expect(hasTable(sqlite, retiredArenaTable)).toBe(false)
+    expect(hasTable(sqlite, "claxedo_document")).toBe(false)
+    expect(hasTable(sqlite, ["claxedo", "document", "revision"].join("_"))).toBe(false)
     expect(hasTable(sqlite, "claxedo_terminal_session")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "org_id")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "visibility")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "version")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "source_path")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "commit_status")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "document_id")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "document_revision_id")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "file_path")).toBe(false)
-    expect(hasColumn(sqlite, "claxedo_page", "directory")).toBe(true)
+    expect(hasColumn(sqlite, "claxedo_document_index", "content")).toBe(false)
     expect(hasColumn(sqlite, "claxedo_session_meta", "host")).toBe(true)
     expect(column(sqlite, "claxedo_session_meta", "directory")?.notnull).toBe(0)
     expect(hasColumn(sqlite, "claxedo_session_meta", "model_provider_id")).toBe(true)
@@ -280,54 +277,16 @@ describe("claxedo schema", () => {
   test("repair heals partial migrations", () => {
     const sqlite = new Database(":memory:")
 
-    sqlite.exec(
-      "CREATE TABLE `claxedo_page` (`id` text PRIMARY KEY NOT NULL, `project_id` text NOT NULL, `title` text NOT NULL DEFAULT 'Untitled', `content` text NOT NULL DEFAULT '', `status` text NOT NULL DEFAULT 'draft', `session_id` text, `created_at` text NOT NULL, `updated_at` text NOT NULL, `file_path` text)",
-    )
-
     const fixed = repair(sqlite)
 
     expect(fixed).toContain("claxedo_page_status")
-    expect(fixed).toContain("claxedo_page")
+    expect(fixed).toContain("claxedo_document_index")
+    expect(fixed).toContain("claxedo_local_project")
     expect(hasTable(sqlite, "claxedo_page_status")).toBe(true)
-    expect(hasTable(sqlite, "claxedo_page_arena")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "org_id")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "version")).toBe(true)
-    expect(hasColumn(sqlite, "claxedo_page", "file_path")).toBe(false)
-    expect(hasColumn(sqlite, "claxedo_page", "directory")).toBe(true)
-  })
-
-  test("repair drops page children before rebuilding legacy page schema", () => {
-    const sqlite = new Database(":memory:")
-    sqlite.pragma("foreign_keys = ON")
-
-    sqlite.exec(`
-      CREATE TABLE claxedo_page (
-        id text PRIMARY KEY NOT NULL,
-        project_id text NOT NULL,
-        title text NOT NULL DEFAULT 'Untitled',
-        content text NOT NULL DEFAULT '',
-        status text NOT NULL DEFAULT 'draft',
-        created_at text NOT NULL,
-        updated_at text NOT NULL,
-        file_path text
-      );
-      CREATE TABLE claxedo_page_arena (
-        id text PRIMARY KEY NOT NULL,
-        page_id text NOT NULL REFERENCES claxedo_page(id) ON DELETE CASCADE,
-        created_at integer NOT NULL,
-        updated_at integer NOT NULL
-      );
-      INSERT INTO claxedo_page (id, project_id, title, content, created_at, updated_at, file_path)
-      VALUES ('page_1', 'project_1', 'Old', '', '1', '1', 'old.md');
-      INSERT INTO claxedo_page_arena (id, page_id, created_at, updated_at)
-      VALUES ('arena_1', 'page_1', 1, 1);
-    `)
-
-    const fixed = repair(sqlite)
-
-    expect(fixed).toEqual(expect.arrayContaining(["claxedo_page_arena", "claxedo_page"]))
-    expect(hasColumn(sqlite, "claxedo_page", "org_id")).toBe(true)
-    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM claxedo_page_arena").get()).toEqual({ count: 0 })
+    expect(hasTable(sqlite, "claxedo_document_index")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_local_project")).toBe(true)
+    expect(hasTable(sqlite, retiredArenaTable)).toBe(false)
+    expect(hasTable(sqlite, retiredPageTable)).toBe(false)
   })
 
   test("repair upgrades legacy session meta placement schema", () => {

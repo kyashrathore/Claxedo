@@ -4,12 +4,51 @@ import { TableKit } from "@tiptap/extension-table"
 import TaskItem from "@tiptap/extension-task-item"
 import TaskList from "@tiptap/extension-task-list"
 import StarterKit from "@tiptap/starter-kit"
-import { onCleanup, onMount } from "solid-js"
+import { createComputed, onCleanup, onMount } from "solid-js"
 import { serializeMarkdownDocument, type RichMarkdown } from "@/features/documents/markdown/detector"
 import { MermaidCodeBlock } from "./mermaid-block"
 import { SlashCommands } from "./slash-commands"
 
 type SelectionAction = "improve" | "fix" | "shorten"
+
+export type SelectionEditor = {
+  state: {
+    selection: { from: number; to: number }
+    doc: { textBetween(from: number, to: number, separator?: string): string }
+  }
+  chain(): {
+    focus(): {
+      insertContentAt(range: { from: number; to: number }, replacement: string): { run(): unknown }
+    }
+  }
+}
+type SelectionTransformTarget = {
+  editor: SelectionEditor
+  document: SelectionEditor["state"]["doc"]
+  from: number
+  to: number
+  selected: string
+}
+
+export function selectionTransformTarget(editor: SelectionEditor): SelectionTransformTarget | undefined {
+  const range = editor.state.selection
+  const selected = editor.state.doc.textBetween(range.from, range.to, "\n")
+  if (!selected) return
+  return { editor, document: editor.state.doc, from: range.from, to: range.to, selected }
+}
+
+export function applySelectionTransform(
+  editor: SelectionEditor | undefined,
+  target: SelectionTransformTarget,
+  replacement: string,
+) {
+  if (!editor || editor !== target.editor || editor.state.doc !== target.document) return false
+  const range = editor.state.selection
+  if (range.from !== target.from || range.to !== target.to) return false
+  if (editor.state.doc.textBetween(target.from, target.to, "\n") !== target.selected) return false
+  editor.chain().focus().insertContentAt({ from: target.from, to: target.to }, replacement).run()
+  return true
+}
 
 export function RichMode(props: {
   detection: RichMarkdown
@@ -46,16 +85,25 @@ export function RichMode(props: {
         if (serialized.status === "source") props.onSerializationError(new Error(serialized.reason.message))
       },
     })
-    onCleanup(() => editor?.destroy())
+    createComputed(() => {
+      editor?.commands.setContent(props.detection.document, { emitUpdate: false })
+    })
+    onCleanup(() => {
+      const current = editor
+      editor = undefined
+      current?.destroy()
+    })
   })
 
   const selectionAction = (action: SelectionAction) => {
     if (!editor || !props.onSelectionAction) return
-    const range = editor.state.selection
-    const selected = editor.state.doc.textBetween(range.from, range.to, "\n")
-    if (!selected) return
-    void props.onSelectionAction(action, selected).then((replacement) => {
-      editor?.chain().focus().insertContentAt({ from: range.from, to: range.to }, replacement).run()
+    const target = selectionTransformTarget(editor)
+    if (!target) return
+    void props.onSelectionAction(action, target.selected).then((replacement) => {
+      if (applySelectionTransform(editor, target, replacement)) return
+      props.onSerializationError(
+        new Error("The selection changed while the agent was working. Select the text again and retry."),
+      )
     }, props.onSerializationError)
   }
 

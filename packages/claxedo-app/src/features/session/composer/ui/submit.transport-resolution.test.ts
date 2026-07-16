@@ -60,7 +60,7 @@ describe("Workspace-runtime transport + model resolution", () => {
   })
 
 
-  test("non-harness submit never enters blank agent/model state when provider data is available", async () => {
+  test("non-harness submit treats the signed-workspace placeholder as no model", async () => {
     state.demoMode = false
     state.harnessMode = false
     state.localCurrentModel = undefined
@@ -91,21 +91,12 @@ describe("Workspace-runtime transport + model resolution", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(toasts).toEqual([])
-    expect(calls.create).toBe(1)
-    expect(calls.transportAsync).toBe(1)
-    const configCall = runtimeCalls.find((call) =>
-      call.input === "/session/session-1/config?directory=ws_local_image_codex&harness=opencode"
-    )
-    expect(configCall?.method).toBe("PATCH")
-    expect(JSON.parse(configCall?.body ?? "{}")).toEqual({
-      harness: { type: "opencode" },
-      agent: "build",
-      model: { providerID: "opencode", modelID: "big-pickle" },
-    })
-    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
-      sessionID: "session-1",
-      directory: "ws_local_image_codex",
+    expect(calls.create).toBe(0)
+    expect(calls.transportAsync).toBe(0)
+    expect(runtimeCalls.some((call) => call.input.startsWith("/session/"))).toBe(false)
+    expect(toasts).toContainEqual({
+      title: "prompt.toast.modelAgentRequired.title",
+      description: "prompt.toast.modelAgentRequired.description",
     })
   })
 

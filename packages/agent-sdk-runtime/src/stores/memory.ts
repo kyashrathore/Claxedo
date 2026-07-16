@@ -6,6 +6,7 @@ import {
   type CompatEvent,
 } from "../compat-events"
 import { chunk } from "../status"
+import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
 import type {
@@ -221,7 +222,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         info: {
           ...message.info,
           time: { ...time, completed: input.outcome.completedAt },
-          error: { name: "UnknownError", data: { message: input.outcome.error ?? "turn failed" } },
+          error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
         },
       })
     }

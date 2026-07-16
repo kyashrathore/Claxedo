@@ -5,6 +5,45 @@ import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
 
 export type Mutate = (action: () => Promise<CommandResult>) => Promise<boolean>
 
+/** The owner-facing lifecycle buckets: staged work waits to be admitted, in
+ *  progress work is executing (the attention states are in-progress variants
+ *  that need the owner), done work shipped. Abandoned never renders. */
+export type TaskStatusBucket = "attention" | "in_progress" | "staged" | "done"
+
+export function taskStatusBucket(state: WorkItemDto["state"]): TaskStatusBucket {
+  if (["blocked", "failed", "verification_failed", "review_needed", "integration_needed"].includes(state)) {
+    return "attention"
+  }
+  if (["active", "result_ready"].includes(state)) return "in_progress"
+  if (state === "completed") return "done"
+  return "staged"
+}
+
+const BUCKET_ORDER: Record<TaskStatusBucket, number> = { attention: 0, in_progress: 1, staged: 2, done: 3 }
+
+/** Stable status ordering: what needs you first, then running, then the staged
+ *  queue, with shipped work last. Ties keep the snapshot's order. */
+export function sortByStatusBucket(items: WorkItemDto[]): WorkItemDto[] {
+  return [...items].sort((a, b) => BUCKET_ORDER[taskStatusBucket(a.state)] - BUCKET_ORDER[taskStatusBucket(b.state)])
+}
+
+const BUCKET_ICON: Record<TaskStatusBucket, "circle-dashed" | "circle-half" | "circle-check" | "circle-alert"> = {
+  staged: "circle-dashed",
+  in_progress: "circle-half",
+  done: "circle-check",
+  attention: "circle-alert",
+}
+
+/** One glyph per lifecycle bucket, readable without color: dashed = staged,
+ *  half-filled = in progress, check = done, alert = needs you. */
+function TaskStatusIcon(props: { state: WorkItemDto["state"] }) {
+  const bucket = () => taskStatusBucket(props.state)
+  return (
+    <span class="workgraph-leaf-status" data-bucket={bucket()} aria-hidden="true">
+      <Icon name={BUCKET_ICON[bucket()]} size="small" />
+    </span>
+  )
+}
 export function OutcomeGroup(props: {
   outcome?: OutcomeDto
   items: WorkItemDto[]
@@ -129,6 +168,7 @@ export function WorkItemLeaf(props: {
   return (
     <div
       class="workgraph-leaf"
+      classList={{ "is-done": props.item.state === "completed" }}
       role="button"
       tabIndex={0}
       aria-label={`Open task ${props.item.title}`}
@@ -139,7 +179,7 @@ export function WorkItemLeaf(props: {
         props.onOpenTask(props.item, event.currentTarget)
       }}
     >
-      <span class="workgraph-status-dot" data-tone={statusTone(props.item.state)} aria-hidden="true" />
+      <TaskStatusIcon state={props.item.state} />
       <span class="workgraph-leaf-title text-text-base">{props.item.title}</span>
       <Show when={waits()}>
         <span class="workgraph-leaf-waits text-text-weaker">waits for {waits()}</span>
@@ -291,10 +331,4 @@ export function KeyedById<T extends { id: string }>(props: {
       {(id) => props.children(() => props.records.find((record) => record.id === id)!)}
     </For>
   )
-}
-
-export function statusTone(state: string): "critical" | "active" | "info" {
-  if (["blocked", "failed", "attention", "verification_failed"].includes(state)) return "critical"
-  if (["running", "active", "ready", "completed"].includes(state)) return "active"
-  return "info"
 }

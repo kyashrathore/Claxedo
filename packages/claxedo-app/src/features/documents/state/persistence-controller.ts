@@ -86,6 +86,7 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
   let saveGeneration = 0
   let saveVersion = state.expectedVersion
   let saveDraft = { ...state.draft }
+  let loadedDraft = { displayName: input.document.displayName, markdown: input.document.markdown }
   let saving = false
   let cancelScheduled: (() => void) | undefined
 
@@ -210,6 +211,7 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
 
     const previousVersion = saveVersion
     state.expectedVersion = response.version
+    loadedDraft = { ...saveDraft }
     savedGeneration = saveGeneration
     state.retryAttempt = 0
     state.retryAt = undefined
@@ -313,6 +315,27 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
     flushOnClose: flush,
     flushBeforeAction: flush,
     applyExternalChange(current: DocumentDraft & { version: string }) {
+      const loaded = state.conflict
+        ? {
+            version: state.conflict.currentVersion,
+            draft: state.conflict.current,
+          }
+        : { version: state.expectedVersion, draft: loadedDraft }
+      if (current.displayName === loaded.draft.displayName && current.markdown === loaded.draft.markdown) {
+        if (current.version === loaded.version) return snapshot()
+        if (state.conflict) {
+          state.conflict = { ...state.conflict, currentVersion: current.version }
+          notify()
+          return snapshot()
+        }
+        const previousVersion = state.expectedVersion
+        state.expectedVersion = current.version
+        if (generation > savedGeneration || state.status === "failed") {
+          state.recoveryError = persistRecoveryDraft() ?? removeRecoveryVersions([previousVersion])
+        }
+        notify()
+        return snapshot()
+      }
       if (saving || generation > savedGeneration || state.status === "failed" || state.status === "conflicted") {
         cancelTimer()
         state.status = "conflicted"
@@ -327,6 +350,7 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
       }
       state.status = "idle"
       state.draft = { displayName: current.displayName, markdown: current.markdown }
+      loadedDraft = { displayName: current.displayName, markdown: current.markdown }
       state.expectedVersion = current.version
       state.error = undefined
       state.conflict = undefined
@@ -356,6 +380,7 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
       savedGeneration = 0
       state.status = "idle"
       state.draft = { ...conflict.current }
+      loadedDraft = { ...conflict.current }
       state.expectedVersion = conflict.currentVersion
       state.conflict = undefined
       state.error = undefined
@@ -368,6 +393,7 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
     },
     confirmOverwrite() {
       if (!state.conflict) return Promise.resolve(snapshot())
+      loadedDraft = { ...state.conflict.current }
       state.expectedVersion = state.conflict.currentVersion
       state.conflict = undefined
       state.status = "dirty"

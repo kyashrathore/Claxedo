@@ -1,4 +1,4 @@
-import type { Accessor, Component, JSX } from "solid-js"
+import { Show, type Accessor, type Component, type JSX } from "solid-js"
 import { DockShellForm } from "@opencode-ai/ui/dock-surface"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
@@ -47,6 +47,8 @@ export const PromptInputFrame: Component<{
   onEditorKeyDown: JSX.EventHandlerUnion<HTMLDivElement, KeyboardEvent>
   focusEditor: VoidFunction
   popover: "at" | "slash" | null
+  documentPicker: boolean
+  documentNotice?: string
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
   atActive?: string
@@ -89,6 +91,8 @@ export const PromptInputFrame: Component<{
   providerID: Accessor<string | undefined>
   modelLabel: Accessor<string>
   model: Accessor<PickerState>
+  modelConnectRequired: Accessor<boolean>
+  onModelConnect: VoidFunction
   onModelClose: VoidFunction
   showVariantSelector: Accessor<boolean>
   variants: Accessor<string[]>
@@ -152,6 +156,8 @@ export const PromptInputFrame: Component<{
   >
     <PromptPopover
       popover={props.popover}
+      documentPicker={props.documentPicker}
+      documentNotice={props.documentNotice}
       setSlashPopoverRef={props.setSlashPopoverRef}
       atFlat={props.atFlat}
       atActive={props.atActive}
@@ -165,6 +171,11 @@ export const PromptInputFrame: Component<{
       commandKeybind={props.commandKeybind}
       t={props.t}
     />
+    <Show when={props.documentNotice}>
+      <div role="status" aria-live="polite" class="px-3 py-1 text-12-regular text-text-weak">
+        {props.documentNotice}
+      </div>
+    </Show>
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}
       onSubmit={props.handleSubmit}
@@ -295,6 +306,8 @@ export const PromptInputFrame: Component<{
           providerID={props.providerID}
           modelLabel={props.modelLabel}
           model={props.model}
+          modelConnectRequired={props.modelConnectRequired}
+          onModelConnect={props.onModelConnect}
           modelTitle={props.t("command.model.choose")}
           modelKeybind={props.commandKeybind("model.choose") ?? ""}
           onUnpaidModelClick={() => props.showDialog(() => <DialogSelectModelUnpaid model={props.model()} />)}

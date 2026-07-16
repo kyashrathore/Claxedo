@@ -1,4 +1,5 @@
 import type { PersistenceConflict } from "@/features/documents/state/persistence-controller"
+import { ChangedOnDiskDiff } from "./changed-on-disk-diff"
 
 export function ConflictRecovery(props: {
   conflict: PersistenceConflict
@@ -47,19 +48,8 @@ export function ConflictRecovery(props: {
       </div>
       <details class="mt-3 text-xs">
         <summary class="cursor-pointer text-text-strong">Compare versions</summary>
-        <div class="mt-2 grid gap-3 md:grid-cols-2">
-          <pre
-            class="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border-weak-base bg-background-base p-3"
-            aria-label="Your draft"
-          >
-            {props.conflict.draft.markdown}
-          </pre>
-          <pre
-            class="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border-weak-base bg-background-base p-3"
-            aria-label="Current disk version"
-          >
-            {props.conflict.current.markdown}
-          </pre>
+        <div class="mt-2">
+          <ChangedOnDiskDiff before={props.conflict.draft.markdown} after={props.conflict.current.markdown} />
         </div>
       </details>
     </section>

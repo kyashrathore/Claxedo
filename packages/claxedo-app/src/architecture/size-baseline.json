@@ -1,7 +1,6 @@
 {
   "features/browser/components/browser-pane.tsx": 969,
   "features/processes/ui/dialog-process-diagnostics.tsx": 1051,
-  "features/documents/editor/page-editor.tsx": 1006,
   "features/processes/providers/process-pane.tsx": 842,
   "app/workbench/rail/rail-sidebar.tsx": 2689,
   "features/terminal/ui/terminal.tsx": 1195,

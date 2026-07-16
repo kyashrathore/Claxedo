@@ -107,7 +107,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
         onOpenWorkGraph={handleOpenWorkGraph}
-        canUsePages={shell.canUsePages()}
+        canUseDocuments={shell.canUseDocuments()}
         onNewSession={handleNewSession}
         onNewTerminal={handleNewTerminal}
         onNewPage={handleNewPage}

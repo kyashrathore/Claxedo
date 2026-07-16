@@ -134,8 +134,8 @@ describe("buildSwitcherItemsFromState", () => {
     api.layout.openPage("page_1", "Page", "/work/foo")
 
     expect(buildSwitcherItemsFromState(api).map((item) => item.kind)).toEqual(["session"])
-    expect(buildSwitcherItemsFromState(api, { canUsePages: true }).map((item) => item.kind)).toEqual(["session", "page", "page"])
-    expect(buildSwitcherItemsFromState(api, { canUsePages: false }).map((item) => item.kind)).toEqual(["session"])
+    expect(buildSwitcherItemsFromState(api, { canUseDocuments: true }).map((item) => item.kind)).toEqual(["session", "page", "page"])
+    expect(buildSwitcherItemsFromState(api, { canUseDocuments: false }).map((item) => item.kind)).toEqual(["session"])
   })
 
   test("returns empty array when no contents exist", () => {

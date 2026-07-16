@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { createClaudeSdkDriver } from "./driver"
+import { claudeSpawnEnv, createClaudeSdkDriver } from "./driver"
 
 describe("Claude SDK driver", () => {
+  test("scrubs the local document installation secret from the child environment", () => {
+    expect(claudeSpawnEnv({
+      PATH: "/bin",
+      CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "installation-secret",
+    })).toEqual({ PATH: "/bin" })
+  })
+
   test("exposes static Claude model config options", () => {
     const driver = createClaudeSdkDriver({
       lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),

@@ -49,6 +49,8 @@ export interface PromptInputProps {
   status?: () => SessionStatus
   /** Active turn state supplied by the session owner. Defaults to status-only for embedded contexts. */
   activeTurn?: () => boolean
+  /** Registers the composer's captured last-prompt retry action for an in-timeline recovery surface. */
+  registerRetry?: (retry?: () => void) => void
   /** Signed workspace runtime identity for relay-backed session sends. */
   workspaceId?: () => string | undefined
   workspaceKind?: () => "cloud" | "user-hosted" | undefined

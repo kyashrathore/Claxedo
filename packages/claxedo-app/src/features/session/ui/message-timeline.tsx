@@ -37,6 +37,8 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
+import { FirstTurnRecoveryCard } from "@/features/session/onboarding/first-turn-recovery-card"
+import type { FirstTurnRecoveryClass } from "@/features/session/onboarding/first-turn-recovery"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextField } from "@opencode-ai/ui/text-field"
@@ -102,7 +104,7 @@ import {
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
 
-// Keep parity with the upstream row model: ../../../../app/src/pages/session/message-timeline.data
+// Keep parity with the upstream session row model.
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
 const emptyTools: ToolPart[] = []
@@ -293,6 +295,8 @@ export function MessageTimeline(props: {
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
+  onFirstTurnRecovery?: (kind: FirstTurnRecoveryClass) => void
+  firstTurnRecovery?: boolean
 }) {
   let touchGesture: number | undefined
 
@@ -459,6 +463,7 @@ export function MessageTimeline(props: {
             settings.general.showReasoningSummaries(),
             sessionStatus().type,
             activeMessageID() === userMessage.id,
+            props.firstTurnRecovery !== false && indexAccessor() === 0,
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -1300,9 +1305,18 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <Card variant="error" class="error-card">
-                {errorRow().text}
-              </Card>
+              <Show
+                when={errorRow().recoveryClass}
+                fallback={<Card variant="error" class="error-card">{errorRow().text}</Card>}
+              >
+                {(kind) => (
+                  <FirstTurnRecoveryCard
+                    kind={kind()}
+                    detail={errorRow().text}
+                    onAction={(value) => props.onFirstTurnRecovery?.(value)}
+                  />
+                )}
+              </Show>
             </div>
           </TimelineRowFrame>
         )

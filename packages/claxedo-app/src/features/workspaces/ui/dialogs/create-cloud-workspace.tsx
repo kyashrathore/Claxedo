@@ -7,6 +7,8 @@ import { api, getDefaultBaseUrl } from "@/platform/api/api"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
 import { useClaxedoEventsOptional } from "@/features/workspaces/app-ports"
 import { workspaceCreateUrl, workspaceProvidersUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
+import { sandboxProviderFacts } from "./provider-facts"
 
 type Provider = {
   id: string
@@ -106,6 +108,7 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
   }
   const isReady = () => logs().some(l => l.step === "ready")
   const isRedirecting = () => logs().some(l => l.step === "redirecting")
+  const failure = () => error() ? classifyProvisionFailure(error()) : undefined
   const pipelineStepState = (key: string, idx: number): "done" | "active" | "pending" | "error" => {
     if (isReady()) return "done"
     const lastKey = lastPipelineKey()
@@ -167,10 +170,12 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
       }
 
       if (ev.step === "ready") {
+        const ready = readyProvisionDirectory(ev.step, dir)
+        if (!ready) return
         unsub?.()
         setLogs((prev) => [...prev, { step: "redirecting", ts: Date.now() }])
         setTimeout(() => {
-          props.onCreated(dir)
+          props.onCreated(ready)
           dialog.close()
         }, 1200)
       }
@@ -217,17 +222,15 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
           appendProvision({ type: "provision", workspaceId, step: status, ts: Date.now() })
         }
 
-        // Timeout fallback: if no ready event after 120s, navigate anyway
-        const timeout = setTimeout(() => {
-          unsub?.()
-          props.onCreated(dir)
-          dialog.close()
-        }, 120_000)
-        onCleanup(() => clearTimeout(timeout))
       } else {
-        // No SSE — navigate immediately (fallback)
-        props.onCreated(dir)
-        dialog.close()
+        const ready = readyProvisionDirectory(result.status, dir)
+        if (ready) {
+          props.onCreated(ready)
+          dialog.close()
+          return
+        }
+        setError("Live provisioning status is unavailable. The workspace will stay here until the server reports ready.")
+        setLoading(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create workspace")
@@ -263,8 +266,9 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
               >
                 <div class="flex flex-col gap-1.5">
                   <For each={providers()}>
-                    {(item) => (
-                      <button
+                    {(item) => {
+                      const facts = () => sandboxProviderFacts(item.id)
+                      return <button
                         type="button"
                         class="group flex items-center gap-3 px-3 py-2.5 rounded-md border text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-interactive-focus"
                         classList={{
@@ -290,6 +294,8 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
 
                         <div class="flex flex-col gap-0.5 min-w-0 flex-1">
                           <span class="text-13-medium text-text-strong">{item.label}</span>
+                          <span class="text-11-regular text-text-weak">{facts().cost}</span>
+                          <span class="text-11-regular text-text-weak">Needs: {facts().needs}</span>
                           <Show
                             when={item.configured}
                             fallback={
@@ -311,14 +317,17 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
                           }}
                         />
                       </button>
-                    )}
+                    }}
                   </For>
                 </div>
 
                 <Show when={!hasConfigured()}>
                   <p class="text-12-regular text-icon-warning-base mt-1">
-                    Configure provider credentials in Settings before creating cloud workspaces.
+                    Add a provider key to continue. Opening its key page in a new tab keeps this setup step ready to resume.
                   </p>
+                  <Show when={sandboxProviderFacts(provider()).keyUrl}>
+                    {(url) => <a class="text-12-medium text-text-interactive-base" href={url()} target="_blank" rel="noreferrer">Open provider key page</a>}
+                  </Show>
                 </Show>
               </Show>
             </div>
@@ -433,13 +442,14 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
               <div class="flex items-start gap-2 px-3 py-2 rounded-md bg-surface-critical-base/8 border border-border-critical-base/20">
                 <Icon name="warning" size="small" class="text-text-on-critical-base mt-0.5 shrink-0" />
                 <div class="flex flex-col gap-0.5">
-                  <span class="text-12-regular text-text-on-critical-base break-words min-w-0">{error()}</span>
-                  <span class="text-11-regular text-text-weak/50">Retrying automatically...</span>
+                  <span class="text-12-medium text-text-on-critical-base">{failure()?.title}</span>
+                  <span class="text-12-regular text-text-on-critical-base break-words min-w-0">{failure()?.guidance}</span>
+                  <span class="text-11-regular text-text-weak/60">Provider response: {error()}</span>
                 </div>
               </div>
               <div class="flex justify-end gap-2">
                 <Button variant="ghost" size="large" onClick={() => { setPhase("form"); setError(""); setLoading(false) }}>
-                  Back
+                  {failure()?.action}
                 </Button>
               </div>
             </Show>

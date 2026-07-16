@@ -14,9 +14,6 @@
 //   - "directory-layout route is a pass-through": the `@claxedo/pages/...`
 //     positive + `@/pages/...` negative pair is un-expressible post-collapse
 //     (app/entry/app.tsx now legitimately imports `@/app/routes/directory-layout`).
-// Also non-drift: the Pages-API scan flags features/documents/data/arena-api.ts on a
-// docstring `/pages/:id/arena/*` (comment false-positive; real route building
-// is delegated to pages-api.ts's array builder).
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import { can, RolePolicy } from "@/platform/auth/role"
@@ -84,9 +81,7 @@ const sessionStatusBoundary = new Set([
   "features/session/data/sync/queries.ts",
 ])
 
-const legacyConversationCleanupBoundary = new Set([
-  "features/session/data/sync/session-cache-cleanup.ts",
-])
+const legacyConversationCleanupBoundary = new Set(["features/session/data/sync/session-cache-cleanup.ts"])
 
 const routeParamBoundary = new Set([
   "app/app-shell.tsx", // route-to-Workbench bridge and URL mirroring
@@ -116,13 +111,9 @@ const vendoredPlatformAliasBoundary = new Set([
   "features/review/providers/highlights.tsx",
 ])
 
-const sessionRenderBoundary = new Set([
-  "features/session/ui/content/session-content.tsx",
-])
+const sessionRenderBoundary = new Set(["features/session/ui/content/session-content.tsx"])
 
-const sessionRefHostOwnerBoundary = new Set([
-  "platform/identity/session-ref.ts",
-])
+const sessionRefHostOwnerBoundary = new Set(["platform/identity/session-ref.ts"])
 
 const commandContext = "app/providers/command.tsx"
 const platformContext = "platform/runtime/platform-provider.tsx"
@@ -169,7 +160,6 @@ const terminalContext = "features/terminal/providers/provider.tsx"
 // prompt.tsx/terminal.tsx now verify the same invariants against this file.
 const liveResourceCache = "platform/sync/live-resource-cache.ts"
 const roleGuardedTerminal = "features/terminal/core/role-guarded-terminal.tsx"
-const pageEditor = "features/documents/editor/page-editor.tsx"
 const reviewTab = "features/review/ui/review-tab.tsx"
 const harnessConfigStore = "features/session/harness/harness-config-store.ts"
 const harnessConfigRuntime = "features/session/harness/harness-config-runtime.ts"
@@ -214,9 +204,7 @@ const contentRenderers = [
   "features/session/ui/content/session-content.tsx",
   "features/terminal/ui/content/terminal-content.tsx",
 ]
-const projectInventoryContentRenderers = [
-  "features/documents/ui/content/pages-index-content.tsx",
-]
+const projectInventoryContentRenderers = ["features/documents/ui/content/pages-index-content.tsx"]
 const sessionPaneScope = "features/session/ui/components/session-pane-scope.tsx"
 const openSessionsRegistry = "features/session/store/open-sessions.ts"
 const panePreferences = "features/session/preferences/pane.ts"
@@ -227,7 +215,13 @@ async function files(dir: string): Promise<string[]> {
     if (entry.endsWith(".d.ts")) continue
     // Demo-only msw fixtures moved from src/demo/ to src/app/demo/ in the
     // app/features/platform reorg; they legitimately spell route strings.
-    if (entry.includes(".test.") || entry.includes(".vitest.") || entry.startsWith("demo/") || entry.startsWith("app/demo/")) continue
+    if (
+      entry.includes(".test.") ||
+      entry.includes(".vitest.") ||
+      entry.startsWith("demo/") ||
+      entry.startsWith("app/demo/")
+    )
+      continue
     out.push(entry)
   }
   return out
@@ -245,10 +239,12 @@ async function upstreamAppFileExists(file: string) {
 
 describe("workspace runtime route audit", () => {
   test("structural performance invariants are part of the package typecheck gate", async () => {
-    const pkg = await Bun.file(path.resolve(root, "..", "package.json")).json() as {
+    const pkg = (await Bun.file(path.resolve(root, "..", "package.json")).json()) as {
       scripts?: Record<string, string>
     }
-    const budgets = await Bun.file(path.resolve(root, "..", "..", "..", "docs/tech-docs/claxedo-app-performance-budgets.md")).text()
+    const budgets = await Bun.file(
+      path.resolve(root, "..", "..", "..", "docs/tech-docs/claxedo-app-performance-budgets.md"),
+    ).text()
 
     expect(pkg.scripts?.typecheck).toContain("bun run test:performance")
     expect(pkg.scripts?.["test:performance"]).toContain("message-timeline-row-reuse.test.ts")
@@ -276,15 +272,19 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
       const text = await Bun.file(path.join(root, file)).text()
-      for (const match of text.matchAll(/(?:import|export)\s+\{\s*([^}]+)\s*\}\s+from\s+["'][^"']*workspace-runtime-request["']/g)) {
+      for (const match of text.matchAll(
+        /(?:import|export)\s+\{\s*([^}]+)\s*\}\s+from\s+["'][^"']*workspace-runtime-request["']/g,
+      )) {
         const unsafe = match[1]!
           .split(",")
           .map((item) => item.trim().replace(/\s+as\s+\w+$/, ""))
-          .filter((item) =>
-            item !== "isUserHostedWorkspaceDirectory" &&
-            (item !== "workspaceIdFromDirectoryRef" || !workspaceRuntimeIdentityBoundary.has(file))
+          .filter(
+            (item) =>
+              item !== "isUserHostedWorkspaceDirectory" &&
+              (item !== "workspaceIdFromDirectoryRef" || !workspaceRuntimeIdentityBoundary.has(file)),
           )
-        if (unsafe.length > 0) offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
+        if (unsafe.length > 0)
+          offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
       }
     }
     const runtimeStore = await Bun.file(path.join(root, "platform/runtime/cloud/workspace-runtime-store.ts")).text()
@@ -314,16 +314,25 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       const text = await Bun.file(path.join(root, file)).text()
-      if (/\bshouldUse(?:WorkspaceRelay|SignedControlPlaneSession|WorkspaceRuntimeSession|LoopbackWorkspaceBridge)\b/.test(text)) {
+      if (
+        /\bshouldUse(?:WorkspaceRelay|SignedControlPlaneSession|WorkspaceRuntimeSession|LoopbackWorkspaceBridge)\b/.test(
+          text,
+        )
+      ) {
         offenders.push(`${file}: reintroduced a legacy RuntimeGateway predicate`)
       }
-      if (file !== "platform/runtime/agent/workspace-relay-connection.ts" && /\bfunction\s+runtimeKind\s*\(/.test(text)) {
+      if (
+        file !== "platform/runtime/agent/workspace-relay-connection.ts" &&
+        /\bfunction\s+runtimeKind\s*\(/.test(text)
+      ) {
         offenders.push(`${file}: reintroduced a private runtimeKind decision`)
       }
     }
     const submitTransport = await Bun.file(path.join(root, "features/session/composer/ui/submit-transport.ts")).text()
     const transport = await Bun.file(path.join(root, "platform/runtime/transport.ts")).text()
-    expect(submitTransport).not.toMatch(/shouldUse(?:WorkspaceRelay|SignedControlPlaneSession|WorkspaceRuntimeSession|LoopbackWorkspaceBridge)/)
+    expect(submitTransport).not.toMatch(
+      /shouldUse(?:WorkspaceRelay|SignedControlPlaneSession|WorkspaceRuntimeSession|LoopbackWorkspaceBridge)/,
+    )
     expect(submitTransport).toMatch(/submitTransportForPlacement/)
     expect(transport).toMatch(/submitTransportForPlacement/)
     expect(offenders).toEqual([])
@@ -382,7 +391,9 @@ describe("workspace runtime route audit", () => {
       if (usedNames.size === 0) continue
 
       const importedFromResolver = new Set<string>()
-      for (const match of text.matchAll(/(?:import|export)\s*(?:type\s*)?\{([^}]+)\}\s*from\s*["'][^"']*legacy-resolver["']/g)) {
+      for (const match of text.matchAll(
+        /(?:import|export)\s*(?:type\s*)?\{([^}]+)\}\s*from\s*["'][^"']*legacy-resolver["']/g,
+      )) {
         for (const spec of match[1]!.split(",")) {
           const name = spec.trim().replace(/\s+as\s+\w+$/, "")
           if (name) importedFromResolver.add(name)
@@ -400,9 +411,7 @@ describe("workspace runtime route audit", () => {
 
   test("test fixtures mock RuntimeGateway instead of workspace runtime internals outside helper tests", async () => {
     const offenders: string[] = []
-    const allowed = new Set([
-      "platform/runtime/agent/workspace-runtime-request.test.ts",
-    ])
+    const allowed = new Set(["platform/runtime/agent/workspace-runtime-request.test.ts"])
     for (const entry of await Array.fromAsync(new Bun.Glob("**/*.{test,vitest}.{ts,tsx}").scan({ cwd: root }))) {
       if (allowed.has(entry)) continue
       const text = await Bun.file(path.join(root, entry)).text()
@@ -468,9 +477,15 @@ describe("workspace runtime route audit", () => {
 
   test("workspace mutation UIs are gated by backend-derived role policy", async () => {
     const networkPolicy = await Bun.file(path.join(root, networkPolicySettings)).text()
-    const serverPolicyTest = await Bun.file(path.join(root, "..", "..", "claxedo-server/src/control-plane/convex-agent-extensions-policy.test.ts")).text()
-    const serverRouteTest = await Bun.file(path.join(root, "..", "..", "claxedo-server/src/routes/agent-config-extensions.test.ts")).text()
-    const serverNetworkPolicyTest = await Bun.file(path.join(root, "..", "..", "claxedo-server/src/routes/network-policy.test.ts")).text()
+    const serverPolicyTest = await Bun.file(
+      path.join(root, "..", "..", "claxedo-server/src/control-plane/convex-agent-extensions-policy.test.ts"),
+    ).text()
+    const serverRouteTest = await Bun.file(
+      path.join(root, "..", "..", "claxedo-server/src/routes/agent-config-extensions.test.ts"),
+    ).text()
+    const serverNetworkPolicyTest = await Bun.file(
+      path.join(root, "..", "..", "claxedo-server/src/routes/network-policy.test.ts"),
+    ).text()
 
     expect(networkPolicy).not.toMatch(/RuntimeGateway\.workspaceConnectionUrl/)
     expect(networkPolicy).toMatch(/openWorkspaceConnection/)
@@ -484,7 +499,12 @@ describe("workspace runtime route audit", () => {
     // capability set; editors may act within a session but never mutate the
     // workspace or manage runners; viewers are read-only and cannot use the
     // terminal.
-    const placement = (role: RelayRole): Placement => ({ workspaceId: "ws", hosting: "workspace", transport: "loopback", role })
+    const placement = (role: RelayRole): Placement => ({
+      workspaceId: "ws",
+      hosting: "workspace",
+      transport: "loopback",
+      role,
+    })
     expect([...RolePolicy.admin].sort()).toEqual([...RolePolicy.owner].sort())
     expect(can("mutate.session", placement("editor"))).toBe(true)
     expect(can("mutate.workspace", placement("editor"))).toBe(false)
@@ -532,16 +552,16 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("production code builds Pages API routes only through route boundaries", async () => {
+  test("production code builds Documents API routes only through its route boundary", async () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      if (file === "features/documents/data/arena-api.ts") continue
+      if (file === "features/documents/data/documents-api.ts") continue
       const text = await Bun.file(path.join(root, file)).text()
-      if (/["'`]\/pages(?:[?"'`/])/.test(text)) {
+      if (/["'`]\/documents(?:[?"'`/])/.test(text)) {
         offenders.push(file)
       }
-      if (/\$\{[^}]+\}\/pages(?:[?"'`/])/.test(text)) {
+      if (/\$\{[^}]+\}\/documents(?:[?"'`/])/.test(text)) {
         offenders.push(file)
       }
     }
@@ -709,7 +729,9 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (file === "features/session/data/sync/queries.ts" || file === "features/session/data/sync/writers.ts") continue
       const text = await Bun.file(path.join(root, file)).text()
-      for (const match of text.matchAll(/setQueryData\([\s\S]{0,160}shellDataKeys\.sessionId\([\s\S]{0,120}"(status|requests|todo|diff)"/g)) {
+      for (const match of text.matchAll(
+        /setQueryData\([\s\S]{0,160}shellDataKeys\.sessionId\([\s\S]{0,120}"(status|requests|todo|diff)"/g,
+      )) {
         offenders.push(`${file}: writes shell session ${match[1]} query directly`)
       }
     }
@@ -752,12 +774,13 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.path/)
   })
 
-  test("PageIndex imports markdown through runtime resolver instead of project ensure", async () => {
+  test("PageIndex derives repository import identity from explicit project props", async () => {
     const text = await Bun.file(path.join(root, pageIndex)).text()
 
-    expect(text).toMatch(/useQueryOptions/)
-    expect(text).toMatch(/queryOptions\.projects\(\)/)
-    expect(text).toMatch(/ensureLocalProject/)
+    expect(text).toMatch(/props\.projects/)
+    expect(text).toMatch(/props\.directory/)
+    expect(text).toMatch(/workspaceId/)
+    expect(text).toMatch(/createFromRepository/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).not.toMatch(/project\.ensure/)
   })
@@ -799,7 +822,9 @@ describe("workspace runtime route audit", () => {
   test("NewSessionView reads workspace choices through query options", async () => {
     const text = await Bun.file(path.join(root, sessionNewView)).text()
     const rootHelper = await Bun.file(path.join(root, "features/session/ui/components/session-new-view-root.ts")).text()
-    const workspaceOptions = await Bun.file(path.join(root, "features/session/ui/components/session-new-workspace-options.ts")).text()
+    const workspaceOptions = await Bun.file(
+      path.join(root, "features/session/ui/components/session-new-workspace-options.ts"),
+    ).text()
 
     expect(text).toMatch(/useQueryOptions/)
     expect(text).toMatch(/queryOptions\.projects\(\)/)
@@ -890,18 +915,20 @@ describe("workspace runtime route audit", () => {
     const selectModelUnpaid = await Bun.file(path.join(root, dialogSelectModelUnpaid)).text()
     const prompt = await Bun.file(path.join(root, promptInput)).text()
     const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
-    const providerConsumers = await Promise.all([
-      settingsProviders,
-      dialogConnectProvider,
-      dialogCustomProvider,
-      dialogSelectProvider,
-      dialogManageModels,
-      dialogSelectModel,
-      dialogSelectModelUnpaid,
-      sessionContextTab,
-      promptInput,
-      localContextOwner,
-    ].map((file) => Bun.file(path.join(root, file)).text()))
+    const providerConsumers = await Promise.all(
+      [
+        settingsProviders,
+        dialogConnectProvider,
+        dialogCustomProvider,
+        dialogSelectProvider,
+        dialogManageModels,
+        dialogSelectModel,
+        dialogSelectModelUnpaid,
+        sessionContextTab,
+        promptInput,
+        localContextOwner,
+      ].map((file) => Bun.file(path.join(root, file)).text()),
+    )
 
     expect(await Bun.file(path.join(root, "overrides/hooks/use-providers.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-settings.tsx")).exists()).toBe(false)
@@ -933,7 +960,9 @@ describe("workspace runtime route audit", () => {
     expect(settings).toMatch(/queryOptions\.globalConfig\(\)/)
     expect(settings).toMatch(/queryOptions\.providers\(null\)/)
     expect(settings).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
-    expect(settings).toMatch(/isConfigCustom\(providerID\)[\s\S]{0,120}claxedoCredentialRequest\(\{ providerId: providerID \}/)
+    expect(settings).toMatch(
+      /isConfigCustom\(providerID\)[\s\S]{0,120}claxedoCredentialRequest\(\{ providerId: providerID \}/,
+    )
     expect(settings).not.toMatch(/useGlobalSync/)
     expect(settings).not.toMatch(/globalSync\.updateConfig/)
     expect(settings).not.toMatch(/globalSync\.data\.(?:provider|config)/)
@@ -1058,11 +1087,15 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/project:\s*projectApi/)
     expect(context).not.toMatch(/todo:\s*\{/)
     expect(context).not.toMatch(/createStore<GlobalStore>/)
-    expect(context).toMatch(/import \{ createDirectoryCacheManager \} from "@\/platform\/sync\/directory-cache-manager"/)
+    expect(context).toMatch(
+      /import \{ createDirectoryCacheManager \} from "@\/platform\/sync\/directory-cache-manager"/,
+    )
     expect(context).not.toMatch(/(?:function|const|let)\s+createDirectoryCacheManager/)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/child-store.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/bootstrap.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/context/global-sync/directory-cache-manager.ts")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/context/global-sync/directory-cache-manager.ts")).exists()).toBe(
+      false,
+    )
     expect(await Bun.file(path.join(root, "app/boot/data/bootstrap.ts")).exists()).toBe(true)
     expect(await Bun.file(path.join(root, "platform/sync/directory-cache-manager.ts")).exists()).toBe(true)
   })
@@ -1094,28 +1127,33 @@ describe("workspace runtime route audit", () => {
     expect(routeIntentText).toMatch(/inventory\?: Accessor/)
     expect(routeIntentText).toMatch(/sessionRefForWorkspaceSession/)
     expect(routeIntentText).toMatch(/sessionRef: target\.sessionRef/)
-    expect(routeIntentText).toMatch(/sessionRef: sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: intent\.sessionId,[\s\S]*directory: workspaceId/)
+    expect(routeIntentText).toMatch(
+      /sessionRef: sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: intent\.sessionId,[\s\S]*directory: workspaceId/,
+    )
     expect(routeIntentText).not.toMatch(/globalSessions/)
     expect(routeIntentText).not.toMatch(/\.store/)
     expect(appShellStateText).toMatch(/sessionInventoryQueryOptions/)
     expect(routeBridgeText).toMatch(/inventory: \(\) => \(\{/)
     expect(routeBridgeText).toMatch(/routeSessionCacheQuery\.data\?\.session\.find\(\(s\) => s\.id === id\)/)
     expect(routeBridgeText).toMatch(/sessionTitleFromSources\(\{[\s\S]*directorySessions,[\s\S]*inventory: \{/)
-    expect(sessionTitleSyncText).toMatch(/input\.directorySessions\?\.\(input\.directory\)\.find\(\(session\) => session\.id === input\.sessionId\)/)
+    expect(sessionTitleSyncText).toMatch(
+      /input\.directorySessions\?\.\(input\.directory\)\.find\(\(session\) => session\.id === input\.sessionId\)/,
+    )
     expect(routeBridgeText).not.toMatch(/s\.id === id && s\.directory === wsId/)
     expect(routeBridgeText).not.toMatch(/s\.id === meta\.sessionId && s\.directory === meta\.directory/)
   })
 
   test("session inventory actions are isolated behind the shell data boundary", async () => {
-    const allowed = new Set([
-      globalSyncContext,
-      "features/session/data/sync/session-inventory.ts",
-    ])
+    const allowed = new Set([globalSyncContext, "features/session/data/sync/session-inventory.ts"])
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (allowed.has(file)) continue
       const text = await Bun.file(path.join(root, file)).text()
-      if (/sessionInventory\.(?:load|reloadWorkspace|loadMoreWorkspace|loadMore|drop)|globalSync\.sessionInventory/.test(text)) {
+      if (
+        /sessionInventory\.(?:load|reloadWorkspace|loadMoreWorkspace|loadMore|drop)|globalSync\.sessionInventory/.test(
+          text,
+        )
+      ) {
         offenders.push(file)
       }
     }
@@ -1129,7 +1167,9 @@ describe("workspace runtime route audit", () => {
     expect(inventory).toMatch(/reloadSessionInventory/)
     expect(inventory).toMatch(/loadMoreSessionInventoryWorkspace/)
     expect(inventory).toMatch(/useSessionInventoryActions/)
-    expect(await Bun.file(path.join(root, "overrides/context/global-sync/global-session-identity.ts")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/context/global-sync/global-session-identity.ts")).exists()).toBe(
+      false,
+    )
     // Behavior over source-text: session identity is keyed on `id`, with
     // directory/workspace only DISAMBIGUATING same-id rows — directory equality
     // is never the sole identity key.
@@ -1265,7 +1305,9 @@ describe("workspace runtime route audit", () => {
   test("SessionContextTab reads pane session identity from SessionParamsProvider only", async () => {
     const text = await Bun.file(path.join(root, sessionContextTab)).text()
 
-    expect(await Bun.file(path.join(root, "overrides/features/session/ui/components/session-context-tab.tsx")).exists()).toBe(false)
+    expect(
+      await Bun.file(path.join(root, "overrides/features/session/ui/components/session-context-tab.tsx")).exists(),
+    ).toBe(false)
     expect(text).not.toMatch(/@solidjs\/router/)
     expect(text).not.toMatch(/\buseParams\b/)
     expect(text).not.toMatch(/\bbase64Decode\b/)
@@ -1439,8 +1481,12 @@ describe("workspace runtime route audit", () => {
     expect(strategy).toMatch(/type:\s*"hydrating";\s*fallback:\s*false/)
     expect(strategy).toMatch(/type:\s*"needs-selection";\s*fallback:\s*false/)
     expect(strategy).toMatch(/type:\s*"uninitialized";\s*fallback:\s*true/)
-    expect(strategy).toMatch(/if \(input\.hasSelection && \(input\.providerLoading \|\| input\.restoreLoading\)\) return \{ type: "selected", fallback: false \}/)
-    expect(strategy).toMatch(/if \(input\.providerLoading \|\| input\.restoreLoading\) return \{ type: "hydrating", fallback: false \}/)
+    expect(strategy).toMatch(
+      /if \(input\.hasSelection && \(input\.providerLoading \|\| input\.restoreLoading\)\) return \{ type: "selected", fallback: false \}/,
+    )
+    expect(strategy).toMatch(
+      /if \(input\.providerLoading \|\| input\.restoreLoading\) return \{ type: "hydrating", fallback: false \}/,
+    )
     expect(strategy).toMatch(/if \(input\.hasSelection\) return \{ type: "invalid-selected", fallback: true \}/)
     expect(strategy).toMatch(/if \(input\.existingSession\) return \{ type: "needs-selection", fallback: false \}/)
     expect(toolbar).toMatch(/promptModelFallbackState/)
@@ -1461,8 +1507,12 @@ describe("workspace runtime route audit", () => {
     expect(input).not.toMatch(/fallbackGuardScopeKey/)
     expect(toolbar).not.toMatch(/shouldUseFallbackModel[\s\S]{0,300}local\.model\.set\(/)
     expect(input).toMatch(/createModelSelectionPicker/)
-    expect(input).toMatch(/write:\s*\(model, options\) => writeOpenCodeDraftModel\(\{[\s\S]{0,400}write:\s*local\.model\.set/)
-    expect(input).toMatch(/fallbackModel:\s*\(\) => toolbarState\.shouldUseFallbackModel\(\) \? toolbarState\.fallbackModel\(\) : undefined/)
+    expect(input).toMatch(
+      /write:\s*\(model, options\) => writeOpenCodeDraftModel\(\{[\s\S]{0,400}write:\s*local\.model\.set/,
+    )
+    expect(input).toMatch(
+      /fallbackModel:\s*\(\) => toolbarState\.shouldUseFallbackModel\(\) \? toolbarState\.fallbackModel\(\) : undefined/,
+    )
     expect(input).not.toMatch(/fallbackModel:\s*\(\) => fallbackModel\(\)/)
     expect(strategy).toMatch(/export function selectRuntimeModel/)
     expect(submit).toMatch(/resolveSubmittedConfig/)
@@ -1486,7 +1536,9 @@ describe("workspace runtime route audit", () => {
     expect(harness).toMatch(/harnessModelNameForSubmit:\s*harnessStore\.harnessModelNameForSubmit/)
     expect(harness).not.toMatch(/harnessModelForSubmit/)
 
-    expect(submit).toMatch(/harnessModelKey:\s*selectedHarnessMode\(scope\)\s*\?\s*harnessController\.modelKeyForSubmit\(scope\)\s*:\s*undefined/)
+    expect(submit).toMatch(
+      /harnessModelKey:\s*selectedHarnessMode\(scope\)\s*\?\s*harnessController\.modelKeyForSubmit\(scope\)\s*:\s*undefined/,
+    )
     expect(submit).not.toMatch(/harnessModel:\s*/)
     expect(submit).not.toMatch(/submitModelFromModelKey/)
 
@@ -1544,10 +1596,14 @@ describe("workspace runtime route audit", () => {
   test("content rendering uses the shared surface contribution registry", async () => {
     const renderer = await Bun.file(path.join(root, "app/workbench/content/index.tsx")).text()
     const contentSurfaces = await Bun.file(path.join(root, "app/integrations/first-party-content-surfaces.tsx")).text()
-    const contentSurfaceTest = await Bun.file(path.join(root, "app/integrations/first-party-content-surfaces.test.ts")).text()
+    const contentSurfaceTest = await Bun.file(
+      path.join(root, "app/integrations/first-party-content-surfaces.test.ts"),
+    ).text()
 
     expect(renderer).toMatch(/const current = m\(\)/)
-    expect(renderer).toMatch(/contentSurface\(current\.type,\s*\{\s*sessionRef:\s*current\.content\?\.sessionRef\s*\}\)/)
+    expect(renderer).toMatch(
+      /contentSurface\(current\.type,\s*\{\s*sessionRef:\s*current\.content\?\.sessionRef\s*\}\)/,
+    )
     expect(renderer).toMatch(/state\.meta\.ids\(\)/)
     expect(renderer).not.toMatch(/firstPartyContentSurface/)
     expect(contentSurfaces).toMatch(/createContributionRegistry\(\{ surfaces: surfaces as SurfaceContribution\[\] \}\)/)
@@ -1667,13 +1723,19 @@ describe("workspace runtime route audit", () => {
     // points back at packages/app/src.
     expect(appViteConfig).not.toMatch(/firstPartyOwners/)
     expect(appViteConfig).not.toMatch(/\.\.\/app\/src/)
-    expect(appViteConfig).toMatch(/find: "@\/", replacement: normalizePath\(fileURLToPath\(new URL\("\.\/src\/", import\.meta\.url\)\)\)/)
+    expect(appViteConfig).toMatch(
+      /find: "@\/", replacement: normalizePath\(fileURLToPath\(new URL\("\.\/src\/", import\.meta\.url\)\)\)/,
+    )
     expect(appViteConfig).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\)\]/)
     expect(appVitestConfig).not.toMatch(/firstPartyOwners/)
     expect(appVitestConfig).not.toMatch(/\.\.\/app\/src/)
-    expect(appVitestConfig).toMatch(/find: "@\/", replacement: normalizePath\(fileURLToPath\(new URL\("\.\/src\/", import\.meta\.url\)\)\)/)
-    // as-any: regex asserts upstream text still contains this compatibility cast.
-    expect(appVitestConfig).toMatch(/plugins:\s*\[solid\(\) as unknown as NonNullable<UserConfig\["plugins"\]>\[number\]\]/)
+    expect(appVitestConfig).toMatch(
+      /find: "@\/", replacement: normalizePath\(fileURLToPath\(new URL\("\.\/src\/", import\.meta\.url\)\)\)/,
+    )
+    expect(appVitestConfig).toMatch(
+      // as-any: regex asserts upstream text still contains this compatibility cast.
+      /plugins:\s*\[solid\(\) as unknown as NonNullable<UserConfig\["plugins"\]>\[number\]\]/,
+    )
     expect(appTsconfig).not.toMatch(/\.\.\/app\/src/)
     expect(appTsconfig).toMatch(/"@\/\*": \["\.\/src\/\*"\]/)
 
@@ -1682,19 +1744,12 @@ describe("workspace runtime route audit", () => {
     expect(desktopRenderer).not.toMatch(/\.\.\/app\/src/)
     expect(desktopRenderer).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\)\]/)
     expect(desktopRenderer).toMatch(/find:\s*"@\/"/)
-    expect(desktopRenderer).toMatch(/const upstreamRoot = normalize\(fileURLToPath\(new URL\("\.\.\/claxedo-app\/src\/", import\.meta\.url\)\)\)/)
+    expect(desktopRenderer).toMatch(
+      /const upstreamRoot = normalize\(fileURLToPath\(new URL\("\.\.\/claxedo-app\/src\/", import\.meta\.url\)\)\)/,
+    )
     expect(desktopRenderer).toMatch(/replacement:\s*upstreamRoot/)
     expect(desktopTsconfig).not.toMatch(/\.\.\/app\/src/)
     expect(desktopTsconfig).toMatch(/"@\/\*": \["\.\.\/claxedo-app\/src\/\*"\]/)
-  })
-
-  test("PageEditor syncs dock sessions through SessionSyncProvider", async () => {
-    const text = await Bun.file(path.join(root, pageEditor)).text()
-
-    expect(text).toMatch(/useSessionSyncOptional/)
-    expect(text).toMatch(/sessionSync\.syncSession\(sid\)/)
-    expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/dockSync\.session\.sync/)
   })
 
   test("SessionPaneScope is the only production pane gateway to DirectoryScope", async () => {
@@ -1718,7 +1773,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType\)/)
     // Readiness is derived from scopeFor(workspaceKey()); Wave 2 hoisted it from
     // an inline JSX arrow into a named workspaceReady() const wired into the scope.
-    expect(text).toMatch(/const workspaceReady = \(\) => \{[\s\S]*return !!workspaceScopes\?\.scopeFor\(workspaceKey\(\)\)/)
+    expect(text).toMatch(
+      /const workspaceReady = \(\) => \{[\s\S]*return !!workspaceScopes\?\.scopeFor\(workspaceKey\(\)\)/,
+    )
     expect(text).toMatch(/workspaceReady=\{workspaceReady\}/)
     expect(text).toMatch(/refreshDirectory=\{refreshDirectory\}/)
   })
@@ -1764,15 +1821,21 @@ describe("workspace runtime route audit", () => {
     expect(orchestration).toMatch(/explicitSessionRef \?\? existing\.content\?\.sessionRef/)
     expect(orchestration).toMatch(/const sessionRef = opts\?\.sessionRef/)
     expect(orchestration).toMatch(/sameWorkspaceSession\(m, directory, sessionId, opts\?\.sessionRef\)/)
-    expect(orchestration).not.toMatch(/m\.type === "session" && m\.directory === directory && m\.sessionId === sessionId/)
+    expect(orchestration).not.toMatch(
+      /m\.type === "session" && m\.directory === directory && m\.sessionId === sessionId/,
+    )
     expect(orchestration).not.toMatch(/opts\?\.sessionRef \?\? sessionRefForPayload\(directory, sessionId\)/)
-    expect(orchestration).not.toMatch(/input\.sessionRef \?\? sessionRefForPayload\(input\.directory, input\.sessionId\)/)
+    expect(orchestration).not.toMatch(
+      /input\.sessionRef \?\? sessionRefForPayload\(input\.directory, input\.sessionId\)/,
+    )
     expect(orchestration).toMatch(/input\.sessionRef \? \{ sessionRef: input\.sessionRef \} : \{\}/)
     expect(orchestration).toMatch(/centralSessionRef\(\{ sessionId \}\)/)
     expect(persistence).toMatch(/missingRequiredSessionRef/)
     expect(persistence).not.toMatch(/backfillSessionRef/)
     expect(persistence).not.toMatch(/sessionRefForPane/)
-    expect(routeBridge).toMatch(/draft\?\.content\?\.sessionRef \?\? sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: event\.sessionID,[\s\S]*directory: event\.directory/)
+    expect(routeBridge).toMatch(
+      /draft\?\.content\?\.sessionRef \?\?\s*sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: event\.sessionID,[\s\S]*directory: event\.directory/,
+    )
     expect(routeBridge).toMatch(/sessionRefForWorkspaceSession/)
     expect(rail).not.toMatch(/sessionRefForPane/)
     expect(rail).not.toMatch(/signedWorkspaceFromProjects/)
@@ -1890,7 +1953,9 @@ describe("workspace runtime route audit", () => {
     // out of submit.test.ts into submit.new-session.test.ts during WP-B4.
     const submitTest = await Bun.file(path.join(root, "features/session/composer/ui/submit.new-session.test.ts")).text()
 
-    expect(await Bun.file(path.join(root, "overrides/features/session/composer/ui/submit.test.ts")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/features/session/composer/ui/submit.test.ts")).exists()).toBe(
+      false,
+    )
     // Connection-scoping made created-session navigation host-aware via a
     // createdSessionRoute helper: central-host sessions keep the canonical
     // sessionRoute, workspace-host sessions use the typed workspaceSessionRoute
@@ -1902,7 +1967,9 @@ describe("workspace runtime route audit", () => {
     )
     expect(handoff).toMatch(/input\.navigate\(createdSessionRoute\(\{/)
     expect(handoff).toMatch(/sessionContentPayload/)
-    expect(handoff).toMatch(/openSession\([\s\S]*input\.sessionDirectory,[\s\S]*input\.session\.id,[\s\S]*"Session",[\s\S]*\{ sessionRef: input\.sessionRef \}/)
+    expect(handoff).toMatch(
+      /openSession\([\s\S]*input\.sessionDirectory,[\s\S]*input\.session\.id,[\s\S]*"Session",[\s\S]*\{ sessionRef: input\.sessionRef \}/,
+    )
     expect(handoff).not.toMatch(/sessionRefForPane/)
     expect(handoff).not.toMatch(/base64Encode\([^)]*\).*\/session/)
     expect(payload).not.toMatch(/sessionRefForPane/)
@@ -2058,13 +2125,17 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, "features/session/session-layout.ts")).text()
     const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
 
-    expect(await Bun.file(path.join(root, "overrides/features/session/ui/use-session-commands.tsx")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/features/session/ui/use-session-commands.tsx")).exists()).toBe(
+      false,
+    )
     expect(await Bun.file(path.join(root, "overrides/pages/features/session/session-layout.ts")).exists()).toBe(false)
     expect(text).toMatch(/sessionViewKey/)
     expect(text).toMatch(/return sessionViewKey\(\{ sessionId: id \}\)/)
     expect(text).toMatch(/return sessionViewKey\(\{[\s\S]*directory: directory\(\),[\s\S]*sessionId: id,[\s\S]*\}\)/)
     expect(commands).toMatch(/return sessionViewKey\(\{ sessionId: id \}\)/)
-    expect(commands).toMatch(/return sessionViewKey\(\{[\s\S]*directory: args\.directory\(\),[\s\S]*sessionId: id,[\s\S]*\}\)/)
+    expect(commands).toMatch(
+      /return sessionViewKey\(\{[\s\S]*directory: args\.directory\(\),[\s\S]*sessionId: id,[\s\S]*\}\)/,
+    )
     expect(text).toMatch(/get id\(\)/)
     expect(text).not.toMatch(/base64Encode/)
     expect(text).not.toMatch(/get dir\(\)/)
@@ -2137,7 +2208,9 @@ describe("workspace runtime route audit", () => {
     const bootstrap = await Bun.file(path.join(root, "app/boot/data/bootstrap.ts")).text()
     const projector = await Bun.file(path.join(root, directoryEventProjector)).text()
     const globalProjector = await Bun.file(path.join(root, globalEventProjector)).text()
-    const statusDispatcher = await Bun.file(path.join(root, "features/session/store/session-status-dispatcher.ts")).text()
+    const statusDispatcher = await Bun.file(
+      path.join(root, "features/session/store/session-status-dispatcher.ts"),
+    ).text()
     const types = await Bun.file(path.join(root, "features/session/data/sync/global-sync-types.ts")).text()
     const directoryCacheManager = await Bun.file(path.join(root, "platform/sync/directory-cache-manager.ts")).text()
     const reducerImports: string[] = []
@@ -2203,9 +2276,13 @@ describe("workspace runtime route audit", () => {
     expect(eventIngress).toMatch(/routeDirectoryEvent\(\{/)
     expect(eventIngress).toMatch(/mark: \(\) => input\.children\.mark\(directory\)/)
     expect(eventIngress).toMatch(/cacheSessions: \(next\) => \{/)
-    expect(eventRouter).toMatch(/applyDirectoryEventToShellQueries\(\{ event: input\.event, directory: input\.directory \}\)[\s\S]*input\.sinks\.mark\?\.\(\)[\s\S]*applySessionStatusSseEvent\(\{ event: input\.event, directory: input\.directory \}\)[\s\S]*applyDirectorySessionCacheEvent/)
+    expect(eventRouter).toMatch(
+      /applyDirectoryEventToShellQueries\(\{ event: input\.event, directory: input\.directory \}\)[\s\S]*input\.sinks\.mark\?\.\(\)[\s\S]*applySessionStatusSseEvent\(\{ event: input\.event, directory: input\.directory \}\)[\s\S]*applyDirectorySessionCacheEvent/,
+    )
     expect(context).not.toMatch(/applySessionStatusSseEvent\(\{[^}]*setStore/)
-    expect(eventIngress).toMatch(/applyClaxedoSessionLifecycleEvent[\s\S]*applySessionStatusSseEvent\(\{[\s\S]*type: "session\.idle"/)
+    expect(eventIngress).toMatch(
+      /applyClaxedoSessionLifecycleEvent[\s\S]*applySessionStatusSseEvent\(\{[\s\S]*type: "session\.idle"/,
+    )
     expect(listEvents).not.toMatch(/projectDirectoryEventToShellQueries/)
     expect(listEvents).not.toMatch(/applySessionStatusSseEvent/)
     expect(listEvents).not.toMatch(/observeSessionStatusEvent/)
@@ -2222,9 +2299,13 @@ describe("workspace runtime route audit", () => {
     expect(statusDispatcher).not.toMatch(/applySessionStatusEventToState/)
     expect(statusDispatcher).not.toMatch(/applySessionStatusTimeoutStageToState/)
     expect(statusDispatcher).not.toMatch(/setStore/)
-    expect(projector).toMatch(/setSessionDiffQueryData\(\{ queryClient, sessionId: props\.sessionID, diff: list\(props\.diff\) \}\)/)
+    expect(projector).toMatch(
+      /setSessionDiffQueryData\(\{ queryClient, sessionId: props\.sessionID, diff: list\(props\.diff\) \}\)/,
+    )
     expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(props\.sessionID, "diff"\)/)
-    expect(projector).toMatch(/dispatchSessionTodoEvent\(\{[\s\S]*sessionID: props\.sessionID,[\s\S]*todos: props\.todos/)
+    expect(projector).toMatch(
+      /dispatchSessionTodoEvent\(\{[\s\S]*sessionID: props\.sessionID,[\s\S]*todos: props\.todos/,
+    )
     expect(projector).not.toMatch(/setSessionTodoQueryData\(\{ queryClient, sessionId: props\.sessionID/)
     expect(projector).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(props\.sessionID, "todo"\)/)
     expect(projector).toMatch(/dispatchSessionRequestsEvent/)
@@ -2233,7 +2314,9 @@ describe("workspace runtime route audit", () => {
     expect(projector).not.toMatch(/case "session\.created"/)
     expect(listEvents).toMatch(/case "session\.created"/)
     expect(listEvents).toMatch(/applySessionListEvent/)
-    expect(directoryCacheManager).toMatch(/cached<SessionCacheValue>\(key, directory, queryKeys\.directory\.sessionCache\)/)
+    expect(directoryCacheManager).toMatch(
+      /cached<SessionCacheValue>\(key, directory, queryKeys\.directory\.sessionCache\)/,
+    )
     expect(listEvents).not.toMatch(/setQueryData\(\s*queryKeys\.directory\.sessionCache/)
     expect(listEvents).not.toMatch(/function (?:set|upsert|remove)DirectorySessionCache/)
     expect(types).not.toMatch(/\bmessage:\s*\{/)
@@ -2284,7 +2367,9 @@ describe("workspace runtime route audit", () => {
     expect(directoryCacheManager).not.toMatch(/createStore<State>\(\{[\s\S]{0,180}\bicon\b/)
     expect(directoryCacheManager).not.toMatch(/setStore\("projectMeta"/)
     expect(directoryCacheManager).not.toMatch(/setStore\("icon"/)
-    expect(directoryCacheManager).not.toMatch(/createStore|solid-js\/store|Store<State>|SetStoreFunction|DirectoryChildStore/)
+    expect(directoryCacheManager).not.toMatch(
+      /createStore|solid-js\/store|Store<State>|SetStoreFunction|DirectoryChildStore/,
+    )
     expect(types).not.toMatch(/\bstatus:\s*"loading"\s*\|/)
     expect(directoryCacheManager).not.toMatch(/\bstatus:\s*"loading"/)
     expect(bootstrap).not.toMatch(/input\.setStore\("status"/)
@@ -2328,7 +2413,9 @@ describe("workspace runtime route audit", () => {
     // page and context-content mount it with `() => undefined` sentinels rather
     // than threading a Solid mirror in. The `messages` memo still feeds the
     // timeline and sessionUserMessages() (asserted below).
-    expect(text).toMatch(/<SessionConversationOwner[\s\S]*messages=\{\(\) => undefined\}[\s\S]*parts=\{\(\) => undefined\}/)
+    expect(text).toMatch(
+      /<SessionConversationOwner[\s\S]*messages=\{\(\) => undefined\}[\s\S]*parts=\{\(\) => undefined\}/,
+    )
     expect(text).not.toMatch(/source=\{\(\) => sync\.data\}/)
     expect(text).not.toMatch(/sync\.data\.part\[messageID\]/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
@@ -2390,27 +2477,26 @@ describe("workspace runtime route audit", () => {
   })
 
   test("directory session cache warmers use the shell data boundary", async () => {
-    const texts = await Promise.all([
-      appShellState,
-      claxedoSessionActions,
-      claxedoActionShared,
-      layoutContext,
-    ].map(async (file) => Bun.file(path.join(root, file)).text()))
+    const texts = await Promise.all(
+      [appShellState, claxedoSessionActions, claxedoActionShared, layoutContext].map(async (file) =>
+        Bun.file(path.join(root, file)).text(),
+      ),
+    )
 
     for (const text of texts) {
       expect(text).toMatch(/ensureDirectorySessionCache|useDirectorySessionCacheActions|directorySessionCacheActions/)
-      expect(text).not.toContain("if (queryClient.getQueryData(directorySessionCacheQueryOptions({ directory }).queryKey)) return")
+      expect(text).not.toContain(
+        "if (queryClient.getQueryData(directorySessionCacheQueryOptions({ directory }).queryKey)) return",
+      )
     }
   })
 
   test("forced session cache refreshes use the shell data boundary", async () => {
-    const texts = await Promise.all([
-      sessionPage,
-      sessionController,
-      promptSubmit,
-      claxedoSessionActions,
-      directoryScope,
-    ].map(async (file) => Bun.file(path.join(root, file)).text()))
+    const texts = await Promise.all(
+      [sessionPage, sessionController, promptSubmit, claxedoSessionActions, directoryScope].map(async (file) =>
+        Bun.file(path.join(root, file)).text(),
+      ),
+    )
 
     for (const text of texts) {
       expect(text).toMatch(/refreshDirectorySessionCache|useDirectorySessionCacheActions|directorySessionCacheActions/)
@@ -2433,8 +2519,12 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/registeredConversationSnapshot/)
     expect(text).toMatch(/const sessionConversation = createMemo/)
-    expect(text).toMatch(/const sessionMessages = createMemo\(\(\) => sessionConversation\(\)\?\.messages \?\? emptyMessages\)/)
-    expect(text).toMatch(/const getMsgParts = \(msgId: string\) => sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)
+    expect(text).toMatch(
+      /const sessionMessages = createMemo\(\(\) => sessionConversation\(\)\?\.messages \?\? emptyMessages\)/,
+    )
+    expect(text).toMatch(
+      /const getMsgParts = \(msgId: string\) => sessionConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/,
+    )
     expect(text).toMatch(/const parentConversation = createMemo/)
     expect(text).toMatch(/agentListQuery/)
     expect(text).toMatch(/configQuery/)
@@ -2516,7 +2606,9 @@ describe("workspace runtime route audit", () => {
     const sessionPageText = await Bun.file(path.join(root, sessionPage)).text()
 
     expect(await Bun.file(path.join(root, "overrides/features/session/ui/composer/index.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/features/session/ui/composer/session-composer-state.ts")).exists()).toBe(false)
+    expect(
+      await Bun.file(path.join(root, "overrides/features/session/ui/composer/session-composer-state.ts")).exists(),
+    ).toBe(false)
     expect(await Bun.file(path.join(root, sessionComposer)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, sessionComposerRegion)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, sessionComposerState)).exists()).toBe(true)
@@ -2557,9 +2649,13 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, upstreamSessionComposerRegion)).text()
     const handoff = await Bun.file(path.join(root, "features/session/ui/prompt-preview-handoff.ts")).text()
 
-    expect(text).toMatch(/directorySessions\(sessionDirectory\(\)\)\.find\(\(session\) => session\.id === sessionID\(\)\)/)
+    expect(text).toMatch(
+      /directorySessions\(sessionDirectory\(\)\)\.find\(\(session\) => session\.id === sessionID\(\)\)/,
+    )
     expect(text).toMatch(/const sessionID = createMemo\(\(\) => props\.sessionID \?\? route\.params\.id\)/)
-    expect(text).toMatch(/const sessionDirectory = createMemo\(\(\) => props\.sessionDirectory \?\? route\.directory\(\)\)/)
+    expect(text).toMatch(
+      /const sessionDirectory = createMemo\(\(\) => props\.sessionDirectory \?\? route\.directory\(\)\)/,
+    )
     expect(handoff).toMatch(/sessionHandoffQueryRoot/)
     expect(handoff).toMatch(/"session-handoff"/)
     expect(handoff).not.toMatch(/session: new Map/)
@@ -2683,11 +2779,15 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/sessionId\?:\s*string/)
     expect(text).toMatch(/queryOptions\.path\(null\)/)
     expect(text).not.toMatch(/globalSync\.data\.path\.home/)
-    expect(commands).toMatch(/<DialogSelectFile[\s\S]*directory=\{args\.directory\(\)\}[\s\S]*sessionId=\{args\.sessionId\(\)\}/)
+    expect(commands).toMatch(
+      /<DialogSelectFile[\s\S]*directory=\{args\.directory\(\)\}[\s\S]*sessionId=\{args\.sessionId\(\)\}/,
+    )
     expect(commands).toMatch(/directorySessionCacheQueryOptions/)
     expect(commands).not.toMatch(/\buseSync\b/)
     expect(commands).not.toMatch(/sync\.session\.get/)
-    expect(reviewWorkspace).toMatch(/<DialogSelectFile[\s\S]*directory=\{props\.directory\}[\s\S]*sessionId=\{props\.sessionId\}/)
+    expect(reviewWorkspace).toMatch(
+      /<DialogSelectFile[\s\S]*directory=\{props\.directory\}[\s\S]*sessionId=\{props\.sessionId\}/,
+    )
   })
 
   test("PromptInput resolves session identity without router params", async () => {
@@ -2781,19 +2881,25 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/\buseParams\b/)
     expect(text).not.toMatch(/\buseSessionParams\b/)
     expect(text).not.toMatch(/not in split mode/)
-    expect(text).toMatch(/type PromptProviderProps = \{[\s\S]*directory\?: Accessor<string> \| string[\s\S]*sessionId\?: Accessor<string \| undefined> \| string/)
+    expect(text).toMatch(
+      /type PromptProviderProps = \{[\s\S]*directory\?: Accessor<string> \| string[\s\S]*sessionId\?: Accessor<string \| undefined> \| string/,
+    )
     // WP-B6: the bounded prompt-session cache (Map + entry struct + LRU
     // eviction) was extracted into the shared live-resource-cache module.
     // prompt.tsx now wires the LRU factory around createRoot(createPromptSession),
     // and must not re-inline the Map/entry it used to own.
     expect(text).toMatch(/import \{ createLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/)
     expect(text).toMatch(/const promptCache = createLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/)
-    expect(text).toMatch(/promptCache\.load\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/)
+    expect(text).toMatch(
+      /promptCache\.load\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/,
+    )
     expect(text).not.toMatch(/new Map<string, PromptCacheEntry>/)
     expect(text).not.toMatch(/export const promptCache/)
     // Same invariant, new home: the disposable-resource struct and the
     // dispose-on-eviction LRU rule now live in the extracted module.
-    expect(cacheModule).toMatch(/export type DisposableResource<T> = \{[\s\S]*value: T[\s\S]*dispose: \(\) => void[\s\S]*\}/)
+    expect(cacheModule).toMatch(
+      /export type DisposableResource<T> = \{[\s\S]*value: T[\s\S]*dispose: \(\) => void[\s\S]*\}/,
+    )
     expect(cacheModule).toMatch(/export function createLruResourceCache<T>\(max: number\)/)
     expect(cacheModule).toMatch(/cache\.get\(oldest\)\?\.dispose\(\)/)
     // Rubric C4: directory-layout is a pure pass-through; PromptProvider
@@ -2814,8 +2920,12 @@ describe("workspace runtime route audit", () => {
     // createRoot(createTerminalSession); the per-provider release-handle map
     // (TerminalCacheEntry) stays local and must not re-inline the shared Map.
     expect(text).toMatch(/import \{ createRefCountedResourceCache \} from "@\/platform\/sync\/live-resource-cache"/)
-    expect(text).toMatch(/const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>\(MAX_TERMINAL_SESSIONS\)/)
-    expect(text).toMatch(/sharedTerminalCache\.acquire\(key, \(\) =>[\s\S]*createRoot\(\(dispose\) => \(\{[\s\S]*createTerminalSession\(sdk, dir, options\)/)
+    expect(text).toMatch(
+      /const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>\(MAX_TERMINAL_SESSIONS\)/,
+    )
+    expect(text).toMatch(
+      /sharedTerminalCache\.acquire\(key, \(\) =>[\s\S]*createRoot\(\(dispose\) => \(\{[\s\S]*createTerminalSession\(sdk, dir, options\)/,
+    )
     expect(text).not.toMatch(/new Map<string, SharedTerminalCacheEntry>/)
     expect(text).toMatch(/const cache = new Map<string, TerminalCacheEntry>\(\)/)
     expect(text).toMatch(/entry\.release\(\)/)
@@ -2845,9 +2955,12 @@ describe("workspace runtime route audit", () => {
     // wrapper (role-gated terminal). Either path resolves to the first-party
     // @/features/terminal/ui/terminal, never an override.
     expect(await Bun.file(path.join(root, "app/entry/index.tsx")).text()).toMatch(/@\/features\/terminal\/ui\/terminal/)
-    expect(await Bun.file(path.join(root, "features/terminal/ui/content/terminal-content.tsx")).text())
-      .toMatch(/role-guarded-terminal/)
-    const processPanel = await Bun.file(path.join(root, "features/processes/ui/workspace-panel/process-pane-panel.tsx")).text()
+    expect(await Bun.file(path.join(root, "features/terminal/ui/content/terminal-content.tsx")).text()).toMatch(
+      /role-guarded-terminal/,
+    )
+    const processPanel = await Bun.file(
+      path.join(root, "features/processes/ui/workspace-panel/process-pane-panel.tsx"),
+    ).text()
     const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
     expect(processPanel).toMatch(/renderTerminal\?:/)
     expect(processPanel).not.toMatch(/role-guarded-terminal/)
@@ -2855,7 +2968,9 @@ describe("workspace runtime route audit", () => {
     expect(reviewWorkspace).toMatch(/renderTerminal=/)
     const roleGuard = await Bun.file(path.join(root, roleGuardedTerminal)).text()
     expect(roleGuard).toMatch(/import \{[^}]*\bTerminal\b[^}]*\} from "\.\.\/ui\/terminal"/)
-    expect(await Bun.file(path.join(root, "overrides/features/terminal/core/role-guarded-terminal.tsx")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/features/terminal/core/role-guarded-terminal.tsx")).exists()).toBe(
+      false,
+    )
   })
 
   test("directory-layout route is a pass-through — no per-workspace provider tree (rubric C4)", async () => {
@@ -2885,7 +3000,9 @@ describe("workspace runtime route audit", () => {
   test("SessionHeader reads tint inputs without the global-sync message mirror", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
-    expect(await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists()).toBe(false)
+    expect(
+      await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
+    ).toBe(false)
     expect(text).toMatch(/registeredConversationSnapshot/)
     expect(text).toMatch(/queryOptions\.agents/)
     expect(text).not.toMatch(/\buseSync\b/)
@@ -2897,7 +3014,9 @@ describe("workspace runtime route audit", () => {
   test("SessionHeader bounds titlebar open-path loading state", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
-    expect(await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists()).toBe(false)
+    expect(
+      await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
+    ).toBe(false)
     expect(text).toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS = 10_000/)
     expect(text).toMatch(/let openRequestID = 0/)
     expect(text).toMatch(/armOpenRequestTimeout\(requestID\)/)
@@ -2976,12 +3095,18 @@ describe("workspace runtime route audit", () => {
     const panelVisual = await Bun.file(path.join(root, "app/workbench/rail/workspace-panel-visual-state.ts")).text()
     const panelMotion = await Bun.file(path.join(root, "app/workbench/rail/workspace-panel-motion-state.ts")).text()
     const keyboardController = await Bun.file(path.join(root, "app/workbench/rail/rail-keyboard-controller.tsx")).text()
-    const floatingChromeMarkup = header.match(/data-testid="workspace-panel-floating-chrome"[\s\S]*?<WorkspacePanelChrome/)?.[0] ?? ""
-    const floatingDomBlock = panelMotion.match(/if \(floatingChrome\) \{[\s\S]*?floatingChrome\.style\.pointerEvents = "auto"[\s\S]*?\n    \}/)?.[0] ?? ""
+    const floatingChromeMarkup =
+      header.match(/data-testid="workspace-panel-floating-chrome"[\s\S]*?<WorkspacePanelChrome/)?.[0] ?? ""
+    const floatingDomBlock =
+      panelMotion.match(
+        /if \(floatingChrome\) \{[\s\S]*?floatingChrome\.style\.pointerEvents = "auto"[\s\S]*?\n    \}/,
+      )?.[0] ?? ""
 
     expect(sidebarShell).toMatch(/--claxedo-sidebar-width/)
     expect(sidebarShell).toMatch(/w-\[var\(--claxedo-sidebar-width\)\] shrink-0/)
-    expect(sidebarShell).toMatch(/props\.sidebarPinned\(\) \? "" : "md:absolute md:left-0 md:top-0 md:bottom-0 md:z-\[80\]"/)
+    expect(sidebarShell).toMatch(
+      /props\.sidebarPinned\(\) \? "" : "md:absolute md:left-0 md:top-0 md:bottom-0 md:z-\[80\]"/,
+    )
     expect(sidebarShell).toMatch(/max-md:fixed/)
     expect(sidebarShell).not.toMatch(/absolute top-0 left-0 bottom-0 z-\[100\]/)
     expect(sidebarShell).toMatch(/props\.closeMobileSidebar\(\)/)
@@ -3016,7 +3141,9 @@ describe("workspace runtime route audit", () => {
     const layout = await Bun.file(path.join(root, appShellLayout)).text()
     const headerSurfaces = await Bun.file(path.join(root, "app/workbench/rail/rail-header-surfaces.ts")).text()
     const projectSessionInfo = await Bun.file(path.join(root, "app/workbench/rail/rail-project-session-info.ts")).text()
-    const sessionStatusDispatcher = await Bun.file(path.join(root, "features/session/store/session-status-dispatcher.ts")).text()
+    const sessionStatusDispatcher = await Bun.file(
+      path.join(root, "features/session/store/session-status-dispatcher.ts"),
+    ).text()
     const sidebarDataPlane = `${text}\n${headerSurfaces}\n${projectSessionInfo}`
 
     expect(text).toMatch(/sessionListQueryOptions/)
@@ -3159,7 +3286,9 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/globalSync\.child/)
     expect(globalSync).toMatch(/function sessionCacheLimit\(directory: string, fallback: number\)/)
     expect(globalSync).toMatch(/queryKeys\.directory\.sessionCache\(key\)/)
-    expect(globalSync).toMatch(/queryClient\.getQueryData<SessionCacheValue>\(queryKeys\.directory\.sessionCache\(directory\)\)\?\.limit/)
+    expect(globalSync).toMatch(
+      /queryClient\.getQueryData<SessionCacheValue>\(queryKeys\.directory\.sessionCache\(directory\)\)\?\.limit/,
+    )
     expect(globalSync).toMatch(/function cacheSessions\(directory: string, value: Omit<SessionCacheValue, "at">\)/)
     expect(text).not.toMatch(/sortedRootSessions\(workspaceStore/)
     expect(text).not.toMatch(/workspaceStore\.sessionTotal/)
@@ -3192,7 +3321,9 @@ describe("workspace runtime route audit", () => {
 
   test("upstream permission auto-respond checks session lineage from directory cache", async () => {
     const text = await Bun.file(path.join(root, "features/session/providers/permission.tsx")).text()
-    const autoResponseCache = await Bun.file(path.join(root, "features/session/providers/permission-auto-response-cache.ts")).text()
+    const autoResponseCache = await Bun.file(
+      path.join(root, "features/session/providers/permission-auto-response-cache.ts"),
+    ).text()
     const configHelper = await Bun.file(path.join(root, "platform/query/directory-config-cache.ts")).text()
 
     expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory\)/)
@@ -3285,7 +3416,9 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/agentListQuery\(/)
     expect(text).toMatch(/commandListQuery\(/)
-    expect(text).toMatch(/directorySessionCacheQueryOptions\(\{[\s\S]*directory: resolvedSessionDirectory\(\) \?\? sdk\.directory/)
+    expect(text).toMatch(
+      /directorySessionCacheQueryOptions\(\{[\s\S]*directory: resolvedSessionDirectory\(\) \?\? sdk\.directory/,
+    )
     expect(text).toMatch(/directorySessionCacheQuery\.data\?\.session\.find\(\(session\) => session\.id === sid\)/)
     expect(text).toMatch(/const projectCatalog = \(\) => \(projectsQuery\.data \?\? \[\]\) as ProjectCatalogItem\[\]/)
     expect(text).toMatch(/resolveSubmitSessionDirectory\(\{/)
@@ -3304,7 +3437,9 @@ describe("workspace runtime route audit", () => {
     expect(submit).toMatch(/commandListQuery\(/)
     expect(submit).toMatch(/queryClient\s*\.\s*fetchQuery\(/)
     expect(shellQuery).toMatch(/export function commandListQuery/)
-    expect(submit).toMatch(/addRegisteredConversationMessage\(\{[\s\S]*message: item\.message,[\s\S]*parts: item\.parts/)
+    expect(submit).toMatch(
+      /addRegisteredConversationMessage\(\{[\s\S]*message: item\.message,[\s\S]*parts: item\.parts/,
+    )
     expect(submit).toMatch(/removeRegisteredConversationMessage\(\{[\s\S]*messageID/)
     expect(submit).toMatch(/setPromptSessionStatus/)
     expect(submit).not.toMatch(/sessionStatusKey/)
@@ -3350,7 +3485,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/registeredConversationUserMessages\(args\.sessionId\(\)\) as UserMessage\[\]/)
     expect(text).toMatch(/conversation\(\)\.parts\[message\.id\]/)
     expect(text).toMatch(/directorySessionCacheQueryOptions\(\{ directory: args\.directory\(\) \}\)\.queryKey/)
-    expect(text).toMatch(/configQuery\(\{[\s\S]*baseUrl: sdk\.url,[\s\S]*directory: args\.directory\(\),[\s\S]*client: sdk\.client/)
+    expect(text).toMatch(
+      /configQuery\(\{[\s\S]*baseUrl: sdk\.url,[\s\S]*directory: args\.directory\(\),[\s\S]*client: sdk\.client/,
+    )
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -3408,7 +3545,9 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       const text = await Bun.file(path.join(root, file)).text()
-      if (/LegacySessionConversationOwner|LegacyConversationMirrorSource|legacy-session-conversation-owner/.test(text)) {
+      if (
+        /LegacySessionConversationOwner|LegacyConversationMirrorSource|legacy-session-conversation-owner/.test(text)
+      ) {
         offenders.push(file)
       }
     }

@@ -28,6 +28,7 @@ import { createVirtualSessionEnv } from "../../virtual-session-env"
 import type { RunStore, SessionEnv, SessionEnvFactory, SessionEnvFactoryInput } from "../../session-env"
 import { createMemoryRunStore } from "../../session-env"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
+import { firstTurnErrorData } from "../../first-turn-error"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { Agent, AgentTool } from "@mariozechner/pi-agent-core"
 import {
@@ -481,7 +482,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         directory: scope,
         completed,
         ...(assistantError
-          ? { error: { name: "UnknownError", data: { message: assistantError } } }
+          ? { error: { name: "UnknownError", data: firstTurnErrorData(assistantError) } }
           : { finish: "stop" }),
         ...(input.variant ? { variant: input.variant } : {}),
       }),

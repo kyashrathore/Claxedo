@@ -1,5 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import Database from "better-sqlite3"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
@@ -20,9 +22,7 @@ import { hostedConnectionsEntitlement } from "./connections-host/connections-ent
 import { hostedOrgMembershipVerifier } from "./connections-host/org-membership"
 import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { mirrorProcessEvents } from "./process-events"
-import { PagesRoutes } from "./routes/pages"
-import { DocsRoutes } from "./routes/docs"
-import { sqliteDocumentStore } from "./doc-store"
+import { DocumentsRoutes } from "./routes/documents"
 import { AgentConfigRoutes } from "./routes/agent-config"
 import { SessionMetaRoutes } from "./routes/session-meta"
 import { WorkspaceRoutes } from "./routes/workspace"
@@ -62,7 +62,13 @@ import {
   type ControlPlaneRelay,
   type ControlPlaneServices,
 } from "./control-plane/services"
-import { betterAuthAdapter, clerkAuthAdapter, signedCloudAuthRequested } from "./control-plane/auth"
+import {
+  betterAuthAdapter,
+  clerkAuthAdapter,
+  controlPlaneAuthContext,
+  ControlPlaneAuthError,
+  signedCloudAuthRequested,
+} from "./control-plane/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,
@@ -80,7 +86,13 @@ import { BootstrapRoutes } from "./routes/bootstrap"
 import { LivingAppsRoutes } from "./routes/living-apps"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "./relay-provider"
-import { ensureWorkspace, listProjects, resolveWorkspace } from "./workspace-store"
+import {
+  ensureWorkspace,
+  listProjects,
+  listWorkspaces,
+  resolveWorkspace,
+  subscribeLocalWorkspaceChanges,
+} from "./workspace-store"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
 import { mountControlPlaneChannels } from "./channels-control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
@@ -93,11 +105,21 @@ import {
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "./central-session-runtime"
 import { dataDir } from "./paths"
+import { withDataDirOwnership } from "./data-dir-owner"
+import { createLocalDocumentsBackend } from "./documents/local-backend"
+import { LocalInstallationDocumentBroker } from "./documents/local-installation-broker"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution } from "./workgraph-agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree-service"
 import type { CommandResult, WorkGraphAttemptOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
+import { sessionMeta } from "./session-meta"
+import { RemoteAccessRoutes } from "./routes/remote-access"
+import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
+import { localHostIdentity, registrationPayload, signHostPayload } from "./routes/workspace-local-host"
+import { startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "./user-hosted-tunnel"
+
+const execFileAsync = promisify(execFile)
 
 const TrackBody = z.object({
   distinctId: z.string(),
@@ -163,10 +185,29 @@ function authRouteOptions(services: ControlPlaneServices) {
   }
 }
 
-function workspaceRouteOptions(services: ControlPlaneServices) {
+export function localDocumentsBackend() {
+  return createLocalDocumentsBackend({
+    resolveWorkspace,
+    sessionMeta,
+    dataDir,
+    reportError,
+    runGit: async (args, directory, options) =>
+      (
+        await execFileAsync("git", [...args], {
+          cwd: directory,
+          ...(options?.env ? { env: { ...process.env, ...options.env } } : {}),
+          ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
+          ...(options?.maxBufferBytes ? { maxBuffer: options.maxBufferBytes } : {}),
+        })
+      ).stdout.trim(),
+  })
+}
+
+function workspaceRouteOptions(services: ControlPlaneServices, connections?: ReturnType<typeof createConnectionsHost>["service"]) {
   return {
     ...authRouteOptions(services),
     credentials: services.credentials,
+    ...(connections ? { connections } : {}),
     ...(services.relay.relayUrl ? { relayUrl: services.relay.relayUrl } : {}),
     ...(services.relay.relayUrls ? { relayUrls: services.relay.relayUrls } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
@@ -194,6 +235,8 @@ export function createApp(
     beforeLocalSessionList?: () => Promise<void>
   } = {},
 ) {
+  const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
+  delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
   const app = new Hono()
   // Record the transport peer address for every request (including
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
@@ -227,6 +270,15 @@ export function createApp(
     createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),
     turnCredentials,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
+  })
+  const requireHostedConnectionsEntitlement = hostedConnectionsEntitlement(process.env)
+  const verifyOrgMembership = hostedOrgMembershipVerifier(process.env)
+  const connectionsHost = createConnectionsHost({
+    credentials: services.credentials,
+    turnCredentials,
+    ...authRouteOptions(services),
+    ...(requireHostedConnectionsEntitlement ? { requireHostedConnectionsEntitlement } : {}),
+    ...(verifyOrgMembership ? { verifyOrgMembership } : {}),
   })
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
   const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxyOptions)
@@ -321,6 +373,43 @@ export function createApp(
     }),
   )
   app.route("/", ProviderAuthRoutes(services))
+  const remoteAccessRelayUrl = services.relay.relayUrl ?? Object.values(services.relay.relayUrls ?? {})[0]
+  const remoteAccessSigner = services.relay.hostTunnelTokenSigner
+  app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
+    deviceLoginConfigured: !!process.env.CLAXEDO_DEVICE_LOGIN_ISSUER?.trim(),
+    relayConfigured: !!remoteAccessRelayUrl && !!remoteAccessSigner,
+    authenticate: async (request) => {
+      const auth = await controlPlaneAuthContext(request, {
+        config: services.auth.config,
+        ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      })
+      if (auth.mode === "signed") return auth
+      throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+    },
+    service: services.authority ? createRemoteAccessService({
+      authority: services.authority,
+      relayUrl: remoteAccessRelayUrl ?? "",
+      hostTunnelTokenSigner: remoteAccessSigner ?? (async () => {
+        throw new ControlPlaneAuthError(503, "host_tunnel_token_signer_unavailable", "Host Tunnel Token signer is not configured")
+      }),
+      listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
+        id: workspace.id,
+        kind: workspace.kind,
+        displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
+        projectId: workspace.project_id,
+        repoUrl: workspace.repo_url ?? workspace.git_remote,
+        repoName: workspace.repo_name,
+        gitBranch: workspace.git_branch,
+      })),
+      subscribeLocalWorkspaces: (listener) => subscribeLocalWorkspaceChanges(listener),
+      localHostIdentity,
+      signHostPayload,
+      registrationPayload,
+      startMachineTunnel: startUserHostedMachineTunnel,
+      stopMachineTunnel: stopUserHostedMachineTunnel,
+      capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
+    }) : unavailableRemoteAccessService(),
+  }))
 
   mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
 
@@ -407,24 +496,20 @@ export function createApp(
     }),
   )
 
-  // Pages routes
+  const documentsBackend = localDocumentsBackend()
   app.route(
-    "/pages",
-    PagesRoutes({
-      env: process.env,
+    "/documents",
+    DocumentsRoutes({
+      backend: documentsBackend,
       services,
       ...authRouteOptions(services),
     }),
   )
-
-  app.route(
-    "/api/claxedo/docs",
-    DocsRoutes({
-      store: () => sqliteDocumentStore,
-      services,
-      ...authRouteOptions(services),
-    }),
-  )
+  app.route("/internal/documents", LocalInstallationDocumentBroker({
+    backend: documentsBackend,
+    ...(localDocumentBrokerToken ? { installationToken: localDocumentBrokerToken } : {}),
+    env: process.env,
+  }))
 
   // Agent config routes (centralized MCP + commands management)
   app.route(
@@ -438,7 +523,7 @@ export function createApp(
     }),
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
-  app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services)))
+  app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost.service)))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/", centralControl.app)
   app.route(
@@ -455,18 +540,9 @@ export function createApp(
   // F5: the hosted-connections entitlement hook — undefined on self-host (never
   // gated, byte-identical), a fail-closed billing gate in hosted mode so a free
   // org is denied once CLAXEDO_HOSTED_CREDENTIALS_ENABLED is flipped on.
-  const requireHostedConnectionsEntitlement = hostedConnectionsEntitlement(process.env)
   // F12: hosted re-checks org membership in Convex before granting the team
   // partition (a Clerk `org_id` claim alone is not authorization — D2).
   // Undefined on self-host → the gate never consults it (byte-identical).
-  const verifyOrgMembership = hostedOrgMembershipVerifier(process.env)
-  const connectionsHost = createConnectionsHost({
-    credentials: services.credentials,
-    turnCredentials,
-    ...authRouteOptions(services),
-    ...(requireHostedConnectionsEntitlement ? { requireHostedConnectionsEntitlement } : {}),
-    ...(verifyOrgMembership ? { verifyOrgMembership } : {}),
-  })
   app.route("/api/claxedo/integrations", connectionsHost.routes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/living-apps", LivingAppsRoutes())
@@ -624,13 +700,14 @@ function localRelayFromEnv(
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
             targetLookup: localRelayTargetLookup({ sandboxManager }),
-            recordRuntimeAccessToken: (input) => authority.recordRuntimeAccessTokenForService({
-              jti: input.jti,
-              workspaceId: input.workspaceId,
-              hostId: input.hostId,
-              subject: input.subject,
-              expiresAt: input.expiresAt,
-            }),
+            recordRuntimeAccessToken: (input) =>
+              authority.recordRuntimeAccessTokenForService({
+                jti: input.jti,
+                workspaceId: input.workspaceId,
+                hostId: input.hostId,
+                subject: input.subject,
+                expiresAt: input.expiresAt,
+              }),
           }),
         }
       : {}),
@@ -653,23 +730,48 @@ function sessionComposerHarness(harness: ReturnType<typeof defaultHarness>) {
 }
 
 export function startControlPlaneStack(options: ControlPlaneStackOptions) {
+  return withDataDirOwnership(dataDir(), (dataDirOwner) => {
+    const releaseDataDirOwner = () => {
+      try {
+        dataDirOwner.release()
+      } catch (error) {
+        console.warn("[claxedo-server] failed to release data directory ownership", error)
+      }
+    }
+    process.once("exit", releaseDataDirOwner)
+    try {
+      return startOwnedControlPlaneStack(options, releaseDataDirOwner)
+    } catch (error) {
+      process.off("exit", releaseDataDirOwner)
+      throw error
+    }
+  })
+}
+
+function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
   const port = options.port ?? 3001
   // No external opencodeUrl configured => embed the engine in-process (default).
   // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
-  let executeWorkGraphAttempt: ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>) | undefined
-  const localWorkGraphAttempts = new Map<string, Readonly<{
-    identity: WorkGraphAttemptOperationRequest["identity"]
-    context: WorkGraphContext
-  }>>()
+  let executeWorkGraphAttempt:
+    | ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>)
+    | undefined
+  const localWorkGraphAttempts = new Map<
+    string,
+    Readonly<{
+      identity: WorkGraphAttemptOperationRequest["identity"]
+      context: WorkGraphContext
+    }>
+  >()
   const sameAttemptIdentity = (
     left: WorkGraphAttemptOperationRequest["identity"],
     right: WorkGraphAttemptOperationRequest["identity"],
-  ) => left.attemptId === right.attemptId
-    && left.sessionId === right.sessionId
-    && left.workspaceId === right.workspaceId
-    && left.leaseEpoch === right.leaseEpoch
+  ) =>
+    left.attemptId === right.attemptId &&
+    left.sessionId === right.sessionId &&
+    left.workspaceId === right.workspaceId &&
+    left.leaseEpoch === right.leaseEpoch
   configureOpenCodeAuth(options.opencodePassword)
   if (options.opencodeUrl) {
     configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
@@ -769,10 +871,13 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
       return localSessionProjectionReady
     },
   })
-  const workgraphRuntimes = new Map<string, Promise<{
-    workspaceId: string
-    runtime: Awaited<ReturnType<typeof ensureEmbeddedWorkspaceRuntime>>
-  }>>()
+  const workgraphRuntimes = new Map<
+    string,
+    Promise<{
+      workspaceId: string
+      runtime: Awaited<ReturnType<typeof ensureEmbeddedWorkspaceRuntime>>
+    }>
+  >()
   const workgraphRuntime = (directory: string) => {
     const hit = workgraphRuntimes.get(directory)
     if (hit) return hit
@@ -796,7 +901,8 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   }
   const workgraphSessionModule = import("./workgraph-session-gateway")
   const workgraphBindings = workgraphSessionModule.then((gateway) =>
-    gateway.createFileWorkGraphSessionBindingStore(path.join(dataDir(), "workgraph-session-bindings.json")))
+    gateway.createFileWorkGraphSessionBindingStore(path.join(dataDir(), "workgraph-session-bindings.json")),
+  )
   const workgraphSessions = Promise.all([workgraphSessionModule, workgraphBindings]).then(([gateway, bindings]) =>
     gateway.createHarnessWorkGraphGateway(opencodeRequest, {
       connections: built.connections,
@@ -809,11 +915,13 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
       attemptContexts: {
         bind: async (input) => {
           const existing = localWorkGraphAttempts.get(input.identity.sessionId)
-          if (existing && (
-            !sameAttemptIdentity(existing.identity, input.identity) ||
-            existing.context.organizationId !== input.context.organizationId ||
-            existing.context.ownerUserId !== input.context.ownerUserId
-          )) throw new Error("WorkGraph Session is already bound to another Attempt owner")
+          if (
+            existing &&
+            (!sameAttemptIdentity(existing.identity, input.identity) ||
+              existing.context.organizationId !== input.context.organizationId ||
+              existing.context.ownerUserId !== input.context.ownerUserId)
+          )
+            throw new Error("WorkGraph Session is already bound to another Attempt owner")
           localWorkGraphAttempts.set(input.identity.sessionId, input)
         },
         release: async (sessionId) => {
@@ -830,10 +938,11 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
         workgraphRuntimes.delete(directory)
         releaseEmbeddedWorkspaceRuntime((await pending).workspaceId)
       },
-    }))
-  void workgraphBindings.then((store) => store.all()).then((bindings) =>
-    Promise.allSettled(bindings.map((binding) => workgraphRuntime(binding.directory))),
+    }),
   )
+  void workgraphBindings
+    .then((store) => store.all())
+    .then((bindings) => Promise.allSettled(bindings.map((binding) => workgraphRuntime(binding.directory))))
   const workgraphSessionGateway = {
     supportsConnections: !!built.connections,
     classifyAdmissionError: (error: unknown) => {
@@ -901,32 +1010,34 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     telemetry: services.telemetry,
   })
   void workgraph.then((embedded) => {
-    executeWorkGraphAttempt = (context, request) => embedded.service.execute(context, {
-      operationId: request.operation.operationId,
-      command: request.operation.type === "record_checkpoint"
-        ? {
-            version: 1,
-            type: "record_attempt_checkpoint",
-            attemptId: request.identity.attemptId,
-            sessionId: request.identity.sessionId,
-            workspaceId: request.identity.workspaceId,
-            ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
-            level: request.operation.level,
-            summary: request.operation.summary,
-            evidenceIds: request.operation.evidenceIds,
-          }
-        : {
-            version: 1,
-            type: "complete_attempt",
-            attemptId: request.identity.attemptId,
-            sessionId: request.identity.sessionId,
-            workspaceId: request.identity.workspaceId,
-            ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
-            summary: request.operation.summary,
-            artifacts: request.operation.artifacts,
-            evidence: request.operation.evidence,
-          },
-    })
+    executeWorkGraphAttempt = (context, request) =>
+      embedded.service.execute(context, {
+        operationId: request.operation.operationId,
+        command:
+          request.operation.type === "record_checkpoint"
+            ? {
+                version: 1,
+                type: "record_attempt_checkpoint",
+                attemptId: request.identity.attemptId,
+                sessionId: request.identity.sessionId,
+                workspaceId: request.identity.workspaceId,
+                ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+                level: request.operation.level,
+                summary: request.operation.summary,
+                evidenceIds: request.operation.evidenceIds,
+              }
+            : {
+                version: 1,
+                type: "complete_attempt",
+                attemptId: request.identity.attemptId,
+                sessionId: request.identity.sessionId,
+                workspaceId: request.identity.workspaceId,
+                ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+                summary: request.operation.summary,
+                artifacts: request.operation.artifacts,
+                evidence: request.operation.evidence,
+              },
+      })
   })
   if (!services.auth.config.enabled && services.auth.config.mode === "local-only" && !options.opencodeUrl) {
     configureOpenCodeApplicationTools(() =>
@@ -1010,7 +1121,18 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     hostname: process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1",
   })
   built.injectWebSocket(server)
+  const stopServer = async () => {
+    opencodeEvents.close()
+    upstreamEvents?.close()
+    await shutdownControlPlaneRuntime()
+    server.close()
+    process.exit(0)
+  }
   server.on("close", () => {
+    process.off("SIGTERM", stopServer)
+    process.off("SIGINT", stopServer)
+    process.off("exit", releaseDataDirOwner)
+    releaseDataDirOwner()
     clearInterval(workgraphReconciler)
     unsubscribeWorkGraphSessionIntake()
     if (workgraphDatabase.open) workgraphDatabase.close()
@@ -1022,13 +1144,8 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     console.error(`[claxedo-server] WARN  failed to setup agent hooks`, err)
   })
 
-  process.on("SIGTERM", async () => {
-    opencodeEvents.close()
-    upstreamEvents?.close()
-    await shutdownControlPlaneRuntime()
-    server.close()
-    process.exit(0)
-  })
+  process.on("SIGTERM", stopServer)
+  process.on("SIGINT", stopServer)
 
   return server
 }

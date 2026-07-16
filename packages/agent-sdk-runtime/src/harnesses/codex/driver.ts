@@ -23,6 +23,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { harnessSpawnEnv } from "../shared/spawn-env"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
@@ -226,11 +227,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     started = await CodexAppServerProcess.start({
       binary: this.options.binary ?? "codex",
       directory,
-      env: {
+      env: codexSpawnEnv({
         ...process.env,
         CODEX_HOME: this.codexHome,
         ...(this.auth.openai ? { OPENAI_API_KEY: this.auth.openai } : {}),
-      },
+      }),
       requestHandler: (message) => this.handleServerRequest(message),
       onClose: (err) => {
         if (this.process === started) this.process = null
@@ -351,6 +352,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     await writeCodexAuthFile(this.codexHome, this.codexAuth)
     return next
   }
+}
+
+export function codexSpawnEnv(input: Record<string, string | undefined>) {
+  return harnessSpawnEnv(input)
 }
 
 class CodexAppServerProcess {

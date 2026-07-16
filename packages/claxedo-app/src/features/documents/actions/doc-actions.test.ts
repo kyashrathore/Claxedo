@@ -1,21 +1,21 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
-import { turnDocumentRevisionIntoWork } from "./doc-actions"
+import { turnDocumentIntoWork } from "./doc-actions"
 
-describe("Docs v2 actions", () => {
+describe("document WorkGraph actions", () => {
   beforeEach(() => configureAppPortsForTest())
 
-  test("dispatches only the exact revision locator through the app-owned integration port", async () => {
-    const locator = {
+  test("dispatches only the canonical document identity and placement", async () => {
+    const request = {
       projectId: "project_1",
       documentId: "document_1",
-      revisionId: "revision_1",
+      placement: "local" as const,
       targetStreamId: "stream_1",
     }
     const calls: unknown[] = []
     configureAppPortsForTest({
       documents: {
-        turnDocumentRevisionIntoWork: async (input) => {
+        turnDocumentIntoWork: async (input) => {
           calls.push(input)
           return {
             proposalId: "proposal_1",
@@ -26,26 +26,22 @@ describe("Docs v2 actions", () => {
       },
     })
 
-    await expect(turnDocumentRevisionIntoWork(locator)).resolves.toMatchObject({ proposalId: "proposal_1" })
-    expect(calls).toEqual([locator])
+    await expect(turnDocumentIntoWork(request)).resolves.toMatchObject({ proposalId: "proposal_1" })
+    expect(calls).toEqual([request])
   })
 
-  test("rejects an incomplete durable revision locator before invoking the app port", async () => {
+  test("rejects incomplete identity before invoking the app port", () => {
     let calls = 0
     configureAppPortsForTest({
       documents: {
-        turnDocumentRevisionIntoWork: async () => {
+        turnDocumentIntoWork: async () => {
           calls++
           throw new Error("must not run")
         },
       },
     })
 
-    expect(() => turnDocumentRevisionIntoWork({
-      projectId: "project_1",
-      documentId: "document_1",
-      revisionId: "",
-    })).toThrow()
+    expect(() => turnDocumentIntoWork({ projectId: "project_1", documentId: "", placement: "local" })).toThrow()
     expect(calls).toBe(0)
   })
 })

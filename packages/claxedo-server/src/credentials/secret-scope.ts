@@ -1,9 +1,10 @@
-import type { CredentialSource } from "./types"
+import type { CredentialScope, CredentialSource } from "./types"
 
 export type CredentialSecretScope = "local" | "shared"
 
 export function credentialSecretInScope(input: {
   source: CredentialSource
+  scope?: CredentialScope
 }, scope: CredentialSecretScope = "local") {
-  return scope !== "shared" || input.source === "managed"
+  return scope !== "shared" || input.scope === "shared" || (!input.scope && input.source === "managed")
 }

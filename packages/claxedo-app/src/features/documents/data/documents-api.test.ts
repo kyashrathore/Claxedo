@@ -45,6 +45,31 @@ describe("documentsApi", () => {
     ])
   })
 
+  test("agentOpen requests an honest canonical path for the current session", async () => {
+    responses.push(
+      Response.json({ document_id: "doc-1", display_name: "Plan", path: "/data/documents/p1/doc-1/plan.md" }),
+    )
+    await expect(documentsApi.agentOpen("doc-1", "session-1")).resolves.toEqual({
+      document_id: "doc-1",
+      display_name: "Plan",
+      path: "/data/documents/p1/doc-1/plan.md",
+    })
+    expect(calls[0]?.url).toBe("http://test.local/documents/doc-1/agent-open")
+    expect(calls[0]?.init?.method).toBe("POST")
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ session_id: "session-1" }))
+  })
+
+  test("runtime conflict resolution sends only the human choice and session identity", async () => {
+    responses.push(Response.json({ path: "/workspace/plan.md", version: "opaque-v3" }))
+    await expect(documentsApi.resolveRuntimeConflict("doc-1", {
+      sessionId: "session-1",
+      choice: "draft",
+    })).resolves.toEqual({ path: "/workspace/plan.md", version: "opaque-v3" })
+    expect(calls[0]?.url).toBe("http://test.local/documents/doc-1/runtime-conflict/resolve")
+    expect(calls[0]?.init?.method).toBe("POST")
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ session_id: "session-1", choice: "draft" }))
+  })
+
   test("save sends display name and Markdown in one conditional request", async () => {
     responses.push(Response.json({ markdown: "body", version: "opaque-v2", modifiedAt: 2 }))
     await expect(
@@ -79,6 +104,72 @@ describe("documentsApi", () => {
       current: { displayName: "Other", markdown: "disk" },
     })
     expect(calls).toHaveLength(3)
+  })
+
+  test("history lists snapshots and restores with the current opaque version", async () => {
+    responses.push(
+      Response.json([{ id: "snapshot-1", reason: "document.written", pins: [] }]),
+      Response.json({ markdown: "restored", version: "opaque-v3", modifiedAt: 3 }),
+    )
+    await expect(documentsApi.snapshots("doc-1")).resolves.toEqual([expect.objectContaining({ id: "snapshot-1" })])
+    await expect(documentsApi.restoreSnapshot("doc-1", "snapshot/1", "opaque-v2")).resolves.toMatchObject({
+      markdown: "restored",
+      version: "opaque-v3",
+    })
+    expect(calls[1]?.url).toBe("http://test.local/documents/doc-1/snapshots/snapshot%2F1/restore")
+    expect(calls[1]?.init?.method).toBe("POST")
+    expect(new Headers(calls[1]?.init?.headers).get("If-Match")).toBe("opaque-v2")
+  })
+
+  test("moves a managed document to a repository without changing its identity", async () => {
+    responses.push(Response.json({ id: "doc-1", origin_kind: "repository", workspace_id: "workspace-1" }))
+    await expect(
+      documentsApi.moveToRepository("doc-1", {
+        workspaceId: "workspace-1",
+        path: "docs/plan.md",
+      }),
+    ).resolves.toMatchObject({ id: "doc-1", origin_kind: "repository" })
+    expect(calls[0]?.url).toBe("http://test.local/documents/doc-1/move-to-repository")
+    expect(calls[0]?.init?.method).toBe("POST")
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ workspace_id: "workspace-1", path: "docs/plan.md" }))
+  })
+
+  test("imports repository metadata without copying content and exports exact bytes", async () => {
+    responses.push(
+      Response.json({ id: "doc-1", origin_kind: "repository", repository_relative_path: "docs/plan.md" }),
+      new Response("\ufeff# Exact\r\nbody", { headers: { "content-type": "text/markdown" } }),
+    )
+    await documentsApi.createFromRepository({
+      projectId: "project-1",
+      directory: "/repo",
+      workspaceId: "workspace-1",
+      path: "docs/plan.md",
+      displayName: "Plan",
+    })
+    await expect(documentsApi.exportBytes("doc-1")).resolves.toEqual(new TextEncoder().encode("\ufeff# Exact\r\nbody"))
+    expect(calls[0]?.url).toBe("http://test.local/documents/from-repo")
+    expect(calls[0]?.init?.body).toBe(
+      JSON.stringify({
+        project_id: "project-1",
+        directory: "/repo",
+        workspace_id: "workspace-1",
+        path: "docs/plan.md",
+        display_name: "Plan",
+      }),
+    )
+  })
+
+  test("lists status metadata and posts an allowed transition", async () => {
+    responses.push(
+      Response.json([{ id: "draft", name: "Draft", color: "#fff", position: 0, transitions: '["done"]' }]),
+      Response.json({ id: "doc-1", status: "done" }),
+    )
+    await expect(documentsApi.listStatuses({ projectId: "project-1" })).resolves.toEqual([
+      expect.objectContaining({ id: "draft", transitions: ["done"] }),
+    ])
+    await expect(documentsApi.transitionStatus("doc-1", "done")).resolves.toMatchObject({ status: "done" })
+    expect(calls[1]?.url).toBe("http://test.local/documents/doc-1/status")
+    expect(calls[1]?.init?.body).toBe(JSON.stringify({ status: "done" }))
   })
 
   test("missing documents surface a typed recovery state", async () => {

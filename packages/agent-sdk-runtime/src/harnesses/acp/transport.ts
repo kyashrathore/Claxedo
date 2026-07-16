@@ -9,6 +9,7 @@ import {
   createWebSocketStream,
   type WebSocketStreamOptions,
 } from "@agentclientprotocol/sdk/experimental/ws-client"
+import { harnessSpawnEnv } from "../shared/spawn-env"
 
 export type ACPTransportEnv = Record<string, string | undefined>
 
@@ -56,10 +57,10 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
   const proc = spawn(input.binary, input.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
-    env: {
+    env: acpSpawnEnv({
       ...process.env,
       ...definedEnv(input.env),
-    },
+    }),
   })
 
   proc.stderr?.on("data", (data: Buffer) => {
@@ -91,6 +92,10 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
       } catch {}
     },
   }
+}
+
+export function acpSpawnEnv(input: ACPTransportEnv) {
+  return harnessSpawnEnv(input)
 }
 
 export function createStreamableHttpACPTransportFactory(options: ACPStreamableHttpTransportFactoryOptions): ACPTransportFactory {

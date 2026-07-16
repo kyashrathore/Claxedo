@@ -33,6 +33,13 @@ export type TunnelPong = {
   received_at: number
 }
 
+export type TunnelHostRegistrationUpdate = {
+  type: "host.registration.update"
+  protocol: typeof TUNNEL_PROTOCOL_VERSION
+  workspace_ids: string[]
+  token: string
+}
+
 export type TunnelHttpRequest = {
   type: "http.request"
   protocol: typeof TUNNEL_PROTOCOL_VERSION
@@ -111,6 +118,7 @@ export type TunnelError = {
 export type TunnelMessage =
   | TunnelPing
   | TunnelPong
+  | TunnelHostRegistrationUpdate
   | TunnelHttpRequest
   | TunnelHttpResponseStart
   | TunnelHttpResponseChunk
@@ -124,6 +132,7 @@ export type TunnelMessage =
 const tunnelMessageTypes = new Set<TunnelMessage["type"]>([
   "ping",
   "pong",
+  "host.registration.update",
   "http.request",
   "http.response.start",
   "http.response.chunk",
@@ -184,6 +193,8 @@ function validateTunnelMessageShape(row: Record<string, unknown>) {
       return isString(row.id) && isFiniteNumber(row.sent_at)
     case "pong":
       return isString(row.id) && isFiniteNumber(row.sent_at) && isFiniteNumber(row.received_at)
+    case "host.registration.update":
+      return isStringArray(row.workspace_ids) && isString(row.token)
     case "http.request":
       return isString(row.request_id)
         && isString(row.workspace_id)
@@ -229,6 +240,10 @@ function validateTunnelMessageShape(row: Record<string, unknown>) {
 
 function isString(input: unknown) {
   return typeof input === "string" && input.length > 0
+}
+
+function isStringArray(input: unknown): input is string[] {
+  return Array.isArray(input) && input.length > 0 && input.every(isString)
 }
 
 function isFiniteNumber(input: unknown) {

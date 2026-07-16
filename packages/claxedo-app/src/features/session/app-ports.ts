@@ -32,6 +32,9 @@ import type * as Marketplace from "@/features/extensions/marketplace/api"
 import type * as ManageModels from "@/app/dialogs/manage-models"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
+import type * as ConnectAI from "@/app/dialogs/connect-ai"
+import type * as DocumentMentions from "@/app/integrations/document-mentions"
+import type * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 export { WORKBENCH_DRAG_MIME } from "@/lib/workbench-drag"
 
 export type SessionAppPorts = {
@@ -73,6 +76,8 @@ export type SessionAppPorts = {
   loadManageModelsDialog: () => Promise<typeof ManageModels>
   loadSelectProviderDialog: () => Promise<typeof SelectProvider>
   loadConnectProviderDialog: () => Promise<typeof ConnectProvider>
+  loadAIConnectDialog: () => Promise<typeof ConnectAI>
+  applyAIConnectionResults: typeof AIConnectResolution.applyAIConnectionResults
   filterMcpCatalogEntries: typeof Marketplace.filterMcpCatalogEntries
   installDisabledReasonForEntry: typeof Marketplace.installDisabledReasonForEntry
   installMcpDialogEntry: typeof Marketplace.installMcpDialogEntry
@@ -81,6 +86,12 @@ export type SessionAppPorts = {
   sourceLabel: typeof Marketplace.sourceLabel
   targetLabel: typeof Marketplace.targetLabel
   uninstallMcpDialogEntry: typeof Marketplace.uninstallMcpDialogEntry
+  listDocumentMentions: typeof DocumentMentions.listDocumentMentions
+  openDocumentMention: typeof DocumentMentions.openDocumentMention
+  documentMentionText: typeof DocumentMentions.documentMentionText
+  useFirstTurnFunnel: () => {
+    emit(event: { name: "first_turn_ok" } | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" } | { name: "first_cloud_turn_ok" }): void
+  }
 }
 
 let ports: SessionAppPorts | undefined
@@ -110,6 +121,7 @@ export const useProviders = bind("useProviders")
 export const useGlobalSync = bind("useGlobalSync")
 export const useTerminal = bind("useTerminal")
 export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")
+export const useFirstTurnFunnel = bind("useFirstTurnFunnel")
 export const useConfigOptional = bind("useConfigOptional")
 export const useShellQueryOptions = bind("useShellQueryOptions")
 export const useGlobalBootstrapActions = bind("useGlobalBootstrapActions")
@@ -145,6 +157,8 @@ export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
 export const loadManageModelsDialog = bind("loadManageModelsDialog")
 export const loadSelectProviderDialog = bind("loadSelectProviderDialog")
 export const loadConnectProviderDialog = bind("loadConnectProviderDialog")
+export const loadAIConnectDialog = bind("loadAIConnectDialog")
+export const applyAIConnectionResults = bind("applyAIConnectionResults")
 export const filterMcpCatalogEntries = bind("filterMcpCatalogEntries")
 export const installDisabledReasonForEntry = bind("installDisabledReasonForEntry")
 export const installMcpDialogEntry = bind("installMcpDialogEntry")
@@ -153,6 +167,10 @@ export const loadMcpDialogData = bind("loadMcpDialogData")
 export const sourceLabel = bind("sourceLabel")
 export const targetLabel = bind("targetLabel")
 export const uninstallMcpDialogEntry = bind("uninstallMcpDialogEntry")
+export const listDocumentMentions = bind("listDocumentMentions")
+export const openDocumentMention = bind("openDocumentMention")
+export const documentMentionText = bind("documentMentionText")
+export type DocumentMentionOption = DocumentMentions.DocumentMentionOption
 export type CatalogEntry = Marketplace.CatalogEntry
 export type InstalledRecord = Marketplace.InstalledRecord
 export type RequestFn = Marketplace.RequestFn

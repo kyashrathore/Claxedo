@@ -322,6 +322,21 @@ async function pauseForUser(ctx: any, user: { _id: unknown }, args: {
   }
 }
 
+async function markSecondDeviceOpenForUser(ctx: any, user: { _id: unknown }, args: { workspace_id: string }) {
+  const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+  if (!workspace || !await authorizeWorkspaceForUser(ctx, workspace, user, "read")) throw new Error("Workspace not found")
+  const links = (await ctx.db
+    .query("local_host_links")
+    .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspace._id))
+    .collect())
+    .filter((link: any) => link.owner_user_id === user._id && !link.revoked_at)
+  const now = Date.now()
+  for (const link of links) {
+    if (!link.second_device_open_at) await ctx.db.patch(link._id, { second_device_open_at: now, updated_at: now })
+  }
+  return { recorded: links.length > 0, second_device_open_at: now }
+}
+
 export const createChallenge = authedMutation({
   args: {
     ...workspaceId,
@@ -422,6 +437,11 @@ export const pauseForService = serviceMutation({
   },
 })
 
+export const markSecondDeviceOpen = authedMutation({
+  args: workspaceId,
+  handler: async (ctx, args) => markSecondDeviceOpenForUser(ctx, await upsertUser(ctx), args),
+})
+
 export const active = authedQuery({
   args: workspaceId,
   handler: async (ctx, args) => {
@@ -440,6 +460,8 @@ export const active = authedQuery({
       active: true,
       host_id: link.host_id,
       workspace_id: args.workspace_id,
+      display_name: link.display_name,
+      second_device_open_at: link.second_device_open_at,
       expires_at: link.expires_at,
       last_seen_at: link.last_seen_at,
     }

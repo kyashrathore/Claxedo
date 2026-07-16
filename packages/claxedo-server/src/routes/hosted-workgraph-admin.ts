@@ -7,6 +7,8 @@ import { internalAdminAuthorized } from "./internal-admin-auth"
 export type WorkGraphReconcileResult = Readonly<{
   launched: readonly unknown[]
   results: readonly unknown[]
+  /** True when an overlapping run was skipped rather than executed. */
+  skipped?: boolean
   background?: Readonly<{
     controls: readonly unknown[]
     intake: Readonly<{ completed: number }>
@@ -70,10 +72,22 @@ export function HostedWorkGraphAdminRoutes(options: HostedWorkGraphAdminOptions 
     }
     active = true
     try {
-      const result = await options.reconcile()
+      let result: WorkGraphReconcileResult
+      try {
+        result = await options.reconcile()
+      } catch (error) {
+        options.telemetry?.capture("system", "workgraph.reconcile.failed", {
+          message: error instanceof Error ? error.message : String(error),
+        })
+        return context.json(
+          errorBody("workgraph_reconcile_failed", "WorkGraph reconciliation failed; retry the trigger"),
+          500,
+        )
+      }
       const summary = {
         launched: result.launched.length,
         results: result.results.length,
+        ...(result.skipped ? { skipped: true } : {}),
         ...(result.background
           ? {
               controls: result.background.controls.length,

@@ -130,10 +130,12 @@ describe("WaitingRow", () => {
 })
 
 describe("createWaitingCardController", () => {
-  test("derives unread state from backend acknowledgements and only dismisses the current local preview", () => {
+  test("derives unread from backend acknowledgements; unpinning is sticky until re-pinned", () => {
     createRoot(() => {
       const [items, setItems] = createSignal<AttentionItem[]>([decisionItem, workItem])
       const controller = createWaitingCardController(items)
+      // The pin preference persists module-globally; normalize before asserting.
+      controller.reveal(false)
       expect(controller.mode(false)).toBe("inline")
       expect(controller.unread()).toBe(2)
       setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
@@ -141,11 +143,14 @@ describe("createWaitingCardController", () => {
       expect(controller.unread()).toBe(0)
       controller.dismiss()
       expect(controller.mode(false)).toBeUndefined()
-      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
-      expect(controller.mode(false)).toBeUndefined()
+      // Codex's pinned-summary model: new attention arriving does NOT force
+      // the card back — the header control is the only way to re-pin it. The
+      // unread state still tracks the new item for the header dot.
       setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }, recapItem])
-      expect(controller.mode(false)).toBe("inline")
+      expect(controller.mode(false)).toBeUndefined()
       expect(controller.unread()).toBe(1)
+      controller.reveal(false)
+      expect(controller.mode(false)).toBe("inline")
     })
   })
 
@@ -195,5 +200,45 @@ describe("WaitingCard", () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect.mock.calls[0][0]).toBe(workItem)
     expect(onSelect.mock.calls[0][1]).toBe(row)
+  })
+
+  test("the inline card folds into the icon rail; floating reveals never collapse", async () => {
+    const onOpenPanel = vi.fn()
+    const onToggleCollapse = vi.fn()
+    const inline = render(() => (
+      <WaitingCard
+        mode="inline"
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+        items={[decisionItem]}
+        total={1}
+        unread={1}
+        onClose={() => {}}
+        onSelect={() => {}}
+        onOpenPanel={onOpenPanel}
+      />
+    ))
+    // The rail keeps one real control per capability: the full panel + expand.
+    await fireEvent.click(screen.getByRole("button", { name: "Open Needs you panel" }))
+    expect(onOpenPanel).toHaveBeenCalledOnce()
+    await fireEvent.click(screen.getByRole("button", { name: "Expand Needs you" }))
+    expect(onToggleCollapse).toHaveBeenCalledOnce()
+    expect(screen.queryByRole("button", { name: /Which auth strategy/ })).toBeNull()
+    inline.unmount()
+
+    render(() => (
+      <WaitingCard
+        mode="floating"
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+        items={[decisionItem]}
+        total={1}
+        unread={1}
+        onClose={() => {}}
+        onSelect={() => {}}
+        onOpenPanel={() => {}}
+      />
+    ))
+    expect(screen.getByRole("button", { name: /Which auth strategy/ })).toBeInTheDocument()
   })
 })

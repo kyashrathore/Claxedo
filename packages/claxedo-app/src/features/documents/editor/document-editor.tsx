@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createSignal, onCleanup } from "solid-js"
+import { Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js"
 import { detectMarkdown, type MarkdownDetection } from "@/features/documents/markdown/detector"
 import {
   createDocumentPersistenceController,
@@ -6,20 +6,29 @@ import {
   type PersistenceSnapshot,
 } from "@/features/documents/state/persistence-controller"
 import { createRecoveryDraftStore, type RecoveryDraftStorage } from "@/features/documents/state/recovery-draft"
-import { documentsApi, type DocumentsApi, type OpenDocument } from "@/features/documents/data/documents-api"
+import {
+  DocumentApiError,
+  documentsApi,
+  type DocumentsApi,
+  type OpenDocument,
+} from "@/features/documents/data/documents-api"
 import { ConflictRecovery } from "./conflict-recovery"
 import { DocumentRecoveryState } from "./recovery-states"
 import { RichMode } from "./rich-mode"
 import { SaveStatus } from "./save-status"
 import { SourceMode } from "./source-mode"
+import { createDocumentExternalChangeController } from "./external-change"
+import { VersionHistory } from "./version-history"
 
 export type DocumentEditorProps = {
   document: OpenDocument
-  api?: Pick<DocumentsApi, "save" | "create">
+  api?: Pick<DocumentsApi, "save" | "create"> &
+    Partial<Pick<DocumentsApi, "open" | "watch" | "snapshots" | "restoreSnapshot">>
   storage?: RecoveryDraftStorage
   onTitleChange?: (title: string) => void
   onBackToIndex?: () => void
   onBlockingClose?: (snapshot: PersistenceSnapshot) => void
+  onUnavailable?: (error: unknown) => void
   onController?: (controller: DocumentPersistenceController) => void
   reportError?: (error: unknown) => void
   transformSelection?: (action: "improve" | "fix" | "shorten", selected: string) => Promise<string>
@@ -61,6 +70,39 @@ export default function DocumentEditor(props: DocumentEditorProps) {
   const unsubscribe = controller.subscribe(setSnapshot)
   props.onController?.(controller)
 
+  const external =
+    api.open && api.watch
+      ? createDocumentExternalChangeController({
+          documentId: props.document.id,
+          projectId: props.document.summary.project_id,
+          watch: api.watch,
+          read: async () => {
+            const current = await api.open!(props.document.id)
+            return { displayName: current.displayName, markdown: current.markdown, version: current.version }
+          },
+          apply: (current) => {
+            const applied = controller.applyExternalChange(current)
+            if (applied.status === "conflicted") return
+            setDetection(detectMarkdown(current.markdown))
+            props.onTitleChange?.(current.displayName)
+          },
+          isUnavailable: (error) =>
+            error instanceof DocumentApiError && (error.status === 404 || error.code === "document_archived"),
+          onUnavailable: props.onUnavailable ?? reportError,
+          onError: reportError,
+          schedule: (run, delay) => {
+            const timer = setTimeout(run, delay)
+            return () => clearTimeout(timer)
+          },
+          subscribeFocus: (refresh) => {
+            if (typeof window === "undefined") return () => undefined
+            window.addEventListener("focus", refresh)
+            return () => window.removeEventListener("focus", refresh)
+          },
+        })
+      : undefined
+  onMount(() => external?.start())
+
   const editMarkdown = (markdown: string) => controller.editMarkdown(markdown)
   const flush = () => controller.flushOnBlur().then(undefined, reportError)
   const tryRich = () => setDetection(detectMarkdown(snapshot().draft.markdown))
@@ -91,8 +133,26 @@ export default function DocumentEditor(props: DocumentEditorProps) {
       markdown: draft.markdown,
     })
   }
+  const restoreSnapshot = async (snapshotId: string) => {
+    if (!api.restoreSnapshot || !api.open) return
+    const flushed = await controller.flushBeforeAction()
+    if (flushed.status === "failed" || flushed.status === "conflicted") {
+      props.onBlockingClose?.(flushed)
+      return
+    }
+    await api.restoreSnapshot(props.document.id, snapshotId, flushed.expectedVersion)
+    const restored = await api.open(props.document.id)
+    controller.applyExternalChange({
+      displayName: restored.displayName,
+      markdown: restored.markdown,
+      version: restored.version,
+    })
+    setDetection(detectMarkdown(restored.markdown))
+    props.onTitleChange?.(restored.displayName)
+  }
 
   onCleanup(() => {
+    external?.stop()
     unsubscribe()
     void controller.flushOnClose().then((result) => {
       if (result.status === "failed" || result.status === "conflicted") props.onBlockingClose?.(result)
@@ -137,12 +197,19 @@ export default function DocumentEditor(props: DocumentEditorProps) {
           Save now
         </button>
         <SaveStatus snapshot={snapshot()} onRetry={() => void controller.retry()} />
+        <Show when={api.snapshots && api.restoreSnapshot && api.open}>
+          <VersionHistory
+            list={() => api.snapshots!(props.document.id)}
+            restore={restoreSnapshot}
+            reportError={reportError}
+          />
+        </Show>
         <details class="relative text-xs text-text-weak">
           <summary class="cursor-pointer rounded px-2 py-1 hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2">
             More
           </summary>
           <div class="absolute right-0 z-20 mt-1 w-56 rounded border border-border-weak-base bg-background-base p-2 shadow-lg">
-            <p>Arena and repository actions are not available for this document yet.</p>
+            <p>Repository actions are not available for this document yet.</p>
           </div>
         </details>
       </header>

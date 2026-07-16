@@ -11,32 +11,32 @@ describe("createMockApi defaults", () => {
   test("api.get resolves the JSON body of the configured response", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
 
-    const result = await fixture.module.api.get<{ ok: boolean }>("/pages")
+    const result = await fixture.module.api.get<{ ok: boolean }>("/documents")
 
     expect(result).toEqual({})
-    expect(fixture.calls).toEqual([{ url: "http://test.local/pages", init: undefined }])
+    expect(fixture.calls).toEqual([{ url: "http://test.local/documents", init: undefined }])
   })
 
   test("api.post records the JSON-stringified body and POST method", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
 
-    await fixture.module.api.post("/pages", { title: "My Page" })
+    await fixture.module.api.post("/documents", { display_name: "My Document" })
 
     expect(fixture.calls).toHaveLength(1)
-    expect(fixture.calls[0]?.url).toBe("http://test.local/pages")
+    expect(fixture.calls[0]?.url).toBe("http://test.local/documents")
     expect(fixture.calls[0]?.init).toMatchObject({
       method: "POST",
-      body: JSON.stringify({ title: "My Page" }),
+      body: JSON.stringify({ display_name: "My Document" }),
     })
   })
 
   test("api.delete sends the DELETE method with no body", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
 
-    await fixture.module.api.delete("/pages/my-id")
+    await fixture.module.api.delete("/documents/my-id")
 
     expect(fixture.calls[0]).toEqual({
-      url: "http://test.local/pages/my-id",
+      url: "http://test.local/documents/my-id",
       init: { method: "DELETE", body: undefined },
     })
   })
@@ -55,23 +55,23 @@ describe("createMockApi defaults", () => {
 
   test("fail() makes every subsequent api.* call reject with the response body as the error message", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
-    fixture.fail(409, JSON.stringify({ error: "page_version_conflict" }))
+    fixture.fail(409, JSON.stringify({ error: "document_version_conflict" }))
 
-    await expect(fixture.module.api.get("/pages")).rejects.toThrow(JSON.stringify({ error: "page_version_conflict" }))
+    await expect(fixture.module.api.get("/documents")).rejects.toThrow(JSON.stringify({ error: "document_version_conflict" }))
   })
 
   test("fail() with no body falls back to a generic 'Request failed: <status>' message", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
     fixture.fail(500, "")
 
-    await expect(fixture.module.api.get("/pages")).rejects.toThrow("Request failed: 500")
+    await expect(fixture.module.api.get("/documents")).rejects.toThrow("Request failed: 500")
   })
 
   test("setResponse(Response) is served as-is, including a non-JSON content type", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
     fixture.setResponse(new Response("# Page", { status: 200, headers: { "Content-Type": "text/markdown" } }))
 
-    const res = await fixture.module.authFetch("http://test.local/pages/1/export")
+    const res = await fixture.module.authFetch("http://test.local/documents/1/export")
 
     expect(res.headers.get("Content-Type")).toBe("text/markdown")
     expect(await res.text()).toBe("# Page")
@@ -80,13 +80,13 @@ describe("createMockApi defaults", () => {
   test("reset() clears recorded calls and restores the default 200 {} response", async () => {
     const fixture = createMockApi({ baseUrl: "http://test.local" })
     fixture.fail(500)
-    await fixture.module.api.get("/pages").catch(() => undefined)
+    await fixture.module.api.get("/documents").catch(() => undefined)
     expect(fixture.calls).toHaveLength(1)
 
     fixture.reset()
 
     expect(fixture.calls).toEqual([])
-    const result = await fixture.module.api.get("/pages")
+    const result = await fixture.module.api.get("/documents")
     expect(result).toEqual({})
   })
 

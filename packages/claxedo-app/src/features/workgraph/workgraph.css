@@ -2,6 +2,8 @@
    outcomes contain tasks. Matches the app's flat sidebar/session surfaces. */
 
 .workgraph-shell {
+  position: relative;
+  display: flex;
   background: var(--background-base);
 }
 
@@ -179,11 +181,28 @@
   height: 0.4rem;
 }
 
+/* Each project is a shelf: cards fill two rows column-by-column and the shelf
+   scrolls horizontally when streams outgrow the viewport — width is used
+   before the page grows taller. */
 .workgraph-project-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 18.5rem));
+  grid-auto-flow: column;
+  grid-auto-columns: 18.5rem;
+  grid-template-rows: repeat(2, auto);
   gap: 0.9rem;
+  overflow-x: auto;
   padding: 0.25rem 0.1rem 1.4rem;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.workgraph-project-cards > * {
+  scroll-snap-align: start;
+}
+
+/* A project with a single stream doesn't reserve a phantom second row. */
+.workgraph-project-cards:has(> :nth-child(2):last-child) {
+  grid-template-rows: auto;
 }
 
 /* ── Stream card: the one substantial surface ─────────────
@@ -196,7 +215,7 @@
 
 .workgraph-streamcard,
 .workgraph-streamcard-new {
-  height: 16rem;
+  height: 17.5rem;
   border-radius: var(--radius-lg);
 }
 
@@ -245,25 +264,6 @@
   border-color: var(--border-strong-base);
   background: var(--surface-base);
   color: var(--text-base);
-}
-
-.workgraph-streamcard[data-tone]::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 2px;
-  content: "";
-}
-
-.workgraph-streamcard[data-tone="critical"]::before {
-  background: color-mix(in srgb, var(--icon-critical-base) 80%, transparent);
-}
-
-.workgraph-streamcard[data-tone="active"]::before {
-  background: color-mix(in srgb, var(--icon-success-base) 70%, transparent);
-}
-
-.workgraph-streamcard[data-tone="info"]::before {
-  background: color-mix(in srgb, var(--icon-weak-base) 45%, transparent);
 }
 
 /* Header zone: title over a subtle hairline. */
@@ -327,13 +327,16 @@
 }
 
 /* Task zone: clean text rows (no per-row rules), wrapping to two lines; the
-   whole list clips inside the fixed tile. */
+   whole list clips inside the fixed tile. The container carries a symmetric
+   gutter (padding cancelled by margin) so the rows' hover wash — which bleeds
+   past the text column via negative margins — survives the overflow clip. */
 .workgraph-streamcard-tasks {
   display: flex;
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-  padding-top: 0.15rem;
+  margin-inline: -0.55rem;
+  padding: 0.15rem 0.55rem 0;
 }
 
 .workgraph-streamcard-tasks .workgraph-leaf {
@@ -355,16 +358,10 @@
   white-space: normal;
 }
 
-/* Every task line carries a real bullet — the status dot, aligned to the
-   first text line and visible at rest. */
-.workgraph-streamcard-tasks .workgraph-status-dot {
-  width: 0.35rem;
-  height: 0.35rem;
-  margin-top: 0.5rem;
-}
-
-.workgraph-streamcard-tasks .workgraph-status-dot[data-tone="info"] {
-  background: color-mix(in srgb, var(--icon-weak-base) 75%, transparent);
+/* Every task line leads with its lifecycle glyph, aligned to the first text
+   line inside the card's top-aligned rows. */
+.workgraph-streamcard-tasks .workgraph-leaf-status {
+  margin-top: 0.12rem;
 }
 
 /* Inside a card a task row is just dot + title; the mono state, dependency
@@ -396,8 +393,13 @@
 /* A Stream with no usable execution target flags exactly that, quietly. */
 .workgraph-streamcard-flag {
   padding-top: 0.35rem;
-  color: var(--text-warning, var(--text-weak));
+  color: var(--text-weak);
   font-size: 0.6875rem;
+}
+
+.workgraph-streamcard-needs-you {
+  flex-shrink: 0;
+  color: var(--text-on-critical-base);
 }
 
 /* Footer zone: hairline, then task count left, overflow count and the
@@ -768,9 +770,9 @@
   align-items: center;
   gap: 0.5rem;
   min-height: 1.85rem;
-  padding: 0.05rem 0.4rem;
-  margin-inline: -0.4rem;
-  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.55rem;
+  margin-inline: -0.55rem;
+  border-radius: var(--radius-md);
   cursor: default;
   transition: background 110ms ease;
 }
@@ -780,6 +782,34 @@
 .workgraph-leaf:hover,
 .workgraph-leaf:focus-visible {
   background: var(--surface-base-hover);
+}
+
+/* Done tasks read as shipped: dimmed and struck through, sinking to the
+   bottom of every status-ordered list. */
+.workgraph-leaf.is-done .workgraph-leaf-title {
+  color: var(--text-weaker);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-weaker) 60%, transparent);
+}
+
+/* Lifecycle glyphs: dashed = staged, half-filled = in progress, check = done,
+   alert = needs you. The shape carries the state; color reinforces it. */
+.workgraph-leaf-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+}
+
+.workgraph-leaf-status[data-bucket="in_progress"] {
+  color: var(--icon-base);
+}
+
+.workgraph-leaf-status[data-bucket="done"] {
+  color: var(--icon-success-base);
+}
+
+.workgraph-leaf-status[data-bucket="attention"] {
+  color: var(--icon-critical-base);
 }
 
 .workgraph-leaf-title {
@@ -1145,8 +1175,13 @@
     display: none;
   }
 
+  /* On mobile the shelf becomes a plain vertical stack. */
   .workgraph-project-cards {
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+    grid-template-rows: none;
     grid-template-columns: 1fr;
+    overflow-x: visible;
     padding-left: 0.4rem;
   }
 

@@ -781,7 +781,7 @@ describe("createAgentRuntime", () => {
     expect(store.getMessages("ses_1")[1]).toMatchObject({
       info: {
         id: "msg_assistant",
-        error: { data: { message: "Codex authentication failed" } },
+        error: { data: { message: "Codex authentication failed", firstTurnErrorClass: "credential" } },
         time: { completed: 123 },
       },
     })

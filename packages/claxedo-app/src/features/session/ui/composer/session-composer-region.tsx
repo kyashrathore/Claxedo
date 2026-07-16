@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
@@ -90,6 +90,8 @@ export function SessionComposerRegion(props: {
    */
   status?: () => SessionStatus
   activeTurn?: () => boolean
+  beforeInput?: JSX.Element
+  registerRetry?: (retry?: () => void) => void
 }) {
   const navigate = useNavigate()
   const layout = useLayout()
@@ -291,6 +293,7 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-lift()}px`,
               }}
             >
+              {props.beforeInput}
               <Show when={props.followup?.items.length}>
                 <SessionFollowupDock
                   items={props.followup!.items}
@@ -330,6 +333,7 @@ export function SessionComposerRegion(props: {
                       canAbort={props.canAbort}
                       status={props.status}
                       activeTurn={props.activeTurn}
+                      registerRetry={props.registerRetry}
                     />
                   </Show>
                 }

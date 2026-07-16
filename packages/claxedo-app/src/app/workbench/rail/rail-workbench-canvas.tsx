@@ -1,11 +1,10 @@
 import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
 
-import { Button } from "@opencode-ai/ui/button"
-
 import { Workbench } from "../workbench/index"
 import { ContentRenderer } from "../content/index"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
+import { OnboardingEmptyState } from "./onboarding-empty-state"
 
 const SessionContent = lazy(() =>
   import("../../../features/session/ui/content/session-content").then((m) => ({ default: m.SessionContent })),
@@ -41,22 +40,7 @@ export function RailWorkbenchCanvas(props: {
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}
-            fallback={
-              <div class="flex flex-col items-center justify-center h-full text-text-weak gap-4">
-                <div class="flex flex-col items-center gap-4">
-                  {/* The zero-project empty state is the `home` surface and had
-                      no <h1> anywhere (axe `page-has-heading-one`); a settled
-                      session gets its <h1> from the timeline title, but this
-                      fallback never mounts one. Visually-hidden so it names the
-                      page for AT without altering the centered empty-state UI. */}
-                  <h1 class="sr-only">No projects yet</h1>
-                  <span class="text-14-regular">No projects yet. Create one to get started.</span>
-                  <Button icon="plus-small" onClick={() => props.onNewProject?.()}>
-                    New Project
-                  </Button>
-                </div>
-              </div>
-            }
+            fallback={<OnboardingEmptyState onNewProject={props.onNewProject} />}
           >
             {(workspaceDir) => (
               <EmptyDraftSessionComposer

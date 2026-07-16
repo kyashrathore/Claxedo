@@ -208,6 +208,16 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return c.json(result, result.ok ? 200 : 422)
   })
 
+  app.get("/connections/:id/repositories", async (c) => {
+    const denied = await gated(c)
+    if (denied) return denied
+    const row = await visibleConnection(c.req.param("id"), managementKeys(c))
+    if (!row) return c.json({ code: "connection_not_found" }, 404)
+    const result = await service.listRepositories(row.id)
+    if (!result.ok) return c.json({ code: result.code }, result.status)
+    return c.json({ repositories: result.repositories })
+  })
+
   app.put("/connections/:id/webhook-secret", async (c) => {
     const denied = await gated(c)
     if (denied) return denied

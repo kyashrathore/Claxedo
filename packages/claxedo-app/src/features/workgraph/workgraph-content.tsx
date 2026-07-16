@@ -314,14 +314,6 @@ export function WorkGraphContent(props: {
     setTasksStreamId(stream.id)
     openPanelTab("tasks")
   }
-  const openWaitingItemInPanel = (item: AttentionItem) => {
-    openPanelTab("attention")
-    void nextFrame().then(async () => {
-      if (focusRowByKey(toWaitingRow(item).key)) return
-      await nextFrame()
-      focusRowByKey(toWaitingRow(item).key)
-    })
-  }
   const showAttentionContext = () => {
     if (!hasAttention()) return openPanelTab("attention")
     if (contextMode()) return card.dismiss()
@@ -437,12 +429,18 @@ export function WorkGraphContent(props: {
     workgraphDefaults: () => client.defaults(),
     save: (streamId: string, expectedVersion: number, settings: Parameters<typeof client.updateStreamSettings>[2]) => client.updateStreamSettings(streamId, expectedVersion, settings),
   }
-  const waitingCard = (mode: "inline" | "floating") => <WaitingCard mode={mode} items={card.items()} total={attentionTotal()} unread={card.unread()} onClose={card.closeFloating} onSelect={openWaitingItemInPanel} />
+  // Card rows open the item's dialog right where the user is; the card head's
+  // expand action is the "see it in full context" path into the shared panel.
+  const waitingCard = (mode: "inline" | "floating") => <WaitingCard mode={mode} items={card.items()} total={attentionTotal()} unread={card.unread()} collapsed={card.collapsed()} onToggleCollapse={card.toggleCollapsed} onClose={card.closeFloating} onSelect={selectWaiting} onOpenPanel={() => openPanelTab("attention")} />
 
   return (
-    <main class="workgraph-shell workgraph-surface size-full overflow-hidden text-text-base" aria-label="WorkGraph">
+    <main
+      class="workgraph-shell workgraph-surface size-full overflow-hidden text-text-base"
+      classList={{ "has-context-card": contextMode() === "inline" }}
+      aria-label="WorkGraph"
+    >
       <div class="workgraph-scroll">
-        <div class="workgraph-canvas mx-auto flex w-full max-w-[1240px] flex-col px-4 py-6 sm:px-8 md:px-10 md:py-10">
+        <div class="workgraph-canvas mx-auto flex w-full max-w-[1680px] flex-col px-4 py-6 sm:px-8 md:px-10 md:py-10">
           <header class="workgraph-head">
             <div class="workgraph-head-top">
               <div class="min-w-0">
@@ -473,7 +471,7 @@ export function WorkGraphContent(props: {
             </div>
             <p class="workgraph-lede text-text-weak">Every thread of work you're shipping with AI, grouped by project. Each card is a stream; open More for its full task list.</p>
           </header>
-          <div class="workgraph-body" classList={{ "has-context": contextMode() === "inline" }}>
+          <div class="workgraph-body">
             <div class="workgraph-primary">
               <div class="workgraph-rule" aria-hidden="true" />
           <DialogRoot
@@ -645,10 +643,12 @@ export function WorkGraphContent(props: {
             </Match>
           </Switch>
             </div>
-            <Show when={contextMode() === "inline"}>{waitingCard("inline")}</Show>
           </div>
         </div>
       </div>
+      {/* The context card FLOATS over the surface at its right edge (Codex-style
+          overlay) — never a section inside the page, never a reserved column. */}
+      <Show when={contextMode() === "inline"}>{waitingCard("inline")}</Show>
       <Show when={contextMode() === "floating"}>{waitingCard("floating")}</Show>
       {/* The two WorkGraph tabs + the active view live in the one shared panel. */}
       <Show when={props.panel}>

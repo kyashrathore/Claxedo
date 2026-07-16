@@ -8,7 +8,7 @@ Initial sharing is owner-controlled and read-only. Shared editing, shared execut
 
 ## Additional authoring adapters
 
-Docs v2 is the initial authoring adapter for appending exact external revisions through the Work Source port. Later authoring integrations use the same source identity, content hash, revision provenance, strict planning, and owner-confirmation contract.
+Documents is the initial authoring adapter for appending exact pinned snapshots through the Work Source port. Later authoring integrations use the same source identity, content hash, snapshot provenance, strict planning, and owner-confirmation contract.
 
 ## Organization planning
 

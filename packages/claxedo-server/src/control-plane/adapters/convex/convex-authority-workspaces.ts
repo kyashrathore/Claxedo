@@ -183,9 +183,14 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       return requireExecutor(input, auth).query(convexApi.localHostLinks.active, {
         workspace_id: args.workspaceId,
       }) as Promise<
-        | { active: true; host_id: string; workspace_id: string; expires_at: number; last_seen_at: number }
+        | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
         | { active: false }
       >
+    },
+    async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
+      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.markSecondDeviceOpen, {
+        workspace_id: args.workspaceId,
+      }) as Promise<{ recorded: boolean; second_device_open_at: number }>
     },
     async deleteWorkspace(auth: SignedControlPlaneAuth, args: {
       workspaceId: string

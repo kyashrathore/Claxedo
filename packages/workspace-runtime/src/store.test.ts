@@ -1030,8 +1030,9 @@ describe("RuntimeStore", () => {
       outcome: { status: "failed", completedAt: 123, error: "The database connection is not open" },
     })
 
-    const assistant = store.getMessages("s1")[1]?.info as { error?: { data?: { message?: string } } }
+    const assistant = store.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }
     assert.equal(assistant.error?.data?.message, "The database connection is not open")
+    assert.equal(assistant.error?.data?.firstTurnErrorClass, "workspace")
     assert.equal(
       ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
       "m1",
@@ -1042,8 +1043,9 @@ describe("RuntimeStore", () => {
     assert.equal(rows.at(-1)?.type, "session.error")
 
     const replayed = new RuntimeStore(root)
-    const replayedAssistant = replayed.getMessages("s1")[1]?.info as { error?: { data?: { message?: string } } }
+    const replayedAssistant = replayed.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }
     assert.equal(replayedAssistant.error?.data?.message, "The database connection is not open")
+    assert.equal(replayedAssistant.error?.data?.firstTurnErrorClass, "workspace")
   })
 
   it("recoverBusySessions is idempotent once a session is recovering", () => {

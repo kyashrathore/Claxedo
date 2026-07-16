@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   backing TEXT NOT NULL,
   access TEXT NOT NULL,
   display_name TEXT,
+  second_device_open_at INTEGER,
   home_region TEXT,
   repo_url TEXT,
   repo_name TEXT,
@@ -207,6 +208,10 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
     db.pragma("synchronous = NORMAL")
     db.pragma("busy_timeout = 5000")
     db.exec(SCHEMA)
+    const localHostColumns = db.prepare("PRAGMA table_info(local_host_links)").all() as Array<{ name: string }>
+    if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
+      db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
+    }
     return db
   })
 }

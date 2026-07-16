@@ -321,6 +321,9 @@ function bootstrapDesktop() {
         await desktopApi().installUpdate()
       },
 
+      getStartAtLogin: () => desktopApi().getStartAtLogin(),
+      setStartAtLogin: (enabled) => desktopApi().setStartAtLogin(enabled),
+
       notify: async (title, description, href) => {
         const focused = await desktopApi()
           .getWindowFocused()

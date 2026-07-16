@@ -131,6 +131,8 @@ const api: ElectronAPI = {
   runUpdater: (alertOnFail) => ipcRenderer.invoke("run-updater", alertOnFail),
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
+  getStartAtLogin: () => ipcRenderer.invoke("get-start-at-login"),
+  setStartAtLogin: (enabled) => ipcRenderer.invoke("set-start-at-login", enabled),
   setNativeTheme: (theme) => ipcRenderer.send("set-native-theme", theme),
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
   browser: browserBridge,

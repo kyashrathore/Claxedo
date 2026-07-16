@@ -1,6 +1,7 @@
 import type { AgentExtensionPolicyOverride } from "../agent-extensions/runtime-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import type { CredentialMetadata, CredentialStatus, CredentialWrite } from "../credentials/types"
+import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../credentials/types"
+import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/discovery"
 import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "./auth"
 import type { DurableSessionLog } from "./durable-session-log"
 import type { SessionWriteMode } from "../architecture"
@@ -66,11 +67,19 @@ export type CredentialSyncResult = {
 export type ControlPlaneCredentials = {
   listCredentials: () => Promise<CredentialMetadata[]>
   getCredentialByProvider: (providerId: string) => Promise<CredentialMetadata | undefined>
+  getCredential?: (id: string) => Promise<CredentialMetadata | undefined>
   resolveCredentialSecret?: (providerId: string) => Promise<string | null>
+  resolveCredentialSecretById?: (id: string) => Promise<string | null>
   putCredential: (input: CredentialWrite) => Promise<CredentialMetadata>
   deleteCredential: (id: string) => Promise<boolean>
   deleteCredentialsByProvider: (providerId: string) => Promise<number>
   updateCredentialStatus: (id: string, status: CredentialStatus, error?: string) => Promise<void>
+  updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number) => Promise<void>
+  discoverLocalCredentials?: () => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
+  saveDiscoveredCredentials?: (input: { discovery_id: string; items: CredentialDiscoverySelection[] }) => Promise<{
+    saved: Array<{ provider_id: string; account_id?: string }>
+  }>
+  updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number) => Promise<boolean>
   syncLocalCredentials: (providerIds?: string[]) => Promise<CredentialSyncResult>
 }
 
@@ -82,7 +91,9 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     listCredentials: async () => (await credentialRegistry()).listCredentials(),
     getCredentialByProvider: async (providerId) => (await credentialRegistry()).getCredentialByProvider(providerId),
+    getCredential: async (id) => (await credentialRegistry()).getCredential(id),
     resolveCredentialSecret: async (providerId) => (await credentialRegistry()).resolveSecret(providerId),
+    resolveCredentialSecretById: async (id) => (await credentialRegistry()).resolveSecretById(id),
     putCredential: async (input) => (await credentialRegistry()).putCredential(input),
     deleteCredential: async (id) => (await credentialRegistry()).deleteCredential(id),
     deleteCredentialsByProvider: async (providerId) => (await credentialRegistry()).deleteCredentialsByProvider(providerId),
@@ -90,6 +101,13 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       const registry = await credentialRegistry()
       registry.updateCredentialStatus(id, status, error)
     },
+    updateCredentialHealth: async (id, health, validatedAt) => {
+      const registry = await credentialRegistry()
+      registry.updateCredentialHealth(id, health, validatedAt)
+    },
+    discoverLocalCredentials: async () => (await import("../credentials/discovery")).credentialDiscovery.discover(),
+    saveDiscoveredCredentials: async (input) => (await import("../credentials/discovery")).credentialDiscovery.save(input),
+    updateCredentialScope: async (id, scope, consentAt) => (await credentialRegistry()).updateCredentialScope(id, scope, consentAt),
     syncLocalCredentials: async (providerIds) => (await import("../credentials/sync")).syncLocalCredentials(providerIds),
   }
 }

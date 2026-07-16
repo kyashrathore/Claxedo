@@ -27,6 +27,7 @@ import { handleProcess, type LaunchResult, type ListResponse, type ProcessClient
 import { claxedoRequestScope } from "./request-scope"
 import { claxedoMcpReadOnly } from "./tool-policy"
 import { registerWorkGraphTools } from "./workgraph-tools"
+import { registerDocumentTools } from "./documents-tools"
 
 const clean = (value: unknown) => {
   if (typeof value !== "string") return ""
@@ -245,6 +246,8 @@ registerWorkGraphTools(
     }
   },
 )
+
+registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), { directory: DEFAULT_DIR })
 
 if (!READ_ONLY) {
   registerTool(

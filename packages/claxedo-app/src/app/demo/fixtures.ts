@@ -122,30 +122,27 @@ export type DemoDiff = {
   after: string
 }
 
-export type DemoPage = {
+export type DemoDocument = {
   id: string
-  title: string
-  content: string
+  project_id: string
+  display_name: string
+  origin_kind: "managed" | "repository"
+  placement_kind: "local"
+  placement_id: string
+  managed_relative_path: string | null
+  repository_id: string | null
+  workspace_id: string | null
+  repository_relative_path: string | null
+  branch: string | null
   status: string
-  visibility: "private" | "project" | "org" | "public"
-  version: number
   session_id: string | null
-  directory: string | null
-  source_kind: string | null
-  source_repo_root: string | null
-  source_repo_key: string | null
-  source_branch: string | null
-  source_path: string | null
-  base_commit: string | null
-  base_blob_sha: string | null
-  base_tree_sha: string | null
-  last_materialized_commit: string | null
-  last_materialized_blob_sha: string | null
-  last_commit_at: string | null
-  last_commit_author_id: string | null
-  commit_status: string | null
+  archived_at: string | null
   created_at: string
   updated_at: string
+  last_opened_at: string | null
+  last_known_file_version: string
+  markdown: string
+  modifiedAt: number
 }
 
 export type DemoPty = {
@@ -187,13 +184,6 @@ type FileStatus = {
   status: string
 }
 
-type Arena = {
-  arena: null
-  agents: unknown[]
-  waves: unknown[]
-  messages: unknown[]
-}
-
 export type DemoFixtures = {
   globalConfig: Record<string, unknown>
   providerAuth: Record<string, unknown>
@@ -228,7 +218,7 @@ export type DemoFixtures = {
     candidates: string[]
   }
   sessionDiffs: Record<string, DemoDiff[]>
-  pages: DemoPage[]
+  documents: DemoDocument[]
   ptys: DemoPty[]
   ptyPreview: Record<string, DemoPreview>
   fileSearch: string[]
@@ -243,7 +233,6 @@ export type DemoFixtures = {
   skills: unknown[]
   commands: unknown[]
   mcp: Record<string, unknown>
-  arenaState: Arena
   vcs: {
     branch: string
   }
@@ -275,7 +264,7 @@ function isDemoFixtures(value: unknown): value is DemoFixtures {
     Array.isArray(value.sessions) &&
     isRecord(value.sessionMessages) &&
     isRecord(value.sessionDiffs) &&
-    Array.isArray(value.pages) &&
+    Array.isArray(value.documents) &&
     Array.isArray(value.ptys) &&
     isRecord(value.ptyPreview)
   )

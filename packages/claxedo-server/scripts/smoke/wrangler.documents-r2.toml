@@ -1,0 +1,9 @@
+name = "claxedo-documents-r2-adapter-smoke"
+main = "documents-r2-adapter-worker.ts"
+compatibility_date = "2025-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = "claxedo-documents-staging"
+remote = true

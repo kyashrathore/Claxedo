@@ -37,7 +37,7 @@ type WorkspaceScopeButtonsProps = {
   onNewSession?: () => void
   onNewTerminal?: (command?: string, title?: string) => void
   onNewPage?: () => void
-  canUsePages?: boolean
+  canUseDocuments?: boolean
   onSettings?: () => void
   class?: string
 }
@@ -104,10 +104,10 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
                 New Terminal
               </DropdownMenu.Item>
             </Show>
-            <Show when={props.canUsePages === true}>
+            <Show when={props.canUseDocuments === true}>
               <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
                 <Icon name="page" size="small" class="mr-2" />
-                New Page
+                New Document
               </DropdownMenu.Item>
             </Show>
             <Show when={canUseTerminal() && workspaceScopeCommands().custom.length > 0}>

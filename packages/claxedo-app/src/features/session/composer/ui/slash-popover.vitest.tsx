@@ -35,9 +35,14 @@ const atOptions: AtOption[] = [
 
 function base() {
   return {
+    documentPicker: false,
     setSlashPopoverRef: () => {},
     atFlat: [] as AtOption[],
-    atKey: (item: AtOption) => (item.type === "agent" ? `agent:${item.name}` : `file:${item.path}`),
+    atKey: (item: AtOption) => {
+      if (item.type === "agent") return `agent:${item.name}`
+      if (item.type === "document") return `document:${item.documentId}`
+      return `file:${item.path}`
+    },
     setAtActive: () => {},
     onAtSelect: () => {},
     slashFlat: [] as SlashCommand[],
@@ -85,5 +90,17 @@ describe("PromptPopover ARIA", () => {
   test("renders nothing when the popover is closed", () => {
     const view = render(() => <PromptPopover {...base()} popover={null} />)
     expect(view.container.querySelector('[role="listbox"]')).toBeNull()
+  })
+
+  test("labels document picker options with honest metadata", () => {
+    const documents: AtOption[] = [{
+      type: "document", documentId: "doc-1", display: "Plan", originKind: "managed", placementKind: "local", status: "draft",
+    }]
+    const view = render(() => (
+      <PromptPopover {...base()} documentPicker popover="at" atFlat={documents} atActive="document:doc-1" />
+    ))
+    expect(view.getByRole("listbox").getAttribute("aria-label")).toBe("Documents")
+    expect(view.getByRole("option").textContent).toContain("Plan")
+    expect(view.getByRole("option").textContent).toContain("draft")
   })
 })

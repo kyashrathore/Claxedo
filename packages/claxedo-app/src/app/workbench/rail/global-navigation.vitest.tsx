@@ -28,7 +28,7 @@ describe("GlobalNavigation", () => {
     renderAt("/")
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "New project",
-      "Pages",
+      "Documents",
       "Marketplace",
       "WorkGraph",
     ])

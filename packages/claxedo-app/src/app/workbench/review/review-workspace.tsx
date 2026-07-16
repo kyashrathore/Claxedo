@@ -18,6 +18,7 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
+import { useQuery } from "@tanstack/solid-query"
 
 import { useLanguage } from "@/platform/i18n/provider"
 import { useFile } from "@/app/providers/file"
@@ -44,7 +45,8 @@ import { ReviewTab } from "@/features/review/ui/review-tab"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
 import { retainMountedTabsPolicy } from "@/ui/controls/retain-mounted-tabs-policy"
 import { useClaxedoState } from "@/app/workbench/state"
-import { pagesApi } from "@/features/documents/data/pages-api"
+import { documentsApi } from "@/features/documents/data/documents-api"
+import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import {
   BROWSER_TAB_ID,
   CONTEXT_TAB_ID,
@@ -140,6 +142,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const dialog = useDialog()
   const processPane = useProcessPane()
   const claxedoState = useClaxedoState()
+  const queryOptions = useQueryOptions()
+  const projects = useQuery(() => queryOptions.projects())
 
   const initialTabs: ReviewWorkspaceTab[] = [REVIEW_TAB]
   if (props.focusContextSessionId) {
@@ -245,15 +249,29 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const collaborateWithMarkdown = async (path: string) => {
     if (!isMarkdownPath(path)) return
     try {
-      const page = await pagesApi.createFromRepo({
-        title: getFilename(path) || "Untitled",
+      const project = projects.data?.find((item) =>
+        item.worktree === props.directory || item.sandboxes?.includes(props.directory),
+      )
+      const workspace = (project as typeof project & {
+        workspaces?: Record<string, { id?: string; workspaceId?: string }>
+      })?.workspaces?.[props.directory]
+      const workspaceId = workspace?.workspaceId ?? workspace?.id ?? project?.id
+      if (!workspaceId) throw new Error("The workspace identity is unavailable.")
+      const document = await documentsApi.createFromRepository({
+        displayName: getFilename(path) || "Untitled",
         directory: props.directory,
+        workspaceId,
         path: relativeToWorkspace(path),
       })
-      claxedoState.layout.openPage(page.id, page.title, page.directory ?? props.directory, page.source_path ?? path)
+      claxedoState.layout.openPage(
+        document.id,
+        document.display_name,
+        props.directory,
+        document.repository_relative_path ?? path,
+      )
     } catch (err) {
       showToast({
-        title: "Failed to open page collaboration",
+        title: "Failed to open document collaboration",
         description: err instanceof Error ? err.message : String(err),
         variant: "error",
       })

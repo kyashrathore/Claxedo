@@ -94,11 +94,13 @@ allows a conservative one-second combined ceiling for the parsing probes.
 
 ## Fidelity report
 
-The repository corpus currently contains 52 Markdown files under `docs/**`.
-All 52 are protected by the byte-stability sweep. The measured rich-admission
-rate is 0/52 (0.0%): 27 differ from the pinned serializer and 25 contain an
-explicitly unsupported construct. This is a fidelity limitation, not a data
-loss path; all 52 open in source mode and no file is serialized on open.
+The 2026-07-16 baseline corpus contained 56 Markdown files under `docs/**`.
+Its measured rich-admission rate was 2/56 (3.6%): 28 differed from the pinned
+serializer and 26 contained an explicitly unsupported construct. This is a
+fidelity limitation, not a data-loss path; the other 54 opened in source mode
+and no file was serialized on open. The byte-stability test discovers the
+current `docs/**` corpus on every run, so later files join the gate without
+making the historical measurement a brittle file-count assertion.
 
 The adversarial corpus has zero known false negatives for reference links,
 setext headings, HTML blocks, footnotes, math, Liquid, MDX, numeric/comment/
