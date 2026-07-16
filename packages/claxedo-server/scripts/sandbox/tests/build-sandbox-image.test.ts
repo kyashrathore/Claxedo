@@ -107,8 +107,8 @@ describe("build-sandbox-image", () => {
   test("production image starts the flattened workspace-runtime dependency graph", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
-    expect(dockerfiles.every((dockerfile) => dockerfile.includes("timeout 5s workspace-runtime"))).toBe(true)
-    expect(dockerfiles.every((dockerfile) => dockerfile.includes('[ "$status" -ne 124 ]'))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes("setsid env WORKSPACE_RUNTIME_PORT=2593"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes("OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime"))).toBe(true)
   })
 
   test("production images install and smoke the checkout's Session V2 OpenCode binary", () => {
@@ -117,8 +117,10 @@ describe("build-sandbox-image", () => {
     for (const dockerfile of dockerfiles) {
       expect(dockerfile).toContain(`test -x /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME}`)
       expect(dockerfile).toContain(`install -m 0755 /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME} /usr/local/bin/opencode`)
-      expect(dockerfile).toContain("http://127.0.0.1:4096/api/session")
+      expect(dockerfile).toContain("http://127.0.0.1:2593/api/session")
       expect(dockerfile).toContain("Session V2 create did not adopt the requested id")
+      expect(dockerfile).toContain("Session V2 history was truncated across workspace-runtime")
+      expect(dockerfile).toContain("accept-encoding: gzip")
       expect(dockerfile).toContain("setsid opencode serve")
       expect(dockerfile).toContain("os.killpg")
     }

@@ -9,7 +9,8 @@ on:
       - packages/sandbox-manager/**
       - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
       - packages/claxedo-server/src/workspace-runtime-integration/host-entry.ts
-      - packages/workspace-runtime/package.json
+      - packages/agent-sdk-runtime/**
+      - packages/workspace-runtime/**
       - packages/opencode/**
       - packages/core/**
       - packages/protocol/**

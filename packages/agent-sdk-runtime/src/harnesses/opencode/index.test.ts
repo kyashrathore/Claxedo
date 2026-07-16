@@ -364,3 +364,28 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     expect(events.some((event) => event.type === "message.part.updated")).toBe(true)
   })
 })
+
+describe("OpenCodeHarnessAdapter external transport", () => {
+  test("removes stale compression headers after fetch decompresses a response", async () => {
+    const prev = globalThis.fetch
+    const body = JSON.stringify({ data: [{ type: "session.next.prompt.admitted", prompt: "x".repeat(2_000) }] })
+    globalThis.fetch = (async () => new Response(body, {
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "content-length": "128",
+      },
+    })) as typeof fetch
+
+    try {
+      const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+      const response = await (await adapter.getRequestFn())(new Request("http://opencode.internal/api/session/s1/history"))
+
+      expect(response.headers.get("content-encoding")).toBeNull()
+      expect(response.headers.get("content-length")).toBeNull()
+      expect(await response.json()).toEqual(JSON.parse(body))
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+})

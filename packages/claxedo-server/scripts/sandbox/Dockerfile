@@ -59,36 +59,34 @@ RUN cd /opt/workspace-runtime && \
     command -v claude-agent-acp && \
     command -v codex-acp
 
-# Prove the exact OpenCode binary shipped with the runtime serves the durable
-# Session V2 contract WorkGraph uses. An HTML app-shell fallback must fail the
-# image build instead of reaching staging as a false-positive workspace.
+# Prove the exact production chain serves WorkGraph's durable Session V2
+# contract through workspace-runtime, including a compressed history page.
 RUN set -eu; \
     mkdir -p /tmp/opencode-session-v2-smoke; \
     setsid opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
-    pid=$!; \
-    stop_server() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$pid" 2>/dev/null || true; }; \
-    trap stop_server EXIT; \
+    engine_pid=$!; \
+    setsid env WORKSPACE_RUNTIME_PORT=2593 WORKSPACE_RUNTIME_HOSTNAME=127.0.0.1 WORKSPACE_RUNTIME_ID=image-smoke WORKSPACE_RUNTIME_DIRECTORY=/tmp/opencode-session-v2-smoke OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1 & \
+    runtime_pid=$!; \
+    stop_servers() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$runtime_pid" 2>/dev/null || true; python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$engine_pid" 2>/dev/null || true; }; \
+    trap stop_servers EXIT; \
     ready=0; \
     for attempt in $(seq 1 60); do \
       if curl -fsS -X POST \
         -H 'content-type: application/json' \
         -d '{"id":"ses_workgraph_image_smoke","location":{"directory":"/tmp/opencode-session-v2-smoke"}}' \
-        http://127.0.0.1:4096/api/session >/tmp/opencode-session-v2.json; then ready=1; break; fi; \
+        http://127.0.0.1:2593/api/session >/tmp/opencode-session-v2.json; then ready=1; break; fi; \
       sleep 0.25; \
     done; \
-    if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log; exit 1; fi; \
+    if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log /tmp/workspace-runtime-smoke.log; exit 1; fi; \
     node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2.json','utf8'));const id=value.id||value.data?.id;if(id!=='ses_workgraph_image_smoke')throw new Error('Session V2 create did not adopt the requested id')"; \
-    stop_server; \
+    for sequence in $(seq 1 20); do \
+      curl -fsS -X POST -H 'content-type: application/json' \
+        -d "{\"id\":\"msg_workgraph_image_smoke_$sequence\",\"prompt\":{\"text\":\"Durable image smoke prompt $sequence with enough repeated content to force response compression through the proxy boundary.\"},\"resume\":false}" \
+        http://127.0.0.1:2593/api/session/ses_workgraph_image_smoke/prompt >/dev/null; \
+    done; \
+    curl -fsS -H 'accept-encoding: gzip' 'http://127.0.0.1:2593/api/session/ses_workgraph_image_smoke/history?limit=100&after=0' >/tmp/opencode-session-v2-history.json; \
+    node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2-history.json','utf8'));if(!Array.isArray(value.data)||value.data.length!==20)throw new Error('Session V2 history was truncated across workspace-runtime')"; \
+    stop_servers; \
     trap - EXIT
-
-# Prove the flattened production dependency graph reaches the serving loop.
-# A healthy host is stopped by GNU timeout with status 124; any module-load or
-# startup crash exits earlier and fails the image build with its captured log.
-RUN set +e; \
-    timeout 5s workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1; \
-    status=$?; \
-    set -e; \
-    if [ "$status" -ne 124 ]; then cat /tmp/workspace-runtime-smoke.log; exit 1; fi; \
-    rm /tmp/workspace-runtime-smoke.log
 
 WORKDIR /workspace

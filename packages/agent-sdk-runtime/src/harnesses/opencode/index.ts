@@ -200,7 +200,17 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return (req) => {
       const src = new URL(req.url)
       const target = new URL(src.pathname + src.search, url)
-      return fetch(new Request(target.toString(), req))
+      return fetch(new Request(target.toString(), req)).then((response) => {
+        if (!response.headers.has("content-encoding")) return response
+        const headers = new Headers(response.headers)
+        headers.delete("content-encoding")
+        headers.delete("content-length")
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        })
+      })
     }
   }
 
