@@ -35,6 +35,8 @@ name: deploy-control-plane
 #   WORKGRAPH_SMOKE_HARNESS / WORKGRAPH_SMOKE_AGENT — deployed execution catalog IDs
 #   WORKGRAPH_SMOKE_PROVIDER_ID / WORKGRAPH_SMOKE_MODEL_ID / WORKGRAPH_SMOKE_EFFORT
 #   WORKGRAPH_SMOKE_TOOLS_JSON — exact JSON array of tool IDs used by the no-op Task
+# The smoke targets this public repository at github.sha, proving the deployed
+# commit through the same per-Stream repository contract used by the product.
 
 on:
   push:
@@ -283,6 +285,8 @@ jobs:
           WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
           WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
           WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
+          WORKGRAPH_SMOKE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          WORKGRAPH_SMOKE_BASE_REVISION: ${{ github.sha }}
         run: bun run smoke:workgraph
 
   deploy-app-staging:
@@ -468,6 +472,8 @@ jobs:
           WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
           WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
           WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
+          WORKGRAPH_SMOKE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          WORKGRAPH_SMOKE_BASE_REVISION: ${{ github.sha }}
         run: bun run smoke:workgraph
 
   deploy-app-production:

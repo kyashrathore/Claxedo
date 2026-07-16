@@ -439,6 +439,8 @@ function requireExecutionProfile(input: unknown, env: SmokeEnvironment) {
   const providerId = required(env.WORKGRAPH_SMOKE_PROVIDER_ID, "WORKGRAPH_SMOKE_PROVIDER_ID")
   const modelId = required(env.WORKGRAPH_SMOKE_MODEL_ID, "WORKGRAPH_SMOKE_MODEL_ID")
   const effort = required(env.WORKGRAPH_SMOKE_EFFORT, "WORKGRAPH_SMOKE_EFFORT")
+  const repositoryUrl = required(env.WORKGRAPH_SMOKE_REPOSITORY_URL, "WORKGRAPH_SMOKE_REPOSITORY_URL")
+  const baseRevision = required(env.WORKGRAPH_SMOKE_BASE_REVISION, "WORKGRAPH_SMOKE_BASE_REVISION")
   const tools = stringArray(
     required(env.WORKGRAPH_SMOKE_TOOLS_JSON, "WORKGRAPH_SMOKE_TOOLS_JSON"),
     "WORKGRAPH_SMOKE_TOOLS_JSON",
@@ -446,8 +448,8 @@ function requireExecutionProfile(input: unknown, env: SmokeEnvironment) {
   const environment = array(value.environments)
     .map(record)
     .find((item) => item?.kind === "hosted_workspace")
-  if (environment?.repositoryRequired !== false) {
-    throw new Error("Hosted execution capabilities do not support the smoke environment")
+  if (environment?.remoteUrlInput !== true || environment.baseRevisionInput !== true) {
+    throw new Error("Hosted execution capabilities do not accept the smoke repository target")
   }
   if (
     !array(value.harnesses)
@@ -479,7 +481,8 @@ function requireExecutionProfile(input: unknown, env: SmokeEnvironment) {
     throw new Error("Configured smoke tools include a tool absent from execution capabilities")
   }
   return {
-    environment: { kind: "hosted_workspace" as const },
+    environment: { kind: "hosted_workspace" as const, repositoryUrl },
+    repository: { remoteUrl: repositoryUrl, baseRevision },
     harness,
     agent,
     model: { providerId, modelId },

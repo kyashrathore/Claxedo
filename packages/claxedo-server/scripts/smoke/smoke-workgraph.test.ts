@@ -40,6 +40,8 @@ describe("WorkGraph deployment smoke", () => {
             {
               kind: "hosted_workspace",
               repositoryRequired: false,
+              remoteUrlInput: true,
+              baseRevisionInput: true,
             },
           ],
           harnesses: [{ id: "opencode" }],
@@ -132,6 +134,8 @@ describe("WorkGraph deployment smoke", () => {
           WORKGRAPH_SMOKE_MODEL_ID: "no-op",
           WORKGRAPH_SMOKE_EFFORT: "low",
           WORKGRAPH_SMOKE_TOOLS_JSON: "[]",
+          WORKGRAPH_SMOKE_REPOSITORY_URL: "https://github.com/claxedo/claxedo.git",
+          WORKGRAPH_SMOKE_BASE_REVISION: "dev",
           WORKGRAPH_SMOKE_RETRY_DELAY_MS: "1",
         },
         request as typeof fetch,
@@ -166,6 +170,17 @@ describe("WorkGraph deployment smoke", () => {
     expect(
       requests.some((entry) => entry.url.pathname === "/api/workgraph/execution-capabilities" && !entry.url.search),
     ).toBe(true)
+    expect(
+      requests
+        .filter((entry) => entry.url.pathname === "/api/workgraph/commands")
+        .map((entry) => JSON.parse(String(entry.init?.body)).command)
+        .find((command) => command.type === "create_stream"),
+    ).toMatchObject({
+      execution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/claxedo.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/claxedo.git", baseRevision: "dev" },
+      },
+    })
     for (const token of [otherOrganizationToken, otherUserToken]) {
       expect(
         requests.some(
