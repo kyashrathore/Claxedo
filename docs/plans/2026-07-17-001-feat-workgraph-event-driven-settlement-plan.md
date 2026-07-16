@@ -2,8 +2,16 @@
 title: "WorkGraph Event-Driven Settlement — Fast Lane + Cron Backstop"
 type: feat
 date: 2026-07-17
-status: active
+status: executing
+followed_by: docs/plans/2026-07-17-002-feat-wakes-v2-settlement-plan.md
 execution: code
+progress: >
+  U1-U5 implemented and verified locally 2026-07-17 (commits aa89411dbe,
+  a078d23187, 90775cc1ce, 48d3f69de3, edeee73688, a7f37766a0, 92e03f0ef3,
+  757fd838cd — 110 focused tests green, wrangler dry-run green with the
+  WORKGRAPH_SETTLER Durable Object). U6 staging proof pending. Follow-up 1
+  (wakes v2 convergence) is now its own plan (see followed_by): the
+  dispatcher built here becomes wakes' driver.
 inputs:
   - docs/plans/2026-07-16-003-workgraph-staging-debug-handoff.md
   - docs/plans/2026-07-13-001-goal-execute-workgraph-end-to-end.md
