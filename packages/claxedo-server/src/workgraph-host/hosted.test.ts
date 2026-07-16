@@ -4,7 +4,7 @@ import type { ConnectionWebhookVerifier } from "@claxedo/connections"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { ExecutionCapabilitiesUnavailableError, type ExecutionCapabilitiesPort } from "@claxedo/workgraph/ports"
-import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS } from "@claxedo/workgraph/contracts"
+import { createChangeCursor, EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS } from "@claxedo/workgraph/contracts"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { WorkspaceAuthority } from "../control-plane/authority"
 import { createHostedWorkGraph } from "./hosted"
@@ -120,6 +120,7 @@ function composition(
         if (args.query && typeof args.query === "object") {
           const query = args.query as Record<string, unknown>
           if (query.kind === "attention") return internalOwnerAttentionPage()
+          if (query.kind === "changes") return internalOwnerChanges()
           if (query.kind === "source_views") return { sourceViews: [] }
           if (query.kind === "source_view") return {
             id: query.sourceViewId,
@@ -578,6 +579,23 @@ describe("hosted WorkGraph composition", () => {
     }))
   })
 
+  test("serves Convex deletion and admission-retry change events through the full hosted router", async () => {
+    const workgraph = composition([])
+
+    const response = await workgraph.router.request("/changes?waitMs=0&limit=100", {
+      headers: { authorization: "Bearer user_a" },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      changes: [
+        { ownerUserId: "user_a", event: { type: "admission_planning_retried", ownerUserId: "user_a" } },
+        { ownerUserId: "user_a", event: { type: "stream_deletion_requested", ownerUserId: "user_a" } },
+      ],
+      timedOut: false,
+    })
+  })
+
   test("never accepts an owner selector and keeps two signed users isolated", async () => {
     const calls: Record<string, unknown>[] = []
     const workgraph = composition(calls)
@@ -697,6 +715,39 @@ function credentialStore(secret: string): ControlPlaneCredentials {
     updateCredentialStatus: async () => undefined,
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
   }
+}
+
+function internalOwnerChanges() {
+  const cursor = (position: number) =>
+    createChangeCursor({
+      organizationId: "org_internal_a" as never,
+      ownerUserId: "internal_user_id" as never,
+      position,
+    })
+  const envelope = (position: number, type: string, resource: Record<string, unknown>, payload: Record<string, unknown>) => ({
+    cursor: cursor(position),
+    ownerUserId: "internal_user_id",
+    resource,
+    event: {
+      schemaVersion: 1,
+      id: `event_${position}`,
+      ownerUserId: "internal_user_id",
+      streamId: "stream_1",
+      sequence: position,
+      type,
+      payload,
+      provenance: {
+        actor: { type: "system", id: "convex" },
+        operationId: `operation_${position}`,
+        requestId: `request_${position}`,
+      },
+      occurredAt: position,
+    },
+  })
+  return [
+    envelope(1, "admission_planning_retried", { type: "admission_proposal", id: "admission_1" }, { proposalId: "admission_1" }),
+    envelope(2, "stream_deletion_requested", { type: "stream", id: "stream_1" }, { streamId: "stream_1" }),
+  ]
 }
 
 function internalOwnerAttentionPage() {

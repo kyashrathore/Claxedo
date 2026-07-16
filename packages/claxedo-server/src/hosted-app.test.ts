@@ -6,6 +6,7 @@ import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/hosted-device-auth"
+import { createHostedWorkGraph } from "./workgraph-host/hosted"
 import type { DocumentStore } from "./document-store"
 
 /**
@@ -238,6 +239,44 @@ describe("hosted app", () => {
       ),
     )
     expect(crossTenant.status).toBe(404)
+  })
+
+  test("accepted WorkGraph commands settle durable control effects immediately", async () => {
+    const plane = fakePlane()
+    const reconcile = vi.fn(async () => ({ ran: true }) as never)
+    const workgraph = createHostedWorkGraph({
+      env: plane.env as never,
+      authConfig: plane.services.auth.config as never,
+      verifier: plane.services.auth.verifier as never,
+      authority: plane.services.authority as never,
+      executor: {
+        mutation: async (_fn, args) => ({
+          ok: true,
+          operationId: (args as Record<string, unknown>).operation_id,
+          cursor: "1",
+          value: { streamId: "stream_1" },
+        }),
+        query: async () => ({ snapshotCursor: "0", records: [], references: [], hasMore: false, capturedAt: 1 }),
+      },
+    })
+    const app = createHostedApp(plane, { workgraph, workGraphReconcile: reconcile })
+
+    const accepted = await app.request("/api/workgraph/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "operation_delete",
+        command: { version: 1, type: "delete_stream", streamId: "stream_1", expectedVersion: 1, reason: "Test cleanup" },
+      }),
+    })
+    expect(accepted.status).toBe(200)
+    await vi.waitFor(() => expect(reconcile).toHaveBeenCalledTimes(1))
+
+    const read = await app.request("/api/workgraph/snapshot?limit=10", {
+      headers: { authorization: "Bearer tenant_a" },
+    })
+    expect(read.status).toBe(200)
+    expect(reconcile).toHaveBeenCalledTimes(1)
   })
 
   test("fails hosted boot when WorkGraph Convex service configuration is missing", () => {
