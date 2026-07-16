@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { authedMutation, authorizeWorkspace, serviceQuery, upsertUser, workspaceByPublicId } from "./model"
+import { authedMutation, authorizeWorkspace, serviceMutation, serviceQuery, upsertUser, workspaceByPublicId } from "./model"
 
 export const recordMint = authedMutation({
   args: {
@@ -22,6 +22,32 @@ export const recordMint = authedMutation({
       workspace_id: workspace._id,
       host_id: args.host_id,
       minted_for_user_id: user._id,
+      expires_at: args.expires_at,
+      created_at: Date.now(),
+    })
+    return { ok: true }
+  },
+})
+
+export const recordMintForService = serviceMutation({
+  args: {
+    jti: v.string(),
+    workspace_id: v.string(),
+    host_id: v.string(),
+    subject: v.string(),
+    expires_at: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("runtime_access_tokens")
+      .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
+      .unique()
+    if (existing) throw new Error("Runtime Access Token already recorded")
+    await ctx.db.insert("runtime_access_tokens", {
+      jti: args.jti,
+      workspace_public_id: args.workspace_id,
+      host_id: args.host_id,
+      minted_for_subject: args.subject,
       expires_at: args.expires_at,
       created_at: Date.now(),
     })
@@ -58,15 +84,10 @@ export const active = serviceQuery({
         reason: "Runtime Access Token has been revoked",
       }
     }
-    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (!workspace) {
-      return {
-        active: false,
-        code: "runtime_access_token_mismatch",
-        reason: "Runtime Access Token workspace is unavailable",
-      }
-    }
-    if (token.workspace_id !== workspace._id || token.host_id !== args.host_id) {
+    const workspaceMatches = token.workspace_public_id
+      ? token.workspace_public_id === args.workspace_id
+      : token.workspace_id === (await workspaceByPublicId(ctx.db, args.workspace_id))?._id
+    if (!workspaceMatches || token.host_id !== args.host_id) {
       return {
         active: false,
         code: "runtime_access_token_mismatch",

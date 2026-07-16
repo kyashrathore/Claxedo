@@ -49,6 +49,7 @@ export type ControlPlaneRelayProviderOptions = {
   runtimeAccessTokenSigner: RuntimeAccessTokenSigner
   hostTunnelTokenSigner: HostTunnelTokenSigner
   targetLookup: RelayTargetLookup
+  recordRuntimeAccessToken: (input: RelayTokenInput & RelayToken) => Promise<unknown>
   drainWorkspace?: (workspaceId: string) => Promise<void>
   telemetry?: {
     capture: (distinctId: string, event: string, properties?: Record<string, unknown>) => void
@@ -92,11 +93,13 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
         role: input.role ?? "viewer",
         ...(ttlSeconds === undefined ? {} : { ttlSeconds }),
       })
-      return {
+      const result = {
         token: token.runtimeAccessToken,
         expiresAt: token.tokenExpiresAt,
         jti: token.jti,
       }
+      await options.recordRuntimeAccessToken({ ...input, ...result })
+      return result
     },
     resolveTarget: async (workspaceId, hostId) => {
       const target = await options.targetLookup({ workspaceId, hostId })

@@ -562,6 +562,7 @@ describe("Agent Config Agent Extensions routes", () => {
       replaceSessionVisibility: async () => ({}),
       deleteSessionVisibility: async () => ({}),
       recordRuntimeAccessToken: async () => ({}),
+      recordRuntimeAccessTokenForService: async () => ({}),
       runtimeAccessTokenActive: async () => ({ active: true }),
       revokeRuntimeAccessToken: async () => ({}),
       revokeRuntimeAccessTokensForWorkspaceUser: async () => ({}),

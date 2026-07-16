@@ -496,6 +496,13 @@ describe("convex authority", () => {
       hostId: "host_1",
       expiresAt: 123,
     })
+    await authority.recordRuntimeAccessTokenForService({
+      jti: "jti_service",
+      workspaceId: "wg_1",
+      hostId: "host_2",
+      subject: "user_1",
+      expiresAt: 456,
+    })
     await expect(
       authority.runtimeAccessTokenActive({
         jti: "jti_1",
@@ -524,20 +531,28 @@ describe("convex authority", () => {
       host_id: "host_1",
       expires_at: 123,
     })
+    expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
+      service_token: "svc_secret",
+      jti: "jti_service",
+      workspace_id: "wg_1",
+      host_id: "host_2",
+      subject: "user_1",
+      expires_at: 456,
+    })
     expect(query).toHaveBeenCalledWith(expect.anything(), {
       service_token: "svc_secret",
       jti: "jti_1",
       workspace_id: "ws_1",
       host_id: "host_1",
     })
-    expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
+    expect(mutation).toHaveBeenNthCalledWith(3, expect.anything(), {
       jti: "jti_1",
       workspace_id: "ws_1",
     })
-    expect(mutation).toHaveBeenNthCalledWith(3, expect.anything(), {
+    expect(mutation).toHaveBeenNthCalledWith(4, expect.anything(), {
       workspace_id: "ws_1",
     })
-    expect(mutation).toHaveBeenNthCalledWith(4, expect.anything(), {
+    expect(mutation).toHaveBeenNthCalledWith(5, expect.anything(), {
       action: "runtime_access_token.minted",
       result: "allow",
       workspace_id: "ws_1",

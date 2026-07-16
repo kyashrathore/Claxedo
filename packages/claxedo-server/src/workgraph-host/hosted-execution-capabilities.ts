@@ -154,7 +154,21 @@ async function readHostedCatalog(
         ? body.error as Record<string, unknown>
         : undefined
       const code = typeof error?.code === "string" ? ` (${error.code})` : ""
-      throw new Error(`Hosted execution catalog ${pathname} via ${new URL(url).host} failed with ${response.status}${code}`)
+      const target = new URL(url)
+      const trace = response.headers.get("x-claxedo-trace-id")
+      const timing = response.headers.get("server-timing")
+      const diagnostics = [
+        trace ? `trace=${trace}` : undefined,
+        timing ? `timing=${timing}` : undefined,
+        response.headers.get("x-claxedo-relay-location-hint") ? "relay-location=present" : undefined,
+        response.headers.get("content-type") ? `content-type=${response.headers.get("content-type")}` : undefined,
+        response.headers.get("content-length") ? `content-length=${response.headers.get("content-length")}` : undefined,
+      ]
+        .filter((value): value is string => !!value)
+        .join(", ")
+      throw new Error(
+        `Hosted execution catalog ${target.pathname}${target.search} via ${target.host} failed with ${response.status}${code}${diagnostics ? ` [${diagnostics}]` : ""}`,
+      )
     }
     return response.json()
   }

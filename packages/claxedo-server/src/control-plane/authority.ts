@@ -236,6 +236,13 @@ export type WorkspaceAuthority = {
       expiresAt: number
     },
   ) => Promise<unknown>
+  recordRuntimeAccessTokenForService: (args: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    subject: string
+    expiresAt: number
+  }) => Promise<unknown>
   runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,

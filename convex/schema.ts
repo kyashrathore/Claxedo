@@ -251,9 +251,11 @@ export default defineSchema({
 
   runtime_access_tokens: defineTable({
     jti: v.string(),
-    workspace_id: v.id("workspaces"),
+    workspace_id: v.optional(v.id("workspaces")),
+    workspace_public_id: v.optional(v.string()),
     host_id: v.string(),
-    minted_for_user_id: v.id("users"),
+    minted_for_user_id: v.optional(v.id("users")),
+    minted_for_subject: v.optional(v.string()),
     expires_at: v.number(),
     revoked_at: v.optional(v.number()),
     created_at: v.number(),

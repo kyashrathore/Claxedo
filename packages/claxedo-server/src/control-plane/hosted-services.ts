@@ -257,6 +257,13 @@ export function composeHostedControlPlane(env: HostedWorkerEnv): HostedControlPl
     runtimeAccessTokenSigner: runtimeAccessSigner,
     hostTunnelTokenSigner: hostTunnelSigner,
     targetLookup: relayTargetLookup,
+    recordRuntimeAccessToken: (input) => authority.recordRuntimeAccessTokenForService({
+      jti: input.jti,
+      workspaceId: input.workspaceId,
+      hostId: input.hostId,
+      subject: input.subject,
+      expiresAt: input.expiresAt,
+    }),
     telemetry,
   })
   const services: ControlPlaneServices = {

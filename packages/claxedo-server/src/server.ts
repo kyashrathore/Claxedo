@@ -569,6 +569,7 @@ export function createDefaultLocalControlPlaneServices() {
   }
   const sandboxManager = createWorkspaceSupervisorSandboxManager()
   const centralStore = createSqliteCentralStore({ mode: getSessionWriteMode })
+  const authority = authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority()
   return createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
@@ -585,8 +586,8 @@ export function createDefaultLocalControlPlaneServices() {
       // working workspace/session features instead of `requireAuthority` 503s.
       // Signed mode without a URL never reaches here — the boot throw above
       // keeps signed/cloud auth fail-closed on Convex.
-      authority: authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority(),
-      relay: localRelayFromEnv(sandboxManager),
+      authority,
+      relay: localRelayFromEnv(sandboxManager, authority),
       sandbox: {
         sandboxManager,
       },
@@ -596,7 +597,10 @@ export function createDefaultLocalControlPlaneServices() {
   )
 }
 
-function localRelayFromEnv(sandboxManager = createWorkspaceSupervisorSandboxManager()): ControlPlaneRelay {
+function localRelayFromEnv(
+  sandboxManager = createWorkspaceSupervisorSandboxManager(),
+  authority = createSqliteWorkspaceAuthority(),
+): ControlPlaneRelay {
   const relayUrl = process.env.CLAXEDO_WORKSPACE_RELAY_URL?.trim()
   const resolverToken = process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()
   const hasSigningKey = !!process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?.trim()
@@ -620,6 +624,13 @@ function localRelayFromEnv(sandboxManager = createWorkspaceSupervisorSandboxMana
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
             targetLookup: localRelayTargetLookup({ sandboxManager }),
+            recordRuntimeAccessToken: (input) => authority.recordRuntimeAccessTokenForService({
+              jti: input.jti,
+              workspaceId: input.workspaceId,
+              hostId: input.hostId,
+              subject: input.subject,
+              expiresAt: input.expiresAt,
+            }),
           }),
         }
       : {}),

@@ -269,6 +269,7 @@ function services(): ControlPlaneServices {
       replaceSessionVisibility: vi.fn(async () => ({})),
       deleteSessionVisibility: vi.fn(async () => ({})),
       recordRuntimeAccessToken: vi.fn(async () => ({})),
+      recordRuntimeAccessTokenForService: vi.fn(async () => ({})),
       runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
       revokeRuntimeAccessToken: vi.fn(async () => ({})),
       revokeRuntimeAccessTokensForWorkspaceUser: vi.fn(async () => ({})),

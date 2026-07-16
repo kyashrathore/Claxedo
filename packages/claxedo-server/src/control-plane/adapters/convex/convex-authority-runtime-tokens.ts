@@ -18,6 +18,25 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
         expires_at: args.expiresAt,
       })
     },
+    async recordRuntimeAccessTokenForService(args: {
+      jti: string
+      workspaceId: string
+      hostId: string
+      subject: string
+      expiresAt: number
+    }) {
+      return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
+        convexApi.runtimeAccessTokens.recordMintForService,
+        {
+          service_token: requireServiceToken(input),
+          jti: args.jti,
+          workspace_id: args.workspaceId,
+          host_id: args.hostId,
+          subject: args.subject,
+          expires_at: args.expiresAt,
+        },
+      )
+    },
     async runtimeAccessTokenActive(args: {
       jti: string
       workspaceId: string

@@ -56,6 +56,7 @@ type ConvexApi = {
   }
   runtimeAccessTokens: {
     recordMint: ConvexMutation
+    recordMintForService: ConvexMutation
     active: ConvexQuery
     revoke: ConvexMutation
     revokeForWorkspaceUser: ConvexMutation

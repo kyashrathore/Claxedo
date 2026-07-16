@@ -122,7 +122,7 @@ describe("worker import-graph", () => {
   const { visited, bareImports } = walk()
   const visitedRel = [...visited].map((f) => path.relative(SRC, f))
 
-  test("Worker deployment keeps Node compatibility enabled for the native Daytona SDK driver", () => {
+  test("Worker deployment keeps native SDK compatibility and public Worker-to-Worker fetch enabled", () => {
     // The Daytona SDK now enters the Worker bundle through the extracted
     // @claxedo/sandbox-manager package rather than a claxedo-server source
     // file: assert the graph reaches sandbox-manager, and that sandbox-manager
@@ -140,7 +140,7 @@ describe("worker import-graph", () => {
     expect(sandboxManagerImportsDaytona).toBe(true)
 
     const wrangler = fs.readFileSync(path.resolve(import.meta.dirname, "../wrangler.toml"), "utf8")
-    expect(wrangler).toContain('compatibility_flags = ["nodejs_compat"]')
+    expect(wrangler).toContain('compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]')
   })
 
   test("entrypoints are actually reachable (sanity)", () => {

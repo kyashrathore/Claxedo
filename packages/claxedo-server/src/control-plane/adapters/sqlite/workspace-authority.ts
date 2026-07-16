@@ -915,6 +915,16 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       `).run(args.jti, args.workspaceId, args.hostId, who.token_identifier, args.expiresAt, Date.now())
       return { ok: true }
     },
+    async recordRuntimeAccessTokenForService(args) {
+      const db = database()
+      const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
+      if (existing) throw new Error("Runtime Access Token already recorded")
+      db.prepare(`
+        INSERT INTO runtime_access_tokens (jti, workspace_id, host_id, minted_for_token_identifier, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(args.jti, args.workspaceId, args.hostId, args.subject, args.expiresAt, Date.now())
+      return { ok: true }
+    },
     async runtimeAccessTokenActive(args) {
       const db = database()
       const token = db.prepare(`SELECT * FROM runtime_access_tokens WHERE jti = ?`).get(args.jti) as {

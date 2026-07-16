@@ -13,6 +13,7 @@ describe("control-plane relay provider", () => {
       runtimeAccessTokenSigner: vi.fn(),
       hostTunnelTokenSigner: vi.fn(),
       targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(),
     })
 
     expect(provider.getRelayEndpoint("ws_1", "eu-west")).toBe("https://relay.eu.test")
@@ -25,6 +26,7 @@ describe("control-plane relay provider", () => {
       runtimeAccessTokenSigner: vi.fn(),
       hostTunnelTokenSigner: vi.fn(),
       targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(),
     })
 
     expect(() => provider.getRelayEndpoint("ws_1", "us-east")).toThrow("Workspace relay endpoint is not configured")
@@ -41,11 +43,13 @@ describe("control-plane relay provider", () => {
       tokenExpiresAt: 2_000,
       jti: "rat_jti",
     }))
+    const recordRuntimeAccessToken = vi.fn(async () => {})
     const provider = createControlPlaneRelayProvider({
       relay: { relayUrl: "https://relay.test" },
       runtimeAccessTokenSigner,
       hostTunnelTokenSigner,
       targetLookup: vi.fn(),
+      recordRuntimeAccessToken,
     })
 
     await expect(provider.mintHostTunnelToken({
@@ -85,6 +89,17 @@ describe("control-plane relay provider", () => {
       role: "editor",
       ttlSeconds: 15 * 60, // 60s requested, below RAT minimum → clamped up
     })
+    expect(recordRuntimeAccessToken).toHaveBeenCalledWith({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      subject: "user_1",
+      orgId: "org_1",
+      role: "editor",
+      ttlMs: 60_000,
+      token: "rat_1",
+      expiresAt: 2_000,
+      jti: "rat_jti",
+    })
   })
 
   test("honors in-bounds ttlMs and clamps out-of-bounds ttlMs to the signer bounds", async () => {
@@ -103,6 +118,7 @@ describe("control-plane relay provider", () => {
       runtimeAccessTokenSigner,
       hostTunnelTokenSigner,
       targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(),
     })
     const base = { workspaceId: "ws_1", hostId: "host_1", subject: "user_1", orgId: "org_1" }
 
@@ -134,6 +150,7 @@ describe("control-plane relay provider", () => {
       runtimeAccessTokenSigner,
       hostTunnelTokenSigner: vi.fn(),
       targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(),
     })
 
     await expect(provider.mintRuntimeAccessToken({
@@ -162,6 +179,30 @@ describe("control-plane relay provider", () => {
     })
   })
 
+  test("does not return an unregistered runtime token", async () => {
+    const provider = createControlPlaneRelayProvider({
+      relay: { relayUrl: "https://relay.test" },
+      runtimeAccessTokenSigner: vi.fn(async () => ({
+        runtimeAccessToken: "rat_1",
+        tokenExpiresAt: 2_000,
+        jti: "rat_jti",
+      })),
+      hostTunnelTokenSigner: vi.fn(),
+      targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(async () => {
+        throw new Error("authority unavailable")
+      }),
+    })
+
+    await expect(provider.mintRuntimeAccessToken({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      subject: "user_1",
+      orgId: "org_1",
+      ttlMs: 60_000,
+    })).rejects.toThrow("authority unavailable")
+  })
+
   test("resolves relay targets without exposing resolver failure details", async () => {
     const targetLookup = vi.fn(async (input: { workspaceId: string; hostId: string }) =>
       input.hostId === "host_ready"
@@ -180,6 +221,7 @@ describe("control-plane relay provider", () => {
       runtimeAccessTokenSigner: vi.fn(),
       hostTunnelTokenSigner: vi.fn(),
       targetLookup,
+      recordRuntimeAccessToken: vi.fn(),
     })
 
     await expect(provider.resolveTarget("ws_1", "host_ready")).resolves.toEqual({
@@ -200,6 +242,7 @@ describe("control-plane relay provider", () => {
       runtimeAccessTokenSigner: vi.fn(),
       hostTunnelTokenSigner: vi.fn(),
       targetLookup: vi.fn(),
+      recordRuntimeAccessToken: vi.fn(),
       drainWorkspace,
       telemetry: { capture },
     })
