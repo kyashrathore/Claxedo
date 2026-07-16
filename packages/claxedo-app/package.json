@@ -49,7 +49,7 @@
     "test:e2e:core": "bun run test:e2e:core:base && bun run test:e2e:workgraph",
     "test:e2e:core:base": "CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts --grep-invert @workgraph-real",
     "test:e2e:documents:canary": "bun run test:e2e:documents:canary:mock && bun run test:e2e:documents:canary:live",
-    "test:e2e:documents:canary:mock": "CLAXEDO_E2E_SUITE=core PLAYWRIGHT_VIDEO=0 npx playwright test --config playwright.config.ts e2e/playwright/documents-core.spec.ts --grep @documents-rich-canary --workers=1 --retries=0",
+    "test:e2e:documents:canary:mock": "CLAXEDO_E2E_SUITE=core PLAYWRIGHT_VIDEO=0 npx playwright test --config playwright.config.ts e2e/playwright/documents-core.spec.ts --grep @documents-release-canary --workers=1 --retries=0",
     "test:e2e:documents:canary:live": "CLAXEDO_E2E_SUITE=all CLAXEDO_E2E_LIVE=1 CLAXEDO_E2E_LIVE_BACKEND_PORT=3301 VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3301 PLAYWRIGHT_VIDEO=0 npx playwright test --config playwright.config.ts e2e/playwright/live-documents-core.spec.ts --grep @documents-rich-live-canary --workers=1 --retries=0",
     "test:e2e:workgraph": "CLAXEDO_WORKGRAPH_REAL_E2E=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-workgraph.spec.ts",
     "test:e2e:mobile": "npx playwright test --project=mobile --config playwright.config.ts",

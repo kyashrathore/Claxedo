@@ -1,26 +1,11 @@
 import type { Editor } from "@tiptap/core"
-import Color from "@tiptap/extension-color"
-import Highlight from "@tiptap/extension-highlight"
-import Image from "@tiptap/extension-image"
-import Link from "@tiptap/extension-link"
-import { Table } from "@tiptap/extension-table"
-import TableCell from "@tiptap/extension-table-cell"
-import TableHeader from "@tiptap/extension-table-header"
-import TableRow from "@tiptap/extension-table-row"
-import TaskItem from "@tiptap/extension-task-item"
-import TaskList from "@tiptap/extension-task-list"
-import { TextStyle } from "@tiptap/extension-text-style"
-import Underline from "@tiptap/extension-underline"
-import { Markdown } from "@tiptap/markdown"
 import { TextSelection } from "@tiptap/pm/state"
-import StarterKit from "@tiptap/starter-kit"
 import { createTiptapEditor } from "solid-tiptap"
 import { For, Show, createComputed, createSignal, onCleanup } from "solid-js"
 import { joinMarkdownEnvelope, normalizeSerializedMarkdownBody } from "@/features/documents/markdown/frontmatter"
 import type { RichMarkdown } from "@/features/documents/markdown/detector"
-import { MermaidCodeBlock } from "./mermaid-block"
-import { SlashCommands } from "./slash-commands"
-import "./page-editor.css"
+import { documentRichEditorExtensions } from "./rich-extensions"
+import "./document-editor.css"
 
 type SelectionAction = "improve" | "fix" | "shorten"
 
@@ -281,24 +266,7 @@ export function RichMode(props: {
   const editorAccessor = createTiptapEditor(() => ({
     element,
     editable: true,
-    extensions: [
-      StarterKit.configure({ codeBlock: false, link: false, underline: false }),
-      MermaidCodeBlock,
-      Link.configure({ openOnClick: false, autolink: true }),
-      Underline,
-      TextStyle,
-      Color,
-      Highlight.configure({ multicolor: true }),
-      Image.configure({ allowBase64: true }),
-      Table.configure({ resizable: true }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      SlashCommands,
-      Markdown,
-    ],
+    extensions: documentRichEditorExtensions(),
     content: initial.envelope.body,
     contentType: "markdown",
     editorProps: {

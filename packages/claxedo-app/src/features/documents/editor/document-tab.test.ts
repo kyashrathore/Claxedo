@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { selectionSDK } from "./tab-page"
+import { selectionSDK } from "./document-tab"
 
 describe("document selection SDK", () => {
   test("propagates provider failures instead of silently disabling selection actions", () => {

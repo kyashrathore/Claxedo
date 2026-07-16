@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("../data/documents-api", () => ({ documentsApi: api }))
 
-import { PageIndex } from "./page-index"
+import { PageIndex } from "./document-index"
 
 describe("PageIndex repository indexing", () => {
   beforeEach(() => {

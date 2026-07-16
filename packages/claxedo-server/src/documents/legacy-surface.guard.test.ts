@@ -13,6 +13,9 @@ const rules = [
   [joined("pages", "-api"), new RegExp(joined("pages", "-api"))],
   [joined("markdown", "ToDoc"), new RegExp(joined("markdown", "ToDoc"))],
   [joined("Page", "Editor"), new RegExp(joined("Page", "Editor"))],
+  [joined("page", "-editor.css"), new RegExp(joined("page", "-editor\\.css"))],
+  ["legacy page-index module", /features\/documents\/editor\/page-index\.(?:ts|tsx)/],
+  ["legacy tab-page module", /features\/documents\/editor\/tab-page\.(?:ts|tsx)/],
   [joined("parse", "PageContent"), new RegExp(joined("parse", "PageContent"))],
   [["document", "revision", "id"].join("_"), new RegExp(["document", "revision", "id"].join("_"))],
   ["/pages route", /["'`]\/pages(?:[/?"'`]|$)/],
@@ -66,6 +69,6 @@ function sourceFiles(root: string): string[] {
       if (entry.name === "node_modules") return []
       return sourceFiles(target)
     }
-    return /\.(?:ts|tsx|js|jsx|sql|json)$/.test(entry.name) ? [target] : []
+    return /\.(?:ts|tsx|js|jsx|css|sql|json)$/.test(entry.name) ? [target] : []
   })
 }

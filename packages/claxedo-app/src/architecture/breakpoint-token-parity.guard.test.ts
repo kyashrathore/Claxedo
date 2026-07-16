@@ -18,7 +18,7 @@ import {
 // interpolated into `@media` conditions, so those literals can never import the
 // token — this source-text guard is the ONLY thing that catches a future edit
 // changing BP_MD in TS without updating the `767`/`768` literals in
-// app-shell.css / page-editor.css / renderer.ts / review-tab.tsx, etc. (WP-C3,
+// app-shell.css / document-editor.css / renderer.ts / review-tab.tsx, etc. (WP-C3,
 // inventory §5.4). Same intent as the i18n locale-parity manifest test (WP-A6).
 
 const SRC_ROOT = path.resolve(import.meta.dir, "..")

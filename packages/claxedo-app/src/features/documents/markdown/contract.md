@@ -13,11 +13,13 @@ serializer returns the same stable `source` shape with `parser_failed` and the
 original envelope bytes, so an invalid or pathological Tiptap tree cannot throw
 through the Documents controller.
 
-The implementation is pinned to `@tiptap/markdown@3.23.4` and uses the same
-Tiptap node families as the Documents editor: StarterKit, images, GFM tables,
-and task lists. Mermaid is represented by the standard code-block node with
-`language: "mermaid"`, so fenced Mermaid blocks use the existing custom node
-view while remaining ordinary fenced Markdown on disk.
+The implementation is pinned to `@tiptap/markdown@3.23.4`. A production-parity
+test runs every detector-admitted fixture and repository document through the
+single extension list mounted by the Documents editor: StarterKit, the Mermaid
+code block, links, underline, text style, color, highlight, images, GFM tables,
+task lists, slash commands, and the Markdown extension. Mermaid remains fenced
+Markdown on disk with `language: "mermaid"` while using its custom node view in
+the editor.
 
 ## Rich subset
 
@@ -94,11 +96,11 @@ allows a conservative one-second combined ceiling for the parsing probes.
 
 ## Fidelity report
 
-The 2026-07-16 baseline corpus contained 56 Markdown files under `docs/**`.
-Its measured rich-admission rate was 2/56 (3.6%): 28 differed from the pinned
-serializer and 26 contained an explicitly unsupported construct. This is a
-fidelity limitation, not a data-loss path; the other 54 opened in source mode
-and no file was serialized on open. The byte-stability test discovers the
+The 2026-07-17 corpus contained 61 Markdown files under `docs/**`. Its measured
+rich-admission rate was 2/61 (3.3%): 31 differed from the pinned serializer and
+28 contained an explicitly unsupported construct. This is a fidelity
+limitation, not a data-loss path; the other 59 opened in source mode and no file
+was serialized on open. The byte-stability and production-parity tests discover the
 current `docs/**` corpus on every run, so later files join the gate without
 making the historical measurement a brittle file-count assertion.
 

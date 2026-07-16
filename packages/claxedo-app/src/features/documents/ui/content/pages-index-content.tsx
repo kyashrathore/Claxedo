@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/solid-query"
 import type { ContentMeta } from "../../../../app/workbench/state/index"
 import { useClaxedoState, useShellQueryOptions as useQueryOptions } from "@/features/documents/app-ports"
 import type { PaneCtx } from "../../../../app/workbench/workbench/index"
-import { PageIndex } from "../../editor/page-index"
+import { PageIndex } from "../../editor/document-index"
 
 export function PagesIndexContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
   const state = useClaxedoState()

@@ -13,7 +13,7 @@
  *
  * CSS custom properties cannot be interpolated into `@media` conditions
  * (`@media (max-width: var(--bp-md))` is invalid CSS), so the `@media` rules in
- * `app-shell.css`/`ui-overrides.css`/`page-editor.css` must keep the literal
+ * `app-shell.css`/`ui-overrides.css`/`document-editor.css` must keep the literal
  * pixel number. `app-shell.css`'s `:root` block mirrors these values as
  * `--bp-*` custom properties (for `calc()`/inline-style use), and
  * `src/architecture/breakpoint-token-parity.guard.test.ts` is the weld that
@@ -29,9 +29,9 @@ export const BP_2XL = 1536 // Tailwind `2xl` — ui-overrides timeline/composer 
 
 // Deliberately OFF the Tailwind scale — named exceptions, not forced onto the
 // nearest stock step (see the inventory §1 page-editor rows).
-export const BP_EDITOR_WIDE = 1200 // page-editor.css padding tier (between lg and xl)
-export const BP_EDITOR_COMPACT = 900 // page-editor.css padding/actions tier (between md and lg)
-export const BP_XS = 420 // page-editor.css extra-narrow-phone tier — live at the mobile iPhone-13 (390px) viewport, do NOT fold into BP_SM
+export const BP_EDITOR_WIDE = 1200 // document-editor.css padding tier (between lg and xl)
+export const BP_EDITOR_COMPACT = 900 // document-editor.css padding/actions tier (between md and lg)
+export const BP_XS = 420 // document-editor.css extra-narrow-phone tier — live at the mobile iPhone-13 (390px) viewport, do NOT fold into BP_SM
 
 /**
  * True when the viewport is narrower than the `md` collapse boundary. `width`

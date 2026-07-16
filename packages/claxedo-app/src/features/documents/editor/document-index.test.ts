@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createDocumentIndexController, repositoryDocumentPath, resolveDocumentProjectScope } from "./page-index"
+import { createDocumentIndexController, repositoryDocumentPath, resolveDocumentProjectScope } from "./document-index"
 import type { DocumentSummary, DocumentsApi } from "../data/documents-api"
 
 const summary = {

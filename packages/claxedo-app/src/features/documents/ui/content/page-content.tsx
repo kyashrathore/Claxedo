@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import type { ContentMeta } from "../../../../app/workbench/state/index"
 import { SessionPaneScope, useClaxedoState } from "@/features/documents/app-ports"
 import type { PaneCtx } from "../../../../app/workbench/workbench/index"
-import { TabPage } from "../../editor/tab-page"
+import { TabPage } from "../../editor/document-tab"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 
 export function PageContent(props: { meta: ContentMeta; ctx: PaneCtx }) {

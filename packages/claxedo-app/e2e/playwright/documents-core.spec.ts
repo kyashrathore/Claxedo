@@ -75,7 +75,6 @@
 import { createHash } from "node:crypto"
 import { expect, test, type Locator, type Page, type Route, type TestInfo } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-documents-core"
 const PROJECT_ID = "proj_documents_core"
@@ -829,7 +828,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, page.getByRole("status").filter({ hasText: "Saved" }), testInfo, "autosave-retry-saved")
   })
 
-  test("rich editor accepts typing and its autosave event preserves the editor instance — behavior 4 @documents-rich-canary", async ({
+  test("rich editor accepts typing and its autosave event preserves the editor instance — behavior 4 @documents-rich-canary @documents-release-canary", async ({
     page,
     context,
   }, testInfo) => {
@@ -931,7 +930,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(unexpectedCanaryRequestFailures(requestFailures)).toEqual([])
   })
 
-  test("rich editor preserves formatting and slash-command interactions through autosave @documents-rich-canary", async ({
+  test("rich editor preserves formatting and slash-command interactions through autosave @documents-rich-canary @documents-release-canary", async ({
     page,
   }) => {
     const pageErrors: string[] = []
@@ -1094,11 +1093,14 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, await sourceEditor(page), testInfo, "version-restore-exact-bytes")
   })
 
-  test("/docs mention resolves an honest path and hydrated file-tool edit refreshes the editor — behavior 8", async ({
+  test("/docs mention resolves an honest path and hydrated file-tool edit refreshes the editor — behavior 8 @documents-unsigned-local-canary @documents-release-canary", async ({
     page,
     context,
   }, testInfo) => {
-    annotate(testInfo, "mock file-tool causality is Tier M; real harness execution remains Tier L session-env evidence")
+    annotate(
+      testInfo,
+      "unsigned-local picker access is independent of AI availability; file-tool causality is Tier M and real harness execution remains Tier L session-env evidence",
+    )
     const runtime = new DocumentRuntime()
     const document = runtime.seed({
       id: "agent_document",
@@ -1111,17 +1113,14 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await openDocument(editorPage, document.summary.id)
     const editor = await sourceEditor(editorPage)
 
-    await page.goto(`/w/${encodeURIComponent(DIR)}/session`)
+    await page.goto(`/w/${encodeURIComponent(DIR)}/session/${encodeURIComponent(SESSION_ID)}`)
     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(composer).toBeVisible({ timeout: 30_000 })
-    await composer.fill("start documents session")
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expectAssistantReplyVisible(page, "ack 1: start documents session")
 
     await composer.fill("/docs")
     const slash = page.getByRole("listbox").last()
     await expect(slash).toBeVisible()
-    await slash.getByRole("option", { name: /Documents/ }).click()
+    await slash.getByRole("option", { name: /\/docs/ }).click()
     const picker = page.getByRole("listbox", { name: "Documents" })
     await expect(picker).toBeVisible()
     await picker.getByRole("option", { name: /Agent brief/ }).click()
@@ -1133,12 +1132,6 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const hydratedPath = `${DIR}/.claxedo/sessions/${SESSION_ID}/docs/${document.summary.id}/agent-brief.md`
     expect(runtime.hydratedAgentFiles.get(hydratedPath)?.bytes).toBe("Heading\n=======\n\nagent base\n")
     await proveGeometry(page, composer, testInfo, "docs-mention-honest-hydrated-path")
-
-    const mentionedPrompt =
-      `document: Agent brief at ${DIR}/.claxedo/sessions/${SESSION_ID}/docs/${document.summary.id}/agent-brief.md ` +
-      `(document_id: ${document.summary.id})`
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expectAssistantReplyVisible(page, `ack 2: ${mentionedPrompt}`)
 
     await runtime.runAgentFileTool(hydratedPath, "Heading\n=======\n\nordinary agent file edit\n")
     await expect(editor).toHaveValue("Heading\n=======\n\nordinary agent file edit\n")
@@ -1156,9 +1149,6 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await expect(await sourceEditor(editorPage)).toHaveValue("Heading\n=======\n\nagent base\n")
     await proveGeometry(editorPage, await sourceEditor(editorPage), testInfo, "agent-edit-prechange-restored")
 
-    await composer.fill("Follow up in the normal session")
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expectAssistantReplyVisible(page, "ack 3: Follow up in the normal session")
     await saveSource(editorPage, "Heading\n=======\n\nhuman continues on same identity\n")
     expect(runtime.inspect(document.summary.id).summary.id).toBe("agent_document")
     expect(runtime.inspect(document.summary.id).markdown).toBe("Heading\n=======\n\nhuman continues on same identity\n")
