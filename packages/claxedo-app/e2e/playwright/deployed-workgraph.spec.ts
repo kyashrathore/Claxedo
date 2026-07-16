@@ -90,7 +90,9 @@ test.describe.serial("deployed WorkGraph", () => {
     await expect(stream.getByText(taskTitle, { exact: true })).toBeHidden()
     await stream.getByRole("button", { name: `Delete stream ${streamTitle}` }).click()
     await page.getByRole("button", { name: "Delete stream", exact: true }).click()
-    await expect(page.getByText(streamTitle, { exact: true })).toBeHidden()
+    // The portaled confirmation popover repeats the title while it closes, so
+    // assert on the stream card itself rather than any text occurrence.
+    await expect(streamContainer(page, streamTitle)).toBeHidden()
 
     expect(workGraphAuthorizations.length).toBeGreaterThan(0)
     expect(workGraphAuthorizations.every((authorization) => authorization.startsWith("Bearer "))).toBe(true)
