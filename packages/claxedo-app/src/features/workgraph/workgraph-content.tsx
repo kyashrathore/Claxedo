@@ -9,6 +9,7 @@ import { RichTextEditor } from "@/ui/rich-text"
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createWorkGraphClient, WorkGraphApiError, type WorkGraphClient, type WorkGraphSessionOpener } from "./api"
+import { ChipMenu, EmptyState, LoadingState, nextFrame, normalizeError, PanelTab, relativeTime, StatStrip, StatusBanner } from "./content-chrome"
 import { ProjectPicker, type LocalProjectOption } from "./project-picker"
 import { useWorkGraphSyncLifecycle } from "./sync-lifecycle"
 import { environmentChoices } from "./waiting/settings-capabilities"
@@ -17,7 +18,8 @@ import { TaskDialog, WaitingItemDialog } from "./waiting/item-dialogs"
 import { WaitingPanelBody } from "./waiting/waiting-panel"
 import { WorkGraphSettingsPanel } from "./settings-panel"
 import { toWaitingRow, waitingSourceFromClient } from "./waiting/waiting-source"
-import { WorkGraphStreamTree } from "./workgraph-overview"
+import { StreamTasksPanelBody } from "./stream-tasks-panel"
+import { WorkGraphProjectGroups, type WorkGraphProject } from "./workgraph-overview"
 import "./workgraph.css"
 import "./waiting/waiting.css"
 
@@ -29,12 +31,12 @@ import "./waiting/waiting.css"
  */
 export type WorkGraphPanelBridge = {
   /** Selected WorkGraph panel tab, or undefined when the panel isn't in a WorkGraph mode. */
-  mode: () => "attention" | "settings" | undefined
+  mode: () => "attention" | "settings" | "tasks" | undefined
   /** Whether the shared main panel is currently open in any mode. */
   isOpen: () => boolean
   /** Stable identity for the current open-panel state. */
   identity: () => unknown
-  open: (view: "attention" | "settings") => void
+  open: (view: "attention" | "settings" | "tasks") => void
   close: () => void
   headerSlot: Accessor<HTMLElement | null>
   bodySlot: Accessor<HTMLElement | null>
@@ -73,6 +75,10 @@ export function WorkGraphContent(props: {
   const [selectedWaiting, setSelectedWaiting] = createSignal<{ item: AttentionItem; invoker: HTMLElement }>()
   const [selectedTask, setSelectedTask] = createSignal<{ item: WorkItemDto; invoker: HTMLElement }>()
   const [streamSettings, setStreamSettings] = createSignal<StreamDto>()
+  // The Stream whose full task list the panel's Tasks tab shows. Only the id is
+  // remembered; the rendered Stream is always resolved against the live snapshot,
+  // so a deleted Stream never leaves a stale body behind.
+  const [tasksStreamId, setTasksStreamId] = createSignal<string>()
   // Stable references for the focus-restoration fallback hierarchy. Row focus is
   // always scoped to the Needs you panel — never a global text query.
   let needsYouTabRef: HTMLButtonElement | undefined
@@ -264,6 +270,19 @@ export function WorkGraphContent(props: {
     }
     setCreating(true)
   }
+  // A project's "New stream" card opens the same dialog with that project's
+  // execution target already selected — the one fact the grouping knows.
+  const openCreatingForProject = (project: WorkGraphProject) => {
+    openCreating()
+    if (!project.detail) return
+    if (project.key.startsWith("local:")) {
+      setEnvironment("local_worktree")
+      setLocalDirectory(project.detail)
+    } else if (project.key.startsWith("hosted:")) {
+      setEnvironment("hosted_workspace")
+      setRepositoryUrl(project.detail)
+    }
+  }
   const createOverrideInvalid = () => {
     const env = environment()
     const catalog = capabilityCatalog()
@@ -286,9 +305,14 @@ export function WorkGraphContent(props: {
     setReconnecting(false)
   }
 
-  const openPanelTab = (view: "attention" | "settings") => {
+  const openPanelTab = (view: "attention" | "settings" | "tasks") => {
     card.closeFloating()
     props.panel?.open(view)
+  }
+  const tasksStream = createMemo(() => streams().find((stream) => stream.id === tasksStreamId()))
+  const openStreamTasks = (stream: StreamDto) => {
+    setTasksStreamId(stream.id)
+    openPanelTab("tasks")
   }
   const openWaitingItemInPanel = (item: AttentionItem) => {
     openPanelTab("attention")
@@ -447,7 +471,7 @@ export function WorkGraphContent(props: {
                 </Button>
               </div>
             </div>
-            <p class="workgraph-lede text-text-weak">Every thread of work you're shipping with AI. Expand a stream to see its outcomes and the tasks underneath.</p>
+            <p class="workgraph-lede text-text-weak">Every thread of work you're shipping with AI, grouped by project. Each card is a stream; open More for its full task list.</p>
           </header>
           <div class="workgraph-body" classList={{ "has-context": contextMode() === "inline" }}>
             <div class="workgraph-primary">
@@ -602,7 +626,7 @@ export function WorkGraphContent(props: {
                     { label: "Needs you", value: attentionTotal() },
                   ]}
                 />
-                <WorkGraphStreamTree
+                <WorkGraphProjectGroups
                   streams={sortedStreams()}
                   outcomes={outcomes()}
                   items={workItems()}
@@ -612,7 +636,9 @@ export function WorkGraphContent(props: {
                   client={client}
                   mutate={mutate}
                   onOpenStreamSettings={openStreamSettings}
+                  onOpenStreamTasks={openStreamTasks}
                   onOpenTask={selectTask}
+                  onNewStream={openCreatingForProject}
                   onOpenSession={props.onOpenSession}
                 />
               </div>
@@ -641,6 +667,11 @@ export function WorkGraphContent(props: {
                     <PanelTab active={panel().mode() === "settings"} onClick={openWorkGraphSettings}>
                       Settings
                     </PanelTab>
+                    <Show when={tasksStream()}>
+                      <PanelTab active={panel().mode() === "tasks"} onClick={() => openPanelTab("tasks")}>
+                        Tasks
+                      </PanelTab>
+                    </Show>
                   </div>
                 </Portal>
               )}
@@ -666,6 +697,31 @@ export function WorkGraphContent(props: {
                         onSelect={selectWaiting}
                       />
                     </Match>
+                    <Match when={panel().mode() === "tasks"}>
+                      <Show
+                        when={tasksStream()}
+                        fallback={
+                          <div class="workgraph-tasks-panel">
+                            <div class="workgraph-detail-status" role="status">
+                              Pick a stream's More action to see its full task list here.
+                            </div>
+                          </div>
+                        }
+                      >
+                        {(stream) => (
+                          <StreamTasksPanelBody
+                            stream={stream()}
+                            outcomes={outcomes().filter((outcome) => outcome.streamId === stream().id)}
+                            items={workItems().filter((item) => item.streamId === stream().id && item.state !== "abandoned")}
+                            attempts={attempts().filter((attempt) => attempt.streamId === stream().id)}
+                            client={client}
+                            mutate={mutate}
+                            onOpenTask={selectTask}
+                            onOpenSession={props.onOpenSession}
+                          />
+                        )}
+                      </Show>
+                    </Match>
                     <Match when={panel().mode() === "settings"}>
                       <WorkGraphSettingsPanel active workgraphSource={workgraphSettingsSource} streamSource={streamSettingsSource} stream={streamSettings()} capabilities={capabilityCatalog()} capabilitiesError={capabilityResourceError()} capabilitiesLoading={capabilities.loading} localProjects={props.localProjects} onChooseLocalProject={props.onChooseLocalProject} onClose={() => {
                         setStreamSettings(undefined)
@@ -683,117 +739,4 @@ export function WorkGraphContent(props: {
       <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
     </main>
   )
-}
-
-function PanelTab(props: { active: boolean; onClick: () => void; children: JSX.Element; ref?: (element: HTMLButtonElement) => void }) {
-  return (
-    <button
-      ref={props.ref}
-      type="button"
-      role="tab"
-      aria-selected={props.active}
-      class="flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors"
-      classList={{
-        "bg-surface-base text-text-strong": props.active,
-        "text-text-base hover:bg-surface-base-hover hover:text-text-base": !props.active,
-      }}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </button>
-  )
-}
-
-function StatStrip(props: { stats: Array<{ label: string; value: number | string }> }) {
-  return (
-    <div class="workgraph-summary" aria-label="WorkGraph summary">
-      <For each={props.stats}>
-        {(stat) => (
-          <div class="workgraph-stat">
-            <span class="workgraph-stat-value text-text-strong">{stat.value}</span>
-            <span class="workgraph-stat-label text-text-weaker">{stat.label}</span>
-          </div>
-        )}
-      </For>
-    </div>
-  )
-}
-
-function ChipMenu<T extends string>(props: { value: string; selected: T; options: Array<{ value: T; label: string }>; onSelect: (value: T) => void }) {
-  const [open, setOpen] = createSignal(false)
-  return (
-    <Popover placement="bottom-start" portal open={open()} onOpenChange={setOpen} style={{ "z-index": "400" }} trigger={<span class="workgraph-defchip-value">{props.value}</span>} triggerAs="button" triggerProps={{ type: "button", class: "workgraph-defchip" }}>
-      <div class="workgraph-chip-menu">
-        <For each={props.options}>
-          {(option) => (
-            <button
-              type="button"
-              class="workgraph-chip-option"
-              classList={{ "is-selected": option.value === props.selected }}
-              onClick={() => {
-                props.onSelect(option.value)
-                setOpen(false)
-              }}
-            >
-              <span>{option.label}</span>
-              <Show when={option.value === props.selected}>
-                <Icon name="check-small" size="small" />
-              </Show>
-            </button>
-          )}
-        </For>
-      </div>
-    </Popover>
-  )
-}
-
-function LoadingState() {
-  return (
-    <div class="space-y-3" aria-live="polite" aria-label="Loading WorkGraph">
-      <For each={[1, 2, 3]}>{() => <div class="h-12 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />}</For>
-    </div>
-  )
-}
-
-function EmptyState(props: { title: string; copy: string }) {
-  return (
-    <div class="workgraph-panel col-span-full py-12 text-center">
-      <div class="mx-auto mb-4 grid size-10 place-items-center rounded-full border border-border-weak-base bg-surface-base">
-        <Icon name="dot-grid" size="small" class="text-icon-weak-base" />
-      </div>
-      <h2 class="text-[14px] font-medium text-text-strong">{props.title}</h2>
-      <p class="mx-auto mt-1 max-w-md text-[11px] leading-5 text-text-weaker">{props.copy}</p>
-    </div>
-  )
-}
-
-function StatusBanner(props: { error: WorkGraphApiError; retry: () => void; retryLabel?: string }) {
-  const copy = () => (props.error.kind === "unauthorized" || props.error.kind === "forbidden" ? "You do not have access to this WorkGraph." : props.error.kind === "conflict" ? "This work changed elsewhere. Reload before trying again." : props.error.kind === "offline" ? "WorkGraph is offline. Your existing view is preserved while we reconnect." : props.error.kind === "cursor_invalid" ? "WorkGraph changed while you were away. A fresh snapshot is required." : props.error.message)
-  return (
-    <div class="mb-6 flex items-center justify-between gap-4 border-y border-border-weak-base bg-background-stronger px-3 py-2 text-[12px]" role="alert">
-      <span>{copy()}</span>
-      <Button size="small" variant="ghost" onClick={props.retry}>
-        {props.retryLabel ?? (props.error.kind === "offline" ? "Reconnect" : "Reload")}
-      </Button>
-    </div>
-  )
-}
-
-function normalizeError(error: unknown) {
-  return error instanceof WorkGraphApiError ? error : new WorkGraphApiError("request_failed", error instanceof Error ? error.message : String(error))
-}
-
-// Resolves after the next animation frame — the point by which a closing modal
-// dialog has performed its one deferred focus-restoration. Registered after the
-// dialog's own frame, so focus work chained on this runs strictly afterwards.
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
-}
-
-function relativeTime(timestamp: number) {
-  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000))
-  if (minutes < 1) return "just now"
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`
 }

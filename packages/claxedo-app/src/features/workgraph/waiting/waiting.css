@@ -56,13 +56,14 @@
     color 110ms ease;
 }
 
-.workgraph-stream-row:hover .workgraph-row-settings,
+.workgraph-card-head:hover .workgraph-row-settings,
 .workgraph-row-settings[data-expanded],
 .workgraph-row-settings:focus-visible {
   opacity: 1;
 }
 
 .workgraph-row-settings:hover {
+  background: var(--surface-base-hover);
   color: var(--icon-base);
 }
 

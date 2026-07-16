@@ -410,7 +410,8 @@ Flows deleted (2): `launch-empty-home`, `three-pane-resize`.
 
 ## Deleted with no replacement (conscious cuts)
 
-- **Pages/Arena surface** — superseded by Docs v2 direction; revisit when it lands.
+- **Pages/Arena surface** — tracked by the Pages local authoring plan; revisit
+  after its local workflow is dependable.
 - **Marketplace browsing UX** (categories/search/badges) — peripheral; the install path
   itself IS covered by spec 23.
 - `remote-access-live` — its extension test targets a Settings→Extensions UI that no

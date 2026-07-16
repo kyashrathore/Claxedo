@@ -81,12 +81,16 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
     mode: () => {
       const mode = panelState().mode
       if (!isGlobalPanelMode(mode)) return undefined
-      return mode === "workgraph-settings" ? ("settings" as const) : ("attention" as const)
+      if (mode === "workgraph-settings") return "settings" as const
+      if (mode === "workgraph-tasks") return "tasks" as const
+      return "attention" as const
     },
     isOpen: () => panelState().open,
     identity: panelState,
-    open: (view: "attention" | "settings") =>
-      state.workspacePanel.openGlobal(view === "settings" ? "workgraph-settings" : "workgraph-attention"),
+    open: (view: "attention" | "settings" | "tasks") =>
+      state.workspacePanel.openGlobal(
+        view === "settings" ? "workgraph-settings" : view === "tasks" ? "workgraph-tasks" : "workgraph-attention",
+      ),
     close: () => state.workspacePanel.close(),
     headerSlot: workGraphPanelHeaderSlot,
     bodySlot: workGraphPanelBodySlot,

@@ -4,7 +4,11 @@ import {
   WorkGraphConnectionToolNames,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
-import { ExecutionCapabilitiesUnavailableError, type ExecutionCapabilitiesPort } from "@claxedo/workgraph/ports"
+import {
+  ExecutionCapabilitiesUnavailableError,
+  type ExecutionCapabilitiesPort,
+  type ExecutionCapabilitiesReadInput,
+} from "@claxedo/workgraph/ports"
 import { createWorkGraphHttpRouter } from "@claxedo/workgraph/hosted"
 import {
   ControlPlaneAuthError,
@@ -110,7 +114,7 @@ export function createHostedWorkGraph(
   const authority = input.authority
   const executor = input.executor ?? createWorkGraphConvexExecutor(url!)
   const clerkOrgByContext = new WeakMap<WorkGraphContext, string>()
-  const signedAuthByContext = new WeakMap<WorkGraphContext, Awaited<ReturnType<typeof controlPlaneAuthContext>>>()
+  const signedAuthByContext = new WeakMap<WorkGraphContext, SignedControlPlaneAuth>()
   const webhookVerifier =
     input.webhookVerifier ??
     createHostedConnectionWebhookVerifier({
@@ -213,28 +217,15 @@ export function createHostedWorkGraph(
         ...(input.now ? { now: input.now } : {}),
       })
     : undefined
-  const authenticated = createWorkGraphHttpRouter({
-    service,
-    resolveContext,
-    notifications,
-    attentionAcknowledgements,
-    archive,
-    deletion,
-    ...(executionCapabilities ? { executionCapabilities } : {}),
-    ...(input.now ? { now: input.now } : {}),
-  })
-  authenticated.route("/", intake.router)
-  const router = new Hono()
-  if (operationalTelemetry) router.use("*", workGraphHttpTelemetry(operationalTelemetry, input.now))
-  if (intake.webhookRouter) router.route("/", intake.webhookRouter)
-  router.route("/", authenticated)
   const ownerActivations = new Map<string, Promise<HostedWorkGraphOwnerActivation>>()
-  const activateOwner = async (auth: SignedControlPlaneAuth) => {
-    const context = await ownerContext(auth, input.requestId?.() || crypto.randomUUID())
-    const key = JSON.stringify([context.organizationId, context.ownerUserId])
+  const activationKey = (auth: SignedControlPlaneAuth) =>
+    JSON.stringify([auth.user.orgId ?? "", auth.user.subject])
+  const activateOwner = (auth: SignedControlPlaneAuth) => {
+    const key = activationKey(auth)
     const existing = ownerActivations.get(key)
     if (existing) return existing
-    const pending = activateHostedOwner(executionCapabilities, context)
+    const pending = ownerContext(auth, input.requestId?.() || crypto.randomUUID())
+      .then((context) => activateHostedOwner(executionCapabilities, context))
     ownerActivations.set(key, pending)
     const clear = () => {
       if (ownerActivations.get(key) === pending) ownerActivations.delete(key)
@@ -242,6 +233,32 @@ export function createHostedWorkGraph(
     void pending.then(clear, clear)
     return pending
   }
+  const readableExecutionCapabilities = executionCapabilities
+    ? {
+        ...executionCapabilities,
+        read: async (context: WorkGraphContext, request: ExecutionCapabilitiesReadInput) => {
+          const auth = signedAuthByContext.get(context)
+          const activation = auth ? ownerActivations.get(activationKey(auth)) : undefined
+          if (activation) await activation
+          return executionCapabilities.read(context, request)
+        },
+      }
+    : undefined
+  const authenticated = createWorkGraphHttpRouter({
+    service,
+    resolveContext,
+    notifications,
+    attentionAcknowledgements,
+    archive,
+    deletion,
+    ...(readableExecutionCapabilities ? { executionCapabilities: readableExecutionCapabilities } : {}),
+    ...(input.now ? { now: input.now } : {}),
+  })
+  authenticated.route("/", intake.router)
+  const router = new Hono()
+  if (operationalTelemetry) router.use("*", workGraphHttpTelemetry(operationalTelemetry, input.now))
+  if (intake.webhookRouter) router.route("/", intake.webhookRouter)
+  router.route("/", authenticated)
   return {
     service,
     activity: activityPorts.activity,
@@ -255,7 +272,7 @@ export function createHostedWorkGraph(
     attentionAcknowledgements,
     archive,
     deletion,
-    executionCapabilities,
+    executionCapabilities: readableExecutionCapabilities,
     operationalTelemetry,
     activateOwner,
   }

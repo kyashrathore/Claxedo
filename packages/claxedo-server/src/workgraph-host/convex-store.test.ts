@@ -1224,11 +1224,36 @@ describe("Convex WorkGraph store", () => {
         mutation: async () => undefined,
         query: async () => ({
           items: [{
-            id: "unorganized_ai_work",
+            id: "work_item_1",
             ownerUserId: "internal_user_id",
-            kind: "unorganized_ai_work",
+            kind: "work_item",
             updatedAt: 5,
-            counts: { externalIssues: 1, sessions: 0, total: 1 },
+            record: {
+              recordType: "work_item",
+              schemaVersion: 1,
+              ownerUserId: "internal_user_id",
+              version: 1,
+              createdAt: 1,
+              updatedAt: 5,
+              provenance: { actor: { type: "system", id: "convex" } },
+              id: "work_item_1",
+              streamId: "stream_1",
+              title: "Review hosted result",
+              state: "result_ready",
+              priority: 0,
+              dependencyIds: [],
+              sourceRevisionRefs: [],
+              completionContract: {
+                version: 1,
+                mode: "all",
+                requirements: [{
+                  id: "review",
+                  kind: "owner_confirmation",
+                  description: "Owner accepts the hosted result",
+                }],
+              },
+              evidenceIds: [],
+            },
           }],
           total: 1,
           hasMore: false,
@@ -1236,8 +1261,10 @@ describe("Convex WorkGraph store", () => {
       },
     })
 
-    await expect(service.query(owner("clerk_subject"), "attention", "list", { limit: 50 })).resolves.toMatchObject({
-      items: [{ ownerUserId: "clerk_subject" }],
+    const page = await service.query(owner("clerk_subject"), "attention", "list", { limit: 50 })
+    expect(() => AttentionPageSchema.parse(page)).not.toThrow()
+    expect(page).toMatchObject({
+      items: [{ ownerUserId: "clerk_subject", record: { ownerUserId: "clerk_subject" } }],
     })
   })
 

@@ -125,14 +125,335 @@
   padding-left: 0.25rem;
 }
 
-/* ── Stream tree (flat) ─────────────────────────────────── */
+/* ── Projects: quiet section labels, not content rows ─────
+   The hierarchy must read at a glance: the Project header is a small static
+   label (like the app's eyebrow labels), and the Stream card below it is the
+   one substantial object. They deliberately do NOT share a visual weight. */
 
 .workgraph-tree {
   border-top: 1px solid var(--border-weak-base);
 }
 
-.workgraph-stream {
-  border-bottom: 1px solid var(--border-weak-base);
+.workgraph-project + .workgraph-project {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-project-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.9rem 0.35rem 0.7rem 0.1rem;
+}
+
+.workgraph-project-name {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.workgraph-project-icon {
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+}
+
+.workgraph-project-path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 110ms ease;
+}
+
+.workgraph-project:hover .workgraph-project-path {
+  opacity: 1;
+}
+
+.workgraph-project-row .workgraph-status-dot {
+  align-self: center;
+  width: 0.4rem;
+  height: 0.4rem;
+}
+
+.workgraph-project-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 18.5rem));
+  gap: 0.9rem;
+  padding: 0.25rem 0.1rem 1.4rem;
+}
+
+/* ── Stream card: the one substantial surface ─────────────
+   Fixed Notes-like tiles: every card shares one exact height, so a shelf of
+   streams reads as a uniform grid that never reflows as tasks accumulate.
+   Zones are explicit but subtle — a title header over a hairline, a task list
+   with per-row rules, a footer under a hairline. At rest a card says only
+   title, tasks, and when it last moved; actions and Add task come on
+   hover/focus. Tone (attention/running) is a 2px accent on the left edge. */
+
+.workgraph-streamcard,
+.workgraph-streamcard-new {
+  height: 16rem;
+  border-radius: var(--radius-lg);
+}
+
+.workgraph-streamcard-gap {
+  flex: 1;
+}
+
+/* Quiet raised plane on system tokens: one step above the canvas, ringed by
+   the theme's 0.5px hairline shadow so neither fill nor border dominates.
+   The step differs per scheme — light needs the near-white solid to separate
+   from the gray canvas, while dark needs the fainter wash or the card shouts. */
+.workgraph-streamcard {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: light-dark(var(--surface-raised-strong), var(--surface-raised-base));
+  box-shadow: var(--shadow-xxs-border);
+  padding: 0.8rem 0.9rem 0.55rem;
+  transition: box-shadow 140ms ease;
+}
+
+.workgraph-streamcard:hover,
+.workgraph-streamcard:focus-within {
+  box-shadow: var(--shadow-xs-border-base);
+}
+
+/* The per-project create affordance: an empty dashed tile, same footprint. */
+.workgraph-streamcard-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px dashed var(--border-base);
+  color: var(--text-weaker);
+  font-size: 0.8125rem;
+  transition:
+    color 130ms ease,
+    border-color 130ms ease,
+    background 130ms ease;
+}
+
+.workgraph-streamcard-new:hover,
+.workgraph-streamcard-new:focus-visible {
+  border-color: var(--border-strong-base);
+  background: var(--surface-base);
+  color: var(--text-base);
+}
+
+.workgraph-streamcard[data-tone]::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  content: "";
+}
+
+.workgraph-streamcard[data-tone="critical"]::before {
+  background: color-mix(in srgb, var(--icon-critical-base) 80%, transparent);
+}
+
+.workgraph-streamcard[data-tone="active"]::before {
+  background: color-mix(in srgb, var(--icon-success-base) 70%, transparent);
+}
+
+.workgraph-streamcard[data-tone="info"]::before {
+  background: color-mix(in srgb, var(--icon-weak-base) 45%, transparent);
+}
+
+/* Header zone: title over a subtle hairline. */
+.workgraph-streamcard-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 1.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
+  margin-bottom: 0.1rem;
+}
+
+/* The title owns the card's full width and wraps to two lines — never the
+   half-width ellipsis the old flat row used. */
+.workgraph-streamcard-head .workgraph-stream-title {
+  display: -webkit-box;
+  flex: 1;
+  max-width: none;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -0.006em;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+/* Stream actions are a small raised toolbar at the head's right edge, shown
+   only while the card is hovered or focused; at rest it takes no space, so the
+   title owns the full width. Same raised tokens as menus, so it reads as a
+   deliberate toolbar in both themes — never a smear over the title. */
+.workgraph-streamcard-actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  padding: 0.1rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-xxs-border);
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease;
+}
+
+.workgraph-streamcard:hover .workgraph-streamcard-actions,
+.workgraph-streamcard:focus-within .workgraph-streamcard-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.workgraph-streamcard-actions .workgraph-row-settings {
+  opacity: 1;
+}
+
+/* Task zone: clean text rows (no per-row rules), wrapping to two lines; the
+   whole list clips inside the fixed tile. */
+.workgraph-streamcard-tasks {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 0.15rem;
+}
+
+.workgraph-streamcard-tasks .workgraph-leaf {
+  /* Never compress rows to fit the fixed tile — clip the tail instead. */
+  flex-shrink: 0;
+  align-items: flex-start;
+  min-height: 1.9rem;
+  gap: 0.5rem;
+  padding-block: 0.3rem;
+}
+
+.workgraph-streamcard-tasks .workgraph-leaf-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+/* Every task line carries a real bullet — the status dot, aligned to the
+   first text line and visible at rest. */
+.workgraph-streamcard-tasks .workgraph-status-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.workgraph-streamcard-tasks .workgraph-status-dot[data-tone="info"] {
+  background: color-mix(in srgb, var(--icon-weak-base) 75%, transparent);
+}
+
+/* Inside a card a task row is just dot + title; the mono state, dependency
+   count, and Session jump live in the full task list, never here. */
+.workgraph-streamcard-tasks .workgraph-leaf-state,
+.workgraph-streamcard-tasks .workgraph-leaf-waits,
+.workgraph-streamcard-tasks .workgraph-leaf-session {
+  display: none;
+}
+
+/* Add task is the demoted last row of the list — same shape as a task row,
+   revealed with the card's hover state. */
+.workgraph-streamcard-add {
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+
+.workgraph-streamcard:hover .workgraph-streamcard-add,
+.workgraph-streamcard:focus-within .workgraph-streamcard-add {
+  opacity: 1;
+}
+
+.workgraph-streamcard-add .workgraph-add-task {
+  min-height: 1.9rem;
+  padding: 0.3rem 0 0.3rem 0.8rem;
+  font-size: 0.8125rem;
+}
+
+/* A Stream with no usable execution target flags exactly that, quietly. */
+.workgraph-streamcard-flag {
+  padding-top: 0.35rem;
+  color: var(--text-warning, var(--text-weak));
+  font-size: 0.6875rem;
+}
+
+/* Footer zone: hairline, then task count left, overflow count and the
+   hover-revealed delete right. */
+.workgraph-streamcard-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.6rem;
+  margin-top: 0.3rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
+  padding-top: 0.3rem;
+  font-size: 0.6875rem;
+}
+
+.workgraph-streamcard:hover .workgraph-streamcard-foot .workgraph-row-delete,
+.workgraph-streamcard:focus-within .workgraph-streamcard-foot .workgraph-row-delete {
+  opacity: 1;
+}
+
+.workgraph-streamcard-more {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-weaker);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+  transition: color 110ms ease;
+}
+
+.workgraph-streamcard-more:hover,
+.workgraph-streamcard-more:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--text-base);
+}
+
+/* ── Tasks tab body in the shared panel ─────────────────── */
+
+.workgraph-tasks-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.workgraph-tasks-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.workgraph-tasks-panel-list .workgraph-outcome {
+  padding-left: 0;
 }
 
 /* New-stream dialog: a real backdrop, biased toward the top, borderless
@@ -328,51 +649,6 @@
   min-height: 20rem;
 }
 
-.workgraph-stream-row {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-height: 2.55rem;
-  padding: 0.15rem 0.35rem 0.15rem 0.1rem;
-  cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: background 110ms ease;
-}
-
-.workgraph-stream-row:hover {
-  background: color-mix(in srgb, var(--surface-base) 60%, transparent);
-}
-
-.workgraph-disclosure {
-  display: grid;
-  flex-shrink: 0;
-  place-items: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: var(--radius-sm);
-  color: var(--icon-weak-base);
-  opacity: 0;
-  transition:
-    transform 140ms ease,
-    color 110ms ease,
-    opacity 110ms ease;
-}
-
-.workgraph-stream-row:hover .workgraph-disclosure,
-.workgraph-stream.is-open .workgraph-disclosure,
-.workgraph-disclosure:focus-visible {
-  opacity: 1;
-}
-
-.workgraph-disclosure:hover {
-  color: var(--icon-base);
-}
-
-.workgraph-stream.is-open .workgraph-disclosure {
-  transform: rotate(90deg);
-  color: var(--icon-base);
-}
-
 .workgraph-status-dot {
   flex-shrink: 0;
   width: 0.5rem;
@@ -405,35 +681,9 @@
   outline: none;
 }
 
-.workgraph-stream-row:hover .workgraph-stream-title {
-  color: var(--text-strong);
-}
-
 .workgraph-stream-title:focus-visible {
   border-radius: 2px;
   box-shadow: 0 0 0 2px var(--border-selected);
-}
-
-.workgraph-stream-meta {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 0.4rem;
-  overflow: hidden;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 110ms ease;
-}
-
-.workgraph-stream-row:hover .workgraph-stream-meta,
-.workgraph-stream.is-open .workgraph-stream-meta {
-  opacity: 1;
-}
-
-.workgraph-stream-meta > span {
-  flex-shrink: 0;
 }
 
 .workgraph-running {
@@ -447,10 +697,6 @@
 }
 
 /* ── Children: outcomes & tasks ─────────────────────────── */
-
-.workgraph-stream-children {
-  padding: 0.1rem 0 0.55rem 1.5rem;
-}
 
 .workgraph-outcome {
   padding-left: 0.85rem;
@@ -522,7 +768,18 @@
   align-items: center;
   gap: 0.5rem;
   min-height: 1.85rem;
-  padding: 0.05rem 0.4rem 0.05rem 0;
+  padding: 0.05rem 0.4rem;
+  margin-inline: -0.4rem;
+  border-radius: var(--radius-sm);
+  cursor: default;
+  transition: background 110ms ease;
+}
+
+/* Task rows are clickable; without a pointer cursor the hover wash is the
+   affordance. */
+.workgraph-leaf:hover,
+.workgraph-leaf:focus-visible {
+  background: var(--surface-base-hover);
 }
 
 .workgraph-leaf-title {
@@ -604,7 +861,9 @@
   transition: color 110ms ease;
 }
 
-.workgraph-add-task:hover {
+.workgraph-add-task:hover,
+.workgraph-add-task:focus-visible {
+  background: var(--surface-base-hover);
   color: var(--text-base);
 }
 
@@ -654,7 +913,6 @@
     background 110ms ease;
 }
 
-.workgraph-stream-row:hover .workgraph-row-delete,
 .workgraph-leaf:hover .workgraph-row-delete,
 .workgraph-row-delete[data-expanded],
 .workgraph-row-delete:focus-visible {
@@ -662,6 +920,7 @@
 }
 
 .workgraph-row-delete:hover {
+  background: var(--surface-base-hover);
   color: var(--icon-critical-base);
 }
 
@@ -831,9 +1090,13 @@
 
 @media (hover: none), (pointer: coarse) {
   .workgraph-row-delete,
-  .workgraph-disclosure,
-  .workgraph-stream-meta {
+  .workgraph-streamcard-actions,
+  .workgraph-streamcard-add {
     opacity: 1;
+  }
+
+  .workgraph-streamcard-actions {
+    pointer-events: auto;
   }
 }
 
@@ -878,16 +1141,13 @@
     opacity: 1;
   }
 
-  .workgraph-stream-title {
-    max-width: 58%;
-  }
-
-  .workgraph-stream-meta {
+  .workgraph-project-path {
     display: none;
   }
 
-  .workgraph-stream-children {
-    padding-left: 0.6rem;
+  .workgraph-project-cards {
+    grid-template-columns: 1fr;
+    padding-left: 0.4rem;
   }
 
   .workgraph-outcome {
@@ -899,14 +1159,14 @@
     padding-left: 0.4rem;
   }
 
-  .workgraph-stream-row {
+  .workgraph-project-row {
     gap: 0.4rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .workgraph-disclosure,
-  .workgraph-stream-row,
+  .workgraph-streamcard,
+  .workgraph-streamcard-add,
   .workgraph-row-delete {
     transition: none;
   }

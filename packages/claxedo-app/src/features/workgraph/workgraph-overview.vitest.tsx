@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { createComponent, createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { Persist, setPersisted } from "@/platform/persistence/persist"
 import { createWorkGraphClient } from "./api"
 import { WorkGraphContent } from "./workgraph-content"
-import { WorkGraphStreamTree } from "./workgraph-overview"
+import { StreamTasksPanelBody } from "./stream-tasks-panel"
+import { WorkGraphProjectGroups } from "./workgraph-overview"
 
-// The route-restorable expanded-Stream set persists to localStorage; reset it so
-// each test starts from the first-visit default rather than a prior test's set.
+// Persisted UI state (if any) lives in localStorage; reset it so each test
+// starts from a first-visit default rather than a prior test's leftovers.
 beforeEach(() => localStorage.clear())
 afterEach(() => cleanup())
 
@@ -50,8 +50,13 @@ describe("WorkGraph overview actions", () => {
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    expect(await screen.findByText("Local worktree · dev")).toBeInTheDocument()
+    // The target surfaces as the Project the Stream is grouped under (header +
+    // full path) — never as inheritance language, and never as a card flag when
+    // the target is present.
+    expect(await screen.findByRole("region", { name: "Project claxedo" })).toBeInTheDocument()
+    expect(screen.getByText("/Users/me/claxedo")).toBeInTheDocument()
     expect(screen.queryByText(/inherit/i)).toBeNull()
+    expect(screen.queryByText("Execution target required")).toBeNull()
   })
 
   test("marks legacy Streams without their own target as requiring configuration", async () => {
@@ -388,7 +393,7 @@ describe("WorkGraph overview actions", () => {
       request: workGraphRequest({ records: streams, command: () => success() }),
     })
     render(() => (
-      <WorkGraphStreamTree
+      <WorkGraphProjectGroups
         streams={streams()}
         outcomes={[]}
         items={[]}
@@ -398,7 +403,9 @@ describe("WorkGraph overview actions", () => {
         client={client}
         mutate={async () => true}
         onOpenStreamSettings={() => undefined}
+        onOpenStreamTasks={() => undefined}
         onOpenTask={() => undefined}
+        onNewStream={() => undefined}
       />
     ))
 
@@ -411,13 +418,26 @@ describe("WorkGraph overview actions", () => {
     expect(screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })).toBe(input)
   })
 
-  test("scopes the inline Add task input name to its Outcome", async () => {
-    const request = workGraphRequest({ records: () => [stream, outcome], command: () => success() })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
+  test("scopes the panel task list's inline Add task input name to its Outcome", async () => {
+    // Outcome grouping lives in the panel's full task list; the Stream card only
+    // previews a flat slice. Both an Outcome-level and a Stream-level "Add task"
+    // exist there; the Outcome-level one precedes the Stream-level one.
+    const client = createWorkGraphClient({
+      baseUrl: "http://test.local",
+      request: workGraphRequest({ records: () => [stream, outcome, pendingItem], command: () => success() }),
+    })
+    render(() => (
+      <StreamTasksPanelBody
+        stream={stream}
+        outcomes={[outcome]}
+        items={[pendingItem]}
+        attempts={[]}
+        client={client}
+        mutate={async () => true}
+        onOpenTask={() => undefined}
+      />
+    ))
 
-    // Both an Outcome-level and a Stream-level "Add task" exist; the Outcome-level one precedes it in the tree.
     const adds = await screen.findAllByRole("button", { name: "Add task" })
     await fireEvent.click(adds[0])
     expect(await screen.findByRole("textbox", { name: "Add task to Claxedo cloud is live" })).toBeInTheDocument()
@@ -474,14 +494,14 @@ describe("WorkGraph overview actions", () => {
     expect(commands.some((command) => command.executionMode === "supervised")).toBe(false)
   })
 
-  test("clicking the execute trigger opens its menu without toggling the row", async () => {
+  test("clicking the execute trigger opens its menu without disturbing the card", async () => {
     const request = workGraphRequest({ records: () => [stream, outcome, pendingItem], command: () => success() })
     render(() =>
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    // The item is visible because the first Stream renders expanded; clicking the
-    // trigger must open the menu, not collapse the Stream out from under it.
+    // The item is visible in the card's task preview; clicking the trigger must
+    // open the menu, not collapse the card's tasks out from under it.
     expect(await screen.findByText("Remove obsolete setup")).toBeInTheDocument()
     await fireEvent.click(await screen.findByRole("button", { name: "Execute stream Ship Claxedo cloud" }))
     expect(await screen.findByRole("menu", { name: "Execute stream Ship Claxedo cloud" })).toBeInTheDocument()
@@ -536,51 +556,50 @@ describe("WorkGraph overview actions", () => {
   })
 })
 
-// AE10 — the expanded-Stream set is route-restorable: it survives a /workgraph
-// reload, spans multiple Streams, and restores only real Streams.
-describe("WorkGraph expanded-Stream restoration", () => {
-  const leadStream = { ...stream, id: "stream_1", title: "Ship Claxedo cloud", activity: { lastActivityAt: 2, recapDueAt: 2 } }
-  const secondStream = { ...stream, id: "stream_2", title: "Migrate billing", activity: { lastActivityAt: 1, recapDueAt: 2 } }
+describe("WorkGraph project grouping", () => {
+  const targeted = (directory: string) => ({
+    environment: { kind: "local_worktree" as const, directory },
+    repository: { baseRevision: "dev" },
+  })
+  const leadStream = { ...stream, id: "stream_1", title: "Ship Claxedo cloud", executionDefaults: targeted("/Users/me/claxedo"), activity: { lastActivityAt: 2, recapDueAt: 2 } }
+  const secondStream = { ...stream, id: "stream_2", title: "Migrate billing", executionDefaults: targeted("/Users/me/billing"), activity: { lastActivityAt: 1, recapDueAt: 2 } }
 
-  test("restores the expanded Stream set across a route reload for multiple Streams", async () => {
+  test("groups Streams under one static header per Project with every card visible", async () => {
     const request = workGraphRequest({ records: () => [leadStream, secondStream], command: () => success() })
-    const first = render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
-    // First visit: the lead Stream auto-expands; the second starts collapsed.
-    await screen.findByRole("button", { name: "Collapse Ship Claxedo cloud" })
-    await fireEvent.click(screen.getByRole("button", { name: "Expand Migrate billing" }))
-    await screen.findByRole("button", { name: "Collapse Migrate billing" })
-
-    // Leave and reload /workgraph.
-    first.unmount()
     render(() =>
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    // Both Streams come back expanded from the persisted set — the reload does not
-    // reset to the first-visit default of only the lead Stream.
-    expect(await screen.findByRole("button", { name: "Collapse Ship Claxedo cloud" })).toBeInTheDocument()
-    expect(await screen.findByRole("button", { name: "Collapse Migrate billing" })).toBeInTheDocument()
+    // One quiet section header per Project (derived from each Stream's execution
+    // target) and both Stream cards visible without any interaction.
+    const claxedo = await screen.findByRole("region", { name: "Project claxedo" })
+    const billing = screen.getByRole("region", { name: "Project billing" })
+    expect(within(claxedo).getByText("Ship Claxedo cloud")).toBeInTheDocument()
+    expect(within(billing).getByText("Migrate billing")).toBeInTheDocument()
   })
 
-  test("restores only real Streams, never fabricating a phantom row for an unknown id", async () => {
-    // A persisted map naming a Stream that no longer exists must be inert, and an
-    // explicit collapse of the lead must be honored over the default.
-    setPersisted(Persist.global("workgraph.expanded-streams.v1"), {
-      ids: { stream_1: false, stream_2: true, ghost_stream: true },
-    })
-    const request = workGraphRequest({ records: () => [leadStream, secondStream], command: () => success() })
+  test("collects Streams sharing an execution target under one Project header", async () => {
+    const sibling = { ...secondStream, executionDefaults: targeted("/Users/me/claxedo") }
+    const request = workGraphRequest({ records: () => [leadStream, sibling], command: () => success() })
     render(() =>
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    // The explicit choices are restored (lead collapsed, second expanded) and the
-    // unknown id renders no disclosure row at all — exactly two Streams.
-    expect(await screen.findByRole("button", { name: "Expand Ship Claxedo cloud" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse Migrate billing" })).toBeInTheDocument()
-    expect(screen.getAllByRole("button", { name: /^(Collapse|Expand) / })).toHaveLength(2)
-    expect(within(document.body).queryByText(/ghost/i)).toBeNull()
+    const claxedo = await screen.findByRole("region", { name: "Project claxedo" })
+    expect(within(claxedo).getByText("Ship Claxedo cloud")).toBeInTheDocument()
+    expect(within(claxedo).getByText("Migrate billing")).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Project billing" })).toBeNull()
+  })
+
+  test("each Project ends with an empty New stream card that opens the create dialog", async () => {
+    const request = workGraphRequest({ records: () => [leadStream], command: () => success() })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: "New stream in claxedo" }))
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+    expect(screen.getByPlaceholderText("Stream title")).toBeInTheDocument()
   })
 })
 

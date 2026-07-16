@@ -1,8 +1,11 @@
 ---
-title: "feat(workgraph): deliver the personal WorkGraph end to end"
+title: "Personal WorkGraph End-to-End Delivery - Plan"
 date: 2026-07-13
-type: goal
-status: in-progress
+deepened: 2026-07-15
+type: feat
+artifact_contract: ce-unified-plan/v1
+artifact_readiness: implementation-ready
+product_contract_source: existing-workgraph-goal
 execution: code
 origin:
   - packages/workgraph/PRD.md
@@ -11,855 +14,435 @@ origin:
   - packages/workgraph/TASKS.md
 ---
 
-# GOAL — Execute WorkGraph End to End
+# Personal WorkGraph End-to-End Delivery - Plan
 
 ## Goal Capsule
 
-Deliver WorkGraph as the personal operating system for AI-assisted work across the Claxedo app, local/self-hosted Claxedo, and Claxedo Cloud.
-
-The completed product has a first-class **WorkGraph** main-navigation entry immediately after **Marketplace**, a backend-neutral WorkGraph application service embedded in Claxedo Server, one northbound HTTP/JSON and ordered-change contract, SQLite as the local and default OSS adapter, Convex as the Cloud default, exact-revision source admission through agents and authoring adapters, Connections-backed personal candidates, Stream-owned execution isolation, durable background Recaps, agent/MCP parity, and end-to-end proof through real local and deployed-cloud compositions. Every personal WorkGraph is physically scoped by the trusted `(organization, user)` tuple supplied by the host.
-
-### Authority order
-
-1. `packages/workgraph/PRD.md` defines product intent and user behavior.
-2. `packages/workgraph/SPEC.md` defines the public service contract and acceptance criteria.
-3. `packages/workgraph/ARCHITECTURE.md` defines ownership and dependency boundaries.
-4. This goal defines implementation sequence, concrete code seams, and verification gates.
-5. Current code supplies patterns and migration inputs; legacy behavior does not override the product contract.
-
-### Authoritative current status
-
-This section, the Requirements, Primary user journeys, Acceptance examples, and Implementation Units define the current goal. The dated Progress Log records point-in-time evidence and does not define the current product contract.
-
-The approved UI is one personal WorkGraph surface at `/workgraph`. Streams expand within that surface and **Add task** is the canonical manual work action. Outcomes are optional organization within a Stream. The existing app-global WorkspacePanel and top-level toggle are the only secondary panel and control. WorkGraph contributes top-level **Needs you** and **Settings** views; the WorkGraph header controls select those views in the same panel. WorkGraph Settings is tabless and contains execution defaults only. Stream Settings is a tabless Stream-scoped dialog containing execution overrides and Recap configuration. Each Stream row exposes its latest Recap through a hover/focus Recap icon and popover. Zero attention produces no WorkGraph dot, card, list, or empty body content. Selecting a Needs you item opens its focused dialog over the same surface.
-
-Source planning and Recap generation are strict Session V2 operations. Only valid output from the exact durable Session can publish a proposal or Recap. Invalid or unavailable output records failure, performs bounded retry, and surfaces attention without publishing generated substitute content or a notification for a nonexistent Recap.
-
-Integrated repository verification currently passes WorkGraph 329/329, WorkGraph MCP 90/90, Claxedo Server 1,851 passed with 12 explicit skips, and Claxedo app 4,137 passed with 7 explicit skips. Package typechecks, builds, architecture gates, and the Worker-safe staging dry run pass. SQLite and Convex both satisfy core adapter conformance version 5 and the archive, restart-recovery, workspace-cleanup, and tenant-level permanent-deletion contracts in repository verification. The native durable Docs v2 authoring action is implemented and covered by focused exact-revision tests. Approved WorkGraph UI acceptance is complete: the Decision inspector passes the serious-contrast check, the canonical real-local browser suite passes 11/11, and an independent headless pass verifies stable Add-task focus and durable submission. The remaining release acceptance is a real credentialed Cloud deployment and its hosted smoke/browser evidence; staging has not been deployed.
-
-Execution capability discovery is a tenant-scoped backend contract. Settings reads one exact, versioned server-attested catalog through `GET /execution-capabilities`, which accepts no tenant or workspace selector and performs no provisioning. An unavailable catalog remains explicit; clients do not substitute guessed, static, stale, or fallback choices. Hosted discovery observes a deterministic control-plane catalog workspace separate from the Stream workspace created for execution; `presetId` is reserved for adapter configuration rather than either workspace. The tenant-bound agent/control-plane refresh API may provision the catalog. Hosted deployment establishes it through setup or background work before Settings can return live choices.
-
-### Execution profile
-
-- Execute on a dedicated goal branch and isolated worktree from `dev`.
-- Treat this file as the long-running execution ledger. Append evidence to the progress log; do not rewrite completed evidence.
-- Use dependency-ordered waves and keep every available agent slot assigned to safe, disjoint work. Refill completed slots immediately while independent implementation, tests, review, or evidence collection remains.
-- Each wave ends with its named package tests, typechecks, architecture guards, and integration proof before the next wave begins.
-- Schema changes are additive and ship before dependent hosted code.
-- Keep the working product bootable after every wave.
-
-### Stop conditions
-
-Stop and surface a blocker only when implementation would change the Product Contract, weaken owner isolation, introduce a second credential store, make Cloud depend on SQLite or Node-native code, or require destructive handling of externally durable results.
-
-Implementation-level naming, component decomposition, and migration mechanics may be resolved by the executing agent when they preserve the contracts and tests in this goal.
+- **Objective:** Finish WorkGraph as a dependable personal execution system: connected work and chat-created work become durable Tasks, autonomous Sessions execute them, meaningful progress is observable, and real staging proves the full loop.
+- **Authority:** Product behavior follows `packages/workgraph/PRD.md` and `packages/workgraph/SPEC.md`; architecture follows `packages/workgraph/ARCHITECTURE.md`; this plan owns the remaining implementation and verification sequence.
+- **Execution profile:** Land dependency-ordered units on `dev`, preserve trusted `(organization, user)` tenancy, and keep SQLite and Convex behavior conformant.
+- **Stop conditions:** Stop for a product-contract change, a weakened authority boundary, a second credential store, destructive loss of durable results, or an external credential/runtime dependency that cannot be safely substituted in repository tests.
+- **Tail ownership:** The goal is complete only after repository gates, real local browser journeys, deployed staging journeys, operational checks, and documentation all agree.
 
 ---
 
 ## Product Contract
 
-### Problem frame
+### Summary
 
-The repository contains the personal WorkGraph contracts, application services, SQLite and Convex adapters, embedded server composition, northbound HTTP/change contract, MCP tools, strict Work Source planning, Connections-backed candidate admission and webhooks, Session-backed execution and Recaps, actionable notifications, the main WorkGraph Stream tree, and the execution lifecycle. The maintained production graph is V2-only apart from the explicit SQLite migration reader and schema fixture.
+The repository implementation now closes three local user journeys: connected issues enter WorkGraph and execute autonomously, chat/MCP-created Streams execute in real project Sessions, and long-running Sessions maintain a bounded WorkGraph ledger. The remaining work turns the staging configuration into a deployed and observable Cloud composition and proves the same journeys with real hosted credentials and infrastructure.
 
-Repository completion remains open for complete approved WorkspacePanel/settings/inspection browser acceptance. Release acceptance also requires a real deployed Convex/Worker/app composition and the complete Cloud browser journey with signed authentication and hosted workspace execution.
+### Problem Frame
 
-The final composition uses request-scoped trusted organization-and-user context, adapter-neutral persistence, live Connections capability handles, launch-all-ready execution, and one primary isolation envelope per Stream with optional child isolation.
+WorkGraph has a substantial domain, storage, execution, connection, UI, and browser-test foundation. Local deterministic composition now proves that a user can configure a source, admit work, let autonomous execution advance Tasks according to their same-Stream prerequisites, inspect the real Session transcript, and receive provider-side results.
+
+Task observability is implemented as a bounded durable ledger. Attempts, evidence, lifecycle events, and agent-authored checkpoints appear in the Task inspector while raw chat and tool activity remain in the Session. An ordinary long-running Session can bind to a Stream and current Task, record meaningful boundaries, complete with evidence, and select the next ready Task without creating a duplicate Session.
+
+### Done
+
+- The personal WorkGraph domain, trusted tuple tenancy, SQLite and Convex adapters, archive/restore, deletion barriers, ordered changes, Attention, notifications, Recaps, Work Sources, Decisions, evidence, and Attempt lifecycle exist with repository coverage.
+- WorkGraph is the app-level destination after Marketplace, with inline Streams and Tasks, Needs you, execution defaults, Stream-scoped environment/repository/base-revision settings, project-directory selection, Recap settings, and focused inspectors.
+- Local Stream execution creates project-scoped worktrees and real Sessions; Session links now route through the owning project rather than opening an unscoped shell.
+- WorkGraph change synchronization uses bounded long polling, and opening WorkGraph no longer depends on repeated full snapshots.
+- Notification acknowledgement and clearing are persisted through the backend instead of being browser-only state.
+- GitHub, Linear, and Jira Connections, Source View contracts, webhook/refresh ingestion, candidate staging, source planning, and sync primitives exist without storing provider credentials in WorkGraph.
+- Connections settings now create, edit, pause, refresh, and delete personal GitHub, Linear, and Jira Source Views. Each mapping carries an explicit Stream target, GitHub can infer its cloud repository, Linear and Jira require a selected project, and admission materializes the mapping on the new Stream.
+- Local embedded WorkGraph agent tools and the standalone authenticated MCP expose creation, reads, source admission, execution, retry, cancellation, findings, evidence, Decisions, Recaps, and lifecycle operations.
+- Execution capability discovery is tenant-scoped, server-attested, side-effect free on read, and aligned with Session-composer harnesses; Pi does not require a provider selection.
+- Cleanup, integration, isolation, and permitted-tools controls are no longer user-facing WorkGraph execution settings; the selected harness and environment own those concerns.
+- Prompt failures, provisioning failures, child-isolation failures, cancellation, and deletion have durable compensation paths; organization-scoped Connection metadata survives owner deletion.
+- Public event credential-key filtering, Connection-tool Session authority checks, callback timeout/size controls, durable hosted Recap identities, catalog workspace cleanup, real E2E command gating, and legacy migration timestamp conversion are fixed in the current checkout.
+- WorkGraph does not form one product-wide DAG. Stream → optional Outcome → Task is a fixed containment hierarchy. Separately, each Stream may have a Task prerequisite DAG used for scheduling: every prerequisite edge connects two Tasks in that Stream, and SQLite and Convex atomically reject self-cycles, direct cycles, transitive cycles, and cross-Stream edges without changing the previous prerequisite set. Outcomes, Attempts, activity, findings, and evidence are not prerequisite-graph vertices.
+- Deterministic GitHub, Linear, and Jira provider journeys pass settings → candidate → admission → execution → sync-back → cleanup through the real local composition.
+- A project chat creates a dependency-ordered multi-Task Stream through real Claxedo MCP, autonomous execution runs every Task in a real project Session, and each transcript reopens inside its owning project.
+- One long-running project Session creates and maintains a bounded ledger, checkpoints Task A, completes it with evidence, observes Task B becoming ready, and returns to WorkGraph through the instant in-app route without duplicating the Session.
+- Explicit Attempt completion publishes the durable `attempt_completed` change accepted by the ordered-change contract, so active WorkGraph clients converge without a snapshot reload.
+- WorkGraph has 355 passing tests; the app typecheck and architecture/performance gates pass; the focused server agent-tool suite passes 8/8; the OpenCode application-tool registry suite passes 13/13. OpenCode package typecheck remains blocked only by the pre-existing branded Message ID comparison in `test/server/httpapi-session.test.ts:639`.
+
+### Left
+
+- U18: repair the clean-runner sandbox-image, control-plane/Convex packaging, and staging diff-routing workflows, then deploy the ordered staging composition from one `dev` SHA.
+- U19: run signed credentialed staging acceptance for GitHub, Linear, and Jira; retain hosted Session transcripts, provider receipts, telemetry, rollback/roll-forward, and cleanup evidence; then align release documentation with the observed deployment.
 
 ### Requirements
 
-| ID  | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | Every WorkGraph record and operation is personally owned by one authenticated user and physically scoped by the trusted `(organization_id, owner_user_id)` tuple. The host derives both values; public requests have no tenant selector.                                                                                                                                                                                                                                                                                                                                                                   |
-| R2  | Streams, Tasks (`Work Item` internally), optional Outcomes, Attempts, Decisions, Recaps, source views, backend candidates, source links, evidence, and durable-effect receipts are first-class records with truthful lifecycle states.                                                                                                                                                                                                                                                                                                                                                                     |
-| R3  | Work enters the executable graph only through explicit admission. Connector results and independent AI sessions remain backend candidates until the owner chooses Add to WorkGraph; they appear as aggregated Unorganized AI work in Needs you.                                                                                                                                                                                                                                                                                                                                                            |
-| R4  | Agents, a durable Docs v2 surface, and explicit source actions append exact immutable Work Source revisions. “Turn into work” creates a durable `planning` record and uses an ordinary Session V2 planner to publish a reviewable Stream, optional Outcomes, Tasks, completion contracts, duplicates, and execution settings. Invalid or unavailable generation records `planning_failed` and attention without a substitute proposal. Later revisions support keep, replace disposable work, or fork. The native Docs action passes only its persisted project, document, and revision identifiers into this path and opens Needs you for review. |
-| R5  | Stream matching searches pinned and recent compact memory cards first, then expands to older cards only when confidence is low. Duplicate review never silently places or merges work.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| R6  | GitHub, Linear, Jira, and future work sources use organization-owned `@claxedo/connections` credentials and metadata plus user-owned provider identity mappings, filters, source views, and bindings. WorkGraph stores references, never provider credentials.                                                                                                                                                                                                                                                                                                                                             |
-| R7  | Execution settings inherit through WorkGraph → Stream → optional Outcome → Task → immutable Attempt. Every ready Task may launch; there is no product-level capacity or WIP queue.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| R8  | One Stream owns one primary isolated execution envelope—a local worktree or remote VM/workspace. Tasks execute inside it and may request child isolation.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| R9  | Agents may record factual state, sourced findings, artifacts, and clearly necessary follow-up work. Consequential scope or decision changes create Decisions that block only affected work.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| R10 | Attempt termination does not imply Task completion. Completion contracts require evidence; an optional Outcome also requires success evidence and owner confirmation before closure.                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| R11 | Eight quiet hours schedule an incremental background Recap using changes since the previous Recap, current state, and prior memory. Only actionable changes notify the user.                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| R12 | Meaningful sessions created outside WorkGraph produce personal Unorganized AI work candidates after becoming idle; attachment is never automatic.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| R13 | A Stream with no durable external effect may be deleted with its Attempts, environment, and unmerged work. A Stream with a durable effect can only close, abandoning unfinished work with reason while preserving history.                                                                                                                                                                                                                                                                                                                                                                                 |
-| R14 | Domain/application code depends on public storage and runtime ports. SQLite is the local default, Convex is the Cloud default, and an OSS adapter can pass the same conformance suite.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| R15 | Claxedo Cloud embeds the WorkGraph application service in its Worker-safe Claxedo Server control plane, mounts the same authenticated HTTP/change contract, persists through Convex, dispatches through hosted workspace runtimes, and recovers background work from durable state.                                                                                                                                                                                                                                                                                                                        |
-| R16 | The Claxedo app exposes one global WorkGraph tab immediately after Marketplace. Streams expand within the main surface and Add task is the canonical manual Task action.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| R17 | The app restores `/workgraph` on reload, consumes ordered change cursors, and contributes Needs you and execution-only Settings views to the one existing app-global WorkspacePanel. The existing top-level toggle carries the attention dot only when attention exists. Stream Settings owns Stream execution and Recap configuration; targeted inspectors use focused dialogs over the same surface. Candidates have no separate intake, capture, or onboarding screen.                                                                                                                                  |
-| R18 | Every high-value UI command has equivalent typed HTTP and MCP/agent access under the same tenant and authority checks.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| R19 | A core end-to-end suite proves the personal journey across frontend and backend, and a deployed-cloud smoke proves the Convex/Worker composition.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| R20 | Legacy docs, public docs, route lists, deployment runbooks, and package guidance describe only the final personal-first contract once migration completes.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| R21 | Attention and candidate collections use stable tenant-bound cursor pages. Query failure remains explicit and never substitutes a full snapshot or fabricated result.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| R22 | WorkGraph Settings saves one versioned execution-defaults patch. Stream Settings saves one versioned execution-and-Recap patch. Each command is atomic, and an explicit clear removes an override.                                                                                                                                                                                                                                                                                                                                                                                                         |
-| R23 | Source planning and Recaps publish only strict output from their exact configured Session V2 jobs. Missing configuration and invalid output create explicit requirements or failure attention without selecting substitute content or profiles.                                                                                                                                                                                                                                                                                                                                                            |
-| R24 | Staging deployment follows strict dependency order: additive Convex schema/functions, Worker-safe Claxedo Server, then app, followed by signed policy and browser verification. Repository dry runs are not deployment evidence.                                                                                                                                                                                                                                                                                                                                                                           |
-| R25 | WorkGraph execution choices come from an exact tenant-scoped, versioned, server-attested capability catalog. GET is side-effect free and accepts no tenant or workspace selector; unavailable state remains explicit with no fallback choices. Hosted control-plane setup owns the separate catalog runtime and an explicit agent/API refresh operation. Stream workspaces remain execution targets created from resolved profiles.                                                                                                                                                                        |
+#### Connected work
 
-### Primary user journeys
+- R26. A user configures personal GitHub, Linear, or Jira Source Views beside an organization-owned Connection, including provider identity, filters, sync policy, and the Stream target template used when an issue becomes work.
+- R27. A matching provider issue appears in Needs you, can be admitted into a Stream, executes after its same-Stream Task prerequisites are satisfied, and publishes a meaningful result back through the same Connection.
 
-#### F1. Create and execute a personal Stream
+#### Agent-created and autonomous work
 
-The user opens WorkGraph, creates a Stream, and uses Add task to add Tasks. An Outcome may group Tasks around a shippable result. Ready Tasks launch in the Stream envelope, and Attempt results move through truthful review/integration states until evidence satisfies each completion contract.
+- R28. A Claxedo Session can use first-party WorkGraph tools to create and update Streams, Outcomes, and Tasks with valid completion contracts and defaults, after which the user can start autonomous execution from the app.
+- R29. Autonomous execution advances only from explicit Attempt completion and contract-satisfying evidence; Session idle, prompt return, or absence of tool calls never implies Task completion.
+- R30. Every managed or attached Attempt references the real Session and owning project so the app opens the complete transcript immediately in its project context.
 
-#### F2. Enter source text and turn it into work
+#### Bounded activity and long-running ledgers
 
-The user asks an agent or a durable Docs v2 surface to turn an exact idea, PRD, plan, or notes revision into work. WorkGraph stores the revision, creates a durable planning record, and schedules a strict Session V2 planner. Valid output becomes a reviewable proposal containing placement, duplicate evidence, optional Outcomes, Tasks, completion contracts, and execution defaults. The user confirms the exact rendered proposal version. Invalid generation remains `planning_failed` with attention. A later source revision shows the diff and keep/replace/fork choices. The native Docs action dispatches the persisted exact revision locator and opens Needs you; browser acceptance verifies the complete visible journey.
+- R31. Every Task exposes a paginated activity timeline that combines canonical lifecycle facts with agent-authored checkpoints while keeping raw messages, shell commands, file reads, and intermediate reasoning in the Session.
+- R32. Stream activity detail is `milestones`, `progress`, or `detailed`, with `progress` as the default; all levels retain lifecycle, blocker, evidence, external-effect, and completion facts.
+- R33. An ordinary long-running Session can bind to one Stream and one current Task, record meaningful checkpoints, settle that Task with evidence, and move to another Task without spawning a duplicate Session.
+- R34. Work remains three levels deep—Stream, optional Outcome, Task. The Task prerequisite relation is a separate per-Stream DAG: every edge connects two Tasks in that Stream, and every path that adds, replaces, imports, or restores edges rejects direct and transitive cycles atomically. Outcomes, Attempts, activity entries, findings, evidence, and follow-ups are not DAG vertices and do not create recursive Task nesting. SQLite and Convex enforce this invariant for dependency updates, admission, and archive restore; the legacy migration imports no dependency edges.
 
-#### F3. Stage personally relevant team work
+#### Delivery and proof
 
-The user configures a source view over a team GitHub, Linear, or Jira Connection and maps the provider identity plus filters. Matching issues appear under Needs you. Add to WorkGraph admits one issue, binds its external identity, and later announces meaningful results through the same Connection.
+- R35. Local headless browser tests prove the connected-provider, chat-created, autonomous dependency, activity/read-clear, retry, and real-Session transcript journeys without direct database or HTTP seeding after the browser boundary.
+- R36. Staging deploys in dependency order and proves signed tenant policy, Convex persistence, hosted execution, real GitHub/Linear/Jira fixture journeys, sync-back, cleanup, telemetry, and rollback readiness.
+- R37. Current CI failures in sandbox-image installation, control-plane Convex packaging, and staging diff routing are resolved before deployment evidence is accepted.
+- R38. New activity, binding, completion, and capability operations are represented in the public HTTP/Protocol/OpenAPI contract and regenerated SDKs; handwritten clients do not become a second wire contract.
+- R39. Provider issue text and metadata remain explicitly untrusted input: they cannot select tenant, Session, execution target, credentials, tools, or completion authority, and prompt context preserves their provenance.
 
-#### F4. Resume after losing context
+### Key Flows
 
-After eight quiet hours, a strict background Session may publish an incremental Stream Recap. An actionable notification carries the exact Stream, Recap, and related record identifiers and appears under Needs you. Reading it acknowledges only the rendered notification version; a failed generation publishes neither a substitute Recap nor its notification.
+- F7. **Connected issue to completed work:** The user connects a provider, defines a personal Source View, receives a candidate, admits it, starts autonomous execution, watches Tasks complete, opens the real Session, and sees a provider-side result.
+- F8. **Chat to autonomous Stream:** In a project Session, the user asks the agent to create a Stream and Tasks. The agent infers the project directory, repository, and base revision, uses WorkGraph tools, and the user starts execution from the WorkGraph UI.
+- F9. **Long-running Session ledger:** The user asks an existing Session to maintain a WorkGraph ledger. The Session binds to a Stream, selects a Task, records only important checkpoints, completes with evidence, and advances without creating a second Session.
+- F10. **Recover and continue:** A failed Attempt exposes its reason, transcript, retry/cancel actions, and durable activity. Retry is idempotent and autonomous execution resumes only when evidence makes dependencies ready.
 
-#### F5. Recover work started outside WorkGraph
+### Acceptance Examples
 
-A meaningful independent session becomes idle and enters Unorganized AI work. WorkGraph suggests recent Streams. The user attaches it, creates a new Stream, or dismisses it until meaningful change.
+- AE13. A GitHub Source View configured through normal settings receives a labeled fixture issue, admits it, executes a no-op repository change, posts the configured result, and records no provider credential in WorkGraph data or public events.
+- AE14. Equivalent Linear and Jira fixtures exercise their provider identities, filters, webhook or refresh paths, admission, execution, and sync-back semantics.
+- AE15. A project Session asked to create a three-Task Stream produces one Stream with inferred local directory, repository URL, base revision, dependencies, and completion contracts; no WorkGraph-level repository setting is consulted.
+- AE16. Completing Task A with valid evidence immediately admits ready Task B. A result without evidence leaves Task A at `result_ready` and does not unblock B.
+- AE17. Opening an Attempt from a Task lands on the real Session inside the owning project and renders the full transcript; a missing or mismatched Session is a failed test, not a tolerated loading state.
+- AE18. Marking Attention read removes unread state across reload and another client. Clearing an item uses its semantic backend action and does not reappear unless a newer actionable version exists.
+- AE19. A long-running Session attaches to an existing Task, writes a checkpoint, survives process restart or context refresh, records evidence, completes the Task, and selects the next ready Task without spawning another Session.
+- AE20. Milestone mode shows lifecycle, blocker, evidence, external effect, and completion only; progress mode adds checkpoints and findings; detailed mode adds more structured boundaries but never raw chat or tool logs.
+- AE21. Invalid Connection credentials, revoked access, rate limits, callback timeout, provider duplication, or a tenant mismatch produce typed attention and no cross-tenant disclosure or duplicate external effect.
+- AE22. The deployed Cloud journey creates, executes, inspects, and deletes a disposable Stream through the Worker/Convex/hosted-runtime composition and retains traces, Session IDs, provider receipts, and cleanup evidence.
+- AE23. A provider fixture containing prompt-injection text is preserved as sourced content but cannot change trusted execution context, access another Connection, broaden tools, or self-certify completion.
 
-#### F6. Discard or close safely
-
-The user deletes a partially implemented Stream before integration; active Attempts cancel and the isolated worktree or VM is destroyed. If code was merged or an external result was accepted, delete is unavailable and close preserves provenance while abandoning unfinished items.
-
-### Acceptance examples
-
-- AE1. A caller cannot list, read, mutate, subscribe to, execute, export, or delete another `(organization, user)` tenant's WorkGraph records by guessing IDs or cursors, including when the same user identity is represented in two organizations.
-- AE2. SQLite and Convex pass core conformance version 5 with equivalent tenant, transition, idempotency, ordering, opaque tenant-and-filter-bound cursor, restart-safe snapshot convergence, lease, Attempt-recovery, and source-revision replacement-fencing behavior. Both adapters pass archive conformance version 1, restart recovery, cleanup, and tenant-level permanent deletion.
-- AE3. A Work Source proposal remains non-executable until confirmed and records the exact old/new source revision pair for a later keep, replace, or fork action.
-- AE4. A GitHub candidate references an organization-owned Connection and the user's filter/mapping but contains no token or duplicated Connection metadata in WorkGraph rows, events, logs, or responses.
-- AE5. Executing two ready Tasks provisions one Stream envelope and two Attempts inside it; an explicitly isolated Task may receive a child worktree without becoming a second Stream.
-- AE6. Killing the request process after Attempt admission does not create a second owner. Reconciliation claims the durable lease and resumes or surfaces attention according to the recorded state.
-- AE7. An agent discovery can add necessary follow-up work, while changing the Outcome criteria creates a pending Decision and does not stop an unrelated ready branch.
-- AE8. Eight quiet hours create exactly one Recap for the activity range; new activity resets the due time and transient generation failure retries without notifying the user.
-- AE9. Before the first durable-effect receipt, Stream deletion cancels and destroys. After the receipt, the same delete command fails with a typed close-required outcome.
-- AE10. Reloading `/workgraph` restores the global WorkGraph tab and expanded Stream state; reconnect from the last cursor applies each change once.
-- AE11. Local and hosted E2E use the same frontend build and HTTP wire shapes; storage-specific fields never enter UI contracts.
-- AE12. A staging deployment can create, read, execute a no-op test Attempt, and delete a disposable Stream through the Worker-backed Convex path with signed authentication.
-
-### Scope boundaries
+### Scope Boundaries
 
 #### Included
 
-- Personal WorkGraph domain, HTTP API, MCP tools, background workers, SQLite and Convex adapters.
-- Local worktree and hosted workspace/VM execution.
-- Exact-revision Work Sources from agents, Docs v2, and explicit source actions, with admission and replanning.
-- Organization-credential, user-filtered GitHub/Linear/Jira source views.
-- One WorkGraph surface with inline Streams, Add task, optional Outcomes, and WorkGraph Needs you and execution-only Settings views in the existing app-global WorkspacePanel. Stream Settings is a tabless dialog for Stream execution and Recap configuration. Focused dialogs inspect proposals, candidates, Task execution/results, Decisions, and actionable Recaps.
-- Real local/backend/browser E2E and deployed Cloud smoke.
-- Deployment, observability, recovery, migrations, and current documentation.
+- Personal Source View configuration for GitHub, Linear, and Jira through project/user settings.
+- Full WorkGraph CRUD and lifecycle parity for the UI, embedded tools, standalone MCP, and hosted agent surface.
+- Structured Task activity, long-running Session binding, explicit completion, evidence-driven autonomous continuation, and real Session navigation.
+- Deterministic local provider compositions plus credentialed staging provider journeys.
+- CI repair, staging deployment, telemetry, runbooks, and release evidence.
 
-#### Deferred to follow-up work
+#### Outside this product identity
 
-- Shared mutation, shared ownership, manager-assigned work, organization-wide Streams, and portfolio planning.
+- Recursive Tasks or arbitrary hierarchy below Task.
+- Mirroring raw Session messages, tool calls, shell output, file reads, or chain-of-thought into WorkGraph activity.
+- A second credential store or user-provided provider tokens in WorkGraph.
+- WorkGraph-level repository, directory, environment, base-revision, cleanup, integration, isolation, or permitted-tools settings.
+- Product-level capacity queues or a WorkGraph-owned cloud-VM idle-lifecycle policy.
+
+#### Deferred to Follow-Up Work
+
+- Shared ownership, organization-wide Streams, manager assignment, and portfolio planning.
+- Maintained storage adapters beyond SQLite and Convex.
+- Notification delivery beyond in-app Attention.
 - Marketplace-distributed WorkGraph templates.
-- Maintained storage adapters beyond SQLite and Convex; the public adapter contract and conformance suite are included.
-- Cost-optimizing placement beyond explicit execution profiles.
-- Notification channels beyond in-app actionable attention.
-- Additional authoring adapters beyond the delivered Docs v2 journey.
 
 ---
 
 ## Planning Contract
 
-### Invariants
+### Key Technical Decisions
 
-- I1. Organization and owner identity come from trusted host context. Public request bodies never select either tenant component.
-- I2. Provider credentials remain in Connections and are resolved immediately before each provider operation.
-- I3. Cloud code imports no SQLite, `better-sqlite3`, Node filesystem, process, or local-worktree implementation.
-- I4. Domain commands and wire contracts are storage-neutral and identical across local, self-hosted, and Cloud modes.
-- I5. A durable command commits state, event/change record, idempotency result, and outbox work atomically.
-- I6. One active Attempt has at most one valid execution lease owner.
-- I7. A durable external effect is recorded before WorkGraph reports the corresponding integration as complete.
-- I8. Destructive Stream deletion and durable-effect recording cannot both commit.
-- I9. UI, HTTP, MCP, and background workers call the same application commands rather than implementing parallel state machines.
-- I10. The app remains feature-owned: WorkGraph UI lives under `features/workgraph`; app composition contributes routes, content, commands, and sidebar entry without feature-to-feature imports.
-- I11. Convex schema evolution is additive-first and follows `docs/tech-docs/convex-schema-evolution.md` plus the schema-only deployment gate.
-- I12. Every browser assertion is backed by observable state or request evidence; no sleep is the sole proof of a negative.
-- I13. HTTP/JSON and ordered-change delivery serve the app and standalone stdio MCP. Local embedded agent tools, execution dispatchers, Recap/intake reconcilers, and scheduled handlers invoke the embedded WorkGraph application service in-process. Hosted embedded tools require durable Session tenant provenance.
-- I14. Mocked routes and runtime doubles may support focused component tests, but no mocked browser, intercepted route, seeded postcondition, direct database mutation, or static prototype counts as core E2E or final acceptance evidence.
+- KTD1. Stream environment identity remains Stream-scoped. (session-settled: user-directed — chosen over WorkGraph-level repository defaults: each Stream is the first durable owner of its local/cloud location, directory, repository URL, and base revision.)
+- KTD2. Connections settings own personal Source Views beside organization-owned accounts. (session-settled: user-approved — chosen over placing source configuration in WorkGraph execution settings: credentials and provider mappings stay together while admitted execution targets remain Stream-scoped.)
+- KTD3. WorkGraph activity is a unified projection, not a second log. Canonical events, Attempts, Decisions, evidence, and external-effect receipts supply lifecycle facts; only agent-authored checkpoints require a new durable record.
+- KTD4. Activity granularity controls checkpoint promotion, not lifecycle truth. (session-settled: user-directed — chosen over copying everything a Session does: meaningful boundaries remain visible and raw execution stays in the Session.)
+- KTD5. A long-running Session attaches to one current Task as an observed Attempt. (session-settled: user-approved — chosen over spawning a managed duplicate Session: the existing transcript remains the execution authority.)
+- KTD6. Agent completion is explicit and evidence-backed. The execution surface exposes scoped completion primitives; runtime idle and prompt success never mutate a Task to completed.
+- KTD7. Embedded tools infer trusted Session, project, tenant, Stream, Task, and Attempt context. Standalone MCP may mutate authorized WorkGraph data but cannot claim attachment to a Claxedo Session without a signed broker identity.
+- KTD8. No recursive Task hierarchy is introduced. (session-settled: user-directed — chosen over infinitely nested Tasks: Outcomes group deliverables, dependency edges order Tasks, and activity/evidence represent progress.)
+- KTD12. Acyclicity is a write-time and restore-time invariant of each Stream's Task prerequisite graph, not an assumption made by the scheduler. Every dependency mutation validates the proposed complete same-Stream graph before replacing edges, and SQLite and Convex share conformance cases for identical rejection semantics.
+- KTD9. Provider proof uses two layers: deterministic local compositions exercise every provider contract, while credentialed staging exercises the real external systems and cleanup lifecycle.
+- KTD10. Existing repository tests are evidence for foundations only. A journey is complete only when its canonical browser test crosses UI, authenticated backend, durable storage, runtime Session, and visible transcript without direct fixture seeding after entry.
+- KTD11. External issue content is data with immutable provider provenance, not trusted system instruction. The runtime supplies authority, target, tools, and completion context from durable WorkGraph state outside the untrusted content block.
 
-### Key technical decisions
+### High-Level Technical Design
 
-| ID    | Decision                                                                                                                                                                                            | Rationale                                                                                                                             | Consequence                                                                                                                                                                                                                                                                                    |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| KTD1  | Replace the legacy process-global WorkGraph registry with request-scoped application services bound to a trusted `WorkGraphContext`.                                                                | Personal isolation cannot be retrofitted around global mutable state.                                                                 | HTTP, MCP, workers, and tests construct services explicitly.                                                                                                                                                                                                                                   |
-| KTD2  | Define capability-focused command/query ports, not a generic SQL repository.                                                                                                                        | Convex mutations and SQLite transactions have different mechanics but can implement the same atomic domain commands.                  | Adapters expose commands such as admit, transition, claim, append evidence, and close rather than leaking query builders.                                                                                                                                                                      |
-| KTD3  | Embed WorkGraph application services in Claxedo Server and keep the frontend on one HTTP/JSON + ordered-change-cursor contract.                                                                     | Claxedo Server is the WorkGraph host, and direct Convex UI access would couple the app to the hosted adapter.                         | The app and standalone stdio MCP use authenticated northbound HTTP/change delivery. Local embedded agent tools, workers, scheduled handlers, and reconcilers call the service in-process. Hosted embedded tools require durable Session tenant provenance; local and Cloud differ by adapters. |
-| KTD4  | Use public authenticated Convex functions for user commands and service/internal functions for workers.                                                                                             | Interactive calls should derive owner identity from the user JWT; workers need durable access without impersonating arbitrary owners. | Service functions validate the control-plane token and accept a persisted owner reference only for already-due jobs.                                                                                                                                                                           |
-| KTD5  | Treat each domain mutation as an event/change-producing atomic command.                                                                                                                             | Realtime, recovery, audit, and idempotency need one committed source of change.                                                       | SQLite writes in one transaction; each Convex mutation writes all affected tables and the ordered change row.                                                                                                                                                                                  |
-| KTD6  | Provision one Stream envelope lazily at first execution.                                                                                                                                            | Empty/planning Streams should not consume a worktree or VM, while all executable work needs a stable isolation owner.                 | Stream stores desired placement before provision and stable envelope identity afterward.                                                                                                                                                                                                       |
-| KTD7  | Admit Attempts durably before advisory dispatch.                                                                                                                                                    | HTTP requests and Worker isolates can disappear after admission.                                                                      | Immediate dispatch improves latency; reconcilers recover admitted/expired work without duplicating ownership.                                                                                                                                                                                  |
-| KTD8  | Use existing workspace runtime and sandbox-manager contracts for hosted placement.                                                                                                                  | Cloud already owns VM/workspace lifecycle and relay routing.                                                                          | WorkGraph adds orchestration intent and leases, not another VM provider abstraction.                                                                                                                                                                                                           |
-| KTD9  | Run Recaps and matching through normal Claxedo agent sessions with explicit model/effort profiles.                                                                                                  | This preserves model selection, permission behavior, observability, and future provider portability.                                  | WorkGraph persists prompts, inputs, outputs, and provenance but contains no direct vendor-specific LLM client.                                                                                                                                                                                 |
-| KTD10 | Store exact source text from agents, explicit source actions, and authoring adapters as immutable Work Source revisions; represent admission as strict Session planning plus explicit confirmation. | Replanning needs stable provenance across every capture path.                                                                         | The Docs v2 seam and native action form the first authoring adapter; additional adapters append equivalent revisions through the source port.                                                                                                                                                  |
-| KTD11 | Use compact deterministic candidate selection before model ranking.                                                                                                                                 | Loading all Streams is unbounded and expensive.                                                                                       | Pinned/recent cards form the first bounded set; an older-card page is requested only below the confidence threshold.                                                                                                                                                                           |
-| KTD12 | Make WorkGraph one global content surface with inline Stream expansion and route-restorable state.                                                                                                  | It is a personal main destination, not a project-owned tool.                                                                          | `/workgraph` focuses one reusable tab; the sidebar row follows Marketplace and Add task is the canonical manual Task action.                                                                                                                                                                   |
-| KTD13 | Build one canonical E2E journey and run it through multiple compositions.                                                                                                                           | Separate local and Cloud tests often drift into testing different products.                                                           | Shared fixtures and assertions prove the same wire contract; environment-specific setup stays in adapters.                                                                                                                                                                                     |
-| KTD14 | Migrate legacy data only when it maps truthfully; retain an export and compatibility read window before removing old tables/routes.                                                                 | Fabricating Streams, owner identity, or completion evidence would corrupt user trust.                                                 | Ambiguous legacy rows enter an owner-visible migration intake/archive instead of pretending to be completed product records.                                                                                                                                                                   |
-| KTD15 | Publish the runtime-neutral DTOs and validators as `@claxedo/workgraph/contracts`.                                                                                                                  | Re-declaring wire shapes in the app, server, MCP package, and adapters would create silent contract drift.                            | Consumers import the pure contracts export; the export graph is guarded against database, runtime, and provider dependencies.                                                                                                                                                                  |
-
-### High-level technical design
+#### Component ownership
 
 ```mermaid
-flowchart LR
-  App["Claxedo app WorkGraph surface"] -->|"northbound HTTP and ordered changes"| API["Claxedo Server WorkGraph router"]
-  API --> Embedded["Embedded WorkGraph application service"]
-  MCP["MCP and agent tools"] --> Embedded
-  Workers["Recap, intake, and execution reconcilers"] --> Embedded
-  Embedded --> Commands["Application commands"]
-  Commands --> Ports["Atomic command and query ports"]
-  Ports --> SQLite["SQLite adapter — local/self-hosted"]
-  Ports --> Convex["Convex functions — Claxedo Cloud"]
-  Commands --> Sources["Work Source revision port"]
-  Commands --> Connections["Connections capability handles"]
-  Commands --> Runtime["Workspace execution port"]
-  Runtime --> Local["Local Stream worktree"]
-  Runtime --> Cloud["Hosted workspace / VM"]
+flowchart TB
+  Settings["Connections and Source View settings"] --> Connections["Organization Connection plus personal mapping"]
+  Connections --> Intake["Webhook and refresh intake"]
+  Intake --> WorkGraph["WorkGraph application service"]
+  Chat["Project Session and MCP tools"] --> WorkGraph
+  WorkGraph --> Store["SQLite or Convex"]
+  WorkGraph --> Runtime["Local or hosted Session runtime"]
+  Runtime --> Activity["Attempts, evidence, checkpoints, and Decisions"]
+  Activity --> Store
+  Store --> UI["WorkGraph UI and Task activity"]
+  Runtime --> Transcript["Project-scoped Session transcript"]
+  Connections --> Sync["Provider sync-back"]
+  Runtime --> Sync
 ```
+
+#### Explicit execution and completion sequence
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant A as App/API
-  participant S as WorkGraph store
-  participant D as Dispatcher
-  participant R as Workspace runtime
+  participant UI as WorkGraph UI
+  participant WG as WorkGraph service
+  participant RT as Session runtime
+  participant A as Scoped agent tools
+  participant S as Durable store
 
-  U->>A: Execute Stream
-  A->>S: Atomically admit ready Attempts + outbox
-  S-->>A: Attempt IDs and change cursor
-  A-->>U: Accepted
-  A->>D: Advisory wake
-  D->>S: Claim Attempt lease
-  D->>R: Provision/adopt Stream envelope
-  R-->>D: Envelope + session identity
-  D->>S: Record placement/running state
-  R-->>D: Result and artifacts
-  D->>S: Record result, evidence, and follow-up state
-  Note over D,S: Reconciler repeats from durable state after a crash
+  UI->>WG: Execute ready Stream or Task
+  WG->>S: Admit Attempt with immutable profile
+  WG->>RT: Create or attach real Session
+  RT->>A: Work with trusted Task and Attempt context
+  A->>S: Record checkpoints, Decisions, and evidence
+  A->>WG: Explicitly settle Attempt
+  WG->>S: Evaluate completion contract
+  alt contract satisfied
+    WG->>S: Complete Task and admit newly ready dependencies
+  else evidence incomplete
+    WG->>S: Keep Task result_ready and surface required evidence
+  end
+  UI->>RT: Open transcript in owning project
 ```
 
-### Domain and persistence shape
+#### Task activity state model
 
-The domain package defines stable IDs, command inputs/results, state unions, transition guards, event/change envelopes, and public DTOs. Storage adapters may use different physical layouts but must support the following logical records:
-
-- WorkGraph execution defaults, edited in the tabless WorkspacePanel Settings view; Stream execution overrides and Recap configuration, edited atomically in tabless Stream Settings.
-- Streams and Stream memory cards.
-- Optional Outcomes, criteria, evidence, closure, and reopen provenance.
-- Tasks (`Work Item` internally), completion contracts, dependencies, source links, and evidence.
-- Stream envelopes, immutable Attempts, leases, sessions, artifacts, and result state.
-- Decisions and affected/dependent work references.
-- Recaps, quiet-window scheduling state, and actionable attention.
-- Source views, provider identity mappings, filters, sync policies, external identities, webhook/refresh receipts, and backend candidates.
-- Work Sources, immutable source revisions/content hashes, admission proposals, exact revision pairs, diff summaries, confirmations, and replanning actions.
-- Durable-effect receipts.
-- Ordered owner/Stream changes, operation-id results, outbox entries, and schema version metadata.
-
-SQLite field names remain snake_case. SQLite and Convex tables use the same logical vocabulary and tuple-leading `(organization_id, owner_user_id)` indexes. Public DTOs use one canonical wire naming convention selected in U1 and are converted at adapter boundaries.
-
-### State machines
-
-```text
-Stream lifecycle: active ↔ paused → closed → reopened → active
-Stream visibility: visible ↔ archived
-Stream deletion: active/paused/closed → [removed] only when durable_effect_count = 0
-
-Outcome: pending → active → ready_to_close → completed
-                   ↘ blocked                 ↘ reopened → active
-
-Work Item: pending → active → result_ready → completed
-                   ↘ review_needed | integration_needed | blocked
-                   ↘ verification_failed | failed | abandoned
-
-Attempt: admitted → placing → running → result
-                                  ↘ attention | failed | cancelled
-
-Decision: proposed → pending → answered | dismissed
-
-Candidate admission: candidate → staged | linked | merged | dismissed
+```mermaid
+stateDiagram-v2
+  [*] --> Pending
+  Pending --> Running: Attempt admitted or Session attached
+  Running --> Waiting: Decision or owner action required
+  Waiting --> Running: Decision resolved
+  Running --> ResultReady: Attempt reports result
+  ResultReady --> Completed: Contract evidence satisfied
+  ResultReady --> Running: Retry or continuation
+  Running --> Failed: Typed terminal failure
+  Failed --> Running: Retry
+  Pending --> Abandoned: Cancel or close
+  Running --> Abandoned: Cancel or close
 ```
 
-Transitions use compare-and-set versioning and operation IDs. State correction is a new provenance-bearing command, not an in-place history rewrite.
+### System-Wide Impact
 
-### HTTP contract
+- **Persistence:** SQLite, Convex, archive/export/restore, migrations, cleanup, and conformance must cover checkpoint records and Session bindings.
+- **Dependency integrity:** SQLite, Convex, admission, archive restore, and any migration that imports prerequisite edges reject a same-Stream Task prerequisite graph containing a direct or transitive cycle before persisting partial edge changes.
+- **Authority:** Attached execution requires an invocation-derived Session identity; caller-provided Session IDs remain untrusted selectors.
+- **Realtime:** Activity and completion append ordinary ordered changes so UI projections update without full snapshot reloads.
+- **Execution:** Managed Attempts and attached Attempts share completion semantics but differ in who creates and owns the Session lifecycle.
+- **Prompt context:** Managed and attached Sessions receive active Stream, current Task, completion contract, recent bounded activity, granularity, and scoped tool guidance at safe turn boundaries.
+- **External effects:** Provider sync is idempotent and receipt-backed; retry never duplicates a comment, status transition, branch, or pull request.
+- **SDK/API:** Public Protocol/OpenAPI and generated clients remain the source of truth for any new HTTP surface; generated outputs are regenerated, not edited.
+- **Prompt trust:** Provider-authored text is delimited and labeled with source provenance; system and scoped-tool authority remains outside that text.
 
-The backend-neutral router is mounted at `/api/workgraph` locally and in hosted mode. It includes:
+### Sequencing
 
-- WorkGraph and Stream settings/defaults;
-- Streams, memory cards, matching, lifecycle, envelope state, and execution;
-- optional Outcomes, criteria, evidence, closure, and reopen;
-- Tasks, dependencies, completion contracts, evidence, retry, pause, and cancel;
-- Attempts, Decisions, Recaps, attention, and artifacts;
-- backend candidate admission, source views, provider preview/refresh, staging, and sync policy;
-- Work Source create/revise and admission proposal/confirm/replan;
-- Unorganized AI work candidates;
-- ordered changes with cursor pagination and bounded long polling;
-- export and account deletion.
+1. Establish the activity, binding, and explicit-completion contracts before changing execution prompts or UI.
+2. Implement SQLite and Convex parity before exposing new HTTP/MCP/UI actions.
+3. Close MCP CRUD and trusted-context gaps before writing the chat and long-running-ledger journeys.
+4. Add Source View settings and provider compositions after the execution loop can finish admitted work.
+5. Repair CI, deploy staging, and run credentialed provider/browser proof only after deterministic local journeys pass.
 
-Every mutating request accepts an operation ID and returns the committed change cursor. Repeating the same operation returns the original result. A conflicting reuse returns a typed idempotency error.
+### Risks and Mitigations
 
-### Realtime and background execution
-
-- The app performs an initial snapshot query, then follows `/changes?cursor=...` using bounded long polling. A future transport may provide SSE without changing cursor semantics.
-- Local composition schedules reconciliation through a process-local wake plus periodic durable scan.
-- Convex scheduled functions mark or enqueue due Recaps, source refreshes, expired leases, and admitted Attempts.
-- The hosted Claxedo Server Worker handles low-latency advisory wakes and scheduled reconciliation by calling its embedded application service in process; each reconciler claims durable work before external action.
-- Notifications are projections of actionable attention, not a second source of truth.
-
-### Work Source contract
-
-Agents, explicit source actions, and the Docs v2 adapter append immutable Work Source revisions with content hashes; admission and replanning bind those revision IDs. The native document action invokes the adapter with persisted project, document, and revision identifiers. Additional authoring surfaces append equivalent exact revisions through the Work Source port without changing admission semantics.
-
-### Migration strategy
-
-1. Introduce pure contracts and ports while legacy code remains readable.
-2. Add versioned SQLite tables and owner context additively.
-3. Add Convex tables/functions in an additive schema-only deployment.
-4. Move HTTP/MCP/app consumers to the new application services.
-5. Export and classify legacy rows; migrate only truthful mappings.
-6. Hold a compatibility read window with telemetry for old routes.
-7. Remove raw-token, singleton registry, legacy CRUD, scheduler-capacity, and obsolete orchestration surfaces after all gates pass.
-
-### Risks and mitigations
-
-| Risk                                                                           | Mitigation                                                                                                                                          |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tenant isolation leaks through guessed IDs, cursors, workers, or MCP arguments | Tuple-leading `(organization_id, owner_user_id)` indexes, trusted context, cross-tenant conformance tests, and negative HTTP/MCP/browser scenarios. |
-| SQLite and Convex drift semantically                                           | Command-level conformance suite with identical fixtures and normalized results; Cloud smoke exercises real Convex.                                  |
-| Worker termination duplicates execution or connector writes                    | Durable admission, leases, operation IDs, receipts, and reconciliation tests with injected interruption boundaries.                                 |
-| Stream deletion races with merge/publish                                       | Atomic durable-effect receipt and delete guard; race test requires exactly one command to win.                                                      |
-| VM/worktree cleanup loses integrated work                                      | Close path secures durable receipts and references before cleanup; delete path is available only before durable effects.                            |
-| Recap/matching costs grow with history                                         | Incremental Recaps, compact memory cards, bounded recent-first candidate sets, pagination, and configurable model/effort.                           |
-| Large pasted source text exhausts matching/planning context                    | Store the complete immutable revision, derive bounded summaries/sections for model use, and preserve direct retrieval of the original text.         |
-| Hosted Connections cannot resolve a team capability                            | Fail closed with actionable source-view attention; hosted operations require a valid Connections capability.                                        |
-| UI becomes a dashboard without execution truth                                 | E2E journey must create, execute, reconcile, decide, and close through real backend commands.                                                       |
-| Legacy tests bless obsolete behavior                                           | Add characterization only for migration inputs; new conformance and product E2E are the release authority.                                          |
+- **Duplicate provider execution:** Reuse durable Session, prompt, Attempt, and provider-operation identities; treat ambiguous callback or response loss as reconciliation, not a new run.
+- **Activity amplification:** Page by Task and cursor, cap checkpoint payloads, index by tenant/Task/time, and keep raw transcript data out of WorkGraph.
+- **False completion:** Require an explicit completion call and evaluate stored evidence against the exact immutable contract.
+- **Attached-Session spoofing:** Infer identity from embedded invocation context or a signed broker; reject arbitrary Session IDs even when the caller has workspace access.
+- **Autonomous stalls:** Re-evaluate readiness immediately after evidence or Decision changes and expose the exact unmet contract in activity and Attention.
+- **Provider fixture pollution:** Isolate labeled staging fixtures, record external IDs and cleanup receipts, and make cleanup safe to rerun.
+- **Cloud-only drift:** Keep SQLite and Convex on one conformance version and run the same contract scenarios before deployed smoke.
 
 ---
 
 ## Implementation Units
 
-### Unit index
-
-| Unit | Title                                        | Primary paths                                                     | Depends on |
-| ---- | -------------------------------------------- | ----------------------------------------------------------------- | ---------- |
-| U1   | Domain contracts and storage ports           | `packages/workgraph/src/domain/`, `packages/workgraph/src/ports/` | None       |
-| U2   | SQLite adapter and legacy migration          | `packages/workgraph/src/adapters/sqlite/`                         | U1         |
-| U3   | Convex adapter and Cloud persistence         | `convex/workgraph*.ts`, hosted Convex adapter                     | U1         |
-| U4   | Authenticated HTTP, changes, and composition | WorkGraph router, local/hosted mounts                             | U1-U3      |
-| U5   | Stream isolation and durable execution       | execution ports, local/hosted dispatchers                         | U2-U4      |
-| U6   | Connections source views and intake          | connectors, Connections host integration                          | U2-U4      |
-| U7   | Source admission, Recaps, sessions, and MCP  | source ports, workers, MCP tools                                  | U4-U6      |
-| U8   | First-class WorkGraph app surface            | `packages/claxedo-app/src/features/workgraph/`                    | U4, U7     |
-| U9   | Core E2E across local and hosted contracts   | WorkGraph/server/app E2E                                          | U5-U8      |
-| U10  | Cloud deployment, rollout, cleanup, and docs | Convex/Worker workflows, runbooks, legacy removal                 | U9         |
-
-### U1. Define the personal domain, commands, and adapter contract
-
-**Goal:** Establish the storage-neutral source of truth that every adapter and surface consumes.
-
-**Requirements:** R1-R3, R7-R14, R17-R18.
-
-**Dependencies:** None.
-
-**Files:** `packages/workgraph/src/contracts/`, `packages/workgraph/src/domain/`, `packages/workgraph/src/ports/`, `packages/workgraph/src/application/workgraph-service.ts`, `packages/workgraph/test/command-contracts.test.ts`, `packages/workgraph/test/domain-rules.test.ts`, `packages/workgraph/test/conformance/`, `packages/workgraph/src/conformance/`, `packages/workgraph/src/index.ts`, `packages/workgraph/package.json`.
-
-**Approach:** Define `WorkGraphContext` with trusted organization and owner user, tenant-bound IDs/DTOs, versioned commands, normalized typed errors, transition guards, execution inheritance, completion evaluation, deletion/closure guards, and an `AtomicWorkGraphStore` composed from capability-focused commands and queries. Publish the DTOs and runtime validators through a pure `@claxedo/workgraph/contracts` export consumed by the app, server, MCP package, and adapter tests. Keep that export Worker-safe and free of database/provider/runtime imports. External I/O is represented by ports; application services coordinate it without importing SQLite, Convex, Node filesystem, or provider SDKs. Define a conformance harness that adapters call with a factory and deterministic clock/ID source.
-
-**Execution note:** Write transition, idempotency, tenant-boundary, and profile-resolution tests before moving existing stores.
-
-**Patterns to follow:** Package boundary discipline in `packages/claxedo-connections/src/types.ts`; trusted auth vocabulary in `packages/claxedo-server/src/control-plane/auth.ts`; owner and service helpers in `convex/model.ts`.
-
-**Test scenarios:**
-
-1. Execution profile resolution identifies the winning WorkGraph, Stream, optional Outcome, or Task value and freezes an Attempt snapshot.
-2. Invalid Work Item, Outcome, Attempt, and Decision transitions return typed errors without writing an event.
-3. A pending Decision blocks only its affected and dependent Work Items.
-4. Completion evidence can move a Work Item to review/integration/verification states but only a satisfied contract completes it.
-5. Outcome criteria produce `ready_to_close`; owner confirmation completes; contradictory evidence reopens with provenance.
-6. A Stream with zero durable-effect receipts accepts delete; one with a receipt returns `close_required`.
-7. Repeating an operation ID returns the same result; reusing it with a different command fails.
-8. Context cannot be overridden by command payload organization or owner fields because such fields do not exist in public inputs.
-9. The `./contracts` export loads in a browser/Worker import check without pulling SQLite, Node, Convex, workspace runtime, or provider SDK code.
-
-**Verification:** Pure package typecheck and focused tests pass without loading `better-sqlite3`, Convex, or Node-native modules.
-
-### U2. Build the SQLite adapter and truthful legacy migration
-
-**Goal:** Make SQLite the complete local/self-hosted implementation of the new contract and safely transition useful legacy state.
-
-**Requirements:** R1-R3, R7-R14, R17, R20; AE1-AE2, AE5-AE9.
-
-**Dependencies:** U1.
-
-**Files:** `packages/workgraph/src/adapters/sqlite/schema.ts`, `packages/workgraph/src/adapters/sqlite/store.ts`, `packages/workgraph/src/adapters/sqlite/legacy-migration.ts`, `packages/workgraph/test/sqlite-schema-v2.test.ts`, `packages/workgraph/test/sqlite-store-commands.test.ts`, `packages/workgraph/test/sqlite-legacy-migration.test.ts`, `packages/workgraph/test/conformance/sqlite.test.ts`, `packages/workgraph/src/db/schema.ts`, `packages/workgraph/src/sqlite.ts`, `packages/claxedo-server/src/server-workgraph.ts`, `packages/claxedo-server/src/server-workgraph.test.ts`.
-
-**Approach:** Add versioned snake_case tables and tuple-leading `(organization_id, owner_user_id)` indexes for the logical records in the Planning Contract. Implement atomic commands with SQLite transactions, compare-and-set versions, monotonic per-Stream changes, operation results, leases, and outbox entries. Replace filename-keyed singleton registry use with constructed services. Create an export-first legacy migration that maps only provable tenant/work/source state; ambiguous runs/items become user-visible migration candidates with raw source references. Implement the separate portable archive port and archive conformance version 1 for SQLite. Retain old tables during the compatibility window.
-
-**Execution note:** Characterize only the legacy behaviors required to migrate data; the conformance suite is authoritative for the final adapter.
-
-**Patterns to follow:** Drizzle/SQLite snake_case rules in root `AGENTS.md`; local server lazy mounting in `packages/claxedo-server/src/server-workgraph.ts`; versioned migration discipline in `packages/claxedo-server/src/storage/`.
-
-**Test scenarios:**
-
-1. A fresh database passes the full store conformance suite under a stable local organization and owner.
-2. Two tenant tuples using one database cannot collide on external identity, operation ID, Stream sequence, or source view, including one user ID present in two organizations.
-3. State and event/outbox/change rows commit together; injected failure rolls back all of them.
-4. Expired lease claim succeeds once and increments its epoch; concurrent claims produce one owner.
-5. Cursor pagination is stable across concurrent inserts and reconnect returns every later change once.
-6. Export/restore round-trips every first-class record and preserves IDs/provenance.
-7. Legacy raw provider tokens are excluded from the new tables and export.
-8. Ambiguous legacy completion or ownership is not fabricated; it appears as a migration candidate with an explanation.
-9. Local server starts without hosted dependencies and mounts the new router lazily.
-
-**Verification:** `packages/workgraph` conformance and existing regression suites pass; `packages/claxedo-server` local composition tests pass; a local database export contains no credential material.
-
-### U3. Implement Convex persistence and Cloud adapter semantics
-
-**Goal:** Make Convex the durable multi-user WorkGraph implementation for Claxedo Cloud.
-
-**Requirements:** R1-R3, R11, R14-R15, R17; AE1-AE2, AE6, AE8, AE11-AE12.
-
-**Dependencies:** U1.
-
-**Files:** `convex/schema.ts`, `convex/workgraphModel.ts`, `convex/workgraphCommands.ts`, `convex/workgraphRuntime.ts`, `convex/workgraphChanges.ts`, `convex/workgraphBackground.ts`, `convex/workgraphConnections.ts`, `convex/workgraphIntake.ts`, `convex/workgraphNotifications.ts`, `convex/crons.ts`, `packages/claxedo-server/src/workgraph-host/convex-api.ts`, `packages/claxedo-server/src/workgraph-host/convex-store.ts`, `packages/claxedo-server/src/workgraph-host/convex-store.test.ts`, `packages/claxedo-server/src/control-plane/convex-workgraph-policy.test.ts`.
-
-**Approach:** Add required `organization_id` and `owner_user_id` fields plus tuple-leading indexes to every Convex WorkGraph table and access path. Public functions use `authedQuery`/`authedMutation` and derive both tenant components from verified identity and membership. Organization-owned Connection credentials and metadata stay in Connections; WorkGraph persists user-owned mappings, filters, source views, candidates, and bindings. Scheduled/internal work scans bounded tuple-scoped due records and handles quarantined legacy rows without starving valid tenants. Service functions require `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN` and operate on already persisted tenant/resource IDs rather than accepting untrusted tenant selection. Each mutation applies one atomic command and appends its change/outbox/idempotency rows. The Worker-side adapter uses `ConvexHttpClient` behind the neutral WorkGraph port and forwards user bearer auth for interactive commands. Convex must pass core, archive, migration, cleanup, deletion-barrier, and concurrent-writer verification before hosted parity is claimed.
-
-**Execution note:** Ship schema additions alone through the Convex schema workflow before deploying code that requires them.
-
-**Patterns to follow:** `convex/model.ts`, `convex/workspaces.ts`, `convex/sandboxLeases.ts`, `packages/claxedo-server/src/control-plane/adapters/convex/`, and `docs/tech-docs/convex-schema-evolution.md`.
-
-**Test scenarios:**
-
-1. Public functions reject missing/wrong-issuer identity and derive organization and owner from authenticated membership.
-2. One tenant cannot read or mutate another tenant's IDs, cursors, external identities, or Attempts; the same user in two organizations remains physically isolated.
-3. Service functions reject missing/wrong service token and cannot create owner-selected interactive commands.
-4. Core conformance version 5 proves command idempotency, compare-and-set, event/change ordering, opaque tenant-and-filter-bound cursors, restart-safe snapshot convergence, lease epochs, Attempt recovery, and source-revision replacement fencing equivalent to SQLite.
-5. Due Recap/source/Attempt queries return bounded pages and cannot claim the same row twice.
-6. Additive schema accepts existing production-shaped fixtures without migration.
-7. Worker adapter error mapping produces the same typed public errors as SQLite.
-
-**Verification:** Convex dry-run/codegen/typecheck passes; policy tests prove auth boundaries; normalized adapter fixtures match SQLite; schema-only staging deployment succeeds before U4.
-
-### U4. Mount one authenticated HTTP contract locally and in Cloud
-
-**Goal:** Expose the complete application service through identical local and hosted routes, ordered changes, and recovery hooks.
-
-**Requirements:** R1-R4, R13-R18; AE1-AE3, AE6, AE9-AE12.
-
-**Dependencies:** U1, U2, U3.
-
-**Files:** `packages/workgraph/src/http/contracts.ts`, `packages/workgraph/src/http/router.ts`, `packages/workgraph/src/http/router.test.ts`, `packages/claxedo-server/src/server-workgraph.ts`, `packages/claxedo-server/src/workgraph-host/hosted.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`, `packages/claxedo-server/src/workgraph-host/intake-router.ts`, `packages/claxedo-server/src/workgraph-host/webhook-router.ts`, `packages/claxedo-server/src/hosted-app.ts`, `packages/claxedo-server/src/hosted-app.test.ts`, `packages/claxedo-server/src/worker.ts`, `packages/claxedo-server/src/worker.import-graph.test.ts`.
-
-**Approach:** Construct the WorkGraph application service inside Claxedo Server and mount one backend-neutral Hono router over it with trusted context middleware. The router and ordered-change endpoints serve the app and standalone stdio MCP. Local embedded agent tools, advisory wakes, scheduled handlers, and reconcilers receive the same service instance and invoke commands directly in-process. Local mode derives the stable local organization and user or signed tenant when configured. Hosted mode requires signed auth plus verified organization membership, composes the service with the Convex adapter, and registers embedded agent tools only when the durable invoking Session provides verified tenant provenance. Public routes carry no organization or owner selectors. Add snapshot and bounded long-poll change endpoints with opaque tenant-and-filter-bound cursors. Scheduled reconciliation operates from durable due queues. Extend the Worker import-graph guard so hosted WorkGraph cannot pull local/server-native modules.
-
-**Patterns to follow:** `packages/claxedo-server/src/hosted-app.ts`, `packages/claxedo-server/src/workgraph-host/hosted.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`, and existing `localOnlyProjection` handling.
-
-**Test scenarios:**
-
-1. Every route rejects cross-tenant IDs and has no client-supplied organization or owner identity field.
-2. Hosted routes require signed auth and fail closed when Convex URL or required service capability is absent.
-3. Local routes run with SQLite and no Convex/Clerk dependency.
-4. Repeated mutation operation ID returns the original HTTP status/body/cursor.
-5. Snapshot plus cursor changes converges when changes occur during initial load.
-6. Long poll returns on a new change or bounded timeout and reconnect never skips a committed cursor.
-7. Worker import graph contains no SQLite, Node filesystem, or local execution implementation.
-8. Scheduled handler claims bounded durable pages and one failed job does not prevent later jobs from reconciliation.
-9. MCP and scheduled reconciliation tests prove direct application-service invocation without loopback HTTP requests.
-
-**Verification:** WorkGraph router, server, hosted app, scheduled worker, and import-graph suites pass in their package directories.
-
-### U5. Implement Stream-owned isolation and durable execution
-
-**Goal:** Execute every ready Work Item inside its Stream’s isolated worktree/VM with durable Attempt ownership, truthful completion, and safe cleanup.
-
-**Requirements:** R7-R10, R13, R15, R17-R18; AE5-AE7, AE9, AE12.
-
-**Dependencies:** U2, U3, U4.
-
-**Files:** `packages/workgraph/src/application/execution-service.ts`, `packages/workgraph/src/application/completion-service.ts`, `packages/workgraph/src/application/stream-lifecycle-service.ts`, `packages/workgraph/src/ports/workspace-execution.ts`, `packages/workgraph/test/execution-service.test.ts`, `packages/workgraph/test/execution-hardening.test.ts`, `packages/claxedo-server/src/workgraph-host/local-execution.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`, `packages/claxedo-server/src/execution-reconciler.ts`, `packages/claxedo-server/src/execution-reconciler.test.ts`, `packages/claxedo-server/src/workgraph-session-gateway.ts`.
-
-**Approach:** Introduce a `WorkspaceExecutionPort` for provision/adopt envelope, create child isolation, launch/steer/cancel session, collect result/evidence, integrate result, and destroy envelope. Refactor the existing local execution adapter so one Stream worktree is primary instead of one node worktree. Hosted execution provisions or adopts an existing Cloud workspace/VM through the sandbox manager and routes sessions through the existing runtime/relay contracts. Admit ready Attempts atomically, then dispatch. Reconciliation handles admitted, expired-lease, missing-session, and terminal-without-semantic-result states. Durable-effect recording gates delete vs close.
-
-**Execution note:** Start with interruption and deletion/integration race tests. Do not rely on a continuously alive process for correctness.
-
-**Patterns to follow:** `packages/claxedo-server/src/workgraph-host/local-execution.ts`, `packages/claxedo-server/src/execution-reconciler.ts`, `@claxedo/sandbox-manager` lease semantics, and V2 Session durable prompt admission rules in root `AGENTS.md`.
-
-**Test scenarios:**
-
-1. Two ready items share one Stream envelope and receive immutable resolved profiles.
-2. A child-isolated Work Item receives a child worktree/session whose cleanup remains owned by the Stream.
-3. Pause prevents new Attempts while active Attempts continue; explicit cancel targets only selected active Attempts.
-4. Crash after admission, placement, session launch, result, and integration receipt converges without duplicate execution or external effect.
-5. Transient placement/provider failure retries; repeated/semantic/ambiguous failure creates attention.
-6. Session stop without semantic result does not mark the Work Item completed.
-7. Completion contract failure produces review/integration/verification state and may add necessary follow-up work.
-8. Delete before durable effect cancels Attempts, destroys children/envelope, and removes unmerged work.
-9. Concurrent delete and durable-effect receipt produce exactly one winner; receipt winner forces close.
-10. Close abandons unfinished items with reason, preserves history/evidence/references, and cleans the runtime.
-
-**Verification:** Local real-worktree integration tests and hosted runtime-port reconciliation tests pass; runtime doubles are confined to interruption-focused component tests and are not E2E evidence. No Attempt can have two active leases; cleanup is idempotent.
-
-### U6. Replace legacy credentials with Connections-backed personal candidates
-
-**Goal:** Import and synchronize personally relevant GitHub, Linear, and Jira work through team Connections without credential duplication.
-
-**Requirements:** R3, R5-R6, R9, R14-R15, R17-R18; AE4, AE7.
-
-**Dependencies:** U2, U3, U4.
-
-**Files:** `packages/workgraph/src/application/source-view-service.ts`, `packages/workgraph/src/application/intake-service.ts`, `packages/workgraph/src/application/matching-service.ts`, `packages/workgraph/src/application/webhook-intake-service.ts`, `packages/workgraph/src/connectors/`, `packages/claxedo-connections/src/`, `packages/claxedo-server/src/workgraph-host/connections.ts`, `packages/claxedo-server/src/workgraph-host/hosted-connections.ts`, `packages/claxedo-server/src/workgraph-host/hosted-intake.ts`, `packages/claxedo-server/src/workgraph-host/webhook-router.ts`, `packages/claxedo-server/src/control-plane/convex-workgraph-intake.test.ts`.
-
-**Approach:** Define personal source views containing team Connection ID, provider user mapping, filters, refresh/webhook configuration, and sync policy. Resolve a live `CapabilityHandle` per operation and call `getToken()` only inside the server-side connector boundary. Report authorization failures through the handle. Remove WorkGraph credential CRUD, raw-token schema, and Composio connected-account assumptions. Normalize external items into backend candidates, apply user filters, enforce external identity idempotency, run bounded Stream/duplicate matching, and require explicit admission. Relevant candidates appear through Needs you with Add to WorkGraph as the user action. Default sync-back announces meaningful results while the external tracker remains team-state authority.
-
-**Execution note:** Extend the existing Connections emulator plan so the final consumer test uses this implementation rather than the legacy resolver.
-
-**Patterns to follow:** `packages/claxedo-connections/src/types.ts`, `packages/claxedo-server/src/connections-host/`, and `docs/plans/2026-07-06-005-test-connections-e2e-emulate-plan.md`.
-
-**Test scenarios:**
-
-1. Team Connection plus personal provider mapping/filter creates only matching owner candidates.
-2. Two users sharing credentials receive separate candidates, external identities, and filters.
-3. Token is obtained immediately before provider call, never returned, logged, persisted, or included in events.
-4. Provider 401 reports auth failure and creates actionable source-view attention without leaking response credentials.
-5. Repeated webhook/refresh delivery updates one candidate/external identity.
-6. Add to WorkGraph requires explicit confirmation and duplicate disposition before executable Work Item creation.
-7. Recent/pinned matching expands to older memory cards only under low confidence.
-8. Announce, silent, and full sync policies produce their declared external effects with receipts and idempotency.
-
-**Verification:** Connector/unit/conformance suites pass; emulator consumer flow proves UI/server/Connections/provider round trip; secret scans over persistence/log fixtures are empty.
-
-### U7. Integrate source admission, Recaps, independent sessions, and MCP
-
-**Goal:** Connect WorkGraph to the user’s real AI work surfaces and expose the complete high-value action set to agents.
-
-**Requirements:** R3-R5, R9-R12, R17-R18; AE3, AE7-AE8.
-
-**Dependencies:** U4, U5, U6.
-
-**Files:** `packages/workgraph/src/application/work-source-service.ts`, `packages/workgraph/src/application/source-admission-service.ts`, `packages/workgraph/src/application/recap-service.ts`, `packages/workgraph/src/application/session-intake-service.ts`, `packages/workgraph/src/application/attention-service.ts`, `packages/workgraph/src/application/notification-service.ts`, `packages/workgraph/src/adapters/sqlite/source-planning-runtime.ts`, `packages/workgraph/src/adapters/sqlite/recap-runtime.ts`, `packages/workgraph/src/adapters/sqlite/session-intake.ts`, `packages/claxedo-server/src/workgraph-session-gateway.ts`, `packages/claxedo-server/src/workgraph-host/session-intake.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`, `packages/claxedo-mcp/src/workgraph-tools.ts`, `packages/claxedo-mcp/src/workgraph-tools.test.ts`, `packages/claxedo-mcp/skills/workgraph/SKILL.md`.
-
-**Approach:** Add a Work Source service that appends exact immutable revisions from agents, explicit source actions, and Docs v2, computes content hashes, and derives bounded model input without discarding the original. Admission begins in `planning`; only valid output from the exact Session V2 job may publish a non-executable proposal for owner confirmation. Invalid or unavailable output records `planning_failed`, bounded retry, and attention. Replanning implements keep, replace disposable work, and fork with exact revision provenance. Subscribe to session lifecycle events and create Unorganized candidates only after meaningful independent work becomes idle. Schedule Recaps from durable quiet-window state; only valid output from the exact background Session may publish a Recap and actionable notification. Register typed WorkGraph MCP tools for source create/revise, list/get/create/propose/admit/execute/pause/cancel/record finding/add follow-up/propose Decision/answer Decision/attach evidence/recap/close/delete, with caller-bound owner and Attempt authority.
-
-**Execution note:** Test source revision races, incremental recap ranges, and MCP authority before visual integration.
-
-**Patterns to follow:** Atomic revision allocation patterns in existing Claxedo document storage, first-party MCP materialization, and V2 Session context/execution boundaries.
-
-**Test scenarios:**
-
-1. “Turn into work” stores the exact Work Source revision ID/content hash and creates no executable work before confirmation.
-2. A changed head between proposal and confirmation returns stale proposal and preserves user edits.
-3. Keep admits selected additions; replace cancels/discards affected unmerged work; fork preserves the original Stream.
-4. Matching uses a bounded recent/pinned first pass and explains alternatives/confidence.
-5. Eight quiet hours produce one incremental Recap only from valid exact-Session output; activity resets the deadline; repeated failure creates attention without a Recap or notification.
-6. A Recap prompt includes current state, previous Recap, and changed range but not complete historical sessions.
-7. An independent meaningful idle session creates one candidate; dismissal suppresses until meaningful change.
-8. MCP caller cannot select another owner/Stream/Attempt or expand scope without a Decision.
-9. UI and MCP commands return the same command results and change cursors.
-
-**Verification:** Work Source contract tests, recap/session worker tests, MCP parity tests, and package architecture guards pass.
-
-### U8. Build WorkGraph as the main app tab after Marketplace
-
-**Goal:** Deliver the approved personal WorkGraph interactions in the Claxedo app.
-
-**Requirements:** R1-R13, R16-R18; AE10-AE11.
-
-**Dependencies:** U4, U7.
-
-**Files:** `packages/claxedo-app/src/features/workgraph/`, `packages/claxedo-app/src/app/workbench/rail/global-navigation.tsx`, `packages/claxedo-app/src/app/workbench/rail/rail-sidebar.tsx`, `packages/claxedo-app/src/app/workbench/rail/rail-sidebar-shell.tsx`, `packages/claxedo-app/src/app/app-shell-layout.tsx`, `packages/claxedo-app/src/app/app-shell-actions.ts`, `packages/claxedo-app/src/app/app-shell-route-sync.ts`, `packages/claxedo-app/src/app/workbench/state/types.ts`, `packages/claxedo-app/src/app/workbench/state/orchestration.ts`, `packages/claxedo-app/src/app/workbench/state/route-intent.ts`, `packages/claxedo-app/src/app/integrations/first-party-content-surfaces.tsx`, `packages/claxedo-app/src/platform/identity/route.ts`, `packages/claxedo-app/src/app/entry/app.tsx`.
-
-**Approach:** Keep `workgraph` as one global content type and one reusable `/workgraph` tab. Add the sidebar row immediately after Marketplace in the same main-navigation group on desktop/mobile. Streams expand within the main surface, Add task remains the canonical manual Task action, and Outcomes are optional. Reuse the existing app-global WorkspacePanel and top-level toggle. WorkGraph contributes top-level Needs you and Settings views; the WorkGraph header controls select those views in the same panel instance. WorkGraph Settings is tabless and contains execution defaults only. Stream Settings is a tabless Stream-scoped dialog containing execution overrides and Recap configuration. Settings content is flush, descriptions and errors sit beside their fields, and the action footer stays pinned. Each Stream row exposes its latest Recap through a hover/focus Recap icon and popover. The existing toggle shows a small accessible dot only when bounded Attention is non-empty; zero attention leaves the body empty and renders no WorkGraph dot, card, or list. Proposal/candidate review, Task and Attempt execution/results, Decisions, and actionable Recaps open focused dialogs over the same surface. Candidates appear only through Needs you; there is no separate intake, capture, or onboarding screen. Use tenant-scoped Attention, bounded candidate pages, and targeted-detail queries with one cursor synchronizer; API failure remains explicit. Preserve loading, offline, reconnecting, conflict, unauthorized, keyboard, narrow-viewport, and screen-reader behavior.
-
-**Execution note:** Build the route/content state model and API fixture tests before visual polish. Use current Claxedo design tokens and interaction patterns.
-
-**Patterns to follow:** Marketplace global surface in `app/workbench/state/orchestration.ts`, route identity in `platform/identity/route.ts`, content registry in `app/integrations/first-party-content-surfaces.tsx`, and sidebar rows around `sidebar-marketplace-entry`.
-
-**Test scenarios:**
-
-1. Sidebar order is New Project, Pages when available, Marketplace, WorkGraph; collapsed/mobile variants expose the same accessible ordering.
-2. Clicking WorkGraph creates one reusable global tab; repeated click focuses it; reload restores `/workgraph` and expanded Stream state.
-3. Needs you renders loading/offline/reconnecting/error or populated attention; zero attention leaves its body empty and removes the WorkGraph indicator.
-4. User creates a Stream and Task through Add task, optionally groups it in an Outcome, edits WorkGraph execution defaults in the panel Settings view and Stream execution/Recap settings in the Stream dialog, and sees resolved source labels.
-5. Execute/pause/cancel/Decision actions optimistically reflect only safe pending state and reconcile from committed cursor.
-6. Attempt result cannot visually appear completed before completion evidence satisfies the contract.
-7. Delete confirmation explains environment/unmerged-work destruction; durable-effect Stream presents close instead.
-8. Proposal/candidate review shows exact provenance and requires confirmation from Needs you; the candidate action is Add to WorkGraph.
-9. Keyboard users can navigate the main tab, create work, use Add to WorkGraph, answer a Decision, inspect evidence, and close an optional Outcome.
-10. At 375×812, navigation and inline Stream content remain operable without hiding primary actions or creating horizontal overflow.
-
-**Verification:** Focused Bun/Vitest UI tests, route/persistence tests, app architecture guards, typecheck, mobile smoke, and visual browser review pass.
-
-### U9. Build the core WorkGraph E2E proof
-
-**Goal:** Prove the product journey across backend and frontend, with adapter parity and deployed Cloud behavior.
-
-**Requirements:** R1-R19; AE1-AE12.
-
-**Dependencies:** U5, U6, U7, U8.
-
-**Files:** `packages/workgraph/test/e2e/personal-journey.test.ts`, `packages/workgraph/test/conformance/`, `packages/workgraph/src/conformance/`, `packages/claxedo-server/src/server-workgraph.test.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.test.ts`, `packages/claxedo-app/e2e/playwright/core-workgraph.spec.ts`, `packages/claxedo-app/e2e/helpers/workgraph-browser-use-server.ts`, `packages/claxedo-app/e2e/helpers/workgraph-connection-browser-use-server.ts`, `packages/claxedo-server/scripts/smoke/smoke-workgraph.ts`, `packages/claxedo-app/playwright.config.ts`.
-
-**Approach:** Create one canonical fixture/journey and reuse its transitions and assertions without injecting completed state. The backend E2E runs the application service with real SQLite. Core adapter parity runs conformance version 5 and archive conformance version 1 against SQLite and test-isolated Convex functions. The core browser spec starts the real frontend, embedded Claxedo Server service, SQLite store, and real local execution path; it creates journey state through the approved single-surface UI or public HTTP commands and uses no page-level route interception. Hosted smoke runs after Convex schema/functions, Worker, and app deployment with signed staging identities, creates a disposable Stream and Task, executes a controlled no-op Attempt through the hosted runtime, follows its changes, proves cross-tenant denial including one user represented in two organizations, and deletes the Stream after cleanup. An independent Browser Use operator then drives the approved deployed journey through visible UI controls, reloads and revisits state, captures evidence at each major transition, and compares visible results with authenticated backend reads. Browser Use is not a wrapper around Playwright, and no mocked suite, seeded postcondition, direct persistence edit, screenshot-only inspection, or static prototype can replace it.
-
-**Core journey:** Open WorkGraph after Marketplace → create a Stream and two Tasks with Add task → optionally group them in an Outcome → confirm recent matching through an approved proposal interaction → execute two ready Tasks in one envelope → observe one Task require a Decision and another continue → answer the Decision through its approved inspector → attach completion evidence → generate and inspect a Recap → use Add to WorkGraph for a filtered external candidate from Needs you → verify `/workgraph` reload/cursor recovery → delete a disposable Stream → record a durable effect on another Stream and close it.
-
-**Execution note:** The backend journey is written first as the executable contract. Browser specs cite numbered behaviors and share real-stack setup helpers. Focused mocked UI tests remain outside this E2E unit and outside acceptance evidence.
-
-**Patterns to follow:** `packages/claxedo-app/e2e/INVARIANTS.md`, existing real-stack browser harnesses and `core-*.spec.ts` assertion conventions, server hosted smoke scripts, and the Connections emulator plan.
-
-**Test scenarios:**
-
-1. Canonical journey passes against application service + SQLite.
-2. Same command corpus produces equivalent normalized results against Convex functions.
-3. Cross-user negative corpus covers direct IDs, list filters, cursors, MCP, worker claims, export, and deletion.
-4. Interruption corpus injects failure after each external boundary and proves convergence/idempotency.
-5. Core browser E2E proves sidebar order, the complete journey, responsive state, keyboard access, reload, and request counts through the real local stack.
-6. The local composition proves real app → embedded Claxedo Server WorkGraph service → real SQLite → real execution adapter with no route mocks or direct persistence setup of asserted outcomes.
-7. Hosted smoke proves real Worker → real Convex mutation/query → hosted no-op execution → ordered cursor → cleanup and disposable deletion.
-8. Secret scan proves provider tokens absent from captured responses, logs, snapshots, and exports.
-9. Browser Use completes the entire canonical journey on the real deployment with no route interception, records screenshots/video, and confirms persisted results after reload and a fresh browser session.
-
-**Verification:** All acceptance layers pass with artifacts: backend/conformance output, real-local browser trace/video, hosted smoke transcript, and independent deployed Browser Use screenshots/video plus authenticated persistence reads.
-
-### U10. Deploy, observe, migrate, clean up, and document
-
-**Goal:** Ship WorkGraph safely to Claxedo Cloud and leave one coherent production implementation.
-
-**Requirements:** R14-R15, R19-R20; AE2, AE11-AE12.
-
-**Dependencies:** U9.
-
-**Files:** `.github/workflows/deploy-convex.yml`, `.github/workflows/deploy-control-plane.yml`, `packages/claxedo-server/wrangler.toml`, `packages/claxedo-server/scripts/deploy/deploy-hosted.ts`, `packages/claxedo-server/scripts/smoke/smoke-workgraph.ts`, `packages/claxedo-server/src/worker.ts`, `packages/claxedo-server/src/control-plane/worker-telemetry.ts`, `packages/claxedo-app/package.json`, `public-docs/deploy-runbook.md`, `packages/claxedo-docs/api/overview.mdx`, `packages/claxedo-docs/guides/introduction.mdx`, `packages/workgraph/README.md`, `packages/workgraph/ARCHITECTURE.md`, `packages/workgraph/SPEC.md`, `packages/workgraph/TASKS.md`, `docs/plans/README.md`, and the explicit migration-window files retained by U2.
-
-**Approach:** Add WorkGraph schema/function paths to deployment gates. Preserve Convex-first then Worker ordering and schema-only rollout discipline, then deploy the app build pointed at the newly verified control plane. Add a protected reusable app deployment workflow because the current repository has package scripts but no app deployment workflow. The control-plane workflow calls it only after the same commit’s environment smoke passes; an app-only `dev` change may call the same workflow directly against the already-green staging control plane. Production deploys the same approved commit and environment configuration. Extend behavioral smoke with signed staging tenant memberships, authenticated create/read/no-op execute/delete, and cross-tenant denial including same-user/different-organization isolation. The smoke script logs those protected CI users into the configured identity provider to obtain short-lived tokens at run time; it stores neither reusable bearer tokens nor a test-only authentication bypass. Add metrics for command latency/errors, reconciliation lag, lease age, Recap backlog/failure, connector health, cursor lag, envelope provision/cleanup, and durable-effect/close outcomes without logging content or secrets. Run legacy export/migration, observe compatibility route use, then remove old singleton/raw-token/Composio/scheduler-capacity/obsolete route code and tests. Refresh all WorkGraph and public docs to current behavior and delete completed temporary plans per policy when nothing cites them.
-
-**Execution note:** Treat schema, hosted code, app enablement, and legacy removal as separate rollout checkpoints with rollback/roll-forward evidence.
-
-**Patterns to follow:** `.github/workflows/deploy-control-plane.yml`, `.github/workflows/deploy-convex.yml`, `public-docs/deploy-runbook.md`, and Worker telemetry conventions.
-
-**Test scenarios:**
-
-1. Convex schema dry-run and schema-only staging deployment complete before dependent Worker deploy.
-2. Old Worker remains compatible with additive WorkGraph schema; new Worker handles absent optional data.
-3. Hosted boot fails closed when WorkGraph persistence/service configuration is invalid.
-4. Staging smoke creates a Stream and Task, runs a controlled no-op hosted Attempt, follows its cursor changes, cleans its envelope, and deletes it with signed auth.
-5. A second signed staging identity and garbage auth cannot read the smoke Stream.
-6. The app deployment job uses the same approved commit, waits for its control-plane smoke, and opens the WorkGraph route against that environment.
-7. Reconciler metrics expose stuck admitted Attempts and Recap backlog without recording content.
-8. Legacy export verifies before migration; removed routes are unused during the observation window.
-9. Public docs and package docs describe personal WorkGraphs, organization-owned Connections, user-owned mappings and filters, backend-neutral storage, and launch-all-ready execution consistently.
-
-**Verification:** Staging deployment and smoke pass, observability is visible, rollback/roll-forward instructions are exercised, production promotion is approved, and legacy scans are clean.
+The original U1-U10 delivered the foundation summarized under **Done**. Stable unit numbering resumes at U11; deleted historical detail remains available in version control.
+
+### U11. Define bounded Task activity and Session binding contracts
+
+- **Goal:** Add the durable vocabulary and public ports for unified Task activity, checkpoint granularity, and attached Session execution.
+- **Requirements:** R31-R34, R38; KTD3-KTD8, KTD12.
+- **Dependencies:** Existing WorkGraph events, Attempts, evidence, Session identity, and ordered changes.
+- **Files:** `packages/workgraph/src/contracts/records.ts`, `packages/workgraph/src/contracts/details.ts`, `packages/workgraph/src/contracts/commands.ts`, `packages/workgraph/src/contracts/events.ts`, `packages/workgraph/src/contracts/page-cursors.ts`, `packages/workgraph/src/contracts/archive.ts`, `packages/workgraph/src/ports/details.ts`, `packages/workgraph/src/ports/store.ts`, `packages/workgraph/src/application/workgraph-service.ts`, `packages/workgraph/src/application/completion-service.ts`, `packages/workgraph/src/http/router.ts`, `packages/workgraph/src/http/router.test.ts`, `packages/workgraph/src/contracts/activity.test.ts`.
+- **Approach:** Introduce a typed agent-checkpoint record and a paginated activity DTO that normalizes canonical domain events with checkpoints. Add Stream granularity, Session-to-Stream binding, current Task, and managed-versus-attached Attempt provenance. Define semantic abandonment rather than hard deletion for evidence-bearing records.
+- **Patterns to follow:** Existing Evidence subjects, Attempt detail pages, tenant-bound cursors, public event payload filtering, and versioned commands.
+- **Test scenarios:**
+  1. Creating and updating a binding requires the trusted tenant and rejects a foreign Session, Stream, or Task.
+  2. One Session may have one active Task binding and may move to a new ready Task after settling the previous one.
+  3. Activity pages remain stable across pagination and expose lifecycle facts plus checkpoints in deterministic order.
+  4. Granularity validation defaults to progress and rejects an unsupported value without changing stored state.
+  5. Archive validation rejects missing binding/checkpoint references and round-trips valid records.
+  6. Contract-level dependency validation accepts an acyclic same-Stream Task prerequisite graph and rejects cross-Stream edges, self-cycles, two-node cycles, and longer transitive cycles.
+- **Verification:** Public schemas parse representative managed and attached histories, cursor tests bind filters and tenant, and the contract has no field capable of carrying raw transcript content.
+
+### U12. Persist activity and bindings with SQLite and Convex parity
+
+- **Goal:** Implement the U11 contract in both maintained adapters and all lifecycle operations.
+- **Requirements:** R31-R34, R36; KTD3, KTD5, KTD12.
+- **Dependencies:** U11.
+- **Files:** `packages/workgraph/src/adapters/sqlite/schema.ts`, `packages/workgraph/src/adapters/sqlite/store.ts`, `packages/workgraph/src/adapters/sqlite/archive.ts`, `packages/workgraph/src/adapters/sqlite/owner-deletion.ts`, `packages/workgraph/test/conformance/store-contract.ts`, `packages/workgraph/test/conformance/sqlite.test.ts`, `convex/schema.ts`, `convex/workgraphModel.ts`, `convex/workgraphCommands.ts`, `convex/workgraphChanges.ts`, `convex/workgraphArchive.ts`, `convex/workgraphOwnerDeletion.ts`, `packages/claxedo-server/src/workgraph-host/convex-store.ts`, `packages/claxedo-server/src/workgraph-host/convex-store.test.ts`.
+- **Approach:** Store only authored checkpoints and bindings as new rows; derive lifecycle activity from existing canonical records. Append one ordered change for every activity-visible mutation. Include new records in archive, restore, owner deletion, and cleanup fences.
+- **Execution note:** Start with adapter-conformance cases so SQLite and Convex cannot acquire different semantics.
+- **Patterns to follow:** Evidence pagination, Attempt pages, snapshot/change cursor fencing, and archive conformance.
+- **Test scenarios:**
+  1. SQLite and Convex return identical activity for the same command history.
+  2. Concurrent checkpoint retries with one operation ID create one record and one change.
+  3. Owner deletion removes bindings/checkpoints while organization-owned Connection metadata remains.
+  4. Snapshot resume remains stable when activity is appended beneath the cursor.
+  5. Archive/export/restore preserves activity ordering and active Session binding.
+  6. Large histories page without N+1 transcript, Recap, Attempt, or evidence reads.
+  7. Updating A to depend on B is rejected atomically when B already reaches A, in both SQLite and Convex, while the previous dependency set remains unchanged.
+  8. Archive restore rejects cyclic same-Stream Task prerequisite graphs without materializing partial edges. The current legacy migration imports no prerequisite edges; any future migration that does must apply the same validation.
+- **Verification:** The next adapter-conformance version passes for SQLite and Convex, including restart, deletion, pagination, and archive cases.
+
+### U13. Add explicit scoped progress and completion to managed execution
+
+- **Goal:** Let an executing agent report progress, Decisions, evidence, follow-ups, result, and completion inside its trusted Attempt context so autonomous dependency chains advance truthfully.
+- **Requirements:** R29-R30, R31-R32; AE16-AE17; KTD4, KTD6-KTD7.
+- **Dependencies:** U11-U12.
+- **Files:** `packages/workgraph/src/application/execution-service.ts`, `packages/workgraph/src/application/completion-service.ts`, `packages/workgraph/src/adapters/sqlite/store.ts`, `packages/workgraph/src/adapters/sqlite/source-planning-runtime.ts`, `packages/claxedo-server/src/workgraph-host/local-execution.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`, `packages/claxedo-server/src/workgraph-session-gateway.ts`, `packages/claxedo-server/src/workgraph-host/local-execution.test.ts`, `packages/claxedo-server/src/workgraph-host/hosted-runtime.test.ts`, `packages/workgraph/test/sqlite-store-commands.test.ts`.
+- **Approach:** Inject bounded WorkGraph context into the real Session and register Attempt-scoped tools that accept content but not caller-selected tenant, Session, Stream, Task, or Attempt IDs. A completion call records the result and evidence, settles the Attempt, evaluates the contract, and immediately re-runs autonomous readiness.
+- **Patterns to follow:** Session V2 durable prompt identity, Connection operation broker scoping, Attempt leases, durable compensation, and Evidence evaluation.
+- **Test scenarios:**
+  1. A two-wave same-Stream Task prerequisite graph automatically launches the second wave only after first-wave evidence satisfies every contract.
+  2. Prompt success without a completion call leaves the Attempt reconcilable and the Task non-completed.
+  3. Invalid evidence records the unmet requirement and keeps the Task result_ready.
+  4. A Decision pauses only dependent work and resumes it after resolution.
+  5. Lost prompt or completion responses reconcile to the same Session and operation without duplicate provider work.
+  6. Failed, cancelled, and timed-out Attempts have `finished_at`, a typed reason, and a navigable transcript when one exists.
+- **Verification:** The local and hosted runtime suites prove explicit completion, multi-wave continuation, crash reconciliation, and no duplicate provider turn.
+
+### U14. Complete WorkGraph MCP parity and long-running Session tools
+
+- **Goal:** Make chat-created work and long-running ledgers first-class through embedded tools, standalone MCP, and hosted trusted composition.
+- **Requirements:** R28, R31-R34, R38; F8-F9; AE15, AE19; KTD5-KTD8.
+- **Dependencies:** U11-U13.
+- **Files:** `packages/claxedo-mcp/src/workgraph-tools.ts`, `packages/claxedo-mcp/src/workgraph-tools.test.ts`, `packages/claxedo-server/src/workgraph-agent-tools.ts`, `packages/claxedo-server/src/workgraph-agent-tools.test.ts`, `packages/claxedo-server/src/workgraph-host/hosted.ts`, `packages/claxedo-server/src/workgraph-host/hosted.test.ts`, `packages/workspace-runtime/src/routes/session-core.ts`, `packages/workspace-runtime/src/routes/session-core.test.ts`, `packages/workgraph/src/contracts/commands.ts`, `packages/workgraph/src/http/router.ts`, `packages/protocol/src/groups/session.ts`, `packages/protocol/src/groups/workgraph.ts`, `packages/protocol/src/api.ts`, `packages/sdk/js/src/v2/gen/types.gen.ts`, `packages/sdk/js/src/v2/gen/sdk.gen.ts`.
+- **Approach:** Expose general Stream, Outcome, and Task update operations already supported by backend commands; align create schemas with required success criteria and completion contracts; add bind/select/current-work, record-progress, refresh-context, and complete-current-work primitives. Embedded tools infer the current Session and project. Standalone MCP cannot claim a Session attachment without signed context. Extend the canonical Protocol/OpenAPI source and regenerate SDK output through the repository generator rather than editing generated files.
+- **Patterns to follow:** Existing capability map, authenticated northbound transport, versioned expected-version commands, and creation-context inference.
+- **Test scenarios:**
+  1. A project Session creates and later updates a Stream, Outcome, Task, dependency, and completion contract without HTTP fallback.
+  2. Missing MCP fields fail at tool validation rather than escaping as a backend Zod error.
+  3. The embedded tool infers project directory, repository, and base revision; explicit caller data cannot override tenant or Session identity.
+  4. Standalone MCP creates work but receives a typed denial when attempting to attach an arbitrary Claxedo Session.
+  5. Repeated checkpoint and completion calls with the same operation ID are idempotent.
+  6. Every high-value UI mutation has an equivalent typed tool outcome, including update, semantic delete/abandon, retry, and read activity.
+- **Verification:** The MCP capability parity matrix is complete and both MCP and embedded-tool suites pass the same behavioral cases.
+
+### U15. Surface Task activity, evidence, retry, and real Session navigation
+
+- **Goal:** Turn the Task inspector into the concise operational view for progress and recovery while preserving the Session as the full execution view.
+- **Requirements:** R30-R32, R35; F10; AE17-AE18, AE20.
+- **Dependencies:** U11-U14.
+- **Files:** `packages/claxedo-app/src/features/workgraph/api.ts`, `packages/claxedo-app/src/features/workgraph/api.test.ts`, `packages/claxedo-app/src/features/workgraph/waiting/waiting-source.ts`, `packages/claxedo-app/src/features/workgraph/waiting/item-dialogs.tsx`, `packages/claxedo-app/src/features/workgraph/waiting/item-dialogs.vitest.tsx`, `packages/claxedo-app/src/features/workgraph/waiting/settings-dialogs.tsx`, `packages/claxedo-app/src/features/workgraph/waiting/settings-dialogs.vitest.tsx`, `packages/claxedo-app/src/features/workgraph/workgraph-content.tsx`, `packages/claxedo-app/src/features/workgraph/workgraph-content.vitest.tsx`, `packages/claxedo-app/src/features/workgraph/change-sync.ts`, `packages/claxedo-app/e2e/playwright/core-workgraph.spec.ts`.
+- **Approach:** Render a paginated activity timeline with structured icons and links for Attempts, checkpoints, Decisions, evidence, external effects, follow-ups, and completion. Stream Settings owns the milestones/progress/detailed choice and defaults to progress. Show typed failure reasons and unmet requirements. Retry and execute actions live on the Task/Stream surface. Session actions resolve project metadata first and navigate directly without an intermediate “opening” state.
+- **Patterns to follow:** Existing WorkspacePanel handoff, focused WorkGraph dialogs, project-scoped Session navigation, ordered change sync, and backend Attention acknowledgement.
+- **Test scenarios:**
+  1. A Task with no Attempts shows its ready state and execute action rather than an empty error panel.
+  2. A failed Attempt shows the reason, retry/cancel actions, activity, and real Session link.
+  3. Opening the Session immediately selects the owning project and displays the entire transcript.
+  4. Mark-read and semantic clear survive reload and another page instance; a newer version reappears as unread.
+  5. Activity pagination appends without duplicate entries and updates from ordered changes without a full reload.
+  6. Each granularity level hides or shows checkpoint detail while retaining mandatory lifecycle facts.
+- **Verification:** Component accessibility checks and the canonical browser journey prove inspection, navigation, retry, read/clear, and scrolling at desktop and narrow widths.
+
+### U16. Add personal Source View settings and provider target mapping
+
+- **Goal:** Let users configure GitHub, Linear, and Jira issue intake through normal settings without exposing credentials or moving execution identity above Stream.
+- **Requirements:** R26-R27, R39; F7; AE13-AE14, AE21, AE23; KTD1-KTD2, KTD11.
+- **Dependencies:** U13-U15.
+- **Files:** `packages/claxedo-app/src/features/settings/app-ports.ts`, `packages/claxedo-app/src/features/settings/ui/connections.tsx`, `packages/claxedo-app/src/features/settings/ui/connections-logic.ts`, `packages/claxedo-app/src/features/settings/ui/connections-logic.test.ts`, `packages/claxedo-app/src/features/workgraph/api.ts`, `packages/workgraph/src/contracts/source-view.ts`, `packages/workgraph/src/application/source-view-service.ts`, `packages/claxedo-server/src/workgraph-host/intake-router.ts`, `packages/claxedo-server/src/workgraph-host/intake-router.test.ts`, `convex/workgraphIntake.ts`, `packages/claxedo-app/e2e/playwright/core-workgraph.spec.ts`.
+- **Approach:** Extend Connections settings with personal Source Views for each connected account: provider identity, allowlisted filters, active/paused state, refresh status, sync policy, and a target template. The Settings feature reaches Source Views through its injected app port and never imports the WorkGraph feature. GitHub may infer repository URL from the selected repository; Linear and Jira require an explicit project-to-repository/environment mapping. Admission materializes the final values on the Stream.
+- **Patterns to follow:** Settings feature boundaries, existing Source View service, project picker, provider-specific Connection metadata, and versioned refresh commands.
+- **Test scenarios:**
+  1. A user can create, edit, pause, refresh, and delete a personal Source View for each provider.
+  2. GitHub repository selection proposes a Stream repository target; Linear and Jira require a valid mapped target before admission.
+  3. Broken or revoked credentials show a typed provider error without revealing secret material.
+  4. Two users sharing one organization Connection maintain independent identities, filters, candidates, and mappings.
+  5. Refresh and webhook delivery for the same issue deduplicate to one candidate and preserve the latest provider revision.
+  6. Provider-authored prompt-injection text remains sourced content and cannot override tenant, target, tools, Connection access, or completion authority.
+- **Verification:** Settings unit tests and browser tests prove all three provider configurations and tenant separation through normal UI interactions.
+
+### U17. Prove the three canonical local journeys without false positives
+
+- **Goal:** Replace primitive-only browser confidence with user-level proofs that cross the real local composition.
+- **Requirements:** R27-R35; F7-F10; AE13-AE21; KTD9-KTD10.
+- **Dependencies:** U13-U16.
+- **Files:** `packages/claxedo-app/e2e/helpers/real-workgraph-harness.ts`, `packages/claxedo-app/e2e/helpers/workgraph-connection-browser-use-server.ts`, `packages/claxedo-app/e2e/playwright/core-workgraph.spec.ts`, `packages/claxedo-app/e2e/playwright/live-claxedo-mcp-tools.spec.ts`, `packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts`, `packages/claxedo-app/e2e/INVARIANTS.md`.
+- **Approach:** Drive provider settings, chat, WorkGraph UI, execution, and Session inspection from the browser. Deterministic provider servers may stand in for external networks, but tests must use production settings, routing, store, execution, and sync code. No direct HTTP or database creation is allowed after the journey begins.
+- **Execution note:** Build the assertions from the user-visible end state backward so a placeholder Session page, staged-only candidate, or manually injected evidence cannot pass.
+- **Test scenarios:**
+  1. GitHub, Linear, and Jira each complete settings → candidate → admit → execute → sync-back → cleanup.
+  2. A chat prompt creates a Stream with multiple dependent Tasks; clicking execute runs real Sessions and completes the graph through agent-recorded evidence.
+  3. A long-running Session binds, checkpoints, resumes after context refresh, completes one Task, and selects the next.
+  4. Every Attempt Session link opens a real transcript in the correct project and contains the original prompt, tool activity, and terminal result.
+  5. Attention mark-read/clear remains durable through reload; retries do not duplicate Tasks, Sessions, or provider effects.
+  6. All Session-composer harnesses pass contract-level creation and navigation; Codex supplies the canonical real execution, and Pi omits provider configuration.
+- **Verification:** The headless canonical suite passes with trace evidence and fails when the Session, project metadata, evidence, or provider receipt is absent.
+
+### U18. Repair CI and deploy the ordered staging composition
+
+- **Goal:** Turn the populated staging configuration into a successful Convex, control-plane, sandbox, relay, and app deployment.
+- **Requirements:** R36-R37; AE22.
+- **Dependencies:** U12-U17.
+- **Files:** `.github/actions/setup-bun/action.yml`, `.github/workflows/claxedo-sandbox-image.yml`, `.github/workflows/deploy-control-plane.yml`, `.github/workflows/deploy-claxedo-app-staging.yml`, `packages/workgraph/package.json`, `convex.json`, `public-docs/deploy-runbook.md`.
+- **Approach:** Build `@claxedo/workgraph` before Convex dry-run/deploy so exported `dist` modules exist; make staging routing fetch or check out enough history to compare the exact before/after SHAs; make the sandbox image dependency install deterministic without the transient `node-gyp`/`nopt` failure. Preserve deployment order and avoid logging secret values.
+- **Execution note:** This unit is CI and packaging heavy; reproduce each failing job locally or in an isolated workflow gate before rerunning deployment.
+- **Test scenarios:**
+  1. A clean runner resolves WorkGraph contracts/domain/matching during Convex dry-run.
+  2. A multi-commit push computes changed paths even when the previous SHA is outside a shallow checkout.
+  3. Sandbox-image install succeeds from a cold cache and includes the required runtime harnesses.
+  4. Missing secret or variable names fail preflight with names only; populated staging never prints values.
+  5. Convex deploy completes before Worker/app deployment, and a downstream failure stops later stages.
+- **Verification:** The three currently failing workflows—`claxedo-sandbox-image`, `deploy-control-plane`, and `deploy-claxedo-app-staging`—complete successfully for the same `dev` commit.
+
+### U19. Run credentialed staging acceptance and close operations/documentation
+
+- **Goal:** Produce release-grade evidence for the Cloud composition and align every status document with observed reality.
+- **Requirements:** R26-R37; F7-F10; AE13-AE22.
+- **Dependencies:** U18.
+- **Files:** `packages/claxedo-app/e2e/playwright/deployed-workgraph.spec.ts`, `packages/claxedo-app/playwright.deployed.config.ts`, `packages/claxedo-server/src/workgraph-host/operational-telemetry.ts`, `packages/claxedo-server/src/workgraph-host/operational-telemetry.test.ts`, `public-docs/deploy-runbook.md`, `public-docs/relay-and-deployment.md`, `packages/workgraph/README.md`, `packages/workgraph/PRD.md`, `packages/workgraph/SPEC.md`, `packages/workgraph/ARCHITECTURE.md`, `packages/workgraph/TASKS.md`.
+- **Approach:** Use protected test accounts and labeled disposable fixtures for GitHub, Linear, and Jira. Run signed cross-tenant checks, hosted execution, Session inspection, provider sync-back, retry/idempotency, cleanup, telemetry, and rollback rehearsal. Store run URLs, traces, fixture IDs, receipts, and cleanup results as release evidence without secrets.
+- **Patterns to follow:** Deployed WorkGraph smoke, provider preflight, operational telemetry queue metrics, durable cleanup compensation, and deployment runbook conventions.
+- **Test scenarios:**
+  1. Each real provider completes the full F7 journey and leaves no disposable fixture after cleanup.
+  2. A signed user cannot access another organization/user WorkGraph, Session, callback, Source View, or provider receipt.
+  3. Hosted autonomous execution advances a multi-wave Stream and opens each real Session transcript.
+  4. Killing a worker during prompt, completion, provider sync, and workspace cleanup recovers without duplication or indefinite running state.
+  5. Telemetry exposes candidate lag, Attempt age, failed/retried work, Recap age, provider sync failure, and cleanup compensation.
+  6. Rollback and roll-forward preserve additive Convex data and resume background reconciliation.
+- **Verification:** Deployed browser and smoke suites pass, dashboards and alerts are observed, rollback rehearsal succeeds, cleanup is confirmed, and documentation states only proven status.
 
 ---
 
 ## Verification Contract
 
-### Per-wave commands
+| Gate | Applies to | Required proof |
+|---|---|---|
+| WorkGraph contracts and adapters | U11-U13 | From `packages/workgraph`: `bun typecheck`, `bun test`, and `bun run build`; SQLite and Convex conformance, archive, restart, deletion, and activity pagination pass. |
+| MCP parity | U14 | From `packages/claxedo-mcp`: `bun typecheck`, `bun test`, and `bun run build`; embedded and standalone capability matrices match their authority boundaries. |
+| Server/runtime | U13-U14, U18-U19 | From `packages/claxedo-server`: `bun typecheck` and the full test suite; local/hosted execution, Session identity, callbacks, provider sync, and telemetry pass. |
+| App components and architecture | U15-U16 | From `packages/claxedo-app`: `bun typecheck`, `bun test`, and `bun run build`; feature-boundary and accessibility gates remain green. |
+| Canonical local browser | U15-U17 | From `packages/claxedo-app`: `bun run test:e2e:core`; the real WorkGraph harness flag is active and traces prove real project Sessions. |
+| Provider compositions | U16-U17 | Deterministic GitHub, Linear, and Jira suites pass through settings, intake, execution, sync-back, and cleanup. |
+| CI/deployment | U18 | WorkGraph builds before Convex; sandbox image, control plane, and staging app workflows pass on one `dev` SHA. |
+| Deployed Cloud | U19 | `bun run test:e2e:deployed-workgraph` passes against staging with signed authentication, real Convex, hosted runtime, and retained traces. |
+| Repository hygiene | All | `git diff --check` passes; generated Protocol/client output is regenerated through supported commands; abandoned implementation experiments are removed. |
 
-Run commands only from their package directories.
-
-#### WorkGraph
-
-```text
-cd packages/workgraph
-bun run test
-bun typecheck
-bun run build
-```
-
-#### Claxedo Server
-
-```text
-cd packages/claxedo-server
-bun run test
-bun typecheck
-bun run check:worker-safe
-```
-
-Use focused test paths during implementation; run the full package gates at wave barriers.
-
-#### Claxedo app
-
-```text
-cd packages/claxedo-app
-bun run typecheck
-bun run test:e2e:core -- --workers=1
-npx playwright test --config playwright.config.ts e2e/playwright/core-workgraph.spec.ts --workers=1
-```
-
-Run the WorkGraph core spec against the real local app/server stack started with `bun run dev`, never `vite preview`. Run browser suites serially at the goal gate so they do not share mutable browser or runtime state.
-
-#### Convex and hosted deployment
-
-```text
-bunx convex deploy --dry-run --typecheck enable
-cd packages/claxedo-server
-bun run check:worker-safe
-bun run deploy:hosted --target=central
-```
-
-The real staging deploy and authenticated hosted smoke are mandatory before completion.
-
-### Wave gates
-
-#### Wave 0 — Baseline and prerequisite audit
-
-- Record current tests/typechecks and dirty-worktree ownership.
-- Characterize source revision storage across agents, Docs v2, and explicit source actions, then freeze the Work Source revision contract.
-- Freeze new WorkGraph wire contracts and canonical migration fixture.
-- Confirm a dedicated branch/worktree and test evidence location.
-
-#### Wave 1 — Domain and persistence
-
-- Complete U1-U3.
-- SQLite and Convex core conformance version 5, archive conformance version 1, Convex policy, restart, cleanup, deletion, and owner-isolation tests pass.
-- When deployment credentials are available, deploy additive Convex schema/functions before the Worker and deploy the app only after the Worker is healthy.
-
-#### Wave 2 — Service and execution
-
-- Complete U4-U5.
-- Local and hosted routers share contracts.
-- Worker-safe guard, interruption corpus, leases, delete/close race, and local real-worktree tests pass.
-
-#### Wave 3 — Sources and AI integration
-
-- Complete U6-U7.
-- Connections emulator consumer flow, Work Source exact-revision admission, recap/session workers, matching, and MCP parity pass.
-
-#### Wave 4 — Frontend
-
-- Complete U8.
-- WorkGraph appears immediately after Marketplace and restores the single `/workgraph` surface with inline Streams and Add task.
-- Settings use scoped dialogs. Proposal/candidate, Task result, Decision, and Recap inspection matches an explicitly approved interaction.
-- UI/unit/architecture/typecheck/mobile/accessibility gates pass with screenshots reviewed by the leader.
-
-#### Wave 5 — End-to-end and Cloud
-
-- Complete U9-U10.
-- Canonical backend journey, real local frontend/backend browser E2E, Convex/Worker hosted-execution staging smoke, deployed app smoke, secret scan, and deployment runbook gates pass.
-- Browser Use independently drives the complete deployed journey through visible controls, inspects each resulting state, captures screenshots/video, and verifies persisted backend results. Scripted test output alone cannot satisfy this gate.
-- Remove legacy code only after telemetry and tests show no remaining consumer.
-
-### Quality gates
-
-- No `any` added without a documented boundary justification.
-- No feature-to-feature imports from WorkGraph UI into Documents, Session, Settings, Marketplace, or Workspaces.
-- No raw provider token fields or WorkGraph-owned credential endpoints.
-- No process-global WorkGraph registry in request handling.
-- No hosted bundle path to SQLite, Node filesystem, or local worktree code.
-- No success state that skips completion/evidence rules.
-- No skipped/fixme core WorkGraph behavior without an owner, reason, and explicit follow-up outside this goal.
-- Every user-visible behavior added to `core-workgraph.spec.ts` is described in its opening SPEC block and linked to a test.
+Repository success does not waive deployed acceptance. Deterministic provider tests do not waive credentialed staging. A page that merely contains a Session ID does not satisfy transcript proof.
 
 ---
 
 ## Definition of Done
 
-- [ ] The personal-first requirements R1-R25 and acceptance examples AE1-AE12 are implemented without unresolved launch blockers.
-- [x] SQLite is the default local/self-hosted adapter and passes the public adapter conformance suite.
-- [x] SQLite and Convex pass core adapter conformance version 5 under trusted `(organization, user)` physical tenancy.
-- [x] SQLite and Convex pass archive conformance version 1, restart recovery, workspace cleanup, and tenant-level permanent-deletion conformance in repository verification.
-- [ ] Convex is the default Claxedo Cloud adapter and passes policy, deployment, and real staging smoke gates.
-- [x] The Cloudflare Worker-safe hosted app mounts authenticated tenant-bound WorkGraph routes and durable scheduled reconciliation with focused server/Convex verification; deployed Cloud acceptance remains tracked separately.
-- [x] WorkGraph uses Connections exclusively for GitHub, Linear, and Jira credentials and persists no secrets.
-- [x] Stream-owned local worktrees and hosted VM/workspaces provision, execute, reconcile, cancel, delete, close, and clean up correctly in repository tests.
-- [x] Strict Session-backed Work Source exact-revision admission and later-revision keep/replace/fork services operate from durable state through agents and the triggerable Docs v2 authoring journey.
-- [x] Eight-hour incremental Recap jobs and Unorganized AI work candidates operate from durable state without generated substitute content.
-- [x] MCP/agent tools provide parity for every high-value UI action under the same owner/authority rules.
-- [x] WorkGraph is the main global tab immediately after Marketplace on desktop and mobile, with inline Streams and Add task.
-- [x] The existing app-global WorkspacePanel hosts the approved WorkGraph Needs you and execution-only Settings views; Stream Settings owns execution and Recap configuration; focused inspectors remain over the single WorkGraph surface. The approved inspector interaction passes the local accessibility and browser acceptance set.
-- [ ] Replacement core browser E2E, real local full-stack E2E, backend conformance/E2E, deployed hosted smoke, and independent Browser Use journey all pass against the approved interaction with reviewed evidence.
-- [x] Cross-tenant isolation, retry/idempotency, crash recovery, secret absence, and delete-vs-close races have explicit passing SQLite and Convex repository tests.
-- [ ] Deployment workflows, telemetry, alerts, and runbooks cover WorkGraph rollout and recovery.
-- [x] Legacy singleton, raw-token, Composio account, capacity scheduler, and obsolete production routes are absent from published/runtime reachability; only explicit migration-window inputs remain.
-- [x] Dead-end V1 source, direct V1 tests, and compatibility-only dependencies are removed from the final production graph.
-- [ ] All touched package tests, builds, typechecks, architecture guards, docs links, and deployment dry-runs are green.
-
----
-
-## Operating Rules
-
-- Use every available parallel-agent slot during implementation, testing, review, and evidence collection whenever dependency and file-ownership analysis finds safe concurrent work. Keep one leader responsible for integration, authoritative gates, and final claims.
-- Assign each worker an explicit, disjoint file set and bounded completion contract. Serialize shared schemas, generated artifacts, lockfiles, integration surfaces, and browser sessions. Refill a worker slot as soon as it becomes available while independent work remains.
-- Agent reports are claims, not evidence. The leader inspects every diff and runs wave gates against the integrated tree.
-- Preserve unrelated user changes, including concurrent Docs v2 work. Re-read the working tree before every wave and never absorb foreign diffs into a WorkGraph commit.
-- Use conventional commits: `feat(workgraph): ...`, `test(workgraph): ...`, `docs(workgraph): ...`, or the affected package scope.
-- One commit should represent one coherent implementation unit or migration checkpoint.
-- Convex schema changes land in a schema-only commit and deployment before dependent Worker code.
-- Do not edit generated Convex or client artifacts directly; run repository generation commands when their source contracts change.
-- After scripted gates are green, assign final Browser Use verification to an independent agent that did not implement the journey. It uses the real deployed frontend, embedded Claxedo Server WorkGraph service, Convex persistence, and hosted runtime, never page-route mocks, seeded postconditions, direct database writes, or a static prototype. It must traverse the entire core journey using visible UI controls, confirm backend persistence after reload and in a fresh browser session, and retain evidence the leader personally reviews.
-- When implementation discovers a product-contract ambiguity, record the concrete conflict and stop that branch. Continue independent units where safe.
-- When a bug is found inside the active unit, reproduce it with a test and fix it. Cross-scope findings become durable follow-up work with evidence.
-- Keep the plan positive and current. Execution discoveries that change architecture are incorporated as decisions, not appended as contradictory alternatives.
-
-## Current execution status
-
-The authoritative status is summarized near the top of this goal and detailed in `packages/workgraph/TASKS.md`. Integrated verification passes WorkGraph 329/329, WorkGraph MCP 90/90, Claxedo Server 1,851 passed with 12 explicit skips, and Claxedo app 4,137 passed with 7 explicit skips. WorkGraph and MCP typechecks, builds, and published-entry imports pass. Server typecheck, the Worker-safe staging dry run, Convex code generation, Connections tests/typecheck/build, app typecheck and production build, deployment workflow verification, docs links, and maintained-file formatting also pass.
-
-SQLite and Convex repository implementations now cover tuple-leading physical tenancy, core conformance version 5, archive integrity, process restart, workspace cleanup, tenant-level permanent deletion, deletion barriers, scheduled background work, hosted execution, capability discovery, and owner-scoped Connections. The Docs v2 backend provides authorized document inventory, immutable head reads, and exact historical revision reads in both SQLite and Convex; the native document action invokes exact-revision planning and opens Needs you. The WorkGraph surface and shared WorkspacePanel are integrated. R17, AE10, and the local browser portion of AE11 pass: all 11 canonical browser bodies are green, including the Decision rationale accessibility check, and an independent headless pass verifies Stream creation, stable Add-task focus, durable Task submission, and the accessible single-surface tree. R19 and the hosted portion of AE11 remain open for deployed Cloud evidence.
-
-Cloud deployment is pending and staging has not been deployed. R24, the hosted portion of AE11, and AE12 remain open. The external gate requires real Convex, Cloudflare, Clerk, control-plane, sandbox, relay, and smoke credentials. Deployment proceeds in strict order: additive Convex schema/functions, Worker-safe Claxedo Server, app, signed cross-tenant policy checks, exact capability-catalog checks, the canonical browser journey against hosted persistence and execution, rollout/rollback exercises, secret rotation, and retained operational evidence.
-
-## Progress Log
-
-The executing leader appends one row per completed wave or material blocker. Rows preserve point-in-time evidence and may name gaps that later rows close. They are not current product, UI, generation, conformance, archive, or deployment authority; the **Authoritative current status** and **Current execution status** sections govern.
-
-| Date       | Wave / Unit                                                | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Result                                                       |
-| ---------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 2026-07-13 | Goal authored                                              | Product contract, repository architecture, local/hosted composition, app navigation, Convex deployment, Connections, and E2E patterns grounded in current files.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | READY                                                        |
-| 2026-07-13 | Source and execution model established                     | Manual versioned Work Sources provide initial authoring; Docs v2 can later append exact revisions through the source port. Embedded Claxedo Server composition, full parallel-agent utilization, and independent Browser Use verification are explicit gates.                                                                                                                                                                                                                                                                                                                                                                                                                           | READY                                                        |
-| 2026-07-13 | U1 contracts and application core                          | Runtime-neutral contracts, owner-scoped domain rules, application service, immutable Attempt profiles, semantic completion/evidence rules, and reusable adapter conformance harness pass focused tests, typecheck, and build.                                                                                                                                                                                                                                                                                                                                                                                                                                                           | COMPLETE                                                     |
-| 2026-07-13 | U2 SQLite local persistence                                | Additive owner-first SQLite schema, command surface, ordered changes, truthful legacy migration, restart persistence, and adapter conformance pass. Existing legacy async-test warnings remain outside acceptance evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                             | COMPLETE                                                     |
-| 2026-07-13 | U3 Convex adapter foundation                               | Owner-first Convex schema/functions, command/change parity, secret guards, bounded queries, and Worker-safe host adapter pass component/policy gates. A real deployed Convex parity run and signed hosted smoke remain required.                                                                                                                                                                                                                                                                                                                                                                                                                                                        | IMPLEMENTED; DEPLOYMENT GATE OPEN                            |
-| 2026-07-13 | U4 embedded local host                                     | Claxedo Server mounts the v2 WorkGraph router in process with caller-owned SQLite, trusted owner context, direct service access for internal consumers, and restart/cross-owner HTTP tests. Execution hardening is tracked in U5.                                                                                                                                                                                                                                                                                                                                                                                                                                                       | COMPLETE                                                     |
-| 2026-07-13 | U6 personal Connections intake                             | Team-held GitHub, Linear, and Jira Connections are scoped by personal Source Views, provider identities, and filters. Recent-first matching, staged confirmation, retryable sync receipts, owner isolation, and secret absence pass focused independent tests. Host/UI/Convex composition remains in progress.                                                                                                                                                                                                                                                                                                                                                                          | SERVICE COMPLETE                                             |
-| 2026-07-13 | U8 WorkGraph app surface                                   | WorkGraph appears immediately after Marketplace with route restoration, home/intake/Stream surfaces, operational Outcomes/items/Attempts/Decisions/evidence/Recaps controls, and a real HTTP/change client. App typecheck, focused tests, and production build pass.                                                                                                                                                                                                                                                                                                                                                                                                                    | IMPLEMENTED; E2E GATE OPEN                                   |
-| 2026-07-13 | U5 execution hardening                                     | The production local mount uses Stream worktrees and durable Session V2 prompt admission, fenced leases, retryable cancellation effects, terminal result reconciliation, semantic evidence promotion, atomic delete-vs-receipt cleanup reservation, and owner-contained cleanup. Independent race and canonical backend rerun passes 35/35; server focused tests and typecheck pass.                                                                                                                                                                                                                                                                                                    | COMPLETE                                                     |
-| 2026-07-13 | U9 canonical backend journey                               | A real SQLite/public-service journey now exercises source admission, dependencies, concurrent Attempts, Decisions, evidence, personal intake, delete-vs-close, and owner isolation without direct state injection. It exposed and drove fixes for semantic completion plus durable-effect evidence, and exposed the missing mounted Recap runtime and remaining visible frontend controls.                                                                                                                                                                                                                                                                                              | BACKEND CORE PASS; BROWSER OPEN                              |
-| 2026-07-13 | U7/U10 sources, Recaps, and agent integration              | Public immutable Source queries, Connections-backed Source Views/intake, durable local idle-session intake, leased/retryable eight-hour incremental Recaps, MCP Source parity, and final-child Outcome readiness are mounted through the embedded service. The canonical Outcome and Recap ratchets are ordinary passing tests.                                                                                                                                                                                                                                                                                                                                                         | LOCAL HOST COMPLETE                                          |
-| 2026-07-13 | Canonical visible controls                                 | The app exposes server-verified source admission, personal Connection-backed Source Views, external refresh/stage/place, Stream execution defaults, Decision proposal, requirement-aware typed evidence, durable integration evidence, and owner-confirmed Outcome closure. Focused UI/API tests, app typecheck, architecture checks, and production build pass.                                                                                                                                                                                                                                                                                                                        | COMPLETE; BROWSER VERIFICATION ACTIVE                        |
-| 2026-07-13 | Integrated local package gate                              | Leader rerun: WorkGraph 669 passed/2 provider-live skipped plus source typecheck/build; MCP tests/typecheck; app typecheck/build; embedded local server behavior 13/13. Known legacy test warnings about closed databases and unawaited rejections remain visible and are not E2E evidence.                                                                                                                                                                                                                                                                                                                                                                                             | PASS                                                         |
-| 2026-07-13 | Hosted Worker composition                                  | Worker-safe embedded WorkGraph is backed by Convex and signed personal ownership. Atomic Attempt admission, fenced leases, durable launch outbox, SandboxManager placement, runtime-access token minting, Session V2 admission, and scheduled result reconciliation pass 64 hosted/Convex/runtime/auth tests. Server typecheck, Worker-safety checks, workspace-runtime proxy tests, and a Wrangler staging dry run pass. A real staging deployment and signed browser smoke require deployment credentials that are not available in this workspace.                                                                                                                                   | REPOSITORY COMPLETE; DEPLOYED ACCEPTANCE BLOCKED             |
-| 2026-07-13 | Interim real-local Browser Use                             | Browser Use opened the real app and embedded local server, created a Stream through visible UI, then proved it survived reload and a fresh browser session. This is navigation/persistence evidence only and does not satisfy the canonical journey or deployed-cloud acceptance.                                                                                                                                                                                                                                                                                                                                                                                                       | PARTIAL EVIDENCE                                             |
-| 2026-07-13 | Canonical real-local browser E2E                           | The opt-in Playwright journey passed in 16.4 seconds against the real app, embedded service, file-backed SQLite, local worktree execution, and controlled Session gateway. It visibly covered exact-revision source placement, execution defaults, Outcomes, dependent Work Items, Decisions, two Attempts, typed evidence, owner confirmation, reload/fresh-mobile persistence, durable integration evidence with close-required preservation, and disposable Stream deletion without route interception or direct database setup.                                                                                                                                                     | PASS                                                         |
-| 2026-07-13 | Independent Browser Use acceptance                         | A separate Browser Use session drove the fresh persistent composition through source admission, Stream organization, immutable execution profile, Decision answer, controlled Session/worktree Attempt, typed evidence, semantic Work Item completion, owner-confirmed Outcome completion, reload, a fresh browser session, and disposable Stream deletion. Evidence: `/tmp/workgraph-root-browser-evidence/01-source-confirmed.png`, `02-outcome-completed.png`, and `03-disposable-deleted.png`.                                                                                                                                                                                      | LOCAL ACCEPTANCE PASS                                        |
-| 2026-07-13 | Session V2 execution profile enforcement                   | Session V2 durably stores the immutable Attempt tool list, and the Core runner applies it as an exact registry-name allowlist in addition to agent permissions. Local and hosted admission send the explicit execution location. Non-empty Connection IDs fail closed before provisioning because Session HTTP/relay has no safe callback-scoped capability consumer; credentials are never serialized or injected. Core focused tests pass 38/38, WorkGraph runtime tests pass 13/13, Protocol/Server typechecks and Worker dry-run pass.                                                                                                                                              | TOOL ENFORCEMENT COMPLETE; CONNECTION EXECUTION OPEN         |
-| 2026-07-13 | Live provider acceptance                                   | The legacy-catalog OpenAI Attempt now reconciles to a truthful failed result instead of hanging. A retry selected from the Session V2 catalog (`opencode/big-pickle`) ran with `tools: []` inside the correct Stream envelope, emitted durable created/admitted/prompted/step/text/ended events, returned `VERIFIED`, and reconciled to a WorkGraph terminal result.                                                                                                                                                                                                                                                                                                                    | PASS                                                         |
-| 2026-07-13 | Live provider Browser Use persistence                      | Browser Use on the real app and production local server visibly opened the provider-backed Stream, showed `RESULT READY`, `Attempt 1 · result`, `opencode/big-pickle · default`, `local worktree · stream`, and `general · claxedo-v2`, then repeated the same assertions after a visible reload. Evidence: `/tmp/claxedo-workgraph-independent/browser-use-live-provider-persisted.png`.                                                                                                                                                                                                                                                                                               | PASS                                                         |
-| 2026-07-13 | Later Work Source revision replanning                      | The app appends an immutable revision from an admitted Stream's exact prior revision, reads the server-authored revision/hash, proposes against that Stream, displays exact From/To provenance, and requires explicit keep, replace-disposable, or fork disposition. Focused UI passes 9/9; canonical real-stack Playwright executes keep and proves both revision references persist, passing 1/1 in 19 seconds on the leader rerun.                                                                                                                                                                                                                                                   | COMPLETE                                                     |
-| 2026-07-13 | MCP Connections intake parity                              | MCP now uses the canonical authenticated routes to list/configure/refresh personal Source Views, list/stage/place intake candidates, and announce meaningful results through the team Connection. No tool accepts owner identity or credential material; the final MCP suite passes 60/60 with typecheck/build green.                                                                                                                                                                                                                                                                                                                                                                   | COMPLETE                                                     |
-| 2026-07-13 | Hosted background and lifecycle truth                      | Convex schedules idempotent eight-hour Recap jobs and independent-session intake, while the Worker claims, launches, and reconciles ordinary tool-less Session V2 jobs. Hosted cancel, close, and delete are two-phase: external interrupt/cleanup acknowledgement precedes terminal state/removal; launch races compensate durably; expired claims recover; retry exhaustion surfaces attention; cleanup receipts preserve idempotency after deletion. Independent re-review resolved every lifecycle race. Hosted/background tests pass 17/17, store/policy/authz tests pass 19/19, codegen/typecheck and Worker dry run pass.                                                        | COMPLETE IN REPOSITORY                                       |
-| 2026-07-13 | Source View and MCP hardening                              | Provider filters are allowlisted (GitHub `repo/state/labels`, Linear `team`, Jira `jql`) and recursively reject secret-shaped keys/values at the domain and SQLite boundaries. MCP embedded transports advertise only supported direct capabilities and can dispatch Source View/intake operations in process. Final MCP tests pass 60/60.                                                                                                                                                                                                                                                                                                                                              | COMPLETE                                                     |
-| 2026-07-13 | Final integrated local gates                               | WorkGraph passes 675 tests with 2 live-connector tests skipped, source typecheck/build pass; MCP passes 60/60 plus typecheck/build; app focused WorkGraph passes 16/16, full typecheck/168 architecture/performance gates and production build pass; canonical real-stack Chromium passes 1/1 in 18 seconds on fresh ports; `git diff --check` is clean.                                                                                                                                                                                                                                                                                                                                | PASS                                                         |
-| 2026-07-13 | Remaining release gates                                    | Real Cloud deployment and signed browser smoke are blocked by absent Convex, Cloudflare, Clerk, and control-plane credentials. Connection-bound Attempt execution remains fail-closed until Session runtimes can consume callback-scoped Connection capabilities without exposing secrets. The compatibility-window removal of the legacy WorkGraph implementation and final reachability/dead-code cleanup remain open.                                                                                                                                                                                                                                                                | GOAL REMAINS IN PROGRESS                                     |
-| 2026-07-13 | Fresh requirement completion audit                         | Source/tests were rechecked requirement by requirement after hosted lifecycle, Source View, MCP, and browser fixes. The audit separated deployed credential gates from repository work: agent-backed “Turn into work” planning and duplicate review; one external/session intake DTO and real `unorganized` UI flow; hosted Source View/intake plus provider webhooks; Connection-bound Session capabilities; actionable Recap notifications; complete MCP command parity; a published full adapter conformance/export/restore/deletion kit; expanded canonical journey coverage; and legacy reachability removal. `packages/workgraph/TASKS.md` now records this current closure list. | REPOSITORY GAPS OPEN; DEPLOYED ACCEPTANCE BLOCKED            |
-| 2026-07-13 | WorkGraph visual redesign                                  | The Home, Stream, and Intake surfaces now use an editorial personal-operations layout with clearer hierarchy, compact metrics, readable execution state, stronger empty states, and responsive mobile composition. Focused UI passes 10/10, the full app typecheck and architecture/performance gate pass, the canonical real SQLite/local-worktree browser journey passes, and Browser Use reviewed clean desktop and 390px mobile captures.                                                                                                                                                                                                                                           | COMPLETE                                                     |
-| 2026-07-13 | Session-scoped Connection capability bridge                | Core now supports exact Session-scoped application tools, the workspace runtime resolves only bound Connection operations through a trusted broker, and hosted setup stores credentials in Connections while Convex receives secret-free metadata. Leader reruns pass 112 Core registry/provider tests, 5 workspace bridge tests, 69 hosted server tests, and full server typecheck.                                                                                                                                                                                                                                                                                                    | IMPLEMENTED; LIVE PROVIDER BROWSER PROOF ACTIVE              |
-| 2026-07-13 | Connection-bound live provider proof                       | An independent visible browser execution advertised only the bound `connection_work_source_list` Session tool, resolved the team-held GitHub credential through Connections, returned the authorized issue to the provider continuation, then deleted the Session-scoped tool registration. Evidence counters were `providerRequests=2`, `connectionCalls=2`, `connectorCalls=1`; the stale callback was unreachable after cleanup.                                                                                                                                                                                                                                                     | PASS                                                         |
-| 2026-07-13 | Recency-biased admission planning                          | SQLite and Convex now produce the same bounded recent/pinned-first placement alternatives, expand to older memory only below the confidence threshold, propose Outcomes and Work Items from the immutable source revision, and surface duplicate evidence without automatic placement or merging. Focused matching, SQLite, hosted Convex, source typecheck, and build gates pass.                                                                                                                                                                                                                                                                                                      | IMPLEMENTED; AGENT-SESSION PLANNING OPEN                     |
-| 2026-07-13 | WorkGraph lifecycle hardening                              | Stream delete/close transitions are serialized and failure-safe; Task abandonment remains unavailable during live Attempts; duplicate Tiptap/icon registration warnings were removed. Focused UI/API tests pass 21/21, full app typecheck/168 architecture gates and production build pass.                                                                                                                                                                                                                                                                                                                                                                                             | PASS                                                         |
-| 2026-07-13 | Work Item abandonment parity                               | `cancel_work_item` now has equivalent SQLite and Convex command semantics. It abandons an idle item with reason/version history and rejects a live Attempt or lease without changing runtime state. SQLite 9/9 and hosted Convex 9/9 focused suites plus both source typechecks pass.                                                                                                                                                                                                                                                                                                                                                                                                   | PASS                                                         |
-| 2026-07-13 | Canonical browser rerun after redesign                     | The canonical no-route-interception Chromium journey passed against file-backed SQLite, the embedded server, and a real local Stream worktree after the UI redesign and generated-plan changes. It exercised source admission/revision, organization, execution, decisions, evidence, persistence/mobile restore, durable-effect close, and disposable deletion in 19.6 seconds.                                                                                                                                                                                                                                                                                                        | PASS                                                         |
-| 2026-07-13 | Published OSS adapter proof                                | `@claxedo/workgraph/conformance` and `@claxedo/workgraph/ports` now publish a runner-neutral, backend-neutral v1 harness and public factory/view types. A custom in-memory adapter consumes only published contracts/domain/hosted/ports/conformance entries and passes the same eight owner, idempotency, CAS/rollback, cursor, lifecycle, source-revision, completion, and delete-race cases as SQLite. Focused conformance is 18/18; typecheck/build/declaration/self-import/package dry-run gates pass and bundles contain no Vitest, SQLite, or Convex. Lease, pagination, export/restore, recovery, cleanup, and permanent-deletion conformance remain explicit v2 work.          | V1 COMPLETE; EXTENDED CONTRACT OPEN                          |
-| 2026-07-13 | V2-only production reachability                            | Published WorkGraph entrypoints and Claxedo Server startup compose the V2 service. The final static graph audit removed the dormant singleton/client/app/MCP planner, raw-token provider routes, Composio bridge, scheduler, event substrate, direct V1 tests, and compatibility-only packages. The explicit migration reader, dependency-free legacy schema fixture, and migration verification remain for the migration window.                                                                                                                                                                                                                                                       | COMPLETE                                                     |
-| 2026-07-13 | Reviewable admission analysis                              | Admission proposals now show the server-authored Outcomes/descriptions/success criteria, numbered Work Items with Outcome/dependency relationships, ranked placement alternatives with confidence/reason/evidence/score, and duplicate subjects with state/reason/evidence/score before confirmation. The component was extracted to keep architecture budgets green. Focused UI 1/1, full app typecheck/168 architecture/26 performance gates, and the real SQLite/embedded-server canonical E2E pass; the deterministic planner-to-agent-Session upgrade remains open.                                                                                                                | PASS                                                         |
-| 2026-07-13 | Durable actionable Recap notifications                     | SQLite and Convex publish one owner-scoped unread delivery record in the same transaction/mutation as a newly generated actionable Recap; retries and non-actionable Recaps cannot create duplicates. Canonical HTTP provides bounded owner-only list/read and exact-version read acknowledgement, while the home attention surface consumes the delivery record and preserves its Stream/Recap deep-link even when acknowledgement conflicts. Focused SQLite/HTTP 20/20, hosted background/runtime 19/19, focused UI 2/2, WorkGraph and server typechecks, WorkGraph build, Convex codegen/typecheck, and diff checks pass.                                                            | COMPLETE                                                     |
-| 2026-07-13 | Local Session-backed Recap generation                      | Local leased Recap jobs admit exact activity-range and prior-Recap prompts through ordinary tool-less Session V2 with caller-owned durable Session IDs, explicit configured generation profiles, strict structured output, nonblocking reconciliation, restart adoption, lease-epoch publication fencing, and atomic actionable notification delivery. Settled failures retry with a new identity; unavailable or incomplete configuration creates durable failure and attention without publishing a Recap or notification. Focused WorkGraph runtime/contracts pass.                                                                                                                  | COMPLETE                                                     |
-| 2026-07-13 | UI inheritance and concurrency hardening                   | WorkGraph, Stream, Outcome, and Work Item controls expose deliberate per-field overrides over truthful inheritance. Edit forms capture the rendered aggregate version, preserve user input on conflicts, and serialize destructive Stream lifecycle actions. Exact Recap deep links select the requested older Recap before acknowledging only that notification version. Focused UI tests, app typecheck/build, repeated real-local browser runs, and desktop/mobile review pass.                                                                                                                                                                                                      | COMPLETE                                                     |
-| 2026-07-13 | Hosted credential, webhook, and notification hardening     | Team Connection metadata is canonical within organization scope while Source Views retain owner-specific provider mappings and filters. Webhook bodies are signature-gated and size-bounded while streaming; hosted notification listing uses indexed pagination. Local and hosted Recaps atomically publish exact owner-scoped actionable deliveries.                                                                                                                                                                                                                                                                                                                                  | COMPLETE IN REPOSITORY                                       |
-| 2026-07-13 | Session-backed source planning final hardening             | Local and hosted “Turn into work” use caller-owned Session/message identity, strict bounded output, immutable source binding, explicit configured generation profiles, durable `planning_failed` state, lease-fenced publication, dependency-cycle rejection, and ordered change publication. Confirmation requires the exact rendered proposal version before any target record or source link is created; focused WorkGraph, MCP, app, and hosted stale-race tests plus package typechecks pass.                                                                                                                                                                                      | COMPLETE IN REPOSITORY; INTEGRATED REGRESSION PENDING        |
-| 2026-07-13 | Expanded canonical browser journey                         | Fresh-port runs exercised duplicate disposition, a team Connection with owner mapping and provider/repository/state filters, greater-than-eight-hour scheduling, notification focus, and persisted read acknowledgement without route interception, direct database mutation, global fetch replacement, or fabricated postconditions.                                                                                                                                                                                                                                                                                                                                                   | BACKEND JOURNEY EVIDENCE; REPLACEMENT UI JOURNEY REQUIRED    |
-| 2026-07-13 | Conformance v2 snapshot and intake integrity               | The published backend-neutral suite now brands resume cursors separately from change watermarks, certifies stable pagination, owner/mutation invalidation, and exact snapshot-to-change convergence. Convex keyset pagination returns complete snapshots beyond 100 records; app and MCP aggregate all pages with one clean invalidation restart. SQLite now rejects a proposal cross-bound to a second intake candidate transactionally, matching Convex and preserving candidate state. Remaining conformance work is leases, adapter/process restart and runtime recovery, export/restore, cleanup, and owner permanent deletion; real Cloud acceptance remains external.            | V2 COMPLETE; EXTENDED/DEPLOYED GATES OPEN                    |
-| 2026-07-14 | Truthful execution capability discovery                    | The owner-scoped contract publishes only live adapter/runtime choices. GET is workspace-neutral and side-effect free; local observes the configured Git/OpenCode runtime, while hosted observes a deterministic per-owner catalog workspace distinct from Stream execution. Explicit agent/control-plane refresh owns catalog provisioning. Focused HTTP and hosted tests pass 23/23, WorkGraph and Server typechecks pass, WorkGraph builds, and the Worker staging dry run passes. Hosted setup/background provisioning and Settings consumption remain integration work.                                                                                                             | BACKEND CONTRACT COMPLETE; HOSTED SETUP/UI CONSUMPTION OPEN  |
-| 2026-07-14 | Final contract and verification reconciliation             | The authoritative contract now physically scopes every personal WorkGraph by trusted `(organization, user)`, keeps Connection credentials/metadata organization-owned and mappings/filters/bindings user-owned, requires exact capability catalogs without fallbacks, uses one shared WorkspacePanel with no separate intake screen, and records the Docs v2 seam versus legacy Pages limitation. Current evidence is WorkGraph 289/289; server/Convex hardening, approved UI/browser proof, and real Cloud deployment remain open.                                                                                                                                                     | GOAL IN PROGRESS                                             |
-| 2026-07-14 | Archive, deletion, and restart closure                     | Source-planning publication receipts now use canonical hashes/results, strict archive export and restore cover public command history, SQLite and Convex deletion barriers cover command and background writers, and process-kill restart recovery converges without duplicate execution. WorkGraph passes 309/309; MCP passes 90/90; focused server/Convex/hosted gates pass 167/167 plus typecheck, Worker safety, codegen, and dry run.                                                                                                                                                                                                                                              | REPOSITORY GATES PASS                                        |
-| 2026-07-14 | Docs v2 durable authoring API seam                         | Local SQLite and hosted Convex expose project-authorized document inventory, immutable current-head reads, and exact historical revision reads without synthesized identifiers or Pages substitution. Focused route, hosted, policy, Worker-safety, and architecture tests pass 110/110. The native Docs v2 editor and visible exact-revision trigger remain pending UI work.                                                                                                                                                                                                                                                                                                           | BACKEND COMPLETE; UI OPEN                                    |
-| 2026-07-14 | Replacement browser and independent full-server acceptance | Every canonical WorkGraph browser body ran against file-backed SQLite and the real embedded router: ten pass, while Decision rationale text has one deterministic serious contrast violation. The harness teardown socket race is fixed and repeated source-proposal runs exit cleanly. Independent Browser Use against the full Claxedo Server created a Stream and Task, proved reload persistence, opened the single WorkspacePanel, exercised a 390px viewport, and found no WorkGraph 4xx/5xx or console error.                                                                                                                                                                    | FUNCTIONAL ACCEPTANCE PASS; ONE UI ACCESSIBILITY DEFECT OPEN |
-| 2026-07-14 | Deployment and documentation audit                         | WorkGraph, server, app, public, and deployment docs now describe the current personal tenancy, Connections, SQLite/Convex, immutable source, execution, Decision, and Recap contracts without stale fallback claims. Docs links and maintained-file formatting pass. The GitHub `staging` environment has no variables or secrets, the last control-plane run failed with empty `CONVEX_DEPLOY_KEY`/no `CONVEX_DEPLOYMENT`, and the app deployment workflow is not present on `dev`; deployed proof cannot begin until that external configuration exists.                                                                                                                              | DOCUMENTATION PASS; DEPLOYMENT BLOCKED EXTERNALLY            |
-| 2026-07-14 | Integrated completion verification                         | Integrated gates pass WorkGraph 325/325, MCP 90/90, Server 1,835 passed/12 skipped, and app 4,137 passed/7 skipped. Typechecks, builds and imports, the Worker dry run, Convex codegen/typecheck, Connections gates, deployment workflow tests, and docs links/format pass. SQLite and Convex pass core conformance v5, archive v1, restart recovery, workspace cleanup, and permanent deletion. Open acceptance: R4, R17, R19, R24, AE10-AE12, Decision contrast, native Docs v2 UI, and credentialed staging.                                                                                                                                                                         | REPOSITORY VERIFICATION PASS; UI AND CLOUD ACCEPTANCE OPEN   |
-| 2026-07-14 | Current-checkout reconciliation                            | WorkGraph passes 329/329; MCP passes 90/90; Server passes 1,851 with 12 explicit skips plus typecheck and Worker-safe dry run; app passes 4,137 with 7 explicit skips plus typecheck, architecture, performance, and production build. Hosted independent-Session intake waits for the runtime's active-status map to clear and retains the projected transcript when a checkpoint returns an older snapshot. The SQLite Stream projection batches durable effects, Recaps, provenance, and source references, and the native Docs action passes exact persisted revision identifiers with focused tests 11/11. R4 is complete in repository verification. Remaining acceptance is the Opus-owned settings/Recap/Decision UI tail, user-selected browser mode, and credentialed staging. | REPOSITORY PASS; UI AND EXTERNAL DEPLOYMENT GATES OPEN        |
-| 2026-07-14 | Headless browser and UI acceptance closure                 | WorkGraph Settings refreshes its compare-and-set version after a successful save, Decision rationale uses the readable base-text token, and same-mount Recap hover/focus performs one lazy detail read. The dynamic Add-task editor schedules focus after the originating click boundary so it stays mounted and focused. Focused component tests pass 62/62, app typecheck/architecture/performance/build gates pass, the real SQLite/router canonical browser suite passes 11/11, and an independent headless agent-browser pass creates a Stream and durable Task through the accessible UI. GitHub authentication is valid, but the `staging` environment still contains zero secrets and zero variables. | LOCAL UI/BROWSER ACCEPTANCE PASS; CLOUD DEPLOYMENT BLOCKED    |
+- The completed-foundation bullets remain true under the integrated tree and no retired WorkGraph-level setting or recursive hierarchy reappears.
+- U11-U19 satisfy their verification outcomes and every feature-bearing unit has passing happy-path, failure, tenancy, idempotency, and restart coverage.
+- GitHub, Linear, and Jira complete real staging intake, admission, autonomous execution, sync-back, and cleanup.
+- Chat/MCP creates valid project-scoped Streams and dependent Tasks, and the app executes them through explicit evidence-backed completion.
+- Long-running Sessions maintain a bounded WorkGraph ledger using real attached Attempts and never duplicate Sessions or raw transcripts.
+- Every dependency mutation, admission, and archive restore preserves an acyclic same-Stream Task prerequisite graph in SQLite and Convex; rejected cross-Stream edges or cycles leave the previous graph unchanged. Any future migration that imports dependency edges applies the same validation.
+- Task activity is paginated, durable, immediately reactive, granularity-aware, and limited to meaningful boundaries.
+- Every Attempt that owns a Session opens the full transcript inside the correct project; unavailable or mismatched Sessions fail acceptance.
+- Read/clear, retry, cancel, Decision, evidence, provider receipt, and cleanup behavior persists across reload, restart, and another client.
+- SQLite and Convex remain conformant; public HTTP, MCP, generated SDK, and UI contracts agree.
+- Sandbox image, control-plane deploy, staging app deploy, typecheck, test, build, architecture, and browser workflows are green for the release SHA.
+- Signed cross-tenant staging checks, telemetry/alert observation, rollback/roll-forward rehearsal, and disposable-fixture cleanup are retained as release evidence.
+- `packages/workgraph/TASKS.md`, product/architecture/specification docs, MCP guidance, and Cloud runbooks describe the shipped behavior and distinguish repository proof from deployment proof.
+- Dead-end code, unused compatibility paths, stale fixtures, secret-bearing logs, and abandoned implementation attempts are absent from the final diff.

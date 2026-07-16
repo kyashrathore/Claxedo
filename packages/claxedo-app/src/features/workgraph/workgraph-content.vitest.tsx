@@ -30,7 +30,7 @@ function mount(request: typeof fetch, options?: {
   localProjects?: readonly { value: string; label: string }[]
   onChooseLocalProject?: () => Promise<string | undefined>
 }) {
-  const [mode, setMode] = createSignal<"attention" | "settings" | undefined>()
+  const [mode, setMode] = createSignal<"attention" | "settings" | "tasks" | undefined>()
   const header = document.createElement("div")
   const body = document.createElement("div")
   header.dataset.testSlot = "header"
@@ -121,6 +121,32 @@ describe("WorkGraph screen", () => {
     await within(body).findByText("Which auth strategy for the new gateway?")
     await fireEvent.click(within(header).getByRole("tab", { name: "Settings" }))
     expect(await within(body).findByRole("heading", { name: "WorkGraph settings" })).toBeInTheDocument()
+  })
+
+  test("a Stream card's More opens the full task list as a Tasks tab in the shared panel", async () => {
+    const tasks = Array.from({ length: 5 }, (_, index) => ({
+      ...blockedWorkItem,
+      id: `item_more_${index + 1}`,
+      title: `Ship increment ${index + 1}`,
+      state: "pending" as const,
+      dependencyIds: [],
+    }))
+    const { header, body, mode } = mount(
+      workGraphRequest({ records: () => [stream, ...tasks], attention: () => emptyAttention }),
+    )
+
+    // The card previews only the first few tasks; the rest sit behind More. No
+    // Tasks tab exists until a Stream's full list is requested.
+    expect(await screen.findByText("Ship increment 1")).toBeInTheDocument()
+    expect(screen.queryByText("Ship increment 5")).not.toBeInTheDocument()
+    expect(within(header).queryByRole("tab", { name: "Tasks" })).toBeNull()
+
+    await fireEvent.click(screen.getByRole("button", { name: "All tasks for Ship Claxedo cloud" }))
+    expect(mode()).toBe("tasks")
+    expect(await within(header).findByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true")
+    // The panel body lists every task of the Stream, including the hidden tail.
+    expect(await within(body).findByText("Ship increment 5")).toBeInTheDocument()
+    expect(within(body).getByText("Ship increment 1")).toBeInTheDocument()
   })
 
   test("renders the inactive Settings tab with a readable text token for sufficient contrast", async () => {

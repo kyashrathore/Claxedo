@@ -4,6 +4,7 @@ import type {
 } from "@claxedo/workgraph/hosted"
 import type {
   AttentionListInput,
+  AttentionItem,
   AttentionPage,
   ChangeCursor,
   SnapshotResumeCursor,
@@ -44,6 +45,7 @@ import type {
 } from "@claxedo/workgraph/contracts"
 import {
   AttentionCursorError,
+  AttentionItemSchema,
   AttentionPageSchema,
   ChangeCursorError,
   AdmissionProposalDtoSchema,
@@ -212,7 +214,10 @@ export function createConvexWorkGraphStore(input: Input) {
       attention: {
         list: async (context: WorkGraphContext, queryInput: AttentionListInput): Promise<AttentionPage> => {
           const page = AttentionPageSchema.parse(await read(context, "attention", queryInput))
-          return { ...page, items: page.items.map((item) => publicOwner(context, item)) }
+          return AttentionPageSchema.parse({
+            ...page,
+            items: page.items.map((item) => publicAttentionItem(context, item)),
+          })
         },
       },
       streams: {
@@ -564,6 +569,25 @@ function publicChanges(context: WorkGraphContext, changes: readonly ChangeEnvelo
     ownerUserId: context.ownerUserId,
     event: { ...change.event, ownerUserId: context.ownerUserId },
   }))
+}
+
+function publicAttentionItem(context: WorkGraphContext, item: AttentionItem): AttentionItem {
+  if (item.kind === "recap_notification") {
+    return AttentionItemSchema.parse({
+      ...item,
+      ownerUserId: context.ownerUserId,
+      notification: publicOwner(context, item.notification),
+      recap: publicOwner(context, item.recap),
+    })
+  }
+  if (item.kind === "unorganized_ai_work" || item.kind === "configuration_required") {
+    return AttentionItemSchema.parse(publicOwner(context, item))
+  }
+  return AttentionItemSchema.parse({
+    ...item,
+    ownerUserId: context.ownerUserId,
+    record: publicOwner(context, item.record),
+  })
 }
 
 function publicOwner<Record extends { ownerUserId: WorkGraphContext["ownerUserId"] }>(context: WorkGraphContext, record: Record): Record {

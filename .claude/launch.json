@@ -10,8 +10,8 @@
     },
     {
       "name": "claxedo-server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["CLAXEDO_WORKGRAPH_REPOSITORY=/Users/yashvardhansingh/test/opencode", "npm", "run", "dev"],
       "cwd": "packages/claxedo-server",
       "port": 3001
     },

@@ -13,14 +13,17 @@ export type WorkspacePanelMode =
   | "activity"
   | "workgraph-attention"
   | "workgraph-settings"
+  | "workgraph-tasks"
+
+export type GlobalPanelMode = "workgraph-attention" | "workgraph-settings" | "workgraph-tasks"
 
 /**
  * A global-navigation panel mode is not bound to a workspace directory. These
  * bypass every workspace-target requirement (open gate, body directory, focus
  * retargeting) because the active global surface owns the panel content.
  */
-export function isGlobalPanelMode(mode: WorkspacePanelMode | undefined): mode is "workgraph-attention" | "workgraph-settings" {
-  return mode === "workgraph-attention" || mode === "workgraph-settings"
+export function isGlobalPanelMode(mode: WorkspacePanelMode | undefined): mode is GlobalPanelMode {
+  return mode === "workgraph-attention" || mode === "workgraph-settings" || mode === "workgraph-tasks"
 }
 // File focus intent — set by the navigator based on which mode the file
 // tree is in. "tab" opens the file as a workspace tab; "review" scrolls

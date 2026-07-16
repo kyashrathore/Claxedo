@@ -3,6 +3,7 @@ import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import {
   isGlobalPanelMode,
   shouldRetargetWorkspacePanelForFocusedPane,
+  type GlobalPanelMode,
   type WorkspacePanelPaneTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import type { useClaxedoState } from "../state/index"
@@ -32,7 +33,7 @@ export function useWorkspacePanelVisualState(input: {
   // sticks on its previous value whenever the live panel mode is not a global
   // WorkGraph mode (a workspace mode or closed), so reopening the top-level
   // toggle restores that tab.
-  const lastWorkGraphMode = createMemo<"workgraph-attention" | "workgraph-settings">((prev) => {
+  const lastWorkGraphMode = createMemo<GlobalPanelMode>((prev) => {
     const mode = input.claxedoState.workspacePanel.state().mode
     return isGlobalPanelMode(mode) ? mode : prev
   }, "workgraph-attention")

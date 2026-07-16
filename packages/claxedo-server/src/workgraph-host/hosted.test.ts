@@ -204,6 +204,39 @@ test("hosted capability GET reads only the persisted attestation and explicit re
   })])
 })
 
+test("hosted capability GET joins the signed owner activation already started by bootstrap", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const discover = vi.fn(async (context: Parameters<ExecutionCapabilitiesPort["read"]>[0]) => {
+    await gate
+    return capabilityCatalog(context)
+  })
+  const workgraph = composition([], undefined, undefined, undefined, {
+    read: discover,
+    refresh: discover,
+  })
+
+  const activation = workgraph.activateOwner(signedAuth("user_a"))
+  await vi.waitFor(() => expect(discover).toHaveBeenCalledTimes(1))
+  let responseSettled = false
+  const response = Promise.resolve(workgraph.router.request("/execution-capabilities", {
+    headers: { authorization: "Bearer user_a" },
+  })).then((value) => {
+    responseSettled = true
+    return value
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(responseSettled).toBe(false)
+  release()
+
+  await expect(activation).resolves.toEqual({ status: "ready" })
+  await expect(response.then(async (value) => ({ status: value.status, body: await value.json() }))).resolves.toMatchObject({
+    status: 200,
+    body: { ownerUserId: "user_a", environments: [{ kind: "hosted_workspace" }] },
+  })
+  expect(discover).toHaveBeenCalledTimes(1)
+})
+
 test("hosted capability GET rejects an expired attestation and explicit refresh records a new revision", async () => {
   let now = 1_000
   let revision = 0
