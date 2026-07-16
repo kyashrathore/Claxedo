@@ -113,6 +113,7 @@ function composition(
         }
         if (args.query && typeof args.query === "object") {
           const query = args.query as Record<string, unknown>
+          if (query.kind === "attention") return internalOwnerAttentionPage()
           if (query.kind === "source_views") return { sourceViews: [] }
           if (query.kind === "source_view") return {
             id: query.sourceViewId,
@@ -502,6 +503,40 @@ describe("hosted WorkGraph composition", () => {
     }))
   })
 
+  test("projects internal Convex Attention ownership to the public owner through the full hosted router", async () => {
+    const calls: Record<string, unknown>[] = []
+    const workgraph = composition(calls)
+
+    const response = await workgraph.router.request("/attention?limit=50", {
+      headers: { authorization: "Bearer user_a" },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      items: [
+        {
+          kind: "work_item",
+          ownerUserId: "user_a",
+          record: { ownerUserId: "user_a" },
+        },
+        {
+          kind: "recap_notification",
+          ownerUserId: "user_a",
+          notification: { ownerUserId: "user_a" },
+          recap: { ownerUserId: "user_a" },
+        },
+      ],
+      total: 2,
+      hasMore: false,
+    })
+    expect(calls).toContainEqual(expect.objectContaining({
+      service_token: "service-secret",
+      organization_id: "org_internal_a",
+      owner_subject: "user_a",
+      query: { kind: "attention", limit: 50 },
+    }))
+  })
+
   test("never accepts an owner selector and keeps two signed users isolated", async () => {
     const calls: Record<string, unknown>[] = []
     const workgraph = composition(calls)
@@ -620,6 +655,87 @@ function credentialStore(secret: string): ControlPlaneCredentials {
     deleteCredentialsByProvider: async () => 0,
     updateCredentialStatus: async () => undefined,
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+  }
+}
+
+function internalOwnerAttentionPage() {
+  return {
+    items: [
+      {
+        id: "work_item_1",
+        ownerUserId: "internal_user_id",
+        kind: "work_item",
+        updatedAt: 5,
+        record: {
+          recordType: "work_item",
+          schemaVersion: 1,
+          ownerUserId: "internal_user_id",
+          version: 1,
+          createdAt: 1,
+          updatedAt: 5,
+          provenance: { actor: { type: "system", id: "convex" } },
+          id: "work_item_1",
+          streamId: "stream_1",
+          title: "Review hosted result",
+          state: "result_ready",
+          priority: 0,
+          dependencyIds: [],
+          sourceRevisionRefs: [],
+          completionContract: {
+            version: 1,
+            mode: "all",
+            requirements: [{
+              id: "review",
+              kind: "owner_confirmation",
+              description: "Owner accepts the hosted result",
+            }],
+          },
+          evidenceIds: [],
+        },
+      },
+      {
+        id: "notification_1",
+        ownerUserId: "internal_user_id",
+        kind: "recap_notification",
+        updatedAt: 9,
+        notification: {
+          id: "notification_1",
+          ownerUserId: "internal_user_id",
+          version: 1,
+          kind: "actionable_recap",
+          state: "unread",
+          streamId: "stream_1",
+          recapId: "recap_1",
+          createdAt: 9,
+          updatedAt: 9,
+        },
+        recap: {
+          recordType: "recap",
+          schemaVersion: 1,
+          ownerUserId: "internal_user_id",
+          version: 1,
+          createdAt: 8,
+          updatedAt: 8,
+          provenance: { actor: { type: "system", id: "convex" } },
+          id: "recap_1",
+          streamId: "stream_1",
+          activityRange: { fromSequence: 1, toSequence: 2, quietSince: 7 },
+          summary: "Stream recap with actionable follow-up",
+          actionableReferences: [{ type: "work_item", id: "work_item_1" }],
+          generation: {
+            state: "succeeded",
+            model: { providerId: "anthropic", modelId: "claude" },
+            effort: "low",
+            generatedAt: 8,
+            method: "agent_session",
+            sessionId: "session_1",
+          },
+          sourceRevisionRefs: [],
+        },
+      },
+    ],
+    total: 2,
+    hasMore: false,
   }
 }
 

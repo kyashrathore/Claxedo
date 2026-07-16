@@ -102,10 +102,12 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
   deletion: WorkGraphOwnerDeletionPort
   executionCapabilities?: ExecutionCapabilitiesPort
   now?: () => number
+  reportError?: (report: WorkGraphHttpErrorReport) => void
 }>) {
   const router = new Hono<{ Variables: Variables }>()
   const pollIntervalMs = Math.max(1, input.pollIntervalMs ?? 100)
   const now = input.now ?? Date.now
+  const reportError = input.reportError ?? reportErrorToConsole
 
   router.use("*", async (context, next) => {
     const candidate = await Promise.resolve().then(() => input.resolveContext(context.req.raw)).catch(() => undefined)
@@ -675,11 +677,41 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     }
   })
 
-  router.onError((_error, context) => {
+  router.onError((error, context) => {
+    try {
+      const workGraphContext = context.get("workGraphContext") as WorkGraphContext | undefined
+      reportError({
+        method: context.req.method,
+        path: context.req.path,
+        ...(workGraphContext?.requestId ? { requestId: workGraphContext.requestId } : {}),
+        error,
+      })
+    } catch {
+      // Reporting must never replace the generic error response.
+    }
     return errorResponse(context, 500, "internal_error", "WorkGraph request failed", false)
   })
 
   return router
+}
+
+export type WorkGraphHttpErrorReport = Readonly<{
+  method: string
+  path: string
+  requestId?: string
+  error: unknown
+}>
+
+function reportErrorToConsole(report: WorkGraphHttpErrorReport) {
+  const error = report.error
+  console.error("workgraph http request failed", {
+    method: report.method,
+    path: report.path,
+    ...(report.requestId ? { requestId: report.requestId } : {}),
+    name: error instanceof Error ? error.name : typeof error,
+    message: error instanceof Error ? error.message : String(error),
+    ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
+  })
 }
 
 function isCursorError(

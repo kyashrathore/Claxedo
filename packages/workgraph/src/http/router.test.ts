@@ -31,7 +31,7 @@ import {
   type WorkGraphCommandHandlers,
   type WorkGraphOwnerDeletionResult,
 } from "../ports"
-import { createWorkGraphHttpRouter } from "./router"
+import { createWorkGraphHttpRouter, type WorkGraphHttpErrorReport } from "./router"
 
 const branded = <Type>(value: string) => value as Type
 
@@ -44,6 +44,25 @@ describe("WorkGraph northbound HTTP router", () => {
     expect(await response.json()).toEqual({
       error: { code: "cursor_invalid", message: "Snapshot cursor is no longer valid", retryable: false },
     })
+  })
+
+  it("reports the underlying exception before returning the generic 500 response", async () => {
+    const reports: WorkGraphHttpErrorReport[] = []
+    const fixture = createFixture({ reportError: (report) => reports.push(report) })
+    fixture.failAttention(new Error("attention owner projection failed"))
+
+    const response = await fixture.app.request("/attention?limit=50", fixture.auth("owner_a"))
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: { code: "internal_error", message: "WorkGraph request failed", retryable: false },
+    })
+    expect(reports).toMatchObject([{
+      method: "GET",
+      path: "/attention",
+      requestId: "request_owner_a",
+      error: expect.objectContaining({ message: "attention owner projection failed" }),
+    }])
   })
 
   it("persists owner-scoped Attention read and clear acknowledgements", async () => {
@@ -528,8 +547,9 @@ describe("WorkGraph northbound HTTP router", () => {
   })
 })
 
-function createFixture() {
+function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttpErrorReport) => void }>) {
   const streams = new Map<StreamID, StreamDto>()
+  let attentionFailure: Error | undefined
   const changes = new Map<OwnerUserID, ChangeEnvelope[]>()
   const streamSequences = new Map<StreamID, number>()
   const operations = new Map<string, Readonly<{ fingerprint: string; result: CommandResult }>>()
@@ -668,7 +688,10 @@ function createFixture() {
           }
         },
       },
-      attention: { list: async () => ({ items: [], total: 0, hasMore: false }) },
+      attention: { list: async () => {
+        if (attentionFailure) throw attentionFailure
+        return { items: [], total: 0, hasMore: false }
+      } },
       streams: { read: async (context: WorkGraphContext, input: Readonly<{ streamId: StreamID }>) => {
         const stream = streams.get(input.streamId)
         return stream?.ownerUserId === context.ownerUserId ? stream : undefined
@@ -833,10 +856,12 @@ function createFixture() {
       resolvedContexts.push(resolved)
       return resolved
     },
+    ...(options?.reportError ? { reportError: options.reportError } : {}),
   })
 
   return {
     app,
+    failAttention: (error: Error) => { attentionFailure = error },
     attentionAcknowledgements,
     resolvedContexts,
     executionContexts,
