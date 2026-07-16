@@ -97,6 +97,8 @@ jobs:
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          WORKGRAPH_SMOKE_BASE_REVISION: ${{ github.sha }}
         run: bun run test:e2e:deployed-workgraph
 
       - name: Upload deployed WorkGraph browser artifacts

@@ -5,7 +5,7 @@
  * product route. The only request instrumentation installed by Clerk's official
  * helper targets the Clerk Frontend API to attach a short-lived testing token.
  */
-import { clerk, clerkSetup, setupClerkTestingToken } from "@clerk/testing/playwright"
+import { clerk, clerkSetup } from "@clerk/testing/playwright"
 import { expect, test, type Locator, type Page, type Response } from "@playwright/test"
 
 const appURL = required("CLAXEDO_APP_URL")
@@ -14,6 +14,8 @@ const publishableKey = required("CLERK_PUBLISHABLE_KEY")
 const smokeUser = required("WORKGRAPH_SMOKE_USER_A_ID")
 const smokeEmail = required("WORKGRAPH_SMOKE_USER_A_EMAIL")
 const smokeOrganization = required("WORKGRAPH_SMOKE_ORGANIZATION_A_ID")
+const smokeRepositoryURL = required("WORKGRAPH_SMOKE_REPOSITORY_URL")
+const smokeBaseRevision = required("WORKGRAPH_SMOKE_BASE_REVISION")
 const guardedOrigins = new Set([new URL(appURL).origin, new URL(controlPlaneURL).origin])
 
 test.describe.serial("deployed WorkGraph", () => {
@@ -33,10 +35,12 @@ test.describe.serial("deployed WorkGraph", () => {
     page.on("pageerror", recordPageError)
     page.on("response", recordNetworkResponse)
 
-    await setupClerkTestingToken({ page })
+    await page.addInitScript(() => {
+      const scope = window as typeof window & { __CLAXEDO_CLERK_TESTING__?: boolean }
+      scope.__CLAXEDO_CLERK_TESTING__ = true
+    })
     await page.goto("/", { waitUntil: "domcontentloaded" })
     expect(await page.evaluate(() => navigator.webdriver)).toBe(false)
-    await installClerkForOfficialTestingHelper(page, publishableKey)
     await clerk.signIn({ page, emailAddress: smokeEmail })
     await page.evaluate(async (organization) => {
       const instance = (window as typeof window & { Clerk: BrowserClerk }).Clerk
@@ -55,6 +59,11 @@ test.describe.serial("deployed WorkGraph", () => {
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill(streamTitle)
+    await create.getByRole("button", { name: "Local worktree" }).click()
+    await page.getByText("Cloud workspace", { exact: true }).click()
+    await create.getByRole("textbox", { name: "GitHub repository URL" }).fill(smokeRepositoryURL)
+    await create.getByRole("combobox", { name: /^Base revision/ }).fill(smokeBaseRevision)
+    await expect(create.getByRole("button", { name: "Create" })).toBeEnabled()
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 
@@ -98,40 +107,14 @@ test.describe.serial("deployed WorkGraph", () => {
 
     page.off("pageerror", recordPageError)
     page.off("response", recordNetworkResponse)
-    await installClerkForOfficialTestingHelper(page, publishableKey)
     await clerk.signOut({ page })
   })
 })
 
 type BrowserClerk = {
-  load(): Promise<void>
+  loaded: boolean
   setActive(input: { organization: string }): Promise<void>
   organization: { id: string } | null
-}
-
-async function installClerkForOfficialTestingHelper(page: Page, key: string) {
-  const frontendApi = clerkFrontendApi(key)
-  await page.addScriptTag({
-    url: `https://${frontendApi}/npm/@clerk/clerk-js@5.125.10/dist/clerk.browser.js`,
-  })
-  await page.evaluate(async (publishableKey) => {
-    const scope = window as typeof window & { Clerk: unknown }
-    if (typeof scope.Clerk !== "function") throw new Error("Clerk browser constructor did not load")
-    const ClerkConstructor = scope.Clerk as new (key: string) => BrowserClerk
-    const instance = new ClerkConstructor(publishableKey)
-    scope.Clerk = instance
-    await instance.load()
-  }, key)
-}
-
-function clerkFrontendApi(key: string) {
-  const encoded = key.replace(/^pk_(?:test|live)_/, "")
-  if (encoded === key) throw new Error("CLERK_PUBLISHABLE_KEY has an unsupported format")
-  const frontendApi = Buffer.from(encoded, "base64").toString("utf8").replace(/\$$/, "").trim()
-  if (!frontendApi || frontendApi.includes("/") || frontendApi.includes(":")) {
-    throw new Error("CLERK_PUBLISHABLE_KEY did not encode a valid Clerk Frontend API host")
-  }
-  return frontendApi
 }
 
 function streamContainer(page: Page, title: string) {

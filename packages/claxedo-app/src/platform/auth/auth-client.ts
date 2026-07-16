@@ -182,6 +182,11 @@ export function initializeClerk(): Promise<void> {
       const next = new Clerk(clerkPubKey);
       clerkInstance = next;
       await next.load();
+      const scope = window as typeof window & {
+        __CLAXEDO_CLERK_TESTING__?: boolean;
+        Clerk?: ClerkInstance;
+      };
+      if (scope.__CLAXEDO_CLERK_TESTING__) scope.Clerk = next;
     })
     .then(() => {
       // Purge stale cross-account state if the user that loaded differs from
