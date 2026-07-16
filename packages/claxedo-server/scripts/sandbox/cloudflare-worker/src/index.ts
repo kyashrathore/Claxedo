@@ -68,6 +68,9 @@ const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
 interface SandboxProcess {
   id: string
   status: "starting" | "running" | "completed" | "failed" | "killed" | "error"
+  kill(signal?: string): Promise<void>
+  getStatus(): Promise<SandboxProcess["status"]>
+  getLogs(): Promise<{ stdout: string; stderr: string }>
   waitForPort(port: number, options: {
     mode: "http"
     path: string
@@ -142,10 +145,12 @@ async function ensureRuntimeProcess(
   port: number,
 ) {
   const existing = await runtimeProcess(sandbox)
-  if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port)) return true
+  if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port, 5_000)) return true
   if (existing) {
-    const refreshed = await runtimeProcess(sandbox)
-    if (refreshed && ["starting", "running"].includes(refreshed.status)) return false
+    const status = await bounded(existing.getStatus(), "workspace-runtime process status")
+    if (["starting", "running"].includes(status)) {
+      await bounded(existing.kill(), "stale workspace-runtime process kill")
+    }
     await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
   }
 
@@ -153,7 +158,24 @@ async function ensureRuntimeProcess(
     sandbox.startProcess(command, { env, processId: RUNTIME_PROCESS_ID }),
     "workspace-runtime process start",
   )
-  return runtimeReady(process, port)
+  if (await runtimeReady(process, port)) return true
+
+  const status = await bounded(process.getStatus(), "workspace-runtime failed process status").catch(() => process.status)
+  const logs = await bounded(process.getLogs(), "workspace-runtime failed process logs").catch(() => ({ stdout: "", stderr: "" }))
+  console.error("workspace-runtime failed to become ready", {
+    status,
+    stdout: safeRuntimeLog(logs.stdout),
+    stderr: safeRuntimeLog(logs.stderr),
+  })
+  return false
+}
+
+function safeRuntimeLog(value: string) {
+  return value
+    .slice(-4_000)
+    .replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[REDACTED PEM]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|COOKIE)[A-Z0-9_]*)=\S+/gi, "$1=[REDACTED]")
 }
 
 function json(data: unknown, status = 200) {
