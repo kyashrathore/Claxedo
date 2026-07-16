@@ -27,6 +27,8 @@ const prevModalSecret = process.env.MODAL_TOKEN_SECRET
 const prevVercelToken = process.env.VERCEL_TOKEN
 const prevVercelTeam = process.env.VERCEL_TEAM_ID
 const prevVercelProject = process.env.VERCEL_PROJECT_ID
+const prevCursor = process.env.CURSOR_API_KEY
+const prevXdgData = process.env.XDG_DATA_HOME
 process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("./store")
@@ -52,6 +54,8 @@ describe("syncLocalCredentials", () => {
     delete process.env.VERCEL_TOKEN
     delete process.env.VERCEL_TEAM_ID
     delete process.env.VERCEL_PROJECT_ID
+    delete process.env.CURSOR_API_KEY
+    delete process.env.XDG_DATA_HOME
     await Promise.all([
       deleteCredentialsByProvider("claude-acp"),
       deleteCredentialsByProvider("claude-sdk"),
@@ -80,6 +84,8 @@ describe("syncLocalCredentials", () => {
     process.env.VERCEL_TOKEN = prevVercelToken
     process.env.VERCEL_TEAM_ID = prevVercelTeam
     process.env.VERCEL_PROJECT_ID = prevVercelProject
+    process.env.CURSOR_API_KEY = prevCursor
+    process.env.XDG_DATA_HOME = prevXdgData
   })
 
   test("syncs env and local sandbox driver credentials into managed storage", async () => {
@@ -278,6 +284,80 @@ describe("syncLocalCredentials", () => {
       expires: 1_790_000_000_000,
       accountId: "acct-openai",
     })
+  })
+
+  test("prefers OpenCode auth under XDG_DATA_HOME over the default data dir", async () => {
+    process.env.XDG_DATA_HOME = path.join(process.env.HOME!, "xdg-data")
+    const xdgDir = path.join(process.env.XDG_DATA_HOME, "opencode")
+    const defaultDir = path.join(process.env.HOME!, ".local", "share", "opencode")
+    mkdirSync(xdgDir, { recursive: true })
+    mkdirSync(defaultDir, { recursive: true })
+    await fs.writeFile(path.join(xdgDir, "auth.json"), JSON.stringify({
+      openai: { type: "api", key: "sk-openai-xdg" },
+    }))
+    await fs.writeFile(path.join(defaultDir, "auth.json"), JSON.stringify({
+      openai: { type: "api", key: "sk-openai-default" },
+    }))
+
+    const result = await syncLocalCredentials(["openai"])
+
+    expect(result.synced).toEqual(["openai"])
+    expect(await resolveSecret("openai")).toBe("sk-openai-xdg")
+  })
+
+  test("discovers OpenCode auth via os.homedir when HOME is unset (Windows-style home)", async () => {
+    const home = process.env.HOME!
+    delete process.env.HOME
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(home)
+    try {
+      const dir = path.join(home, ".local", "share", "opencode")
+      mkdirSync(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "auth.json"), JSON.stringify({
+        openai: { type: "api", key: "sk-openai-userprofile" },
+      }))
+
+      const result = await syncLocalCredentials(["openai"])
+
+      expect(result.synced).toEqual(["openai"])
+      expect(await resolveSecret("openai")).toBe("sk-openai-userprofile")
+    } finally {
+      homedirSpy.mockRestore()
+      process.env.HOME = home
+    }
+  })
+
+  test("syncs Cursor credentials from the CURSOR_API_KEY env var", async () => {
+    process.env.CURSOR_API_KEY = "cursor-env-key"
+
+    const result = await syncLocalCredentials(["cursor-acp"])
+
+    expect(result.synced).toEqual(["cursor-acp"])
+    expect(result.missing).toEqual([])
+    expect(await resolveSecret("cursor-acp")).toBe("cursor-env-key")
+    expect((await getCredentialByProvider("cursor-acp"))?.source).toBe("env")
+  })
+
+  test("does not discover Cursor credentials from local Cursor state", async () => {
+    // Deliberate: the IDE's state.vscdb only holds a cursor.com web-session
+    // JWT, not a CURSOR_API_KEY, so local Cursor files must never sync.
+    const home = process.env.HOME!
+    for (const dir of [
+      path.join(home, "Library", "Application Support", "Cursor", "User", "globalStorage"),
+      path.join(home, ".config", "Cursor", "User", "globalStorage"),
+    ]) {
+      mkdirSync(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "state.vscdb"), "fake-cursor-state-db")
+    }
+    mkdirSync(path.join(home, ".cursor"), { recursive: true })
+    await fs.writeFile(path.join(home, ".cursor", "cli-config.json"), JSON.stringify({
+      authInfo: { authId: "auth0|user_123" },
+    }))
+
+    const result = await syncLocalCredentials(["cursor-acp"])
+
+    expect(result.synced).toEqual([])
+    expect(result.missing).toEqual(["cursor-acp"])
+    expect(await resolveSecret("cursor-acp")).toBeNull()
   })
 
   test("prefers freshest codex account auth over stale top-level auth", async () => {

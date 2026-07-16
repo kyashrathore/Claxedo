@@ -23,11 +23,23 @@ const acp = {
   "claude-sdk": "ANTHROPIC_API_KEY",
   "codex-acp": "OPENAI_API_KEY",
   "codex-app-server": "OPENAI_API_KEY",
+  // cursor-acp is env-only on purpose: cursor-agent needs a dashboard-issued
+  // CURSOR_API_KEY, and the only token on disk (the IDE's state.vscdb entry)
+  // is a cursor.com web-session JWT, not a valid API key.
   "cursor-acp": "CURSOR_API_KEY",
 } as const
 
+// Mirrors the engine's xdg-basedir resolution (packages/core/src/global.ts):
+// XDG_DATA_HOME wins, otherwise ~/.local/share — on Windows too (USERPROFILE,
+// never APPDATA). Falls back across candidates so a login made before
+// XDG_DATA_HOME was set is still found.
 function opencodeAuthPath() {
-  return path.join(homeDir(), ".local", "share", "opencode", "auth.json")
+  const xdg = clean(process.env.XDG_DATA_HOME)
+  const candidates = [
+    ...(xdg ? [path.join(xdg, "opencode", "auth.json")] : []),
+    path.join(homeDir(), ".local", "share", "opencode", "auth.json"),
+  ]
+  return candidates.find((file) => fs.existsSync(file)) ?? candidates[0]
 }
 
 function opencodeAuth() {
