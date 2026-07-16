@@ -51,6 +51,7 @@ const api = anyApi as unknown as {
 
 type Claim = {
   ownerUserId: string
+  ownerSubject: string
   orgId: string
   outboxId: string
   attemptId: string
@@ -226,7 +227,7 @@ export function createHostedWorkGraphRuntime(
               const token = await provider.mintRuntimeAccessToken({
                 workspaceId,
                 hostId: placement.hostId,
-                subject: claim.ownerUserId,
+                subject: claim.ownerSubject,
                 orgId: claim.orgId,
                 role: "owner",
                 ttlMs: 10 * 60_000,

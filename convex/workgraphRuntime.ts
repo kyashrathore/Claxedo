@@ -103,7 +103,13 @@ export const claimLaunches = serviceMutation({
             ),
           )
           .unique()
-        if (!item || attempt.organization_id !== row.organization_id || item.organization_id !== row.organization_id) {
+        const owner = await ctx.db.get(row.owner_user_id)
+        if (
+          !item ||
+          !owner?.clerk_subject ||
+          attempt.organization_id !== row.organization_id ||
+          item.organization_id !== row.organization_id
+        ) {
           await ctx.db.patch(row._id, {
             status: "failed",
             last_error: "Attempt owner or Work Item is unavailable",
@@ -138,6 +144,7 @@ export const claimLaunches = serviceMutation({
         })
         return {
           ownerUserId: String(row.owner_user_id),
+          ownerSubject: owner.clerk_subject,
           outboxId: row.id,
           attemptId: attempt.id,
           streamId: attempt.stream_id,

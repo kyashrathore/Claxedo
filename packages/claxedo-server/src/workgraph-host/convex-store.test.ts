@@ -3529,7 +3529,7 @@ class ConvexHarness {
     const organizationIds = typeof organizations === "string" ? [organizations] : organizations
     this.rows.set(
       "users",
-      owners.map((owner) => ({ _id: owner, token_identifier: `token:${owner}` })),
+      owners.map((owner) => ({ _id: owner, token_identifier: `token:${owner}`, clerk_subject: owner })),
     )
     this.rows.set(
       "org_memberships",

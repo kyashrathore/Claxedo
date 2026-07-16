@@ -1517,6 +1517,7 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("binds scoped Attempt and Connection tools before prompting without inferring completion", async () => {
     const mutations: Record<string, unknown>[] = []
+    const mintedTokens: Record<string, unknown>[] = []
     const ensureInputs: Record<string, unknown>[] = []
     const publishedLaunches: Record<string, unknown>[] = []
     const publishedSnapshots: Record<string, unknown>[] = []
@@ -1552,7 +1553,10 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         relay: {
           provider: {
-            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            mintRuntimeAccessToken: async (input: Record<string, unknown>) => {
+              mintedTokens.push(input)
+              return { token: "runtime-token", expiresAt: 1000, jti: "jti" }
+            },
             getRelayEndpoint: async () => "https://relay.test",
           },
         },
@@ -1581,6 +1585,7 @@ describe("hosted WorkGraph runtime outbox", () => {
               return [
                 {
                   ownerUserId: "internal-user-a",
+                  ownerSubject: "clerk-user-a",
                   orgId: "org-a",
                   outboxId: "outbox-a",
                   attemptId: "attempt-a",
@@ -1692,6 +1697,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       launched: [{ state: "running" }],
       results: [{ settled: false, state: "awaiting_explicit_completion" }],
     })
+    expect(mintedTokens[0]).toMatchObject({ subject: "clerk-user-a", orgId: "org-a" })
     expect(mutations).toHaveLength(5)
     expect(ensureInputs[0]).toMatchObject({
       env: {
@@ -1923,6 +1929,7 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("claims an admitted fenced Attempt and records truthful attention", async () => {
     const db = new RuntimeDb({
+      users: [{ _id: "user-a", clerk_subject: "clerk-user-a" }],
       workgraph_outbox: [
         {
           _id: "outbox-row",
@@ -1987,11 +1994,12 @@ describe("hosted WorkGraph runtime outbox", () => {
       worker_id: "worker-a",
       now: 10,
       limit: 10,
-    })) as Array<{ outboxId: string; attemptId: string; leaseEpoch: number; prompt: string }>
+    })) as Array<{ outboxId: string; attemptId: string; leaseEpoch: number; prompt: string; ownerSubject: string }>
     expect(claims).toMatchObject([
       {
         outboxId: "outbox-a",
         attemptId: "attempt-a",
+        ownerSubject: "clerk-user-a",
         leaseEpoch: 2,
         queueLagMs: 9,
         activeLeaseAgeMs: 0,
@@ -2075,6 +2083,7 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("recovers an expired admitted launch after restart and fences its old callback epoch", async () => {
     const db = new RuntimeDb({
+      users: [{ _id: "user-a", clerk_subject: "clerk-user-a" }],
       workgraph_outbox: [
         {
           _id: "outbox-row",
