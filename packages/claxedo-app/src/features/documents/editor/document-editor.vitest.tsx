@@ -260,4 +260,35 @@ describe("DocumentEditor", () => {
     expect(screen.getByLabelText("Your draft")).toHaveTextContent("human draft")
     expect(screen.getByLabelText("Current disk version")).toHaveTextContent("external again")
   })
+
+  test("an autosave self-event preserves the explicitly selected source editor and its DOM", async () => {
+    let onEvent: ((event: { type: "document.changed"; document_id: string }) => void) | undefined
+    let disk = document("# Initial\n")
+    const save = vi.fn(async (_id: string, request: { displayName: string; markdown: string }) => {
+      disk = { ...disk, displayName: request.displayName, markdown: request.markdown, version: "opaque-v2" }
+      return { ok: true as const, version: disk.version }
+    })
+    const client = {
+      ...api(save),
+      open: vi.fn(async () => disk),
+      watch: vi.fn(async (_query, next: typeof onEvent, signal?: AbortSignal) => {
+        onEvent = next
+        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
+      }),
+    }
+    render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
+    await waitFor(() => expect(client.open).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
+    const source = screen.getByRole("textbox", { name: "Document Markdown source" })
+    fireEvent.input(source, { target: { value: "# Human draft\n" } })
+    fireEvent.blur(source)
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved"))
+
+    onEvent?.({ type: "document.changed", document_id: "doc-1" })
+    await waitFor(() => expect(client.open).toHaveBeenLastCalledWith("doc-1"))
+    expect(screen.getByText("Source mode")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Document Markdown source" })).toBe(source)
+    expect(source).toHaveValue("# Human draft\n")
+  })
 })

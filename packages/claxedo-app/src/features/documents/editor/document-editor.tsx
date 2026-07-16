@@ -81,10 +81,15 @@ export default function DocumentEditor(props: DocumentEditorProps) {
             return { displayName: current.displayName, markdown: current.markdown, version: current.version }
           },
           apply: (current) => {
+            const before = controller.snapshot()
             const applied = controller.applyExternalChange(current)
             if (applied.status === "conflicted") return
-            setDetection(detectMarkdown(current.markdown))
-            props.onTitleChange?.(current.displayName)
+            if (applied.draft.markdown !== before.draft.markdown) {
+              setDetection(detectMarkdown(applied.draft.markdown))
+            }
+            if (applied.draft.displayName !== before.draft.displayName) {
+              props.onTitleChange?.(applied.draft.displayName)
+            }
           },
           isUnavailable: (error) =>
             error instanceof DocumentApiError && (error.status === 404 || error.code === "document_archived"),
