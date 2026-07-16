@@ -650,6 +650,59 @@ describe("WorkGraph execution capability composition", () => {
     expect(released).toEqual(destroyed)
   })
 
+  test("bounds stalled hosted catalog requests and identifies the failed endpoint", async () => {
+    const destroyed: string[] = []
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        ensure: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        target: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        destroy: async (workspaceId: string) => {
+          destroyed.push(workspaceId)
+          return { ok: true, status: "destroyed" }
+        },
+        release: async () => ({ released: true }),
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      requestTimeoutMs: 10,
+      request: async (request, init) => {
+        if (!new URL(request).pathname.endsWith("/provider")) return Response.json({})
+        return await new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
+        })
+      },
+    })
+
+    await expect(capabilities.refresh(context)).rejects.toMatchObject({
+      code: "execution_capabilities_unavailable",
+      message: expect.stringContaining("/provider via relay.test failed"),
+    })
+    expect(destroyed).toHaveLength(1)
+  })
+
   test("isolates hosted catalog workspace identity and cache by organization and owner", async () => {
     const ensured: Array<{ workspaceId: string; labels: Record<string, string> }> = []
     const capabilities = createHostedExecutionCapabilities({

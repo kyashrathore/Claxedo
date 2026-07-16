@@ -20,8 +20,11 @@ type HostedExecutionCapabilitiesInput = Readonly<{
   readConnections(context: WorkGraphContext): Promise<readonly ExecutionConnectionCapability[]>
   connectionToolIds: readonly string[]
   now?: () => number
+  requestTimeoutMs?: number
   request?: (url: string, init?: RequestInit) => Promise<Response>
 }>
+
+const DEFAULT_CATALOG_REQUEST_TIMEOUT_MS = 30_000
 
 export function createHostedExecutionCapabilities(input: HostedExecutionCapabilitiesInput) {
   const now = input.now ?? Date.now
@@ -137,17 +140,19 @@ async function readHostedCatalog(
   const relay = await input.relayProvider.getRelayEndpoint(workspaceId, placement.homeRegion as ClaxedoRegion)
   const request = async (pathname: string) => {
     const url = `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${pathname}`
-    const response = await (input.request ?? fetch)(
-      url,
-      {
-        headers: {
-          authorization: `Bearer ${token.token}`,
-          "x-opencode-directory": "/workspace",
-          "accept-encoding": "identity",
-        },
-        signal: AbortSignal.timeout(5_000),
+    const response = await (input.request ?? fetch)(url, {
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        "x-opencode-directory": "/workspace",
+        "accept-encoding": "identity",
       },
-    )
+      signal: AbortSignal.timeout(input.requestTimeoutMs ?? DEFAULT_CATALOG_REQUEST_TIMEOUT_MS),
+    }).catch((error) => {
+      const target = new URL(url)
+      throw new Error(
+        `Hosted execution catalog ${target.pathname}${target.search} via ${target.host} failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
     if (!response.ok) {
       const body = await response.clone().json().catch(() => undefined)
       const error = body && typeof body === "object" && "error" in body && body.error && typeof body.error === "object"
