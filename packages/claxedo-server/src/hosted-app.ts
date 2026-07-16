@@ -75,6 +75,7 @@ import { createConvexDocumentStore } from "./document-host/convex-store"
 import type { DocumentStore } from "./document-store"
 import { workGraphHttpTelemetry } from "./workgraph-host/operational-telemetry"
 import type { SettlementDispatcher } from "./workgraph-host/settlement-dispatcher"
+import type { WorkGraphConvexExecutor } from "./workgraph-host/convex-store"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -83,12 +84,16 @@ export type HostedAppOverrides = {
   centralSessionRuntime?: boolean
   /** Test/custom composition seam; production composes Convex from env. */
   workgraph?: HostedWorkGraph
+  /** Test/custom executor seam for the production WorkGraph composition. */
+  workGraphExecutor?: WorkGraphConvexExecutor
   /** Test/custom seam for signed bootstrap owner activation. */
   workGraphOwnerActivation?: (auth: SignedControlPlaneAuth) => Promise<HostedWorkGraphOwnerActivation>
   /** Bounded durable reconciler shared by cron and the protected admin trigger. */
   workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
-  /** Worker request-local settlement adapter; receives the active ExecutionContext. */
-  workGraphSettlementDispatcher?: (
+  /** Fixed settlement adapter for Node/self-host compositions. */
+  workGraphSettlementDispatcher?: SettlementDispatcher
+  /** Request-bound Worker adapter; binds the active ExecutionContext. */
+  workGraphSettlementDispatcherForRequest?: (
     waitUntil: (promise: Promise<unknown>) => void,
   ) => SettlementDispatcher
   /** Test seam for the complete_attempt transcript-retention gate. */
@@ -193,7 +198,11 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ...(services.authority ? { authority: services.authority } : {}),
       ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
       ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+      ...(overrides.workGraphExecutor ? { executor: overrides.workGraphExecutor } : {}),
       ...(overrides.workGraphSettlementDispatcher
+        ? { settlementDispatcher: overrides.workGraphSettlementDispatcher }
+        : {}),
+      ...(overrides.workGraphSettlementDispatcherForRequest
         ? { settlementDispatcherForRequest: (request: Request) => settlementDispatcherByRequest.get(request) }
         : {}),
       telemetry: services.telemetry,
@@ -218,10 +227,10 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     const url = new URL(context.req.url)
     url.pathname = url.pathname === "/api/workgraph" ? "/" : url.pathname.slice("/api/workgraph".length)
     const request = new Request(url, context.req.raw)
-    if (!overrides.workgraph && overrides.workGraphSettlementDispatcher) {
+    if (!overrides.workgraph && overrides.workGraphSettlementDispatcherForRequest) {
       settlementDispatcherByRequest.set(
         request,
-        overrides.workGraphSettlementDispatcher(
+        overrides.workGraphSettlementDispatcherForRequest(
           context.executionCtx.waitUntil.bind(context.executionCtx),
         ),
       )

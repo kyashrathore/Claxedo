@@ -41,7 +41,7 @@ function fakePlane(
     },
     authority: {
       auditAllow: vi.fn(),
-      usersMe: vi.fn(async () => ({ id: "user_1" })),
+      usersMe: vi.fn(async () => ({ id: "user_1", user_id: "user_1" })),
       resolveOrgId: vi.fn(async (auth) => `org_${auth.user.subject}`),
       authorizeProject: vi.fn(async (auth, args) =>
         auth.user.subject === "tenant_a" && args.orgId === "org_tenant_a"
@@ -244,6 +244,52 @@ describe("hosted app", () => {
     const plane = fakePlane()
     plane.env = { CLAXEDO_DEPLOYMENT_MODE: "hosted" }
     expect(() => createHostedApp(plane)).toThrow("Hosted WorkGraph requires Convex storage")
+  })
+
+  test("binds a successful WorkGraph command nudge to its request ExecutionContext", async () => {
+    const nudges: Array<{ organizationId: string; ownerUserId: string }> = []
+    const waitUntil = vi.fn()
+    const app = createHostedApp(fakePlane(), {
+      workGraphExecutor: {
+        query: async () => ({}),
+        mutation: async () => ({
+          ok: true,
+          operationId: "create_stream_a",
+          cursor: "1",
+          value: { streamId: "stream_a" },
+        }),
+      },
+      workGraphSettlementDispatcherForRequest: (schedule) => ({
+        nudge(tenant) {
+          nudges.push(tenant)
+          schedule(Promise.resolve())
+        },
+      }),
+    })
+
+    const response = await app.fetch(
+      new Request("http://cp.test/api/workgraph/commands", {
+        method: "POST",
+        headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "create_stream_a",
+          command: { version: 1, type: "create_stream", title: "Fast lane" },
+        }),
+      }),
+      undefined,
+      { waitUntil, passThroughOnException: vi.fn() } as never,
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      operationId: "create_stream_a",
+      cursor: "1",
+      value: { streamId: "stream_a" },
+    })
+    expect(nudges).toEqual([{ organizationId: "org_tenant_a", ownerUserId: "user_1" }])
+    expect(waitUntil).toHaveBeenCalledOnce()
+    await Promise.all(waitUntil.mock.calls.map((call) => call[0]))
   })
 
   test("CORS allows deployment-configured app origins (exact and suffix) and denies unknown ones", async () => {

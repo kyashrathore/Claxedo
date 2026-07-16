@@ -52,7 +52,11 @@ import {
   instrumentWorkGraphCommands,
   workGraphHttpTelemetry,
 } from "./operational-telemetry"
-import { noopSettlementDispatcher, type SettlementDispatcher } from "./settlement-dispatcher"
+import {
+  noopSettlementDispatcher,
+  type SettlementDispatcher,
+  type SettlementTenant,
+} from "./settlement-dispatcher"
 
 export type HostedWorkGraph = ReturnType<typeof createHostedWorkGraph>
 
@@ -126,6 +130,7 @@ export function createHostedWorkGraph(
   const executor = input.executor ?? createWorkGraphConvexExecutor(url!)
   const clerkOrgByContext = new WeakMap<WorkGraphContext, string>()
   const signedAuthByContext = new WeakMap<WorkGraphContext, SignedControlPlaneAuth>()
+  const settlementTenantByContext = new WeakMap<WorkGraphContext, SettlementTenant>()
   const settlementDispatcherByContext = new WeakMap<WorkGraphContext, SettlementDispatcher>()
   const webhookVerifier =
     input.webhookVerifier ??
@@ -158,10 +163,9 @@ export function createHostedWorkGraph(
       if (!result.ok) return result
       try {
         const dispatcher = settlementDispatcherByContext.get(context) ?? settlementDispatcher
-        dispatcher.nudge({
-          organizationId: context.organizationId,
-          ownerUserId: context.ownerUserId,
-        })
+        const tenant = settlementTenantByContext.get(context)
+        if (!tenant) throw new Error("Hosted WorkGraph settlement tenant is unavailable")
+        dispatcher.nudge(tenant)
       } catch {
         // A settlement nudge is advisory; the durable command result owns the response.
       }
@@ -174,7 +178,10 @@ export function createHostedWorkGraph(
     executor,
   })
   const ownerContext = async (auth: SignedControlPlaneAuth, requestId: string): Promise<WorkGraphContext> => {
-    const organizationId = await trustedOrganizationId(authority, auth)
+    const [organizationId, ownerUserId] = await Promise.all([
+      trustedOrganizationId(authority, auth),
+      trustedOwnerUserId(authority, auth),
+    ])
     const context: WorkGraphContext = {
       organizationId: organizationId as never,
       ownerUserId: auth.user.subject as never,
@@ -184,6 +191,7 @@ export function createHostedWorkGraph(
     }
     if (auth.user.orgId) clerkOrgByContext.set(context, auth.user.orgId)
     signedAuthByContext.set(context, auth)
+    settlementTenantByContext.set(context, { organizationId, ownerUserId })
     return context
   }
   const resolveContext = async (request: Request): Promise<WorkGraphContext> => {
@@ -340,6 +348,23 @@ async function trustedOrganizationId(authority: WorkspaceAuthority, auth: Signed
     503,
     "workspace_authority_unavailable",
     "WorkGraph organization identity is unavailable",
+  )
+}
+
+async function trustedOwnerUserId(authority: WorkspaceAuthority, auth: SignedControlPlaneAuth) {
+  try {
+    const identity = await authority.usersMe(auth)
+    if (identity && typeof identity === "object" && !Array.isArray(identity)) {
+      const ownerUserId = (identity as Record<string, unknown>).user_id
+      if (typeof ownerUserId === "string" && ownerUserId.trim()) return ownerUserId.trim()
+    }
+  } catch (error) {
+    if (error instanceof ControlPlaneAuthError) throw error
+  }
+  throw new ControlPlaneAuthError(
+    503,
+    "workspace_authority_unavailable",
+    "WorkGraph owner identity is unavailable",
   )
 }
 

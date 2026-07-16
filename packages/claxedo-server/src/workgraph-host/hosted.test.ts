@@ -46,6 +46,7 @@ function composition(
     })),
     requestId: () => "request-hosted",
     authority: {
+      usersMe: async (auth: SignedControlPlaneAuth) => ({ user_id: `internal_${auth.user.subject}` }),
       resolveOrgId: async (auth: SignedControlPlaneAuth) =>
         auth.user.orgId === "clerk_org_b" ? "org_internal_b" : "org_internal_a",
     } as unknown as WorkspaceAuthority,
@@ -525,7 +526,7 @@ describe("hosted WorkGraph composition", () => {
 
     expect(response.status).toBe(200)
     expect(nudge).toHaveBeenCalledOnce()
-    expect(nudge).toHaveBeenCalledWith({ organizationId: "org_internal_a", ownerUserId: "user_a" })
+    expect(nudge).toHaveBeenCalledWith({ organizationId: "org_internal_a", ownerUserId: "internal_user_a" })
   })
 
   test("does not nudge settlement when a command returns a failure", async () => {

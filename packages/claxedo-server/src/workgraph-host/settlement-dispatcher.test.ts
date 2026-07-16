@@ -7,17 +7,18 @@ test("serializes settlement runs for the same tenant", async () => {
   const secondStarted = Promise.withResolvers<void>()
   let running = 0
   let maxRunning = 0
-  const settle = vi.fn(async () => {
-    running += 1
-    maxRunning = Math.max(maxRunning, running)
-    if (settle.mock.calls.length === 1) {
-      firstStarted.resolve()
-      await releaseFirst.promise
-    } else {
+    const settle = vi.fn(async () => {
+      running += 1
+      maxRunning = Math.max(maxRunning, running)
+      if (settle.mock.calls.length === 1) {
+        firstStarted.resolve()
+        await releaseFirst.promise
+        running -= 1
+        return
+      }
       secondStarted.resolve()
-    }
-    running -= 1
-  })
+      running -= 1
+    })
   const dispatcher = createNodeSettlementDispatcher({ settle })
   const tenant = { organizationId: "org_1", ownerUserId: "user_1" }
 

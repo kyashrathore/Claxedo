@@ -5,6 +5,10 @@ export type SettlementTenant = {
   ownerUserId: string
 }
 
+export function settlementTenantKey(tenant: SettlementTenant) {
+  return JSON.stringify([tenant.organizationId, tenant.ownerUserId])
+}
+
 export interface SettlementDispatcher {
   /** Fire-and-forget. Must never throw into the caller or block the response. */
   nudge(tenant: SettlementTenant): void
@@ -46,7 +50,7 @@ export function createNodeSettlementDispatcher(input: Readonly<{
 
   return {
     nudge(tenant) {
-      const key = JSON.stringify([tenant.organizationId, tenant.ownerUserId])
+      const key = settlementTenantKey(tenant)
       if (chains.has(key)) {
         queued.set(key, tenant)
         return

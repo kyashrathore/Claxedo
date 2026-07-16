@@ -21,6 +21,7 @@ import type { SandboxFetchOptions } from "./sandbox-target-fetch"
 import { ControlPlaneAuthError } from "./control-plane/auth"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
+import { createNodeSettlementDispatcher } from "./workgraph-host/settlement-dispatcher"
 
 function centralStorePorts() {
   const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
@@ -95,9 +96,17 @@ export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
   const plane = composeHostedNodeControlPlane(env)
   const turnCredentials = createConnectionTurnCredentials()
   const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
+  const workGraphSettlementDispatcher = workGraphRuntime
+    ? createNodeSettlementDispatcher({
+        settle: (tenant) => workGraphRuntime.reconcile({ tenants: [tenant], trigger: "nudge" }),
+      })
+    : undefined
   const app = createHostedApp(plane, {
     centralSessionRuntime: true,
     ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
+    ...(workGraphSettlementDispatcher
+      ? { workGraphSettlementDispatcher }
+      : {}),
   })
   const centralControl = createCentralControlApp(plane.services, {
     authConfig: plane.services.auth.config,

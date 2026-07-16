@@ -9,6 +9,7 @@ import {
   recordFailure,
   recordResult,
   requestCompletionRetry,
+  retryLaunch,
   renewWorkGraphAttemptLease,
   settleRejectedProvision,
 } from "../../../../convex/workgraphRuntime"
@@ -76,10 +77,11 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         {
           _id: "duplicate-stale-a",
-          organization_id: "org-a",
-          owner_user_id: "user-a",
+          organization_id: "org-expired",
+          owner_user_id: "user-expired",
           status: "claimed",
           available_at: 20_000,
+          claim_expires_at: 90_000,
         },
         {
           _id: "stale-claimed-b",
@@ -87,6 +89,7 @@ describe("hosted WorkGraph runtime outbox", () => {
           owner_user_id: "user-b",
           status: "claimed",
           available_at: 10_000,
+          claim_expires_at: 100_001,
         },
         {
           _id: "fresh-pending",
@@ -112,8 +115,114 @@ describe("hosted WorkGraph runtime outbox", () => {
       }),
     ).resolves.toEqual([
       { organizationId: "org-a", ownerUserId: "user-a" },
-      { organizationId: "org-b", ownerUserId: "user-b" },
+      { organizationId: "org-expired", ownerUserId: "user-expired" },
     ])
+  })
+
+  test("pages expired claims without letting active claims consume the budget", async () => {
+    const db = new RuntimeDb({
+      workgraph_outbox: [
+        {
+          _id: "active-claim",
+          organization_id: "org-active",
+          owner_user_id: "user-active",
+          status: "claimed",
+          available_at: 1,
+          claim_expires_at: 100_001,
+        },
+        {
+          _id: "expired-claim",
+          organization_id: "org-expired",
+          owner_user_id: "user-expired",
+          status: "claimed",
+          available_at: 2,
+          claim_expires_at: 99_999,
+        },
+      ],
+    })
+
+    await expect(
+      handler(listStaleTenants)({ db } as never, {
+        service_token: "service-secret",
+        now: 100_000,
+        limit: 1,
+      }),
+    ).resolves.toEqual([{ organizationId: "org-expired", ownerUserId: "user-expired" }])
+  })
+
+  test("does not let one tenant's row backlog consume the distinct-tenant result window", async () => {
+    const db = new RuntimeDb({
+      workgraph_outbox: [
+        ...Array.from({ length: 501 }, (_, index) => ({
+          _id: `noisy-${index}`,
+          organization_id: "org-noisy",
+          owner_user_id: "user-noisy",
+          status: "pending",
+          available_at: index,
+        })),
+        {
+          _id: "quiet-tenant",
+          organization_id: "org-quiet",
+          owner_user_id: "user-quiet",
+          status: "pending",
+          available_at: 1,
+        },
+      ],
+    })
+
+    await expect(
+      handler(listStaleTenants)({ db } as never, {
+        service_token: "service-secret",
+        now: 100_000,
+        limit: 500,
+      }),
+    ).resolves.toEqual([
+      { organizationId: "org-noisy", ownerUserId: "user-noisy" },
+      { organizationId: "org-quiet", ownerUserId: "user-quiet" },
+    ])
+  })
+
+  test("returns the production retry hint when provisioning requeues a launch", async () => {
+    const db = new RuntimeDb({
+      workgraph_outbox: [{
+        _id: "outbox-row",
+        owner_user_id: "user-a",
+        id: "outbox-a",
+        status: "claimed",
+        claimed_by: "worker-a",
+        payload: { attemptId: "attempt-a", leaseEpoch: 2 },
+      }],
+      workgraph_attempts: [{
+        _id: "attempt-row",
+        owner_user_id: "user-a",
+        id: "attempt-a",
+        work_item_id: "item-a",
+        state: "admitted",
+      }],
+      workgraph_leases: [{
+        _id: "lease-row",
+        owner_user_id: "user-a",
+        resource_type: "work_item",
+        resource_id: "item-a",
+        holder_id: "attempt-a",
+        epoch: 2,
+      }],
+    })
+
+    await expect(
+      handler(retryLaunch)({ db } as never, {
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        outbox_id: "outbox-a",
+        attempt_id: "attempt-a",
+        lease_epoch: 2,
+        worker_id: "worker-a",
+        available_at: 11_500,
+        reason: "Hosted workspace is provisioning",
+        now: 10_000,
+      }),
+    ).resolves.toEqual({ settled: true, retryAfterMs: 1_500 })
   })
 
   test("partitions workspace identity by organization, owner, and Stream scope", async () => {
@@ -815,7 +924,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         reason: "workspace cleanup unavailable",
         now: 20,
       }),
-    ).resolves.toEqual({ settled: true })
+    ).resolves.toEqual({ settled: true, retryAfterMs: 60_000 })
     expect(
       StreamReplacementResetSchema.parse(db.row("workgraph_streams", "stream-row")?.replacement_reset),
     ).toMatchObject({ state: "attention", proposalId: "proposal-a" })

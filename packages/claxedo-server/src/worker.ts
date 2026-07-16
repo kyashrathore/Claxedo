@@ -33,6 +33,7 @@ import { skipOverlappingReconcile } from "./workgraph-host/reconcile-serialize"
 import type { WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
 import {
   createCloudflareSettlementDispatcher,
+  dispatchCloudflareSettlement,
   WorkGraphSettler,
   type WorkGraphSettlerNamespace,
 } from "./workgraph-host/cloudflare-settlement-dispatcher"
@@ -81,7 +82,7 @@ function buildApp(env: WorkerEnv): Hono {
     ...(workGraphReconcile ? { workGraphReconcile } : {}),
     ...(env.WORKGRAPH_SETTLER
       ? {
-          workGraphSettlementDispatcher: (waitUntil: (promise: Promise<unknown>) => void) =>
+          workGraphSettlementDispatcherForRequest: (waitUntil: (promise: Promise<unknown>) => void) =>
             createCloudflareSettlementDispatcher({ namespace: env.WORKGRAPH_SETTLER!, waitUntil }),
         }
       : {}),
@@ -164,11 +165,7 @@ const handler = {
       if (!ctx) {
         throw new Error("WorkGraph settlement backstop requires a Worker ExecutionContext")
       }
-      const dispatcher = createCloudflareSettlementDispatcher({
-        namespace: env.WORKGRAPH_SETTLER,
-        waitUntil: (promise) => ctx.waitUntil(promise),
-      })
-      tenants.forEach((tenant) => dispatcher.nudge(tenant))
+      await Promise.all(tenants.map((tenant) => dispatchCloudflareSettlement(env.WORKGRAPH_SETTLER!, tenant)))
       return
     }
     const hostedEnv = env as unknown as HostedWorkerEnv

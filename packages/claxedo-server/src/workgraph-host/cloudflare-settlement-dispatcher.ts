@@ -5,7 +5,11 @@ import {
 } from "../control-plane/hosted-services"
 import { reportError } from "../observability/report"
 import { createHostedWorkGraphRuntime } from "./hosted-runtime"
-import type { SettlementDispatcher, SettlementTenant } from "./settlement-dispatcher"
+import {
+  settlementTenantKey,
+  type SettlementDispatcher,
+  type SettlementTenant,
+} from "./settlement-dispatcher"
 
 const MAX_BACKOFF_MS = 30_000
 const MIN_BACKOFF_MS = 1_000
@@ -36,6 +40,24 @@ export interface WorkGraphSettlerNamespace {
   get(id: unknown): WorkGraphSettlerStub
 }
 
+export async function dispatchCloudflareSettlement(
+  namespace: WorkGraphSettlerNamespace,
+  tenant: SettlementTenant,
+) {
+  const response = await namespace
+    .get(namespace.idFromName(settlementTenantKey(tenant)))
+    .fetch(
+      new Request("https://workgraph-settler.internal/nudge", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(tenant),
+      }),
+    )
+  if (!response.ok) {
+    throw new Error(`WorkGraph settler nudge failed: ${response.status} ${await response.text()}`.trim())
+  }
+}
+
 type SettlerOptions = Readonly<{
   now?: () => number
   settle?: (tenant: SettlementTenant) => Promise<unknown>
@@ -46,10 +68,6 @@ type RearmHint = Readonly<{
   retryAfterMs?: number
   keepAliveMs?: number
 }>
-
-export function settlementTenantKey(tenant: SettlementTenant) {
-  return JSON.stringify([tenant.organizationId, tenant.ownerUserId])
-}
 
 export function createCloudflareSettlementDispatcher(input: Readonly<{
   namespace: WorkGraphSettlerNamespace
@@ -68,21 +86,7 @@ export function createCloudflareSettlementDispatcher(input: Readonly<{
     nudge(tenant) {
       try {
         input.waitUntil(
-          input.namespace
-            .get(input.namespace.idFromName(settlementTenantKey(tenant)))
-            .fetch(
-              new Request("https://workgraph-settler.internal/nudge", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(tenant),
-              }),
-            )
-            .then(async (response) => {
-              if (!response.ok) {
-                throw new Error(`WorkGraph settler nudge failed: ${response.status} ${await response.text()}`.trim())
-              }
-            })
-            .catch(report),
+          dispatchCloudflareSettlement(input.namespace, tenant).catch(report),
         )
       } catch (error) {
         report(error)
@@ -97,7 +101,7 @@ export function createCloudflareSettlementDispatcher(input: Readonly<{
  */
 export class WorkGraphSettler {
   private tenantLoading?: Promise<SettlementTenant>
-  private nudgeChain = Promise.resolve()
+  private nudgeScheduled?: Promise<void>
   private settleRuntime?: (tenant: SettlementTenant) => Promise<unknown>
   private readonly now: () => number
 
@@ -115,50 +119,70 @@ export class WorkGraphSettler {
     }
     const body = await request.json().catch(() => undefined)
     const tenant = requireTenant(body)
-    const scheduled = this.nudgeChain.then(() => this.scheduleNudge(tenant))
-    this.nudgeChain = scheduled.catch(() => undefined)
-    await scheduled
+    await this.loadTenant(tenant)
+    if (!this.nudgeScheduled) {
+      const scheduled = this.scheduleNudge().finally(() => {
+        if (this.nudgeScheduled === scheduled) this.nudgeScheduled = undefined
+      })
+      this.nudgeScheduled = scheduled
+    }
+    await this.nudgeScheduled
     return new Response(null, { status: 204 })
   }
 
   async alarm() {
     const tenant = await this.loadTenant()
-    const now = this.now()
-    const persistedStartedAt = await this.state.storage.get<number>(STARTED_AT_KEY)
-    const startedAt = persistedStartedAt ?? now
+    const invokedAt = this.now()
+    const [persistedStartedAt, storedRetryUntil, storedBackoff] = await Promise.all([
+      this.state.storage.get<number>(STARTED_AT_KEY),
+      this.state.storage.get<number>(RETRY_UNTIL_KEY),
+      this.state.storage.get<number>(BACKOFF_KEY),
+    ])
+    const startedAt = persistedStartedAt ?? invokedAt
     if (persistedStartedAt === undefined) await this.state.storage.put(STARTED_AT_KEY, startedAt)
     const result = await this.settle(tenant)
+    const completedAt = this.now()
     const hint = settlementRearmHint(result)
-    const priorRetryUntil = (await this.state.storage.get<number>(RETRY_UNTIL_KEY)) ?? 0
+    const priorRetryUntil = storedRetryUntil ?? 0
     const retryUntil = Math.max(
       priorRetryUntil,
-      hint.retryAfterMs === undefined ? 0 : now + hint.retryAfterMs,
-      hint.keepAliveMs === undefined ? 0 : now + hint.keepAliveMs,
+      hint.retryAfterMs === undefined ? 0 : completedAt + hint.retryAfterMs,
+      hint.keepAliveMs === undefined ? 0 : completedAt + hint.keepAliveMs,
     )
-    if ((!hint.pending && retryUntil <= now) || now - startedAt >= SETTLEMENT_WINDOW_MS) {
+    if ((!hint.pending && retryUntil <= completedAt) || completedAt - startedAt >= SETTLEMENT_WINDOW_MS) {
       await this.state.storage.delete(PROGRESS_KEYS)
       return
     }
-    const priorBackoff = (await this.state.storage.get<number>(BACKOFF_KEY)) ?? 0
+    const priorBackoff = storedBackoff ?? 0
     const delay = Math.min(
       MAX_BACKOFF_MS,
       Math.max(MIN_BACKOFF_MS, hint.retryAfterMs ?? 0, priorBackoff ? priorBackoff * 2 : 0),
     )
-    await this.state.storage.put(BACKOFF_KEY, delay)
-    await this.state.storage.put(RETRY_UNTIL_KEY, retryUntil)
-    await this.state.storage.setAlarm(now + delay)
+    await Promise.all([
+      this.state.storage.put(BACKOFF_KEY, delay),
+      this.state.storage.put(RETRY_UNTIL_KEY, retryUntil),
+    ])
+    await this.setEarlierAlarm(completedAt + delay)
   }
 
-  private async scheduleNudge(tenant: SettlementTenant) {
-    await this.loadTenant(tenant)
+  private async scheduleNudge() {
+    await this.setEarlierAlarm(this.now())
+  }
+
+  private async setEarlierAlarm(scheduledTime: number) {
     const alarm = await this.state.storage.getAlarm()
-    const now = this.now()
-    if (alarm !== null && alarm <= now) return
-    await this.state.storage.setAlarm(now)
+    if (alarm !== null && alarm <= scheduledTime) return
+    await this.state.storage.setAlarm(scheduledTime)
   }
 
   private loadTenant(candidate?: SettlementTenant) {
-    this.tenantLoading ??= this.readTenant(candidate)
+    if (!this.tenantLoading) {
+      const loading = this.readTenant(candidate)
+      this.tenantLoading = loading
+      void loading.catch(() => {
+        if (this.tenantLoading === loading) this.tenantLoading = undefined
+      })
+    }
     return this.tenantLoading.then((tenant) => {
       if (candidate && settlementTenantKey(candidate) !== settlementTenantKey(tenant)) {
         throw new Error("WorkGraph settler tenant does not match its persisted identity")
@@ -178,12 +202,15 @@ export class WorkGraphSettler {
 
   private settle(tenant: SettlementTenant) {
     if (this.options.settle) return this.options.settle(tenant)
-    this.settleRuntime ??= this.composeRuntime()
+    this.settleRuntime ??= this.composeRuntime(tenant)
     return this.settleRuntime(tenant)
   }
 
-  private composeRuntime() {
-    const hostedEnv = this.env as HostedWorkerEnv
+  private composeRuntime(tenant: SettlementTenant) {
+    const hostedEnv = {
+      ...(this.env as HostedWorkerEnv),
+      CLAXEDO_WORKGRAPH_WORKER_ID: `claxedo-settler:${settlementTenantKey(tenant)}`,
+    }
     const runtime = createHostedWorkGraphRuntime(hostedEnv, composeHostedControlPlane(hostedEnv).services)
     if (!runtime) {
       throw new HostedWorkerCompositionError(

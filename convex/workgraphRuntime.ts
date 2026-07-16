@@ -29,16 +29,25 @@ export const listStaleTenants = serviceQuery({
   handler: async (ctx, args) => {
     const staleBefore = args.now - Math.max(1, args.threshold_ms ?? 60_000)
     const limit = Math.max(1, Math.min(500, args.limit ?? 500))
-    const rows = (await Promise.all(
-      ["pending", "claimed"].map((status) =>
-        ctx.db
+    // This backstop is temporary until staging proves the command fast lane.
+    // Scan more rows than the tenant result cap so one noisy tenant cannot
+    // consume the entire distinct-tenant dispatch window.
+    const rowScanLimit = Math.min(5_000, limit * 10)
+    const pending = await ctx.db
+      .query("workgraph_outbox")
+      .withIndex("by_status_available", (query: any) =>
+        query.eq("status", "pending").lte("available_at", staleBefore),
+      )
+      .take(rowScanLimit)
+    const claimed = pending.length === rowScanLimit
+      ? []
+      : await ctx.db
           .query("workgraph_outbox")
-          .withIndex("by_status_available", (query: any) =>
-            query.eq("status", status).lte("available_at", staleBefore),
+          .withIndex("by_status_claim_expiry", (query: any) =>
+            query.eq("status", "claimed").lte("claim_expires_at", args.now),
           )
-          .take(limit),
-      ),
-    )).flat()
+          .take(rowScanLimit - pending.length)
+    const rows = [...pending, ...claimed]
     return Array.from(
       new Map(
         rows.map((row) => [
@@ -474,7 +483,10 @@ export const completeControlEffect = serviceMutation({
       })
       if (row.attempt_count >= 3)
         await surfaceControlAttention(ctx, row, args.reason ?? "Hosted lifecycle finalization failed", args.now)
-      return { settled: true }
+      return {
+        settled: true,
+        ...(exhausted ? {} : { retryAfterMs: 60_000 }),
+      }
     }
     const payload = row.payload as { finalize?: string; attemptId?: string; attemptIds?: string[]; proposalId?: string }
     const controlPayload = row.payload as { sessionId?: string }
@@ -879,7 +891,7 @@ export const retryLaunch = serviceMutation({
       last_error: args.reason,
       updated_at: args.now,
     })
-    return { settled: true }
+    return { settled: true, retryAfterMs: Math.max(0, args.available_at - args.now) }
   },
 })
 

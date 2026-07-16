@@ -9,6 +9,8 @@ import {
   type WorkGraphOperationalReporter,
   type WorkGraphReconciliationTrigger,
 } from "./operational-telemetry"
+import { createWorkGraphConvexExecutor } from "./convex-store"
+import type { SettlementTenant } from "./settlement-dispatcher"
 
 type Mutation = FunctionReference<"mutation">
 type Query = FunctionReference<"query">
@@ -136,7 +138,7 @@ type RunningRecap = {
 }
 type SourcePlanClaim = Omit<RecapClaim, "streamId"> & { proposalId: string; sessionId?: string }
 type RunningSourcePlan = RunningRecap
-export type WorkerTenant = { organizationId: string; ownerUserId: string }
+export type WorkerTenant = SettlementTenant
 
 /** Durable Worker dispatcher over SandboxManager → authenticated relay → Session V2. */
 export function createHostedWorkGraphRuntime(
@@ -153,8 +155,8 @@ export function createHostedWorkGraphRuntime(
   const url = clean(env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
   const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
   if (!url || !serviceToken) return
-  const client = options.executor ?? convexExecutor(url)
-  const query = client.query ?? convexQueryExecutor(url)
+  const client = options.executor ?? createWorkGraphConvexExecutor(url)
+  const query = client.query ?? createWorkGraphConvexExecutor(url).query
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
   const workerId = clean(env.CLAXEDO_WORKGRAPH_WORKER_ID) ?? "claxedo-worker"
@@ -1476,19 +1478,6 @@ async function hostedSessionHistory(
   }
 }
 
-function convexExecutor(url: string): Executor {
-  const client = new ConvexHttpClient(url)
-  return {
-    mutation: (fn, args) => client.mutation(fn, args),
-    query: (fn, args) => client.query(fn, args),
-  }
-}
-
-function convexQueryExecutor(url: string) {
-  const client = new ConvexHttpClient(url)
-  return (fn: Query, args: Record<string, unknown>) => client.query(fn, args)
-}
-
 export class HostedTranscriptRetentionError extends Error {
   readonly code = "attempt_transcript_not_retained"
   readonly retryable = true
@@ -1523,7 +1512,7 @@ export function createHostedSessionTranscriptRetention(
   const url = clean(env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
   const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
   if (!serviceToken || (!url && !options.executor)) return
-  const client = options.executor ?? convexExecutor(url!)
+  const client = options.executor ?? createWorkGraphConvexExecutor(url!)
   const provider = services.relay.provider
   const manager = services.sandbox.sandboxManager
   if (!provider || !manager) return

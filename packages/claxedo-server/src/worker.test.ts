@@ -27,7 +27,7 @@ const createHostedApp = vi.fn((
   _plane: unknown,
   _options?: {
     workGraphReconcile?: () => Promise<unknown>
-    workGraphSettlementDispatcher?: (
+    workGraphSettlementDispatcherForRequest?: (
       waitUntil: (promise: Promise<unknown>) => void,
     ) => { nudge(tenant: { organizationId: string; ownerUserId: string }): void }
   },
@@ -86,7 +86,7 @@ describe("worker entrypoint", () => {
   test("binds settlement nudges to the current request waitUntil", async () => {
     const options = createHostedApp.mock.calls.at(-1)?.[1]
     const work: Promise<unknown>[] = []
-    const dispatcher = options?.workGraphSettlementDispatcher?.((promise) => work.push(promise))
+    const dispatcher = options?.workGraphSettlementDispatcherForRequest?.((promise) => work.push(promise))
 
     dispatcher?.nudge({ organizationId: "org-a", ownerUserId: "user-a" })
 
@@ -184,5 +184,19 @@ describe("worker entrypoint", () => {
 
     expect(listStaleTenants).toHaveBeenCalledTimes(1)
     expect(reconcile).not.toHaveBeenCalled()
+  })
+
+  test("fails the minute backstop when a Durable Object nudge is rejected", async () => {
+    const worker = (await import("./worker")).default
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() }
+    settlerFetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+
+    await expect(
+      worker.scheduled(
+        { cron: "* * * * *", scheduledTime: 123_456 },
+        { WORKGRAPH_SETTLER: settlerNamespace },
+        ctx as never,
+      ),
+    ).rejects.toThrow("503 unavailable")
   })
 })

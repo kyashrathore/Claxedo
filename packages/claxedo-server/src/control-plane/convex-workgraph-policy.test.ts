@@ -131,7 +131,10 @@ describe("Convex WorkGraph persistence policy", () => {
       runtime.indexOf("export const claimLaunches"),
     )
     expect(staleTenants).toContain('withIndex("by_status_available"')
-    expect(staleTenants).toMatch(/\.take\(limit\)/)
+    expect(staleTenants).toContain('withIndex("by_status_claim_expiry"')
+    expect(staleTenants).toContain(".take(rowScanLimit)")
+    expect(staleTenants).toContain("rowScanLimit - pending.length")
+    expect(staleTenants).toContain('lte("claim_expires_at", args.now)')
     for (const worker of [
       "claimLaunches",
       "claimControlEffects",
