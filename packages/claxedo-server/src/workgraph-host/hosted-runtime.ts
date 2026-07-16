@@ -21,6 +21,7 @@ const api = anyApi as unknown as {
     retryLaunch: Mutation
     recordResult: Mutation
     listRunning: Mutation
+    requestCompletionRetry: Mutation
     recordFailure: Mutation
     markAttention: Mutation
     claimControlEffects: Mutation
@@ -457,6 +458,54 @@ export function createHostedWorkGraphRuntime(
                 })
               }
               if (!terminal) return { settled: false, state: "running" }
+              if (terminal.type.startsWith("session.next.step.ended")) {
+                const terminalSeq = terminal.durable?.seq
+                if (terminalSeq === undefined) throw new SessionHistoryResponseError()
+                const retry = attempt.completionRetry
+                  ? { accepted: true as const, ...attempt.completionRetry }
+                  : await client.mutation(
+                    api.workgraphRuntime.requestCompletionRetry,
+                    resultArgs(attempt, serviceToken, {
+                      terminal_seq: terminalSeq,
+                      now: now(),
+                    }),
+                  ) as { accepted?: boolean; terminalSeq?: number; requestedAt?: number }
+                if (!retry.accepted) return { settled: false, state: "already_settled" }
+                if (terminalSeq <= Number(retry.terminalSeq)) {
+                  let admitted: Response
+                  try {
+                    admitted = await request(
+                      `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/session/${encodeURIComponent(attempt.sessionId)}/prompt`,
+                      {
+                        method: "POST",
+                        headers: {
+                          authorization: `Bearer ${token.token}`,
+                          "content-type": "application/json",
+                          "x-opencode-directory": "/workspace",
+                        },
+                        body: JSON.stringify({
+                          id: `msg_workgraph_completion_${attempt.attemptId}`,
+                          prompt: {
+                            text: [
+                              "Your previous turn ended without completing the active WorkGraph Attempt.",
+                              "Call workgraph_complete_task now with a concise summary and evidence for every completion requirement.",
+                              "Each evidence entry must use the exact requirementId from the Task. Do not finish with another text-only response.",
+                            ].join("\n"),
+                          },
+                          delivery: "steer",
+                          resume: true,
+                        }),
+                      },
+                    )
+                  } catch {
+                    return { settled: false, state: "retrying_explicit_completion" }
+                  }
+                  if (!admitted.ok) {
+                    throw new Error(`Hosted completion retry failed: ${admitted.status} ${await admitted.text()}`)
+                  }
+                  return { settled: false, state: "retrying_explicit_completion" }
+                }
+              }
               const [connectionCleanup, attemptCleanup] = await Promise.all([
                 request(
                   `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(attempt.sessionId)}`,
@@ -492,17 +541,13 @@ export function createHostedWorkGraphRuntime(
                   }),
                 )
               }
-              const summary = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
-              if (typeof summary !== "string" || !summary.trim()) throw new Error("session_output_missing")
-              const files = Array.isArray(terminal.data.files)
-                ? terminal.data.files.filter((file): file is string => typeof file === "string" && !!file.trim())
-                : []
-              return {
-                settled: false,
-                state: "awaiting_explicit_completion",
-                summary: summary.trim(),
-                artifacts: files.map((file) => `file:${file.trim()}`),
-              }
+              return await client.mutation(
+                api.workgraphRuntime.recordFailure,
+                resultArgs(attempt, serviceToken, {
+                  reason: "Hosted Session ended without workgraph_complete_task after one completion retry",
+                  now: now(),
+                }),
+              )
             } catch (error) {
               return await client.mutation(
                 api.workgraphRuntime.recordFailure,
@@ -1180,6 +1225,7 @@ type RunningAttempt = {
   leaseEpoch: number
   sessionId: string
   workspaceId: string
+  completionRetry?: { terminalSeq: number; requestedAt: number }
   activeLeaseAgeMs?: number
   expiredRecovery?: boolean
 }

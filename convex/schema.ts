@@ -583,6 +583,7 @@ export default defineSchema({
     envelope_id: v.optional(v.string()),
     child_workspace_id: v.optional(v.string()),
     session_id: v.optional(v.string()),
+    completion_retry: v.optional(v.object({ terminal_seq: v.number(), requested_at: v.number() })),
     cancellation: v.optional(v.any()),
     source_revision_refs: v.array(workSourceRevisionRef),
     provenance: v.any(),

@@ -5,6 +5,7 @@ import { serviceMutation } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
 import { appendSystemWorkGraphChange, reconcileAutonomousStreams } from "./workgraphCommands"
+import { assertWorkGraphOwnerWritable } from "./workgraphModel"
 
 type RuntimeMutationCtx = GenericMutationCtx<DataModel>
 
@@ -998,9 +999,68 @@ export const listRunning = serviceMutation({
           expiredRecovery: renewal.recovered,
           sessionId: attempt.session_id,
           workspaceId: attempt.envelope_id,
+          ...(attempt.completion_retry ? {
+            completionRetry: {
+              terminalSeq: attempt.completion_retry.terminal_seq,
+              requestedAt: attempt.completion_retry.requested_at,
+            },
+          } : {}),
         }
       }),
     ).then((items) => items.filter((item) => item !== null))
+  },
+})
+
+/** Durably fences the single completion-only continuation allowed for a managed Attempt. */
+export const requestCompletionRetry = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_user_id: v.id("users"),
+    attempt_id: v.string(),
+    session_id: v.string(),
+    lease_epoch: v.number(),
+    terminal_seq: v.number(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await assertWorkGraphOwnerWritable(ctx, args.organization_id, args.owner_user_id)
+    const attempt = await ctx.db
+      .query("workgraph_attempts")
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) => query.eq(query.field("id"), args.attempt_id))
+      .unique()
+    if (!attempt || attempt.state !== "running" || attempt.session_id !== args.session_id) {
+      return { accepted: false as const }
+    }
+    const lease = await ctx.db
+      .query("workgraph_leases")
+      .withIndex("by_tenant_resource", (query: any) =>
+        query
+          .eq("organization_id", args.organization_id)
+          .eq("owner_user_id", args.owner_user_id)
+          .eq("resource_type", "work_item")
+          .eq("resource_id", attempt.work_item_id),
+      )
+      .unique()
+    if (
+      !lease ||
+      lease.holder_id !== attempt.id ||
+      lease.epoch !== args.lease_epoch ||
+      lease.expires_at <= args.now
+    ) return { accepted: false as const }
+    if (attempt.completion_retry) {
+      return {
+        accepted: true as const,
+        terminalSeq: attempt.completion_retry.terminal_seq,
+        requestedAt: attempt.completion_retry.requested_at,
+      }
+    }
+    await ctx.db.patch(attempt._id, {
+      completion_retry: { terminal_seq: args.terminal_seq, requested_at: args.now },
+    })
+    return { accepted: true as const, terminalSeq: args.terminal_seq, requestedAt: args.now }
   },
 })
 

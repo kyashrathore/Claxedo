@@ -7,6 +7,7 @@ import {
   markAttention,
   recordFailure,
   recordResult,
+  requestCompletionRetry,
   renewWorkGraphAttemptLease,
   settleRejectedProvision,
 } from "../../../../convex/workgraphRuntime"
@@ -224,6 +225,33 @@ describe("hosted WorkGraph runtime outbox", () => {
       },
     ])
     expect(db.row("workgraph_leases", "lease-row")).toMatchObject({ epoch: 2, expires_at: 300_020 })
+    await expect(
+      handler(requestCompletionRetry)({ db } as never, {
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        attempt_id: "attempt-a",
+        session_id: "session-a",
+        lease_epoch: 2,
+        terminal_seq: 7,
+        now: 21,
+      }),
+    ).resolves.toMatchObject({ accepted: true, terminalSeq: 7, requestedAt: 21 })
+    await expect(
+      handler(requestCompletionRetry)({ db } as never, {
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        attempt_id: "attempt-a",
+        session_id: "session-a",
+        lease_epoch: 2,
+        terminal_seq: 99,
+        now: 22,
+      }),
+    ).resolves.toMatchObject({ accepted: true, terminalSeq: 7, requestedAt: 21 })
+    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({
+      completion_retry: { terminal_seq: 7, requested_at: 21 },
+    })
     await expect(
       renewWorkGraphAttemptLease({ db } as never, {
         organizationId: "org-a" as never,
@@ -1521,6 +1549,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     const ensureInputs: Record<string, unknown>[] = []
     const publishedLaunches: Record<string, unknown>[] = []
     const publishedSnapshots: Record<string, unknown>[] = []
+    const promptBodies: Array<{ id?: string; prompt?: { text?: string } }> = []
     const runtime = createHostedWorkGraphRuntime(
       {
         CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -1621,6 +1650,8 @@ describe("hosted WorkGraph runtime outbox", () => {
                   workspaceId: String(mutations[2]?.workspace_id),
                 },
               ]
+            if ("terminal_seq" in args)
+              return { accepted: true, terminalSeq: args.terminal_seq, requestedAt: 100 }
             return { settled: true }
           },
         },
@@ -1666,21 +1697,15 @@ describe("hosted WorkGraph runtime outbox", () => {
             return Response.json({ bound: true })
           }
           if (url.pathname.endsWith("/prompt")) {
-            expect(JSON.parse(String(init?.body))).toMatchObject({
-              prompt: {
-                text: expect.stringContaining("A text response without this tool call does not complete the Attempt"),
-              },
-            })
-            expect(JSON.parse(String(init?.body))).toMatchObject({
-              prompt: { text: expect.stringContaining('"evidence":{"kind":"test_result"') },
-            })
+            const body = JSON.parse(String(init?.body))
+            promptBodies.push(body)
             return Response.json({ data: { admitted: true } })
           }
           if (url.pathname.endsWith("/history"))
             return Response.json({
               data: [
-                { type: "session.next.text.ended", data: { text: "done" } },
-                { type: "session.next.step.ended", data: { files: ["result.txt"] } },
+                { type: "session.next.text.ended", durable: { seq: 1 }, data: { text: "done" } },
+                { type: "session.next.step.ended", durable: { seq: 2 }, data: { files: ["result.txt"] } },
               ],
               hasMore: false,
             })
@@ -1697,10 +1722,10 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     await expect(runtime?.reconcile()).resolves.toMatchObject({
       launched: [{ state: "running" }],
-      results: [{ settled: false, state: "awaiting_explicit_completion" }],
+      results: [{ settled: false, state: "retrying_explicit_completion" }],
     })
     expect(mintedTokens[0]).toMatchObject({ subject: "clerk-user-a", orgId: "org-a" })
-    expect(mutations).toHaveLength(5)
+    expect(mutations).toHaveLength(6)
     expect(ensureInputs[0]).toMatchObject({
       env: {
         WORKSPACE_RUNTIME_RUNNER: "opencode",
@@ -1718,6 +1743,27 @@ describe("hosted WorkGraph runtime outbox", () => {
       sessionId: "session-a",
       connectionIds: ["connection-a"],
       tools: ["connection_work_source_list"],
+    })
+    expect(mutations.find((mutation) => "terminal_seq" in mutation)).toMatchObject({
+      attempt_id: "attempt-a",
+      session_id: "session-a",
+      lease_epoch: 2,
+      terminal_seq: 2,
+    })
+    expect(promptBodies).toEqual([
+      expect.objectContaining({
+        id: "msg_workgraph_attempt-a",
+        prompt: {
+          text: expect.stringContaining("A text response without this tool call does not complete the Attempt"),
+        },
+      }),
+      expect.objectContaining({
+        id: "msg_workgraph_completion_attempt-a",
+        prompt: { text: expect.stringContaining("Call workgraph_complete_task now") },
+      }),
+    ])
+    expect(promptBodies[0]).toMatchObject({
+      prompt: { text: expect.stringContaining('"evidence":{"kind":"test_result"') },
     })
     expect(mutations).not.toContainEqual(expect.objectContaining({ summary: "done", artifacts: ["file:result.txt"] }))
     expect(publishedLaunches).toEqual([
@@ -1741,22 +1787,40 @@ describe("hosted WorkGraph runtime outbox", () => {
     ])
   })
 
-  test("records session_output_missing instead of fabricating hosted success", async () => {
+  test("requests one explicit completion retry instead of fabricating hosted success", async () => {
     for (const data of [
-      [{ type: "session.next.step.ended", data: { files: [] } }],
+      [{ type: "session.next.step.ended", durable: { seq: 1 }, data: { files: [] } }],
       [
-        { type: "session.next.text.ended", data: { text: "   " } },
-        { type: "session.next.step.ended", data: { files: [] } },
+        { type: "session.next.text.ended", durable: { seq: 1 }, data: { text: "   " } },
+        { type: "session.next.step.ended", durable: { seq: 2 }, data: { files: [] } },
       ],
     ]) {
       const { mutations, result } = await reconcileAttemptHistory({ data, hasMore: false })
-      expect(result).toMatchObject({ results: [{ settled: true }] })
+      expect(result).toMatchObject({ results: [{ settled: false, state: "retrying_explicit_completion" }] })
       expect(mutations[2]).toMatchObject({
         session_id: "session-a",
-        reason: "session_output_missing",
+        terminal_seq: data.at(-1)!.durable.seq,
       })
       expect(mutations[2]).not.toHaveProperty("summary")
     }
+  })
+
+  test("records a truthful failure when the completion-only retry also ends without completion", async () => {
+    const { mutations, result } = await reconcileAttemptHistory(
+      {
+        data: [
+          { type: "session.next.text.ended", durable: { seq: 3 }, data: { text: "Still done" } },
+          { type: "session.next.step.ended", durable: { seq: 4 }, data: { files: [] } },
+        ],
+        hasMore: false,
+      },
+      { terminalSeq: 2, requestedAt: 100 },
+    )
+    expect(result).toMatchObject({ results: [{ settled: true }] })
+    expect(mutations[2]).toMatchObject({
+      session_id: "session-a",
+      reason: "Hosted Session ended without workgraph_complete_task after one completion retry",
+    })
   })
 
   test("records session_history_invalid for malformed or missing hosted history data", async () => {
@@ -2170,7 +2234,10 @@ function handler(fn: unknown) {
     })
 }
 
-async function reconcileAttemptHistory(history: unknown) {
+async function reconcileAttemptHistory(
+  history: unknown,
+  completionRetry?: { terminalSeq: number; requestedAt: number },
+) {
   const mutations: Record<string, unknown>[] = []
   const runtime = createHostedWorkGraphRuntime(
     { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
@@ -2211,8 +2278,12 @@ async function reconcileAttemptHistory(history: unknown) {
                 leaseEpoch: 2,
                 sessionId: "session-a",
                 workspaceId: "workspace-a",
+                ...(completionRetry ? { completionRetry } : {}),
               },
             ]
+          if ("terminal_seq" in args) {
+            return { accepted: true, terminalSeq: args.terminal_seq, requestedAt: args.now }
+          }
           return { settled: true }
         },
       },
@@ -2222,6 +2293,7 @@ async function reconcileAttemptHistory(history: unknown) {
         if (url.pathname.includes("/connection-binding/") || url.pathname.includes("/attempt-binding/")) {
           return new Response(null, { status: 204 })
         }
+        if (url.pathname.endsWith("/prompt")) return Response.json({ data: { admitted: true } })
         throw new Error(`Unexpected hosted runtime request ${url.pathname}`)
       },
     },
