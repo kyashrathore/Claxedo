@@ -197,7 +197,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         owner_user_id: "user-a",
         id: "attempt-a",
         work_item_id: "item-a",
-        state: "admitted",
+        state: "placing",
       }],
       workgraph_leases: [{
         _id: "lease-row",
@@ -2544,6 +2544,10 @@ describe("hosted WorkGraph runtime outbox", () => {
       claimed_by: "worker-a",
       attempt_count: 1,
     })
+    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({
+      state: "placing",
+      row_version: 2,
+    })
 
     await expect(
       handler(markAttention)({ db } as never, {
@@ -2560,7 +2564,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({
       state: "attention",
       attention_reason: "Session API missing",
-      row_version: 2,
+      row_version: 3,
     })
     expect(db.row("workgraph_outbox", "outbox-row")).toMatchObject({
       status: "failed",
@@ -2681,7 +2685,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         now: 11,
       }),
     ).resolves.toEqual({ settled: false })
-    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({ state: "admitted", row_version: 2 })
+    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({ state: "placing", row_version: 3 })
     expect(db.row("workgraph_leases", "lease-row")).toMatchObject({ epoch: 2 })
   })
 })

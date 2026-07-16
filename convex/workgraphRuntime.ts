@@ -123,7 +123,7 @@ export const claimLaunches = serviceMutation({
           lease.holder_id !== attempt.id ||
           lease.epoch !== payload.leaseEpoch ||
           attempt.cancellation?.state === "pending" ||
-          attempt.state !== "admitted"
+          !["admitted", "placing"].includes(attempt.state)
         ) {
           await ctx.db.patch(row._id, {
             status: "cancelled",
@@ -158,6 +158,7 @@ export const claimLaunches = serviceMutation({
           })
           return null
         }
+        const attemptRowVersion = attempt.row_version
         const renewal = await renewWorkGraphAttemptLease(ctx, {
           organizationId: row.organization_id,
           ownerUserId: row.owner_user_id,
@@ -173,6 +174,13 @@ export const claimLaunches = serviceMutation({
             updated_at: args.now,
           })
           return null
+        }
+        if (attempt.state === "admitted") {
+          await ctx.db.patch(attempt._id, {
+            state: "placing",
+            row_version: attemptRowVersion + (renewal.recovered ? 2 : 1),
+            updated_at: args.now,
+          })
         }
         const retryCount = row.attempt_count
         await ctx.db.patch(row._id, {
@@ -285,7 +293,7 @@ export const confirmLaunch = serviceMutation({
     const { outbox, attempt, lease } = await fenced(ctx, args)
     return {
       accepted:
-        !!outbox && !!attempt && attempt.cancellation?.state !== "pending" && attempt.state === "admitted" && !!lease,
+        !!outbox && !!attempt && attempt.cancellation?.state !== "pending" && attempt.state === "placing" && !!lease,
     }
   },
 })
@@ -824,7 +832,7 @@ export const markRunning = serviceMutation({
   },
   handler: async (ctx, args) => {
     const { outbox, attempt, lease } = await fenced(ctx, args)
-    if (!outbox || !attempt || attempt.cancellation?.state === "pending" || !lease || attempt.state !== "admitted")
+    if (!outbox || !attempt || attempt.cancellation?.state === "pending" || !lease || attempt.state !== "placing")
       return { settled: false }
     const sessionBindings = await ctx.db
       .query("workgraph_session_bindings")
@@ -881,7 +889,7 @@ export const retryLaunch = serviceMutation({
   },
   handler: async (ctx, args) => {
     const { outbox, attempt, lease } = await fenced(ctx, args)
-    if (!outbox || !attempt || attempt.cancellation?.state === "pending" || !lease || attempt.state !== "admitted")
+    if (!outbox || !attempt || attempt.cancellation?.state === "pending" || !lease || attempt.state !== "placing")
       return { settled: false }
     await ctx.db.patch(outbox._id, {
       status: "pending",
