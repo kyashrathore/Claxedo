@@ -21,10 +21,13 @@ type HostedExecutionCapabilitiesInput = Readonly<{
   connectionToolIds: readonly string[]
   now?: () => number
   requestTimeoutMs?: number
+  modelCatalogTimeoutMs?: number
+  modelCatalogRetryDelayMs?: number
   request?: (url: string, init?: RequestInit) => Promise<Response>
 }>
 
 const DEFAULT_CATALOG_REQUEST_TIMEOUT_MS = 30_000
+const DEFAULT_MODEL_CATALOG_RETRY_DELAY_MS = 500
 
 export function createHostedExecutionCapabilities(input: HostedExecutionCapabilitiesInput) {
   const now = input.now ?? Date.now
@@ -180,7 +183,7 @@ async function readHostedCatalog(
   const [harness, agents, providers, tools] = await Promise.all([
     request("/session/capabilities?directory=%2Fworkspace"),
     request("/agent?directory=%2Fworkspace"),
-    request("/api/model"),
+    readHostedModelCatalog(input, request),
     request("/experimental/tool/ids"),
   ]).catch((error) => {
     if (error instanceof ExecutionCapabilitiesUnavailableError) throw error
@@ -194,6 +197,52 @@ async function readHostedCatalog(
   return {
     runtime: { harness, agents, providers, tools },
   }
+}
+
+async function readHostedModelCatalog(
+  input: HostedExecutionCapabilitiesInput,
+  request: (pathname: string) => Promise<unknown>,
+) {
+  const timeoutMs = input.modelCatalogTimeoutMs ?? DEFAULT_CATALOG_REQUEST_TIMEOUT_MS
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    const catalog = await request("/api/model")
+    if (hasExecutableModel(catalog)) return catalog
+    if (Date.now() >= deadline) {
+      throw new Error(`Hosted execution model catalog remained empty for ${timeoutMs}ms`)
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(input.modelCatalogRetryDelayMs ?? DEFAULT_MODEL_CATALOG_RETRY_DELAY_MS, deadline - Date.now())),
+    )
+  }
+}
+
+function hasExecutableModel(input: unknown) {
+  const root = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  if (Array.isArray(root?.data)) {
+    return root.data.some((value) => {
+      const model = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+      return typeof model?.providerID === "string"
+        && !!model.providerID.trim()
+        && typeof model.id === "string"
+        && !!model.id.trim()
+        && model.enabled !== false
+        && model.status !== "deprecated"
+    })
+  }
+  if (!Array.isArray(root?.all) || !Array.isArray(root.connected)) return false
+  const connected = new Set(root.connected.filter((value): value is string => typeof value === "string" && !!value.trim()))
+  return root.all.some((value) => {
+    const provider = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+    if (typeof provider?.id !== "string" || !connected.has(provider.id)) return false
+    const models = provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
+      ? provider.models as Record<string, unknown>
+      : undefined
+    return models && Object.values(models).some((value) => {
+      const model = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+      return typeof model?.id === "string" && !!model.id.trim() && model.status !== "deprecated"
+    })
+  })
 }
 
 async function provisionCatalogWorkspace(input: HostedExecutionCapabilitiesInput, context: WorkGraphContext) {

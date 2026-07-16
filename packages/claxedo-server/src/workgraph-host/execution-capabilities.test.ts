@@ -362,6 +362,7 @@ describe("WorkGraph execution capability composition", () => {
     const ensured: string[] = []
     const destroyed: string[] = []
     const released: string[] = []
+    let modelReads = 0
     let ready = false
     const capabilities = createHostedExecutionCapabilities({
       authority: {
@@ -412,12 +413,16 @@ describe("WorkGraph execution capability composition", () => {
       readConnections: async () => [],
       connectionToolIds: [],
       now: () => 789,
+      modelCatalogRetryDelayMs: 0,
       request: async (request) => {
         const url = new URL(request)
         requested.push(url.pathname)
         if (url.pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
         if (url.pathname.endsWith("/agent")) return Response.json(runtime.agents)
-        if (url.pathname.endsWith("/api/model")) return Response.json(runtime.providers)
+        if (url.pathname.endsWith("/api/model")) {
+          modelReads += 1
+          return Response.json(modelReads === 1 ? { data: [] } : runtime.providers)
+        }
         if (url.pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
         throw new Error(`Unexpected request ${url.pathname}`)
       },
@@ -449,6 +454,7 @@ describe("WorkGraph execution capability composition", () => {
       "/workspaces/catalog/agent",
       "/workspaces/catalog/api/model",
       "/workspaces/catalog/experimental/tool/ids",
+      "/workspaces/catalog/api/model",
     ])
   })
 
