@@ -139,6 +139,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(sandboxWorker).toContain("SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}")
     expect(controlPlane).toContain("wrangler secret put CLOUDFLARE_SANDBOX_API_TOKEN --env staging")
     expect(controlPlane).toContain('convex env set CLERK_WEBHOOK_SECRET "$CLERK_WEBHOOK_SECRET"')
+    expect(controlPlane.match(/run: bun run scripts\/smoke\/sync-clerk-workgraph-fixtures\.ts/g)).toHaveLength(2)
     expect(controlPlane).toContain('working-directory: packages/workspace-relay')
     expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
     expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')

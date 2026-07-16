@@ -67,14 +67,16 @@ export const resolveForMe = authedMutation({
   },
   handler: async (ctx, args) => {
     const user = await upsertUser(ctx)
-    const org = args.clerk_org_id ? await orgByClerkOrgId(ctx.db, args.clerk_org_id) : undefined
-    if (org && !org.deleted_at) {
+    if (args.clerk_org_id) {
+      const org = await orgByClerkOrgId(ctx.db, args.clerk_org_id)
+      if (!org || org.deleted_at) throw new Error("Organization not found")
       const membership = (await ctx.db
         .query("org_memberships")
         .withIndex("by_org_user", (q: any) => q.eq("org_id", org._id))
         .collect())
         .find((item: any) => item.user_id === user._id)
       if (membership) return { org_id: org._id, clerk_org_id: org.clerk_org_id, role: membership.role }
+      throw new Error("Organization membership is required")
     }
     const personal = await personalOrgForUser(ctx, user)
     return { org_id: personal._id, clerk_org_id: personal.clerk_org_id, role: "owner" }

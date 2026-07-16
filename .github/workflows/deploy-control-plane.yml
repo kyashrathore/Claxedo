@@ -254,6 +254,18 @@ jobs:
           [ "$workgraph_code" = "401" ] \
             || { echo "::error::expected WorkGraph 401, got $workgraph_code"; exit 1; }
 
+      - name: Synchronize WorkGraph Clerk smoke fixtures
+        working-directory: packages/claxedo-server
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
+        run: bun run scripts/smoke/sync-clerk-workgraph-fixtures.ts
+
       - name: WorkGraph authenticated persistence and no-op execution smoke
         working-directory: packages/claxedo-server
         env:
@@ -427,12 +439,25 @@ jobs:
             || { echo "::error::expected WorkGraph 401, got $workgraph_code"; exit 1; }
           echo "production smoke passed"
 
+      - name: Synchronize WorkGraph Clerk smoke fixtures
+        working-directory: packages/claxedo-server
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
+        run: bun run scripts/smoke/sync-clerk-workgraph-fixtures.ts
+
       - name: WorkGraph authenticated persistence and no-op execution smoke
         working-directory: packages/claxedo-server
         env:
           BASE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
           WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
           WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
