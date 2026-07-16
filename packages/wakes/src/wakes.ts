@@ -45,6 +45,8 @@ type CommonCreate = {
   workspaceId: WorkspaceId
   /** Which sink fires this wake. Default "session_turn". */
   kind?: string
+  /** Serialization lane: same-key wakes never fire concurrently. Default none. */
+  serialKey?: string
   intent?: Json
   idempotencyKey?: string
   createdBy?: string
@@ -115,6 +117,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
           sessionId: wake.sessionId,
           workspaceId: wake.workspaceId,
           kind: wake.kind,
+          serialKey: wake.serialKey ?? undefined,
           intentJson: wake.intentJson,
           fireAt: nextFireAt,
           schedule: wake.schedule,
@@ -158,6 +161,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       workspaceId: fields.workspaceId,
       triggerType: fields.triggerType,
       kind: fields.kind ?? "session_turn",
+      serialKey: fields.serialKey ?? null,
       intentJson: fields.intentJson ?? "null",
       resultJson: null,
       state: "pending",
@@ -203,6 +207,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
         kind: input.kind,
+        serialKey: input.serialKey,
         intentJson: JSON.stringify(input.intent ?? null),
         fireAt,
         schedule,
@@ -219,6 +224,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
         kind: input.kind,
+        serialKey: input.serialKey,
         intentJson: JSON.stringify(input.intent ?? null),
         eventKey: input.eventKey,
         expiresAt: toMs(input.expiresAt) ?? undefined,
@@ -234,6 +240,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
         kind: input.kind,
+        serialKey: input.serialKey,
         intentJson: JSON.stringify(input.intent ?? null),
         prompt: input.prompt,
         token: generateToken(),

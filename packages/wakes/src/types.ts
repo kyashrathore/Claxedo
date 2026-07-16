@@ -41,6 +41,12 @@ export interface Wake {
   triggerType: TriggerType
   /** Selects the sink that runs when this wake fires. Default "session_turn". */
   kind: WakeKind
+  /**
+   * Serialization lane for time-triggered fires: while one wake of a key is
+   * `firing`, no other wake of that key can be claimed. Wakes of different
+   * keys (and null-key wakes) fire in parallel. Null = no lane.
+   */
+  serialKey: string | null
   intentJson: string
   /** Set at pending→firing for on_event/on_approval so a crash can re-drive it. */
   resultJson: string | null

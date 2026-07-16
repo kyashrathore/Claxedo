@@ -10,6 +10,7 @@ const FIELD_TO_COL: Record<keyof Wake, string> = {
   workspaceId: "workspace_id",
   triggerType: "trigger_type",
   kind: "kind",
+  serialKey: "serial_key",
   intentJson: "intent_json",
   resultJson: "result_json",
   state: "state",
@@ -36,6 +37,7 @@ function rowToWake(r: Row): Wake {
     workspaceId: r.workspace_id as string,
     triggerType: r.trigger_type as Wake["triggerType"],
     kind: (r.kind as string) ?? "session_turn",
+    serialKey: (r.serial_key as string) ?? null,
     intentJson: r.intent_json as string,
     resultJson: (r.result_json as string) ?? null,
     state: r.state as WakeState,
@@ -63,6 +65,7 @@ CREATE TABLE IF NOT EXISTS wakes (
   workspace_id TEXT NOT NULL,
   trigger_type TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'session_turn',
+  serial_key TEXT,
   intent_json TEXT NOT NULL,
   result_json TEXT,
   state TEXT NOT NULL,
@@ -88,6 +91,7 @@ CREATE INDEX IF NOT EXISTS wakes_token ON wakes(token);
 CREATE INDEX IF NOT EXISTS wakes_ws_state ON wakes(workspace_id, state);
 CREATE INDEX IF NOT EXISTS wakes_session ON wakes(session_id);
 CREATE INDEX IF NOT EXISTS wakes_expiry ON wakes(state, expires_at);
+CREATE INDEX IF NOT EXISTS wakes_lane ON wakes(serial_key, state) WHERE serial_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS effect_receipts (
   key TEXT PRIMARY KEY,
   result_json TEXT NOT NULL,
@@ -111,7 +115,10 @@ export class SqliteWakeStore implements WakeStore {
     this.db.exec(SCHEMA)
     // Additive upgrades for DB files created before these columns existed
     // (CREATE TABLE IF NOT EXISTS never alters an existing table).
-    for (const ddl of ["ALTER TABLE wakes ADD COLUMN kind TEXT NOT NULL DEFAULT 'session_turn'"]) {
+    for (const ddl of [
+      "ALTER TABLE wakes ADD COLUMN kind TEXT NOT NULL DEFAULT 'session_turn'",
+      "ALTER TABLE wakes ADD COLUMN serial_key TEXT",
+    ]) {
       try {
         this.db.exec(ddl)
       } catch {
@@ -148,12 +155,24 @@ export class SqliteWakeStore implements WakeStore {
   }
 
   async claimDue(nowMs: number, leaseMs: number, limit: number): Promise<Wake[]> {
+    // Lane rule: a serial-keyed wake is claimable only when no other wake of
+    // its key is already `firing`, and one claim batch takes at most one wake
+    // per key (earliest first). Null-key wakes have no lane (own partition
+    // via COALESCE to their unique id).
     const rows = this.db
       .prepare(
         `UPDATE wakes SET state = 'firing', lease_until = ?, attempts = attempts + 1
          WHERE id IN (
-           SELECT id FROM wakes
-           WHERE trigger_type = 'at' AND state = 'pending' AND fire_at IS NOT NULL AND fire_at <= ?
+           SELECT id FROM (
+             SELECT id, fire_at,
+                    ROW_NUMBER() OVER (PARTITION BY COALESCE(serial_key, id) ORDER BY fire_at ASC, id ASC) AS lane_rank
+             FROM wakes
+             WHERE trigger_type = 'at' AND state = 'pending' AND fire_at IS NOT NULL AND fire_at <= ?
+               AND (serial_key IS NULL OR serial_key NOT IN (
+                 SELECT serial_key FROM wakes WHERE state = 'firing' AND serial_key IS NOT NULL
+               ))
+           )
+           WHERE lane_rank = 1
            ORDER BY fire_at ASC LIMIT ?
          )
          RETURNING *`,

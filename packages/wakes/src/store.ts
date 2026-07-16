@@ -17,7 +17,10 @@ export interface WakeStore {
 
   /**
    * Atomically claim due `at` wakes: `pending → firing`, stamping a lease.
-   * Returns the claimed rows (already in `firing`). Must be safe under concurrency.
+   * Returns the claimed rows (already in `firing`). Must be safe under
+   * concurrency, and must honor serialization lanes: never claim a wake whose
+   * `serialKey` already has a `firing` row, and never claim two wakes of the
+   * same key in one batch (earliest per key wins; null keys are unrestricted).
    */
   claimDue(nowMs: number, leaseMs: number, limit: number): Promise<Wake[]>
 
