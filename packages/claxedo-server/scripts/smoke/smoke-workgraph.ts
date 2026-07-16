@@ -47,7 +47,13 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
     progress("refreshing hosted execution capabilities")
     await refreshExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA, retryDelayMs)
     progress("reading hosted execution capabilities")
-    const capabilities = await readExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA, retryDelayMs)
+    const capabilities = await readExecutionCapabilities(
+      request,
+      base,
+      clerkSecret,
+      sessionAOrganizationA,
+      retryDelayMs,
+    )
     const execution = requireExecutionProfile(capabilities, env)
 
     progress("creating the authenticated Stream")
@@ -148,7 +154,17 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         "attemptId",
       )
       progress(`created Attempt ${attemptId}; reconciling execution`)
-      await reconcileAttempt(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, attemptId, progress)
+      const references = await reconcileAttempt(
+        request,
+        base,
+        clerkSecret,
+        sessionAOrganizationA,
+        reconcileToken,
+        attemptId,
+        progress,
+      )
+      progress(`verifying retained Session ${references.sessionId} in Workspace ${references.workspaceId}`)
+      await verifyHostedSession(request, base, tokenA, references)
       console.log(`WorkGraph hosted signed user-and-organization isolation and execution passed for ${streamId}`)
     } catch (error) {
       executionError = error
@@ -553,7 +569,7 @@ async function reconcileAttempt(
       if (typeof references?.workspaceId !== "string" || typeof references.sessionId !== "string") {
         throw new Error("Hosted Attempt result has no durable Workspace and Session references")
       }
-      return
+      return { workspaceId: references.workspaceId, sessionId: references.sessionId }
     }
     if (attempt.state === "attention" || attempt.state === "failed" || attempt.state === "cancelled") {
       const reason = typeof attempt.attentionReason === "string" ? `: ${attempt.attentionReason}` : ""
@@ -562,6 +578,47 @@ async function reconcileAttempt(
     await wait(Math.min(12_000, Math.max(0, deadline - Date.now())))
   }
   throw new Error("Hosted Attempt did not produce a result within six minutes")
+}
+
+async function verifyHostedSession(
+  request: typeof fetch,
+  base: string,
+  token: string,
+  references: { workspaceId: string; sessionId: string },
+) {
+  const [gateway, inventory, transcript] = await Promise.all([
+    jsonRequest(request, `${base}/api/control/sessions/${encodeURIComponent(references.sessionId)}/gateway`, {
+      headers: authorization(token),
+    }),
+    jsonRequest(request, `${base}/api/control/sessions?workspaceId=${encodeURIComponent(references.workspaceId)}`, {
+      headers: authorization(token),
+    }),
+    jsonRequest(
+      request,
+      `${base}/api/control/sessions/${encodeURIComponent(references.sessionId)}/messages?workspaceId=${encodeURIComponent(references.workspaceId)}`,
+      { headers: authorization(token) },
+    ),
+  ])
+  const resolved = record(gateway)
+  if (
+    resolved?.workspaceId !== references.workspaceId ||
+    resolved.harnessHost !== "central" ||
+    resolved.gatewayUrl !== null
+  ) {
+    throw new Error("Hosted Session gateway did not resolve the owning Workspace")
+  }
+  const sessions = array(record(inventory)?.sessions).map(record)
+  if (!sessions.some((session) => session?.session_id === references.sessionId)) {
+    throw new Error("Hosted Session is absent from the owning Workspace inventory")
+  }
+  const messages = array(record(transcript)?.messages).map(record)
+  if (record(transcript)?.allowed !== true || messages.length < 2) {
+    throw new Error("Hosted Session transcript was not retained")
+  }
+  const roles = new Set(messages.map((message) => record(message?.info)?.role))
+  if (!roles.has("user") || !roles.has("assistant")) {
+    throw new Error("Hosted Session transcript does not contain both user and assistant messages")
+  }
 }
 
 async function reconcileDeletion(

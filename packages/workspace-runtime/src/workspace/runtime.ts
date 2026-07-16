@@ -1504,9 +1504,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         return new Response(body, { headers: sseHeaders() })
       })
 
-      // Session V2 is the durable agent-control contract used by hosted
-      // WorkGraph. Keep it on the authenticated workspace-runtime/relay path
-      // and proxy byte-for-byte to the local OpenCode engine.
+      // Session V2 and its model catalog are the durable agent-control
+      // contracts used by hosted WorkGraph. Keep them on the authenticated
+      // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
       const proxySessionV2 = async (c: Context) => {
         const adapter = ensure()
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
@@ -1514,6 +1514,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
         return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       }
+      app.all("/api/model", proxySessionV2)
       app.all("/api/session", proxySessionV2)
       app.all("/api/session/*", proxySessionV2)
 

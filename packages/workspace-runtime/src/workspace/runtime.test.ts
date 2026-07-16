@@ -1397,7 +1397,7 @@ describe("workspace runtime auth helpers", () => {
     expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
   })
 
-  test("proxies the real Session V2 create, prompt, and history contract", async () => {
+  test("proxies the real Session V2 model, create, prompt, and history contract", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-session-v2-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
@@ -1406,6 +1406,11 @@ describe("workspace runtime auth helpers", () => {
     const handler: OpenCodeRequestFn = async (request) => {
       const body = request.body ? await request.clone().json().catch(() => undefined) : undefined
       seen.push({ method: request.method, path: new URL(request.url).pathname, body })
+      if (new URL(request.url).pathname === "/api/model") {
+        return Response.json({
+          data: [{ id: "gpt-5", providerID: "openai", enabled: true, variants: [{ id: "high" }] }],
+        })
+      }
       if (new URL(request.url).pathname === "/api/session") {
         expect(body).toEqual({ agent: "build", model: { id: "gpt-5", providerID: "openai" } })
         expect(body).not.toHaveProperty("id")
@@ -1419,6 +1424,9 @@ describe("workspace runtime auth helpers", () => {
     const app = new Hono()
     mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
 
+    expect(await (await app.request("http://localhost/api/model", {
+      headers: { "x-opencode-directory": dir },
+    })).json()).toMatchObject({ data: [{ id: "gpt-5", variants: [{ id: "high" }] }] })
     expect((await app.request("http://localhost/api/session", {
       method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": dir },
       body: JSON.stringify({ agent: "build", model: { id: "gpt-5", providerID: "openai" } }),
@@ -1431,7 +1439,7 @@ describe("workspace runtime auth helpers", () => {
       headers: { "x-opencode-directory": dir },
     })).status).toBe(200)
     expect(seen.map((request) => `${request.method} ${request.path}`)).toEqual([
-      "POST /api/session", "POST /api/session/ses_v2/prompt", "GET /api/session/ses_v2/history",
+      "GET /api/model", "POST /api/session", "POST /api/session/ses_v2/prompt", "GET /api/session/ses_v2/history",
     ])
   })
 

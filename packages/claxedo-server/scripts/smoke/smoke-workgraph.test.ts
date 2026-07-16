@@ -53,15 +53,18 @@ describe("WorkGraph deployment smoke", () => {
       if (url.pathname === "/api/workgraph/execution-capabilities/refresh") {
         capabilityRefreshes += 1
         if (capabilityRefreshes === 1) {
-          return Response.json({
-            error: {
-              code: "execution_capabilities_unavailable",
-              capability: "catalog_workspace",
-              reason: "runtime_unavailable",
-              message: "The hosted capability catalog is provisioning; retry after 2000ms",
-              retryable: true,
+          return Response.json(
+            {
+              error: {
+                code: "execution_capabilities_unavailable",
+                capability: "catalog_workspace",
+                reason: "runtime_unavailable",
+                message: "The hosted capability catalog is provisioning; retry after 2000ms",
+                retryable: true,
+              },
             },
-          }, { status: 503 })
+            { status: 503 },
+          )
         }
         return Response.json({ refreshed: true })
       }
@@ -101,6 +104,29 @@ describe("WorkGraph deployment smoke", () => {
         return Response.json({
           attempt: { id: "attempt_1", state: "result" },
           executionReferences: { workspaceId: "workgraph_workspace_1", sessionId: "session_runtime_1" },
+        })
+      }
+      if (url.pathname === "/api/control/sessions/session_runtime_1/gateway") {
+        return Response.json({
+          gatewayUrl: null,
+          workspaceId: "workgraph_workspace_1",
+          directory: null,
+          harnessHost: "central",
+        })
+      }
+      if (url.pathname === "/api/control/sessions") {
+        return Response.json({
+          sessions: [{ session_id: "session_runtime_1", title: "Confirm the hosted WorkGraph no-op execution path" }],
+        })
+      }
+      if (url.pathname === "/api/control/sessions/session_runtime_1/messages") {
+        return Response.json({
+          allowed: true,
+          messages: [
+            { info: { id: "msg_user", role: "user" }, parts: [{ type: "text", text: "Confirm deployment" }] },
+            { info: { id: "msg_assistant", role: "assistant" }, parts: [{ type: "text", text: "confirmed" }] },
+          ],
+          maxEventOrdinal: 0,
         })
       }
       if (url.pathname === "/api/workgraph/snapshot") {
@@ -169,6 +195,21 @@ describe("WorkGraph deployment smoke", () => {
     ).toBe(true)
     expect(
       requests.some((entry) => entry.url.pathname === "/api/workgraph/execution-capabilities" && !entry.url.search),
+    ).toBe(true)
+    expect(
+      requests.some(
+        (entry) =>
+          entry.url.pathname === "/api/control/sessions/session_runtime_1/gateway" &&
+          authorization(entry.init) === sourceToken,
+      ),
+    ).toBe(true)
+    expect(
+      requests.some(
+        (entry) =>
+          entry.url.pathname === "/api/control/sessions/session_runtime_1/messages" &&
+          entry.url.searchParams.get("workspaceId") === "workgraph_workspace_1" &&
+          authorization(entry.init) === sourceToken,
+      ),
     ).toBe(true)
     expect(
       requests
