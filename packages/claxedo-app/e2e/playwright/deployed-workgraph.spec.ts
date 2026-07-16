@@ -16,7 +16,7 @@ const smokeEmail = required("WORKGRAPH_SMOKE_USER_A_EMAIL")
 const smokeOrganization = required("WORKGRAPH_SMOKE_ORGANIZATION_A_ID")
 const smokeRepositoryURL = required("WORKGRAPH_SMOKE_REPOSITORY_URL")
 const smokeBaseRevision = required("WORKGRAPH_SMOKE_BASE_REVISION")
-const guardedOrigins = new Set([new URL(appURL).origin, new URL(controlPlaneURL).origin])
+const controlPlaneOrigin = new URL(controlPlaneURL).origin
 
 test.describe.serial("deployed WorkGraph", () => {
   test.beforeAll(async () => {
@@ -26,9 +26,8 @@ test.describe.serial("deployed WorkGraph", () => {
   test("authenticates, persists a Stream and Task across desktop and narrow reloads, then deletes them", async ({
     page,
   }, testInfo) => {
-    // Stream deletion is durable: the command marks the record and the
-    // every-minute reconcile lane finalizes it, so the card disappears within
-    // the cron cadence plus one live-sync window rather than instantly.
+    // Stream deletion is durable: the command hides the deletion-pending record
+    // immediately while the settlement fast lane finalizes teardown.
     testInfo.setTimeout(240_000)
     const pageErrors: Error[] = []
     const failedResponses: string[] = []
@@ -128,10 +127,9 @@ function streamContainer(page: Page, title: string) {
 
 function recordResponse(response: Response, failed: string[], workGraphAuthorizations: string[]) {
   const url = new URL(response.url())
-  if (url.origin === new URL(controlPlaneURL).origin && url.pathname.startsWith("/api/workgraph")) {
-    workGraphAuthorizations.push(response.request().headers().authorization ?? "")
-  }
-  if (response.status() < 400 || !guardedOrigins.has(url.origin)) return
+  if (url.origin !== controlPlaneOrigin || !url.pathname.startsWith("/api/workgraph")) return
+  workGraphAuthorizations.push(response.request().headers().authorization ?? "")
+  if (response.status() < 400) return
   failed.push(`${response.status()} ${response.request().method()} ${response.url()}`)
 }
 
