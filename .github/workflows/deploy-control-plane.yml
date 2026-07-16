@@ -25,6 +25,8 @@ name: deploy-control-plane
 # Environment-scoped variables:
 #   CLAXEDO_CONTROL_PLANE_URL — base URL of that environment's Worker
 #                               (e.g. https://claxedo-control-plane-staging.<subdomain>.workers.dev)
+#   CLAXEDO_WORKSPACE_RELAY_URL — base URL of that environment's Cloudflare
+#                                 Workspace Relay Worker
 #   WORKGRAPH_SMOKE_USER_A_ID / WORKGRAPH_SMOKE_USER_B_ID — distinct Clerk users
 #   WORKGRAPH_SMOKE_USER_A_EMAIL — primary email for user A's browser sign-in
 #   WORKGRAPH_SMOKE_ORGANIZATION_A_ID / WORKGRAPH_SMOKE_ORGANIZATION_B_ID
@@ -82,6 +84,7 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
@@ -102,7 +105,7 @@ jobs:
           set -euo pipefail
           required=(
             CONVEX_DEPLOY_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
-            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL
+            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL WORKSPACE_RELAY_URL
             WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_USER_B_ID
             WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
             WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
@@ -153,6 +156,13 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields"}'
 
+      - name: Deploy workspace relay Worker (staging)
+        working-directory: packages/workspace-relay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+
       # wrangler resolves to the workspace-pinned version (4.50.0 via the
       # repo lockfile) after setup-bun's `bun install`.
       # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging.
@@ -161,7 +171,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bunx wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
+        run: >-
+          bunx wrangler deploy --env staging
+          --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          --var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"
 
       - name: Synchronize staging sandbox control token
         working-directory: packages/claxedo-server
@@ -275,6 +289,7 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
@@ -295,7 +310,7 @@ jobs:
           set -euo pipefail
           required=(
             CONVEX_DEPLOY_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
-            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL
+            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL WORKSPACE_RELAY_URL
             WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_USER_B_ID
             WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
             WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
@@ -338,6 +353,13 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields"}'
 
+      - name: Deploy workspace relay Worker (production)
+        working-directory: packages/workspace-relay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler deploy --env "" --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+
       # Top-level wrangler env = production (name = claxedo-control-plane).
       # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging.
       - name: Deploy control-plane Worker (production)
@@ -345,7 +367,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bunx wrangler deploy --env "" --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
+        run: >-
+          bunx wrangler deploy --env ""
+          --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          --var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"
 
       - name: Behavioral smoke (production)
         env:

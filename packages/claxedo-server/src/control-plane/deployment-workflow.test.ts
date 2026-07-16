@@ -35,10 +35,11 @@ describe("Claxedo Cloud deployment workflow", () => {
     )
   })
 
-  test("orders staging and production as Convex, Worker, smoke, then app", () => {
+  test("orders staging and production as Convex, relay, control plane, smoke, then app", () => {
     const staging = [
       controlPlane.indexOf("- name: Deploy Convex (staging deployment)"),
       controlPlane.indexOf("- name: Normalize legacy runtime lease fields (staging)"),
+      controlPlane.indexOf("- name: Deploy workspace relay Worker (staging)"),
       controlPlane.indexOf("- name: Deploy control-plane Worker (staging)"),
       controlPlane.indexOf("  smoke-staging:"),
       controlPlane.indexOf("  deploy-app-staging:"),
@@ -46,6 +47,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     const production = [
       controlPlane.indexOf("- name: Deploy Convex (production deployment)"),
       controlPlane.indexOf("- name: Normalize legacy runtime lease fields (production)"),
+      controlPlane.indexOf("- name: Deploy workspace relay Worker (production)"),
       controlPlane.indexOf("- name: Deploy control-plane Worker (production)"),
       controlPlane.indexOf("- name: Behavioral smoke (production)"),
       controlPlane.indexOf("  deploy-app-production:"),
@@ -79,6 +81,7 @@ describe("Claxedo Cloud deployment workflow", () => {
       "CLERK_SECRET_KEY",
       "CLAXEDO_RUNTIME_ADMIN_TOKEN",
       "CONTROL_PLANE_URL",
+      "WORKSPACE_RELAY_URL",
       "APP_URL",
       "PAGES_PROJECT",
       "PAGES_BRANCH",
@@ -134,6 +137,9 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(sandboxWorker).toContain("npx --yes wrangler@4.50.0 secret put API_TOKEN")
     expect(sandboxWorker).toContain("SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}")
     expect(controlPlane).toContain("wrangler secret put CLOUDFLARE_SANDBOX_API_TOKEN --env staging")
+    expect(controlPlane).toContain('working-directory: packages/workspace-relay')
+    expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
+    expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
     expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
   })
@@ -165,6 +171,8 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(app).toContain("WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}")
     expect(deployedBrowser).toContain("clerk.signIn({ page, emailAddress: smokeEmail })")
     expect(deployedBrowser).toContain("await instance.setActive({ organization })")
+    expect(deployedBrowser).toContain("const frontendApi = clerkFrontendApi(key)")
+    expect(deployedBrowser).not.toContain('required("CLERK_FAPI")')
     expect(deployedBrowser).toContain('await page.reload({ waitUntil: "domcontentloaded" })')
     expect(deployedBrowser).toContain("await page.setViewportSize({ width: 390, height: 844 })")
     expect(deployedBrowser).not.toContain("page.route(")

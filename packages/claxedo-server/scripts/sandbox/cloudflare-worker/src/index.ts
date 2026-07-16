@@ -57,9 +57,11 @@ async function resolveEgressSecret(env: Env, sandboxId: string, host: string) {
   return match ? { header: match.header, value: match.value } : undefined
 }
 
-// Well-known port the workspace-runtime binds inside the container (matches the
-// provider's CLAXEDO_WR_PORT default). The data-plane proxy forwards here.
-const WORKSPACE_RUNTIME_PORT = 3002
+// Well-known port the workspace-runtime binds inside the container. Keep this
+// aligned with @claxedo/sandbox-manager's DEFAULT_WORKSPACE_RUNTIME_PORT: the
+// control plane supplies that port to ensure-runtime and the data-plane proxy
+// must forward to the same listener.
+const WORKSPACE_RUNTIME_PORT = 2593
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
 const CONTAINER_OPERATION_TIMEOUT_MS = 10_000
 const RUNTIME_READY_TIMEOUT_MS = 30_000

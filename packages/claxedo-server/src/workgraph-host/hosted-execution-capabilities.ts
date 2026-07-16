@@ -136,8 +136,9 @@ async function readHostedCatalog(
   })
   const relay = await input.relayProvider.getRelayEndpoint(workspaceId, placement.homeRegion as ClaxedoRegion)
   const request = async (pathname: string) => {
+    const url = `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${pathname}`
     const response = await (input.request ?? fetch)(
-      `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${pathname}`,
+      url,
       {
         headers: {
           authorization: `Bearer ${token.token}`,
@@ -147,7 +148,14 @@ async function readHostedCatalog(
         signal: AbortSignal.timeout(5_000),
       },
     )
-    if (!response.ok) throw new Error(`Hosted execution catalog ${pathname} failed with ${response.status}`)
+    if (!response.ok) {
+      const body = await response.clone().json().catch(() => undefined)
+      const error = body && typeof body === "object" && "error" in body && body.error && typeof body.error === "object"
+        ? body.error as Record<string, unknown>
+        : undefined
+      const code = typeof error?.code === "string" ? ` (${error.code})` : ""
+      throw new Error(`Hosted execution catalog ${pathname} via ${new URL(url).host} failed with ${response.status}${code}`)
+    }
     return response.json()
   }
   const [harness, agents, providers, tools] = await Promise.all([

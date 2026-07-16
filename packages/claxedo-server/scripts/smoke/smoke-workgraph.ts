@@ -323,11 +323,20 @@ async function readExecutionCapabilities(
 ) {
   const deadline = Date.now() + 120_000
   let lastError: ReturnType<typeof executionCapabilitiesError> | undefined
+  let lastTransportError: string | undefined
   while (Date.now() < deadline) {
     const response = await request(`${base}/api/workgraph/execution-capabilities`, {
       headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
       signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
+    }).catch((error: unknown) => {
+      lastTransportError = errorMessage(error)
+      console.warn(`Execution capability read transport retry: ${lastTransportError}`)
+      return undefined
     })
+    if (!response) {
+      await wait(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())))
+      continue
+    }
     const body = parseJson(await response.text(), "/api/workgraph/execution-capabilities")
     if (response.ok) {
       requireHostedCapabilities(body)
@@ -335,13 +344,14 @@ async function readExecutionCapabilities(
     }
     const error = executionCapabilitiesError(body, response.status)
     lastError = error
+    console.warn(`Execution capability read retry: ${error.capability}/${error.reason}: ${error.message}`)
     if (!error.retryable) {
       throw new Error(`Execution capability ${error.capability}/${error.reason} is unavailable: ${error.message}`)
     }
     await wait(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())))
   }
   throw new Error(
-    `Execution capability route remained retryable-unavailable for two minutes${lastError ? `: ${lastError.capability}/${lastError.reason}: ${lastError.message}` : ""}`,
+    `Execution capability route remained retryable-unavailable for two minutes${lastError ? `: ${lastError.capability}/${lastError.reason}: ${lastError.message}` : lastTransportError ? `: ${lastTransportError}` : ""}`,
   )
 }
 
@@ -354,24 +364,39 @@ async function refreshExecutionCapabilities(
 ) {
   const deadline = Date.now() + 120_000
   let lastError: ReturnType<typeof executionCapabilitiesError> | undefined
+  let lastTransportError: string | undefined
   while (Date.now() < deadline) {
     const response = await request(`${base}/api/workgraph/execution-capabilities/refresh`, {
       method: "POST",
       headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
       signal: AbortSignal.timeout(Math.max(1, Math.min(60_000, deadline - Date.now()))),
+    }).catch((error: unknown) => {
+      lastTransportError = errorMessage(error)
+      console.warn(`Execution capability refresh transport retry: ${lastTransportError}`)
+      return undefined
     })
+    if (!response) {
+      await wait(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())))
+      continue
+    }
     const body = parseJson(await response.text(), "/api/workgraph/execution-capabilities/refresh")
     if (response.ok) return
     const error = executionCapabilitiesError(body, response.status)
     lastError = error
+    console.warn(`Execution capability refresh retry: ${error.capability}/${error.reason}: ${error.message}`)
     if (!error.retryable) {
       throw new Error(`Execution capability ${error.capability}/${error.reason} is unavailable: ${error.message}`)
     }
     await wait(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())))
   }
   throw new Error(
-    `Execution capability refresh remained retryable-unavailable for two minutes${lastError ? `: ${lastError.capability}/${lastError.reason}: ${lastError.message}` : ""}`,
+    `Execution capability refresh remained retryable-unavailable for two minutes${lastError ? `: ${lastError.capability}/${lastError.reason}: ${lastError.message}` : lastTransportError ? `: ${lastTransportError}` : ""}`,
   )
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return `${error.name}: ${error.message}`
+  return "unknown transport failure"
 }
 
 function executionCapabilitiesError(input: unknown, status: number) {

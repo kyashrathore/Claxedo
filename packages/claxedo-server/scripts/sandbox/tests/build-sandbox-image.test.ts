@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
+import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "@claxedo/sandbox-manager"
 import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
@@ -107,6 +108,14 @@ describe("build-sandbox-image", () => {
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("timeout 5s workspace-runtime"))).toBe(true)
     expect(dockerfiles.every((dockerfile) => dockerfile.includes('[ "$status" -ne 124 ]'))).toBe(true)
+  })
+
+  test("Cloudflare data-plane proxy targets the canonical workspace-runtime port", () => {
+    const worker = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../cloudflare-worker/src/index.ts"),
+      "utf8",
+    )
+    expect(worker).toContain(`const WORKSPACE_RUNTIME_PORT = ${DEFAULT_WORKSPACE_RUNTIME_PORT}`)
   })
 
   test("workspace package build order is topological (dependencies before dependents, workspace-runtime last)", () => {

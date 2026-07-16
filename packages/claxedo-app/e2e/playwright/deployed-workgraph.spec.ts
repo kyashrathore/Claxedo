@@ -110,7 +110,7 @@ type BrowserClerk = {
 }
 
 async function installClerkForOfficialTestingHelper(page: Page, key: string) {
-  const frontendApi = required("CLERK_FAPI")
+  const frontendApi = clerkFrontendApi(key)
   await page.addScriptTag({
     url: `https://${frontendApi}/npm/@clerk/clerk-js@5.125.10/dist/clerk.browser.js`,
   })
@@ -122,6 +122,16 @@ async function installClerkForOfficialTestingHelper(page: Page, key: string) {
     scope.Clerk = instance
     await instance.load()
   }, key)
+}
+
+function clerkFrontendApi(key: string) {
+  const encoded = key.replace(/^pk_(?:test|live)_/, "")
+  if (encoded === key) throw new Error("CLERK_PUBLISHABLE_KEY has an unsupported format")
+  const frontendApi = Buffer.from(encoded, "base64").toString("utf8").replace(/\$$/, "").trim()
+  if (!frontendApi || frontendApi.includes("/") || frontendApi.includes(":")) {
+    throw new Error("CLERK_PUBLISHABLE_KEY did not encode a valid Clerk Frontend API host")
+  }
+  return frontendApi
 }
 
 function streamContainer(page: Page, title: string) {
