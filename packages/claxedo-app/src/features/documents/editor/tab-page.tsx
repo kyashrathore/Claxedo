@@ -1,6 +1,7 @@
-import { createEffect, createSignal, Match, on, Switch } from "solid-js"
-import { pagesApi, type Page } from "@/features/documents/data/pages-api"
-import PageEditor, { loadTiptap, type PageEditorProps } from "./page-editor"
+import { Match, Switch, createEffect, createSignal, on } from "solid-js"
+import { DocumentApiError, documentsApi, type OpenDocument } from "../data/documents-api"
+import DocumentEditor from "./document-editor"
+import { DocumentRecoveryState } from "./recovery-states"
 
 export type TabPageProps = {
   pageId: string
@@ -13,84 +14,74 @@ export type TabPageProps = {
   onBackToIndex?: () => void
 }
 
-function Loading() {
-  return (
-    <div class="flex items-center gap-2 px-4 py-6 text-text-weak">
-      <div class="size-4 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
-      <span>Loading...</span>
-    </div>
-  )
-}
-
 export function TabPage(props: TabPageProps) {
-  const [page, setPage] = createSignal<Page | undefined>()
+  const [document, setDocument] = createSignal<OpenDocument>()
   const [loading, setLoading] = createSignal(true)
-  const [error, setError] = createSignal<string | undefined>()
-  const [saving, setSaving] = createSignal(false)
-  let loadSeq = 0
+  const [error, setError] = createSignal<unknown>()
+  let sequence = 0
 
-  const loadPage = (id: string) => {
-    const seq = ++loadSeq
+  const load = async (id: string) => {
+    const request = ++sequence
     setLoading(true)
     setError(undefined)
-    void loadTiptap()
-    pagesApi
-      .get(id)
-      .then((page) => {
-        if (seq !== loadSeq) return
-        setPage(page)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (seq !== loadSeq) return
-        setError(err instanceof Error ? err.message : String(err))
-        setLoading(false)
-      })
-  }
-
-  const editor = (): PageEditorProps | undefined => {
-    const next = page()
-    if (!next) return
-    return {
-      page: next,
-      pageId: props.pageId,
-      sessionId: props.sessionId,
-      directory: props.directory,
-      filePath: props.filePath,
-      leafId: props.leafId,
-      surfaceId: props.surfaceId,
-      saving: saving(),
-      loading: loading(),
-      onSavingChange: setSaving,
-      onTitleChange: props.onTitleChange,
-      onBackToIndex: props.onBackToIndex,
+    try {
+      const opened = await documentsApi.open(id)
+      if (request === sequence) setDocument(opened)
+    } catch (next) {
+      if (request === sequence) setError(next)
     }
+    if (request === sequence) setLoading(false)
   }
 
-  loadPage(props.pageId)
-
+  void load(props.pageId)
   createEffect(
     on(
       () => props.pageId,
-      (id) => loadPage(id),
+      (id) => void load(id),
       { defer: true },
     ),
   )
 
+  const recoveryKind = () => {
+    const current = error()
+    if (current instanceof DocumentApiError && current.code === "document_archived") return "archived" as const
+    if (current instanceof DocumentApiError && current.status === 404) return "missing" as const
+    return "error" as const
+  }
+  const errorMessage = () => {
+    const current = error()
+    return current instanceof Error ? current.message : String(current)
+  }
+
   return (
-    <div class="relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base">
-      <div class="flex-1 min-h-0 overflow-auto">
-        <Switch>
-          <Match when={loading()}>
-            <Loading />
-          </Match>
-          <Match when={error()}>{(err) => <div class="px-4 py-6 text-text-on-critical-base/80">{err()}</div>}</Match>
-          <Match when={editor()}>{(next) => <PageEditor {...next()} />}</Match>
-          <Match when={!loading()}>
-            <div class="px-4 py-6 text-text-weak">No content</div>
-          </Match>
-        </Switch>
-      </div>
+    <div class="relative flex size-full min-h-0 flex-col overflow-hidden bg-background-base">
+      <Switch>
+        <Match when={loading()}>
+          <div class="px-6 py-8 text-sm text-text-weak" role="status">
+            Loading document…
+          </div>
+        </Match>
+        <Match when={error()}>
+          {(next) => (
+            <DocumentRecoveryState
+              kind={recoveryKind()}
+              message={errorMessage()}
+              onBack={props.onBackToIndex}
+              onRetry={() => void load(props.pageId)}
+            />
+          )}
+        </Match>
+        <Match when={document()}>
+          {(next) => (
+            <DocumentEditor
+              document={next()}
+              onTitleChange={props.onTitleChange}
+              onBackToIndex={props.onBackToIndex}
+              reportError={(next) => setError(next)}
+            />
+          )}
+        </Match>
+      </Switch>
     </div>
   )
 }

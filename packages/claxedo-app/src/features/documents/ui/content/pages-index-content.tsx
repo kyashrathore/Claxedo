@@ -13,11 +13,14 @@ export function PagesIndexContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
       scope={props.meta.directory ? "project" : "all"}
       directory={props.meta.directory}
       projects={projectsQuery.data ?? []}
-      onOpenPage={(page) => {
-        const directory = page.project_id
-          ? page.directory || props.meta.directory || page.project_worktree || undefined
-          : undefined
-        state.layout.openPage(page.id, page.title, directory, page.source_path ?? undefined)
+      onOpenPage={(document) => {
+        const directory = document.project_id ? props.meta.directory : undefined
+        state.layout.openPage(
+          document.id,
+          document.display_name,
+          directory,
+          document.repository_relative_path ?? undefined,
+        )
       }}
     />
   )

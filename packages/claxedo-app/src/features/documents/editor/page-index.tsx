@@ -1,507 +1,212 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { showToast } from "@opencode-ai/ui/toast"
-import { usePlatform } from "@/platform/runtime/platform-provider"
-import { ensureLocalProject, useClaxedoState, useGlobalSDK, useShellQueryOptions as useQueryOptions } from "@/features/documents/app-ports"
-import { queryClient } from "@/platform/query/query-client"
-import { pagesApi, type Page, type PageQuery, type PageStatus } from "@/features/documents/data/pages-api"
-import { turnDocumentRevisionIntoWork, type DocumentRevisionLocator } from "@/features/documents/actions/doc-actions"
-import { durableDocumentRevisionForPage, TURN_REVISION_INTO_WORK_LABEL } from "@/features/documents/actions/doc-work-action"
-import { StatusEditorDialog } from "./status-editor-dialog"
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { documentsApi, type DocumentQuery, type DocumentSummary, type DocumentsApi } from "../data/documents-api"
 
-type Project = {
-  id: string
-  name?: string | null
-  worktree: string
-  sandboxes?: string[]
-  git?: { remote?: string | null }
-  workspaces?: Record<string, {
-    id?: string
-    workspaceId?: string
-    directory?: string
-    remote_directory?: string
-    kind?: string
-    git_remote?: string
-    repo_url?: string
-  }>
+type IndexState = {
+  documents: DocumentSummary[]
+  loading: boolean
+  error?: string
+  connection: "connecting" | "connected" | "reconnecting"
 }
 
-type Scope = "all" | "project" | "global"
+export function createDocumentIndexController(input: {
+  query: DocumentQuery
+  api: DocumentsApi
+  schedule: (handler: () => void, delay: number) => () => void
+  onChange: (state: IndexState) => void
+  onError: (error: unknown) => void
+}) {
+  const state: IndexState = { documents: [], loading: true, connection: "connecting" }
+  const emit = () => input.onChange({ ...state, documents: [...state.documents] })
+  let stopped = true
+  let retryAttempt = 0
+  let abort: AbortController | undefined
+  let cancelRetry: (() => void) | undefined
 
-export type PageStatusGroup = { status: PageStatus; pages: Page[] }
+  const load = async (loading = true) => {
+    if (loading) state.loading = true
+    state.error = undefined
+    emit()
+    try {
+      state.documents = await input.api.list(input.query)
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : String(error)
+      input.onError(error)
+    }
+    state.loading = false
+    emit()
+  }
 
-export const UNKNOWN_PAGE_STATUS: PageStatus = {
-  id: "__unknown__",
-  name: "Unknown",
-  color: "#6b7280",
-  position: 999,
-  transitions: [],
+  const connect = () => {
+    if (stopped) return
+    abort = new AbortController()
+    void input.api
+      .watch(
+        input.query,
+        (event) => {
+          if (event.type === "document.connected") {
+            const reconnected = state.connection === "reconnecting"
+            state.connection = "connected"
+            retryAttempt = 0
+            emit()
+            if (reconnected) void load(false)
+            return
+          }
+          if (event.type === "document.changed") void load(false)
+        },
+        abort.signal,
+      )
+      .then(() => {
+        if (!stopped) reconnect(new Error("Document event stream closed."))
+      }, reconnect)
+  }
+
+  const reconnect = (error: unknown) => {
+    if (stopped || abort?.signal.aborted) return
+    input.onError(error)
+    state.connection = "reconnecting"
+    emit()
+    const delay = Math.min(1_000 * 2 ** retryAttempt, 8_000)
+    retryAttempt++
+    cancelRetry = input.schedule(connect, delay)
+  }
+
+  return {
+    snapshot: () => ({ ...state, documents: [...state.documents] }),
+    load,
+    start() {
+      stopped = false
+      connect()
+    },
+    stop() {
+      stopped = true
+      abort?.abort()
+      cancelRetry?.()
+    },
+  }
 }
+
+type Project = { id: string; worktree: string }
 
 export type PageIndexProps = {
-  scope: Scope
+  scope: "all" | "project" | "global"
   directory?: string
   projects: Project[]
-  onOpenPage: (page: Page) => void
-}
-
-function currentProject(list: Project[], dir?: string) {
-  if (!dir) return
-  return list.find((item) =>
-    item.worktree === dir ||
-    item.sandboxes?.includes(dir) ||
-    Object.entries(item.workspaces ?? {}).some(([key, workspace]) =>
-      [key, workspace.id, workspace.workspaceId, workspace.directory, workspace.remote_directory].includes(dir),
-    ),
-  )
-}
-
-function query(scope: Scope, dir: string | undefined): PageQuery {
-  if (scope === "project") return { scope: "project", directory: dir }
-  if (scope === "global") return { scope: "global" }
-  return { scope: "all" }
-}
-
-function title() {
-  return "Pages"
-}
-
-function provenanceKey(page: Page) {
-  if (page.source_repo_key) return `repo:${page.source_repo_key}`
-  if (page.source_repo_root) return `repo-root:${page.source_repo_root}`
-  if (page.source_path) return `file:${parent(page.source_path)}`
-  if (page.directory || page.project_worktree) return `workspace:${page.directory || page.project_worktree}`
-  return "unsourced"
-}
-
-function provenanceLabel(page: Page) {
-  if (page.source_path && page.source_repo_root) {
-    return page.source_branch ? `${page.source_path} · ${page.source_branch}` : page.source_path
-  }
-  if (page.source_path) return page.source_path
-  if (page.source_repo_root) return page.source_repo_root
-  if (page.directory || page.project_worktree) return "Workspace page"
-  return "Unsourced"
-}
-
-function provenanceFilterLabel(page: Page) {
-  if (page.source_repo_root) return page.source_branch ? `Git: ${page.source_repo_root} · ${page.source_branch}` : `Git: ${page.source_repo_root}`
-  if (page.source_path) return `File: ${parent(page.source_path) || page.source_path}`
-  if (page.directory || page.project_worktree) return "Workspace pages"
-  return "Unsourced"
-}
-
-function parent(value: string) {
-  const txt = value.trim().replaceAll("\\", "/")
-  if (!txt) return ""
-  const trimmed = txt.replace(/\/+$/, "")
-  const idx = trimmed.lastIndexOf("/")
-  if (idx < 0) return ""
-  if (idx === 0) return "/"
-  if (idx === 2 && /^[a-z]:/i.test(trimmed)) return `${trimmed.slice(0, 2)}/`
-  return trimmed.slice(0, idx)
-}
-
-export function groupPagesByStatus(pages: Page[], statuses: PageStatus[]): PageStatusGroup[] {
-  const rows = statuses.map((item) => ({
-    status: item,
-    pages: pages.filter((page) => page.status === item.id),
-  }))
-  const ids = new Set(statuses.map((item) => item.id))
-  const rest = pages.filter((page) => !ids.has(page.status))
-  if (!rest.length) return rows
-  return [
-    ...rows,
-    {
-      status: UNKNOWN_PAGE_STATUS,
-      pages: rest,
-    },
-  ]
-}
-
-export function allowedPageStatusTransitions(page: Page, statuses: PageStatus[]) {
-  const current = statuses.find((item) => item.id === page.status)
-  if (!current) return statuses
-  return statuses.filter((item) => current.transitions.includes(item.id))
-}
-
-/** Optimistic list transform for a status move: rewrite the page's status in place. */
-export function optimisticMovePage(pages: Page[], pageId: string, status: string): Page[] {
-  return pages.map((page) => (page.id === pageId ? { ...page, status } : page))
-}
-
-/** Optimistic list transform for a delete: drop the page from the list. */
-export function optimisticDropPage(pages: Page[], pageId: string): Page[] {
-  return pages.filter((page) => page.id !== pageId)
-}
-
-/**
- * Apply an optimistic page-list mutation and then commit it. The list is
- * mutated immediately from its current snapshot; if the commit rejects, the
- * list is rolled back to that exact pre-mutation snapshot and `onError` fires.
- * This is the shared engine behind PageIndex.movePage / PageIndex.dropPage — a
- * commit failure must never leave the optimistic edit stuck on screen.
- */
-export async function runOptimisticPageMutation(input: {
-  getPages: () => Page[]
-  setPages: (next: Page[]) => void
-  optimistic: (pages: Page[]) => Page[]
-  commit: () => Promise<unknown>
-  onError: (err: unknown) => void
-}): Promise<void> {
-  const prev = input.getPages()
-  input.setPages(input.optimistic(prev))
-  try {
-    await input.commit()
-  } catch (err) {
-    input.setPages(prev)
-    input.onError(err)
-  }
+  onOpenPage: (document: DocumentSummary) => void
 }
 
 export function PageIndex(props: PageIndexProps) {
-  const dialog = useDialog()
-  const globalSDK = useGlobalSDK()
-  const platform = usePlatform()
-  const queryOptions = useQueryOptions()
-  const claxedoState = (() => {
-    try {
-      return useClaxedoState()
-    } catch {
-      return undefined
-    }
-  })()
-  const [pages, setPages] = createSignal<Page[]>([])
-  const [statuses, setStatuses] = createSignal<PageStatus[]>([])
-  const [loading, setLoading] = createSignal(true)
-  const [filter, setFilter] = createSignal("all")
-  const [collapsed, setCollapsed] = createSignal(new Set())
-  const projects = createMemo(() => queryClient.getQueryData<Project[]>(queryOptions.projects().queryKey) ?? props.projects)
-  const project = createMemo(() => currentProject(projects(), props.directory))
-  const workTarget = createMemo(() => {
-    const directory = props.directory?.trim()
-    if (!directory) return undefined
-    const workspace = Object.entries(project()?.workspaces ?? {}).find(([key, candidate]) =>
-      [key, candidate.id, candidate.workspaceId, candidate.directory, candidate.remote_directory].includes(directory),
-    )?.[1]
-    const hosted = new Set(["cloud", "user-hosted"]).has(workspace?.kind ?? "") || directory.startsWith("workspace:")
-    const repositoryUrl = workspace?.git_remote ?? workspace?.repo_url ?? project()?.git?.remote ?? undefined
-    if (hosted) return repositoryUrl ? { repositoryUrl } : undefined
-    return directory.startsWith("/") ? { directory } : undefined
+  const [state, setState] = createSignal<IndexState>({ documents: [], loading: true, connection: "connecting" })
+  const query = (): DocumentQuery => ({
+    directory: props.scope === "project" ? props.directory : undefined,
+    projectId: !props.directory ? props.projects[0]?.id : undefined,
   })
-  const revisionLocator = (page: Page) => {
-    const target = workTarget()
-    return target ? durableDocumentRevisionForPage(page, target) : undefined
-  }
-  const listQuery = createMemo(() => query(props.scope, props.directory))
-  const canEdit = createMemo(() => props.scope !== "all")
-  const filterOptions = createMemo(() => {
-    const seen = new Set<string>()
-    const options = [{ id: "all", label: "All pages" }]
-    for (const page of pages()) {
-      const id = provenanceKey(page)
-      if (seen.has(id)) continue
-      seen.add(id)
-      options.push({ id, label: provenanceFilterLabel(page) })
-    }
-    return options
-  })
-  const visiblePages = createMemo(() => filter() === "all" ? pages() : pages().filter((page) => provenanceKey(page) === filter()))
-
-  let loadSeq = 0
-  const loadPages = (showLoading = true) => {
-    const next = listQuery()
-    const seq = ++loadSeq
-    if (showLoading) setLoading(true)
-    void Promise.all([pagesApi.list(next), pagesApi.listStatuses(next)])
-      .then(([pageList, statusList]) => {
-        if (seq !== loadSeq) return
-        setPages(pageList)
-        setStatuses(statusList)
-      })
-      .catch((err) => {
-        if (seq !== loadSeq) return
-        showToast({
-          title: "Failed to load pages",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "error",
-        })
-      })
-      .finally(() => {
-        if (showLoading && seq === loadSeq) setLoading(false)
-      })
-  }
-
-  createEffect(() => {
-    loadPages()
+  const controller = createDocumentIndexController({
+    query: query(),
+    api: documentsApi,
+    schedule: (handler, delay) => {
+      const timer = setTimeout(handler, delay)
+      return () => clearTimeout(timer)
+    },
+    onChange: setState,
+    onError: (error) => console.error(error),
   })
 
-  createEffect(() => {
-    const next = listQuery()
-    const abort = new AbortController()
-    const watch = (pagesApi as typeof pagesApi & {
-      watchListEvents?: (input: PageQuery | undefined, onChange: () => void, signal?: AbortSignal) => Promise<void>
-    }).watchListEvents
-    if (watch) void watch(next, () => loadPages(false), abort.signal).catch(() => {})
-    onCleanup(() => abort.abort())
+  onMount(() => {
+    if (!query().projectId && !query().directory) {
+      setState({
+        documents: [],
+        loading: false,
+        connection: "connecting",
+        error: "Choose a project to view Documents.",
+      })
+      return
+    }
+    void controller.load()
+    controller.start()
   })
-
-  const grouped = createMemo(() => groupPagesByStatus(visiblePages(), statuses()))
-
-  const openStatusEditor = () => {
-    if (!canEdit()) return
-    dialog.show(() => (
-      <StatusEditorDialog
-        statuses={statuses()}
-        onSave={async (next) => {
-          const saved = await pagesApi.saveStatuses(next, listQuery())
-          setStatuses(saved)
-        }}
-      />
-    ))
-  }
-
-  const createPage = async () => {
-    try {
-      if (props.directory) {
-        await ensureLocalProject({
-          baseUrl: globalSDK.url,
-          request: platform.fetch,
-          directory: props.directory,
-          projectsQuery: queryOptions.projects(),
-        })
-      }
-      const page = await pagesApi.create({
-        title: "Untitled",
-        project_id: project()?.id,
-        directory: props.directory || project()?.worktree,
-      })
-      props.onOpenPage(page)
-    } catch (err) {
-      showToast({
-        title: "Failed to create page",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "error",
-      })
-    }
-  }
-
-  const movePage = (pageId: string, status: string) =>
-    runOptimisticPageMutation({
-      getPages: pages,
-      setPages,
-      optimistic: (list) => optimisticMovePage(list, pageId, status),
-      commit: () => pagesApi.transitionStatus(pageId, status),
-      onError: (err) =>
-        showToast({
-          title: "Failed to update status",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "error",
-        }),
-    })
-
-  const dropPage = (pageId: string) =>
-    runOptimisticPageMutation({
-      getPages: pages,
-      setPages,
-      optimistic: (list) => optimisticDropPage(list, pageId),
-      commit: () => pagesApi.delete(pageId),
-      onError: (err) =>
-        showToast({
-          title: "Failed to delete page",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "error",
-        }),
-    })
-
-  // Open the existing global WorkspacePanel on "Needs you" so the strict
-  // WorkGraph planning for the new revision can be reviewed there. Uses the
-  // established navigation bridge (focus the WorkGraph surface, then select the
-  // attention tab); it never renders its own panel/card.
-  const openWorkGraphNeedsYou = () => {
-    if (!claxedoState) return
-    claxedoState.layout.openWorkGraph()
-    claxedoState.workspacePanel.openGlobal("workgraph-attention")
-  }
-
-  const turnRevisionIntoWork = async (locator: DocumentRevisionLocator) => {
-    try {
-      await turnDocumentRevisionIntoWork(locator)
-      openWorkGraphNeedsYou()
-    } catch (err) {
-      // Surface the exact typed error (DocsApiError / DocumentWorkGraphHandoffError)
-      // message — no generic success/failure substitute.
-      showToast({
-        title: "Couldn't turn revision into WorkGraph work",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "error",
-      })
-    }
-  }
-
-  const toggle = (id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  onCleanup(controller.stop)
 
   return (
-    <div class="flex flex-col h-full overflow-hidden bg-background-base">
-      <div class="flex-1 min-h-0 overflow-auto">
-        <div style="width:min(100%,980px);margin:0 auto;padding:0 60px 120px;">
-          <div style="margin-top:80px;margin-bottom:28px;">
-            <div class="flex items-end justify-between gap-4">
-              <div class="flex flex-col gap-2">
-                <h1 style="font-size:40px;font-weight:700;line-height:1.1;letter-spacing:-0.02em;color:var(--text-strong);margin:0;">
-                  {title()}
-                </h1>
-                <div class="flex items-center gap-3 text-14-regular" style="color:var(--text-weaker);">
-                  <span>{visiblePages().length} {visiblePages().length === 1 ? "page" : "pages"}</span>
-                  <Show when={filterOptions().length > 1}>
-                    <label class="flex items-center gap-2">
-                      <span>Filter</span>
-                      <select
-                        class="rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-13-regular"
-                        value={filter()}
-                        onInput={(event) => setFilter(event.currentTarget.value)}
-                      >
-                        <For each={filterOptions()}>{(item) => <option value={item.id}>{item.label}</option>}</For>
-                      </select>
-                    </label>
-                  </Show>
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="text-14-medium"
-                  style="display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:8px;border:1px solid var(--border-weak-base);background:var(--background-base);color:var(--text-base);"
-                  aria-label="Create page"
-                  onClick={() => void createPage()}
-                >
-                  <Icon name="plus" size="small" />
-                  <span>New Page</span>
-                </button>
-                <IconButton
-                  icon="settings-gear"
-                  variant="ghost"
-                  aria-label="Configure statuses"
-                  disabled={!canEdit()}
-                  onClick={openStatusEditor}
-                />
-              </div>
-            </div>
-          </div>
-
-          <Show when={loading()}>
-            <div class="flex items-center gap-3 py-16" style="color:var(--text-weak);">
-              <div class="size-4 rounded-full border-2 border-current" style="border-top-color:transparent;animation:spin 0.6s linear infinite;" />
-              <span class="text-14-regular">Loading pages...</span>
-            </div>
-          </Show>
-
-          <Show when={!loading() && visiblePages().length === 0}>
-            <div class="rounded-xl border border-border-weak-base p-6" style="background:var(--surface-base);color:var(--text-weaker);">
-              No pages yet in this view.
-            </div>
-          </Show>
-
-          <Show when={!loading() && visiblePages().length > 0}>
-            <div class="flex flex-col gap-6">
-              <For each={grouped()}>
-                {(group) => (
-                  <Show when={group.pages.length > 0}>
-                    <section class="flex flex-col gap-2">
-                      <button
-                        type="button"
-                        class="flex items-center gap-2 py-1 text-left"
-                        onClick={() => toggle(group.status.id)}
-                      >
-                        <span class="inline-block size-2 rounded-sm" style={{ background: group.status.color }} />
-                        <span class="text-12-medium text-text-base">{group.status.name}</span>
-                        <span class="text-12-regular text-text-weaker">{group.pages.length}</span>
-                      </button>
-                      <Show when={!collapsed().has(group.status.id)}>
-                        <div class="flex flex-col gap-2">
-                          <For each={group.pages}>
-                            {(page) => {
-                              const moves = () => allowedPageStatusTransitions(page, statuses())
-                              return (
-                                <div
-                                  class="group flex items-center gap-3 rounded-xl border border-border-weak-base px-4 py-3"
-                                  style="background:var(--surface-base);"
-                                >
-                                  <button
-                                    type="button"
-                                    class="min-w-0 flex-1 text-left"
-                                    onClick={() => props.onOpenPage(page)}
-                                  >
-                                    <div class="truncate text-14-medium text-text-base">{page.title || "Untitled"}</div>
-                                    <div class="flex items-center gap-2 text-12-regular text-text-weaker">
-                                      <span class="truncate">{provenanceLabel(page)}</span>
-                                    </div>
-                                  </button>
-                                  <DropdownMenu gutter={4} placement="bottom-end">
-                                    <DropdownMenu.Trigger
-                                      class="rounded-md border border-border-weak-base px-2 py-1 text-12-regular text-text-weaker"
-                                      aria-label="Page actions"
-                                    >
-                                      <span>{group.status.name}</span>
-                                    </DropdownMenu.Trigger>
-                                    <DropdownMenu.Portal>
-                                      <DropdownMenu.Content>
-                                        <Show when={revisionLocator(page)}>
-                                          {(locator) => (
-                                            <>
-                                              <DropdownMenu.Item
-                                                aria-label={TURN_REVISION_INTO_WORK_LABEL}
-                                                onSelect={() => void turnRevisionIntoWork(locator())}
-                                              >
-                                                <DropdownMenu.ItemLabel>
-                                                  {TURN_REVISION_INTO_WORK_LABEL}
-                                                </DropdownMenu.ItemLabel>
-                                              </DropdownMenu.Item>
-                                              <DropdownMenu.Separator />
-                                            </>
-                                          )}
-                                        </Show>
-                                        <DropdownMenu.Group>
-                                          <DropdownMenu.GroupLabel>Move To</DropdownMenu.GroupLabel>
-                                          <For each={moves()}>
-                                            {(item) => (
-                                              <DropdownMenu.Item onSelect={() => void movePage(page.id, item.id)}>
-                                                <DropdownMenu.ItemLabel>{item.name}</DropdownMenu.ItemLabel>
-                                              </DropdownMenu.Item>
-                                            )}
-                                          </For>
-                                        </DropdownMenu.Group>
-                                        <DropdownMenu.Separator />
-                                        <DropdownMenu.Item onSelect={() => void dropPage(page.id)}>
-                                          <DropdownMenu.ItemLabel>Delete</DropdownMenu.ItemLabel>
-                                        </DropdownMenu.Item>
-                                      </DropdownMenu.Content>
-                                    </DropdownMenu.Portal>
-                                  </DropdownMenu>
-                                </div>
-                              )
-                            }}
-                          </For>
-                        </div>
-                      </Show>
-                    </section>
-                  </Show>
-                )}
-              </For>
-            </div>
-          </Show>
+    <main class="size-full overflow-auto bg-background-base px-6 py-6" aria-labelledby="documents-index-title">
+      <header class="mb-5 flex items-end justify-between gap-4 border-b border-border-weak-base pb-4">
+        <div>
+          <h1 id="documents-index-title" class="text-lg font-medium text-text-strong">
+            Documents
+          </h1>
+          <p class="mt-1 text-xs text-text-weak">Markdown files available in this project.</p>
         </div>
-      </div>
-    </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="rounded px-2 py-1.5 text-xs text-text-weak focus-visible:outline focus-visible:outline-2"
+            disabled
+            title="Repository import will be available when repository routing is connected."
+          >
+            Add to Documents
+          </button>
+          <button
+            type="button"
+            class="rounded bg-surface-raised-base px-3 py-1.5 text-xs font-medium text-text-strong focus-visible:outline focus-visible:outline-2"
+            disabled={!query().projectId && !query().directory}
+            onClick={() =>
+              void documentsApi
+                .create({
+                  projectId: query().projectId,
+                  directory: query().directory,
+                  displayName: "Untitled document",
+                })
+                .then(props.onOpenPage, (error) =>
+                  setState({ ...state(), error: error instanceof Error ? error.message : String(error) }),
+                )
+            }
+          >
+            New document
+          </button>
+          <span class="text-xs text-text-weak" role="status" aria-live="polite">
+            {state().connection === "reconnecting" ? "Reconnecting…" : `${state().documents.length} documents`}
+          </span>
+        </div>
+      </header>
+      <Show when={state().error}>
+        <p class="mb-4 text-sm text-text-on-critical-base" role="alert">
+          {state().error}
+        </p>
+      </Show>
+      <Show
+        when={!state().loading}
+        fallback={
+          <p class="text-sm text-text-weak" role="status">
+            Loading documents…
+          </p>
+        }
+      >
+        <Show
+          when={state().documents.length}
+          fallback={<p class="py-12 text-center text-sm text-text-weak">No documents yet.</p>}
+        >
+          <ul class="divide-y divide-border-weak-base" aria-label="Documents">
+            <For each={state().documents}>
+              {(document) => (
+                <li>
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-between gap-4 px-2 py-3 text-left hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
+                    onClick={() => props.onOpenPage(document)}
+                  >
+                    <span class="min-w-0">
+                      <span class="block truncate text-sm font-medium text-text-strong">{document.display_name}</span>
+                      <span class="mt-0.5 block truncate text-xs text-text-weak">
+                        {document.origin_kind === "repository" ? document.repository_relative_path : "Managed document"}
+                      </span>
+                    </span>
+                    <span class="shrink-0 text-xs text-text-weak">{document.status}</span>
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+      </Show>
+    </main>
   )
 }
