@@ -1390,26 +1390,30 @@ describe("hosted shell boot surface", () => {
     expect(waitUntil).toHaveBeenCalledTimes(1)
   })
 
-  test("/api/claxedo/events requires the control-plane bearer", async () => {
+  test("hosted central event routes require the control-plane bearer", async () => {
     const app = createHostedApp(fakePlane())
-    const res = await app.fetch(new Request("http://cp.test/api/claxedo/events"))
-    expect(res.status).toBe(401)
-    expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    for (const path of ["/api/claxedo/events", "/api/wr/events"]) {
+      const res = await app.fetch(new Request(`http://cp.test${path}`))
+      expect(res.status).toBe(401)
+      expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    }
   })
 
-  test("/api/claxedo/events streams an immediate heartbeat in the bus envelope", async () => {
+  test("hosted central event routes stream an immediate heartbeat in the bus envelope", async () => {
     const app = createHostedApp(fakePlane())
-    const res = await app.fetch(
-      new Request("http://cp.test/api/claxedo/events", {
-        headers: { authorization: "Bearer user_1", accept: "text/event-stream" },
-      }),
-    )
-    expect(res.status).toBe(200)
-    expect(res.headers.get("content-type")).toContain("text/event-stream")
-    const reader = res.body!.getReader()
-    const first = await reader.read()
-    expect(new TextDecoder().decode(first.value)).toBe(`data: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
-    await reader.cancel()
+    for (const path of ["/api/claxedo/events", "/api/wr/events"]) {
+      const res = await app.fetch(
+        new Request(`http://cp.test${path}`, {
+          headers: { authorization: "Bearer user_1", accept: "text/event-stream" },
+        }),
+      )
+      expect(res.status).toBe(200)
+      expect(res.headers.get("content-type")).toContain("text/event-stream")
+      const reader = res.body!.getReader()
+      const first = await reader.read()
+      expect(new TextDecoder().decode(first.value)).toBe(`data: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
+      await reader.cancel()
+    }
   })
 
   // D9 fail-closed hosted boot: the hosted app refuses to compose unless the

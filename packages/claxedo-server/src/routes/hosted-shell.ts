@@ -261,21 +261,23 @@ function eventsStream(c: Context, heartbeatMs: number) {
 
 export function HostedShellRoutes(options: HostedShellRouteOptions) {
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
+  const events = async (c: Context) => {
+    try {
+      await controlPlaneAuthContext(c.req.raw, {
+        config: options.authConfig,
+        ...(options.verifier ? { verifier: options.verifier } : {}),
+      })
+    } catch (err) {
+      return authErrorResponse(c, err)
+    }
+    return eventsStream(c, heartbeatMs)
+  }
   return new Hono()
     // Rubric S1 (mirrors routes/events.ts): every bus subscriber passes the
     // same control-plane auth gate as the other claxedo routes. There is no
     // loopback bypass on a hosted central.
-    .get("/api/claxedo/events", async (c) => {
-      try {
-        await controlPlaneAuthContext(c.req.raw, {
-          config: options.authConfig,
-          ...(options.verifier ? { verifier: options.verifier } : {}),
-        })
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-      return eventsStream(c, heartbeatMs)
-    })
+    .get("/api/claxedo/events", events)
+    .get("/api/wr/events", events)
     .get("/api/claxedo/bootstrap", async (c) => {
       try {
         const provider = emptyProvider()
