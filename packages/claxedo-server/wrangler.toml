@@ -92,11 +92,9 @@ new_sqlite_classes = ["WorkGraphSettler"]
 name = "claxedo-control-plane-staging"
 
 [env.staging.triggers]
-# Two lanes: the every-minute lane runs ONLY the bounded WorkGraph reconciler
-# (deletion finalization / execution placement must land within the client's
-# live sync window); the 15-minute lane runs the full sweep (sandbox GC,
-# billing, reconcile) per the D13 truth-keeper band.
-crons = ["*/15 * * * *", "* * * * *"]
+# The 15-minute sweep remains the bounded truth keeper for sandbox GC,
+# billing, and WorkGraph reconciliation.
+crons = ["*/15 * * * *"]
 
 [env.staging.vars]
 CLAXEDO_SIGNED_CLOUD_AUTH = "1"
