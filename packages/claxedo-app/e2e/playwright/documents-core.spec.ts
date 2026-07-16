@@ -37,7 +37,8 @@
  *   3. Opening and closing without an edit performs no write; unsupported Markdown opens
  *      in source mode with an explicit reason and exact bytes.
  *   4. Autosave reports unsaved/saving/saved truthfully; a failed save remains actionable
- *      and Retry recovers without dropping the draft.
+ *      and Retry recovers without dropping the draft. Rich-editor typing survives its
+ *      own autosave event without remounting or switching modes.
  *   5. Two stale tabs cannot silently overwrite one another: CAS conflict UI preserves
  *      both the human draft and current disk value.
  *   6. External edits refresh a clean editor live; the same event conflicts with a dirty
@@ -642,7 +643,7 @@ async function openDocument(page: Page, id: string) {
 }
 
 async function sourceEditor(page: Page) {
-  const source = page.getByRole("textbox", { name: "Document Markdown source" })
+  const source = page.getByLabel("Document Markdown source")
   if (await source.count()) return source
   await page.getByRole("button", { name: "Edit source" }).click()
   await expect(source).toBeVisible()
@@ -800,6 +801,28 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
     expect(runtime.inspect(document.summary.id).markdown).toBe("Heading\n=======\n\nkeep this draft\n")
     await proveGeometry(page, page.getByRole("status").filter({ hasText: "Saved" }), testInfo, "autosave-retry-saved")
+  })
+
+  test("rich editor accepts typing and its autosave event preserves the editor instance — behavior 4", async ({
+    page,
+  }, testInfo) => {
+    annotate(testInfo, "direct rich-editor input and autosave feedback-loop regression")
+    const runtime = new DocumentRuntime()
+    const document = runtime.seed({ displayName: "Editable rich document", markdown: "# Editable\n\nStart here.\n" })
+    await bootstrap(page, runtime)
+    await openDocument(page, document.summary.id)
+    const rich = page.getByRole("textbox", { name: "Document rich editor" })
+    await rich.evaluate((element) => (element.dataset.e2eEditorInstance = "stable"))
+    await rich.click()
+    await page.keyboard.press("End")
+    await page.keyboard.type(" Typed in rich mode.")
+    await expect(page.getByRole("status")).toContainText(/Unsaved changes|Saving/)
+    await expect(page.getByRole("status")).toContainText("Saved", { timeout: 10_000 })
+    await expect(rich).toContainText("Typed in rich mode.")
+    await expect(page.getByText("Source mode")).toHaveCount(0)
+    expect(await rich.getAttribute("data-e2e-editor-instance")).toBe("stable")
+    expect(runtime.inspect(document.summary.id).markdown).toContain("Typed in rich mode.")
+    await proveGeometry(page, rich, testInfo, "rich-editor-stable-after-autosave")
   })
 
   test("two tabs surface a CAS conflict and preserve both sides — behavior 5", async ({ page, context }, testInfo) => {
