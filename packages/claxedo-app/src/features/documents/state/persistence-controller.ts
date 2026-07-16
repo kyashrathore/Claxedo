@@ -210,7 +210,9 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
     }
 
     const previousVersion = saveVersion
-    state.expectedVersion = response.version
+    if (state.expectedVersion === saveVersion || state.expectedVersion === response.version) {
+      state.expectedVersion = response.version
+    }
     loadedDraft = { ...saveDraft }
     savedGeneration = saveGeneration
     state.retryAttempt = 0
@@ -321,6 +323,20 @@ export function createDocumentPersistenceController(input: DocumentPersistenceCo
             draft: state.conflict.current,
           }
         : { version: state.expectedVersion, draft: loadedDraft }
+      if (
+        saving &&
+        current.displayName === saveDraft.displayName &&
+        current.markdown === saveDraft.markdown &&
+        current.version !== saveVersion &&
+        current.version !== state.expectedVersion
+      ) {
+        const previousVersion = state.expectedVersion
+        state.expectedVersion = current.version
+        loadedDraft = { ...saveDraft }
+        state.recoveryError = persistRecoveryDraft() ?? removeRecoveryVersions([previousVersion])
+        notify()
+        return snapshot()
+      }
       if (current.displayName === loaded.draft.displayName && current.markdown === loaded.draft.markdown) {
         if (current.version === loaded.version) return snapshot()
         if (state.conflict) {

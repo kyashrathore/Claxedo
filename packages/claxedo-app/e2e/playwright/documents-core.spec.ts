@@ -196,6 +196,7 @@ class DocumentRuntime {
   readonly hostedObjects = new Map<string, string>()
   readonly hydratedAgentFiles = new Map<string, HydratedAgentFile>()
   readonly hostedVmFiles = new Map<string, HydratedAgentFile>()
+  readonly deliveredEvents: Array<{ documentId: string; reason: string }> = []
   private eventWaiters: Array<{ route: Route; documentId?: string; projectId?: string }> = []
   private nextDocument = 1
   private nextSnapshot = 1
@@ -444,6 +445,7 @@ class DocumentRuntime {
       (waiter) => waiter.documentId === id || (!waiter.documentId && waiter.projectId === document.summary.project_id),
     )
     this.eventWaiters = this.eventWaiters.filter((waiter) => !matching.includes(waiter))
+    if (matching.length) this.deliveredEvents.push({ documentId: id, reason })
     await Promise.all(
       matching.map(({ route }) =>
         route
@@ -644,8 +646,10 @@ async function openDocument(page: Page, id: string) {
 
 async function sourceEditor(page: Page) {
   const source = page.getByLabel("Document Markdown source")
-  if (await source.count()) return source
-  await page.getByRole("button", { name: "Edit source" }).click()
+  const editSource = page.getByRole("button", { name: "Edit source" })
+  await expect(source.or(editSource)).toBeVisible()
+  if (await source.isVisible()) return source
+  await editSource.click()
   await expect(source).toBeVisible()
   return source
 }
@@ -662,6 +666,28 @@ function annotate(testInfo: TestInfo, extra = "") {
   testInfo.annotations.push({
     type: "evidence-tier",
     description: `Tier M mock-backed real UI proof${extra ? `; ${extra}` : ""}`,
+  })
+}
+
+function unexpectedCanaryConsoleErrors(messages: string[], requestFailures: string[]) {
+  // The deterministic route harness closes finite SSE responses after delivery;
+  // reconnect diagnostics from those exact streams are expected harness noise.
+  return messages.filter(
+    (message) =>
+      !message.startsWith("[documents] editor persistence error Error: Document event stream closed.") &&
+      !(
+        message.startsWith("[documents] editor persistence error TypeError: Failed to fetch") &&
+        message.includes("/src/platform/api/api.ts") &&
+        requestFailures.some((value) => new URL(value).pathname === "/documents/events")
+      ) &&
+      !message.startsWith("[global-sdk] event stream failed"),
+  )
+}
+
+function unexpectedCanaryRequestFailures(urls: string[]) {
+  return urls.filter((value) => {
+    const pathname = new URL(value).pathname
+    return !["/documents/events", "/api/wr/events", "/global/event", "/event"].includes(pathname)
   })
 }
 
@@ -803,26 +829,181 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, page.getByRole("status").filter({ hasText: "Saved" }), testInfo, "autosave-retry-saved")
   })
 
-  test("rich editor accepts typing and its autosave event preserves the editor instance — behavior 4", async ({
+  test("rich editor accepts typing and its autosave event preserves the editor instance — behavior 4 @documents-rich-canary", async ({
     page,
+    context,
   }, testInfo) => {
     annotate(testInfo, "direct rich-editor input and autosave feedback-loop regression")
+    const pageErrors: string[] = []
+    const consoleErrors: string[] = []
+    const requestFailures: string[] = []
+    page.on("pageerror", (error) => pageErrors.push(error.message))
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text())
+    })
+    page.on("requestfailed", (request) => requestFailures.push(request.url()))
     const runtime = new DocumentRuntime()
     const document = runtime.seed({ displayName: "Editable rich document", markdown: "# Editable\n\nStart here.\n" })
     await bootstrap(page, runtime)
     await openDocument(page, document.summary.id)
     const rich = page.getByRole("textbox", { name: "Document rich editor" })
+    await expect(page.locator(".notion-page-shell")).toBeVisible()
+    await expect(page.getByRole("textbox", { name: "Document name" })).toHaveClass(/notion-title/)
+    await expect(rich).toHaveClass(/tiptap/)
     await rich.evaluate((element) => (element.dataset.e2eEditorInstance = "stable"))
+    const richHandle = await rich.elementHandle()
+    if (!richHandle) throw new Error("Rich editor did not mount")
     await rich.click()
+    expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
+    expect(
+      await rich.evaluate((element) => {
+        const anchor = getSelection()?.anchorNode
+        if (!anchor) return false
+        return element.contains(anchor.nodeType === Node.TEXT_NODE ? anchor.parentNode : anchor)
+      }),
+    ).toBe(true)
     await page.keyboard.press("End")
     await page.keyboard.type(" Typed in rich mode.")
     await expect(page.getByRole("status")).toContainText(/Unsaved changes|Saving/)
     await expect(page.getByRole("status")).toContainText("Saved", { timeout: 10_000 })
     await expect(rich).toContainText("Typed in rich mode.")
+
+    await page.keyboard.press("Enter")
+    await page.keyboard.type("Second paragrapx")
+    await page.keyboard.press("Backspace")
+    await page.keyboard.type("h.")
+    await page.keyboard.press("Home")
+    await page.keyboard.type("Caret stable: ")
+    await page.keyboard.press("End")
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin })
+    await page.evaluate(() => navigator.clipboard.writeText(" Pasted"))
+    const clipboardModifier = process.platform === "darwin" ? "Meta" : "Control"
+    const editorModifier = await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta" : "Control"))
+    await page.keyboard.press(`${clipboardModifier}+V`)
+    expect(await rich.textContent()).toContain("Caret stable: Second paragraph. Pasted")
+    await page.keyboard.press(`${editorModifier}+Z`)
+    expect(await rich.textContent()).not.toContain("Pasted")
+    await page.keyboard.press(`${editorModifier}+Shift+Z`)
+    expect(await rich.textContent()).toContain("Caret stable: Second paragraph. Pasted")
+    const selectionBeforeSave = await rich.evaluate((element) => {
+      const selection = getSelection()
+      const anchor = selection?.anchorNode
+      return {
+        inside: Boolean(anchor && element.contains(anchor.nodeType === Node.TEXT_NODE ? anchor.parentNode : anchor)),
+        anchorOffset: selection?.anchorOffset,
+        focusOffset: selection?.focusOffset,
+        anchorText: anchor?.textContent,
+      }
+    })
+    await expect(page.getByRole("status")).toContainText(/Unsaved changes|Saving/)
+    await expect(page.getByRole("status")).toContainText("Saved", { timeout: 10_000 })
+    expect(
+      await rich.evaluate((element) => {
+        const selection = getSelection()
+        const anchor = selection?.anchorNode
+        return {
+          inside: Boolean(anchor && element.contains(anchor.nodeType === Node.TEXT_NODE ? anchor.parentNode : anchor)),
+          anchorOffset: selection?.anchorOffset,
+          focusOffset: selection?.focusOffset,
+          anchorText: anchor?.textContent,
+        }
+      }),
+    ).toEqual(selectionBeforeSave)
+    await page.keyboard.type("!")
+    await expect(rich).toContainText("Caret stable: Second paragraph. Pasted!")
+    await expect(page.getByRole("status")).toContainText("Saved", { timeout: 10_000 })
     await expect(page.getByText("Source mode")).toHaveCount(0)
     expect(await rich.getAttribute("data-e2e-editor-instance")).toBe("stable")
-    expect(runtime.inspect(document.summary.id).markdown).toContain("Typed in rich mode.")
+    const richHandleAfterSave = await rich.elementHandle()
+    if (!richHandleAfterSave) throw new Error("Rich editor disappeared after autosave")
+    expect(await page.evaluate(([before, after]) => before === after, [richHandle, richHandleAfterSave])).toBe(true)
+    expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
+    expect(runtime.inspect(document.summary.id).markdown).toContain("Caret stable: Second paragraph. Pasted!")
+    expect(runtime.deliveredEvents).toContainEqual({ documentId: document.summary.id, reason: "user.save" })
     await proveGeometry(page, rich, testInfo, "rich-editor-stable-after-autosave")
+
+    await openDocument(page, document.summary.id)
+    const reopened = page.getByRole("textbox", { name: "Document rich editor" })
+    await expect(reopened).toContainText("Caret stable: Second paragraph. Pasted!")
+    await expect(page.getByText("Source mode")).toHaveCount(0)
+    expect(pageErrors).toEqual([])
+    expect(unexpectedCanaryConsoleErrors(consoleErrors, requestFailures)).toEqual([])
+    expect(unexpectedCanaryRequestFailures(requestFailures)).toEqual([])
+  })
+
+  test("rich editor preserves formatting and slash-command interactions through autosave @documents-rich-canary", async ({
+    page,
+  }) => {
+    const pageErrors: string[] = []
+    const consoleErrors: string[] = []
+    const requestFailures: string[] = []
+    page.on("pageerror", (error) => pageErrors.push(error.message))
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text())
+    })
+    page.on("requestfailed", (request) => requestFailures.push(request.url()))
+    const runtime = new DocumentRuntime()
+    const document = runtime.seed({
+      displayName: "Rich interaction document",
+      markdown: "First paragraph.\n\nSecond paragraph.\n",
+    })
+    await bootstrap(page, runtime)
+    await openDocument(page, document.summary.id)
+
+    const title = page.getByRole("textbox", { name: "Document name" })
+    const rich = page.getByRole("textbox", { name: "Document rich editor" })
+    const richHandle = await rich.elementHandle()
+    if (!richHandle) throw new Error("Rich editor did not mount")
+    await title.focus()
+    await page.keyboard.press("Enter")
+    expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
+
+    await rich.locator("p").first().click()
+    const editorModifier = await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta" : "Control"))
+    await page.keyboard.press(`${editorModifier}+A`)
+    expect(await page.evaluate(() => getSelection()?.toString())).toBe("First paragraph.")
+    await page.keyboard.press(`${editorModifier}+A`)
+    expect(await page.evaluate(() => getSelection()?.toString())).toContain("Second paragraph.")
+
+    await rich.evaluate((element) => {
+      const paragraph = element.querySelector("p")
+      if (!paragraph) throw new Error("Expected a paragraph to format")
+      const range = document.createRange()
+      range.selectNodeContents(paragraph)
+      getSelection()?.removeAllRanges()
+      getSelection()?.addRange(range)
+      document.dispatchEvent(new Event("selectionchange"))
+      paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))
+    })
+    await page.getByRole("button", { name: "Bold" }).click()
+
+    await rich.evaluate((element) => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      range.collapse(false)
+      getSelection()?.removeAllRanges()
+      getSelection()?.addRange(range)
+      ;(element as HTMLElement).focus()
+    })
+    await page.keyboard.press("Enter")
+    await page.keyboard.type("/h2")
+    const headingCommand = page.locator(".slash-command-item").filter({ hasText: "Heading 2" }).first()
+    await expect(headingCommand).toBeVisible()
+    await headingCommand.click()
+    await page.keyboard.type("Slash heading")
+
+    await expect(page.getByRole("status")).toContainText("Saved", { timeout: 10_000 })
+    const saved = runtime.inspect(document.summary.id).markdown
+    expect(saved).toContain("**First paragraph.**")
+    expect(saved).toContain("## Slash heading")
+    const richHandleAfterSave = await rich.elementHandle()
+    if (!richHandleAfterSave) throw new Error("Rich editor disappeared after interaction autosave")
+    expect(await page.evaluate(([before, after]) => before === after, [richHandle, richHandleAfterSave])).toBe(true)
+    await openDocument(page, document.summary.id)
+    await expect(page.getByRole("textbox", { name: "Document rich editor" })).toContainText("Slash heading")
+    expect(pageErrors).toEqual([])
+    expect(unexpectedCanaryConsoleErrors(consoleErrors, requestFailures)).toEqual([])
+    expect(unexpectedCanaryRequestFailures(requestFailures)).toEqual([])
   })
 
   test("two tabs surface a CAS conflict and preserve both sides — behavior 5", async ({ page, context }, testInfo) => {

@@ -28,3 +28,9 @@ export function splitMarkdownEnvelope(markdown: string): MarkdownEnvelope {
 export function joinMarkdownEnvelope(envelope: Pick<MarkdownEnvelope, "bom" | "frontmatter">, body: string) {
   return envelope.bom + envelope.frontmatter + body
 }
+
+export function normalizeSerializedMarkdownBody(envelope: Pick<MarkdownEnvelope, "body">, serialized: string) {
+  if (envelope.body.trim().length === 0 && serialized === "") return envelope.body
+  if (serialized === "") return ""
+  return serialized.replace(/\n*$/, "") + (envelope.body.match(/\n*$/)?.[0] ?? "")
+}

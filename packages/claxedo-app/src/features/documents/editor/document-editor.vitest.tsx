@@ -45,16 +45,36 @@ function api(save = vi.fn(async () => ({ ok: true as const, version: "opaque-v2"
   } satisfies Pick<DocumentsApi, "save" | "create">
 }
 
+function selectEditorContents(editor: HTMLElement) {
+  editor.focus()
+  fireEvent.focus(editor)
+  const range = window.document.createRange()
+  range.selectNodeContents(editor.querySelector("p")!)
+  window.getSelection()?.removeAllRanges()
+  window.getSelection()?.addRange(range)
+  window.document.dispatchEvent(new Event("selectionchange"))
+  fireEvent.mouseUp(editor)
+}
+
 afterEach(cleanup)
 
 describe("DocumentEditor", () => {
+  test("mounts the established Notion editor shell for supported Markdown", () => {
+    const view = render(() => (
+      <DocumentEditor document={document("# Plan\n\nStart here.\n")} api={api()} storage={storage()} />
+    ))
+
+    expect(view.container.querySelector(".notion-page-shell")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Document name" })).toHaveClass("notion-title")
+    expect(screen.getByRole("textbox", { name: "Document rich editor" })).toHaveClass("tiptap")
+  })
+
   test("opening without editing performs zero writes at the API boundary", () => {
     const client = api()
     render(() => <DocumentEditor document={document("# Plan\n")} api={client} storage={storage()} />)
     expect(client.save).not.toHaveBeenCalled()
-    expect(screen.getByRole("toolbar", { name: "Document formatting" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "improve" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Edit source" })).toBeInTheDocument()
+    expect(screen.queryByRole("toolbar", { name: "Document formatting" })).not.toBeInTheDocument()
   })
 
   test("labels source mode with the detector reason and saves plain Markdown on blur", async () => {
@@ -191,8 +211,8 @@ describe("DocumentEditor", () => {
     const name = screen.getByRole("textbox", { name: "Document name" })
     const save = screen.getByRole("button", { name: "Save now" })
     const rich = screen.getByRole("button", { name: "Try rich mode" })
-    expect(name.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(save.compareDocumentPosition(rich) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(save.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(name.compareDocumentPosition(rich) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite")
   })
 
@@ -208,16 +228,9 @@ describe("DocumentEditor", () => {
       />
     ))
     const editor = screen.getByRole("textbox", { name: "Document rich editor" })
-    editor.focus()
-    fireEvent.focus(editor)
-    const range = window.document.createRange()
-    range.selectNodeContents(editor.querySelector("p")!)
-    window.getSelection()?.removeAllRanges()
-    window.getSelection()?.addRange(range)
-    window.document.dispatchEvent(new Event("selectionchange"))
-    fireEvent.mouseUp(editor)
+    selectEditorContents(editor)
 
-    fireEvent.click(screen.getByRole("button", { name: "improve" }))
+    fireEvent.click(await screen.findByRole("button", { name: "improve" }))
 
     await waitFor(() => expect(transformSelection).toHaveBeenCalledWith("improve", "Paragraph"))
     await waitFor(() => expect(editor).toHaveTextContent("Improved paragraph"))
@@ -228,6 +241,52 @@ describe("DocumentEditor", () => {
         expect.objectContaining({ markdown: "Improved paragraph\n" }),
       ),
     )
+  })
+
+  test("Tiptap Markdown formatting and a pre-response self-event preserve the rich editor instance", async () => {
+    let onEvent: ((event: { type: "document.changed"; document_id: string }) => void) | undefined
+    let disk = document("Paragraph\n")
+    let resolveSave!: (value: { ok: true; version: string }) => void
+    const pending = new Promise<{ ok: true; version: string }>((resolve) => {
+      resolveSave = resolve
+    })
+    let savedMarkdown = ""
+    const save = vi.fn(async (_id: string, request: { displayName: string; markdown: string }) => {
+      savedMarkdown = request.markdown
+      return pending
+    })
+    const client = {
+      ...api(save),
+      open: vi.fn(async () => disk),
+      watch: vi.fn(async (_query, next: typeof onEvent, signal?: AbortSignal) => {
+        onEvent = next
+        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
+      }),
+    }
+    render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
+    await waitFor(() => expect(onEvent).toBeTypeOf("function"))
+
+    const editor = screen.getByRole("textbox", { name: "Document rich editor" })
+    selectEditorContents(editor)
+    fireEvent.click(await screen.findByRole("button", { name: "Underline" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save now" }))
+    await waitFor(() => expect(save).toHaveBeenCalled())
+    expect(savedMarkdown).toBe("++Paragraph++\n")
+
+    disk = { ...disk, markdown: savedMarkdown, version: "opaque-v2" }
+    onEvent!({ type: "document.changed", document_id: "doc-1" })
+    await waitFor(() => expect(client.open).toHaveBeenLastCalledWith("doc-1"))
+    resolveSave({ ok: true, version: "opaque-v2" })
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved"))
+
+    const opensAfterSave = client.open.mock.calls.length
+    onEvent!({ type: "document.changed", document_id: "doc-1" })
+    onEvent!({ type: "document.changed", document_id: "doc-1" })
+    await waitFor(() => expect(client.open.mock.calls.length).toBeGreaterThan(opensAfterSave))
+
+    expect(screen.getByRole("textbox", { name: "Document rich editor" })).toBe(editor)
+    expect(screen.queryByText("Source mode")).not.toBeInTheDocument()
+    expect(editor).toHaveTextContent("Paragraph")
   })
 
   test("clean external edits refresh in place while dirty edits enter the normal conflict flow", async () => {
@@ -244,11 +303,13 @@ describe("DocumentEditor", () => {
     render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
     await waitFor(() => expect(client.open).toHaveBeenCalled())
 
+    const rich = screen.getByRole("textbox", { name: "Document rich editor" })
     disk = { ...disk, markdown: "# External clean\n", version: "opaque-v2" }
     onEvent?.({ type: "document.changed", document_id: "doc-1" })
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Document rich editor" })).toHaveTextContent("External clean"),
     )
+    expect(screen.getByRole("textbox", { name: "Document rich editor" })).toBe(rich)
 
     fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
     fireEvent.input(screen.getByRole("textbox", { name: "Document Markdown source" }), {

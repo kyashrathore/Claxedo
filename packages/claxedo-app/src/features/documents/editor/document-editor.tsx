@@ -184,16 +184,7 @@ export default function DocumentEditor(props: DocumentEditorProps) {
             Documents
           </button>
         )}
-        <input
-          aria-label="Document name"
-          class="min-w-0 flex-1 bg-transparent text-base font-medium text-text-strong outline-none placeholder:text-text-weak focus-visible:outline focus-visible:outline-2"
-          value={snapshot().draft.displayName}
-          onInput={(event) => {
-            controller.editDisplayName(event.currentTarget.value)
-            props.onTitleChange?.(event.currentTarget.value)
-          }}
-          onBlur={flush}
-        />
+        <div class="flex-1" />
         <button
           type="button"
           class="rounded px-2 py-1 text-xs text-text-weak hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
@@ -219,40 +210,64 @@ export default function DocumentEditor(props: DocumentEditorProps) {
         </details>
       </header>
 
-      <Switch>
-        <Match when={detection().status === "rejected"}>
-          <DocumentRecoveryState kind="rejected" message={rejectedReason()} onBack={props.onBackToIndex} />
-        </Match>
-        <Match when={detection().status === "source" && detection()}>
-          {(value) => {
-            const source = value() as Extract<MarkdownDetection, { status: "source" }>
-            return (
-              <SourceMode
-                markdown={snapshot().draft.markdown}
-                reason={source.reason.message}
-                onInput={editMarkdown}
-                onBlur={flush}
-                onTryRich={tryRich}
-              />
-            )
-          }}
-        </Match>
-        <Match when={detection().status === "rich" && detection()}>
-          {(value) => (
-            <RichMode
-              detection={value() as Extract<MarkdownDetection, { status: "rich" }>}
-              onInput={editMarkdown}
-              onBlur={flush}
-              onEditSource={editSource}
-              onSelectionAction={props.transformSelection}
-              onSerializationError={(error) => {
-                setEditorError(error.message)
-                reportError(error)
+      <div class="min-h-0 flex-1 overflow-auto">
+        <div class="notion-page-shell">
+          <input
+            aria-label="Document name"
+            class="notion-title"
+            placeholder="Untitled"
+            value={snapshot().draft.displayName}
+            onInput={(event) => {
+              controller.editDisplayName(event.currentTarget.value)
+              props.onTitleChange?.(event.currentTarget.value)
+            }}
+            onBlur={flush}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return
+              event.preventDefault()
+              const rich = event.currentTarget
+                .closest(".notion-page-shell")
+                ?.querySelector<HTMLElement>('[aria-label="Document rich editor"]')
+              rich?.focus()
+            }}
+          />
+
+          <Switch>
+            <Match when={detection().status === "rejected"}>
+              <DocumentRecoveryState kind="rejected" message={rejectedReason()} onBack={props.onBackToIndex} />
+            </Match>
+            <Match when={detection().status === "source" && detection()}>
+              {(value) => {
+                const source = value() as Extract<MarkdownDetection, { status: "source" }>
+                return (
+                  <SourceMode
+                    markdown={snapshot().draft.markdown}
+                    reason={source.reason.message}
+                    onInput={editMarkdown}
+                    onBlur={flush}
+                    onTryRich={tryRich}
+                  />
+                )
               }}
-            />
-          )}
-        </Match>
-      </Switch>
+            </Match>
+            <Match when={detection().status === "rich" && detection()}>
+              {(value) => (
+                <RichMode
+                  detection={value() as Extract<MarkdownDetection, { status: "rich" }>}
+                  onInput={editMarkdown}
+                  onBlur={flush}
+                  onEditSource={editSource}
+                  onSelectionAction={props.transformSelection}
+                  onSerializationError={(error) => {
+                    setEditorError(error.message)
+                    reportError(error)
+                  }}
+                />
+              )}
+            </Match>
+          </Switch>
+        </div>
+      </div>
 
       <Show when={editorError()}>
         {(message) => (

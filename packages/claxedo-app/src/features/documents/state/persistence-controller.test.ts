@@ -509,6 +509,44 @@ describe("document persistence controller", () => {
     })
   })
 
+  test("an in-flight self-event advances the base without conflicting a newer draft", async () => {
+    const first = deferred<SaveResponse>()
+    const second = deferred<SaveResponse>()
+    const responses = [first, second]
+    const test = setup({ save: () => responses.shift()!.promise })
+    test.controller.editMarkdown("first save")
+    test.scheduler.runNext()
+    await settle()
+    test.controller.editMarkdown("newer typing")
+
+    test.controller.applyExternalChange({
+      displayName: "Initial",
+      markdown: "first save",
+      version: "opaque-v2",
+    })
+    expect(test.controller.snapshot()).toMatchObject({
+      status: "saving",
+      expectedVersion: "opaque-v2",
+      draft: { displayName: "Initial", markdown: "newer typing" },
+      conflict: undefined,
+    })
+
+    first.resolve({ ok: true, version: "opaque-v2" })
+    await settle()
+    expect(test.requests).toEqual([
+      { displayName: "Initial", markdown: "first save", expectedVersion: "opaque-v1" },
+      { displayName: "Initial", markdown: "newer typing", expectedVersion: "opaque-v2" },
+    ])
+    second.resolve({ ok: true, version: "opaque-v3" })
+    await settle()
+    expect(test.controller.snapshot()).toMatchObject({
+      status: "saved",
+      expectedVersion: "opaque-v3",
+      draft: { displayName: "Initial", markdown: "newer typing" },
+      conflict: undefined,
+    })
+  })
+
   test("a repaired recovery index is cleared after save and does not resurrect the draft", async () => {
     const storage = memoryStorage()
     storage.values.set("claxedo:document-recovery:doc-1:versions", "not json")
@@ -576,5 +614,53 @@ describe("document persistence controller", () => {
       conflict: undefined,
       draft: { displayName: "Initial", markdown: "human" },
     })
+  })
+
+  test("a duplicate self-event preserves the newer recovery draft", async () => {
+    const pending = deferred<SaveResponse>()
+    const storage = memoryStorage()
+    const test = setup({ storage, save: () => pending.promise })
+    test.controller.editMarkdown("saving")
+    test.scheduler.runNext()
+    await settle()
+    test.controller.editMarkdown("newer unsaved draft")
+    const selfEvent = { displayName: "Initial", markdown: "saving", version: "opaque-v2" }
+    test.controller.applyExternalChange(selfEvent)
+    test.controller.applyExternalChange(selfEvent)
+
+    expect(
+      setup({
+        storage,
+        document: { id: "doc-1", displayName: "Initial", markdown: "saving", version: "opaque-v2" },
+      }).controller.snapshot(),
+    ).toMatchObject({
+      status: "dirty",
+      expectedVersion: "opaque-v2",
+      restoredRecoveryDraft: true,
+      draft: { displayName: "Initial", markdown: "newer unsaved draft" },
+    })
+  })
+
+  test("an older save response cannot regress a newer self-event version", async () => {
+    const first = deferred<SaveResponse>()
+    const test = setup({
+      save: (request) =>
+        request.markdown === "saving" ? first.promise : Promise.resolve({ ok: true, version: "opaque-v4" }),
+    })
+    test.controller.editMarkdown("saving")
+    test.scheduler.runNext()
+    await settle()
+    test.controller.editMarkdown("newer unsaved draft")
+    test.controller.applyExternalChange({ displayName: "Initial", markdown: "saving", version: "opaque-v2" })
+    test.controller.applyExternalChange({ displayName: "Initial", markdown: "saving", version: "opaque-v3" })
+
+    first.resolve({ ok: true, version: "opaque-v2" })
+    await settle()
+
+    expect(test.requests).toEqual([
+      { displayName: "Initial", markdown: "saving", expectedVersion: "opaque-v1" },
+      { displayName: "Initial", markdown: "newer unsaved draft", expectedVersion: "opaque-v3" },
+    ])
+    expect(test.controller.snapshot()).toMatchObject({ status: "saved", expectedVersion: "opaque-v4" })
   })
 })

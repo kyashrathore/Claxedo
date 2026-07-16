@@ -5,7 +5,12 @@ import { TableKit } from "@tiptap/extension-table"
 import TaskItem from "@tiptap/extension-task-item"
 import TaskList from "@tiptap/extension-task-list"
 import StarterKit from "@tiptap/starter-kit"
-import { joinMarkdownEnvelope, splitMarkdownEnvelope, type MarkdownEnvelope } from "./frontmatter"
+import {
+  joinMarkdownEnvelope,
+  normalizeSerializedMarkdownBody,
+  splitMarkdownEnvelope,
+  type MarkdownEnvelope,
+} from "./frontmatter"
 
 const manager = new MarkdownManager({
   extensions: [StarterKit, Image, TableKit, TaskList, TaskItem],
@@ -201,13 +206,10 @@ function decodeMarkdown(input: string | Uint8Array) {
 export function serializeMarkdownDocument(document: JSONContent, envelope: MarkdownEnvelope): MarkdownSerialization {
   try {
     const serialized = manager.serialize(document)
-    const body =
-      envelope.body.trim().length === 0 && serialized === ""
-        ? envelope.body
-        : serialized === ""
-          ? ""
-          : serialized.replace(/\n*$/, "") + (envelope.body.match(/\n*$/)?.[0] ?? "")
-    return { status: "serialized", markdown: joinMarkdownEnvelope(envelope, body) }
+    return {
+      status: "serialized",
+      markdown: joinMarkdownEnvelope(envelope, normalizeSerializedMarkdownBody(envelope, serialized)),
+    }
   } catch {
     return {
       status: "source",

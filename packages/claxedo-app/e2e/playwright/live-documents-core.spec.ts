@@ -310,6 +310,73 @@ test.describe.serial("live Documents core backend @live", () => {
     })
   })
 
+  test("real rich typing autosaves exact filesystem bytes and reopens @documents-rich-live-canary", async ({
+    page,
+  }) => {
+    const pageErrors: string[] = []
+    const consoleErrors: string[] = []
+    let created: DocumentSummary | undefined
+    page.on("pageerror", (error) => pageErrors.push(error.message))
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text())
+    })
+    page.on("response", async (response) => {
+      const request = response.request()
+      const url = new URL(response.url())
+      if (request.method() !== "POST" || url.pathname !== "/documents" || !response.ok()) return
+      expect(url.origin).toBe(BACKEND_URL)
+      created = (await response.json()) as DocumentSummary
+    })
+    await seedProject(page)
+    await page.goto(indexUrl())
+    await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole("button", { name: "New document" }).click()
+
+    const title = page.getByRole("textbox", { name: "Document name" })
+    const rich = page.getByRole("textbox", { name: "Document rich editor" })
+    const richHandle = await rich.elementHandle()
+    if (!richHandle) throw new Error("Live rich editor did not mount")
+    await title.fill("Live rich canary")
+    await rich.click()
+    await page.keyboard.type("Live rich typing")
+    await page.keyboard.press("Enter")
+    await page.keyboard.type("Second paragraph")
+    await expect(page.getByRole("status")).toContainText(/Unsaved changes|Saving/)
+    await expect(page.getByRole("status")).toContainText("Saved", { timeout: 20_000 })
+    expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
+    const richHandleAfterSave = await rich.elementHandle()
+    if (!richHandleAfterSave) throw new Error("Live rich editor disappeared after autosave")
+    expect(await page.evaluate(([before, after]) => before === after, [richHandle, richHandleAfterSave])).toBe(true)
+
+    await expect.poll(() => created).toBeTruthy()
+    expect(created?.managed_relative_path).toBeTruthy()
+    expect((await requestJson<DocumentSummary>(`/documents/${encodeURIComponent(created!.id)}`)).display_name).toBe(
+      "Live rich canary",
+    )
+    const content = await requestJson<{ markdown: string }>(`/documents/${encodeURIComponent(created!.id)}/content`)
+    expect(content.markdown).toBe("Live rich typing\n\nSecond paragraph")
+    expect(await fs.readFile(path.join(dataDir, "documents", created!.managed_relative_path!), "utf8")).toBe(
+      content.markdown,
+    )
+
+    expect(pageErrors).toEqual([])
+    expect(consoleErrors).toEqual([])
+    await page.goto(documentUrl(created!.id))
+    await expect(page.getByRole("textbox", { name: "Document rich editor" })).toContainText("Second paragraph")
+    await expect(page.getByText("Source mode")).toHaveCount(0)
+    expect(pageErrors).toEqual([])
+    // Chromium reports aborted SSE reads as `network error` during a full
+    // document navigation. Editing/autosave was asserted clean immediately
+    // above; only these exact navigation-teardown diagnostics are allowed.
+    expect(
+      consoleErrors.filter(
+        (message) =>
+          message !== "TypeError: network error" &&
+          message !== "[documents] editor persistence error TypeError: network error",
+      ),
+    ).toEqual([])
+  })
+
   test("real create/edit survives a full server restart with exact bytes", async ({ page }, testInfo) => {
     const documentRequests: string[] = []
     page.on("request", (request) => {
