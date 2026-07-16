@@ -14,7 +14,7 @@ import { ensureWorkGraph } from "../../../../convex/workspaces"
 import { syncWorkGraphSession } from "../../../../convex/sessions"
 import { createHostedWorkGraphRuntime, parseHostedRecapOutput, workGraphWorkspaceId } from "./hosted-runtime"
 import type { ControlPlaneServices } from "../control-plane/services"
-import { StreamReplacementResetSchema } from "@claxedo/workgraph/contracts"
+import { StreamReplacementResetSchema, WorkGraphAttemptToolNames } from "@claxedo/workgraph/contracts"
 
 const previousToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
 beforeEach(() => {
@@ -1626,7 +1626,7 @@ describe("hosted WorkGraph runtime outbox", () => {
             expect(JSON.parse(String(init?.body))).toEqual({
               agent: "build",
               model: { providerID: "openai", id: "gpt-5", variant: "high" },
-              tools: ["connection_work_source_list"],
+              tools: ["connection_work_source_list", ...WorkGraphAttemptToolNames],
               location: { directory: "/workspace" },
             })
             return Response.json({ id: "session-a" }, { status: 201 })
@@ -1657,6 +1657,14 @@ describe("hosted WorkGraph runtime outbox", () => {
               brokerUrl: "https://central.test",
             })
             return Response.json({ bound: true })
+          }
+          if (url.pathname.endsWith("/prompt")) {
+            expect(JSON.parse(String(init?.body))).toMatchObject({
+              prompt: {
+                text: expect.stringContaining("A text response without this tool call does not complete the Attempt"),
+              },
+            })
+            return Response.json({ data: { admitted: true } })
           }
           if (url.pathname.endsWith("/history"))
             return Response.json({

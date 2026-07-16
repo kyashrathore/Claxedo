@@ -2,7 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { defaultHomeRegion } from "../region"
 import type { ControlPlaneServices } from "../control-plane/services"
-import { AdmissionAgentPlanSchema } from "@claxedo/workgraph/contracts"
+import { AdmissionAgentPlanSchema, WorkGraphAttemptToolNames } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
 import { createWorkGraphOperationalReporter, type WorkGraphOperationalReporter } from "./operational-telemetry"
 
@@ -269,7 +269,7 @@ export function createHostedWorkGraphRuntime(
                     id: claim.profile.model.modelId,
                     variant: claim.profile.effort,
                   },
-                  tools: claim.profile.tools,
+                  tools: [...new Set([...claim.profile.tools, ...WorkGraphAttemptToolNames])],
                   location: { directory: "/workspace" },
                 }),
               })
@@ -355,7 +355,7 @@ export function createHostedWorkGraphRuntime(
                 method: "POST",
                 body: JSON.stringify({
                   id: `msg_workgraph_${claim.attemptId}`,
-                  prompt: { text: claim.prompt },
+                  prompt: { text: managedAttemptPrompt(claim.prompt) },
                   delivery: "steer",
                   resume: true,
                 }),
@@ -531,6 +531,17 @@ export function createHostedWorkGraphRuntime(
       }
     },
   }
+}
+
+function managedAttemptPrompt(prompt: string) {
+  return [
+    prompt,
+    "",
+    "WorkGraph execution protocol:",
+    "Before your final response, call workgraph_complete_task with a concise summary and evidence for every completion requirement.",
+    "Each evidence entry must identify its requirementId. A text response without this tool call does not complete the Attempt.",
+    "Use workgraph_report_progress only for meaningful intermediate boundaries.",
+  ].join("\n")
 }
 
 async function reconcileBackground(
