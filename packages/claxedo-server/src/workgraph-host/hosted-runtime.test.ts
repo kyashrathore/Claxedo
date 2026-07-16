@@ -13,7 +13,13 @@ import {
 } from "../../../../convex/workgraphRuntime"
 import { ensureWorkGraph } from "../../../../convex/workspaces"
 import { syncWorkGraphSession } from "../../../../convex/sessions"
-import { createHostedWorkGraphRuntime, parseHostedRecapOutput, workGraphWorkspaceId } from "./hosted-runtime"
+import {
+  createHostedSessionTranscriptRetention,
+  createHostedWorkGraphRuntime,
+  HostedTranscriptRetentionError,
+  parseHostedRecapOutput,
+  workGraphWorkspaceId,
+} from "./hosted-runtime"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { StreamReplacementResetSchema, WorkGraphAttemptToolNames } from "@claxedo/workgraph/contracts"
 
@@ -1787,6 +1793,150 @@ describe("hosted WorkGraph runtime outbox", () => {
     ])
   })
 
+  test("never overwrites the retained transcript with an empty snapshot pull", async () => {
+    const publishedSnapshots: Record<string, unknown>[] = []
+    const runtime = createHostedWorkGraphRuntime(
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      transcriptServices(),
+      {
+        background: false,
+        sessionPublisher: {
+          launch: async () => {},
+          snapshot: async (input) => {
+            publishedSnapshots.push(input)
+          },
+        },
+        executor: {
+          mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            if (args.limit === 10 && "worker_id" in args) return []
+            if (args.limit === 10)
+              return [
+                {
+                  ownerUserId: "user-a",
+                  orgId: "org-a",
+                  attemptId: "attempt-a",
+                  leaseEpoch: 2,
+                  sessionId: "session-a",
+                  workspaceId: "workspace-a",
+                },
+              ]
+            return { settled: true }
+          },
+        },
+        fetch: async (input) => {
+          const url = new URL(String(input))
+          if (url.pathname.endsWith("/history")) return Response.json({ data: [], hasMore: false })
+          if (url.pathname.endsWith("/message")) return Response.json({ messages: [], maxEventOrdinal: 0 })
+          throw new Error(`Unexpected hosted runtime request ${url.pathname}`)
+        },
+      },
+    )
+    await expect(runtime?.reconcile()).resolves.toMatchObject({
+      results: [{ settled: false, state: "running" }],
+    })
+    expect(publishedSnapshots).toEqual([])
+  })
+
+  test("retains the transcript durably before a hosted completion is accepted", async () => {
+    const publishedSnapshots: Record<string, unknown>[] = []
+    const snapshotRequests: string[] = []
+    const retain = createHostedSessionTranscriptRetention(
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      transcriptServices(),
+      {
+        now: () => 42,
+        sessionPublisher: {
+          launch: async () => {},
+          snapshot: async (input) => {
+            publishedSnapshots.push(input)
+          },
+        },
+        fetch: async (input, init) => {
+          snapshotRequests.push(String(input))
+          expect(new Headers(init?.headers).get("x-opencode-directory")).toBe("/workspace")
+          expect(new Headers(init?.headers).get("authorization")).toBe("Bearer runtime-token")
+          return Response.json({
+            messages: [
+              { info: { id: "msg_user", role: "user" }, parts: [] },
+              { info: { id: "msg_assistant", role: "assistant" }, parts: [] },
+            ],
+            maxEventOrdinal: 7,
+          })
+        },
+      },
+    )
+    await retain!({
+      organizationId: "org-a",
+      ownerUserId: "user-a",
+      workspaceId: "workspace-a",
+      sessionId: "session-a",
+    })
+    expect(snapshotRequests).toEqual([
+      "https://relay.test/workspaces/workspace-a/session/session-a/message?snapshot=1",
+    ])
+    expect(publishedSnapshots).toEqual([
+      {
+        organizationId: "org-a",
+        ownerUserId: "user-a",
+        workspaceId: "workspace-a",
+        sessionId: "session-a",
+        messages: [
+          expect.objectContaining({ info: expect.objectContaining({ role: "user" }) }),
+          expect.objectContaining({ info: expect.objectContaining({ role: "assistant" }) }),
+        ],
+        now: 42,
+      },
+    ])
+  })
+
+  test("rejects completion retention until the transcript holds user and assistant messages", async () => {
+    const publishedSnapshots: Record<string, unknown>[] = []
+    const retain = createHostedSessionTranscriptRetention(
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      transcriptServices(),
+      {
+        sessionPublisher: {
+          launch: async () => {},
+          snapshot: async (input) => {
+            publishedSnapshots.push(input)
+          },
+        },
+        fetch: async () => Response.json({ messages: [], maxEventOrdinal: 0 }),
+      },
+    )
+    await expect(
+      retain!({
+        organizationId: "org-a",
+        ownerUserId: "user-a",
+        workspaceId: "workspace-a",
+        sessionId: "session-a",
+      }),
+    ).rejects.toBeInstanceOf(HostedTranscriptRetentionError)
+    expect(publishedSnapshots).toEqual([])
+  })
+
+  test("maps a failed transcript pull into a retryable retention error", async () => {
+    const retain = createHostedSessionTranscriptRetention(
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      transcriptServices(),
+      {
+        sessionPublisher: { launch: async () => {}, snapshot: async () => {} },
+        fetch: async () => new Response("boom", { status: 502 }),
+      },
+    )
+    const failure = await retain!({
+      organizationId: "org-a",
+      ownerUserId: "user-a",
+      workspaceId: "workspace-a",
+      sessionId: "session-a",
+    }).catch((error) => error)
+    expect(failure).toBeInstanceOf(HostedTranscriptRetentionError)
+    expect((failure as HostedTranscriptRetentionError).retryable).toBe(true)
+    expect((failure as HostedTranscriptRetentionError).message).toContain("502")
+  })
+
   test("requests one explicit completion retry instead of fabricating hosted success", async () => {
     for (const data of [
       [{ type: "session.next.step.ended", durable: { seq: 1 }, data: { files: [] } }],
@@ -2232,6 +2382,29 @@ function handler(fn: unknown) {
       owner_user_id: "user-a",
       ...args,
     })
+}
+
+function transcriptServices() {
+  return {
+    sandbox: {
+      sandboxManager: {
+        target: async () => ({
+          status: "ready",
+          sandboxId: "sandbox",
+          url: "https://runtime.test",
+          hostId: "host-a",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+      },
+    },
+    relay: {
+      provider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      },
+    },
+  } as unknown as ControlPlaneServices
 }
 
 async function reconcileAttemptHistory(

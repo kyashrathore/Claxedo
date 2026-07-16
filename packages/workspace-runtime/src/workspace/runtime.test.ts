@@ -970,7 +970,11 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  test("serves empty message lists for bound runtime sessions before adapter fallback", async () => {
+  test("falls back to the adapter transcript when a bound session has an empty message projection", async () => {
+    // Regression: proxy-driven (Session V2) sessions keep messages in the
+    // engine and get bound into the store message-less by discovery — an empty
+    // store projection must never shadow the engine transcript (staging
+    // WorkGraph retention synced [] and settled attempts without transcripts).
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-bound-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -985,11 +989,15 @@ describe("workspace runtime auth helpers", () => {
     })
     seed.close()
 
+    const engineTranscript = [
+      { info: { id: "msg-user", role: "user" }, parts: [{ type: "text", text: "prompt" }] },
+      { info: { id: "msg-assistant", role: "assistant" }, parts: [{ type: "text", text: "done" }] },
+    ]
     const originalGetMessages = OpenCodeHarnessAdapter.prototype.getMessages
     const calls: string[] = []
     OpenCodeHarnessAdapter.prototype.getMessages = async (id) => {
       calls.push(`messages:${id}`)
-      return []
+      return engineTranscript as never
     }
 
     try {
@@ -1000,10 +1008,16 @@ describe("workspace runtime auth helpers", () => {
       })
 
       const messageRes = await app.request(`http://localhost/session/s-empty/message?directory=${encodeURIComponent(dir)}`)
-
       expect(messageRes.status).toBe(200)
-      await expect(messageRes.json()).resolves.toEqual([])
-      expect(calls).toEqual([])
+      await expect(messageRes.json()).resolves.toEqual(engineTranscript)
+
+      const snapshotRes = await app.request(
+        `http://localhost/session/s-empty/message?snapshot=1&directory=${encodeURIComponent(dir)}`,
+      )
+      expect(snapshotRes.status).toBe(200)
+      await expect(snapshotRes.json()).resolves.toEqual(engineTranscript)
+
+      expect(calls).toEqual(["messages:s-empty", "messages:s-empty"])
     } finally {
       OpenCodeHarnessAdapter.prototype.getMessages = originalGetMessages
     }

@@ -69,6 +69,7 @@ import {
   createHostedAttemptOperationExecutor,
   createHostedAttemptOperationHandler,
 } from "./workgraph-host/hosted-attempt-operation"
+import { createHostedSessionTranscriptRetention } from "./workgraph-host/hosted-runtime"
 import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
 import { DocsRoutes } from "./routes/docs"
 import { createConvexDocumentStore } from "./document-host/convex-store"
@@ -86,6 +87,13 @@ export type HostedAppOverrides = {
   workGraphOwnerActivation?: (auth: SignedControlPlaneAuth) => Promise<HostedWorkGraphOwnerActivation>
   /** Bounded durable reconciler shared by cron and the protected admin trigger. */
   workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
+  /** Test seam for the complete_attempt transcript-retention gate. */
+  attemptTranscriptRetention?: (input: {
+    organizationId: string
+    ownerUserId: string
+    workspaceId: string
+    sessionId: string
+  }) => Promise<void>
   /** Deterministic hosted capability gate for component tests. */
   entitlementGate?: EntitlementGate
   /** Test/custom storage seam; production composes Convex from env. */
@@ -189,7 +197,12 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const connectionOperationHandler = connectionOperationExecutor
     ? createHostedConnectionOperationHandler({ env: plane.env, execute: connectionOperationExecutor })
     : undefined
-  const attemptOperationExecutor = createHostedAttemptOperationExecutor({ env: plane.env })
+  const attemptTranscriptRetention =
+    overrides.attemptTranscriptRetention ?? createHostedSessionTranscriptRetention(plane.env, services)
+  const attemptOperationExecutor = createHostedAttemptOperationExecutor({
+    env: plane.env,
+    ...(attemptTranscriptRetention ? { retainTranscript: attemptTranscriptRetention } : {}),
+  })
   const attemptOperationHandler = attemptOperationExecutor
     ? createHostedAttemptOperationHandler({ env: plane.env, execute: attemptOperationExecutor })
     : undefined

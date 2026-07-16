@@ -10,15 +10,30 @@ import {
   type WorkGraphAttemptOperationRequest,
 } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
+import { HostedTranscriptRetentionError } from "./hosted-runtime"
 
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as { workgraphCommands: { executeForService: Mutation } }
 
 type Executor = { mutation(fn: Mutation, args: Record<string, unknown>): Promise<unknown> }
 
+type TranscriptRetention = (input: Readonly<{
+  organizationId: string
+  ownerUserId: string
+  workspaceId: string
+  sessionId: string
+}>) => Promise<void>
+
 export function createHostedAttemptOperationExecutor(input: Readonly<{
   env: HostedWorkerEnv
   executor?: Executor
+  /**
+   * When composed, complete_attempt is accepted only after the Session
+   * transcript is durably retained in the authority — a failed retention
+   * rejects the completion as retryable instead of settling the Attempt
+   * without its transcript.
+   */
+  retainTranscript?: TranscriptRetention
 }>) {
   const serviceToken = clean(input.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
   const url = clean(input.env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(input.env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
@@ -27,41 +42,51 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
   return async (
     principal: Readonly<{ ownerUserId: string; orgId: string }>,
     request: WorkGraphAttemptOperationRequest,
-  ): Promise<CommandResult> => CommandResultSchema.parse(await executor.mutation(
-    api.workgraphCommands.executeForService,
-    {
-      service_token: serviceToken,
-      organization_id: principal.orgId,
-      owner_subject: principal.ownerUserId,
-      actor_type: "agent",
-      actor_id: request.identity.attemptId,
-      operation_id: request.operation.operationId,
-      request_id: `attempt_tool_${crypto.randomUUID()}`,
-      command: request.operation.type === "record_checkpoint"
-        ? {
-            version: 1,
-            type: "record_attempt_checkpoint",
-            attemptId: request.identity.attemptId,
-            sessionId: request.identity.sessionId,
-            workspaceId: request.identity.workspaceId,
-            ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
-            level: request.operation.level,
-            summary: request.operation.summary,
-            evidenceIds: request.operation.evidenceIds,
-          }
-        : {
-            version: 1,
-            type: "complete_attempt",
-            attemptId: request.identity.attemptId,
-            sessionId: request.identity.sessionId,
-            workspaceId: request.identity.workspaceId,
-            ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
-            summary: request.operation.summary,
-            artifacts: request.operation.artifacts,
-            evidence: request.operation.evidence,
-          },
-    },
-  ))
+  ): Promise<CommandResult> => {
+    if (request.operation.type === "complete" && input.retainTranscript) {
+      await input.retainTranscript({
+        organizationId: principal.orgId,
+        ownerUserId: principal.ownerUserId,
+        workspaceId: request.identity.workspaceId,
+        sessionId: request.identity.sessionId,
+      })
+    }
+    return CommandResultSchema.parse(await executor.mutation(
+      api.workgraphCommands.executeForService,
+      {
+        service_token: serviceToken,
+        organization_id: principal.orgId,
+        owner_subject: principal.ownerUserId,
+        actor_type: "agent",
+        actor_id: request.identity.attemptId,
+        operation_id: request.operation.operationId,
+        request_id: `attempt_tool_${crypto.randomUUID()}`,
+        command: request.operation.type === "record_checkpoint"
+          ? {
+              version: 1,
+              type: "record_attempt_checkpoint",
+              attemptId: request.identity.attemptId,
+              sessionId: request.identity.sessionId,
+              workspaceId: request.identity.workspaceId,
+              ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+              level: request.operation.level,
+              summary: request.operation.summary,
+              evidenceIds: request.operation.evidenceIds,
+            }
+          : {
+              version: 1,
+              type: "complete_attempt",
+              attemptId: request.identity.attemptId,
+              sessionId: request.identity.sessionId,
+              workspaceId: request.identity.workspaceId,
+              ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+              summary: request.operation.summary,
+              artifacts: request.operation.artifacts,
+              evidence: request.operation.evidence,
+            },
+      },
+    ))
+  }
 }
 
 export function createHostedAttemptOperationHandler(input: Readonly<{
@@ -112,6 +137,9 @@ function operationFailure(error: unknown) {
   }
   if (error instanceof RuntimeAccessTokenVerificationUnavailableError) {
     return failure(503, error.code, "Runtime access token verification is unavailable", true)
+  }
+  if (error instanceof HostedTranscriptRetentionError) {
+    return failure(503, error.code, error.message, true)
   }
   return failure(500, "attempt_operation_failed", "Attempt operation failed", false)
 }

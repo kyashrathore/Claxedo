@@ -448,14 +448,20 @@ export function createHostedWorkGraphRuntime(
                 if (!snapshot.ok) {
                   throw new Error(`Hosted Session transcript failed: ${snapshot.status} ${await snapshot.text()}`)
                 }
-                await sessionPublisher.snapshot({
-                  organizationId: attempt.orgId,
-                  ownerUserId: attempt.ownerUserId,
-                  workspaceId: attempt.workspaceId,
-                  sessionId: attempt.sessionId,
-                  messages: hostedSessionMessages(await snapshot.json()),
-                  now: now(),
-                })
+                const messages = hostedSessionMessages(await snapshot.json())
+                // An empty pull is never authoritative: the launch sync already
+                // recorded the empty transcript, and overwriting a previously
+                // retained transcript with [] would drop durable messages.
+                if (messages.length > 0) {
+                  await sessionPublisher.snapshot({
+                    organizationId: attempt.orgId,
+                    ownerUserId: attempt.ownerUserId,
+                    workspaceId: attempt.workspaceId,
+                    sessionId: attempt.sessionId,
+                    messages,
+                    now: now(),
+                  })
+                }
               }
               if (!terminal) return { settled: false, state: "running" }
               if (terminal.type.startsWith("session.next.step.ended")) {
@@ -1443,6 +1449,93 @@ async function hostedSessionHistory(
 function convexExecutor(url: string): Executor {
   const client = new ConvexHttpClient(url)
   return { mutation: (fn, args) => client.mutation(fn, args) }
+}
+
+export class HostedTranscriptRetentionError extends Error {
+  readonly code = "attempt_transcript_not_retained"
+  readonly retryable = true
+
+  constructor(message: string) {
+    super(message)
+    this.name = "HostedTranscriptRetentionError"
+  }
+}
+
+/**
+ * Durable transcript retention for hosted Attempt completion: pull the Session
+ * transcript from the workspace runtime and sync it into the authority BEFORE
+ * complete_attempt is accepted. Any failure — unavailable workspace, failed
+ * pull, or a transcript without both user and assistant messages — is a
+ * retryable HostedTranscriptRetentionError, so the Attempt stays incomplete
+ * instead of settling without a durable transcript.
+ */
+export function createHostedSessionTranscriptRetention(
+  env: HostedWorkerEnv,
+  services: ControlPlaneServices,
+  options: {
+    fetch?: RuntimeFetch
+    now?: () => number
+    sessionPublisher?: HostedSessionPublisher
+  } = {},
+) {
+  const url = clean(env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
+  const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
+  const sessionPublisher =
+    options.sessionPublisher ?? (url && serviceToken ? convexSessionPublisher(url, serviceToken) : undefined)
+  const provider = services.relay.provider
+  const manager = services.sandbox.sandboxManager
+  if (!sessionPublisher || !provider || !manager) return
+  const request = options.fetch ?? fetch
+  const now = options.now ?? Date.now
+  return async (input: {
+    organizationId: string
+    ownerUserId: string
+    workspaceId: string
+    sessionId: string
+  }) => {
+    try {
+      const placement = await manager.target(input.workspaceId)
+      if (placement.status !== "ready") throw new Error("Hosted workspace is unavailable for transcript retention")
+      const token = await provider.mintRuntimeAccessToken({
+        workspaceId: input.workspaceId,
+        hostId: placement.hostId,
+        subject: input.ownerUserId,
+        orgId: input.organizationId,
+        role: "owner",
+        ttlMs: 10 * 60_000,
+      })
+      const relay = await provider.getRelayEndpoint(input.workspaceId, placement.homeRegion as never)
+      const snapshot = await request(
+        `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}/session/${encodeURIComponent(input.sessionId)}/message?snapshot=1`,
+        {
+          headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
+        },
+      )
+      if (!snapshot.ok) {
+        throw new Error(`Hosted Session transcript failed: ${snapshot.status} ${await snapshot.text()}`)
+      }
+      const messages = hostedSessionMessages(await snapshot.json())
+      const roles = new Set(messages.map(messageRole))
+      if (!roles.has("user") || !roles.has("assistant")) {
+        throw new Error("Hosted Session transcript does not contain both user and assistant messages")
+      }
+      await sessionPublisher.snapshot({
+        organizationId: input.organizationId,
+        ownerUserId: input.ownerUserId,
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        messages,
+        now: now(),
+      })
+    } catch (error) {
+      throw new HostedTranscriptRetentionError(error instanceof Error ? error.message : String(error))
+    }
+  }
+}
+
+function messageRole(message: unknown) {
+  const info = record(record(message)?.info)
+  return typeof info?.role === "string" ? info.role : undefined
 }
 
 function convexSessionPublisher(url: string, serviceToken: string): HostedSessionPublisher {

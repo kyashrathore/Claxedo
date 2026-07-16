@@ -5,6 +5,7 @@ import {
   createHostedAttemptOperationExecutor,
   createHostedAttemptOperationHandler,
 } from "./hosted-attempt-operation"
+import { HostedTranscriptRetentionError } from "./hosted-runtime"
 
 describe("hosted Attempt operation endpoint", () => {
   it("maps verified runtime identity into one service-authenticated WorkGraph command", async () => {
@@ -68,6 +69,65 @@ describe("hosted Attempt operation endpoint", () => {
     }])
   })
 
+  it("retains the transcript before accepting complete_attempt and not for checkpoints", async () => {
+    const calls: string[] = []
+    const execute = createHostedAttemptOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        mutation: async (_fn, args) => {
+          calls.push(`mutation:${(args.command as { type?: string }).type}`)
+          return { ok: true, operationId: "operation-1", cursor: "1", value: { recorded: true } }
+        },
+      },
+      retainTranscript: async (input) => {
+        calls.push(`retain:${input.workspaceId}/${input.sessionId}:${input.organizationId}:${input.ownerUserId}`)
+      },
+    })!
+
+    await execute({ ownerUserId: "alice", orgId: "org-acme" }, completion())
+    await execute({ ownerUserId: "alice", orgId: "org-acme" }, operation())
+    expect(calls).toEqual([
+      "retain:workspace-1/session-1:org-acme:alice",
+      "mutation:complete_attempt",
+      "mutation:record_attempt_checkpoint",
+    ])
+  })
+
+  it("rejects completion as retryable when transcript retention fails, without settling the Attempt", async () => {
+    const keys = await generateKeyPair("Ed25519")
+    const token = await mintRuntimeAccessToken({
+      subject: "alice",
+      orgId: "org-acme",
+      workspaceId: "workspace-1",
+      hostId: "host-1",
+      role: "owner",
+    }, keys.privateKey, "EdDSA")
+    let mutationCalls = 0
+    const execute = createHostedAttemptOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        mutation: async () => {
+          mutationCalls++
+          return { ok: true, operationId: "operation-1", cursor: "1", value: null }
+        },
+      },
+      retainTranscript: async () => {
+        throw new HostedTranscriptRetentionError("Hosted Session transcript failed: 502 boom")
+      },
+    })!
+    const response = await createHostedAttemptOperationHandler({
+      env: {},
+      runtimeKey: Promise.resolve(keys.publicKey),
+      execute,
+    })(request(token, completion()))
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({
+      error: { code: "attempt_transcript_not_retained", retryable: true },
+    })
+    expect(mutationCalls).toBe(0)
+  })
+
   it("rejects a runtime token minted for another workspace", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
@@ -112,13 +172,37 @@ function operation() {
   }
 }
 
-function request(token?: string) {
+function completion() {
+  return {
+    version: 1 as const,
+    identity: {
+      attemptId: "attempt-1" as never,
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      leaseEpoch: 3,
+    },
+    operation: {
+      type: "complete" as const,
+      operationId: "operation-1" as never,
+      summary: "Task complete",
+      artifacts: [],
+      evidence: [
+        {
+          requirementId: "requirement-1" as never,
+          evidence: { kind: "test_result" as const, summary: "verified", passed: true },
+        },
+      ],
+    },
+  }
+}
+
+function request(token?: string, body: Record<string, unknown> = operation()) {
   return new Request("https://central.test/internal/workgraph/attempt-operation", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(operation()),
+    body: JSON.stringify(body),
   })
 }

@@ -1533,15 +1533,23 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             parts: [...(body.parts ?? []), { type: "text", text: scopedToolPrompt(sessionId, registration) }],
           }
         },
+        // An empty message projection is never authoritative: proxy-driven
+        // sessions (OpenCode Session V2) keep their messages in the engine and
+        // are bound into the store message-less by session discovery, so an
+        // empty projection must fall through to the adapter instead of
+        // shadowing the engine transcript.
         getMessages: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined
           const messages = store().getMessages(sessionId)
+          if (!messages.length) return undefined
           return messages
         },
         getMessageSnapshot: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined
+          const messages = store().getMessages(sessionId)
+          if (!messages.length) return undefined
           return {
-            messages: store().getMessages(sessionId),
+            messages,
             maxEventOrdinal: store().getSessionMaxSeq(sessionId),
           }
         },
