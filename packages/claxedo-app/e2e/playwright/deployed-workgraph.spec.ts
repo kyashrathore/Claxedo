@@ -6,7 +6,7 @@
  * helper targets the Clerk Frontend API to attach a short-lived testing token.
  */
 import { clerk, clerkSetup } from "@clerk/testing/playwright"
-import { expect, test, type Locator, type Page, type Response } from "@playwright/test"
+import { expect, test, type Page, type Response } from "@playwright/test"
 
 const appURL = required("CLAXEDO_APP_URL")
 const controlPlaneURL = required("CLAXEDO_CONTROL_PLANE_URL")
@@ -69,7 +69,6 @@ test.describe.serial("deployed WorkGraph", () => {
 
     let stream = streamContainer(page, streamTitle)
     await expect(stream).toBeVisible()
-    await ensureExpanded(stream, streamTitle)
     await stream.getByRole("button", { name: "Add task", exact: true }).click()
     await stream.getByRole("textbox", { name: `Add task to ${streamTitle}` }).fill(taskTitle)
     await stream.getByRole("textbox", { name: `Add task to ${streamTitle}` }).press("Enter")
@@ -78,7 +77,6 @@ test.describe.serial("deployed WorkGraph", () => {
     await page.reload({ waitUntil: "domcontentloaded" })
     stream = streamContainer(page, streamTitle)
     await expect(stream).toBeVisible()
-    await ensureExpanded(stream, streamTitle)
     await expect(stream.getByText(taskTitle, { exact: true })).toBeVisible()
 
     await page.setViewportSize({ width: 390, height: 844 })
@@ -86,7 +84,6 @@ test.describe.serial("deployed WorkGraph", () => {
     stream = streamContainer(page, streamTitle)
     await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible()
     await expect(stream).toBeVisible()
-    await ensureExpanded(stream, streamTitle)
     await expect(stream.getByText(taskTitle, { exact: true })).toBeVisible()
 
     await stream.getByRole("button", { name: `Delete task ${taskTitle}` }).click()
@@ -118,16 +115,7 @@ type BrowserClerk = {
 }
 
 function streamContainer(page: Page, title: string) {
-  return page.locator(".workgraph-stream").filter({ has: page.getByText(title, { exact: true }) })
-}
-
-async function ensureExpanded(stream: Locator, title: string) {
-  const disclosure = stream.getByRole("button", { name: new RegExp(`^(Expand|Collapse) ${escapeRegex(title)}$`) })
-  if ((await disclosure.getAttribute("aria-expanded")) === "false") await disclosure.click()
-}
-
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return page.getByRole("article", { name: `Stream ${title}` })
 }
 
 function recordResponse(response: Response, failed: string[], workGraphAuthorizations: string[]) {
