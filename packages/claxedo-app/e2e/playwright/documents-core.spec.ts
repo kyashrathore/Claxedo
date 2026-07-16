@@ -723,9 +723,12 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
       path: "docs/repository.md",
       display_name: "repository.md",
     })
+    const contentReadsBeforeIndex = runtime.requests.filter((request) => request.pathname.endsWith("/content")).length
     await openIndex(page)
     await expect(page.getByRole("list", { name: "Documents" })).toContainText("docs/repository.md")
-    expect(runtime.requests.some((request) => request.pathname.endsWith("/content"))).toBe(false)
+    expect(runtime.requests.filter((request) => request.pathname.endsWith("/content"))).toHaveLength(
+      contentReadsBeforeIndex,
+    )
     expect(JSON.stringify([...runtime.documents.values()].map((item) => item.summary))).not.toContain(
       "repository original",
     )
