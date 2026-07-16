@@ -12,6 +12,7 @@ import type {
   Wake,
   WakeId,
   WakeResult,
+  WakeSink,
   WorkspaceId,
 } from "./types"
 import type { WakeStore } from "./store"
@@ -20,7 +21,13 @@ import { generateToken } from "./token"
 
 export interface CreateWakesOptions {
   store: WakeStore
-  spawnTurn: SpawnTurn
+  /** Sugar for `sinks.session_turn`: fire by resuming the wake's session. */
+  spawnTurn?: SpawnTurn
+  /**
+   * Firing handlers keyed by wake `kind`. A wake whose kind has no registered
+   * sink fails its fire (the row stays reclaimable) instead of firing wrong.
+   */
+  sinks?: Record<string, WakeSink>
   authorize?: Authorize
   budgets?: Budgets
   /** Injectable clock (epoch ms). Default `Date.now`. */
@@ -36,6 +43,8 @@ export interface CreateWakesOptions {
 type CommonCreate = {
   sessionId?: SessionId | null
   workspaceId: WorkspaceId
+  /** Which sink fires this wake. Default "session_turn". */
+  kind?: string
   intent?: Json
   idempotencyKey?: string
   createdBy?: string
@@ -71,16 +80,31 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
   const limits = resolveBudgets(opts.budgets)
   const leaseMs = opts.leaseMs ?? 30_000
   const batchLimit = opts.batchLimit ?? 100
+  const sinks: Record<string, WakeSink> = {
+    ...(spawnTurn ? { session_turn: (wake, result) => spawnTurn(wake.sessionId, result) } : {}),
+    ...opts.sinks,
+  }
+  if (Object.keys(sinks).length === 0) {
+    throw new Error("createWakes requires spawnTurn or at least one sink")
+  }
+
+  // Resolve BEFORE any side effect: an unregistered kind must fail the fire
+  // while the row is still recoverable, never half-fire.
+  function sinkFor(wake: Wake): WakeSink {
+    const sink = sinks[wake.kind]
+    if (!sink) throw new Error(`no sink registered for wake kind "${wake.kind}"`)
+    return sink
+  }
 
   function resultForWake(wake: Wake): WakeResult {
     if (wake.resultJson) return JSON.parse(wake.resultJson) as WakeResult
     return { trigger: "at", intent: JSON.parse(wake.intentJson) }
   }
 
-  // A wake in `firing`: spawn its turn (at-least-once), record `fired`, and for a
+  // A wake in `firing`: run its sink (at-least-once), record `fired`, and for a
   // recurring `at` wake, enqueue the next occurrence idempotently.
   async function driveFiring(wake: Wake): Promise<void> {
-    await spawnTurn(wake.sessionId, resultForWake(wake))
+    await sinkFor(wake)(wake, resultForWake(wake))
     await store.cas(wake.id, "firing", "fired", { firedAt: now(), leaseUntil: null })
     if (wake.triggerType === "at" && wake.schedule) {
       if (!computeNextRun) throw new Error("recurring wake requires the computeNextRun option")
@@ -90,6 +114,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
           triggerType: "at",
           sessionId: wake.sessionId,
           workspaceId: wake.workspaceId,
+          kind: wake.kind,
           intentJson: wake.intentJson,
           fireAt: nextFireAt,
           schedule: wake.schedule,
@@ -132,6 +157,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       sessionId: fields.sessionId ?? null,
       workspaceId: fields.workspaceId,
       triggerType: fields.triggerType,
+      kind: fields.kind ?? "session_turn",
       intentJson: fields.intentJson ?? "null",
       resultJson: null,
       state: "pending",
@@ -176,6 +202,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         triggerType: "at",
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
+        kind: input.kind,
         intentJson: JSON.stringify(input.intent ?? null),
         fireAt,
         schedule,
@@ -191,6 +218,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         triggerType: "on_event",
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
+        kind: input.kind,
         intentJson: JSON.stringify(input.intent ?? null),
         eventKey: input.eventKey,
         expiresAt: toMs(input.expiresAt) ?? undefined,
@@ -205,6 +233,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         triggerType: "on_approval",
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
+        kind: input.kind,
         intentJson: JSON.stringify(input.intent ?? null),
         prompt: input.prompt,
         token: generateToken(),
@@ -250,8 +279,11 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       const t = now()
       let fired = 0
       for (const wake of await store.findExpirable(t)) {
+        // Resolve the sink before the terminal CAS so an unregistered kind
+        // cannot silently swallow the gave-up notification.
+        const sink = sinkFor(wake)
         if (await store.cas(wake.id, "pending", "expired", { firedAt: t })) {
-          await spawnTurn(wake.sessionId, {
+          await sink(wake, {
             trigger: "at",
             intent: JSON.parse(wake.intentJson),
             expired: true,

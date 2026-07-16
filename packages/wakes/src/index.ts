@@ -22,7 +22,9 @@ export type {
   TriggerType,
   Wake,
   WakeId,
+  WakeKind,
   WakeResult,
+  WakeSink,
   WakeState,
   WorkspaceId,
 } from "./types"

@@ -9,6 +9,7 @@ const FIELD_TO_COL: Record<keyof Wake, string> = {
   sessionId: "session_id",
   workspaceId: "workspace_id",
   triggerType: "trigger_type",
+  kind: "kind",
   intentJson: "intent_json",
   resultJson: "result_json",
   state: "state",
@@ -34,6 +35,7 @@ function rowToWake(r: Row): Wake {
     sessionId: (r.session_id as string) ?? null,
     workspaceId: r.workspace_id as string,
     triggerType: r.trigger_type as Wake["triggerType"],
+    kind: (r.kind as string) ?? "session_turn",
     intentJson: r.intent_json as string,
     resultJson: (r.result_json as string) ?? null,
     state: r.state as WakeState,
@@ -60,6 +62,7 @@ CREATE TABLE IF NOT EXISTS wakes (
   session_id TEXT,
   workspace_id TEXT NOT NULL,
   trigger_type TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'session_turn',
   intent_json TEXT NOT NULL,
   result_json TEXT,
   state TEXT NOT NULL,
@@ -106,6 +109,15 @@ export class SqliteWakeStore implements WakeStore {
     this.db.pragma("journal_mode = WAL")
     this.db.pragma("busy_timeout = 5000")
     this.db.exec(SCHEMA)
+    // Additive upgrades for DB files created before these columns existed
+    // (CREATE TABLE IF NOT EXISTS never alters an existing table).
+    for (const ddl of ["ALTER TABLE wakes ADD COLUMN kind TEXT NOT NULL DEFAULT 'session_turn'"]) {
+      try {
+        this.db.exec(ddl)
+      } catch {
+        // column already exists
+      }
+    }
   }
 
   async insert(wake: Wake): Promise<{ inserted: boolean }> {

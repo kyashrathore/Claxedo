@@ -27,12 +27,20 @@ export type WakeResult =
   | { trigger: "on_event"; intent: Json; payload: Json }
   | { trigger: "on_approval"; answer: string; resolvedBy: Actor }
 
+/**
+ * What firing a wake does. `session_turn` (the default) resumes a session;
+ * hosts register other kinds via the `sinks` option.
+ */
+export type WakeKind = string
+
 /** A durable wake row. `null` timestamps/params are absent-by-type. */
 export interface Wake {
   id: WakeId
   sessionId: SessionId | null
   workspaceId: WorkspaceId
   triggerType: TriggerType
+  /** Selects the sink that runs when this wake fires. Default "session_turn". */
+  kind: WakeKind
   intentJson: string
   /** Set at pending→firing for on_event/on_approval so a crash can re-drive it. */
   resultJson: string | null
@@ -61,6 +69,13 @@ export type ResolveOutcome =
 
 /** Resume (or start, when sessionId is null) a turn against a session. At-least-once. */
 export type SpawnTurn = (sessionId: SessionId | null, result: WakeResult) => Promise<void>
+
+/**
+ * A firing handler for one wake kind. Receives the whole wake plus the
+ * reconstructed result. Runs at-least-once: a throw leaves the row in
+ * `firing` for lease-reclaim to re-drive.
+ */
+export type WakeSink = (wake: Wake, result: WakeResult) => Promise<void> | void
 
 /** Host authz: may this actor resolve an approval for this workspace? */
 export type Authorize = (actor: Actor, workspaceId: WorkspaceId) => Promise<boolean> | boolean
