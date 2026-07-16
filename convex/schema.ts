@@ -1165,4 +1165,51 @@ export default defineSchema({
   })
     .index("by_workspace_created", ["workspace_id", "created_at"])
     .index("by_user_created", ["user_id", "created_at"]),
+
+  // @claxedo/wakes durable rows (the Convex `WakeStore` adapter, wakes-v2 plan
+  // 2026-07-17-002 U5). Column names mirror the SQLite store; absent optional
+  // = the port's null. `id` is the engine-generated durable wake id — Convex
+  // `_id` stays internal to this adapter.
+  wakes: defineTable({
+    id: v.string(),
+    session_id: v.optional(v.string()),
+    workspace_id: v.string(),
+    trigger_type: v.string(),
+    kind: v.string(),
+    serial_key: v.optional(v.string()),
+    intent_json: v.string(),
+    result_json: v.optional(v.string()),
+    state: v.string(),
+    expires_at: v.optional(v.number()),
+    depth: v.number(),
+    created_by: v.optional(v.string()),
+    created_at: v.number(),
+    fired_at: v.optional(v.number()),
+    fire_at: v.optional(v.number()),
+    schedule: v.optional(v.string()),
+    event_key: v.optional(v.string()),
+    token: v.optional(v.string()),
+    prompt: v.optional(v.string()),
+    resolved_by: v.optional(v.string()),
+    idempotency_key: v.optional(v.string()),
+    lease_until: v.optional(v.number()),
+    attempts: v.number(),
+  })
+    .index("by_wake_id", ["id"])
+    .index("by_idempotency", ["workspace_id", "idempotency_key"])
+    .index("by_due", ["trigger_type", "state", "fire_at"])
+    .index("by_lane_state", ["serial_key", "state"])
+    .index("by_token", ["token"])
+    .index("by_session", ["session_id"])
+    .index("by_event_state", ["event_key", "state"])
+    .index("by_state_expiry", ["state", "expires_at"])
+    .index("by_state_lease", ["state", "lease_until"])
+    .index("by_workspace_state", ["workspace_id", "state"])
+    .index("by_workspace_created", ["workspace_id", "created_at"]),
+
+  wake_receipts: defineTable({
+    key: v.string(),
+    result_json: v.string(),
+    created_at: v.number(),
+  }).index("by_key", ["key"]),
 })
