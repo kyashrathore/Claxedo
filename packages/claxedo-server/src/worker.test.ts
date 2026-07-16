@@ -13,9 +13,19 @@ import { describe, expect, test, vi } from "vitest"
 
 const appFetch = vi.fn(async () => new Response("ok"))
 const reconcile = vi.fn(async () => ({ launched: [], results: [], background: {} }))
+const settlerFetch = vi.fn(async () => new Response(null, { status: 204 }))
+const settlerNamespace = {
+  idFromName: vi.fn((name: string) => name),
+  get: vi.fn(() => ({ fetch: settlerFetch })),
+}
 const createHostedApp = vi.fn((
   _plane: unknown,
-  _options?: { workGraphReconcile?: () => Promise<unknown> },
+  _options?: {
+    workGraphReconcile?: () => Promise<unknown>
+    workGraphSettlementDispatcher?: (
+      waitUntil: (promise: Promise<unknown>) => void,
+    ) => { nudge(tenant: { organizationId: string; ownerUserId: string }): void }
+  },
 ) => ({ fetch: appFetch }))
 
 vi.mock("./control-plane/hosted-services", () => ({
@@ -39,7 +49,10 @@ describe("worker entrypoint", () => {
   test("forwards the request, env bindings, and ExecutionContext into the app", async () => {
     const worker = (await import("./worker")).default
     const request = new Request("http://cp.test/api/claxedo/health")
-    const env = { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test" }
+    const env = {
+      CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+      WORKGRAPH_SETTLER: settlerNamespace,
+    }
     const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() }
 
     const res = await worker.fetch(request, env, ctx as never)
@@ -59,6 +72,23 @@ describe("worker entrypoint", () => {
     const callsBefore = ctx.waitUntil.mock.calls.length
     gotCtx.waitUntil(Promise.resolve())
     expect(ctx.waitUntil.mock.calls.length).toBe(callsBefore + 1)
+  })
+
+  test("binds settlement nudges to the current request waitUntil", async () => {
+    const options = createHostedApp.mock.calls.at(-1)?.[1]
+    const work: Promise<unknown>[] = []
+    const dispatcher = options?.workGraphSettlementDispatcher?.((promise) => work.push(promise))
+
+    dispatcher?.nudge({ organizationId: "org-a", ownerUserId: "user-a" })
+
+    expect(work).toHaveLength(1)
+    await Promise.all(work)
+    expect(settlerNamespace.idFromName).toHaveBeenCalledWith(JSON.stringify(["org-a", "user-a"]))
+    expect(settlerFetch).toHaveBeenCalledTimes(1)
+    const request = settlerFetch.mock.calls[0]?.[0] as unknown as Request
+    expect(request.method).toBe("POST")
+    expect(new URL(request.url).pathname).toBe("/nudge")
+    await expect(request.json()).resolves.toEqual({ organizationId: "org-a", ownerUserId: "user-a" })
   })
 
   test("runs manual reconciliation with background control effects enabled", async () => {

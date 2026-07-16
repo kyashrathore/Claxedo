@@ -97,6 +97,7 @@ export function createHostedWorkGraph(
     now?: () => number
     telemetry?: ControlPlaneTelemetry
     settlementDispatcher?: SettlementDispatcher
+    settlementDispatcherForRequest?: (request: Request) => SettlementDispatcher | undefined
     /** Test/custom-host seam; Cloud uses the encrypted per-org credential store. */
     webhookCredentials?: (orgId: string) => ControlPlaneCredentials
   }>,
@@ -125,6 +126,7 @@ export function createHostedWorkGraph(
   const executor = input.executor ?? createWorkGraphConvexExecutor(url!)
   const clerkOrgByContext = new WeakMap<WorkGraphContext, string>()
   const signedAuthByContext = new WeakMap<WorkGraphContext, SignedControlPlaneAuth>()
+  const settlementDispatcherByContext = new WeakMap<WorkGraphContext, SettlementDispatcher>()
   const webhookVerifier =
     input.webhookVerifier ??
     createHostedConnectionWebhookVerifier({
@@ -155,7 +157,8 @@ export function createHostedWorkGraph(
       const result = await commandService.execute(context, request)
       if (!result.ok) return result
       try {
-        settlementDispatcher.nudge({
+        const dispatcher = settlementDispatcherByContext.get(context) ?? settlementDispatcher
+        dispatcher.nudge({
           organizationId: context.organizationId,
           ownerUserId: context.ownerUserId,
         })
@@ -191,7 +194,13 @@ export function createHostedWorkGraph(
     })
     if (auth.mode !== "signed")
       throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed WorkGraph auth is required")
-    return ownerContext(auth, request.headers.get("x-request-id")?.trim() || input.requestId?.() || crypto.randomUUID())
+    const context = await ownerContext(
+      auth,
+      request.headers.get("x-request-id")?.trim() || input.requestId?.() || crypto.randomUUID(),
+    )
+    const requestDispatcher = input.settlementDispatcherForRequest?.(request)
+    if (requestDispatcher) settlementDispatcherByContext.set(context, requestDispatcher)
+    return context
   }
   const intake = createHostedWorkGraphIntake({
     env: input.env,

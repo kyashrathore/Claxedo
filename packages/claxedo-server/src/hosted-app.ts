@@ -30,7 +30,7 @@
  *   POST /internal/workgraph/reconcile
  */
 
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "./cors-origins"
 import { JwksRoutes } from "./control-plane/routes/jwks"
@@ -74,6 +74,7 @@ import { DocsRoutes } from "./routes/docs"
 import { createConvexDocumentStore } from "./document-host/convex-store"
 import type { DocumentStore } from "./document-store"
 import { workGraphHttpTelemetry } from "./workgraph-host/operational-telemetry"
+import type { SettlementDispatcher } from "./workgraph-host/settlement-dispatcher"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -86,6 +87,10 @@ export type HostedAppOverrides = {
   workGraphOwnerActivation?: (auth: SignedControlPlaneAuth) => Promise<HostedWorkGraphOwnerActivation>
   /** Bounded durable reconciler shared by cron and the protected admin trigger. */
   workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
+  /** Worker request-local settlement adapter; receives the active ExecutionContext. */
+  workGraphSettlementDispatcher?: (
+    waitUntil: (promise: Promise<unknown>) => void,
+  ) => SettlementDispatcher
   /** Test seam for the complete_attempt transcript-retention gate. */
   attemptTranscriptRetention?: (input: {
     organizationId: string
@@ -177,6 +182,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   assertHostedAppBootConfig(plane)
   const { services } = plane
   const app = new Hono()
+  const settlementDispatcherByRequest = new WeakMap<Request, SettlementDispatcher>()
   const workgraph =
     overrides.workgraph ??
     createHostedWorkGraph({
@@ -187,6 +193,9 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ...(services.authority ? { authority: services.authority } : {}),
       ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
       ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+      ...(overrides.workGraphSettlementDispatcher
+        ? { settlementDispatcherForRequest: (request: Request) => settlementDispatcherByRequest.get(request) }
+        : {}),
       telemetry: services.telemetry,
     })
   const workGraphOwnerActivation = overrides.workGraphOwnerActivation
@@ -205,10 +214,19 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const attemptOperationHandler = attemptOperationExecutor
     ? createHostedAttemptOperationHandler({ env: plane.env, execute: attemptOperationExecutor })
     : undefined
-  const forwardWorkGraph = (request: Request) => {
-    const url = new URL(request.url)
+  const forwardWorkGraph = (context: Context) => {
+    const url = new URL(context.req.url)
     url.pathname = url.pathname === "/api/workgraph" ? "/" : url.pathname.slice("/api/workgraph".length)
-    return workgraph.router.fetch(new Request(url, request))
+    const request = new Request(url, context.req.raw)
+    if (!overrides.workgraph && overrides.workGraphSettlementDispatcher) {
+      settlementDispatcherByRequest.set(
+        request,
+        overrides.workGraphSettlementDispatcher(
+          context.executionCtx.waitUntil.bind(context.executionCtx),
+        ),
+      )
+    }
+    return workgraph.router.fetch(request)
   }
 
   app.use(
@@ -339,8 +357,8 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
 
-  app.all("/api/workgraph", (context) => forwardWorkGraph(context.req.raw))
-  app.all("/api/workgraph/*", (context) => forwardWorkGraph(context.req.raw))
+  app.all("/api/workgraph", forwardWorkGraph)
+  app.all("/api/workgraph/*", forwardWorkGraph)
   app.route(
     "/api/claxedo/docs",
     DocsRoutes({

@@ -80,6 +80,14 @@ CLAXEDO_DEPLOYMENT_MODE = "hosted"
 binding = "CLAXEDO_DOCUMENTS"
 bucket_name = "claxedo-documents"
 
+[[durable_objects.bindings]]
+name = "WORKGRAPH_SETTLER"
+class_name = "WorkGraphSettler"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["WorkGraphSettler"]
+
 [env.staging]
 name = "claxedo-control-plane-staging"
 
@@ -97,6 +105,10 @@ CLAXEDO_DEPLOYMENT_MODE = "hosted"
 [[env.staging.r2_buckets]]
 binding = "CLAXEDO_DOCUMENTS"
 bucket_name = "claxedo-documents-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "WORKGRAPH_SETTLER"
+class_name = "WorkGraphSettler"
 
 # KV namespace for the Cloudflare credential backend (only needed once the hosted
 # surface manages provider credentials; the first surface does not).

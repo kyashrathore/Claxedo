@@ -31,6 +31,17 @@ import { sentryInitOptions } from "./observability/sentry-config"
 import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
 import { skipOverlappingReconcile } from "./workgraph-host/reconcile-serialize"
 import type { WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
+import {
+  createCloudflareSettlementDispatcher,
+  WorkGraphSettler,
+  type WorkGraphSettlerNamespace,
+} from "./workgraph-host/cloudflare-settlement-dispatcher"
+
+export { WorkGraphSettler }
+
+type WorkerEnv = HostedWorkerEnv & {
+  WORKGRAPH_SETTLER?: WorkGraphSettlerNamespace
+}
 
 // D12: route reportError/reportPaymentError (the payment page-class hook the
 // billing routes call) into the request's Sentry scope. withSentry runs the
@@ -58,7 +69,7 @@ let cached: {
 // signed-auth/authority presence. Both throw HostedWorkerCompositionError,
 // which `fetch` below maps to a 503 for EVERY request — the Worker is down,
 // not open, when hosted config is missing.
-function buildApp(env: HostedWorkerEnv): Hono {
+function buildApp(env: WorkerEnv): Hono {
   if (cached) return cached.app
   const plane = composeHostedControlPlane(env)
   const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
@@ -67,6 +78,12 @@ function buildApp(env: HostedWorkerEnv): Hono {
   const workGraphReconcile = workGraphRuntime ? skipOverlappingReconcile(workGraphRuntime.reconcile) : undefined
   const app = createHostedApp(plane, {
     ...(workGraphReconcile ? { workGraphReconcile } : {}),
+    ...(env.WORKGRAPH_SETTLER
+      ? {
+          workGraphSettlementDispatcher: (waitUntil: (promise: Promise<unknown>) => void) =>
+            createCloudflareSettlementDispatcher({ namespace: env.WORKGRAPH_SETTLER!, waitUntil }),
+        }
+      : {}),
   })
   // D12: Hono converts route exceptions into 500s internally, so they never
   // escape to withSentry — report them here, keeping Hono's default response
@@ -102,7 +119,7 @@ function compositionErrorResponse(err: HostedWorkerCompositionError): Response {
 type ScheduledController = { cron: string; scheduledTime: number }
 
 const handler = {
-  async fetch(request: Request, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
     let app: Hono
     try {
       app = buildApp(env)
@@ -129,7 +146,7 @@ const handler = {
   // failure here (missing config, missing token, non-2xx GC) THROWS so the
   // cron invocation is recorded as failed and reaches Sentry via withSentry —
   // a silently-dead reaper is the failure mode this design exists to avoid.
-  async scheduled(controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: WorkerEnv, ctx?: ExecutionContext): Promise<void> {
     // The every-minute staging lane settles only durable WorkGraph control
     // effects (deletion finalization, execution placement) so clients observe
     // command outcomes within their live sync window. The heavier sandbox GC
@@ -197,6 +214,6 @@ const handler = {
 }
 
 export default Sentry.withSentry(
-  (env: HostedWorkerEnv) => sentryInitOptions(env, "worker"),
+  (env: WorkerEnv) => sentryInitOptions(env, "worker"),
   handler,
 )
