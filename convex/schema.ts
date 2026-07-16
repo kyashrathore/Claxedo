@@ -458,6 +458,7 @@ export default defineSchema({
     pinned: v.boolean(),
     execution_defaults: v.any(),
     recap_defaults: v.any(),
+    activity_granularity: v.optional(v.union(v.literal("milestones"), v.literal("progress"), v.literal("detailed"))),
     memory: v.optional(v.any()),
     activity: v.any(),
     recap_due_at: v.optional(v.number()),

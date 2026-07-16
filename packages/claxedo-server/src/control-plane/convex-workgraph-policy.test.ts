@@ -91,6 +91,9 @@ describe("Convex WorkGraph persistence policy", () => {
       })
     }
     expect(schema.tables.workgraph_work_items.validator.fields.outcome_id.isOptional).toBe("optional")
+    const activityGranularity = schema.tables.workgraph_streams.validator.fields.activity_granularity
+    expect(activityGranularity).toMatchObject({ isOptional: "optional", kind: "union" })
+    expect(activityGranularity.members.map((member) => member.value)).toEqual(["milestones", "progress", "detailed"])
     expect(
       (schema.tables.workgraph_attempts as unknown as { indexes: Array<{ fields: string[] }> }).indexes,
     ).toContainEqual(expect.objectContaining({ fields: ["organization_id", "owner_user_id", "state", "updated_at"] }))
