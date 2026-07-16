@@ -12,6 +12,11 @@ import { describe, expect, test, vi } from "vitest"
  */
 
 const appFetch = vi.fn(async () => new Response("ok"))
+const reconcile = vi.fn(async () => ({ launched: [], results: [], background: {} }))
+const createHostedApp = vi.fn((
+  _plane: unknown,
+  _options?: { workGraphReconcile?: () => Promise<unknown> },
+) => ({ fetch: appFetch }))
 
 vi.mock("./control-plane/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => ({})),
@@ -23,7 +28,11 @@ vi.mock("./control-plane/hosted-services", () => ({
 }))
 
 vi.mock("./hosted-app", () => ({
-  createHostedApp: vi.fn(() => ({ fetch: appFetch })),
+  createHostedApp,
+}))
+
+vi.mock("./workgraph-host/hosted-runtime", () => ({
+  createHostedWorkGraphRuntime: vi.fn(() => ({ reconcile })),
 }))
 
 describe("worker entrypoint", () => {
@@ -50,5 +59,20 @@ describe("worker entrypoint", () => {
     const callsBefore = ctx.waitUntil.mock.calls.length
     gotCtx.waitUntil(Promise.resolve())
     expect(ctx.waitUntil.mock.calls.length).toBe(callsBefore + 1)
+  })
+
+  test("runs manual reconciliation with background control effects enabled", async () => {
+    const worker = (await import("./worker")).default
+    await worker.fetch(
+      new Request("http://cp.test/api/claxedo/health"),
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test" },
+    )
+    const options = createHostedApp.mock.calls.at(-1)?.[1] as
+      | { workGraphReconcile?: () => Promise<unknown> }
+      | undefined
+
+    await options?.workGraphReconcile?.()
+
+    expect(reconcile).toHaveBeenCalledWith()
   })
 })

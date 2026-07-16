@@ -60,7 +60,7 @@ function buildApp(env: HostedWorkerEnv): Hono {
   const plane = composeHostedControlPlane(env)
   const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
   const app = createHostedApp(plane, {
-    ...(workGraphRuntime ? { workGraphReconcile: () => workGraphRuntime.reconcile({ background: false }) } : {}),
+    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
   })
   // D12: Hono converts route exceptions into 500s internally, so they never
   // escape to withSentry — report them here, keeping Hono's default response
