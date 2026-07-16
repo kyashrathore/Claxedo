@@ -86,7 +86,7 @@ class_name = "WorkGraphSettler"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["WorkGraphSettler"]
+new_sqlite_classes = ["WorkGraphSettler"]
 
 [env.staging]
 name = "claxedo-control-plane-staging"
