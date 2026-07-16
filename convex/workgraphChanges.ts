@@ -300,7 +300,14 @@ async function attentionPage(ctx: any, organization: string, owner: string, inpu
     const root = await owned(ctx, "workgraphs", organization, owner, "workgraph_default")
     if (root) throw new Error("Attention projection is not initialized for this owner")
   }
-  const page = await Promise.all(rows.slice(0, limit).map((row: any) => attentionProjectionItem(ctx, organization, owner, row, summary)))
+  const built = await Promise.all(rows.slice(0, limit).map((row: any) => attentionProjectionItem(ctx, organization, owner, row, summary)))
+  // Items scoped to a deletion-pending Stream no longer need the owner — the
+  // deletion request already resolved them from the owner's point of view.
+  const deleting = await deletionPendingStreamIds(ctx, organization, owner)
+  const page = deleting.size === 0 ? built : built.filter((item: any) => {
+    const streamId = item?.record?.streamId ?? item?.notification?.streamId
+    return !streamId || !deleting.has(streamId)
+  })
   const hasMore = rows.length > limit
   return AttentionPageSchema.parse({
     items: page,
@@ -479,11 +486,17 @@ async function snapshot(ctx: any, organization: string, owner: string, input: Re
     { table: "workgraph_recaps", recordType: "recap", dto: (row: any) => recapDto(row, owner) },
     { table: "workgraph_admission_proposals", recordType: "admission_proposal", dto: (row: any) => admissionDto(row, owner) },
   ]
+  // A deletion-pending Stream is already gone from the owner's point of view —
+  // the durable teardown is background compensation. Hide it and every record
+  // it scopes from the snapshot; the single-Stream read stays visible so
+  // finalization checks (smoke cleanup verification) keep their strict meaning.
+  const deleting = await deletionPendingStreamIds(ctx, organization, owner)
   const [root, ...batches] = await Promise.all([
     owned(ctx, "workgraphs", organization, owner, "workgraph_default"),
     ...specs.map(async (spec) => Promise.all(
       (await snapshotRows(ctx, organization, owner, spec.table, spec.recordType, resume.position, limit + 1))
         .filter((row: any) => spec.recordType !== "admission_proposal" || row.source)
+        .filter((row: any) => !deleting.has(spec.recordType === "stream" ? row.id : row.stream_id))
         .map(spec.dto),
     )),
   ])
@@ -507,6 +520,14 @@ async function snapshot(ctx: any, organization: string, owner: string, input: Re
       }),
     } : {}), capturedAt: resume.capturedAt,
   }
+}
+
+async function deletionPendingStreamIds(ctx: any, organization: string, owner: string) {
+  const rows = await ctx.db.query("workgraph_streams")
+    .withIndex("by_tenant_created_id", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner))
+    .filter((query: any) => query.neq(query.field("deletion"), undefined))
+    .collect()
+  return new Set<string>(rows.map((row: any) => row.id))
 }
 
 async function snapshotRows(

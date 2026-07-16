@@ -29,7 +29,7 @@ test.describe.serial("deployed WorkGraph", () => {
     // Stream deletion is durable: the command marks the record and the
     // every-minute reconcile lane finalizes it, so the card disappears within
     // the cron cadence plus one live-sync window rather than instantly.
-    testInfo.setTimeout(480_000)
+    testInfo.setTimeout(240_000)
     const pageErrors: Error[] = []
     const failedResponses: string[] = []
     const workGraphAuthorizations: string[] = []
@@ -96,11 +96,9 @@ test.describe.serial("deployed WorkGraph", () => {
     await page.getByRole("button", { name: "Delete stream", exact: true }).click()
     // The portaled confirmation popover repeats the title while it closes, so
     // assert on the stream card itself rather than any text occurrence. The
-    // card clears once the reconcile lane finalizes the durable deletion.
-    // Measured on staging: finalization lands ~111s after the command at the
-    // every-minute cron cadence, plus up to a live-sync window; 300s absorbs
-    // cron-phase variance without weakening what is asserted.
-    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 300_000 })
+    // snapshot hides deletion-pending Streams immediately, so the card clears
+    // within one live-sync window; durable teardown continues in background.
+    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 45_000 })
 
     expect(workGraphAuthorizations.length).toBeGreaterThan(0)
     expect(workGraphAuthorizations.every((authorization) => authorization.startsWith("Bearer "))).toBe(true)
