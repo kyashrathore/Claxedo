@@ -11,6 +11,7 @@ import {
 } from "./operational-telemetry"
 
 type Mutation = FunctionReference<"mutation">
+type Query = FunctionReference<"query">
 const api = anyApi as unknown as {
   sessions: {
     syncWorkGraphSession: Mutation
@@ -20,6 +21,7 @@ const api = anyApi as unknown as {
     ensureWorkGraph: Mutation
   }
   workgraphRuntime: {
+    listStaleTenants: Query
     listWorkerTenants: Mutation
     claimLaunches: Mutation
     markRunning: Mutation
@@ -82,7 +84,10 @@ type Claim = {
   }
 }
 
-type Executor = { mutation: (fn: Mutation, args: Record<string, unknown>) => Promise<unknown> }
+type Executor = {
+  mutation: (fn: Mutation, args: Record<string, unknown>) => Promise<unknown>
+  query?: (fn: Query, args: Record<string, unknown>) => Promise<unknown>
+}
 type RuntimeFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 type HostedSessionPublisher = {
   launch: (input: {
@@ -149,6 +154,7 @@ export function createHostedWorkGraphRuntime(
   const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
   if (!url || !serviceToken) return
   const client = options.executor ?? convexExecutor(url)
+  const query = client.query ?? convexQueryExecutor(url)
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
   const workerId = clean(env.CLAXEDO_WORKGRAPH_WORKER_ID) ?? "claxedo-worker"
@@ -156,6 +162,15 @@ export function createHostedWorkGraphRuntime(
   const sessionPublisher =
     options.sessionPublisher ?? (options.executor ? undefined : convexSessionPublisher(url, serviceToken))
   return {
+    listStaleTenants: async (
+      input: { now?: number; thresholdMs?: number; limit?: number } = {},
+    ) =>
+      (await query(api.workgraphRuntime.listStaleTenants, {
+        service_token: serviceToken,
+        now: input.now ?? now(),
+        ...(input.thresholdMs === undefined ? {} : { threshold_ms: input.thresholdMs }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      })) as WorkerTenant[],
     reconcile: async (run: {
       background?: boolean
       tenants?: WorkerTenant[]
@@ -1463,7 +1478,15 @@ async function hostedSessionHistory(
 
 function convexExecutor(url: string): Executor {
   const client = new ConvexHttpClient(url)
-  return { mutation: (fn, args) => client.mutation(fn, args) }
+  return {
+    mutation: (fn, args) => client.mutation(fn, args),
+    query: (fn, args) => client.query(fn, args),
+  }
+}
+
+function convexQueryExecutor(url: string) {
+  const client = new ConvexHttpClient(url)
+  return (fn: Query, args: Record<string, unknown>) => client.query(fn, args)
 }
 
 export class HostedTranscriptRetentionError extends Error {

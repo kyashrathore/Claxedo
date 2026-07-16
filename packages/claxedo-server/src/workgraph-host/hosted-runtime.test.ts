@@ -34,6 +34,36 @@ afterEach(() => {
 })
 
 describe("hosted WorkGraph runtime outbox", () => {
+  test("reads stale settlement tenants through the service-authenticated query", async () => {
+    const queries: Record<string, unknown>[] = []
+    const runtime = createHostedWorkGraphRuntime(
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+      },
+      {} as ControlPlaneServices,
+      {
+        executor: {
+          mutation: async () => [],
+          query: async (_fn, args) => {
+            queries.push(args)
+            return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+          },
+        },
+      },
+    )
+
+    await expect(runtime?.listStaleTenants({ now: 100_000, thresholdMs: 45_000, limit: 25 })).resolves.toEqual([
+      { organizationId: "org-a", ownerUserId: "user-a" },
+    ])
+    expect(queries).toEqual([{
+      service_token: "service-secret",
+      now: 100_000,
+      threshold_ms: 45_000,
+      limit: 25,
+    }])
+  })
+
   test("lists each tenant with stale unsettled outbox work once", async () => {
     const db = new RuntimeDb({
       workgraph_outbox: [
