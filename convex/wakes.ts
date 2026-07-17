@@ -103,14 +103,14 @@ type WakeInput = {
 async function byWakeId(ctx: QueryCtx, id: string) {
   return ctx.db
     .query("wakes")
-    .withIndex("by_wake_id", (q) => q.eq("id", id))
+    .withIndex("by_wake_id", (q: any) => q.eq("id", id))
     .unique()
 }
 
 async function byIdempotency(ctx: QueryCtx, workspaceId: string, key: string) {
   return ctx.db
     .query("wakes")
-    .withIndex("by_idempotency", (q) => q.eq("workspace_id", workspaceId).eq("idempotency_key", key))
+    .withIndex("by_idempotency", (q: any) => q.eq("workspace_id", workspaceId).eq("idempotency_key", key))
     .first()
 }
 
@@ -176,7 +176,7 @@ export async function createLaneWakeIfIdle(
 ): Promise<{ wakeId: string; created: boolean }> {
   const pending = await ctx.db
     .query("wakes")
-    .withIndex("by_lane_state", (q) => q.eq("serial_key", wake.serialKey).eq("state", "pending"))
+    .withIndex("by_lane_state", (q: any) => q.eq("serial_key", wake.serialKey).eq("state", "pending"))
     .collect()
   const existing = pending.find((doc) => doc.kind === wake.kind)
   if (existing) return { wakeId: existing.id, created: false }
@@ -208,7 +208,7 @@ export const getWakeByToken = serviceQuery({
   handler: async (ctx, args) => {
     const doc = await ctx.db
       .query("wakes")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .withIndex("by_token", (q: any) => q.eq("token", args.token))
       .first()
     return doc ? toWake(doc) : null
   },
@@ -237,7 +237,7 @@ export const claimDueWakes = serviceMutation({
   handler: async (ctx, args) => {
     const due = await ctx.db
       .query("wakes")
-      .withIndex("by_due", (q) => q.eq("trigger_type", "at").eq("state", "pending").lte("fire_at", args.now))
+      .withIndex("by_due", (q: any) => q.eq("trigger_type", "at").eq("state", "pending").lte("fire_at", args.now))
       .collect()
     const scoped = due
       .filter((doc) => doc.fire_at != null)
@@ -257,7 +257,7 @@ export const claimDueWakes = serviceMutation({
         if (takenLanes.has(doc.serial_key)) continue
         const firing = await ctx.db
           .query("wakes")
-          .withIndex("by_lane_state", (q) => q.eq("serial_key", doc.serial_key).eq("state", "firing"))
+          .withIndex("by_lane_state", (q: any) => q.eq("serial_key", doc.serial_key).eq("state", "firing"))
           .first()
         if (firing) continue
         takenLanes.add(doc.serial_key)
@@ -305,7 +305,7 @@ export const findPendingWakesByEventKey = serviceQuery({
   handler: async (ctx, args) => {
     const docs = await ctx.db
       .query("wakes")
-      .withIndex("by_event_state", (q) => q.eq("event_key", args.event_key).eq("state", "pending"))
+      .withIndex("by_event_state", (q: any) => q.eq("event_key", args.event_key).eq("state", "pending"))
       .collect()
     return docs.map(toWake)
   },
@@ -316,7 +316,7 @@ export const findExpirableWakes = serviceQuery({
   handler: async (ctx, args) => {
     const docs = await ctx.db
       .query("wakes")
-      .withIndex("by_state_expiry", (q) => q.eq("state", "pending").lte("expires_at", args.now))
+      .withIndex("by_state_expiry", (q: any) => q.eq("state", "pending").lte("expires_at", args.now))
       .collect()
     return docs.filter((doc) => doc.expires_at != null).map(toWake)
   },
@@ -327,7 +327,7 @@ export const findReclaimableWakes = serviceQuery({
   handler: async (ctx, args) => {
     const docs = await ctx.db
       .query("wakes")
-      .withIndex("by_state_lease", (q) => q.eq("state", "firing").lte("lease_until", args.now))
+      .withIndex("by_state_lease", (q: any) => q.eq("state", "firing").lte("lease_until", args.now))
       .collect()
     return docs
       .filter((doc) => doc.lease_until != null)
@@ -358,7 +358,7 @@ export const listWakesForSession = serviceQuery({
   handler: async (ctx, args) => {
     const docs = await ctx.db
       .query("wakes")
-      .withIndex("by_session", (q) => q.eq("session_id", args.session_id))
+      .withIndex("by_session", (q: any) => q.eq("session_id", args.session_id))
       .collect()
     return docs.map(toWake)
   },
@@ -369,7 +369,7 @@ export const countLiveWakes = serviceQuery({
   handler: async (ctx, args) => {
     const docs = await ctx.db
       .query("wakes")
-      .withIndex("by_workspace_state", (q) => q.eq("workspace_id", args.workspace_id).eq("state", "pending"))
+      .withIndex("by_workspace_state", (q: any) => q.eq("workspace_id", args.workspace_id).eq("state", "pending"))
       .collect()
     return docs.length
   },
@@ -380,7 +380,7 @@ export const countWakesCreatedSince = serviceQuery({
   handler: async (ctx, args) => {
     const docs = await ctx.db
       .query("wakes")
-      .withIndex("by_workspace_created", (q) => q.eq("workspace_id", args.workspace_id).gte("created_at", args.since))
+      .withIndex("by_workspace_created", (q: any) => q.eq("workspace_id", args.workspace_id).gte("created_at", args.since))
       .collect()
     return docs.length
   },
@@ -391,7 +391,7 @@ export const getWakeReceipt = serviceQuery({
   handler: async (ctx, args) => {
     const doc = await ctx.db
       .query("wake_receipts")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .withIndex("by_key", (q: any) => q.eq("key", args.key))
       .unique()
     return doc ? doc.result_json : null
   },
@@ -402,7 +402,7 @@ export const putWakeReceipt = serviceMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("wake_receipts")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .withIndex("by_key", (q: any) => q.eq("key", args.key))
       .unique()
     if (existing) return null
     await ctx.db.insert("wake_receipts", { key: args.key, result_json: args.result_json, created_at: args.now })
