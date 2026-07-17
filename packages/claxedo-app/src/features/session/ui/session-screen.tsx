@@ -27,6 +27,8 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useSDK } from "@/features/session/app-ports"
 import { useGlobalSDK } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
+import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
+import { promptLength } from "@/features/session/composer/ui/history"
 import { useComments } from "@/platform/comments/provider"
 import { useServer } from "@/features/session/app-ports"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
@@ -915,7 +917,12 @@ export default function SessionPage() {
 
     if (action === "focus-input") {
       if (composerState.blocked()) return
-      inputRef?.focus()
+      const input = inputRef
+      if (!input) return
+      input.focus()
+      // Blur may have destroyed the DOM selection (editor re-renders) — restore
+      // the caret the composer persisted into the prompt store.
+      setCursorPosition(input, prompt.cursor() ?? promptLength(prompt.current()))
     }
   }
 

@@ -167,3 +167,34 @@ correctness** — it cannot reproduce **platform admission behavior** (the 6-in-
 flight-handshake window, shared egress IPs, provider rate limits are exactly
 what the real deploys exist to measure). So: local-first eliminates avoidable
 deploy failures; the benchmark rows remain the only source of platform truth.
+
+## Phase 2 deploy-readiness prep (verified 2026-07-17, while Phase 0 runs)
+
+Confirmed so the deploy phase hits no surprises:
+- **Relay Dockerfile EXISTS** at `packages/workspace-relay/Dockerfile` (source-mode, oven/bun:1.3.14; build context = monorepo root). The fly.toml comment calling it "not yet in-tree" is STALE — ignore it. `fly deploy -c packages/workspace-relay/fly.toml` from repo root is viable.
+- **Fly app must be created**: `claxedo-workspace-relay` does not exist in the account (only the suspended June bench app + selfhost). For the reeval, deploy a throwaway `claxedo-relay-reeval` app (`fly launch --copy-config --no-deploy` then `fly deploy`), NOT the prod name.
+- **Instance-count tension to reconcile**: fly.toml warns SINGLE-INSTANCE-ONLY (prod v1 keeps host-tunnel sockets in process memory; multi-instance needs sticky routing not yet built), but June's PASS row was `m3` (3×2048MB). For the benchmark this is fine: the reeval app is a throwaway measurement, and the loadgen points every client at ONE relay origin, so replicate June's 3×2048MB `sin` shape for capacity headroom while accepting it's not a correctness-critical prod topology. Document the machine count used in each row.
+- **Required prod-boot secrets** (relay fail-closes without them, `src/main.ts` validateProductionEnv): `CLAXEDO_RELAY_RESOLVER_URL`, `CLAXEDO_RELAY_RESOLVER_TOKEN`, `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` (ephemeral refused in prod), `CLAXEDO_CONTROL_PLANE_JWKS_URL` or `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM`, `CLAXEDO_RELAY_METRICS_TOKEN`, plus **`CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY=64`** (amendment 3). The relay resolves workspace targets via the control-plane resolver — the bench needs a resolver reachable from Fly (either point at staging control-plane, or run the bench relay in a mode that resolves the single benchmark target directly; the loadgen/provision kit must supply the target mapping). **This resolver dependency is the biggest Phase-2 unknown — the Phase-0 provision.ts must expose how a relay reaches the Daytona sandbox target without a full control plane.**
+- **CF sandbox worker (Row 6)**: deployable via `deploy-cloudflare-sandbox-worker.yml` (dispatch) — repo secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` both present. GHCR image `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-5-1-ae435f536c-v8` exists.
+- **Daytona snapshot**: fresh CI snapshot `claxedo-workspace-runtime-0-5-1-ae435f536c-v8` available; provision.ts uses it (or ensureSnapshot).
+
+## Execution authorization (owner, 2026-07-17)
+
+Owner: proceed end to end; **spend is NOT a stop condition** — do not gate on cost estimates. Binding rules for the run:
+- Proceed autonomously through Phase 2 deploys once Phase 0's local-first gates are green (loadgen round-trips a relayed WS message locally; both CF workers boot under `wrangler dev`; `bun test src` green).
+- STOP + report ONLY when a provider actually refuses: a hard paywall, a plan-required/permission rejection at deploy, or a quota/creation denial. A successful (billable) deploy is not a stop condition.
+- Keep every deploy `-reeval`-suffixed and tear it all down after the run regardless.
+
+## Phase 2 execution — BLOCKED on Daytona credential (2026-07-18)
+
+Phase 0 verified independently (318/0 tests; real local relayed WS round-trip with `trace source=relay-trace`). Phase 2 deploys started; findings:
+
+**Cloudflare deploy path PROVEN.** Deployed `claxedo-workspace-relay-reeval` (stock worker) — Durable Object binding accepted and live:
+- `https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev/health` -> `200 {"ok":true,"service":"workspace-relay","mode":"cloudflare-durable-object"}`
+- Cloudflare paid-plan / DO activation is ACTIVE on account `683a…af0e` — the open unknown is resolved. (Worker kept up as evidence; in teardown checklist.)
+
+**BLOCKER: the Daytona API key is expired/invalid.** The key in the local managed store (`dtn_…`, 68 chars, valid format) is rejected 401 Unauthorized on the real endpoint `https://app.daytona.io/api/sandbox` (raw authenticated probe, not just the SDK). An earlier `list()` probe's "OK" was a false positive — the SDK swallowed the auth error. Provision fails: `DaytonaAuthenticationError: Invalid credentials, statusCode 401`.
+
+Impact: blocks the core cross-provider matrix (Rows 1–5) — every one targets a Daytona sandbox, and H0/H1/H2 are specifically CF-relay-to-Daytona. Cannot self-serve: the key is expired and cannot be minted locally. Per the plan's prime directive (missing credentials -> STOP and report), execution pauses here.
+
+**Exact ask to unblock:** a fresh Daytona API key with sandbox-create permission (+ org id / api url if non-default). Then resume — everything else is staged (bench kit, CF deploy proven, Fly Dockerfile present, stub resolver/RAT working, fresh snapshot `claxedo-workspace-runtime-0-5-1-ae435f536c-v8`). Row 6 (CF->CF control) needs no Daytona but needs the CF sandbox worker deployed (`deploy-cloudflare-sandbox-worker.yml`) — can run independently if desired.

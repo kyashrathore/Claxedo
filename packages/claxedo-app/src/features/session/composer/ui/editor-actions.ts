@@ -271,6 +271,11 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
   }
 
   const handleBlur = () => {
+    // Persist the caret into the prompt store so a later programmatic focus
+    // (e.g. typing elsewhere on the page) can restore it — the DOM selection
+    // does not survive editor re-renders while blurred.
+    const cursor = currentCursor()
+    if (cursor !== null && cursor !== input.prompt.cursor()) input.prompt.set(input.prompt.current(), cursor)
     closePopover()
     setComposing(false)
   }

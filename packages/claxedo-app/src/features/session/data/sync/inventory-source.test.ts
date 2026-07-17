@@ -423,6 +423,40 @@ describe("global sync inventory source helpers", () => {
     expect(first).toEqual(second)
     expect(first[0]?.sessions.map((item) => item.id)).toEqual(["ses_remote"])
   })
+
+  // Guards the property behind upstream's "78x faster Home cold loading" fix
+  // (#36214): session inventory must cost O(1) requests regardless of how
+  // many directories exist. Our loopback path does one control-plane list and
+  // groups client-side; a per-directory fan-out would fail this test.
+  test("cold workspace inventory costs one request regardless of directory count", async () => {
+    const requested: string[] = []
+    const directories = Array.from({ length: 25 }, (_, index) => `/repo/project_${index}`)
+    const sessions = directories.flatMap((directory, index) => [
+      { sessionID: `ses_${index}_a`, directory, createdAt: 1, updatedAt: index * 2 + 2 },
+      { sessionID: `ses_${index}_b`, directory, createdAt: 1, updatedAt: index * 2 + 1 },
+    ])
+    const source = createInventoryPageSource({
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 1,
+      platformFetch: () => async (url) => {
+        requested.push(String(url))
+        return jsonResponse({ sessions })
+      },
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    const groups = await source.fetchWorkspaceGrouped({ perGroup: 1 })
+
+    expect(requested).toHaveLength(1)
+    expect(groups).toHaveLength(25)
+    for (const group of groups) {
+      expect(group.sessions).toHaveLength(1)
+      expect(group.total).toBe(2)
+      expect(group.hasMore).toBe(true)
+    }
+  })
 })
 
 function session(id: string, updated: number) {

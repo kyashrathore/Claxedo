@@ -53,6 +53,11 @@ function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): San
     return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T]
   }
 
+  if (id === "box") {
+    const api_key = clean(secret)
+    return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T]
+  }
+
   if (id === "docker") {
     const image = clean(secret)
     if (image) return { image } as SandboxDriverAuth[T]

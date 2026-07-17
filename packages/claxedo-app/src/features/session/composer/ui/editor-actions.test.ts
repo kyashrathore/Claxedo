@@ -69,6 +69,7 @@ function createHarness() {
       cursor = nextCursor
     },
     prompt: () => promptValue,
+    cursor: () => cursor,
   }
 }
 
@@ -189,6 +190,32 @@ describe("prompt editor actions", () => {
       harness.actions.handleBlur()
       expect(harness.actions.composing()).toBe(false)
       expect(harness.calls.popovers).toEqual([null])
+      dispose()
+    })
+  })
+
+  test("blur persists the caret into the prompt store", () => {
+    createRoot((dispose) => {
+      const harness = createHarness()
+      harness.editor.textContent = "hello world"
+      setCursorPosition(harness.editor, 6)
+
+      harness.actions.handleBlur()
+
+      expect(harness.cursor()).toBe(6)
+      expect(harness.prompt()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
+      dispose()
+    })
+  })
+
+  test("blur without an editor selection leaves the stored caret alone", () => {
+    createRoot((dispose) => {
+      const harness = createHarness()
+      harness.setPrompt([{ type: "text", content: "draft", start: 0, end: 5 }], 5)
+
+      harness.actions.handleBlur()
+
+      expect(harness.cursor()).toBe(5)
       dispose()
     })
   })

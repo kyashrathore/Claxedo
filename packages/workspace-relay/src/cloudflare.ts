@@ -334,6 +334,16 @@ function websocketRequest(request: Request) {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket"
 }
 
+// Additive experiment instrumentation: when the client sends
+// `x-claxedo-relay-ws-trace: 1`, the cloud WS admit path emits a single
+// `relay.trace` frame on the client socket carrying wsUpstreamOpenMs /
+// queuedFrames / maxQueuedDelayMs. This mirrors the Bun relay's trace
+// (bun.ts) so a benchmark harness sees the same vocabulary on both adapters.
+// Without the header there is zero behavior change.
+function relayWebSocketTraceEnabled(request: Request) {
+  return request.headers.get("x-claxedo-relay-ws-trace") === "1"
+}
+
 function workspaceIdsFromSearch(url: URL) {
   return [...new Set([
     ...url.searchParams.getAll("workspaceId"),
@@ -1331,6 +1341,13 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   }
 
   const admitCloudClient = async (request: Request, authorized: AuthorizedWorkspaceRelayRequest) => {
+    // Trace state is only allocated when the header opts in — no behavior
+    // change on the default path. `upstreamStartedAt` is captured before the
+    // upstream open so upstreamOpenMs reflects the DO's outbound-WS admission
+    // wall clock (the cross-provider handshake the June evaluation isolated).
+    const trace = relayWebSocketTraceEnabled(request)
+      ? { upstreamStartedAt: performance.now(), queueTimes: [] as number[], emitted: false }
+      : undefined
     let upstream: WorkspaceRelayDurableObjectSocket
     try {
       upstream = await connectWebSocket(
@@ -1351,12 +1368,23 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     } catch {
       return json("upstream_unavailable", "Workspace upstream is unavailable", 503)
     }
+    const upstreamConnectedAt = trace ? performance.now() : 0
     const pair = acceptSocket()
     const client = { request: authorized, socket: pair.server }
     clients.add(client)
     let closed = false
     let upstreamOpen = upstream.readyState === undefined || upstream.readyState === 1
     const queue: Array<string | ArrayBuffer | Uint8Array> = []
+    const emitTrace = (openedAt: number) => {
+      if (!trace || trace.emitted) return
+      trace.emitted = true
+      sendSocket(pair.server, JSON.stringify({
+        type: "relay.trace",
+        wsUpstreamOpenMs: roundedMs(openedAt - trace.upstreamStartedAt),
+        queuedFrames: trace.queueTimes.length,
+        maxQueuedDelayMs: roundedMs(trace.queueTimes.reduce((max, at) => Math.max(max, openedAt - at), 0)),
+      }))
+    }
     const activeTokenTimer = watchRuntimeAccessToken(client, (reason) => {
       closeSocket(pair.server, 1008, reason)
     })
@@ -1376,6 +1404,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }
     const flushQueue = () => {
       upstreamOpen = true
+      if (trace) emitTrace(performance.now())
       for (const item of queue.splice(0)) {
         if (!sendSocket(upstream, item)) {
           closeSocket(pair.server, 1011, "Upstream WebSocket connection failed")
@@ -1392,6 +1421,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
           cleanupClient({ code: 1011, reason: "Upstream WebSocket queue limit exceeded" })
           return
         }
+        if (trace) trace.queueTimes.push(performance.now())
         queue.push(payload)
         return
       }
@@ -1406,6 +1436,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     })
     upstream.addEventListener?.("close", cleanupUpstream)
     upstream.addEventListener?.("error", () => cleanupUpstream({ code: 1011, reason: "Upstream WebSocket connection failed" }))
+    // When connectWebSocket resolved an already-open socket (the common
+    // workerd path: fetch() returns after the 101), the "open" event never
+    // fires, so emit the trace here with the connect wall clock.
+    if (trace && upstreamOpen) emitTrace(upstreamConnectedAt)
     return upgradeResponse(pair.client, request)
   }
 

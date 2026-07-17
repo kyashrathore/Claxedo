@@ -17,6 +17,7 @@ import { Dynamic } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
+import { observeElementOffsetReconnectAware } from "./message-timeline-observe-offset"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
@@ -546,6 +547,7 @@ export function MessageTimeline(props: {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
+    observeElementOffset: observeElementOffsetReconnectAware,
     initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: () => timelineFallbackItemSize,
@@ -750,16 +752,14 @@ export function MessageTimeline(props: {
     props.setScrollRef(root)
   }
 
+  const boundaryGesture = (event: { currentTarget: HTMLDivElement; target: EventTarget | null }, delta: number) =>
+    markBoundaryGesture({ root: event.currentTarget, target: event.target, delta, onMarkScrollGesture: props.onMarkScrollGesture })
+
   const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
     prepareInteractionScroll()
-    const root = event.currentTarget
-    const delta = normalizeWheelDelta({
-      deltaY: event.deltaY,
-      deltaMode: event.deltaMode,
-      rootHeight: root.clientHeight,
-    })
+    const delta = normalizeWheelDelta({ deltaY: event.deltaY, deltaMode: event.deltaMode, rootHeight: event.currentTarget.clientHeight })
     if (!delta) return
-    markBoundaryGesture({ root, target: event.target, delta, onMarkScrollGesture: props.onMarkScrollGesture })
+    boundaryGesture(event, delta)
   }
 
   const handleListTouchStart = (event: TouchEvent) => {
@@ -776,12 +776,7 @@ export function MessageTimeline(props: {
     const delta = prev - next
     if (!delta) return
 
-    markBoundaryGesture({
-      root: event.currentTarget,
-      target: event.target,
-      delta,
-      onMarkScrollGesture: props.onMarkScrollGesture,
-    })
+    boundaryGesture(event, delta)
   }
 
   const handleListTouchEnd = () => {
@@ -790,8 +785,12 @@ export function MessageTimeline(props: {
 
   const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     prepareInteractionScroll()
-    if (event.target !== event.currentTarget) return
-    props.onMarkScrollGesture(event.currentTarget)
+    props.onMarkScrollGesture(event.target)
+  }
+
+  // Drag-to-select starts on a child node, not the list — mark it so autoscroll yields.
+  const handleListPointerMove = (event: PointerEvent) => {
+    if (event.buttons === 1) props.onMarkScrollGesture(event.target)
   }
 
   const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
@@ -1426,6 +1425,7 @@ export function MessageTimeline(props: {
         onTouchEnd={handleListTouchEnd}
         onTouchCancel={handleListTouchEnd}
         onPointerDown={handleListPointerDown}
+        onPointerMove={handleListPointerMove}
         onScroll={handleListScroll}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
