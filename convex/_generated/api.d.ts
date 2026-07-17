@@ -25,6 +25,7 @@ import type * as runtimeAccessTokens from "../runtimeAccessTokens.js";
 import type * as sandboxLeases from "../sandboxLeases.js";
 import type * as sessions from "../sessions.js";
 import type * as users from "../users.js";
+import type * as wakes from "../wakes.js";
 import type * as workgraphActivity from "../workgraphActivity.js";
 import type * as workgraphArchive from "../workgraphArchive.js";
 import type * as workgraphAttention from "../workgraphAttention.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   sandboxLeases: typeof sandboxLeases;
   sessions: typeof sessions;
   users: typeof users;
+  wakes: typeof wakes;
   workgraphActivity: typeof workgraphActivity;
   workgraphArchive: typeof workgraphArchive;
   workgraphAttention: typeof workgraphAttention;

@@ -6,5 +6,5 @@ export function credentialSecretInScope(input: {
   source: CredentialSource
   scope?: CredentialScope
 }, scope: CredentialSecretScope = "local") {
-  return scope !== "shared" || input.scope === "shared" || (!input.scope && input.source === "managed")
+  return scope !== "shared" || input.scope === "shared" || input.source === "managed"
 }
