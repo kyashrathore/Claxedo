@@ -67,8 +67,15 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Ship the browser contract")
     await create.getByRole("textbox", { name: "Description" }).fill("Keep the WorkGraph state visible and organized.")
-    await create.getByLabel("Project directory").selectOption(repositoryDirectory)
-    await create.getByLabel("Base revision").fill("HEAD")
+    // The project directory is now a chip-style Select and the base revision is a
+    // chip popover; both portal out of the modal dialog (aria-hidden by Kobalte's
+    // focus scope), so open the chip then act on the portaled option/field.
+    await create.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill("HEAD")
+    await baseRevisionField.press("Enter")
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 
@@ -107,7 +114,11 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await expect(page.getByRole("dialog", { name: "Stream settings" })).toHaveCount(0)
     await expect(streamSettings.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true")
     await streamSettings.getByLabel("Environment").selectOption("local_worktree")
-    await streamSettings.getByLabel("Project directory").selectOption(repositoryDirectory)
+    // Project directory is a chip-style Select whose option list portals; open the
+    // chip, then click the basename-labeled option. (Base revision here stays the
+    // panel's native free-text field.)
+    await streamSettings.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
     await streamSettings.getByLabel("Base revision").fill("HEAD")
     await streamSettings.getByLabel("Harness").selectOption("opencode")
     await streamSettings.getByLabel("Recap model").selectOption("openai/gpt-5")
@@ -593,8 +604,12 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Recap the launch")
-    await create.getByLabel("Project directory").selectOption(repositoryDirectory)
-    await create.getByLabel("Base revision").fill("HEAD")
+    await create.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill("HEAD")
+    await baseRevisionField.press("Enter")
     await create.getByRole("button", { name: "Create" }).click()
     const streamId = await streamIdByTitle(request, "Recap the launch")
 
@@ -1367,8 +1382,12 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Persist the narrow surface")
-    await create.getByLabel("Project directory").selectOption(repositoryDirectory)
-    await create.getByLabel("Base revision").fill("HEAD")
+    await create.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill("HEAD")
+    await baseRevisionField.press("Enter")
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 

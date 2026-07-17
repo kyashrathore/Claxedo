@@ -143,8 +143,6 @@ describe("WorkGraph northbound HTTP router", () => {
       const createdBody = await created.json() as { value: { streamId: string } }
       const snapshot = await (await app.request("/snapshot")).json() as WorkGraphSnapshotPage
       expect(readChangeCursor(snapshot.snapshotCursor, "organization_sqlite", "owner_sqlite")).toBe(2)
-      const foreignChangeCursor = createChangeCursor({ organizationId: "other_organization", ownerUserId: "owner_sqlite", position: 1 })
-      expect((await app.request(`/changes?after=${encodeURIComponent(foreignChangeCursor)}`)).status).toBe(409)
       expect(snapshot.records).toEqual(expect.arrayContaining([
         expect.objectContaining({ recordType: "workgraph", version: 2 }),
         expect.objectContaining({ recordType: "stream", title: "SQLite Stream" }),
@@ -323,6 +321,15 @@ describe("WorkGraph northbound HTTP router", () => {
       connections: [],
     })
     expect(fixture.executionContexts[0]).toBe(fixture.resolvedContexts[0])
+    // Absent selector → today's unscoped behavior (no directory in the read input).
+    expect(fixture.executionReadInputs[0]).toEqual({})
+    // An absolute directory selector is validated and forwarded to the port.
+    const scoped = await fixture.app.request("/execution-capabilities?directory=%2Frepos%2Fclaxedo", fixture.auth("owner_a"))
+    expect(scoped.status).toBe(200)
+    expect(fixture.executionReadInputs.at(-1)).toEqual({ directory: "/repos/claxedo" })
+    // An invalid (non-absolute / empty) directory string is a route validation error.
+    expect((await fixture.app.request("/execution-capabilities?directory=relative%2Fpath", fixture.auth("owner_a"))).status).toBe(400)
+    expect((await fixture.app.request("/execution-capabilities?directory=", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities?ownerUserId=owner_b", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities?workspaceId=workspace_1", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities", fixture.auth("shared_owner_a"))).status).toBe(403)
@@ -465,57 +472,13 @@ describe("WorkGraph northbound HTTP router", () => {
 
     expect(retry.status).toBe(first.status)
     expect(await retry.json()).toEqual(await first.json())
-    const changes = await fixture.app.request("/changes", fixture.auth("owner_a"))
-    const body = await changes.json() as { changes: ChangeEnvelope[]; cursor: ChangeCursor; timedOut: boolean }
-    expect(body.timedOut).toBe(false)
-    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([1])
-    expect(readChangeCursor(body.cursor, "organization", "owner_a")).toBe(1)
   })
 
-  it("converges an owner snapshot with ordered changes after its cursor", async () => {
-    const fixture = createFixture()
-    await fixture.command("owner_a", createStream("operation_1", "First"))
-    const snapshot = await fixture.app.request("/snapshot", fixture.auth("owner_a"))
-    expect(snapshot.status).toBe(200)
-    const page = await snapshot.json() as WorkGraphSnapshotPage
-    expect(readChangeCursor(page.snapshotCursor, "organization", "owner_a")).toBe(1)
-    expect(page.records).toHaveLength(1)
-
-    await fixture.command("owner_a", createStream("operation_2", "Second"))
-    const changes = await fixture.app.request(`/changes?after=${page.snapshotCursor}&limit=10`, fixture.auth("owner_a"))
-    expect(changes.status).toBe(200)
-    const body = await changes.json() as { changes: ChangeEnvelope[]; cursor: ChangeCursor; timedOut: boolean }
-    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([2])
-    expect(readChangeCursor(body.cursor, "organization", "owner_a")).toBe(2)
-  })
-
-  it("preserves cursor order when changes interleave independent Stream sequences", async () => {
-    const fixture = createFixture()
-    await fixture.command("owner_a", createStream("operation_1", "First"))
-    await fixture.command("owner_a", createStream("operation_2", "Second"))
-
-    const response = await fixture.app.request("/changes", fixture.auth("owner_a"))
-    const body = await response.json() as { changes: ChangeEnvelope[] }
-    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([1, 2])
-    expect(body.changes.map((change) => change.event.sequence)).toEqual([1, 1])
-  })
-
-  it("bounds long polling and returns early when a new ordered change appears", async () => {
-    const fixture = createFixture()
-    const startedAt = Date.now()
-    const zero = createChangeCursor({ organizationId: "organization", ownerUserId: "owner_a", position: 0 })
-    const timeout = await fixture.app.request(`/changes?after=${encodeURIComponent(zero)}&waitMs=15`, fixture.auth("owner_a"))
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(10)
-    expect(await timeout.json()).toEqual({ changes: [], cursor: zero, timedOut: true })
-
-    const poll = fixture.app.request(`/changes?after=${encodeURIComponent(zero)}&waitMs=200`, fixture.auth("owner_a"))
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    await fixture.command("owner_a", createStream("operation_1", "Arrived while polling"))
-    const response = await poll
-    const body = await response.json() as { changes: ChangeEnvelope[]; cursor: ChangeCursor }
-    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([1])
-    expect(readChangeCursor(body.cursor, "organization", "owner_a")).toBe(1)
-  })
+  // The ordered change feed is no longer client-facing (plan 2026-07-17-004): the
+  // `/changes` route is deleted in favour of the `workgraph.changed` bus doorbell.
+  // The `wg_v2_changes` log itself is unchanged and stays covered at the store
+  // level by the conformance suite (`conformance/index.ts`), which asserts
+  // ordering, exactly-once delivery after a snapshot cursor, and owner isolation.
 
   it("lists and reads owner notifications and marks them read with exact-version CAS", async () => {
     const fixture = createFixture()
@@ -557,6 +520,7 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
   const attentionAcknowledgements: Array<{ owner: string; operation: string }> = []
   const resolvedContexts: WorkGraphContext[] = []
   const executionContexts: WorkGraphContext[] = []
+  const executionReadInputs: Array<{ directory?: string }> = []
   let nextId = 0
   let now = 1_000
   const notifications = new Map<string, WorkGraphNotification>([1, 2].map((id) => [`notification_${id}`, {
@@ -734,8 +698,9 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
       },
     }),
     executionCapabilities: {
-      read: async (owner) => {
+      read: async (owner, request) => {
         executionContexts.push(owner)
+        executionReadInputs.push(request)
         return {
           schemaVersion: 1,
           organizationId: owner.organizationId,
@@ -848,7 +813,6 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
         return saved
       },
     }),
-    pollIntervalMs: 5,
     resolveContext: (request) => {
       const match = /^Bearer (shared_)?(owner_[ab])$/.exec(request.headers.get("authorization") ?? "")
       if (!match) return undefined
@@ -865,6 +829,7 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
     attentionAcknowledgements,
     resolvedContexts,
     executionContexts,
+    executionReadInputs,
     auth: (owner: string) => ({ headers: { authorization: `Bearer ${owner}` } }),
     command: (owner: string, body: unknown) => app.request("/commands", {
       method: "POST",

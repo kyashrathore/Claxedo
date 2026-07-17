@@ -4,13 +4,16 @@
  * This file complements `documents-core.spec.ts`: it installs no request routes and
  * starts a real isolated claxedo-server with a scratch CLAXEDO_DATA_DIR. The browser
  * creates and edits through the production Documents UI and the production HTTP,
- * SQLite, filesystem, watcher, SSE, CAS, and snapshot implementations. Restart uses
+ * SQLite, filesystem, CAS, and snapshot implementations. Restart uses
  * the same scratch data directory and a new server process.
  *
- * The integrated grant journey uses the real `/docs` picker to grant a real Session
- * path, then drives an ordinary bash process against that path before checking the
- * open editor, dirty conflict, parked session draft, and visible version restore.
- * The companion server smoke executes the same write through `sessionEnvBashTool`,
+ * An open editor does NOT live-refresh on an external/agent write — the external-change
+ * controller and the `/documents/events` SSE were removed (plan 2026-07-17-004). A
+ * competing durable write is caught as a CAS conflict on the next save, never a silent
+ * loss. The integrated grant journey uses the real `/docs` picker to grant a real Session
+ * path, then drives an ordinary bash process against that path before checking the durable
+ * write-back, the CAS conflict on save, the parked session draft, and visible version
+ * restore. The companion server smoke executes the same write through `sessionEnvBashTool`,
  * keeping provider health separate from the deterministic Documents release gate.
  */
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test"
@@ -212,7 +215,7 @@ async function saveSource(page: Page, markdown: string) {
   const source = await sourceEditor(page)
   await source.fill(markdown)
   await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
-  await page.getByRole("button", { name: "Save now" }).click()
+  await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
   return source
 }
@@ -254,7 +257,7 @@ test.describe.serial("live Documents core backend @live", () => {
   test.skip(
     !LIVE,
     "Tier L: set CLAXEDO_E2E_LIVE=1 to run live-documents-core against an isolated real claxedo-server, " +
-      "SQLite index, managed filesystem, watcher/SSE stream, and snapshot history.",
+      "SQLite index, managed filesystem, CAS, and snapshot history.",
   )
 
   test.beforeAll(async () => {
@@ -395,32 +398,42 @@ test.describe.serial("live Documents core backend @live", () => {
     await proveGeometry(page, reopened, testInfo, "real-managed-document-reopened-after-server-restart")
   })
 
-  test("real external writes live-refresh, preserve dirty conflict, and restore a version", async ({
+  // Live-refresh of an open editor was intentionally removed (plan 2026-07-17-004):
+  // no `/documents/events` SSE, no external-change controller. A competing durable
+  // write is caught as a CAS conflict on the human's next save, preserving both sides.
+  test("a competing durable write is caught as a CAS conflict on save, and a version restores", async ({
     page,
   }, testInfo) => {
     expect(createdDocument).toBeTruthy()
     await seedProject(page)
-    const eventRequest = page.waitForRequest(
-      (request) =>
-        new URL(request.url()).pathname === "/documents/events" &&
-        new URL(request.url()).searchParams.get("document_id") === createdDocument!.id,
-    )
     await page.goto(documentUrl(createdDocument!.id))
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
     let source = await sourceEditor(page)
-    await eventRequest
 
+    const baseline = "Heading\n=======\n\nreal managed bytes survive restart\n"
+    await expect(source).toHaveValue(baseline)
     const canonical = path.join(dataDir, "documents", createdDocument!.managed_relative_path!)
-    const cleanExternal = "Heading\n=======\n\nreal external clean refresh\n"
-    await fs.writeFile(canonical, cleanExternal)
-    await expect(source).toHaveValue(cleanExternal, { timeout: 20_000 })
-    await proveGeometry(page, source, testInfo, "real-external-clean-live-refresh")
 
+    // A competing durable write advances the version out from under the open editor.
+    // The editor does NOT follow it — that controller is gone — so it still shows the
+    // baseline bytes it opened with.
+    const current = await requestJson<{ version: string }>(`/documents/${createdDocument!.id}/content`)
+    const competingExternal = "Heading\n=======\n\nreal external competing edit\n"
+    await requestJson(`/documents/${createdDocument!.id}/content`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": current.version },
+      body: JSON.stringify({ markdown: competingExternal }),
+    })
+    expect(await fs.readFile(canonical, "utf8")).toBe(competingExternal)
+    await expect(source).toHaveValue(baseline)
+    await proveGeometry(page, source, testInfo, "real-external-write-does-not-live-refresh")
+
+    // The human edits the stale editor and saves; the stale If-Match is rejected and
+    // both sides are preserved in the conflict UI.
     const dirtyDraft = "Heading\n=======\n\nhuman unsaved draft\n"
     await source.fill(dirtyDraft)
     await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
-    const competingExternal = "Heading\n=======\n\nreal external competing edit\n"
-    await fs.writeFile(canonical, competingExternal)
+    await page.keyboard.press("ControlOrMeta+s")
     const conflict = page
       .getByRole("alert")
       .filter({ has: page.getByRole("heading", { name: "Document changed on disk" }) })
@@ -429,15 +442,15 @@ test.describe.serial("live Documents core backend @live", () => {
     await expect(conflict.getByLabel("Your draft")).toContainText("human unsaved draft")
     await expect(conflict.getByLabel("Current disk version")).toContainText("real external competing edit")
     expect(await fs.readFile(canonical, "utf8")).toBe(competingExternal)
-    await proveGeometry(page, conflict, testInfo, "real-external-dirty-conflict-preserves-both-sides")
+    await proveGeometry(page, conflict, testInfo, "real-dirty-cas-conflict-preserves-both-sides")
 
     await conflict.getByRole("button", { name: "Reload disk" }).click()
     source = await sourceEditor(page)
     await expect(source).toHaveValue(competingExternal)
-    await page.getByText("Version history", { exact: true }).click()
+    await page.getByLabel("More", { exact: true }).click()
     const versions = page.getByRole("list", { name: "Document versions" })
     await expect(versions).toBeVisible()
-    const savedVersion = versions.getByRole("listitem").filter({ hasText: "document.written" }).first()
+    const savedVersion = versions.getByRole("listitem").filter({ hasText: "Edited" }).first()
     await expect(savedVersion).toBeVisible()
     await savedVersion.getByRole("button", { name: "Restore" }).click()
     await expect(source).toHaveValue("Heading\n=======\n\nreal managed bytes survive restart\n")
@@ -460,7 +473,7 @@ test.describe.serial("live Documents core backend @live", () => {
     await expect(composer).not.toContainText(".claxedo/sessions")
   })
 
-  test("/docs reference resolves to a real session tool path; bash refresh, parked write-back, dirty recovery, and restore retain identity", async ({
+  test("/docs reference resolves to a real session tool path; bash write-back, parked write-back, CAS dirty recovery on save, and restore retain identity", async ({
     page,
   }, testInfo) => {
     expect(createdDocument).toBeTruthy()
@@ -499,11 +512,14 @@ test.describe.serial("live Documents core backend @live", () => {
 
     const agentEdit = "Heading\n=======\n\nreal agent ordinary bash edit\n"
     await runGrantedPathBash(grantedPath, agentEdit)
-    await expect(editor).toHaveValue(agentEdit, { timeout: 30_000 })
+    // The agent's bash write-back reaches durable storage, but the open editor no
+    // longer live-refreshes to follow it (external-change removed, plan
+    // 2026-07-17-004) — it still shows the bytes it opened with.
     expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
       agentEdit,
     )
-    await proveGeometry(page, editor, testInfo, "real-agent-bash-live-refreshes-open-editor")
+    await expect(editor).toHaveValue(preAgent)
+    await proveGeometry(page, editor, testInfo, "real-agent-bash-does-not-live-refresh-open-editor")
 
     const dirtyDraft = "Heading\n=======\n\nhuman draft during agent session\n"
     await editor.fill(dirtyDraft)
@@ -515,6 +531,9 @@ test.describe.serial("live Documents core backend @live", () => {
       headers: { "content-type": "application/json", "if-match": current.version },
       body: JSON.stringify({ markdown: durableWinner }),
     })
+    // The editor opened against a now-stale version, so its save is the moment the
+    // divergence surfaces — as a CAS conflict, not a silent overwrite.
+    await page.keyboard.press("ControlOrMeta+s")
     const conflict = page
       .getByRole("alert")
       .filter({ has: page.getByRole("heading", { name: "Document changed on disk" }) })
@@ -556,7 +575,7 @@ test.describe.serial("live Documents core backend @live", () => {
       (snapshot) => snapshot.sha256 === createHash("sha256").update(preAgent).digest("hex"),
     )
     expect(preAgentSnapshot).toBeGreaterThanOrEqual(0)
-    await page.getByText("Version history", { exact: true }).click()
+    await page.getByLabel("More", { exact: true }).click()
     const versions = page.getByRole("list", { name: "Document versions" })
     await expect(versions).toBeVisible()
     await versions.getByRole("listitem").nth(preAgentSnapshot).getByRole("button", { name: "Restore" }).click()

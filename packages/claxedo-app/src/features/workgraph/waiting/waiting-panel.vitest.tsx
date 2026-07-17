@@ -80,6 +80,16 @@ describe("WaitingPanelBody", () => {
     expect(onClear).toHaveBeenCalledOnce()
   })
 
+  test("heads the panel quietly — the list is the count, and unread is not a dot", () => {
+    // Same rule the card already follows: the items ARE the signal. Unread still
+    // drives Mark all read; it just has no red bead of its own.
+    render(() => body([decisionItem, workItem], { unread: 2 }))
+    expect(screen.getByText("Needs you")).toBeInTheDocument()
+    expect(screen.queryByRole("img", { name: /unread/ })).toBeNull()
+    expect(document.querySelector(".workgraph-attention-dot")).toBeNull()
+    expect(document.querySelector(".workgraph-count")).toBeNull()
+  })
+
   test("shows an explicit error state with retry — never a snapshot fallback", async () => {
     const retry = vi.fn()
     render(() => body([], { loaded: false, error: new Error("attention unavailable"), retry }))

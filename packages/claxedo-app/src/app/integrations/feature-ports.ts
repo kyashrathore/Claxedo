@@ -2,6 +2,7 @@ import { configureSessionAppPorts } from "@/features/session/app-ports"
 import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
 import { configureSettingsAppPorts } from "@/features/settings/app-ports"
 import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
+import { configureWorkGraphAppPorts } from "@/features/workgraph/app-ports"
 import { configureReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts } from "@/features/workspaces/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
@@ -155,6 +156,7 @@ configureSettingsAppPorts({
 })
 
 configureDocumentsAppPorts({
+  useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
   useSDK: SDK.useSDK,
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   useSessionSyncOptional: SessionSync.useSessionSyncOptional,
@@ -165,6 +167,13 @@ configureDocumentsAppPorts({
   surfaceRoute: SurfaceRoute.surfaceRoute,
   SessionPaneScope: SessionScope.SessionPaneScope,
   turnDocumentIntoWork: DocWorkGraph.turnDocumentIntoWork,
+})
+
+// WorkGraph consumes exactly one shell capability: the central Claxedo events
+// bus, where the server rings the `workgraph.changed` doorbell that replaced the
+// deleted `GET /api/workgraph/changes` long-poll (plan 2026-07-17-004).
+configureWorkGraphAppPorts({
+  useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
 })
 
 configureReviewAppPorts({

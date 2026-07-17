@@ -5,6 +5,43 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { WorkGraphApiError } from "../api"
 import { StreamSettingsDialog, WorkGraphSettingsView } from "./settings-dialogs"
 
+// The project-directory chip uses the shared Kobalte-backed `Select`, which is
+// hard to drive in happy-dom. Stub it to a flat trigger (accessible name from its
+// aria-label) + always-visible option list so the picker's interactions stay
+// testable through the same props contract; the real Select is covered by e2e.
+vi.mock("@opencode-ai/ui/select", () => ({
+  Select: (props: {
+    options: unknown[]
+    current?: unknown
+    placeholder?: string
+    disabled?: boolean
+    label?: (value: unknown) => string
+    onSelect?: (value: unknown) => void
+    children?: (value: unknown) => unknown
+    triggerProps?: Record<string, unknown>
+  }) => {
+    const display = () => {
+      const current = props.current
+      if (current === undefined || current === null) return props.placeholder ?? ""
+      return props.label ? props.label(current) : String(current)
+    }
+    return (
+      <div data-testid="mock-select">
+        <button type="button" aria-label={props.triggerProps?.["aria-label"] as string | undefined} disabled={props.disabled}>
+          {display()}
+        </button>
+        <div role="listbox">
+          {props.options.map((option) => (
+            <div role="option" onClick={() => props.onSelect?.(option)}>
+              {props.children ? props.children(option) : props.label ? props.label(option) : String(option)}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  },
+}))
+
 afterEach(cleanup)
 
 const defaultsDto = {
@@ -335,11 +372,13 @@ describe("StreamSettingsDialog", () => {
     ))
     await screen.findByText("Stream settings")
 
-    const project = screen.getByLabelText("Project directory") as HTMLSelectElement
-    expect(project.value).toBe("/repo")
-    expect(screen.getByRole("option", { name: "Current project" })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole("button", { name: "Choose another folder…" }))
-    await waitFor(() => expect(project.value).toBe("/repo/new"))
+    // The project-directory chip shows the current directory by basename and lists
+    // known projects the same way; the final entry re-opens the shared folder picker.
+    const project = screen.getByLabelText("Project directory")
+    expect(project).toHaveTextContent("repo")
+    expect(screen.getByRole("option", { name: "repo" })).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("option", { name: "Choose another folder…" }))
+    await waitFor(() => expect(screen.getByLabelText("Project directory")).toHaveTextContent("new"))
   })
 
   test("saves execution and recap atomically at one expected version", async () => {

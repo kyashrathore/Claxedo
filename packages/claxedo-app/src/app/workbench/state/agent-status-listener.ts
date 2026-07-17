@@ -363,6 +363,11 @@ function useReconnectCleanup() {
 
   createEffect(() => {
     if (!claxedoEvents) return
+    // Deliberately the AGGREGATE `connected()`, not `centralConnected()`: the
+    // agent statuses reconciled here are driven by `agent.lifecycle` /
+    // `pty.*` events, which arrive on the central stream for local workspaces AND
+    // on each remote workspace's relay stream. Any of those coming back up can
+    // mean statuses drifted, so "any stream reconnected" is the right edge here.
     const isConnected = claxedoEvents.connected()
     if (!isConnected) return
     if (!hadConnection) {

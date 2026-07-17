@@ -58,10 +58,69 @@ export type SessionLifecycleEvent = {
   ts: number
 }
 
+// Doorbell nudge for WorkGraph live sync (plan 2026-07-17-004).
+//
+// Publisher: the claxedo-server WorkGraph host, post-commit — after appended
+// `wg_v2_changes` rows become readable — coalesced (~100ms trailing) so a burst
+// of mutations emits one nudge.
+// Consumer: claxedo-app `features/workgraph`, via the central events stream, which
+// debounce-reloads the snapshot + attention. It replaces the deleted
+// `GET /api/workgraph/changes` long-poll.
+//
+// This carries NO payload beyond identity on purpose: it is a doorbell, not a
+// change envelope. The client re-reads state (R1); the ordered `wg_v2_changes`
+// log stays server-side for settlement/wakes/audit.
+//
+// `ownerUserId` scopes the nudge (WorkGraph is owner-scoped). It is set from
+// the authenticated `auth.user.subject` at publish ("local" in unsigned-local
+// mode) and `routes/events.ts` enforces it server-side: signed subscribers
+// only receive events whose ownerUserId matches their own subject. The reload
+// it triggers is additionally authorized per-request by the snapshot endpoint.
+export type WorkgraphChangedEvent = {
+  type: "workgraph.changed"
+  ownerUserId: string
+  ts: number
+}
+
+// Doorbell nudge for Documents live sync (plan 2026-07-17-004).
+//
+// Publisher: the claxedo-server documents backend, from its save paths (see
+// `documents/backend.ts` `publishDocumentEvent`). External-change detection and
+// the per-surface `GET /documents/events` SSE were REMOVED in this plan; this
+// doorbell on the central events stream is the sole live-sync mechanism.
+// Consumer: claxedo-app `features/documents`, via the central events stream.
+//
+// ⚠ SHAPE COLLISION — read before wiring. A DIFFERENT `document.changed` payload
+// exists in-process on the legacy `subscribeDocumentEvents` listener registry: it
+// is snake_case and wider (`document_id`, `org_id`, `project_id`, `reason`,
+// `invalidate`, `ts`; see `documents/backend.ts`). This bus envelope is camelCase,
+// matching every other event in this union. The two share a `type` discriminant
+// but are NOT interchangeable: convert at the boundary, never pass through.
+//
+// `orgId`/`projectId` are required so a consumer can filter to its own project.
+// `orgId` is enforced server-side by `routes/events.ts` (signed subscribers only
+// see their own org's events); `projectId` remains a client-side routing hint.
+export type DocumentChangedEvent = {
+  type: "document.changed"
+  documentId: string
+  orgId: string
+  projectId: string
+  /** Absent when the change is not a content write (e.g. rename/archive). */
+  version?: string
+  ts: number
+}
+
 type ControlEvent =
   | {
       type: "provision"
       workspaceId: string
+      /**
+       * Org that owns the workspace (`Workspace.org_id`), stamped at publish.
+       * `routes/events.ts` uses it to scope delivery in signed mode; absent
+       * (local workspaces) means the event is only visible to unsigned-local/
+       * loopback subscribers.
+       */
+      orgId?: string
       step: "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"
       message?: string
       totalMs?: number
@@ -70,6 +129,8 @@ type ControlEvent =
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | SessionLifecycleEvent
+  | WorkgraphChangedEvent
+  | DocumentChangedEvent
 
 export type ClaxedoEvent = RuntimeClaxedoEvent | ControlEvent
 

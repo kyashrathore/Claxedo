@@ -27,6 +27,13 @@ import {
   instrumentWorkGraphCommands,
   workGraphHttpTelemetry,
 } from "./workgraph-host/operational-telemetry"
+import {
+  createWorkGraphChangeDoorbell,
+  createWorkGraphChangeTipWatcher,
+  instrumentAttentionDoorbell,
+  instrumentWorkGraphChangeDoorbell,
+} from "./workgraph-host/change-doorbell"
+import { claxedoBus, type WorkgraphChangedEvent } from "./bus"
 
 export type LocalWorkGraphAuthOptions = Readonly<{
   authConfig: ControlPlaneAuthConfig
@@ -77,6 +84,14 @@ export async function createLocalEmbeddedWorkGraph(
     resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
     webhookVerifier?: ConnectionWebhookVerifier
     telemetry?: ControlPlaneTelemetry
+    /**
+     * WorkGraph live-sync doorbell (plan 2026-07-17-004). Defaults to the central
+     * `claxedoBus`, which feeds `/api/wr/events` + `/global/event`; injectable so
+     * tests can observe nudges without the bus.
+     */
+    publishChanged?: (event: WorkgraphChangedEvent) => void
+    /** Trailing coalesce window for the doorbell (default 100ms). */
+    changeCoalesceMs?: number
   }>,
 ) {
   const workgraph = await import("@claxedo/workgraph")
@@ -88,9 +103,18 @@ export async function createLocalEmbeddedWorkGraph(
   const operationalTelemetry = input.telemetry
     ? createWorkGraphOperationalReporter({ telemetry: input.telemetry, env: process.env })
     : undefined
-  const service = operationalTelemetry
-    ? instrumentWorkGraphCommands(adapter.service, operationalTelemetry)
-    : adapter.service
+  const doorbell = createWorkGraphChangeDoorbell({
+    publish: input.publishChanged ?? ((event) => claxedoBus.publish(event)),
+    ...(input.changeCoalesceMs === undefined ? {} : { coalesceMs: input.changeCoalesceMs }),
+  })
+  const changeTips = createWorkGraphChangeTipWatcher({ database: input.database, doorbell })
+  // Wrapped before anything downstream (router, intake host, MCP, agent tools)
+  // receives `service`, so every command path nudges post-commit.
+  const service = instrumentWorkGraphChangeDoorbell(
+    operationalTelemetry ? instrumentWorkGraphCommands(adapter.service, operationalTelemetry) : adapter.service,
+    doorbell,
+    changeTips,
+  )
   const activityPorts = workgraph.createSqliteWorkGraphActivityPorts({ database: input.database })
   const recaps = workgraph.createSqliteRecapRuntime({
     database: input.database,
@@ -113,8 +137,14 @@ export async function createLocalEmbeddedWorkGraph(
   })
   const sessionIntake = workgraph.createSqliteSessionIntakePort(input.database)
   const notifications = workgraph.createNotificationService(workgraph.createSqliteNotificationStore(input.database))
-  const attentionAcknowledgements = workgraph.createAttentionAcknowledgementService(
-    workgraph.createSqliteAttentionAcknowledgementStore(input.database),
+  // ATTENTION PARITY: acknowledgement writes append no `wg_v2_changes` row, so
+  // they carry their own nudge — otherwise a mark-all-read in one client would
+  // never reach another.
+  const attentionAcknowledgements = instrumentAttentionDoorbell(
+    workgraph.createAttentionAcknowledgementService(
+      workgraph.createSqliteAttentionAcknowledgementStore(input.database),
+    ),
+    doorbell,
   )
   const archive = workgraph.createSqliteWorkGraphArchivePort(
     input.database,
@@ -268,6 +298,14 @@ export async function createLocalEmbeddedWorkGraph(
     intake,
     executionCapabilities: input.executionCapabilities,
     operationalTelemetry,
+    doorbell,
+    /**
+     * Nudge iff this owner's change log advanced since the last call. The server
+     * reconciler drives this once per owner per tick so that writers outside the
+     * command path (attempt settlement, recaps, source planning, activity, intake
+     * stores) still reach clients, without costing anything when idle.
+     */
+    observeChanges: changeTips.observe,
   }
 }
 

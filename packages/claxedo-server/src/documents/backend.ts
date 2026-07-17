@@ -1,3 +1,4 @@
+import type { DocumentChangedEvent } from "../bus"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
 import type {
@@ -8,7 +9,6 @@ import type {
   DocumentWorkspace,
   WriteResult,
 } from "./port"
-import type { DocumentExternalChange } from "./watch"
 
 type Awaitable<T> = T | Promise<T>
 
@@ -104,12 +104,6 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
         expected: Readonly<{ baseCommit?: string; baseBlobSha?: string }>
       }>,
     ): Promise<Readonly<{ commit: string; blobSha: string; version: DocumentVersion }>>
-  }>
-  watch?: Readonly<{
-    open(
-      entry: DocumentIndexEntry,
-      onChange: (change: DocumentExternalChange) => void | Promise<void>,
-    ): Promise<Readonly<{ close(): void }>>
   }>
   agentOpen?(
     entry: DocumentIndexEntry,
@@ -208,7 +202,6 @@ export type DocumentEventReason =
   | "document.archived"
   | "document.restored"
   | "document.content_updated"
-  | "document.external_changed"
   | "document.snapshot_restored"
   | "document.repository_indexed"
   | "document.repository_relocated"
@@ -235,12 +228,44 @@ export function subscribeDocumentEvents(
   }
 }
 
+/**
+ * Doorbell sink for the CENTRAL bus (plan 2026-07-17-004, Wave 2-C).
+ *
+ * Injected, never imported: this module is in the Worker import graph
+ * (`hosted-app.ts` → `routes/documents.ts` → here), and `../bus` pulls
+ * `@claxedo/workspace-runtime` — a FORBIDDEN_BARE dependency that
+ * `worker.import-graph.test.ts` rejects. Only the local composition root
+ * (`server.ts`) has a bus, so only it installs the sink; hosted stays sinkless
+ * and simply emits nothing (plan §8.1: hosted has no live client sync yet).
+ *
+ * The `DocumentChangedEvent` import is type-only, so it is erased and never
+ * enters the bundle — while still keeping this envelope in lockstep with the
+ * bus union.
+ */
+type DocumentChangedSink = (event: DocumentChangedEvent) => void
+
+let documentChangedSink: DocumentChangedSink | undefined
+
+export function setDocumentChangedSink(sink: DocumentChangedSink | undefined) {
+  documentChangedSink = sink
+  return () => {
+    if (documentChangedSink === sink) documentChangedSink = undefined
+  }
+}
+
 export function publishDocumentEvent(
   scope: DocumentEventScope,
   documentId: string,
   reason: DocumentEventReason,
   version?: DocumentVersion,
 ) {
+  const ts = Date.now()
+  // ⚠ TWO SHAPES, ONE `type` DISCRIMINANT — do not pass one where the other is
+  // expected. `event` below is the LEGACY in-process listener payload
+  // (`subscribeDocumentEvents`): snake_case and wider (`reason`, `invalidate`).
+  // The bus envelope is camelCase and carries identity only. This function is the
+  // single boundary where the legacy shape is CONVERTED into the bus shape;
+  // nothing else may forward one as the other.
   const event = {
     type: "document.changed",
     document_id: documentId,
@@ -249,9 +274,27 @@ export function publishDocumentEvent(
     reason,
     ...(version ? { version } : {}),
     invalidate: invalidationHints(reason),
-    ts: Date.now(),
+    ts,
   }
   for (const listener of eventListeners.get(eventKey(scope.orgId, scope.projectId)) ?? []) listener(event)
+
+  // Fire-and-forget by design: Documents' correctness mechanism is CAS-at-write
+  // (`if-match`), not this hint. A dropped nudge costs freshness until the next
+  // read/focus; it can never cost a lost or clobbered write. So a failing sink
+  // must never fail the mutation that triggered it.
+  if (!documentChangedSink) return
+  try {
+    documentChangedSink({
+      type: "document.changed",
+      documentId,
+      orgId: scope.orgId,
+      projectId: scope.projectId,
+      ...(version ? { version } : {}),
+      ts,
+    })
+  } catch (error) {
+    console.error("[claxedo-server] WARN  document.changed publish failed:", error)
+  }
 }
 
 export async function withDocumentOperation<T>(owner: object, key: string, run: () => Promise<T>) {
@@ -282,8 +325,7 @@ function invalidationHints(reason: DocumentEventReason) {
     reason === "document.repository_relocated" ||
     reason === "document.moved_to_repository" ||
     reason === "document.git_committed" ||
-    reason === "document.content_updated" ||
-    reason === "document.external_changed"
+    reason === "document.content_updated"
   ) {
     return ["index", "content", "snapshots"]
   }

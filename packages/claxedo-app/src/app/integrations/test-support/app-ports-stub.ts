@@ -23,6 +23,7 @@ import { configureSettingsAppPorts, type SettingsAppPorts } from "@/features/set
 import { configureDocumentsAppPorts, type DocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureReviewAppPorts, type ReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts, type WorkspacesAppPorts } from "@/features/workspaces/app-ports"
+import { configureWorkGraphAppPorts, type WorkGraphAppPorts } from "@/features/workgraph/app-ports"
 
 export type AppPortsTestOverrides = {
   session?: Partial<SessionAppPorts>
@@ -31,6 +32,7 @@ export type AppPortsTestOverrides = {
   documents?: Partial<DocumentsAppPorts>
   review?: Partial<ReviewAppPorts>
   workspaces?: Partial<WorkspacesAppPorts>
+  workgraph?: Partial<WorkGraphAppPorts>
 }
 
 type Thunks<P> = { [K in keyof P]: () => P[K] }
@@ -139,6 +141,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
 }
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {
+  useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useSessionSyncOptional: lazy("@/features/session/providers/session-sync", "useSessionSyncOptional"),
@@ -188,6 +191,10 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   isForbiddenConnectionError: lazy("@/features/session/ui/components/cloud-startup-view", "isForbiddenConnectionError"),
 }
 
+const workgraphThunks: Thunks<WorkGraphAppPorts> = {
+  useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
+}
+
 /**
  * Install test app-ports for every feature. Safe to call repeatedly; each call
  * replaces the full configuration (including any previous overrides).
@@ -199,4 +206,5 @@ export function configureAppPortsForTest(overrides: AppPortsTestOverrides = {}) 
   configureDocumentsAppPorts(portsFromThunks(documentsThunks, overrides.documents ?? {}))
   configureReviewAppPorts(portsFromThunks(reviewThunks, overrides.review ?? {}))
   configureWorkspacesAppPorts(portsFromThunks(workspacesThunks, overrides.workspaces ?? {}))
+  configureWorkGraphAppPorts(portsFromThunks(workgraphThunks, overrides.workgraph ?? {}))
 }

@@ -447,7 +447,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "Documents HTTP adapter",
     reason: "Thin Worker-safe route adapter composed with placement-specific index and DocumentWorkspace backends.",
     tests: ["routes/documents.test.ts"],
-    routeSamples: ["/documents", "/documents/document_1/content", "/documents/events"],
+    routeSamples: ["/documents", "/documents/document_1/content"],
   },
   {
     area: "route",

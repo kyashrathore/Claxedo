@@ -1,3 +1,5 @@
+import { Icon } from "@opencode-ai/ui/icon"
+import { Match, Switch } from "solid-js"
 import type { PersistenceSnapshot } from "@/features/documents/state/persistence-controller"
 
 const labels = {
@@ -10,29 +12,37 @@ const labels = {
 } as const
 
 export function SaveStatus(props: { snapshot: PersistenceSnapshot; onRetry: () => void }) {
+  const status = () => props.snapshot.status
   return (
-    <div
-      class="flex min-h-7 items-center gap-2 text-xs text-text-weak"
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-    >
-      <span
-        classList={{
-          "text-text-on-critical-base": props.snapshot.status === "failed" || props.snapshot.status === "conflicted",
-        }}
-      >
-        {labels[props.snapshot.status]}
-      </span>
-      {props.snapshot.status === "failed" && (
-        <button
-          type="button"
-          class="rounded px-1.5 py-1 text-text-strong hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
-          onClick={props.onRetry}
-        >
-          Retry
-        </button>
-      )}
+    <div class="flex size-7 items-center justify-center" role="status" aria-live="polite" aria-atomic="true">
+      <span class="sr-only">{labels[status()]}</span>
+      <Switch>
+        <Match when={status() === "saving"}>
+          <span
+            class="size-3.5 animate-spin rounded-full border border-border-base border-t-transparent"
+            aria-hidden="true"
+          />
+        </Match>
+        <Match when={status() === "saved"}>
+          <Icon name="check-small" size="small" class="text-icon-weak-base" />
+        </Match>
+        <Match when={status() === "failed"}>
+          <button
+            type="button"
+            aria-label="Retry"
+            title={labels.failed}
+            class="flex size-7 items-center justify-center rounded text-text-on-critical-base hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
+            onClick={props.onRetry}
+          >
+            <Icon name="circle-alert" size="small" />
+          </button>
+        </Match>
+        <Match when={status() === "conflicted"}>
+          <span class="flex size-7 items-center justify-center text-text-on-critical-base" title={labels.conflicted}>
+            <Icon name="circle-alert" size="small" />
+          </span>
+        </Match>
+      </Switch>
     </div>
   )
 }

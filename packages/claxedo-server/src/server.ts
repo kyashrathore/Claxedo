@@ -37,7 +37,7 @@ import {
   opencodeRequest,
 } from "./opencode-engine"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode-events"
-import { globalBus } from "./bus"
+import { claxedoBus, globalBus } from "./bus"
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
@@ -88,6 +88,7 @@ import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane
 import { createControlPlaneRelayProvider } from "./relay-provider"
 import {
   ensureWorkspace,
+  getWorkspaceByDirectory,
   listProjects,
   listWorkspaces,
   resolveWorkspace,
@@ -107,6 +108,7 @@ import { centralModelBackend } from "./central-session-runtime"
 import { dataDir } from "./paths"
 import { withDataDirOwnership } from "./data-dir-owner"
 import { createLocalDocumentsBackend } from "./documents/local-backend"
+import { setDocumentChangedSink } from "./documents/backend"
 import { LocalInstallationDocumentBroker } from "./documents/local-installation-broker"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
@@ -498,6 +500,12 @@ export function createApp(
   )
 
   const documentsBackend = localDocumentsBackend()
+  // Documents doorbell (plan 2026-07-17-004, Wave 2-C). The documents backend is
+  // Worker-safe and cannot import the bus, so the local composition root injects
+  // the publish here. Every document mutation — saves AND `fs.watch` external
+  // changes — funnels through `publishDocumentEvent`, so this one line covers
+  // both paths. Hosted (`hosted-app.ts`) installs no sink and emits nothing.
+  setDocumentChangedSink((event) => claxedoBus.publish(event))
   app.route(
     "/documents",
     DocumentsRoutes({
@@ -1014,6 +1022,15 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       harness: async () => sessionComposerHarness(defaultHarness(await loadUserConfig())),
       connections: built.connections,
       resolveTeamOwner: (context) => `org:${context.organizationId}`,
+      // Validate a New-stream directory selector against the authoritative local
+      // workspace catalog (the same registry that backs /project). Only a known
+      // local (non-cloud) project directory is honored; everything else fails
+      // closed so git never runs against an arbitrary user-supplied path.
+      resolveRepositoryDirectory: async (directory) => {
+        const workspace = await getWorkspaceByDirectory(directory).catch(() => undefined)
+        if (!workspace || workspace.kind === "cloud") return undefined
+        return workspace.directory
+      },
     }),
     recaps: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
     sourcePlanning: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
@@ -1111,6 +1128,11 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
             await embedded.recaps.scheduleDue(context)
             await embedded.recaps.runDue(context)
             await embedded.sourcePlanning.runDue(context)
+            // Doorbell safety net (plan 2026-07-17-004): nudge clients when this
+            // owner's change log advanced by any path that does not run through
+            // `service.execute` (attempt settlement, recaps, source planning,
+            // activity, intake). Tip-conditional, so an idle owner emits nothing.
+            embedded.observeChanges(context)
           }),
         )
       })

@@ -216,6 +216,7 @@ function registerTool(
   config: {
     description: string
     inputSchema: Record<string, unknown>
+    _meta?: Record<string, unknown>
   },
   handler: (args: any) => Promise<unknown>,
 ) {

@@ -106,29 +106,6 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
       return await backend.remoteList(input)
     },
 
-    async watchEntry(
-      input: Readonly<{
-        orgId: string
-        projectId: string
-        documentId: string
-        auth?: SignedControlPlaneAuth
-      }>,
-    ) {
-      const entry =
-        (await findEntry(input.orgId, input.documentId)) ??
-        (input.auth && backend.remoteFind
-          ? await backend.remoteFind({ auth: input.auth, orgId: input.orgId, documentId: input.documentId })
-          : undefined)
-      if (!entry || entry.archived_at || entry.project_id !== input.projectId) throw notFound()
-      return entry
-    },
-
-    async openWatch(scope: DocumentIndexScope, entry: DocumentIndexEntry) {
-      return await backend.watch?.open(entry, (change) =>
-        publishDocumentEvent(scope, change.documentId, "document.external_changed", change.currentVersion ?? undefined),
-      )
-    },
-
     async create(
       scope: DocumentsServiceScope,
       input: Readonly<{

@@ -40,7 +40,6 @@ import {
 import { readRepositoryFile } from "./repository-file-authority"
 import { sessionMatchesDocumentProject } from "./session-grants"
 import { hydrateSessionDocument, reachableLocalSessionWorkspace } from "./session-hydration"
-import { createDocumentWatchService } from "./watch"
 
 type Handle = LocalManagedDocumentHandle | RepositoryDocumentHandle
 
@@ -132,19 +131,6 @@ export function createLocalDocumentsBackend(
         ? managed.restore(handle, snapshotId, request)
         : repository.restore(handle, snapshotId, request),
   }
-  const documentWatch = createDocumentWatchService({
-    read: (handle: Handle) => workspace.read(handle),
-    snapshot: (handle: Handle, request) => workspace.snapshot(handle, request),
-    onChange: () => {},
-    onError: (error, handle) => {
-      dependencies.reportError(error, {
-        tags: { source: "document_watch" },
-        extra: { documentId: handle.documentId, projectId: handle.projectId },
-      })
-      console.error(`[document-watch] ${handle.documentId}:`, error)
-    },
-  })
-
   async function requireAuthorizedRepositoryWorkspace(entry: Extract<DocumentEntry, { origin: "repository" }>) {
     return await requireProjectWorkspace(entry.workspaceId, entry.projectId, entry.documentId)
   }
@@ -441,31 +427,6 @@ export function createLocalDocumentsBackend(
       const updated = findDocumentIndexEntry(moved.orgId, moved.documentId)
       if (!updated) throw new DocumentNotFoundError(moved.documentId)
       return updated
-    },
-    watch: {
-      async open(entry: DocumentIndexEntry, onChange: Parameters<typeof documentWatch.open>[2]) {
-        const handle = await workspace.resolve(
-          entry.origin_kind === "managed"
-            ? {
-                origin: "managed",
-                placement: "local",
-                orgId: entry.org_id,
-                projectId: entry.project_id,
-                documentId: entry.id,
-                relativePath: entry.managed_relative_path,
-              }
-            : {
-                origin: "repository",
-                placement: "local",
-                orgId: entry.org_id,
-                projectId: entry.project_id,
-                documentId: entry.id,
-                workspaceId: entry.workspace_id,
-                relativePath: entry.repository_relative_path,
-              },
-        )
-        return documentWatch.open(handle, (await workspace.read(handle)).version, onChange)
-      },
     },
     async agentOpen(entry: DocumentIndexEntry, sessionId: string) {
       if (entry.placement_kind !== "local") {

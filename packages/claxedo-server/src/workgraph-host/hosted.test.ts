@@ -579,21 +579,20 @@ describe("hosted WorkGraph composition", () => {
     }))
   })
 
-  test("serves Convex deletion and admission-retry change events through the full hosted router", async () => {
+  // The `/changes` route is deleted (plan 2026-07-17-004); the Convex-backed change
+  // log stays and is read in-process by settlement/wakes/audit, so this asserts the
+  // hosted changes query directly instead of through the router.
+  test("reads Convex deletion and admission-retry change events from the hosted change log", async () => {
     const workgraph = composition([])
+    const context = await workgraph.resolveContext(
+      new Request("https://hosted.test/api/workgraph", { headers: { authorization: "Bearer user_a" } }),
+    )
 
-    const response = await workgraph.router.request("/changes?waitMs=0&limit=100", {
-      headers: { authorization: "Bearer user_a" },
-    })
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
-      changes: [
-        { ownerUserId: "user_a", event: { type: "admission_planning_retried", ownerUserId: "user_a" } },
-        { ownerUserId: "user_a", event: { type: "stream_deletion_requested", ownerUserId: "user_a" } },
-      ],
-      timedOut: false,
-    })
+    expect(await workgraph.service.queries.changes.list(context, { limit: 100 })).toMatchObject([
+      { ownerUserId: "user_a", event: { type: "admission_planning_retried", ownerUserId: "user_a" } },
+      { ownerUserId: "user_a", event: { type: "stream_deletion_requested", ownerUserId: "user_a" } },
+    ])
+    expect((await workgraph.router.request("/changes", { headers: { authorization: "Bearer user_a" } })).status).toBe(404)
   })
 
   test("never accepts an owner selector and keeps two signed users isolated", async () => {

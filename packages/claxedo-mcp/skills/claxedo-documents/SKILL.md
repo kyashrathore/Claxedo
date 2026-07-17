@@ -12,7 +12,7 @@ Resolve document references through the Claxedo document index. Keep prompts com
 1. Pass a `claxedo://document/<id>` reference directly to `documents_open` as `id_or_name`.
 2. Use `documents_list` first when the user supplies only a name or asks what documents exist. The tool returns metadata, not document bodies.
 3. Omit `directory` when the Claxedo MCP has a project default. Otherwise pass the current project directory. Use one scope only: `directory` or `project_id`.
-4. Omit `session_id` when the runtime supplies the current session default. Otherwise pass the current Claxedo session ID.
+4. Omit `session_id` in OpenCode; it injects the current session from MCP tool metadata. In other harnesses, omit it when the runtime supplies a session default or pass the current Claxedo session ID.
 5. Read or edit only the absolute canonical path returned by `documents_open`. Let the session document bridge synchronize changes.
 
 Never infer a managed path, scan `.claxedo` for a substitute, or treat a display name as unique after the tool reports ambiguity.

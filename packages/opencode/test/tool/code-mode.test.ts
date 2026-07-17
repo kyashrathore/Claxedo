@@ -28,9 +28,16 @@ function mcpTool(
   handler: (args: Record<string, unknown>) => unknown,
   inputSchema: Record<string, unknown> = { type: "object", properties: {} },
   outputSchema?: Record<string, unknown>,
+  meta?: Record<string, unknown>,
 ): MCP.McpTool {
   return {
-    def: { name, description: name, inputSchema, ...(outputSchema ? { outputSchema } : {}) } as MCPToolDef,
+    def: {
+      name,
+      description: name,
+      inputSchema,
+      ...(outputSchema ? { outputSchema } : {}),
+      ...(meta ? { _meta: meta } : {}),
+    } as MCPToolDef,
     client: {
       callTool: async (params: { arguments?: Record<string, unknown> }) => handler(params.arguments ?? {}),
     } as unknown as MCP.McpTool["client"],
@@ -265,6 +272,31 @@ describe("code mode execute", () => {
     expect(output.metadata.toolCalls).toEqual([
       { tool: "greeter.hello", status: "completed", input: { name: "world" } },
     ])
+  })
+
+  test("injects session context requested by MCP tool metadata", async () => {
+    const seen: Record<string, unknown>[] = []
+    const tool = await build({
+      claxedo_documents_open: mcpTool(
+        "documents_open",
+        (args) => {
+          seen.push(args)
+          return { content: [{ type: "text", text: "opened" }] }
+        },
+        { type: "object", properties: { id_or_name: { type: "string" }, session_id: { type: "string" } } },
+        undefined,
+        { "io.claxedo/session-argument": "session_id" },
+      ),
+    })
+
+    await Effect.runPromise(tool.execute({
+      code: "return await tools.claxedo.documents_open({ id_or_name: 'claxedo://document/document-1' })",
+    }, ctx))
+
+    expect(seen).toEqual([{
+      id_or_name: "claxedo://document/document-1",
+      session_id: "ses_code-mode",
+    }])
   })
 
   test("exposes structured content as native data and composes multiple calls", async () => {

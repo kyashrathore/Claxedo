@@ -200,14 +200,18 @@ export function TabFile(props: TabFileProps) {
               />
             </Tooltip>
           </Show>
+          {/* This is where adding a repository file to Documents lives: on the
+              Markdown file itself, next to the file it acts on. The Documents
+              index used to carry a "type the path yourself" importer, which
+              asked you to name a file you were already looking at. */}
           <Show when={isMd() && props.onCollaborate}>
-            <Tooltip value="Collaborate">
+            <Tooltip value="Add to Documents">
               <IconButton
                 icon="file-text"
                 variant="ghost"
                 size="small"
                 onClick={() => props.onCollaborate?.()}
-                aria-label="Collaborate"
+                aria-label="Add to Documents"
               />
             </Tooltip>
           </Show>

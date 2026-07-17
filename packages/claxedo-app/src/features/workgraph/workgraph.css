@@ -57,21 +57,6 @@
   line-height: 1.5;
 }
 
-.workgraph-count {
-  display: inline-flex;
-  min-width: 1rem;
-  align-items: center;
-  justify-content: center;
-  margin-left: 0.15rem;
-  padding: 0 0.28rem;
-  border-radius: 999px;
-  background: var(--surface-base);
-  font-family: var(--font-family-mono);
-  font-size: 0.625rem;
-  line-height: 1rem;
-  color: var(--text-weak);
-}
-
 .workgraph-rule {
   height: 1px;
   margin-bottom: 0.6rem;
@@ -118,13 +103,6 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.55rem 0.25rem 0.45rem;
-}
-
-.workgraph-attention-dot {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: var(--icon-critical-base);
 }
 
 .workgraph-attention-list {
@@ -180,12 +158,6 @@
   opacity: 1;
 }
 
-.workgraph-project-row .workgraph-status-dot {
-  align-self: center;
-  width: 0.4rem;
-  height: 0.4rem;
-}
-
 /* Each project is a shelf: cards fill two rows column-by-column and the shelf
    scrolls horizontally when streams outgrow the viewport — width is used
    before the page grows taller. */
@@ -224,10 +196,6 @@
   border-radius: var(--radius-lg);
 }
 
-.workgraph-streamcard-gap {
-  flex: 1;
-}
-
 /* Quiet raised plane on system tokens: one step above the canvas, ringed by
    the theme's 0.5px hairline shadow so neither fill nor border dominates.
    The step differs per scheme — light needs the near-white solid to separate
@@ -238,14 +206,17 @@
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  background: light-dark(var(--surface-raised-strong), var(--surface-raised-base));
+  background: color-mix(in srgb, var(--surface-raised-base) 20%, transparent);
   box-shadow: var(--shadow-xxs-border);
   padding: 0.8rem 0.9rem 0.55rem;
-  transition: box-shadow 140ms ease;
+  transition:
+    box-shadow 140ms ease,
+    background 140ms ease;
 }
 
 .workgraph-streamcard:hover,
 .workgraph-streamcard:focus-within {
+  background: color-mix(in srgb, var(--surface-raised-base) 50%, transparent);
   box-shadow: var(--shadow-xs-border-base);
 }
 
@@ -377,9 +348,42 @@
   display: none;
 }
 
+/* The overflow tail: a demoted row that continues the list, indented to the
+   title column so it lines up under the task names rather than their glyphs.
+   Always visible — unlike Add task, it reports something the card can't
+   otherwise show. */
+.workgraph-streamcard-more {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 1.9rem;
+  margin-inline: -0.55rem;
+  /* Left pad = the row gutter plus the status-glyph column (1rem) and its
+     0.5rem gap, so the label starts exactly under the task titles. */
+  padding: 0.3rem 0.55rem 0.3rem 2.05rem;
+  /* Same wash as a task row: full-bleed and radius-md, never a square. */
+  border-radius: var(--radius-md);
+  color: var(--text-weaker);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  transition:
+    color 110ms ease,
+    background 110ms ease;
+}
+
+.workgraph-streamcard-more:hover,
+.workgraph-streamcard-more:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--text-base);
+}
+
 /* Add task is the demoted last row of the list — same shape as a task row,
    revealed with the card's hover state. */
+/* Column flex so the button below stretches to the row width instead of
+   shrink-wrapping its label the way a bare <button> would. */
 .workgraph-streamcard-add {
+  display: flex;
+  flex-direction: column;
   opacity: 0;
   transition: opacity 130ms ease;
 }
@@ -389,9 +393,16 @@
   opacity: 1;
 }
 
+/* Add task is a row here, not the inline chip it is elsewhere: same full-bleed
+   wash, same radius, and a 0.5rem gap that drops its plus into the status-glyph
+   column — so its label starts under the task titles like every other row. */
 .workgraph-streamcard-add .workgraph-add-task {
+  display: flex;
   min-height: 1.9rem;
-  padding: 0.3rem 0 0.3rem 0.8rem;
+  gap: 0.5rem;
+  margin-inline: -0.55rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-md);
   font-size: 0.8125rem;
 }
 
@@ -402,46 +413,162 @@
   font-size: 0.6875rem;
 }
 
+/* Deliberately quiet: no colour and no glyph. This used to paint itself with
+   --text-on-critical-base, which means "text ON a critical surface" and so
+   resolves to pure white here — leaving it brighter than the stream title on a
+   card whose whole language is restraint. The words carry it; the attention
+   rows above already show their own alert glyph. */
 .workgraph-streamcard-needs-you {
   flex-shrink: 0;
-  color: var(--text-on-critical-base);
+  color: var(--text-base);
+  font-weight: 600;
 }
 
-/* Footer zone: hairline, then task count left, overflow count and the
-   hover-revealed delete right. */
+/* Footer zone: hairline, then one single line — the folded lifecycle stack and
+   needs-you together on the left, the hover-revealed delete on the right.
+   Spelled out, the lifecycle counts alone ran 167px of the footer's 267px and
+   wrapped the row into a stack, so they fold behind the glyph instead. */
 .workgraph-streamcard-foot {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   min-height: 1.6rem;
   margin-top: 0.3rem;
   border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
   padding-top: 0.3rem;
   font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+/* The fan opens over the tail of the task list, so the rows it crosses would
+   otherwise peek out around the pills. This masks exactly the strip the fan
+   occupies, in the card's own fill, and fades out at the top so the list
+   dissolves into the fan instead of meeting a hard edge. */
+.workgraph-streamcard-foot::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: calc(var(--fan-count, 0) * 1.45rem);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface-raised-base) 20%, transparent) 65%,
+    transparent
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease;
+}
+
+.workgraph-streamcard-foot:has(.workgraph-streamcard-lifecycle:hover)::before,
+.workgraph-streamcard-foot:has(.workgraph-streamcard-stack[data-open])::before,
+.workgraph-streamcard-foot:has(.workgraph-streamcard-stack:focus-visible)::before {
+  opacity: 1;
+}
+
+.workgraph-streamcard-gap {
+  flex: 1;
+}
+
+/* The lifecycle control: at rest a stack glyph plus the total, holding the
+   per-bucket rows folded behind it. The wrapper is the fan's origin, so it
+   stays exactly as wide as the button. */
+.workgraph-streamcard-lifecycle {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.workgraph-streamcard-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 1.4rem;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+  color: var(--icon-weak-base);
+  transition:
+    color 110ms ease,
+    background 110ms ease;
+}
+
+/* The set ships no chevron-up, and the fan opens upward — so point the one we
+   have the way the motion actually goes. */
+.workgraph-streamcard-stack-chevron {
+  transform: rotate(180deg);
+}
+
+.workgraph-streamcard-stack-count {
+  color: var(--text-weaker);
+  font-variant-numeric: tabular-nums;
+  transition: color 110ms ease;
+}
+
+.workgraph-streamcard-lifecycle:hover .workgraph-streamcard-stack,
+.workgraph-streamcard-stack[data-open],
+.workgraph-streamcard-stack:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--icon-base);
+}
+
+.workgraph-streamcard-lifecycle:hover .workgraph-streamcard-stack-count,
+.workgraph-streamcard-stack[data-open] .workgraph-streamcard-stack-count,
+.workgraph-streamcard-stack:focus-visible .workgraph-streamcard-stack-count {
+  color: var(--text-base);
+}
+
+.workgraph-streamcard-stack:focus-visible {
+  outline: 2px solid var(--border-selected);
+  outline-offset: 1px;
+}
+
+/* The fan: every row starts stacked on the button, then splits upward into its
+   own slot. Rows are inert labels — never a hover target — so the fan can't
+   trap the pointer or flicker as it passes over them. */
+.workgraph-streamcard-fan {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.workgraph-streamcard-fan-row {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-xxs-border);
+  color: var(--text-base);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  transform: scale(0.94);
+  transform-origin: bottom left;
+  opacity: 0;
+  transition:
+    transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease;
+  /* Closing reverses the order: the outermost row folds back in first. */
+  transition-delay: calc((var(--fan-count) - var(--fan-slot)) * 30ms);
+}
+
+.workgraph-streamcard-lifecycle:hover .workgraph-streamcard-fan-row,
+.workgraph-streamcard-stack[data-open] ~ .workgraph-streamcard-fan .workgraph-streamcard-fan-row,
+.workgraph-streamcard-stack:focus-visible ~ .workgraph-streamcard-fan .workgraph-streamcard-fan-row {
+  transform: translateY(calc(var(--fan-slot) * -1.45rem)) scale(1);
+  opacity: 1;
+  /* Opening runs from the button outward: nearest row leads. */
+  transition-delay: calc((var(--fan-slot) - 1) * 40ms);
 }
 
 .workgraph-streamcard:hover .workgraph-streamcard-foot .workgraph-row-delete,
 .workgraph-streamcard:focus-within .workgraph-streamcard-foot .workgraph-row-delete {
   opacity: 1;
-}
-
-.workgraph-streamcard-more {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  min-height: 1.7rem;
-  padding: 0 0.3rem;
-  border-radius: var(--radius-sm);
-  color: var(--text-weaker);
-  font-size: 0.6875rem;
-  white-space: nowrap;
-  transition: color 110ms ease;
-}
-
-.workgraph-streamcard-more:hover,
-.workgraph-streamcard-more:focus-visible {
-  background: var(--surface-base-hover);
-  color: var(--text-base);
 }
 
 /* ── Tasks tab body in the shared panel ─────────────────── */
@@ -506,10 +633,27 @@
 .workgraph-create-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 0.375rem;
   margin-top: 0.9rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--border-weak-base);
+}
+
+/* The shared Select chips (environment, project directory) sit flush in the
+   chip row like the session composer's workspace chips. */
+.workgraph-chip-select {
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+/* The chip Selects portal their listbox to <body>; Kobalte copies the content's
+   computed z-index onto the popper positioner, so raising it here lifts the whole
+   listbox above the New-stream modal dialog (and the app-shell layers beneath it)
+   instead of letting it render behind the dialog shell. Same elevation the base-
+   revision popover uses. */
+[data-component="select-content"].workgraph-chip-select {
+  z-index: 400;
 }
 
 .workgraph-create-target {
@@ -520,8 +664,7 @@
   font-size: 0.75rem;
 }
 
-.workgraph-create-target input,
-.workgraph-project-select {
+.workgraph-create-target input {
   width: 100%;
   border: 1px solid var(--border-weak-base);
   border-radius: 0.375rem;
@@ -531,27 +674,8 @@
   outline: none;
 }
 
-.workgraph-create-target input:focus,
-.workgraph-project-select:focus-visible {
+.workgraph-create-target input:focus {
   border-color: var(--border-strong-base);
-}
-
-.workgraph-project-picker {
-  display: grid;
-  gap: 0.3rem;
-  width: 100%;
-}
-
-.workgraph-project-picker > button {
-  justify-self: start;
-}
-
-.workgraph-setting-control .workgraph-project-select {
-  height: 1.85rem;
-  padding: 0 0.6rem;
-  border-radius: var(--radius-md);
-  color: var(--text-base);
-  font-size: 0.75rem;
 }
 
 .workgraph-create-target small {
@@ -559,65 +683,72 @@
   font-size: 0.6875rem;
 }
 
-.workgraph-defchip {
+/* The base-revision chip trigger — a 28px ghost chip matching the shared Select
+   triggers (environment, project directory) beside it in the row. */
+.workgraph-chip-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  height: 1.75rem;
-  padding: 0 0.7rem;
-  border: 1px solid var(--border-weak-base);
-  border-radius: 999px;
-  background: var(--surface-base);
-  color: var(--text-base);
-  font-size: 0.75rem;
+  gap: 0.25rem;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-weak);
+  font-size: var(--font-size-base);
   line-height: 1;
   white-space: nowrap;
   text-transform: none;
   letter-spacing: 0;
   outline: none;
-  transition:
-    border-color 120ms ease,
-    background 120ms ease;
+  transition: background 120ms ease;
 }
 
-.workgraph-defchip:hover {
-  border-color: var(--border-strong-base);
-  background: var(--background-stronger);
+.workgraph-chip-trigger:hover,
+.workgraph-chip-trigger:focus-visible,
+.workgraph-chip-trigger[data-expanded] {
+  background: var(--surface-raised-base-hover);
 }
 
-.workgraph-defchip:focus-visible {
-  border-color: var(--border-selected);
+.workgraph-chip-caret {
+  flex-shrink: 0;
+  color: var(--text-weak);
 }
 
 .workgraph-defchip-value {
   white-space: nowrap;
 }
 
-.workgraph-chip-menu {
+/* The base-revision popover reuses the shared List (search box + keyed items)
+   exactly like the session composer's model picker, so it only needs sizing — the
+   elevation above the modal comes from the Popover's inline z-index. */
+.workgraph-revision-popover {
+  width: 15rem;
+}
+
+.workgraph-revision-popover [data-slot="popover-body"] {
+  padding: 8px;
+}
+
+.workgraph-revision-list-host {
   display: flex;
-  min-width: 11rem;
+  min-height: 0;
   flex-direction: column;
-  padding: 0.25rem;
 }
 
-.workgraph-chip-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: var(--radius-md);
-  color: var(--text-base);
-  font-size: 0.8125rem;
-  text-align: left;
+.workgraph-revision-list {
+  flex: 1;
+  min-height: 0;
 }
 
-.workgraph-chip-option:hover {
-  background: var(--surface-base);
+.workgraph-revision-list [data-slot="list-scroll"] {
+  max-height: 15rem;
 }
 
-.workgraph-chip-option.is-selected {
-  color: var(--text-strong);
+.workgraph-revision-option {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workgraph-create-actions {
@@ -654,26 +785,6 @@
 
 .workgraph-dialog-scope.is-expanded .richtext-surface {
   min-height: 20rem;
-}
-
-.workgraph-status-dot {
-  flex-shrink: 0;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: var(--icon-info-base);
-}
-
-.workgraph-status-dot[data-tone="active"] {
-  background: var(--icon-success-base);
-}
-
-.workgraph-status-dot[data-tone="critical"] {
-  background: var(--icon-critical-base);
-}
-
-.workgraph-status-dot[data-tone="info"] {
-  background: color-mix(in srgb, var(--icon-weak-base) 75%, transparent);
 }
 
 .workgraph-stream-title {
@@ -1209,5 +1320,20 @@
   .workgraph-streamcard-add,
   .workgraph-row-delete {
     transition: none;
+  }
+
+  /* The fan still moves — the rows would sit on top of each other otherwise —
+     but it lands at once, with no travel or stagger. */
+  .workgraph-streamcard-fan-row {
+    transform: translateY(calc(var(--fan-slot) * -1.45rem));
+    transition: opacity 1ms linear;
+    transition-delay: 0s;
+  }
+
+  .workgraph-streamcard-lifecycle:hover .workgraph-streamcard-fan-row,
+  .workgraph-streamcard-stack[data-open] ~ .workgraph-streamcard-fan .workgraph-streamcard-fan-row,
+  .workgraph-streamcard-stack:focus-visible ~ .workgraph-streamcard-fan .workgraph-streamcard-fan-row {
+    transform: translateY(calc(var(--fan-slot) * -1.45rem));
+    transition-delay: 0s;
   }
 }

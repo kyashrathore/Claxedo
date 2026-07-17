@@ -196,8 +196,13 @@ describe("document discovery tools", () => {
 
   it("registers both tools as discovery tools even in read-only mode", () => {
     const names: string[] = []
-    registerDocumentTools((name) => names.push(name), vi.fn())
+    let openConfig: Record<string, unknown> | undefined
+    registerDocumentTools((name, config) => {
+      names.push(name)
+      if (name === "documents_open") openConfig = config
+    }, vi.fn())
     expect(names).toEqual(["documents_list", "documents_open"])
+    expect(openConfig?._meta).toEqual({ "io.claxedo/session-argument": "session_id" })
   })
 
   it("applies current directory and session defaults to open calls", async () => {

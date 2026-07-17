@@ -61,14 +61,20 @@ export function DetailState<T>(props: {
   retry?: () => void
   emptyWhen?: (value: T) => boolean
   emptyLabel?: string
+  /** Layout-shaped placeholder rendered while loading instead of the bare text. */
+  skeleton?: JSX.Element
   children: (value: T) => JSX.Element
 }) {
   return (
     <Switch>
       <Match when={props.resource.loading && props.resource() === undefined}>
-        <div class="workgraph-detail-status" role="status" aria-live="polite">
-          Loading…
-        </div>
+        <Show when={props.skeleton} fallback={
+          <div class="workgraph-detail-status" role="status" aria-live="polite">
+            Loading…
+          </div>
+        }>
+          {(skeleton) => <>{skeleton()}</>}
+        </Show>
       </Match>
       <Match when={props.resource.error}>
         <div class="workgraph-detail-status is-error" role="alert">

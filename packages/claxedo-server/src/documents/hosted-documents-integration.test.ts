@@ -195,17 +195,9 @@ describe("hosted remote documents genuine integration", () => {
       })
       const managedOpen = await managedOpenResponse.json() as { path: string }
       activeCentral = secondApp
-      const events = await secondApp.request("https://control.test/documents/events?project_id=project_1&document_id=managed_remote", {
-        headers: { authorization: "Bearer user-bearer", accept: "text/event-stream" },
-      })
-      expect(events.status).toBe(200)
-      const reader = events.body!.getReader()
-      await readEvent(reader)
       await fs.writeFile(managedOpen.path, "managed agent")
       await flushRuntimeDocument("session_1", "managed_remote")
       expect((await managed.read(await managed.resolve(portEntry(managedEntry)))).markdown).toBe("managed agent")
-      expect((await readEvent(reader)).reason).toBe("document.content_updated")
-      await reader.cancel()
 
       const external = await managed.read(await managed.resolve(portEntry(managedEntry)))
       await localControl.request(`http://localhost/documents/managed_remote/content?project_id=project_1`, {
@@ -402,17 +394,6 @@ async function temporary(prefix: string) {
 
 async function git(directory: string, args: string[]) {
   await exec("git", args, { cwd: directory })
-}
-
-async function readEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
-  for (const _attempt of Array.from({ length: 10 })) {
-    const value = await reader.read()
-    if (value.done) throw new Error("SSE closed")
-    const data = new TextDecoder().decode(value.value).split("\n")
-      .find((line) => line.startsWith("data:"))?.slice(5).trim()
-    if (data) return JSON.parse(data) as { reason?: string }
-  }
-  throw new Error("SSE event was not received")
 }
 
 function restore(env: NodeJS.ProcessEnv, key: string, value?: string) {

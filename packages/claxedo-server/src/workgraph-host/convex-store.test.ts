@@ -1618,12 +1618,12 @@ describe("Convex WorkGraph store", () => {
       attempt: { id: "attempt_subject_owned", ownerUserId: "clerk_user_a" },
       executionReferences: { sessionId: "session_subject_owned" },
     })
-    const changes = await app.request("/changes?limit=10")
-    expect(changes.status).toBe(200)
-    expect(await changes.json()).toMatchObject({ changes: [{
+    // The change feed is server-side only now (plan 2026-07-17-004): the `/changes`
+    // route is gone, so subject mapping on the changes query is asserted in-process.
+    expect(await service.queries.changes.list(owner("clerk_user_a"), { limit: 10 })).toMatchObject([{
       ownerUserId: "clerk_user_a",
       event: { ownerUserId: "clerk_user_a" },
-    }] })
+    }])
     expect(harness.rowsFor("workgraph_streams")).toEqual([
       expect.objectContaining({ id: streamId, owner_user_id: "durable_user_a" }),
     ])

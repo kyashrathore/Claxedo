@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js"
+import { Match, Show, Switch, createSignal, onCleanup } from "solid-js"
 import { detectMarkdown, type MarkdownDetection } from "@/features/documents/markdown/detector"
 import {
   createDocumentPersistenceController,
@@ -6,29 +6,22 @@ import {
   type PersistenceSnapshot,
 } from "@/features/documents/state/persistence-controller"
 import { createRecoveryDraftStore, type RecoveryDraftStorage } from "@/features/documents/state/recovery-draft"
-import {
-  DocumentApiError,
-  documentsApi,
-  type DocumentsApi,
-  type OpenDocument,
-} from "@/features/documents/data/documents-api"
+import { documentsApi, type DocumentsApi, type OpenDocument } from "@/features/documents/data/documents-api"
 import { ConflictRecovery } from "./conflict-recovery"
 import { DocumentRecoveryState } from "./recovery-states"
 import { RichMode } from "./rich-mode"
 import { SaveStatus } from "./save-status"
 import { SourceMode } from "./source-mode"
-import { createDocumentExternalChangeController } from "./external-change"
 import { VersionHistory } from "./version-history"
 
 export type DocumentEditorProps = {
   document: OpenDocument
   api?: Pick<DocumentsApi, "save" | "create"> &
-    Partial<Pick<DocumentsApi, "open" | "watch" | "snapshots" | "restoreSnapshot">>
+    Partial<Pick<DocumentsApi, "open" | "snapshots" | "restoreSnapshot">>
   storage?: RecoveryDraftStorage
   onTitleChange?: (title: string) => void
   onBackToIndex?: () => void
   onBlockingClose?: (snapshot: PersistenceSnapshot) => void
-  onUnavailable?: (error: unknown) => void
   onController?: (controller: DocumentPersistenceController) => void
   reportError?: (error: unknown) => void
   transformSelection?: (action: "improve" | "fix" | "shorten", selected: string) => Promise<string>
@@ -67,50 +60,22 @@ export default function DocumentEditor(props: DocumentEditorProps) {
   const [snapshot, setSnapshot] = createSignal(controller.snapshot())
   const [detection, setDetection] = createSignal<MarkdownDetection>(detectMarkdown(snapshot().draft.markdown))
   const [editorError, setEditorError] = createSignal<string>()
+  const [richUnavailable, setRichUnavailable] = createSignal(false)
   const unsubscribe = controller.subscribe(setSnapshot)
   props.onController?.(controller)
 
-  const external =
-    api.open && api.watch
-      ? createDocumentExternalChangeController({
-          documentId: props.document.id,
-          projectId: props.document.summary.project_id,
-          watch: api.watch,
-          read: async () => {
-            const current = await api.open!(props.document.id)
-            return { displayName: current.displayName, markdown: current.markdown, version: current.version }
-          },
-          apply: (current) => {
-            const before = controller.snapshot()
-            const applied = controller.applyExternalChange(current)
-            if (applied.status === "conflicted") return
-            if (applied.draft.markdown !== before.draft.markdown) {
-              setDetection(detectMarkdown(applied.draft.markdown))
-            }
-            if (applied.draft.displayName !== before.draft.displayName) {
-              props.onTitleChange?.(applied.draft.displayName)
-            }
-          },
-          isUnavailable: (error) =>
-            error instanceof DocumentApiError && (error.status === 404 || error.code === "document_archived"),
-          onUnavailable: props.onUnavailable ?? reportError,
-          onError: reportError,
-          schedule: (run, delay) => {
-            const timer = setTimeout(run, delay)
-            return () => clearTimeout(timer)
-          },
-          subscribeFocus: (refresh) => {
-            if (typeof window === "undefined") return () => undefined
-            window.addEventListener("focus", refresh)
-            return () => window.removeEventListener("focus", refresh)
-          },
-        })
-      : undefined
-  onMount(() => external?.start())
-
-  const editMarkdown = (markdown: string) => controller.editMarkdown(markdown)
+  const editMarkdown = (markdown: string) => {
+    setRichUnavailable(false)
+    controller.editMarkdown(markdown)
+  }
   const flush = () => controller.flushOnBlur().then(undefined, reportError)
-  const tryRich = () => setDetection(detectMarkdown(snapshot().draft.markdown))
+  // A recheck that lands back on source renders an identical screen, so say so explicitly —
+  // otherwise the button reads as broken.
+  const tryRich = () => {
+    const next = detectMarkdown(snapshot().draft.markdown)
+    setDetection(next)
+    setRichUnavailable(next.status === "source")
+  }
   const editSource = () =>
     setDetection({
       status: "source",
@@ -157,7 +122,6 @@ export default function DocumentEditor(props: DocumentEditorProps) {
   }
 
   onCleanup(() => {
-    external?.stop()
     unsubscribe()
     void controller.flushOnClose().then((result) => {
       if (result.status === "failed" || result.status === "conflicted") props.onBlockingClose?.(result)
@@ -165,7 +129,16 @@ export default function DocumentEditor(props: DocumentEditorProps) {
   })
 
   return (
-    <main class="flex size-full min-h-0 flex-col bg-background-base" aria-label="Document editor">
+    <main
+      class="flex size-full min-h-0 flex-col bg-background-base"
+      aria-label="Document editor"
+      onKeyDown={(event) => {
+        // Autosave already covers this; Cmd+S only exists so the reflex isn't a dead key.
+        if (event.key !== "s" || !(event.metaKey || event.ctrlKey)) return
+        event.preventDefault()
+        void controller.flushBeforeAction().then(undefined, reportError)
+      }}
+    >
       <header class="flex items-center gap-3 border-b border-border-weak-base px-6 py-3">
         {props.onBackToIndex && (
           <button
@@ -185,13 +158,6 @@ export default function DocumentEditor(props: DocumentEditorProps) {
           </button>
         )}
         <div class="flex-1" />
-        <button
-          type="button"
-          class="rounded px-2 py-1 text-xs text-text-weak hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
-          onClick={() => void controller.flushBeforeAction()}
-        >
-          Save now
-        </button>
         <SaveStatus snapshot={snapshot()} onRetry={() => void controller.retry()} />
         <Show when={api.snapshots && api.restoreSnapshot && api.open}>
           <VersionHistory
@@ -200,14 +166,6 @@ export default function DocumentEditor(props: DocumentEditorProps) {
             reportError={reportError}
           />
         </Show>
-        <details class="relative text-xs text-text-weak">
-          <summary class="cursor-pointer rounded px-2 py-1 hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2">
-            More
-          </summary>
-          <div class="absolute right-0 z-20 mt-1 w-56 rounded border border-border-weak-base bg-background-base p-2 shadow-lg">
-            <p>Repository actions are not available for this document yet.</p>
-          </div>
-        </details>
       </header>
 
       <div class="min-h-0 flex-1 overflow-auto">
@@ -243,6 +201,7 @@ export default function DocumentEditor(props: DocumentEditorProps) {
                   <SourceMode
                     markdown={snapshot().draft.markdown}
                     reason={source.reason.message}
+                    unavailable={richUnavailable()}
                     onInput={editMarkdown}
                     onBlur={flush}
                     onTryRich={tryRich}

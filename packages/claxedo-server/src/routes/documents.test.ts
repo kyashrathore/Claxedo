@@ -33,7 +33,7 @@ import {
   updateDocumentIndexMetadata,
 } from "../documents/index-store"
 import type { DocumentIndexEntry } from "../documents/index-store"
-import type { DocumentExternalChange } from "../documents/watch"
+import { setDocumentChangedSink, subscribeDocumentEvents } from "../documents/backend"
 import { ClaxedoDB } from "../storage/db"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./documents"
 import { peerAddressStamp } from "./local-only-projection"
@@ -259,20 +259,6 @@ async function createDocument(app = localApp(), input: Record<string, unknown> =
   })
   expect(response.status).toBe(201)
   return (await response.json()) as { id: string; last_known_file_version: string }
-}
-
-async function nextEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
-  for (const _ of Array.from({ length: 10 })) {
-    const chunk = await reader.read()
-    if (chunk.done) return
-    const data = new TextDecoder()
-      .decode(chunk.value)
-      .split("\n")
-      .find((line) => line.startsWith("data:"))
-      ?.slice(5)
-      .trim()
-    if (data) return JSON.parse(data) as Record<string, unknown>
-  }
 }
 
 function deferred() {
@@ -1074,21 +1060,25 @@ describe("DocumentsRoutes", () => {
     await expect(conflict.json()).resolves.toMatchObject({ currentVersion: current.version })
   })
 
-  test("emits every mutation reason and invalidation hints over reconnectable SSE", async () => {
+  // Project-scoped delivery moved off the SSE onto the central `document.changed`
+  // doorbell (plan 2026-07-17-004, Wave 2-C), so this exercises the in-process
+  // listener registry that both the doorbell sink and the document-scoped stream
+  // are fed from. `publishDocumentEvent` is synchronous, so every event is
+  // already recorded by the time each awaited request resolves.
+  test("emits every mutation reason and invalidation hints to document event listeners", async () => {
     const app = localApp()
-    const events = await app.request("http://localhost/documents/events?project_id=project_local")
-    expect(events.headers.get("content-type")).toContain("text/event-stream")
-    const reader = events.body!.getReader()
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain("retry: 2000")
+    const seen: Record<string, unknown>[] = []
+    // localApp() authenticates through localOnlyAuthAdapter, whose org is __local__.
+    const unsubscribe = subscribeDocumentEvents("__local__", "project_local", (event) => seen.push(event))
+    const nextReason = () => seen.at(-1)?.reason
 
     const document = await createDocument(app, { display_name: "Evented" })
-    const created = await nextEvent(reader)
-    expect(created).toMatchObject({
+    expect(seen.at(-1)).toMatchObject({
       type: "document.changed",
       reason: "document.created",
       invalidate: ["index", "content", "snapshots"],
     })
-    const reasons = [created?.reason]
+    const reasons = [nextReason()]
 
     const metadataResponse = await app.request(`http://localhost/documents/${document.id}`, {
       method: "PATCH",
@@ -1097,7 +1087,7 @@ describe("DocumentsRoutes", () => {
     })
     expect(metadataResponse.status).toBe(200)
     const metadata = (await metadataResponse.json()) as { last_known_file_version: string }
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
 
     expect(
       (
@@ -1108,7 +1098,7 @@ describe("DocumentsRoutes", () => {
         })
       ).status,
     ).toBe(200)
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
 
     expect(
       (
@@ -1119,7 +1109,7 @@ describe("DocumentsRoutes", () => {
         })
       ).status,
     ).toBe(200)
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
 
     const content = await app.request(`http://localhost/documents/${document.id}/content`, {
       method: "PUT",
@@ -1128,7 +1118,7 @@ describe("DocumentsRoutes", () => {
     })
     expect(content.status).toBe(200)
     const current = (await content.json()) as { version: string }
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
 
     const snapshots = (await (await app.request(`http://localhost/documents/${document.id}/snapshots`)).json()) as {
       id: string
@@ -1142,16 +1132,16 @@ describe("DocumentsRoutes", () => {
         })
       ).status,
     ).toBe(200)
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
 
     expect((await app.request(`http://localhost/documents/${document.id}/archive`, { method: "POST" })).status).toBe(
       200,
     )
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
     expect((await app.request(`http://localhost/documents/${document.id}/restore`, { method: "POST" })).status).toBe(
       200,
     )
-    reasons.push((await nextEvent(reader))?.reason)
+    reasons.push(nextReason())
 
     expect(reasons).toEqual([
       "document.created",
@@ -1163,126 +1153,78 @@ describe("DocumentsRoutes", () => {
       "document.archived",
       "document.restored",
     ])
-    await reader.cancel()
+    unsubscribe()
   })
 
-  test("keeps idle SSE connections alive with heartbeat events", async () => {
-    const app = new Hono().route(
-      "/documents",
-      DocumentsRoutes({
-        backend,
-        services: { auth: localOnlyAuthAdapter() } as never,
-        heartbeatMs: 5,
-      }),
-    )
-    const events = await app.request("http://localhost/documents/events?project_id=project_local")
-    const reader = events.body!.getReader()
-    await reader.read()
-    await expect(nextEvent(reader)).resolves.toMatchObject({ type: "document.heartbeat" })
-    await reader.cancel()
-  })
+  test("publishes a camelCase document.changed doorbell for saves", async () => {
+    const published: Record<string, unknown>[] = []
+    const restore = setDocumentChangedSink((event) => published.push(event))
+    try {
+      const app = localApp()
+      const document = await createDocument(app, { display_name: "Doorbell" })
+      // ⚠ The two `document.changed` shapes share a discriminant. The bus envelope
+      // must be the camelCase one, carrying identity only — never the legacy
+      // snake_case SSE payload with `reason`/`invalidate` passed straight through.
+      expect(published.at(-1)).toEqual({
+        type: "document.changed",
+        documentId: document.id,
+        orgId: "__local__",
+        projectId: "project_local",
+        version: expect.any(String),
+        ts: expect.any(Number),
+      })
+      expect(published.at(-1)).not.toHaveProperty("document_id")
+      expect(published.at(-1)).not.toHaveProperty("reason")
+      expect(published.at(-1)).not.toHaveProperty("invalidate")
 
-  test("opens and closes a document watch for document-scoped SSE", async () => {
-    const created = await createDocument()
-    let opened = 0
-    let closed = 0
-    let publish: Parameters<NonNullable<DocumentsRouteBackend["watch"]>["open"]>[1] | undefined
-    const watchedBackend = {
-      ...backend,
-      watch: {
-        async open(_entry: DocumentIndexEntry, onChange: (change: DocumentExternalChange) => void | Promise<void>) {
-          opened += 1
-          publish = onChange
-          return {
-            close: () => {
-              closed += 1
-            },
-          }
+      const content = await app.request(`http://localhost/documents/${document.id}/content`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "if-match": document.last_known_file_version },
+        body: JSON.stringify({ markdown: "doorbell content" }),
+      })
+      expect(content.status).toBe(200)
+      expect(published.at(-1)).toMatchObject({ documentId: document.id, type: "document.changed" })
+
+      // Metadata-only changes are not content writes, so they ring without a version.
+      const renamed = await app.request(`http://localhost/documents/${document.id}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "if-match": ((await content.json()) as { version: string }).version,
         },
-      },
+        body: JSON.stringify({ display_name: "Doorbell renamed" }),
+      })
+      expect(renamed.status).toBe(200)
+      expect(published.at(-1)).not.toHaveProperty("version")
+    } finally {
+      restore()
     }
-    const app = new Hono().route(
-      "/documents",
-      DocumentsRoutes({
-        backend: watchedBackend,
-        services: { auth: localOnlyAuthAdapter() } as never,
-      }),
-    )
-    const abort = new AbortController()
-    const events = await app.request(
-      new Request(`http://localhost/documents/events?project_id=project_local&document_id=${created.id}`, {
-        signal: abort.signal,
-      }),
-    )
-    const reader = events.body!.getReader()
-    await expect(nextEvent(reader)).resolves.toMatchObject({ type: "document.connected" })
-    expect(opened).toBe(1)
-    await publish?.({
-      type: "changed",
-      documentId: created.id,
-      projectId: "project_local",
-      previousVersion: created.last_known_file_version as never,
-      currentVersion: "external-version" as never,
-    })
-    await expect(nextEvent(reader)).resolves.toMatchObject({
-      type: "document.changed",
-      document_id: created.id,
-      project_id: "project_local",
-      reason: "document.external_changed",
-      version: "external-version",
-      invalidate: ["index", "content", "snapshots"],
-    })
-    abort.abort()
-    await reader.cancel()
-    const source = await fs.readFile(new URL("./documents.ts", import.meta.url), "utf8")
-    expect(source).toContain("watched?.close()")
-    expect(closed).toBe(1)
-
-    const wrongProject = await app.request(
-      `http://localhost/documents/events?project_id=project_other&document_id=${created.id}`,
-    )
-    expect(wrongProject.status).toBe(404)
   })
 
-  test("registers the SSE listener before publishing the reconnect invalidation", async () => {
-    const source = await fs.readFile(new URL("./documents.ts", import.meta.url), "utf8")
-    expect(source.indexOf("const unsubscribe = subscribe(")).toBeGreaterThan(-1)
-    expect(source.indexOf("const unsubscribe = subscribe(")).toBeLessThan(source.indexOf('event: "document.connected"'))
-    expect(source.indexOf("const unsubscribe = subscribe(")).toBeLessThan(
-      source.indexOf("await documents().openWatch("),
-    )
-  })
-
-  test("closes a watch that finishes opening after the SSE client disconnects", async () => {
-    const created = await createDocument()
-    const gate = deferred()
-    let closed = 0
-    const watchedBackend = {
-      ...backend,
-      watch: {
-        async open(_entry: DocumentIndexEntry, _onChange: (change: DocumentExternalChange) => void | Promise<void>) {
-          await gate.promise
-          return {
-            close: () => {
-              closed++
-            },
-          }
-        },
-      },
+  test("keeps a failing doorbell sink from failing the write that rang it", async () => {
+    // CAS-at-write is the correctness mechanism; the doorbell is a fire-and-forget
+    // hint. A broken sink may cost freshness, never a write.
+    const restore = setDocumentChangedSink(() => {
+      throw new Error("bus exploded")
+    })
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const app = localApp()
+      await expect(createDocument(app, { display_name: "Resilient" })).resolves.toMatchObject({
+        display_name: "Resilient",
+      })
+    } finally {
+      errors.mockRestore()
+      restore()
     }
-    const app = new Hono().route(
-      "/documents",
-      DocumentsRoutes({
-        backend: watchedBackend,
-        services: { auth: localOnlyAuthAdapter() } as never,
-      }),
-    )
-    const events = await app.request(
-      `http://localhost/documents/events?project_id=project_local&document_id=${created.id}`,
-    )
-    await events.body!.cancel()
-    gate.resolve()
-    for (let attempt = 0; attempt < 20 && closed === 0; attempt++) await Promise.resolve()
-    expect(closed).toBe(1)
   })
+
+  test("emits no doorbell when no sink is installed (hosted composition)", async () => {
+    setDocumentChangedSink(undefined)
+    const app = localApp()
+    await expect(createDocument(app, { display_name: "Sinkless" })).resolves.toMatchObject({
+      display_name: "Sinkless",
+    })
+  })
+
 })

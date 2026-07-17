@@ -138,7 +138,7 @@ export async function startSandbox(
     const message = err instanceof Error ? err.message : String(err)
 
     recordSupervisorSandboxStartFailure(state.ws.id, message)
-    emitProvision(state.ws.id, "error", { message })
+    emitProvision(state.ws, "error", { message })
     log.warn("Sandbox start failed", {
       workspaceId: state.ws.id,
       driver: driverId,
@@ -312,7 +312,7 @@ async function resolveSupervisorSandboxNetworkPolicy(
 }
 
 async function markSandboxAcquiring(state: WorkspaceRuntimeState) {
-  emitProvision(state.ws.id, "acquiring_sandbox")
+  emitProvision(state.ws, "acquiring_sandbox")
   const pending = await updateWorkspace(state.ws.id, {
     status: "acquiring_sandbox",
   })
@@ -495,7 +495,7 @@ async function markSandboxReady(
 
   callbacks.scheduleStop(state)
   startSandboxHealthMonitor(state)
-  emitProvision(state.ws.id, "ready")
+  emitProvision(state.ws, "ready")
 
   log.info("sandbox ready", {
     workspaceId: state.ws.id,

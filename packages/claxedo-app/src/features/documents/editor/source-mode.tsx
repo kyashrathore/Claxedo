@@ -1,6 +1,9 @@
+import { Show } from "solid-js"
+
 export function SourceMode(props: {
   markdown: string
   reason: string
+  unavailable?: boolean
   onInput: (markdown: string) => void
   onBlur: () => void
   onTryRich: () => void
@@ -14,13 +17,21 @@ export function SourceMode(props: {
           </div>
           <p class="mt-0.5 text-xs text-text-weak">{props.reason}</p>
         </div>
-        <button
-          type="button"
-          class="rounded px-2 py-1 text-xs text-text-strong hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
-          onClick={props.onTryRich}
-        >
-          Try rich mode
-        </button>
+        <div class="flex shrink-0 flex-col items-end gap-1">
+          <button
+            type="button"
+            class="rounded px-2 py-1 text-xs text-text-strong hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2"
+            onClick={props.onTryRich}
+          >
+            Try rich mode
+          </button>
+          <Show when={props.unavailable}>
+            {/* The reason to the left already says why; this only proves the click landed. */}
+            <p class="text-xs text-text-weak" role="status">
+              Checked again — still source mode.
+            </p>
+          </Show>
+        </div>
       </div>
       <textarea
         aria-label="Document Markdown source"

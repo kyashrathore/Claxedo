@@ -27,7 +27,6 @@ import {
   StreamActivityGranularitySchema,
   TaskActivityPageSchema,
   StreamDtoSchema,
-  WorkGraphChangeEnvelopeSchema,
   WorkGraphCommandRequestSchema,
   WorkSourceDtoSchema,
   WorkSourceRevisionDtoSchema,
@@ -54,7 +53,7 @@ export type EmbeddedWorkGraphTransport = Readonly<{
   snapshot(input: Readonly<{ after?: SnapshotResumeCursor; limit: number }>): Promise<unknown>
   readStream(streamId: string): Promise<unknown>
   readDefaults?(): Promise<unknown>
-  readExecutionCapabilities?(): Promise<unknown>
+  readExecutionCapabilities?(input?: Readonly<{ directory?: string }>): Promise<unknown>
   refreshExecutionCapabilities?(): Promise<unknown>
   listAttention?(input: Readonly<{ after?: string; limit: number }>): Promise<unknown>
   listNotifications?(input: Readonly<{ after?: string; limit: number; state?: "unread" | "read" }>): Promise<unknown>
@@ -138,12 +137,6 @@ const ReviewedReplacementWorkItemsSchema = z.array(z.strictObject({
     context.addIssue({ code: "custom", path: [index, "work_item_id"], message: "Reviewed Work Items must be unique" })
   })
 })
-const ChangesResponseSchema = z.strictObject({
-  changes: z.array(WorkGraphChangeEnvelopeSchema),
-  cursor: z.string().trim().min(1).optional(),
-  timedOut: z.boolean(),
-})
-
 export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "Read personal WorkGraph defaults", tool: "workgraph_get_defaults", mutating: false },
   { uiAction: "Update personal WorkGraph defaults", tool: "workgraph_update_defaults", mutating: true },
@@ -155,7 +148,6 @@ export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "List or inspect WorkGraph", tool: "workgraph_list", mutating: false },
   { uiAction: "Get a WorkGraph record", tool: "workgraph_get", mutating: false },
   { uiAction: "Read an exact Work Source revision", tool: "workgraph_source_revision", mutating: false },
-  { uiAction: "Read the ordered WorkGraph change feed", tool: "workgraph_changes", mutating: false },
   { uiAction: "Create or revise a Work Source", tool: "workgraph_source", mutating: true },
   { uiAction: "Create a Stream", tool: "workgraph_create_stream", mutating: true },
   { uiAction: "Create an Outcome", tool: "workgraph_create_outcome", mutating: true },
@@ -204,7 +196,7 @@ export const WORKGRAPH_CAPABILITY_MAP = [
 export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_get_defaults: {},
   workgraph_update_defaults: { ...operation, expected_version: z.number().int().nonnegative(), defaults: WorkGraphDefaultsSchema },
-  workgraph_execution_capabilities: {},
+  workgraph_execution_capabilities: { directory: z.string().optional() },
   workgraph_refresh_execution_capabilities: {},
   workgraph_attention: { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
   workgraph_notifications: { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional(), state: z.enum(["unread", "read"]).optional() },
@@ -212,7 +204,6 @@ export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_list: { kind: z.enum(["streams", "sources", "work", "decisions", "recaps"]), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
   workgraph_get: { record_type: z.enum(["source", "stream", "outcome", "work_item", "attempt", "decision", "recap", "proposal"]), id: z.string() },
   workgraph_source_revision: { work_source_id: z.string(), revision_id: z.string() },
-  workgraph_changes: { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional(), wait_ms: z.number().int().min(0).max(30_000).optional() },
   workgraph_source: { ...operation, action: z.enum(["create", "revise"]), title: z.string().optional(), content: z.string(), work_source_id: z.string().optional(), expected_revision_id: z.string().optional() },
   workgraph_create_stream: { ...operation, title: z.string(), description: z.string().optional(), source: z.object(sourceRef).optional(), execution: ExecutionProfileDefaultsSchema.optional(), recap: RecapProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
   workgraph_create_outcome: { ...operation, stream_id: z.string(), title: z.string(), description: z.string().optional(), success_criteria: z.array(z.string()).min(1), execution: ExecutionProfileDefaultsSchema.optional() },
@@ -408,9 +399,12 @@ export async function callWorkGraph(
   }
   if (tool === "workgraph_execution_capabilities" || tool === "workgraph_refresh_execution_capabilities") {
     const refresh = tool === "workgraph_refresh_execution_capabilities"
+    // Only the read path is directory-scoped; refresh is hosted-only and ignores it.
+    const directory = !refresh && typeof input.directory === "string" && input.directory.trim() ? input.directory.trim() : undefined
+    const query = directory ? `?${new URLSearchParams({ directory })}` : ""
     const value = typeof transport !== "function"
-      ? await requiredMethod(refresh ? transport.refreshExecutionCapabilities : transport.readExecutionCapabilities, tool)()
-      : await transport(`/api/workgraph/execution-capabilities${refresh ? "/refresh" : ""}`, { method: refresh ? "POST" : "GET", ...(refresh ? { body: "{}" } : {}) })
+      ? await requiredMethod(refresh ? transport.refreshExecutionCapabilities : transport.readExecutionCapabilities, tool)(directory ? { directory } : undefined)
+      : await transport(`/api/workgraph/execution-capabilities${refresh ? "/refresh" : query}`, { method: refresh ? "POST" : "GET", ...(refresh ? { body: "{}" } : {}) })
     return ExecutionCapabilitiesSchema.parse(value)
   }
   if (tool === "workgraph_attention") {
@@ -445,12 +439,6 @@ export async function callWorkGraph(
         body: JSON.stringify({ expectedVersion }),
       })
     return WorkGraphNotificationSchema.parse(value)
-  }
-  if (tool === "workgraph_changes") {
-    if (typeof transport !== "function") throw new Error("Embedded WorkGraph transport does not expose the ordered change feed")
-    const query = pageQuery(input, 50)
-    if (typeof input.wait_ms === "number") query.set("waitMs", String(input.wait_ms))
-    return ChangesResponseSchema.parse(await transport(`/api/workgraph/changes?${query}`, { method: "GET" }))
   }
   if (tool === "workgraph_source_revision") {
     const workSourceId = requiredString(input, "work_source_id")
@@ -568,7 +556,7 @@ export async function callWorkGraph(
       return transport(`/api/workgraph/sources${query.size ? `?${query}` : ""}`, { method: "GET" })
     }
     if (input.cursor !== undefined || input.limit !== undefined) {
-      throw new Error("cursor and limit apply only to Work Source pages; use workgraph_changes for incremental WorkGraph observation")
+      throw new Error("cursor and limit apply only to Work Source pages; re-read the WorkGraph snapshot for current state")
     }
     const snapshot = await readSnapshot(transport, 100)
     const records = snapshot.records.filter((record) => listIncludes(requiredString(input, "kind"), record.recordType))
@@ -820,7 +808,6 @@ function embeddedSupports(transport: EmbeddedWorkGraphTransport, tool: keyof typ
     workgraph_notifications: "listNotifications",
     workgraph_mark_notification_read: "markNotificationRead",
     workgraph_source_revision: "readSourceRevision",
-    workgraph_changes: undefined,
     workgraph_source_views: "listSourceViews",
     workgraph_configure_source_view: "createSourceView",
     workgraph_update_source_view: "updateSourceView",
@@ -844,7 +831,6 @@ function embeddedSupports(transport: EmbeddedWorkGraphTransport, tool: keyof typ
     workgraph_release_session: "releaseSessionBinding",
   }
   const method = methods[tool]
-  if (tool === "workgraph_changes") return false
   if (tool === "workgraph_update_candidate") {
     return typeof transport.dismissCandidate === "function" && typeof transport.restoreCandidate === "function"
   }

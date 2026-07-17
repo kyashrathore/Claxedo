@@ -11,6 +11,7 @@ import {
 } from "@opencode-ai/codemode"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
+import { withMcpSessionContext } from "@/mcp/session-context"
 import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import { Permission } from "@/permission"
@@ -152,17 +153,18 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   callID: string
   ctx: Tool.Context
 }) {
+  const args = withMcpSessionContext(input.entry.tool.def, input.args, input.ctx.sessionID)
   yield* input.plugin.trigger(
     "tool.execute.before",
     { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID },
-    { args: input.args },
+    { args },
   )
   const result: CallToolResult = yield* Effect.gen(function* () {
     yield* input.ctx.ask({ permission: input.entry.key, metadata: {}, patterns: ["*"], always: ["*"] })
     // Deliberately mirrors McpCatalog.convertTool's transport call so the MCP service stays free of tool-loop concerns.
     return yield* Effect.promise(async () => {
       const raw = await input.entry.tool.client.callTool(
-        { name: input.entry.tool.def.name, arguments: input.args },
+        { name: input.entry.tool.def.name, arguments: args },
         CallToolResultSchema,
         {
           resetTimeoutOnProgress: true,
@@ -193,7 +195,7 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   )
   yield* input.plugin.trigger(
     "tool.execute.after",
-    { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID, args: input.args },
+    { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID, args },
     result,
   )
   return result

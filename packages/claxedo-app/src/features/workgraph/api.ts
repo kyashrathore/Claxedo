@@ -27,7 +27,6 @@ import {
   WorkSourceDtoSchema,
   WorkSourceRevisionDtoSchema,
   StreamDtoSchema,
-  WorkGraphChangeEnvelopeSchema,
   WorkGraphCommandRequestSchema,
   WorkGraphDefaultsDtoSchema,
   WorkGraphDefaultsSchema,
@@ -38,7 +37,6 @@ import {
   WorkGraphSnapshotPageSchema,
   WorkGraphSnapshotAggregationError,
   collectWorkGraphSnapshotPages,
-  type ChangeCursor,
   type AttentionCursor,
   type CommandResult,
   type ExecutionMode,
@@ -71,12 +69,6 @@ import z from "zod"
 import { bypassFetchThrottle } from "@/lib/fetch-throttle"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
-
-const ChangesResponseSchema = z.strictObject({
-  changes: z.array(WorkGraphChangeEnvelopeSchema),
-  cursor: z.string().trim().min(1).brand("ChangeCursor").optional(),
-  timedOut: z.boolean(),
-})
 
 const WorkSourcesResponseSchema = z.strictObject({
   sources: z.array(WorkSourceDtoSchema),
@@ -208,21 +200,10 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
     clearAttention: () => write("/attention/clear", {}, (value) => AttentionAcknowledgementSchema.parse(value)),
     defaults: (): Promise<WorkGraphDefaultsDto> =>
       read("/defaults", (value) => WorkGraphDefaultsDtoSchema.parse(value)),
-    executionCapabilities: (): Promise<ExecutionCapabilities> =>
-      read("/execution-capabilities", (value) => ExecutionCapabilitiesSchema.parse(value), undefined, decodeExecutionCapabilitiesError),
-    // The bounded /changes long-poll. `waitMs` holds the request open server-side
-    // until a change lands or the window elapses; `signal` cancels the in-flight
-    // poll on unmount/navigation so the synchronizer aborts cleanly.
-    changes: (cursor?: ChangeCursor, options: Readonly<{ waitMs?: number; signal?: AbortSignal }> = {}) => {
-      const query = new URLSearchParams()
-      if (cursor) query.set("after", cursor)
-      if (options.waitMs !== undefined) query.set("waitMs", String(options.waitMs))
-      const search = query.toString()
-      return read(
-        `/changes${search ? `?${search}` : ""}`,
-        (value) => ChangesResponseSchema.parse(value),
-        bypassFetchThrottle(options.signal ? { signal: options.signal } : {}),
-      )
+    executionCapabilities: (options: Readonly<{ directory?: string }> = {}): Promise<ExecutionCapabilities> => {
+      const directory = options.directory?.trim()
+      const query = directory ? `?${new URLSearchParams({ directory })}` : ""
+      return read(`/execution-capabilities${query}`, (value) => ExecutionCapabilitiesSchema.parse(value), undefined, decodeExecutionCapabilitiesError)
     },
     stream: (streamId: string): Promise<StreamDto> =>
       read(`/streams/${encodeURIComponent(streamId)}`, (value) => StreamDtoSchema.parse(value)),

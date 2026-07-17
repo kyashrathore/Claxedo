@@ -606,7 +606,7 @@ describe("WorkGraph project grouping", () => {
     )
 
     // Preview order: needs-you, in progress, then the staged queue — the done
-    // task is pushed past the 4-row preview and lives behind "+1 more".
+    // task is pushed past the 4-row preview and lives behind "Show 1 more".
     await screen.findByText("Unblock the deploy")
     const rows = screen.getAllByRole("button", { name: /^Open task / })
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
@@ -615,8 +615,18 @@ describe("WorkGraph project grouping", () => {
       "Open task Draft the plan",
       "Open task Write the docs",
     ])
-    expect(screen.getByText("2 staged · 1 in progress · 1 done")).toBeInTheDocument()
-    expect(screen.getByText("1 need you")).toBeInTheDocument()
+    // The lifecycle folds behind the stack glyph — the total on the button, a
+    // row per bucket in the fan, and the same breakdown in the button's label
+    // for anyone who never hovers.
+    expect(
+      screen.getByRole("button", { name: "Task breakdown for Ship Claxedo cloud: 2 staged, 1 in progress, 1 done" }),
+    ).toBeInTheDocument()
+    expect(screen.getByText("2 staged")).toBeInTheDocument()
+    expect(screen.getByText("1 in progress")).toBeInTheDocument()
+    expect(screen.getByText("1 done")).toBeInTheDocument()
+    expect(screen.getByText("1 needs you")).toBeInTheDocument()
+    // The overflow continues the task list rather than reporting from the footer.
+    expect(screen.getByRole("button", { name: "All tasks for Ship Claxedo cloud" })).toHaveTextContent("Show 1 more")
   })
 
   test("each Project ends with an empty New stream card that opens the create dialog", async () => {
@@ -631,20 +641,6 @@ describe("WorkGraph project grouping", () => {
   })
 })
 
-// Faithful bounded /changes long-poll: with no changes to deliver and a positive
-// waitMs, hold the request open until the client aborts it, then answer timedOut —
-// so the synchronizer re-issues its next poll instead of tight-looping.
-function holdLongPoll(url: URL, init?: RequestInit): Response | Promise<Response> {
-  const after = url.searchParams.get("after") ?? undefined
-  const timedOutBody = { changes: [] as unknown[], ...(after ? { cursor: after } : {}), timedOut: true }
-  if (Number(url.searchParams.get("waitMs") ?? "0") <= 0) {
-    return Response.json({ changes: [], ...(after ? { cursor: after } : {}), timedOut: false })
-  }
-  const signal = init?.signal
-  if (!signal || signal.aborted) return Response.json(timedOutBody)
-  return new Promise((resolve) => signal.addEventListener("abort", () => resolve(Response.json(timedOutBody)), { once: true }))
-}
-
 function workGraphRequest(input: {
   records: () => unknown[]
   command: (command: Record<string, unknown>) => Record<string, unknown>
@@ -653,7 +649,6 @@ function workGraphRequest(input: {
   return async (request: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof request === "string" ? request : request instanceof URL ? request : request.url)
     const pathname = url.pathname
-    if (pathname.endsWith("/changes")) return holdLongPoll(url, init)
     if (pathname.includes("/attention")) return Response.json({ items: [], total: 0, hasMore: false })
     if (pathname.includes("/recaps/")) return Response.json(recap)
     if (pathname.includes("/attempts/") && input.attempt) return Response.json(input.attempt(pathname.split("/").at(-1)!))

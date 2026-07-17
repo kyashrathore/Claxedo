@@ -691,7 +691,6 @@ export async function createHandlers() {
       { id: "draft", name: "Draft", color: "#6b7280", position: 0, transitions: "[\"done\"]" },
       { id: "done", name: "Done", color: "#22c55e", position: 1, transitions: "[\"draft\"]" },
     ])),
-    http.get(`${DEMO_BASE}/documents/events`, () => sse(heartbeat({ type: "document.heartbeat" }))),
     http.get(`${DEMO_BASE}/documents`, () => HttpResponse.json(state.documents)),
     http.post(`${DEMO_BASE}/documents`, async ({ request }) => {
       const body = await jsonRecord(request)

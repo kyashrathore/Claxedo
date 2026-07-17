@@ -1,11 +1,32 @@
+import { Icon } from "@opencode-ai/ui/icon"
+import { Popover } from "@opencode-ai/ui/popover"
 import { For, Show, createSignal } from "solid-js"
+import { useLanguage } from "@/platform/i18n/provider"
+import { getRelativeTime } from "@/lib/time"
 import type { DocumentSnapshot } from "../data/documents-api"
+
+const actorLabels = { user: "You", agent: "Agent", system: "System" } as const
+
+const actionLabels: Record<string, string> = {
+  "document.created": "Created",
+  "document.before_write": "Before edit",
+  "document.written": "Edited",
+  "document.before_restore": "Before restore",
+}
+
+// Snapshot reasons are machine codes; show words. Unmapped codes stay raw rather than
+// get flattened into a wrong label — restoring the wrong version is unrecoverable.
+function actionLabel(reason: string) {
+  if (reason.startsWith("document.restored:")) return "Restored"
+  return actionLabels[reason] ?? reason
+}
 
 export function VersionHistory(props: {
   list: () => Promise<DocumentSnapshot[]>
   restore: (snapshotId: string) => Promise<void>
   reportError: (error: unknown) => void
 }) {
+  const language = useLanguage()
   const [snapshots, setSnapshots] = createSignal<DocumentSnapshot[]>([])
   const [loading, setLoading] = createSignal(false)
   const [restoring, setRestoring] = createSignal<string>()
@@ -38,16 +59,23 @@ export function VersionHistory(props: {
   }
 
   return (
-    <details
-      class="relative text-xs text-text-weak"
-      onToggle={(event) => {
-        if (event.currentTarget.open && !snapshots().length) void load()
+    <Popover
+      title="Version history"
+      class="w-72 text-xs text-text-weak"
+      triggerAs="button"
+      triggerProps={{
+        type: "button",
+        "aria-label": "More",
+        title: "More",
+        class:
+          "flex size-7 items-center justify-center rounded text-icon-weak-base hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2",
+      }}
+      trigger={<Icon name="dot-grid" size="small" />}
+      onOpenChange={(open) => {
+        if (open && !snapshots().length) void load()
       }}
     >
-      <summary class="cursor-pointer rounded px-2 py-1 hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2">
-        Version history
-      </summary>
-      <div class="absolute right-0 z-30 mt-1 w-80 rounded border border-border-weak-base bg-background-base p-3 shadow-lg">
+      <div>
         <Show when={error()}>
           {(message) => (
             <p class="mb-2 text-text-on-critical-base" role="alert">
@@ -60,14 +88,18 @@ export function VersionHistory(props: {
             <ul class="max-h-64 space-y-2 overflow-auto" aria-label="Document versions">
               <For each={snapshots()}>
                 {(snapshot) => (
-                  <li class="flex items-start justify-between gap-3 border-b border-border-weak-base pb-2">
+                  <li class="flex items-center justify-between gap-3 border-b border-border-weak-base pb-2">
                     <span class="min-w-0">
-                      <span class="block truncate text-text-strong">{snapshot.reason}</span>
-                      <span class="block">{new Date(snapshot.createdAt).toLocaleString()}</span>
+                      <span class="block truncate text-text-strong">
+                        {actorLabels[snapshot.actor.type]} · {actionLabel(snapshot.reason)}
+                      </span>
+                      <span class="block" title={new Date(snapshot.createdAt).toLocaleString()}>
+                        {getRelativeTime(new Date(snapshot.createdAt).toISOString(), language.t)}
+                      </span>
                     </span>
                     <button
                       type="button"
-                      class="rounded px-2 py-1 text-text-strong hover:bg-surface-raised-base disabled:text-text-weak"
+                      class="shrink-0 rounded px-2 py-1 text-text-strong hover:bg-surface-raised-base disabled:text-text-weak"
                       disabled={Boolean(restoring())}
                       onClick={() => void restore(snapshot.id)}
                     >
@@ -80,6 +112,6 @@ export function VersionHistory(props: {
           </Show>
         </Show>
       </div>
-    </details>
+    </Popover>
   )
 }

@@ -5,13 +5,14 @@ import { Dialog as DialogShell } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
+import { Select } from "@opencode-ai/ui/select"
 import { RichTextEditor } from "@/ui/rich-text"
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, type JSX, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createWorkGraphClient, WorkGraphApiError, type WorkGraphClient, type WorkGraphSessionOpener } from "./api"
-import { ChipMenu, EmptyState, LoadingState, nextFrame, normalizeError, PanelTab, relativeTime, StatStrip, StatusBanner } from "./content-chrome"
+import { BaseRevisionChip, EmptyState, LoadingState, nextFrame, normalizeError, PanelTab, relativeTime, StatStrip, StatusBanner } from "./content-chrome"
 import { ProjectPicker, type LocalProjectOption } from "./project-picker"
-import { useWorkGraphSyncLifecycle } from "./sync-lifecycle"
+import { useWorkGraphSyncLifecycle, type WorkGraphEventsApi } from "./sync-lifecycle"
 import { environmentChoices } from "./waiting/settings-capabilities"
 import { WaitingCard, createWaitingCardController } from "./waiting/waiting-card"
 import { TaskDialog, WaitingItemDialog } from "./waiting/item-dialogs"
@@ -42,10 +43,15 @@ export type WorkGraphPanelBridge = {
   bodySlot: Accessor<HTMLElement | null>
 }
 
+type EnvironmentKind = "local_worktree" | "hosted_workspace"
+type EnvironmentOption = { kind: EnvironmentKind; label: string }
+
 export function WorkGraphContent(props: {
   active?: Accessor<boolean>
   request?: typeof fetch
   client?: WorkGraphClient
+  /** Test seam for the central events bus; defaults to the shell's (app-ports). */
+  events?: WorkGraphEventsApi
   panel?: WorkGraphPanelBridge
   onOpenSession?: WorkGraphSessionOpener
   executionContext?: ExecutionEnvironment
@@ -123,9 +129,26 @@ export function WorkGraphContent(props: {
   // instead of substituting cached or invented choices. Closing and reopening any
   // surface refetches; retry re-runs it in place.
   const capabilitiesNeeded = () => (!!props.panel?.isOpen() && props.panel?.mode() === "settings") || !!streamSettings() || creating()
+  // Only the create dialog carries a project-directory chip, and only there is
+  // capability discovery scoped to that directory so the Base revision popover
+  // lists THAT repository's local branches. Settings / waiting surfaces have no
+  // directory chip: their source stays `true`, so their unscoped boot-catalog
+  // fetch is byte-for-byte unchanged.
+  const capabilitiesDirectory = () => {
+    if (!creating() || environment() !== "local_worktree") return undefined
+    return localDirectory().trim() || undefined
+  }
+  // Two-arg createResource gate: the source is falsy (no fetch) until a surface
+  // needs the catalog, then it is the selected directory (scoped) or `true`
+  // (unscoped). Changing the create dialog's project chip changes the source and
+  // refetches only the suggestion list — the typed base revision is never reset.
+  const capabilitiesSource = () => {
+    if (!capabilitiesNeeded()) return undefined
+    return capabilitiesDirectory() ?? true
+  }
   const [capabilities, { refetch: refetchCapabilities }] = createResource(
-    () => (capabilitiesNeeded() ? true : undefined),
-    () => client.executionCapabilities(),
+    capabilitiesSource,
+    (source) => client.executionCapabilities(typeof source === "string" ? { directory: source } : {}),
   )
   // An explicit capability failure (its WorkGraphApiError) is observed here and
   // resolves to "no catalog" — the forms then stay fail-closed on that absence
@@ -191,18 +214,14 @@ export function WorkGraphContent(props: {
   const retryMutation = () => {
     void refetch()
   }
-  // One live synchronizer, seeded once from the first canonical snapshot cursor
-  // and never restarted by later snapshot updates (it reloads the snapshot
-  // itself). It drives the bounded /changes long-poll continuously; its stall is
-  // surfaced verbatim through the sync StatusBanner, whose Retry resumes the loop
-  // from the last good cursor. cursor_invalid is auto-reset inside the loop, so it
-  // never reaches the banner.
-  // Applying a change window (and resetting after cursor_invalid) reloads the
-  // canonical snapshot and Attention together; the fresh snapshot cursor is
-  // returned so the loop can resume from it after a reset.
+  // One live synchronizer. The server rings the `workgraph.changed` doorbell on
+  // the central events stream and this reloads the canonical snapshot + Attention
+  // together — no cursor, no client-side change log, no socket held open. A reload
+  // that fails stalls the surface and surfaces the error verbatim through the sync
+  // StatusBanner, whose Retry re-runs exactly this pass; it never falls back to
+  // stale data.
   const reloadCanonical = async () => {
     await Promise.all([refetch(), loadAttention()])
-    return snapshot()?.snapshotCursor
   }
   const acknowledgeAttention = async (action: () => Promise<unknown>) => {
     setAttentionError(undefined)
@@ -216,9 +235,8 @@ export function WorkGraphContent(props: {
   }
   const sync = useWorkGraphSyncLifecycle({
     active: () => props.active?.() ?? true,
-    snapshot,
-    changes: client.changes,
     reload: reloadCanonical,
+    ...(props.events ? { events: props.events } : {}),
   })
   const mutate = async (action: () => Promise<CommandResult>) => {
     if (submitting()) return false
@@ -261,6 +279,22 @@ export function WorkGraphContent(props: {
     const catalog = capabilityCatalog()
     return catalog ? environmentChoices(catalog) : []
   }
+  // The environment chip feeds the shared `Select` option OBJECTS (with a `value`
+  // key accessor), NOT bare strings: Kobalte's Select only builds an openable
+  // collection from keyed option objects — primitive-string options render a
+  // trigger that never opens its listbox. The choices stay derived from the exact
+  // catalog policy via `createEnvironmentValues`.
+  const environmentLabel = (kind: EnvironmentKind) => (kind === "local_worktree" ? "Local worktree" : "Cloud workspace")
+  const environmentOptions = createMemo<EnvironmentOption[]>(() =>
+    createEnvironmentValues().map((kind) => ({ kind, label: environmentLabel(kind) })),
+  )
+  // Always resolve to a labelled option so the trigger keeps showing the current
+  // environment even when the catalog advertises nothing yet (fail-closed): the
+  // synthesized option is display-only and is never in the (empty) collection.
+  const currentEnvironmentOption = createMemo<EnvironmentOption>(() => {
+    const kind = environment()
+    return environmentOptions().find((option) => option.kind === kind) ?? { kind, label: environmentLabel(kind) }
+  })
   const openCreating = () => {
     setBaseRevision(capabilityCatalog()?.repository.baseRevisions[0] ?? "HEAD")
     if (!props.executionContext) {
@@ -545,34 +579,24 @@ export function WorkGraphContent(props: {
                     <div class="workgraph-create-desc">
                       <RichTextEditor value={description()} onChange={setDescription} ariaLabel="Description" placeholder="Add a description…" />
                     </div>
+                    {/* One compact chip row — environment, project directory (local
+                        only), and base revision — mirroring the session composer's
+                        workspace row. */}
                     <div class="workgraph-create-chips" role="group" aria-label="Stream defaults">
-                      <ChipMenu
-                        value={environment() === "local_worktree" ? "Local worktree" : "Cloud workspace"}
-                        selected={environment()}
-                        options={createEnvironmentValues().map((kind) => ({
-                          value: kind,
-                          label: kind === "local_worktree" ? "Local worktree" : "Cloud workspace",
-                        }))}
-                        onSelect={setEnvironment}
+                      <Select<EnvironmentOption>
+                        size="normal"
+                        variant="ghost"
+                        options={environmentOptions()}
+                        current={currentEnvironmentOption()}
+                        value={(option) => option.kind}
+                        label={(option) => option.label}
+                        onSelect={(option) => {
+                          if (option) setEnvironment(option.kind)
+                        }}
+                        class="workgraph-chip-select text-text-base"
+                        valueClass="truncate text-13-regular text-text-weak"
                       />
-                    </div>
-                    <Show
-                      when={environment() === "local_worktree"}
-                      fallback={
-                        <label class="workgraph-create-target">
-                          <span>GitHub repository URL</span>
-                          <input
-                            value={repositoryUrl()}
-                            onInput={(event) => setRepositoryUrl(event.currentTarget.value)}
-                            placeholder="https://github.com/owner/repository.git"
-                            required
-                          />
-                          <small>The cloud workspace clones this repository for every Stream Attempt.</small>
-                        </label>
-                      }
-                    >
-                      <div class="workgraph-create-target">
-                        <span>Project directory</span>
+                      <Show when={environment() === "local_worktree"}>
                         <ProjectPicker
                           value={localDirectory()}
                           projects={props.localProjects ?? []}
@@ -580,25 +604,25 @@ export function WorkGraphContent(props: {
                           onChoose={props.onChooseLocalProject}
                           onError={(error) => setMutationError(normalizeError(error))}
                         />
-                        <small>The Stream creates its isolated worktree from this local Git repository.</small>
-                      </div>
-                    </Show>
-                    <label class="workgraph-create-target">
-                      <span>Base revision</span>
-                      <input
+                      </Show>
+                      <BaseRevisionChip
                         value={baseRevision()}
-                        onInput={(event) => setBaseRevision(event.currentTarget.value)}
-                        list="workgraph-stream-base-revisions"
-                        placeholder="HEAD"
-                        required
+                        options={capabilityCatalog()?.repository.baseRevisions ?? []}
+                        onChange={setBaseRevision}
                       />
-                      <datalist id="workgraph-stream-base-revisions">
-                        <For each={capabilityCatalog()?.repository.baseRevisions ?? []}>
-                          {(revision) => <option value={revision} />}
-                        </For>
-                      </datalist>
-                      <small>The Git ref used to create this Stream's execution workspace.</small>
-                    </label>
+                    </div>
+                    <Show when={environment() === "hosted_workspace"}>
+                      <label class="workgraph-create-target">
+                        <span>GitHub repository URL</span>
+                        <input
+                          value={repositoryUrl()}
+                          onInput={(event) => setRepositoryUrl(event.currentTarget.value)}
+                          placeholder="https://github.com/owner/repository.git"
+                          required
+                        />
+                        <small>The cloud workspace clones this repository for every Stream Attempt.</small>
+                      </label>
+                    </Show>
                     <Show when={mutationError()}>{(error) => <StatusBanner error={error()} retry={retryMutation} />}</Show>
                     <Show when={capabilityResourceError()}>{(error) => <StatusBanner error={error()} retry={() => void refetchCapabilities()} />}</Show>
                     <div class="workgraph-create-actions">
@@ -670,9 +694,6 @@ export function WorkGraphContent(props: {
                   <div class="flex h-full items-center gap-0.5 pl-2" role="tablist" aria-label="WorkGraph panel">
                     <PanelTab ref={(element) => (needsYouTabRef = element)} active={panel().mode() === "attention"} onClick={() => openPanelTab("attention")}>
                       Needs you
-                      <Show when={card.unread() > 0}>
-                        <span class="workgraph-attention-dot" aria-hidden="true" />
-                      </Show>
                     </PanelTab>
                     <PanelTab active={panel().mode() === "settings"} onClick={openWorkGraphSettings}>
                       Settings

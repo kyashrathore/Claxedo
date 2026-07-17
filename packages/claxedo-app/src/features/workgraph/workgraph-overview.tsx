@@ -109,22 +109,13 @@ function ProjectSection(props: {
   onNewStream: (project: WorkGraphProject) => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
-  const streamIds = () => new Set(props.streams.map((stream) => stream.id))
-  const items = () => props.items.filter((item) => streamIds().has(item.streamId) && item.state !== "abandoned")
-  const needsAttention = () =>
-    items().some((item) =>
-      ["blocked", "failed", "verification_failed", "review_needed", "integration_needed", "attention"].includes(
-        item.state,
-      ),
-    )
   return (
     <section class="workgraph-project" aria-label={`Project ${props.project.label}`}>
+      {/* The header is a quiet label, not a signal: attention belongs to the
+          cards below, which name the stream that actually needs you. */}
       <div class="workgraph-project-row">
         <SemanticIcon concept="project" size="small" class="workgraph-project-icon" />
         <span class="workgraph-project-name text-text-strong">{props.project.label}</span>
-        <Show when={needsAttention()}>
-          <span class="workgraph-status-dot" data-tone="critical" aria-hidden="true" />
-        </Show>
         <Show when={props.project.detail}>
           <span class="workgraph-project-path text-text-weaker">{props.project.detail}</span>
         </Show>
@@ -185,6 +176,17 @@ function StreamCard(props: {
     for (const item of props.items) counts[taskStatusBucket(item.state)] += 1
     return counts
   }
+  // The lifecycle staged → in progress → done, one label per non-empty bucket.
+  // The footer is only 267px wide, so these ride folded behind the stack glyph
+  // and fan out on hover; needs-you and the overflow count stay always-visible.
+  const lifecycleRows = () =>
+    [
+      bucketCounts().staged ? `${bucketCounts().staged} staged` : "",
+      bucketCounts().in_progress ? `${bucketCounts().in_progress} in progress` : "",
+      bucketCounts().done ? `${bucketCounts().done} done` : "",
+    ].filter(Boolean)
+  const lifecycleTotal = () => bucketCounts().staged + bucketCounts().in_progress + bucketCounts().done
+  const needsYouLabel = () => `${bucketCounts().attention} need${bucketCounts().attention === 1 ? "s" : ""} you`
   // The execution target itself is the Project header's job; the card only
   // flags the one actionable problem — a Stream with no usable target.
   const targetMissing = () => {
@@ -197,6 +199,9 @@ function StreamCard(props: {
   }
   const [confirming, setConfirming] = createSignal(false)
   const [removing, setRemoving] = createSignal(false)
+  // Hover and focus fan the lifecycle rows open through CSS alone; this only
+  // carries the tap/click path, where there is no hover to rely on.
+  const [fanOpen, setFanOpen] = createSignal(false)
   // Recap is Stream-owned: the icon shows only when the stream has a latest recap,
   // and the preview is fetched lazily (armed on first hover/focus) from the real
   // recap detail — never fabricated. Hover and keyboard focus both open it.
@@ -427,6 +432,18 @@ function StreamCard(props: {
         <Show when={!props.items.length}>
           <div class="workgraph-leaf-empty text-text-weaker">No tasks yet.</div>
         </Show>
+        {/* The tail of the same list, so the overflow reads as "the list keeps
+            going" rather than a footer statistic. */}
+        <Show when={hiddenCount()}>
+          <button
+            type="button"
+            class="workgraph-streamcard-more"
+            aria-label={`All tasks for ${props.stream.title}`}
+            onClick={() => props.onOpenStreamTasks(props.stream)}
+          >
+            Show {hiddenCount()} more
+          </button>
+        </Show>
         {/* Add task reads as one more (demoted) task row at the end of the list. */}
         <div class="workgraph-streamcard-add">
           <InlineAddTask
@@ -442,32 +459,54 @@ function StreamCard(props: {
           Execution target required
         </div>
       </Show>
-      <div class="workgraph-streamcard-foot">
-        {/* The lifecycle at a glance: staged → in progress → done, plus a red
-            needs-you count when the stream is waiting on the owner. */}
-        <span class="text-text-weaker">
-          {[
-            bucketCounts().staged ? `${bucketCounts().staged} staged` : "",
-            bucketCounts().in_progress ? `${bucketCounts().in_progress} in progress` : "",
-            bucketCounts().done ? `${bucketCounts().done} done` : "",
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
+      {/* --fan-count rides the footer because two things need it: the rows'
+          closing stagger, and the mask that hides the list strip they cover. */}
+      <div class="workgraph-streamcard-foot" style={{ "--fan-count": `${lifecycleRows().length}` }}>
+        {/* The lifecycle folds into one glyph + total; hover, focus, or tap
+            splits it into a row per bucket, each fanning up off the button.
+            The rows are decoration — the button's label carries the same
+            breakdown for screen readers. */}
+        <Show when={lifecycleRows().length}>
+          <div class="workgraph-streamcard-lifecycle">
+            <button
+              type="button"
+              class="workgraph-streamcard-stack"
+              aria-label={`Task breakdown for ${props.stream.title}: ${lifecycleRows().join(", ")}`}
+              aria-expanded={fanOpen()}
+              data-open={fanOpen() ? "" : undefined}
+              onClick={(event) => {
+                event.stopPropagation()
+                setFanOpen((open) => !open)
+              }}
+              onBlur={() => setFanOpen(false)}
+            >
+              {/* A chevron claims nothing except the direction the fan opens.
+                  The count beside it is what says "how much is folded here". */}
+              <Icon name="chevron-down" size="small" class="workgraph-streamcard-stack-chevron" />
+              <span class="workgraph-streamcard-stack-count">{lifecycleTotal()}</span>
+            </button>
+            <span class="workgraph-streamcard-fan" aria-hidden="true">
+              <For each={lifecycleRows()}>
+                {(row, index) => (
+                  <span
+                    class="workgraph-streamcard-fan-row"
+                    style={{ "--fan-slot": `${lifecycleRows().length - index()}` }}
+                  >
+                    {row}
+                  </span>
+                )}
+              </For>
+            </span>
+          </div>
+        </Show>
+        {/* Needs-you sits with the lifecycle, not across the card from it: it is
+            the same fact — where the work stands. No glyph of its own; the
+            words say it, and an icon here would only repeat the alert already
+            on the rows it refers to. */}
         <Show when={bucketCounts().attention}>
-          <span class="workgraph-streamcard-needs-you">{bucketCounts().attention} need you</span>
+          <span class="workgraph-streamcard-needs-you">{needsYouLabel()}</span>
         </Show>
         <span class="workgraph-streamcard-gap" aria-hidden="true" />
-        <Show when={hiddenCount()}>
-          <button
-            type="button"
-            class="workgraph-streamcard-more"
-            aria-label={`All tasks for ${props.stream.title}`}
-            onClick={() => props.onOpenStreamTasks(props.stream)}
-          >
-            +{hiddenCount()} more
-          </button>
-        </Show>
         <Popover
           placement="bottom-end"
           portal

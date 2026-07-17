@@ -7,7 +7,7 @@ import {
   type DecisionDto,
   WorkItemDtoSchema,
 } from "@claxedo/workgraph/contracts"
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { TaskDialog, WaitingItemDialog } from "./item-dialogs"
 import type { WorkGraphWaitingSource } from "./waiting-source"
@@ -298,6 +298,19 @@ describe("WaitingItemDialog — failed task", () => {
 })
 
 describe("TaskDialog — execution and activity", () => {
+  test("shows a layout-shaped skeleton while the work item loads, not bare text", async () => {
+    let resolve: (value: WorkItemDto) => void = () => {}
+    const source = baseSource({
+      workItem: vi.fn(() => new Promise<WorkItemDto>((r) => (resolve = r))),
+      latestAttempt: vi.fn(async () => undefined),
+    })
+    render(() => <TaskDialog item={failedWorkItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    expect(await screen.findByRole("status", { name: "Loading task" })).toBeInTheDocument()
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument()
+    resolve(failedWorkItem)
+    await screen.findByText(failedWorkItem.title)
+  })
+
   test("runs a pending Task directly from the fixed footer", async () => {
     const executeWorkItem = vi.fn(async () => ok)
     const onResolved = vi.fn()
@@ -318,6 +331,36 @@ describe("TaskDialog — execution and activity", () => {
     await waitFor(() => expect(executeWorkItem).toHaveBeenCalledWith(item.id, "autonomous"))
     expect(onResolved).toHaveBeenCalledOnce()
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  test("surfaces state, dependencies, and pending requirement status as static chips", async () => {
+    const item = { ...failedWorkItem, dependencyIds: ["dep_1", "dep_2"] }
+    const source = baseSource({
+      workItem: vi.fn(async () => item),
+      latestAttempt: vi.fn(async () => failedAttempt),
+      evidence: vi.fn(async () => []),
+    })
+
+    render(() => <TaskDialog item={item} source={source} onClose={() => {}} onResolved={() => {}} />)
+    const chips = await screen.findByRole("group", { name: "Task status" })
+    expect(chips).toHaveTextContent("failed")
+    expect(chips).toHaveTextContent("waits for 2 task(s)")
+    await waitFor(() => expect(chips).toHaveTextContent("owner confirmation · pending"))
+    // The requirement description survives as the chip's tooltip — no information lost.
+    expect(within(chips).getByTitle("Confirm the review is complete")).toBeInTheDocument()
+  })
+
+  test("marks a satisfied requirement as evidence recorded once its evidence loads", async () => {
+    const item = { ...failedWorkItem, state: "result_ready" as const }
+    const source = baseSource({
+      workItem: vi.fn(async () => item),
+      latestAttempt: vi.fn(async () => failedAttempt),
+      evidence: vi.fn(async () => [{ requirementId: "requirement_1" }] as never),
+    })
+
+    render(() => <TaskDialog item={item} source={source} onClose={() => {}} onResolved={() => {}} />)
+    const chips = await screen.findByRole("group", { name: "Task status" })
+    await waitFor(() => expect(chips).toHaveTextContent("owner confirmation · evidence recorded"))
   })
 
   test("appends paginated activity without duplicating an overlapping entry", async () => {

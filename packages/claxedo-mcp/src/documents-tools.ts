@@ -4,7 +4,7 @@ import { z } from "zod"
 type ToolResult = Readonly<{ content: readonly Readonly<{ type: "text"; text: string }>[]; isError?: boolean }>
 type Register = (
   name: string,
-  config: Readonly<{ description: string; inputSchema: Record<string, unknown> }>,
+  config: Readonly<{ description: string; inputSchema: Record<string, unknown>; _meta?: Record<string, unknown> }>,
   handler: (input: Record<string, unknown>) => Promise<ToolResult>,
 ) => void
 type Request = <Result>(requestPath: string, init?: RequestInit) => Promise<Result>
@@ -85,6 +85,7 @@ export function registerDocumentTools(
     {
       description: "Open a claxedo://document/... reference, exact id, or name as an honest canonical file path for this session.",
       inputSchema: DOCUMENT_TOOL_SCHEMAS.documents_open,
+      _meta: { "io.claxedo/session-argument": "session_id" },
     },
     (input) => callDocuments(request, "documents_open", withDefaults(input, defaults)),
   )

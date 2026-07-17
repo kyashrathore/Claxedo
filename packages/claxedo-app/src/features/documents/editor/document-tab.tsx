@@ -88,7 +88,6 @@ export function TabPage(props: TabPageProps) {
               document={next()}
               onTitleChange={props.onTitleChange}
               onBackToIndex={props.onBackToIndex}
-              onUnavailable={setError}
               reportError={(error) => console.error("[documents] editor persistence error", error)}
               transformSelection={createSelectionTransform({
                 client: sdk.client,

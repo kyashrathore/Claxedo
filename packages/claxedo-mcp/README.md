@@ -58,7 +58,6 @@ Read-only mode registers:
 - `workgraph_list`
 - `workgraph_get`
 - `workgraph_source_revision`
-- `workgraph_changes`
 - `workgraph_source_views` when the embedded/HTTP host supports it
 - `workgraph_intake` when the embedded/HTTP host supports it
 - `workgraph_get_candidate` when the embedded/HTTP host supports it

@@ -66,15 +66,6 @@ export type DocumentQuery = {
   archived?: "active" | "archived" | "all"
 }
 
-export type DocumentEvent = {
-  type: "document.connected" | "document.changed" | "document.heartbeat"
-  document_id?: string
-  project_id?: string
-  reason?: string
-  version?: string
-  invalidate?: string[]
-}
-
 export class DocumentApiError extends Error {
   constructor(
     readonly code: string,
@@ -153,13 +144,20 @@ export const documentsApi = {
     return request<DocumentContent>(documentsUrl({ id, path: "content" }))
   },
   async open(id: string): Promise<OpenDocument> {
-    const summary = await documentsApi.get(id)
+    // Fetch summary and content concurrently. They are independent reads, and
+    // awaiting them in series made opening a document two separate trips
+    // through the global fetch throttle (`lib/fetch-throttle.ts`, cap 4) — so
+    // under a busy multi-workspace bootstrap the second request re-queued
+    // behind everything the first one let through, roughly doubling the open
+    // latency. The archived guard still runs before content is handed back; on
+    // an archived document the concurrent content read is simply discarded.
+    const [summary, content] = await Promise.all([documentsApi.get(id), documentsApi.content(id)])
     if (summary.archived_at) throw new DocumentApiError("document_archived", 410, "This document is archived.")
     return {
       id,
       displayName: summary.display_name,
       summary,
-      ...(await documentsApi.content(id)),
+      ...content,
     }
   },
   agentOpen(id: string, sessionId: string) {
@@ -260,32 +258,6 @@ export const documentsApi = {
       method: "POST",
       body: JSON.stringify({ status }),
     })
-  },
-  async watch(query: DocumentQuery, onEvent: (event: DocumentEvent) => void, signal?: AbortSignal) {
-    const response = await authFetch(String(documentsUrl({ path: "events", query })), {
-      headers: { Accept: "text/event-stream" },
-      signal,
-    })
-    if (!response.ok || !response.body)
-      throw new DocumentApiError("document_events_unavailable", response.status, "Document updates are unavailable.")
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-    while (!signal?.aborted) {
-      const chunk = await reader.read()
-      if (chunk.done) return
-      buffer += decoder.decode(chunk.value, { stream: true })
-      const blocks = buffer.split("\n\n")
-      buffer = blocks.pop() ?? ""
-      blocks.forEach((block) => {
-        const data = block
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("\n")
-        if (data) onEvent(JSON.parse(data) as DocumentEvent)
-      })
-    }
   },
 }
 

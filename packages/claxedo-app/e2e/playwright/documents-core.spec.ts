@@ -3,7 +3,7 @@
  *
  * PURPOSE — prove the complete Documents user contract in the real Claxedo UI while a
  * deterministic HTTP adapter controls durable index/placement state separately from
- * disposable runtime objects, filesystem versions, snapshots, event delivery, repository
+ * disposable runtime objects, filesystem versions, snapshots, repository
  * identity, agent hydration, and hosted placement. This is Tier M
  * browser evidence: the application, editor, routing, controller, and network contracts
  * are real; the backing server is simulated in this file. Server filesystem atomicity,
@@ -15,8 +15,9 @@
  * data directory. Repository files retain repository identity and are edited in place.
  * Opening is read-only. Human edits move idle → dirty → saving → saved; transport errors
  * move saving → failed → retry; stale If-Match moves saving → conflicted while retaining
- * both draft and disk values. External events replace a clean draft and conflict with a
- * dirty draft. Every accepted write snapshots the previous bytes, and restoration is an
+ * both draft and disk values. An open editor does NOT live-refresh on an external write
+ * (that controller was removed, plan 2026-07-17-004): the divergence surfaces as a CAS
+ * conflict on the next save. Every accepted write snapshots the previous bytes, and restoration is an
  * explicit history action. Agent access hydrates the canonical file into a session path;
  * an ordinary file-tool write conditionally writes back to the indexed placement. Hosted
  * writes persist in object placement independently of the disposable hydrated VM path.
@@ -25,8 +26,9 @@
  * `ul[aria-label=Documents]`; the editor is `main[aria-label=Document editor]`; rich and
  * source modes expose `Document rich editor` and `Document Markdown source`; persistence
  * is the editor's live `role=status`; conflicts are `role=alert` headed “Document changed
- * on disk” with Reload disk, Save as copy, Overwrite, and Compare versions; history is a
- * “Version history” disclosure containing `ul[aria-label=Document versions]`; `/docs`
+ * on disk” with Reload disk, Save as copy, Overwrite, and Compare versions; history is the
+ * editor's “More” popover titled “Version history”, containing `ul[aria-label=Document
+ * versions]`; `/docs`
  * opens `role=listbox[aria-label=Documents]` in the session composer.
  *
  * BEHAVIORS —
@@ -41,15 +43,16 @@
  *      own autosave event without remounting or switching modes.
  *   5. Two stale tabs cannot silently overwrite one another: CAS conflict UI preserves
  *      both the human draft and current disk value.
- *   6. External edits refresh a clean editor live; the same event conflicts with a dirty
- *      editor and preserves both sides. Out-of-contract Markdown lands in source mode and
- *      the previous snapshot is restored through the visible history UI.
+ *   6. An external write does not live-refresh an open editor; a competing write is caught
+ *      as a CAS conflict on the human's next save and preserves both sides. Out-of-contract
+ *      Markdown lands in source mode on reopen and the previous snapshot is restored through
+ *      the visible history UI.
  *   7. Version restore is If-Match guarded and replaces the editor with the selected
  *      immutable snapshot.
  *   8. `/docs` resolves one selected document to an honest hydrated path; a causally
- *      subsequent mock file-tool edit conditionally writes back and arrives through the
- *      document event stream. Reopen, snapshot restore, follow-up, and human save retain
- *      the same identity.
+ *      subsequent mock file-tool edit conditionally writes back to the indexed placement
+ *      and is seen on reopen (no live-refresh). Reopen, snapshot restore, follow-up, and
+ *      human save retain the same identity.
  *   9. Locally emulated hosted placement survives disposal of its hydrated VM path; a
  *       reopened editor reads the object-placement value.
  *
@@ -60,8 +63,8 @@
  *
  * HARNESS NOTES — tests carry an `evidence-tier=mock-ui` annotation. `installMockRuntime`
  * owns the surrounding shell/session APIs; `DocumentRuntime` owns only `/documents/**`.
- * Its event responses are one-shot SSE batches, matching the shared mock's reconnecting
- * stream convention. “agent edit”, “restart”, “checkout loss”, and “VM loss” here validate
+ * There is no document event stream any more (removed with external-change,
+ * plan 2026-07-17-004); external writes only mutate durable state. “agent edit”, “restart”, “checkout loss”, and “VM loss” here validate
  * browser and wire behavior, not operating-system or deployment durability. WorkGraph
  * exact fetch/pin is companion D10 server contract evidence rather than a browser success
  * behavior because no browser UI owns that direct route. A D14 release verdict must pair
@@ -195,14 +198,11 @@ class DocumentRuntime {
   readonly hostedObjects = new Map<string, string>()
   readonly hydratedAgentFiles = new Map<string, HydratedAgentFile>()
   readonly hostedVmFiles = new Map<string, HydratedAgentFile>()
-  readonly deliveredEvents: Array<{ documentId: string; reason: string }> = []
-  private eventWaiters: Array<{ route: Route; documentId?: string; projectId?: string }> = []
   private nextDocument = 1
   private nextSnapshot = 1
   private nextVersion = 1
   private savesFail = false
   private saveLatency = 0
-  private suppressedSaveEvents = new Set<string>()
 
   seed(input: {
     id?: string
@@ -261,10 +261,6 @@ class DocumentRuntime {
     this.saveLatency = milliseconds
   }
 
-  suppressNextSaveEvent(id: string) {
-    this.suppressedSaveEvents.add(id)
-  }
-
   inspect(id: string) {
     return this.require(id)
   }
@@ -275,7 +271,12 @@ class DocumentRuntime {
     )
   }
 
-  async externalEdit(id: string, markdown: string, actor: "agent" | "user" = "agent") {
+  // Mutates the durable document as if something wrote the file out of band.
+  // There is no live-refresh notification anymore (the `/documents/events` SSE
+  // and the editor's external-change controller were removed, plan
+  // 2026-07-17-004): an open editor stays put, and the divergence surfaces as a
+  // CAS conflict the next time that editor saves.
+  externalEdit(id: string, markdown: string, actor: "agent" | "user" = "agent") {
     const document = this.require(id)
     this.snapshot(document, `before ${actor} edit`, { type: actor, id: `${actor}_documents_core` })
     document.markdown = markdown
@@ -285,7 +286,6 @@ class DocumentRuntime {
     document.summary.updated_at = new Date().toISOString()
     this.writePlacement(document)
     this.persistMetadata(document)
-    await this.publish(id, actor === "agent" ? "agent.write" : "external.write")
   }
 
   hydrateForAgent(id: string, sessionId: string) {
@@ -314,7 +314,6 @@ class DocumentRuntime {
     this.writePlacement(document)
     this.persistMetadata(document)
     file.expectedVersion = document.version
-    await this.publish(document.summary.id, "agent.write")
   }
 
   deleteCheckout() {
@@ -434,41 +433,6 @@ class DocumentRuntime {
     return { markdown: document.markdown, version: document.version, modifiedAt: document.modifiedAt }
   }
 
-  private async publish(id: string, reason: string) {
-    const document = this.require(id)
-    const deadline = Date.now() + 3_000
-    while (!this.eventWaiters.some((waiter) => waiter.documentId === id) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-    const matching = this.eventWaiters.filter(
-      (waiter) => waiter.documentId === id || (!waiter.documentId && waiter.projectId === document.summary.project_id),
-    )
-    this.eventWaiters = this.eventWaiters.filter((waiter) => !matching.includes(waiter))
-    if (matching.length) this.deliveredEvents.push({ documentId: id, reason })
-    await Promise.all(
-      matching.map(({ route }) =>
-        route
-          .fulfill({
-            status: 200,
-            contentType: "text/event-stream",
-            body: [
-              `data: ${JSON.stringify({ type: "document.connected" })}`,
-              `data: ${JSON.stringify({
-                type: "document.changed",
-                document_id: id,
-                project_id: document.summary.project_id,
-                reason,
-                version: document.version,
-                invalidate: ["summary", "content", "snapshots"],
-              })}`,
-              "",
-            ].join("\n\n"),
-          })
-          .catch(() => undefined),
-      ),
-    )
-  }
-
   private async handle(route: Route) {
     const request = route.request()
     const url = new URL(request.url())
@@ -482,14 +446,9 @@ class DocumentRuntime {
     })
 
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent)
-    if (request.method() === "GET" && parts[1] === "events") {
-      this.eventWaiters.push({
-        route,
-        ...(url.searchParams.get("document_id") ? { documentId: url.searchParams.get("document_id")! } : {}),
-        ...(url.searchParams.get("project_id") ? { projectId: url.searchParams.get("project_id")! } : {}),
-      })
-      return
-    }
+    // The `/documents/events` SSE route was removed with external-change
+    // (plan 2026-07-17-004); the client never opens it, so there is nothing to
+    // mock here.
     if (request.method() === "GET" && parts[1] === "statuses") {
       return json(route, [{ id: "draft", name: "Draft", color: "gray", position: 0, transitions: [] }])
     }
@@ -534,12 +493,6 @@ class DocumentRuntime {
       document.summary.last_known_file_version = document.version
       this.writePlacement(document)
       this.persistMetadata(document)
-      if (this.suppressedSaveEvents.delete(id)) {
-        // The request remains durable while this one event is deliberately lost,
-        // forcing a second stale tab to prove CAS at its own Save boundary.
-      } else {
-        void this.publish(id, "user.save")
-      }
       return json(route, this.content(document))
     }
     if (request.method() === "POST" && parts[2] === "agent-open") {
@@ -569,7 +522,6 @@ class DocumentRuntime {
       document.summary.last_known_file_version = document.version
       this.writePlacement(document)
       this.persistMetadata(document)
-      void this.publish(id, "snapshot.restore")
       return json(route, this.content(document))
     }
     if (request.method() === "POST" && parts[2] === "work-source") {
@@ -656,7 +608,7 @@ async function sourceEditor(page: Page) {
 async function saveSource(page: Page, markdown: string) {
   const source = await sourceEditor(page)
   await source.fill(markdown)
-  await page.getByRole("button", { name: "Save now" }).click()
+  await page.keyboard.press("ControlOrMeta+s")
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
   return source
 }
@@ -668,25 +620,17 @@ function annotate(testInfo: TestInfo, extra = "") {
   })
 }
 
-function unexpectedCanaryConsoleErrors(messages: string[], requestFailures: string[]) {
-  // The deterministic route harness closes finite SSE responses after delivery;
-  // reconnect diagnostics from those exact streams are expected harness noise.
-  return messages.filter(
-    (message) =>
-      !message.startsWith("[documents] editor persistence error Error: Document event stream closed.") &&
-      !(
-        message.startsWith("[documents] editor persistence error TypeError: Failed to fetch") &&
-        message.includes("/src/platform/api/api.ts") &&
-        requestFailures.some((value) => new URL(value).pathname === "/documents/events")
-      ) &&
-      !message.startsWith("[global-sdk] event stream failed"),
-  )
+function unexpectedCanaryConsoleErrors(messages: string[]) {
+  // The document `/documents/events` SSE is gone (plan 2026-07-17-004), so its
+  // reconnect noise no longer needs an exemption. The central events stream can
+  // still churn a reconnect diagnostic under the deterministic harness.
+  return messages.filter((message) => !message.startsWith("[global-sdk] event stream failed"))
 }
 
 function unexpectedCanaryRequestFailures(urls: string[]) {
   return urls.filter((value) => {
     const pathname = new URL(value).pathname
-    return !["/documents/events", "/api/wr/events", "/global/event", "/event"].includes(pathname)
+    return !["/api/wr/events", "/global/event", "/event"].includes(pathname)
   })
 }
 
@@ -918,7 +862,6 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(await page.evaluate(([before, after]) => before === after, [richHandle, richHandleAfterSave])).toBe(true)
     expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
     expect(runtime.inspect(document.summary.id).markdown).toContain("Caret stable: Second paragraph. Pasted!")
-    expect(runtime.deliveredEvents).toContainEqual({ documentId: document.summary.id, reason: "user.save" })
     await proveGeometry(page, rich, testInfo, "rich-editor-stable-after-autosave")
 
     await openDocument(page, document.summary.id)
@@ -926,7 +869,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await expect(reopened).toContainText("Caret stable: Second paragraph. Pasted!")
     await expect(page.getByText("Source mode")).toHaveCount(0)
     expect(pageErrors).toEqual([])
-    expect(unexpectedCanaryConsoleErrors(consoleErrors, requestFailures)).toEqual([])
+    expect(unexpectedCanaryConsoleErrors(consoleErrors)).toEqual([])
     expect(unexpectedCanaryRequestFailures(requestFailures)).toEqual([])
   })
 
@@ -1001,7 +944,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await openDocument(page, document.summary.id)
     await expect(page.getByRole("textbox", { name: "Document rich editor" })).toContainText("Slash heading")
     expect(pageErrors).toEqual([])
-    expect(unexpectedCanaryConsoleErrors(consoleErrors, requestFailures)).toEqual([])
+    expect(unexpectedCanaryConsoleErrors(consoleErrors)).toEqual([])
     expect(unexpectedCanaryRequestFailures(requestFailures)).toEqual([])
   })
 
@@ -1019,11 +962,13 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const secondSource = await sourceEditor(second)
     await secondSource.fill("Heading\n=======\n\nsecond-tab draft\n")
     await firstSource.fill("Heading\n=======\n\nfirst-tab disk\n")
-    runtime.suppressNextSaveEvent(document.summary.id)
-    await page.getByRole("button", { name: "Save now" }).click()
+    // No live-refresh exists any more (plan 2026-07-17-004), so the second tab
+    // never learns of the first tab's save until it saves itself — exactly the
+    // CAS conflict this behavior asserts.
+    await page.keyboard.press("ControlOrMeta+s")
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
     const diskAfterFirstSave = runtime.inspect(document.summary.id).markdown
-    await second.getByRole("button", { name: "Save now" }).click()
+    await second.keyboard.press("ControlOrMeta+s")
     await expect(second.getByRole("heading", { name: "Document changed on disk" })).toBeVisible({ timeout: 10_000 })
     expect(runtime.contentWrites(document.summary.id).at(-1)?.ifMatch).toBe(staleVersion)
     expect(runtime.inspect(document.summary.id).markdown).toBe(diskAfterFirstSave)
@@ -1034,7 +979,12 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await second.close()
   })
 
-  test("clean external refresh then dirty conflict; out-of-contract edit stays restorable — behavior 6", async ({
+  // Live-refresh of an open editor was intentionally removed (plan 2026-07-17-004):
+  // an external write no longer follows into an open editor, and a competing write
+  // surfaces as a CAS conflict the next time the human saves — never a silent loss.
+  // Out-of-contract Markdown still lands in source mode on (re)load, and a previous
+  // snapshot stays restorable through the visible history UI.
+  test("external write surfaces a CAS conflict on save; out-of-contract edit stays restorable — behavior 6", async ({
     page,
   }, testInfo) => {
     annotate(testInfo, "external file write is injected at the document server boundary")
@@ -1047,26 +997,37 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await bootstrap(page, runtime)
     await openDocument(page, document.summary.id)
     let source = await sourceEditor(page)
-    await runtime.externalEdit(document.summary.id, "Heading\n=======\n\nagent clean refresh\n")
-    await expect(source).toHaveValue("Heading\n=======\n\nagent clean refresh\n")
-    await proveGeometry(page, source, testInfo, "clean-live-external-refresh")
 
+    // An external write advances the durable version. The open editor does NOT
+    // follow it — that is the accepted tradeoff — so it still shows the base bytes.
+    runtime.externalEdit(document.summary.id, "Heading\n=======\n\nagent competing edit\n")
+    await expect(source).toHaveValue("Heading\n=======\n\nbase\n")
+    await proveGeometry(page, source, testInfo, "external-write-does-not-live-refresh")
+
+    // The human edits against the stale base and saves; the stale If-Match is
+    // rejected and both sides are preserved in the conflict UI.
     await source.fill("Heading\n=======\n\nhuman dirty draft\n")
-    await runtime.externalEdit(document.summary.id, "Heading\n=======\n\nagent competing edit\n")
+    await page.keyboard.press("ControlOrMeta+s")
     await expect(page.getByRole("heading", { name: "Document changed on disk" })).toBeVisible()
     await page.getByText("Compare versions").click()
     await expect(page.getByLabel("Your draft")).toContainText("human dirty draft")
     await expect(page.getByLabel("Current disk version")).toContainText("agent competing edit")
-    await proveGeometry(page, page.getByRole("alert"), testInfo, "dirty-live-external-conflict")
+    await proveGeometry(page, page.getByRole("alert"), testInfo, "dirty-cas-conflict-on-save")
 
     await page.getByRole("button", { name: "Reload disk" }).click()
-    await runtime.externalEdit(document.summary.id, "# Agent MDX\n\n<Component answer={42} />\n")
+    source = await sourceEditor(page)
+    await expect(source).toHaveValue("Heading\n=======\n\nagent competing edit\n")
+
+    // Out-of-contract Markdown written externally is only seen on reopen (no live
+    // refresh); it must open in source mode rather than silently rewrite.
+    runtime.externalEdit(document.summary.id, "# Agent MDX\n\n<Component answer={42} />\n")
+    await openDocument(page, document.summary.id)
     source = await sourceEditor(page)
     await expect(source).toHaveValue("# Agent MDX\n\n<Component answer={42} />\n")
     await expect(page.getByText("Source mode", { exact: true })).toBeVisible()
     await proveGeometry(page, source, testInfo, "out-of-contract-agent-edit-source-mode")
 
-    await page.getByText("Version history", { exact: true }).click()
+    await page.getByLabel("More", { exact: true }).click()
     const history = page.getByRole("list", { name: "Document versions" })
     await expect(history).toBeVisible()
     await history.getByRole("button", { name: "Restore" }).first().click()
@@ -1083,7 +1044,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await openDocument(page, document.summary.id)
     await saveSource(page, "Heading\n=======\n\nnew current\n")
     const expectedVersion = runtime.inspect(document.summary.id).version
-    await page.getByText("Version history", { exact: true }).click()
+    await page.getByLabel("More", { exact: true }).click()
     const list = page.getByRole("list", { name: "Document versions" })
     await expect(list).toBeVisible()
     await list.getByRole("button", { name: "Restore" }).first().click()
@@ -1093,7 +1054,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, await sourceEditor(page), testInfo, "version-restore-exact-bytes")
   })
 
-  test("/docs mention resolves an honest path and hydrated file-tool edit refreshes the editor — behavior 8 @documents-unsigned-local-canary @documents-release-canary", async ({
+  test("/docs mention resolves an honest path and hydrated file-tool edit persists, seen on reopen — behavior 8 @documents-unsigned-local-canary @documents-release-canary", async ({
     page,
     context,
   }, testInfo) => {
@@ -1112,6 +1073,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await bootstrap(editorPage, runtime)
     await openDocument(editorPage, document.summary.id)
     const editor = await sourceEditor(editorPage)
+    await expect(editor).toHaveValue("Heading\n=======\n\nagent base\n")
 
     await page.goto(`/w/${encodeURIComponent(DIR)}/session/${encodeURIComponent(SESSION_ID)}`)
     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -1134,15 +1096,17 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await proveGeometry(page, composer, testInfo, "docs-mention-honest-hydrated-path")
 
     await runtime.runAgentFileTool(hydratedPath, "Heading\n=======\n\nordinary agent file edit\n")
-    await expect(editor).toHaveValue("Heading\n=======\n\nordinary agent file edit\n")
-    await proveGeometry(editorPage, editor, testInfo, "agent-file-edit-live-refresh")
+    // The open editor no longer live-refreshes (plan 2026-07-17-004): it still
+    // shows the base bytes. The write-back is proven durable by reopening below.
+    await expect(editor).toHaveValue("Heading\n=======\n\nagent base\n")
+    await proveGeometry(editorPage, editor, testInfo, "agent-file-edit-not-live-refreshed")
 
     await editorPage.goto(INDEX_URL)
     await openDocument(editorPage, document.summary.id)
     await expect(editorPage).toHaveURL(documentUrl(document.summary.id))
     await expect(await sourceEditor(editorPage)).toHaveValue("Heading\n=======\n\nordinary agent file edit\n")
 
-    await editorPage.getByText("Version history", { exact: true }).click()
+    await editorPage.getByLabel("More", { exact: true }).click()
     const versions = editorPage.getByRole("list", { name: "Document versions" })
     await expect(versions).toBeVisible()
     await versions.getByRole("button", { name: "Restore" }).first().click()

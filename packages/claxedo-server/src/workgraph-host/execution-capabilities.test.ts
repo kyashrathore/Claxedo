@@ -905,6 +905,131 @@ describe("WorkGraph execution capability composition", () => {
     await capabilities.read(context, {})
     expect(requested).toHaveLength(8)
   })
+
+  test("scopes base-revision enumeration to a validated project directory", async () => {
+    const bootRepo = await gitRepository()
+    const otherRepo = await gitRepositoryWithBranches()
+    const validated: string[] = []
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        repositoryDirectory: bootRepo,
+        harness: async () => "opencode",
+        // Only the second repository is a "known project"; everything else is unknown.
+        resolveRepositoryDirectory: (directory) => {
+          validated.push(directory)
+          return directory === otherRepo ? otherRepo : undefined
+        },
+        opencodeRequest: async (request) => {
+          const pathname = new URL(request.url).pathname
+          return Response.json(
+            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+          )
+        },
+      })
+
+      // No selector → the boot repository (only "main"), exactly as before.
+      const boot = await capabilities.read(context, {})
+      expect(boot.repository.baseRevisions).toEqual(["HEAD", "main"])
+      expect(validated).toEqual([])
+
+      // A validated selector → THAT repository's branches, HEAD-first / newest-first.
+      const scoped = await capabilities.read(context, { directory: otherRepo })
+      expect(scoped.repository.baseRevisions).toEqual(["HEAD", "newer-feature", "older-feature", "main"])
+      expect(validated).toEqual([otherRepo])
+    } finally {
+      await rm(bootRepo, { recursive: true, force: true })
+      await rm(otherRepo, { recursive: true, force: true })
+    }
+  })
+
+  test("fails closed on an unknown or non-existent directory without running git against it", async () => {
+    const bootRepo = await gitRepository()
+    const validated: string[] = []
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        repositoryDirectory: bootRepo,
+        harness: async () => "opencode",
+        // Unknown project directory: the validator returns nothing, so git must
+        // never be invoked against the caller-supplied path.
+        resolveRepositoryDirectory: (directory) => {
+          validated.push(directory)
+          return undefined
+        },
+        opencodeRequest: async (request) => {
+          const pathname = new URL(request.url).pathname
+          return Response.json(
+            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+          )
+        },
+      })
+
+      await expect(capabilities.read(context, { directory: "/not/a/known/project" })).rejects.toMatchObject({
+        code: "execution_capabilities_unavailable",
+        capability: "repository",
+        reason: "repository_unavailable",
+        retryable: false,
+      })
+      expect(validated).toEqual(["/not/a/known/project"])
+
+      // A relative selector is rejected before the validator is even consulted.
+      await expect(capabilities.read(context, { directory: "relative/path" })).rejects.toMatchObject({
+        capability: "repository",
+        reason: "repository_unavailable",
+      })
+      expect(validated).toEqual(["/not/a/known/project"])
+    } finally {
+      await rm(bootRepo, { recursive: true, force: true })
+    }
+  })
+
+  test("fails closed when the validator resolves a directory that no longer exists", async () => {
+    const bootRepo = await gitRepository()
+    const missing = path.join(os.tmpdir(), "workgraph-capabilities-missing-does-not-exist")
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        repositoryDirectory: bootRepo,
+        harness: async () => "opencode",
+        resolveRepositoryDirectory: () => missing,
+        opencodeRequest: async (request) => {
+          const pathname = new URL(request.url).pathname
+          return Response.json(
+            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+          )
+        },
+      })
+
+      await expect(capabilities.read(context, { directory: missing })).rejects.toMatchObject({
+        capability: "repository",
+        reason: "repository_unavailable",
+        retryable: false,
+      })
+    } finally {
+      await rm(bootRepo, { recursive: true, force: true })
+    }
+  })
+
+  test("suggests only local branches for the base revision, most recently committed first", async () => {
+    const directory = await gitRepositoryWithBranches()
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        repositoryDirectory: directory,
+        harness: async () => "opencode",
+        opencodeRequest: async (request) => {
+          const pathname = new URL(request.url).pathname
+          return Response.json(
+            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+          )
+        },
+      })
+
+      const result = await capabilities.read(context, {})
+      expect(result.repository.baseRevisions).toEqual(["HEAD", "newer-feature", "older-feature", "main"])
+      expect(result.repository.baseRevisions).not.toContain("origin/main")
+      expect(result.repository.baseRevisions).not.toContain("upstream/main")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
 })
 
 const signedAuth = {
@@ -930,5 +1055,40 @@ async function gitRepository() {
     "-m",
     "initial",
   ])
+  return directory
+}
+
+async function gitRepositoryWithBranches() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "workgraph-capabilities-branches-"))
+  const run = promisify(execFile)
+  const commit = (message: string, isoDate: string) =>
+    run("git", [
+      "-C",
+      directory,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "-m",
+      message,
+    ], { env: { ...process.env, GIT_AUTHOR_DATE: isoDate, GIT_COMMITTER_DATE: isoDate } })
+
+  await run("git", ["init", "-b", "main", directory])
+  await commit("initial", "2024-01-01T00:00:00Z")
+  await run("git", ["-C", directory, "checkout", "-b", "older-feature"])
+  await commit("older feature work", "2024-01-02T00:00:00Z")
+  await run("git", ["-C", directory, "checkout", "main"])
+  await run("git", ["-C", directory, "checkout", "-b", "newer-feature"])
+  await commit("newer feature work", "2024-01-05T00:00:00Z")
+  await run("git", ["-C", directory, "checkout", "main"])
+
+  // Simulate remote-tracking refs (as would exist after `git fetch`) without
+  // registering a real remote, so the fixture stays self-contained.
+  const headSha = (await run("git", ["-C", directory, "rev-parse", "HEAD"])).stdout.trim()
+  await run("git", ["-C", directory, "update-ref", "refs/remotes/origin/main", headSha])
+  await run("git", ["-C", directory, "update-ref", "refs/remotes/upstream/main", headSha])
+
   return directory
 }

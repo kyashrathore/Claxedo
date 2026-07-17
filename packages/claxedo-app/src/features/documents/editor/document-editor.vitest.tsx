@@ -104,6 +104,23 @@ describe("DocumentEditor", () => {
     await waitFor(() => expect(screen.getByLabelText("Rich Markdown editor")).toBeInTheDocument())
   })
 
+  test("a recheck that cannot reach rich mode says so instead of silently doing nothing", async () => {
+    // An empty paragraph round-trips to blank lines that never parse back, so this
+    // document can never reach rich mode — the button must not read as broken.
+    render(() => <DocumentEditor document={document("# Hello\n\n\n\n## hi\n")} api={api()} storage={storage()} />)
+    expect(screen.queryByText(/still source mode/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Try rich mode" }))
+    expect(screen.getByText(/still source mode/)).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Document Markdown source" })).toBeInTheDocument()
+    // Editing clears the stale verdict so the next recheck speaks for itself.
+    fireEvent.input(screen.getByRole("textbox", { name: "Document Markdown source" }), {
+      target: { value: "# Hello\n\n## hi\n" },
+    })
+    expect(screen.queryByText(/still source mode/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Try rich mode" }))
+    await waitFor(() => expect(screen.getByLabelText("Rich Markdown editor")).toBeInTheDocument())
+  })
+
   test("rich to source is an explicit transition over the same Markdown draft", async () => {
     render(() => <DocumentEditor document={document("# Heading\n")} api={api()} storage={storage()} />)
     fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
@@ -177,7 +194,7 @@ describe("DocumentEditor", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved"))
   })
 
-  test("failed saves stay actionable and Save now plus unmount flush pending edits", async () => {
+  test("failed saves stay actionable and Cmd+S plus unmount flush pending edits", async () => {
     const failed = api(
       vi.fn(async () => {
         throw new Error("read only")
@@ -188,7 +205,7 @@ describe("DocumentEditor", () => {
     ))
     const source = screen.getByRole("textbox", { name: "Document Markdown source" })
     fireEvent.input(source, { target: { value: "pending" } })
-    fireEvent.click(screen.getByRole("button", { name: "Save now" }))
+    fireEvent.keyDown(source, { key: "s", metaKey: true })
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Save failed"))
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument()
     view.unmount()
@@ -209,11 +226,18 @@ describe("DocumentEditor", () => {
   test("persistence controls have predictable keyboard order and a live status region", () => {
     render(() => <DocumentEditor document={document("Heading\n=======\n")} api={api()} storage={storage()} />)
     const name = screen.getByRole("textbox", { name: "Document name" })
-    const save = screen.getByRole("button", { name: "Save now" })
     const rich = screen.getByRole("button", { name: "Try rich mode" })
-    expect(save.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(name.compareDocumentPosition(rich) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite")
+  })
+
+  test("the header carries no redundant save control and no empty overflow menu", () => {
+    render(() => <DocumentEditor document={document("Heading\n=======\n")} api={api()} storage={storage()} />)
+    expect(screen.queryByRole("button", { name: "Save now" })).not.toBeInTheDocument()
+    expect(screen.queryByText("More")).not.toBeInTheDocument()
+    // Autosave is silent while it is working; only failures earn a control.
+    expect(screen.getByRole("status")).toHaveTextContent("Ready")
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument()
   })
 
   test("accepted selection transforms flow through the editor update into the normal save queue", async () => {
@@ -243,113 +267,32 @@ describe("DocumentEditor", () => {
     )
   })
 
-  test("Tiptap Markdown formatting and a pre-response self-event preserve the rich editor instance", async () => {
-    let onEvent: ((event: { type: "document.changed"; document_id: string }) => void) | undefined
-    let disk = document("Paragraph\n")
-    let resolveSave!: (value: { ok: true; version: string }) => void
-    const pending = new Promise<{ ok: true; version: string }>((resolve) => {
-      resolveSave = resolve
-    })
+  test("Tiptap Markdown formatting serializes through the normal save queue and keeps the rich editor instance", async () => {
     let savedMarkdown = ""
     const save = vi.fn(async (_id: string, request: { displayName: string; markdown: string }) => {
       savedMarkdown = request.markdown
-      return pending
+      return { ok: true as const, version: "opaque-v2" }
     })
-    const client = {
-      ...api(save),
-      open: vi.fn(async () => disk),
-      watch: vi.fn(async (_query, next: typeof onEvent, signal?: AbortSignal) => {
-        onEvent = next
-        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
-      }),
-    }
-    render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
-    await waitFor(() => expect(onEvent).toBeTypeOf("function"))
+    render(() => <DocumentEditor document={document("Paragraph\n")} api={api(save)} storage={storage()} />)
 
     const editor = screen.getByRole("textbox", { name: "Document rich editor" })
     selectEditorContents(editor)
     fireEvent.click(await screen.findByRole("button", { name: "Underline" }))
-    fireEvent.click(screen.getByRole("button", { name: "Save now" }))
+    fireEvent.keyDown(editor, { key: "s", metaKey: true })
     await waitFor(() => expect(save).toHaveBeenCalled())
     expect(savedMarkdown).toBe("++Paragraph++\n")
-
-    disk = { ...disk, markdown: savedMarkdown, version: "opaque-v2" }
-    onEvent!({ type: "document.changed", document_id: "doc-1" })
-    await waitFor(() => expect(client.open).toHaveBeenLastCalledWith("doc-1"))
-    resolveSave({ ok: true, version: "opaque-v2" })
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved"))
 
-    const opensAfterSave = client.open.mock.calls.length
-    onEvent!({ type: "document.changed", document_id: "doc-1" })
-    onEvent!({ type: "document.changed", document_id: "doc-1" })
-    await waitFor(() => expect(client.open.mock.calls.length).toBeGreaterThan(opensAfterSave))
-
+    // The save round-trip must not remount the editor.
     expect(screen.getByRole("textbox", { name: "Document rich editor" })).toBe(editor)
     expect(screen.queryByText("Source mode")).not.toBeInTheDocument()
     expect(editor).toHaveTextContent("Paragraph")
   })
 
-  test("clean external edits refresh in place while dirty edits enter the normal conflict flow", async () => {
-    let onEvent: ((event: { type: "document.changed"; document_id: string }) => void) | undefined
-    let disk = document("# Initial\n")
-    const client = {
-      ...api(),
-      open: vi.fn(async () => disk),
-      watch: vi.fn(async (_query, next: typeof onEvent, signal?: AbortSignal) => {
-        onEvent = next
-        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
-      }),
-    }
-    render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
-    await waitFor(() => expect(client.open).toHaveBeenCalled())
-
-    const rich = screen.getByRole("textbox", { name: "Document rich editor" })
-    disk = { ...disk, markdown: "# External clean\n", version: "opaque-v2" }
-    onEvent?.({ type: "document.changed", document_id: "doc-1" })
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Document rich editor" })).toHaveTextContent("External clean"),
-    )
-    expect(screen.getByRole("textbox", { name: "Document rich editor" })).toBe(rich)
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
-    fireEvent.input(screen.getByRole("textbox", { name: "Document Markdown source" }), {
-      target: { value: "human draft" },
-    })
-    disk = { ...disk, markdown: "external again", version: "opaque-v3" }
-    onEvent?.({ type: "document.changed", document_id: "doc-1" })
-    await screen.findByText("Document changed on disk")
-    expect(screen.getByLabelText("Your draft")).toHaveTextContent("human draft")
-    expect(screen.getByLabelText("Current disk version")).toHaveTextContent("external again")
-  })
-
-  test("an autosave self-event preserves the explicitly selected source editor and its DOM", async () => {
-    let onEvent: ((event: { type: "document.changed"; document_id: string }) => void) | undefined
-    let disk = document("# Initial\n")
-    const save = vi.fn(async (_id: string, request: { displayName: string; markdown: string }) => {
-      disk = { ...disk, displayName: request.displayName, markdown: request.markdown, version: "opaque-v2" }
-      return { ok: true as const, version: disk.version }
-    })
-    const client = {
-      ...api(save),
-      open: vi.fn(async () => disk),
-      watch: vi.fn(async (_query, next: typeof onEvent, signal?: AbortSignal) => {
-        onEvent = next
-        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
-      }),
-    }
-    render(() => <DocumentEditor document={disk} api={client} storage={storage()} />)
-    await waitFor(() => expect(client.open).toHaveBeenCalled())
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
-    const source = screen.getByRole("textbox", { name: "Document Markdown source" })
-    fireEvent.input(source, { target: { value: "# Human draft\n" } })
-    fireEvent.blur(source)
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved"))
-
-    onEvent?.({ type: "document.changed", document_id: "doc-1" })
-    await waitFor(() => expect(client.open).toHaveBeenLastCalledWith("doc-1"))
-    expect(screen.getByText("Source mode")).toBeInTheDocument()
-    expect(screen.getByRole("textbox", { name: "Document Markdown source" })).toBe(source)
-    expect(source).toHaveValue("# Human draft\n")
-  })
+  // External-change live-refresh was intentionally removed (plan 2026-07-17-004):
+  // an open editor no longer follows on-disk writes, and the next save surfaces a
+  // CAS conflict instead of silently reloading. The former "clean external edits
+  // refresh in place" and "autosave self-event preserves the source editor" cases
+  // exercised that gone behavior, so they were deleted rather than weakened. CAS
+  // conflict surfacing is still covered by the conflict tests above.
 })

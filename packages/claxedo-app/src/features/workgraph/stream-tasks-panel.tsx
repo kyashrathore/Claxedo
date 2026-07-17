@@ -24,7 +24,6 @@ export function StreamTasksPanelBody(props: {
     <div class="workgraph-tasks-panel" aria-label={`All tasks for ${props.stream.title}`}>
       <div class="workgraph-tasks-panel-head">
         <span class="text-[12px] font-semibold text-text-strong">{props.stream.title}</span>
-        <span class="workgraph-count" aria-label={`${props.items.length} tasks`}>{props.items.length}</span>
         <Show when={completed()}>
           <span class="text-[11px] text-text-weaker">{completed()} done</span>
         </Show>

@@ -147,6 +147,29 @@ describe("Markdown rich-mode detector", () => {
     expect(serializedMarkdown({ type: "doc", content: [] }, result.envelope)).toBe("")
   })
 
+  test("a &nbsp;-poisoned document with uneven blank runs stays in source mode", () => {
+    // Real-world shape produced by earlier rich-mode saves: an `&nbsp;` line
+    // (serializer artifact for adjacent empty paragraphs) plus 3-newline blank
+    // runs, neither of which the pinned serializer can reproduce byte-exactly.
+    const poisoned = "\n\n# Hello every\n\n\n\n&nbsp;\n\n## hi\n\n"
+    const result = detectMarkdown(poisoned)
+
+    expect(result.status).toBe("source")
+    if (result.status !== "source") return
+    expect(result.reason.code).toBe("roundtrip_mismatch")
+  })
+
+  test("the same document reaches rich mode once the poison is edited out", () => {
+    // The manual source-mode fix: delete the `&nbsp;` line and collapse blank
+    // runs to single blank lines. This must round-trip byte-exactly.
+    const cleaned = "# Hello every\n\n## hi\n"
+    const result = detectMarkdown(cleaned)
+
+    expect(result.status).toBe("rich")
+    if (result.status !== "rich") return
+    expect(serializedMarkdown(result.document, result.envelope)).toBe(cleaned)
+  })
+
   test("returns a stable source result when the external serializer throws", () => {
     const result = detectMarkdown("Original")
     expect(result.status).toBe("rich")

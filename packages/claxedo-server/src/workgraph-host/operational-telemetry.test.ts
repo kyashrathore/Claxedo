@@ -88,36 +88,23 @@ describe("WorkGraph operational telemetry", () => {
     })
   })
 
-  test("observes cursor timeouts, invalidations, and connector authentication without reading content", async () => {
+  // Cursor telemetry (which classified `/changes` long-poll responses) is gone
+  // (plan 2026-07-17-004): the route was deleted and the doorbell has no response
+  // envelope to classify, so HTTP telemetry only classifies connector surfaces now.
+  test("observes connector authentication without reading content", async () => {
     const capture = vi.fn()
     const reporter = createWorkGraphOperationalReporter({ telemetry: { capture } })
     const app = new Hono()
     app.use("*", workGraphHttpTelemetry(reporter, sequence(1, 11, 20, 25, 30, 31)))
-    app.get("/api/workgraph/changes", (context) => context.json({ changes: [], cursor: "opaque", timedOut: true }))
     app.get("/api/workgraph/source-views", (context) => context.json({ error: { code: "forbidden" } }, 401))
-    app.get("/api/workgraph/invalid/changes", (context) => context.json({ error: { code: "cursor_invalid" } }, 409))
 
-    await app.request("/api/workgraph/changes")
     await app.request("/api/workgraph/source-views")
-    await app.request("/api/workgraph/invalid/changes")
 
-    expect(capture).toHaveBeenCalledWith("system", "workgraph.cursor", {
-      outcome: "timed_out",
-      latencyMs: 10,
-      changes: 0,
-      count: 1,
-    })
     expect(capture).toHaveBeenCalledWith("system", "workgraph.connector", {
       surface: "source_view",
       outcome: "auth_failed",
-      latencyMs: 5,
+      latencyMs: 10,
       status: 401,
-      count: 1,
-    })
-    expect(capture).toHaveBeenCalledWith("system", "workgraph.cursor", {
-      outcome: "invalidated",
-      latencyMs: 1,
-      changes: 0,
       count: 1,
     })
   })

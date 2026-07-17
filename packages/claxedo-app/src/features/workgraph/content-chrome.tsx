@@ -1,7 +1,8 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
+import { List } from "@opencode-ai/ui/list"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createSignal, For, type JSX, Show } from "solid-js"
+import { createSignal, For, type JSX } from "solid-js"
 import { WorkGraphApiError } from "./api"
 
 /** Presentational chrome for the WorkGraph screen — tabs, summary strip, chip
@@ -42,29 +43,73 @@ export function StatStrip(props: { stats: Array<{ label: string; value: number |
   )
 }
 
-export function ChipMenu<T extends string>(props: { value: string; selected: T; options: Array<{ value: T; label: string }>; onSelect: (value: T) => void }) {
+/** The Stream base-revision chip: a compact trigger whose popover reuses the same
+ *  shared `List` (search box + keyed items) as the session composer's model picker
+ *  so the styling matches exactly. Typing filters the advertised revisions; clicking
+ *  a revision selects it; Enter accepts the raw typed text so any Git ref stays
+ *  enterable even when it matches no advertised option. */
+export function BaseRevisionChip(props: { value: string; options: readonly string[]; onChange: (value: string) => void }) {
   const [open, setOpen] = createSignal(false)
+  const [draft, setDraft] = createSignal("")
+  const revisions = () => [...props.options]
+  const commit = (value: string) => {
+    const next = value.trim()
+    if (next) props.onChange(next)
+    setOpen(false)
+  }
+  // The shared List builds its own search box (magnifier + TextField) but exposes
+  // no aria-label hook. Label the rendered search input directly so it keeps the
+  // stable "Base revision" accessible name the vitest/e2e specs rely on (the
+  // placeholder shows the current value, so it can't double as the name).
+  const labelSearchInput = (host: HTMLElement) => {
+    queueMicrotask(() => host.querySelector<HTMLElement>("input, textarea")?.setAttribute("aria-label", "Base revision"))
+  }
   return (
-    <Popover placement="bottom-start" portal open={open()} onOpenChange={setOpen} style={{ "z-index": "400" }} trigger={<span class="workgraph-defchip-value">{props.value}</span>} triggerAs="button" triggerProps={{ type: "button", class: "workgraph-defchip" }}>
-      <div class="workgraph-chip-menu">
-        <For each={props.options}>
-          {(option) => (
-            <button
-              type="button"
-              class="workgraph-chip-option"
-              classList={{ "is-selected": option.value === props.selected }}
-              onClick={() => {
-                props.onSelect(option.value)
-                setOpen(false)
-              }}
-            >
-              <span>{option.label}</span>
-              <Show when={option.value === props.selected}>
-                <Icon name="check-small" size="small" />
-              </Show>
-            </button>
-          )}
-        </For>
+    <Popover
+      placement="bottom-start"
+      portal
+      open={open()}
+      onOpenChange={(next) => {
+        setOpen(next)
+        // Open with an empty query so the full revision list is visible; the List
+        // remounts fresh on each open, so its filter always starts empty.
+        if (next) setDraft("")
+      }}
+      class="workgraph-revision-popover"
+      style={{ "z-index": "400" }}
+      trigger={
+        <>
+          <span class="workgraph-defchip-value">{props.value || "HEAD"}</span>
+          <Icon name="chevron-down" size="small" class="workgraph-chip-caret" />
+        </>
+      }
+      triggerAs="button"
+      triggerProps={{ type: "button", class: "workgraph-chip-trigger", "aria-label": "Base revision" }}
+    >
+      <div class="workgraph-revision-list-host" ref={labelSearchInput}>
+        <List<string>
+          class="workgraph-revision-list"
+          search={{ placeholder: props.value || "HEAD", autofocus: true }}
+          key={(revision) => revision}
+          items={revisions}
+          current={props.value || undefined}
+          emptyMessage="No advertised revisions"
+          onFilter={setDraft}
+          onKeyEvent={(event) => {
+            // Any Git ref stays enterable: Enter commits the raw typed text even
+            // when it matches no advertised option, falling back to the current
+            // value when the field is empty. Preventing default stops the List
+            // from selecting its highlighted row instead.
+            if (event.key !== "Enter" || event.isComposing) return
+            event.preventDefault()
+            commit(draft() || props.value)
+          }}
+          onSelect={(revision) => {
+            if (revision) commit(revision)
+          }}
+        >
+          {(revision) => <span class="workgraph-revision-option">{revision}</span>}
+        </List>
       </div>
     </Popover>
   )

@@ -63,7 +63,12 @@ test.describe.serial("deployed WorkGraph", () => {
     await create.getByRole("button", { name: "Local worktree" }).click()
     await page.getByText("Cloud workspace", { exact: true }).click()
     await create.getByRole("textbox", { name: "GitHub repository URL" }).fill(smokeRepositoryURL)
-    await create.getByRole("combobox", { name: /^Base revision/ }).fill(smokeBaseRevision)
+    // Base revision is a chip popover that portals out of the modal dialog; open it,
+    // then commit the raw ref through its free-text field.
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill(smokeBaseRevision)
+    await baseRevisionField.press("Enter")
     await expect(create.getByRole("button", { name: "Create" })).toBeEnabled()
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()

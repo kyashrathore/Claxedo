@@ -15,8 +15,6 @@ export type WorkGraphTelemetryEnv = Readonly<
     CLAXEDO_WORKGRAPH_ALERT_EXPIRED_RECOVERIES?: string
     CLAXEDO_WORKGRAPH_ALERT_GENERATION_FAILURES?: string
     CLAXEDO_WORKGRAPH_ALERT_CONNECTOR_AUTH_FAILURES?: string
-    CLAXEDO_WORKGRAPH_ALERT_CURSOR_INVALIDATIONS?: string
-    CLAXEDO_WORKGRAPH_ALERT_CURSOR_TIMEOUTS?: string
     CLAXEDO_WORKGRAPH_ALERT_WORKSPACE_FAILURES?: string
     CLAXEDO_WORKGRAPH_ALERT_CLOSE_REQUIRED?: string
     CLAXEDO_WORKGRAPH_ALERT_BACKLOG?: string
@@ -30,8 +28,6 @@ export type WorkGraphMonitorName =
   | "expired_lease_recoveries"
   | "generation_failures"
   | "connector_auth_failures"
-  | "cursor_invalidations"
-  | "cursor_timeouts"
   | "workspace_failures"
   | "close_required"
   | "backlog"
@@ -71,8 +67,6 @@ export function workGraphMonitorContract(env: WorkGraphTelemetryEnv = {}): reado
       windowMs,
       "critical",
     ),
-    monitor("cursor_invalidations", "count", env.CLAXEDO_WORKGRAPH_ALERT_CURSOR_INVALIDATIONS, 10, windowMs, "warning"),
-    monitor("cursor_timeouts", "count", env.CLAXEDO_WORKGRAPH_ALERT_CURSOR_TIMEOUTS, 30, windowMs, "warning"),
     monitor("workspace_failures", "count", env.CLAXEDO_WORKGRAPH_ALERT_WORKSPACE_FAILURES, 3, windowMs, "critical"),
     monitor("close_required", "count", env.CLAXEDO_WORKGRAPH_ALERT_CLOSE_REQUIRED, 5, windowMs, "warning"),
     monitor("backlog", "gauge", env.CLAXEDO_WORKGRAPH_ALERT_BACKLOG, 20, windowMs, "warning"),
@@ -218,23 +212,6 @@ export function createWorkGraphOperationalReporter(
       })
       if (input.outcome === "auth_failed") observe("connector_auth_failures", 1)
     },
-    cursor(
-      input: Readonly<{
-        outcome: "changed" | "timed_out" | "invalidated" | "failed"
-        latencyMs: number
-        changes: number
-      }>,
-    ) {
-      capture("workgraph.cursor", {
-        outcome: input.outcome,
-        latencyMs: boundedDuration(input.latencyMs),
-        changes: boundedCount(input.changes),
-        count: 1,
-      })
-      if (input.outcome === "invalidated") observe("cursor_invalidations", 1)
-      if (input.outcome === "timed_out") observe("cursor_timeouts", 1)
-      observe("lag", input.latencyMs)
-    },
     workspace(
       input: Readonly<{
         operation: "provision" | "launch" | "cancel" | "finalize" | "release" | "cleanup"
@@ -294,26 +271,9 @@ export function workGraphHttpTelemetry(
     const startedAt = now()
     await next()
     const latencyMs = now() - startedAt
-    if (path.endsWith("/changes")) {
-      const body = (await context.res
-        .clone()
-        .json()
-        .catch(() => undefined)) as { changes?: unknown[]; timedOut?: boolean; error?: { code?: string } } | undefined
-      telemetry.cursor({
-        outcome:
-          body?.error?.code === "cursor_invalid"
-            ? "invalidated"
-            : body?.timedOut
-              ? "timed_out"
-              : Array.isArray(body?.changes) && body.changes.length > 0
-                ? "changed"
-                : context.res.ok
-                  ? "changed"
-                  : "failed",
-        latencyMs,
-        changes: Array.isArray(body?.changes) ? body.changes.length : 0,
-      })
-    }
+    // The `/changes` long-poll — and the cursor telemetry derived from its
+    // response envelope — is gone (plan 2026-07-17-004). Live sync is now the
+    // `workgraph.changed` bus doorbell, which has no HTTP response to classify.
     const surface = path.includes("/webhooks/")
       ? "webhook"
       : path.includes("/source-views")

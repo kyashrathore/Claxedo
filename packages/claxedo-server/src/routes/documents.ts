@@ -1,5 +1,4 @@
 import { Hono } from "hono"
-import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import {
   ControlPlaneAuthError,
@@ -16,11 +15,7 @@ import {
   type WorkspaceAuthority,
 } from "../control-plane/authority"
 import type { ControlPlaneServices } from "../control-plane/services"
-import {
-  DocumentAgentOpenError,
-  subscribeDocumentEvents as subscribe,
-  type DocumentsBackend,
-} from "../documents/backend"
+import { DocumentAgentOpenError, type DocumentsBackend } from "../documents/backend"
 import type { DocumentIndexEntry } from "../documents/index-store"
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "../documents/errors"
 import type { DocumentHandle, DocumentVersion, SnapshotID } from "../documents/port"
@@ -32,8 +27,6 @@ export type { DocumentsBackend as DocumentsRouteBackend } from "../documents/bac
 
 const LOCAL_ORG = "__local__"
 const MAX_BODY_BYTES = 2 * 1024 * 1024
-const SSE_RETRY_MS = 2_000
-const SSE_HEARTBEAT_MS = 30_000
 
 const CreateDocumentBody = z
   .object({
@@ -120,7 +113,6 @@ export type DocumentsRouteOptions<H extends DocumentHandle = DocumentHandle> = R
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   authority?: WorkspaceAuthority
-  heartbeatMs?: number
 }>
 
 type AuthenticatedScope = Readonly<{
@@ -156,49 +148,10 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
         }),
       )
     })
-    .get("/events", async (context) => {
-      const scope = await routeScope(context.req.raw, options, "read", {
-        projectId: context.req.query("project_id"),
-        directory: context.req.query("directory") ?? context.req.header("x-opencode-directory"),
-      })
-      const documentId = context.req.query("document_id")
-      const watchedEntry = documentId
-        ? await documents().watchEntry({
-            orgId: scope.orgId,
-            projectId: scope.projectId,
-            documentId,
-            ...(scope.auth ? { auth: scope.auth } : {}),
-          })
-        : undefined
-      return streamSSE(context, async (stream) => {
-        const aborted = new Promise<void>((resolve) => stream.onAbort(resolve))
-        const unsubscribe = subscribe(scope.orgId, scope.projectId, (event) => {
-          void stream.writeSSE({ event: "document.changed", data: JSON.stringify(event) })
-        })
-        let watched: Readonly<{ close(): void }> | undefined
-        let heartbeat: ReturnType<typeof setInterval> | undefined
-        try {
-          watched = watchedEntry ? await documents().openWatch(scope, watchedEntry) : undefined
-          if (stream.aborted) return
-          heartbeat = setInterval(() => {
-            void stream.writeSSE({
-              event: "document.heartbeat",
-              data: JSON.stringify({ type: "document.heartbeat", ts: Date.now() }),
-            })
-          }, options.heartbeatMs ?? SSE_HEARTBEAT_MS)
-          await stream.writeSSE({
-            event: "document.connected",
-            data: JSON.stringify({ type: "document.connected", project_id: scope.projectId, invalidate: ["index"] }),
-            retry: SSE_RETRY_MS,
-          })
-          await aborted
-        } finally {
-          if (heartbeat) clearInterval(heartbeat)
-          unsubscribe()
-          watched?.close()
-        }
-      })
-    })
+    // NOTE: the document-scoped `/events` SSE (external-change watch lease + change
+    // stream) was REMOVED in plan 2026-07-17-004. External-change detection is
+    // retired; CAS-at-write (`if-match`) is the correctness floor, and the central
+    // `document.changed` doorbell on the claxedoBus carries save notifications.
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),

@@ -2,12 +2,59 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { createComponent, createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { Persist, setPersisted } from "@/platform/persistence/persist"
+import type { WorkgraphChangedEvent } from "./workgraph-changed-event"
 import { createWorkGraphClient } from "./api"
+import type { WorkGraphEventsApi } from "./sync-lifecycle"
 import { WorkGraphContent, type WorkGraphPanelBridge } from "./workgraph-content"
 
-// happy-dom leaves window.scrollTo unimplemented; the ChipMenu popover (Kobalte)
-// calls it while opening, so shim it to a no-op for the New-stream chip tests.
+// jsdom leaves window.scrollTo and Element.prototype.scrollTo unimplemented; the
+// base-revision chip popover (Kobalte) and the shared List it now renders call
+// both while opening/filtering, so shim them to no-ops for the New-stream chip
+// tests.
 window.scrollTo = (() => {}) as typeof window.scrollTo
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = (() => {}) as typeof Element.prototype.scrollTo
+}
+
+// The environment and project-directory chips use the shared Kobalte-backed
+// `Select`, which is hard to drive deterministically in happy-dom. Stub it to a
+// flat trigger + always-visible option list: the trigger's accessible name is its
+// aria-label when provided (project chip) or its current value text otherwise
+// (environment chip), and each option carries role="option". The real Select is
+// covered by the Playwright e2e; these tests exercise catalog-derivation and the
+// create payload through the same props contract.
+vi.mock("@opencode-ai/ui/select", () => ({
+  Select: (props: {
+    options: unknown[]
+    current?: unknown
+    placeholder?: string
+    disabled?: boolean
+    label?: (value: unknown) => string
+    onSelect?: (value: unknown) => void
+    children?: (value: unknown) => unknown
+    triggerProps?: Record<string, unknown>
+  }) => {
+    const display = () => {
+      const current = props.current
+      if (current === undefined || current === null) return props.placeholder ?? ""
+      return props.label ? props.label(current) : String(current)
+    }
+    return (
+      <div data-testid="mock-select">
+        <button type="button" aria-label={props.triggerProps?.["aria-label"] as string | undefined} disabled={props.disabled}>
+          {display()}
+        </button>
+        <div role="listbox">
+          {props.options.map((option) => (
+            <div role="option" onClick={() => props.onSelect?.(option)}>
+              {props.children ? props.children(option) : props.label ? props.label(option) : String(option)}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  },
+}))
 
 // Persisted UI state lives in localStorage AND the persistence layer's
 // module-level memory cache; `localStorage.clear()` alone does not reset the
@@ -27,8 +74,33 @@ afterEach(() => {
  * and portals its "Needs you" / Settings views into the panel slots. The stubbed
  * transport serves each real endpoint; attention never falls back to the snapshot.
  */
+/**
+ * A hand-driven stand-in for the shell's central Claxedo events bus, which the
+ * app injects through `features/workgraph/app-ports.ts`. WorkGraph consumes
+ * exactly two things from it — the `workgraph.changed` doorbell and the CENTRAL
+ * stream's connected state — so the stub is exactly that surface, driven per test.
+ */
+function testBus(initiallyConnected = true) {
+  const handlers = new Set<(event: WorkgraphChangedEvent) => void>()
+  const [connected, setConnected] = createSignal(initiallyConnected)
+  const api: WorkGraphEventsApi = {
+    on: (_type, handler) => {
+      handlers.add(handler)
+      return () => handlers.delete(handler)
+    },
+    centralConnected: connected,
+  }
+  return {
+    api,
+    setConnected,
+    /** Ring the doorbell exactly as the server's coalesced publish would. */
+    ring: () => handlers.forEach((handler) => handler({ type: "workgraph.changed", ownerUserId: "user_1", ts: 1 })),
+  }
+}
+
 function mount(request: typeof fetch, options?: {
   active?: () => boolean
+  events?: WorkGraphEventsApi
   mainPanelOpen?: () => boolean
   panelIdentity?: () => unknown
   executionContext?: { kind: "local_worktree"; directory: string }
@@ -322,13 +394,14 @@ describe("WorkGraph screen", () => {
     await screen.findByRole("heading", { name: "Streams" })
     await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
 
-    // The chip menu portals out of the modal dialog, so its options are aria-hidden by
-    // Kobalte's focus scope; query them with { hidden: true }. Environment choices are
-    // projected from the catalog and every new Stream has an explicit target.
+    // The environment chip's options are projected from the catalog: switching it to
+    // the Cloud workspace target is only possible because the catalog advertises it.
     await fireEvent.click(await screen.findByRole("button", { name: "Local worktree" }))
-    await fireEvent.click(await screen.findByText("Cloud workspace"))
+    await fireEvent.click(await screen.findByRole("option", { name: "Cloud workspace" }))
 
     expect(screen.queryByText("Inherit · integration not set")).toBeNull()
+    // The chip now reflects the catalog-derived selection.
+    expect(await screen.findByRole("button", { name: "Cloud workspace" })).toBeInTheDocument()
   })
 
   test("creates a local Stream with its required directory and base revision", async () => {
@@ -347,10 +420,16 @@ describe("WorkGraph screen", () => {
     await screen.findByRole("heading", { name: "Streams" })
     await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
     fireEvent.input(screen.getByPlaceholderText("Stream title"), { target: { value: "Ship stream targets" } })
-    fireEvent.change(screen.getByLabelText("Project directory"), {
-      target: { value: "/Users/me/claxedo" },
-    })
-    fireEvent.input(screen.getByPlaceholderText("HEAD"), { target: { value: "dev" } })
+    // The project-directory chip lists known projects by basename; pick the target.
+    await fireEvent.click(screen.getByRole("option", { name: "claxedo" }))
+    // The base-revision chip opens a popover whose text field accepts any raw ref;
+    // Enter commits the typed value even when it matches no advertised revision. The
+    // popover portals outside the modal dialog, so Kobalte's focus scope marks it
+    // aria-hidden — query it with { hidden: true }.
+    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    const revision = await screen.findByRole("textbox", { name: "Base revision", hidden: true })
+    fireEvent.input(revision, { target: { value: "dev" } })
+    fireEvent.keyDown(revision, { key: "Enter" })
     await waitFor(() => expect(screen.getByRole("button", { name: "Create" })).not.toBeDisabled())
     await fireEvent.click(screen.getByRole("button", { name: "Create" }))
     await waitFor(() => expect(commands).toHaveLength(1))
@@ -362,6 +441,57 @@ describe("WorkGraph screen", () => {
         repository: { baseRevision: "dev" },
       },
     })
+  })
+
+  test("refetches directory-scoped base revisions when the project chip changes", async () => {
+    const requestedDirectories: (string | undefined)[] = []
+    mount(
+      workGraphRequest({
+        records: () => [stream],
+        attention: () => emptyAttention,
+        onCapabilities: (directory) => requestedDirectories.push(directory),
+        // Each project advertises its own local branches; the Base revision popover
+        // must list the branches of whichever directory is currently selected.
+        capabilitiesFor: (directory) => ({
+          ...capabilitiesDto,
+          repository: {
+            baseRevisions:
+              directory === "/Users/me/claxedo"
+                ? ["main", "claxedo-feature"]
+                : directory === "/Users/me/other"
+                  ? ["main", "other-feature"]
+                  : ["main", "dev"],
+          },
+        }),
+      }),
+      {
+        localProjects: [
+          { value: "/Users/me/claxedo", label: "Claxedo" },
+          { value: "/Users/me/other", label: "Other" },
+        ],
+      },
+    )
+    await screen.findByRole("heading", { name: "Streams" })
+    await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
+
+    // Selecting the first project scopes discovery to its directory and lists its
+    // branches in the Base revision popover (revisions render as list buttons that
+    // the portalled popover marks aria-hidden under the dialog's focus scope).
+    await fireEvent.click(screen.getByRole("option", { name: "claxedo" }))
+    await waitFor(() => expect(requestedDirectories).toContain("/Users/me/claxedo"))
+    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    expect(await screen.findByRole("button", { name: "claxedo-feature", hidden: true })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "other-feature", hidden: true })).toBeNull()
+    // Toggle the popover closed via its trigger (Escape would dismiss the whole
+    // create dialog) before switching projects.
+    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+
+    // Switching to the other project refetches for THAT directory and swaps the list.
+    await fireEvent.click(screen.getByRole("option", { name: "other" }))
+    await waitFor(() => expect(requestedDirectories).toContain("/Users/me/other"))
+    await fireEvent.click(screen.getByRole("button", { name: "Base revision" }))
+    expect(await screen.findByRole("button", { name: "other-feature", hidden: true })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "claxedo-feature", hidden: true })).toBeNull()
   })
 
   test("selects known projects and can add another through the shared project picker", async () => {
@@ -380,12 +510,14 @@ describe("WorkGraph screen", () => {
     await screen.findByRole("heading", { name: "Streams" })
     await fireEvent.click(screen.getByRole("button", { name: "New stream" }))
 
-    const project = screen.getByLabelText("Project directory") as HTMLSelectElement
-    expect(project.value).toBe("/Users/me/claxedo")
-    expect(within(project).getByRole("option", { name: "Other" })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole("button", { name: "Choose another folder…" }))
+    // The chip shows the seeded project by basename and lists the other known
+    // projects the same way; the final entry re-opens the shared folder picker.
+    const project = screen.getByLabelText("Project directory")
+    expect(project).toHaveTextContent("claxedo")
+    expect(screen.getByRole("option", { name: "other" })).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("option", { name: "Choose another folder…" }))
     await waitFor(() => expect(choose).toHaveBeenCalledOnce())
-    await waitFor(() => expect(project.value).toBe("/Users/me/new-project"))
+    await waitFor(() => expect(screen.getByLabelText("Project directory")).toHaveTextContent("new-project"))
   })
 
   test("New stream fails closed on capability failure: real banner, no substitute option, retry recovers", async () => {
@@ -397,9 +529,11 @@ describe("WorkGraph screen", () => {
     // The exact capability failure is surfaced in the create form. No cached/invented
     // target choice is offered and the Stream cannot be created without a valid target.
     const banner = await screen.findByText("Execution runtime is unavailable.")
-    await fireEvent.click(screen.getByRole("button", { name: "Local worktree" }))
-    expect(screen.queryAllByRole("button", { name: "Local worktree", hidden: true })).toHaveLength(1)
-    expect(screen.queryByRole("button", { name: "Cloud workspace", hidden: true })).toBeNull()
+    // The environment chip trigger stays, but the unavailable catalog offers it no
+    // options — no substitute Local worktree / Cloud workspace choice is fabricated.
+    expect(screen.queryAllByRole("button", { name: "Local worktree" })).toHaveLength(1)
+    expect(screen.queryByRole("option", { name: "Local worktree" })).toBeNull()
+    expect(screen.queryByRole("option", { name: "Cloud workspace" })).toBeNull()
     fireEvent.input(screen.getByPlaceholderText("Stream title"), { target: { value: "Ship it" } })
     expect(screen.getByRole("button", { name: "Create" })).toBeDisabled()
 
@@ -407,43 +541,138 @@ describe("WorkGraph screen", () => {
     failing = false
     await fireEvent.click(within(banner.closest('[role="alert"]') as HTMLElement).getByRole("button", { name: "Reload" }))
     await waitFor(() => expect(screen.queryByText("Execution runtime is unavailable.")).toBeNull())
-    expect(await screen.findByText("Cloud workspace")).toBeInTheDocument()
+    expect(await screen.findByRole("option", { name: "Cloud workspace" })).toBeInTheDocument()
   })
 
-  test("surfaces an ordered change-sync failure through the sync banner and clears it on retry", async () => {
-    let failing = true
-    mount(workGraphRequest({ records: () => [stream], attention: () => emptyAttention, changesStatus: () => (failing ? 500 : undefined) }))
-    // The change-sync resource is keyed on the snapshot cursor; its rejection surfaces
-    // through the sync StatusBanner rather than an effect writing state.
-    const banner = await screen.findByText("Live sync stalled.")
-    // Retry re-runs the same sync pass; with the endpoint healthy the banner clears.
-    failing = false
-    await fireEvent.click(within(banner.closest(".workgraph-toast") as HTMLElement).getByRole("button", { name: "Reload" }))
-    await waitFor(() => expect(screen.queryByText("Live sync stalled.")).toBeNull())
+  // ── Live sync: doorbell + revalidate ──────────────────────────────────────
+  // WorkGraph holds ZERO sockets of its own. The server rings `workgraph.changed`
+  // on the already-open central events stream and the surface re-reads the
+  // canonical snapshot + Attention; the cursored `/changes` long-poll is gone.
+
+  test("re-reads the canonical snapshot when the server rings the workgraph.changed doorbell", async () => {
+    const bus = testBus()
+    let snapshots = 0
+    let title = "Ship Claxedo cloud"
+    mount(
+      workGraphRequest({
+        records: () => [{ ...stream, title }],
+        attention: () => emptyAttention,
+        onSnapshot: () => snapshots++,
+      }),
+      { events: bus.api },
+    )
+    await screen.findByText("Ship Claxedo cloud")
+    expect(snapshots).toBe(1)
+
+    // A remote mutation (an agent, another tab, an MCP tool) rings the doorbell —
+    // the board picks the change up without ever polling for it.
+    title = "Ship Claxedo cloud v2"
+    bus.ring()
+    expect(await screen.findByText("Ship Claxedo cloud v2")).toBeInTheDocument()
   })
 
-  test("holds the change long-poll only while the WorkGraph surface is visible", async () => {
-    const [active, setActive] = createSignal(false)
-    const signals: AbortSignal[] = []
+  test("issues no /changes request at all — the poll is gone, not shortened", async () => {
+    const bus = testBus()
+    const paths: string[] = []
+    const request = workGraphRequest({ records: () => [stream], attention: () => emptyAttention })
+    mount(
+      ((input: string | URL | Request, init?: RequestInit) => {
+        paths.push(new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname)
+        return request(input, init)
+      }) as typeof fetch,
+      { events: bus.api },
+    )
+    await screen.findByRole("heading", { name: "Streams" })
+    bus.ring()
+    await waitFor(() => expect(paths.filter((path) => path.endsWith("/snapshot")).length).toBeGreaterThan(1))
+    expect(paths.filter((path) => path.includes("/changes"))).toEqual([])
+  })
+
+  test("folds a burst of doorbell nudges into a single canonical reload", async () => {
+    const bus = testBus()
+    let snapshots = 0
+    mount(
+      workGraphRequest({ records: () => [stream], attention: () => emptyAttention, onSnapshot: () => snapshots++ }),
+      { events: bus.api },
+    )
+    await screen.findByRole("heading", { name: "Streams" })
+    await waitFor(() => expect(snapshots).toBe(1))
+
+    // Two nudges for one logical burst are expected (a command and the reconciler
+    // tick can both fire); the trailing debounce makes the reload idempotent.
+    bus.ring()
+    bus.ring()
+    bus.ring()
+    await waitFor(() => expect(snapshots).toBe(2))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(snapshots).toBe(2)
+  })
+
+  test("surfaces a failed doorbell reload through the sync banner and clears it on retry", async () => {
+    const bus = testBus()
+    let failing = false
     mount(
       workGraphRequest({
         records: () => [stream],
         attention: () => emptyAttention,
-        onChanges: (signal) => {
-          if (signal) signals.push(signal)
-        },
+        snapshotStatus: () => (failing ? 500 : undefined),
       }),
-      { active },
+      { events: bus.api },
     )
     await screen.findByRole("heading", { name: "Streams" })
-    expect(signals).toHaveLength(0)
+
+    // R4 — never SILENTLY stale: a revalidation that fails stalls the surface and
+    // surfaces the error verbatim rather than sitting on data of unknown currency.
+    failing = true
+    bus.ring()
+    const toast = await waitFor(() => {
+      const node = document.querySelector(".workgraph-toast")
+      expect(node?.textContent).toContain("Live sync stalled.")
+      return node as HTMLElement
+    })
+
+    // Retry re-runs exactly that reload — the only way out of the stall; a further
+    // doorbell nudge must NOT quietly paper over it.
+    failing = false
+    await fireEvent.click(within(toast).getByRole("button", { name: "Reload" }))
+    await waitFor(() => expect(document.querySelector(".workgraph-toast")).toBeNull())
+  })
+
+  test("revalidates once when the surface becomes active again — no cursor, no diff", async () => {
+    const [active, setActive] = createSignal(false)
+    const bus = testBus()
+    let snapshots = 0
+    mount(
+      workGraphRequest({ records: () => [stream], attention: () => emptyAttention, onSnapshot: () => snapshots++ }),
+      { active, events: bus.api },
+    )
+    await screen.findByRole("heading", { name: "Streams" })
+    await waitFor(() => expect(snapshots).toBe(1))
+
+    // While the surface is not the route the user is looking at, nudges are ignored
+    // — the reload it skipped is earned back on activation instead.
+    bus.ring()
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(snapshots).toBe(1)
 
     setActive(true)
-    await waitFor(() => expect(signals).toHaveLength(1))
-    expect(signals[0]?.aborted).toBe(false)
+    await waitFor(() => expect(snapshots).toBe(2))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(snapshots).toBe(2)
+  })
 
-    setActive(false)
-    await waitFor(() => expect(signals[0]?.aborted).toBe(true))
+  test("revalidates once when the events stream reconnects — a nudge lost in the gap cannot leave the board stale", async () => {
+    const bus = testBus(false)
+    let snapshots = 0
+    mount(
+      workGraphRequest({ records: () => [stream], attention: () => emptyAttention, onSnapshot: () => snapshots++ }),
+      { events: bus.api },
+    )
+    await screen.findByRole("heading", { name: "Streams" })
+    await waitFor(() => expect(snapshots).toBe(1))
+
+    bus.setConnected(true)
+    await waitFor(() => expect(snapshots).toBe(2))
   })
 
   // ── Focus restoration for attention actions ───────────────────────────────
@@ -531,29 +760,16 @@ describe("WorkGraph screen", () => {
 
 // ── Transport stub ──────────────────────────────────────────────────────────
 
-// Faithful bounded /changes long-poll: with no changes to deliver and a positive
-// waitMs, hold the request open until the client aborts it (unmount/navigation),
-// then answer timedOut — exactly like the server. This makes the synchronizer
-// re-issue its next poll instead of tight-looping on an instant empty response.
-function holdLongPoll(url: URL, init?: RequestInit): Response | Promise<Response> {
-  const after = url.searchParams.get("after") ?? undefined
-  const timedOutBody = { changes: [] as unknown[], ...(after ? { cursor: after } : {}), timedOut: true }
-  if (Number(url.searchParams.get("waitMs") ?? "0") <= 0) {
-    return Response.json({ changes: [], ...(after ? { cursor: after } : {}), timedOut: false })
-  }
-  const signal = init?.signal
-  if (!signal || signal.aborted) return Response.json(timedOutBody)
-  return new Promise((resolve) => signal.addEventListener("abort", () => resolve(Response.json(timedOutBody)), { once: true }))
-}
-
 function workGraphRequest(input: {
   records: () => unknown[]
   attention?: () => unknown
   attentionStatus?: number
   capabilities?: () => unknown
+  capabilitiesFor?: (directory: string | undefined) => unknown
+  onCapabilities?: (directory: string | undefined) => void
   capabilitiesStatus?: () => number | undefined
-  changesStatus?: () => number | undefined
-  onChanges?: (signal: AbortSignal | null | undefined) => void
+  snapshotStatus?: () => number | undefined
+  onSnapshot?: () => void
   command?: (command: Record<string, unknown>) => Record<string, unknown>
 }) {
   let readAt: number | undefined
@@ -561,16 +777,12 @@ function workGraphRequest(input: {
   return (async (request: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof request === "string" ? request : request instanceof URL ? request : request.url)
     const pathname = url.pathname
-    if (pathname.endsWith("/changes")) {
-      input.onChanges?.(init?.signal)
-      const status = input.changesStatus?.()
-      if (status) return Response.json({ error: { code: "internal_error", message: "Live sync stalled.", retryable: true } }, { status })
-      return holdLongPoll(url, init)
-    }
     if (pathname.includes("/execution-capabilities")) {
       const status = input.capabilitiesStatus?.()
       if (status) return Response.json(capabilitiesUnavailable, { status })
-      return Response.json(input.capabilities?.() ?? capabilitiesDto)
+      const directory = url.searchParams.get("directory") ?? undefined
+      input.onCapabilities?.(directory)
+      return Response.json(input.capabilitiesFor?.(directory) ?? input.capabilities?.() ?? capabilitiesDto)
     }
     if (pathname.includes("/attention")) {
       if (input.attentionStatus) return new Response("nope", { status: input.attentionStatus })
@@ -595,6 +807,11 @@ function workGraphRequest(input: {
     if (pathname.endsWith("/commands")) {
       const body = JSON.parse(String(init?.body)) as { command: Record<string, unknown> }
       return Response.json(input.command?.(body.command) ?? { ok: true, operationId: "op_1", cursor: "c_2", value: {} })
+    }
+    input.onSnapshot?.()
+    const snapshotStatus = input.snapshotStatus?.()
+    if (snapshotStatus) {
+      return Response.json({ error: { code: "internal_error", message: "Live sync stalled.", retryable: true } }, { status: snapshotStatus })
     }
     const records = input.records() as Array<{ recordType: string; id: string; version: number }>
     return Response.json({

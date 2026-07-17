@@ -61,7 +61,7 @@ export function TaskDialog(props: {
     )
   }
   return (
-    <WorkGraphDialog open={!!props.item} onClose={props.onClose} title="Task" size="large" scrollBody footer={footer()}>
+    <WorkGraphDialog open={!!props.item} onClose={props.onClose} title="Task" scrollBody footer={footer()}>
       <Show when={props.item} keyed>
         {(item) => <TaskContent workItemId={item.id} refreshToken={props.refreshToken} activityGranularity={props.activityGranularity} source={props.source} onOpenSession={openSession} />}
       </Show>
@@ -298,15 +298,16 @@ function TaskContent(props: {
     ([workItemId]) => props.source.latestAttempt(workItemId),
   )
   return (
-    <DetailState resource={workItem} retry={refetch}>
+    <DetailState resource={workItem} retry={refetch} skeleton={<TaskSkeleton />}>
       {(item) => (
         <div class="workgraph-detail">
-          <p class="workgraph-detail-lede text-text-strong">{item.title}</p>
-          <DialogField label="State">{item.state.replaceAll("_", " ")}</DialogField>
-          <Show when={item.dependencyIds.length}>
-            <DialogField label="Waits for">{item.dependencyIds.length} task(s)</DialogField>
-          </Show>
-          <CompletionRequirements item={item} source={props.source} />
+          <div class="workgraph-detail-head">
+            <p class="workgraph-detail-title text-text-strong">{item.title}</p>
+            <Show when={item.description?.trim()}>
+              <p class="workgraph-detail-desc text-text-weak">{item.description}</p>
+            </Show>
+          </div>
+          <TaskChips item={item} source={props.source} />
           <DialogSection title="Latest attempt">
             <Show when={latest.loading && !latest()}>
               <div class="workgraph-detail-status" role="status">
@@ -337,34 +338,63 @@ function TaskContent(props: {
   )
 }
 
-function CompletionRequirements(props: { item: WorkItemDto; source: WorkGraphWaitingSource }) {
+/** Layout-shaped placeholder for the Task dialog: title bar, chip pills, and
+ *  section lines pulse where the real content will land, instead of a bare
+ *  "Loading…" in an otherwise empty dialog. */
+function TaskSkeleton() {
+  return (
+    <div class="workgraph-detail" role="status" aria-live="polite" aria-label="Loading task">
+      <div class="h-7 w-2/3 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />
+      <div class="flex gap-1.5 border-t border-border-weak-base pt-3">
+        <div class="h-7 w-24 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />
+        <div class="h-7 w-48 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />
+      </div>
+      <div class="mt-2 h-4 w-1/2 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />
+      <div class="h-4 w-1/3 animate-pulse rounded-md bg-background-stronger motion-reduce:animate-none" />
+    </div>
+  )
+}
+
+/**
+ * Static, non-interactive status chips mirroring the New-stream dialog's chip
+ * row: the Task's state, its dependency count (when it waits on other work), and
+ * one chip per completion requirement carrying its evidence status. The
+ * requirement description moves to each chip's title so no information is lost.
+ */
+function TaskChips(props: { item: WorkItemDto; source: WorkGraphWaitingSource }) {
   const [evidence] = createResource(() => props.item.id, (workItemId) => props.source.evidence(workItemId))
   const recorded = createMemo(() => new Set(evidence()?.flatMap((entry) => entry.requirementId ? [entry.requirementId] : []) ?? []))
+  const evidenceNeeded = () => ["result_ready", "verification_failed"].includes(props.item.state)
+  const requirementStatus = (requirement: WorkItemDto["completionContract"]["requirements"][number]) =>
+    recorded().has(requirement.id) ? "evidence recorded" : evidenceNeeded() ? "evidence needed" : "pending"
   return (
-    <DialogSection title="Completion requirements">
+    <div class="workgraph-detail-chips" role="group" aria-label="Task status">
+      <span class="workgraph-detail-chip">{props.item.state.replaceAll("_", " ")}</span>
+      <Show when={props.item.dependencyIds.length}>
+        <span class="workgraph-detail-chip">waits for {props.item.dependencyIds.length} task(s)</span>
+      </Show>
       <For each={props.item.completionContract.requirements}>
         {(requirement) => (
-          <div class="workgraph-detail-plan-item">
-            <div class="flex items-center justify-between gap-3">
-              <span class="text-text-base">{requirement.kind.replaceAll("_", " ")}</span>
-              <Show when={evidence()}>
-                <span class="font-mono text-[10px]" classList={{
-                  "text-icon-success-base": recorded().has(requirement.id),
-                  "text-icon-critical-base": !recorded().has(requirement.id) && ["result_ready", "verification_failed"].includes(props.item.state),
-                  "text-text-base": !recorded().has(requirement.id) && !["result_ready", "verification_failed"].includes(props.item.state),
-                }}>
-                  {recorded().has(requirement.id) ? "evidence recorded" : ["result_ready", "verification_failed"].includes(props.item.state) ? "evidence needed" : "pending"}
-                </span>
-              </Show>
-            </div>
-            <span class="text-[11px] text-text-base">{requirement.description}</span>
-          </div>
+          <span class="workgraph-detail-chip" title={requirement.description}>
+            {requirement.kind.replaceAll("_", " ")}
+            <Show when={evidence()}>
+              <span classList={{
+                "text-icon-success-base": recorded().has(requirement.id),
+                "text-icon-critical-base": !recorded().has(requirement.id) && evidenceNeeded(),
+                "text-text-weak": !recorded().has(requirement.id) && !evidenceNeeded(),
+              }}>
+                {/* Non-breaking space: ordinary whitespace between flex items is
+                    dropped, which glued the kind and status together. */}
+                {" · "}{requirementStatus(requirement)}
+              </span>
+            </Show>
+          </span>
         )}
       </For>
       <Show when={evidence.error}>
-        <div class="workgraph-detail-status is-error" role="alert">Evidence could not be loaded.</div>
+        <span class="workgraph-detail-chip text-icon-critical-base">Evidence could not be loaded.</span>
       </Show>
-    </DialogSection>
+    </div>
   )
 }
 

@@ -217,6 +217,9 @@ export const WorkGraphGroup = HttpApiGroup.make("workgraph")
   )
   .add(
     HttpApiEndpoint.get("workgraph.executionCapabilities", "/api/workgraph/execution-capabilities", {
+      // Optional project selector: scopes repository (base-revision) enumeration to
+      // a known local project directory. Absent → the boot repository.
+      query: Schema.Struct({ directory: Schema.optional(Text) }),
       success: ExecutionCapabilities,
       error: [WorkGraphBadRequest, WorkGraphForbidden, WorkGraphExecutionCapabilitiesUnavailable],
     }).annotateMerge(OpenApi.annotations({
