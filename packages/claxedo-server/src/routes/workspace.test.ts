@@ -440,22 +440,19 @@ describe("workspace routes signed control plane authority", () => {
       authConfig,
       verifier,
       connections: {
-        listRepositories: vi.fn(async () => ({
+        repositoryForAuth: vi.fn(async () => ({
           ok: true as const,
-          repositories: [{
+          repository: {
             id: "1",
             name: "private-repo",
             fullName: "acme/private-repo",
             cloneUrl: "https://github.com/acme/private-repo.git",
             private: true,
             permissions: { read: true, write: false },
-          }],
+          },
+          token: "github-secret",
         })),
-        getToken: vi.fn(async () => ({
-          ok: true as const,
-          response: { token: "github-secret", tokenType: "bearer" as const },
-        })),
-      } as never,
+      },
     })
 
     const res = await app.request("http://localhost/create", {

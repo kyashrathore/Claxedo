@@ -59,11 +59,11 @@ function mount(request: typeof fetch, options?: {
 }
 
 const streamStat = () => screen.getByText("Needs you", { selector: ".workgraph-stat-label" })
-// The panel path from the card is its head's expand action — it opens the
-// full Waiting list in the shared panel.
+// The panel path from the card is its clickable "Needs you" head row — it
+// opens the full Waiting list in the shared panel.
 const openWaitingPanelFromCard = async () => {
   const card = await screen.findByRole("complementary", { name: "Waiting on you" })
-  await fireEvent.click(within(card).getByRole("button", { name: "Open Needs you panel" }))
+  await fireEvent.click(within(card).getByRole("button", { name: "Needs you" }))
   await waitFor(() => expect(screen.queryAllByRole("button", { name: /Which auth strategy/ }).length).toBeGreaterThan(0))
 }
 

@@ -136,7 +136,6 @@ vi.mock("@/features/session/app-ports", () => ({
   useWorkspaceQuery: () => ({ data: [] }),
   workspacePlacement: () => undefined,
   listDocumentMentions: vi.fn(async () => []),
-  openDocumentMention: vi.fn(),
   documentMentionText: vi.fn(),
   loadSelectProviderDialog,
 }))

@@ -1,8 +1,4 @@
 import { createSignal } from "solid-js"
-import {
-  documentSelectionIsCurrent,
-  type DocumentSelectionState,
-} from "./document-selection"
 
 export type ComposerDocumentOption = {
   documentId: string
@@ -17,15 +13,10 @@ type ComposerDocumentSelection = Omit<ComposerDocumentOption, "displayName"> & {
   display: string
 }
 
-export function createDocumentPickerController<Mention>(input: {
+export function createDocumentPickerController(input: {
   directory: () => string
-  scope: () => string
-  sessionId: () => string | undefined
-  draftId: () => string | undefined
-  promptText: () => string
   list: (input: { directory: string }) => Promise<ComposerDocumentOption[]>
-  openDocument: (input: { documentId: string; sessionId: string }) => Promise<Mention>
-  mentionText: (mention: Mention) => string
+  mentionText: (document: ComposerDocumentSelection) => string
   replaceText: (text: string) => void
   openPopover: () => void
 }) {
@@ -34,7 +25,6 @@ export function createDocumentPickerController<Mention>(input: {
   const [documents, setDocuments] = createSignal<ComposerDocumentOption[]>([])
   const [loading, setLoading] = createSignal(false)
   const [listError, setListError] = createSignal<unknown>()
-  let generation = 0
   let listGeneration = 0
   const notice = () => {
     const selected = selectionNotice()
@@ -46,20 +36,11 @@ export function createDocumentPickerController<Mention>(input: {
       return `Documents unavailable: ${error instanceof Error ? error.message : String(error)}`
     }
   }
-  const current = (): DocumentSelectionState => ({
-    generation,
-    scope: input.scope(),
-    ...(input.sessionId() ? { sessionId: input.sessionId() } : {}),
-    ...(input.draftId() ? { draftId: input.draftId() } : {}),
-    prompt: input.promptText(),
-  })
-
   return {
     open,
     documents,
     notice,
     show() {
-      generation += 1
       setSelectionNotice(undefined)
       setOpen(true)
       input.openPopover()
@@ -83,30 +64,9 @@ export function createDocumentPickerController<Mention>(input: {
       setOpen(false)
     },
     select(document: ComposerDocumentSelection) {
-      const sessionId = input.sessionId()
-      if (!sessionId || sessionId === "new") {
-        setSelectionNotice("Document unavailable: start the session before selecting /docs.")
-        setOpen(false)
-        return
-      }
-      const started = { ...current(), generation: ++generation, sessionId }
-      setSelectionNotice(`Opening ${document.display}…`)
-      void input.openDocument({ documentId: document.documentId, sessionId })
-        .then((mention) => {
-          if (!documentSelectionIsCurrent(started, current())) return
-          input.replaceText(input.mentionText(mention))
-          setSelectionNotice(undefined)
-        })
-        .catch((error: unknown) => {
-          if (!documentSelectionIsCurrent(started, current())) return
-          setSelectionNotice(`Document unavailable: ${error instanceof Error ? error.message : String(error)}`)
-        })
-        .finally(() => {
-          const next = current()
-          if (started.generation !== next.generation) return
-          if (!documentSelectionIsCurrent(started, next)) setSelectionNotice(undefined)
-          setOpen(false)
-        })
+      input.replaceText(input.mentionText(document))
+      setSelectionNotice(undefined)
+      setOpen(false)
     },
   }
 }

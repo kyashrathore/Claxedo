@@ -31,6 +31,7 @@ describe("remote access client", () => {
       deviceLoginConfigured: false,
       relayConfigured: false,
       hostedSignedIn: false,
+      enrolled: false,
       enabled: false,
       secondDeviceOpen: false,
     })

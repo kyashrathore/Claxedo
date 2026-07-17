@@ -17,7 +17,7 @@ const secondDeviceBody = z.object({
 }).strict()
 
 export type RemoteAccessService = {
-  status(auth?: SignedControlPlaneAuth): Promise<{ enabled: boolean; secondDeviceOpen: boolean }>
+  status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean; secondDeviceOpen: boolean }>
   enable(
     auth: SignedControlPlaneAuth,
     input: { displayName: string; startAtLogin: boolean },
@@ -60,6 +60,7 @@ export function RemoteAccessRoutes(options: {
       relay_configured: options.relayConfigured,
       hosted_signed_in: !!auth,
       enabled: available && result.enabled,
+      enrolled: available && result.enrolled,
       second_device_open: available && result.secondDeviceOpen,
     })
   })

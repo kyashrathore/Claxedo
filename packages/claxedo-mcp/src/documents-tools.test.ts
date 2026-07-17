@@ -65,6 +65,23 @@ describe("document discovery tools", () => {
     })
   })
 
+  it("resolves a compact Claxedo document reference", async () => {
+    const request = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path.includes("archived=all")) return [{ id: "document-1", display_name: "Plan", archived_at: null }]
+      expect(path).toBe("/documents/document-1/agent-open")
+      expect(JSON.parse(String(init?.body))).toEqual({ session_id: "session-1" })
+      return { document_id: "document-1", display_name: "Plan", path: "/data/documents/document-1/plan.md" }
+    })
+
+    const result = await callDocuments(request, "documents_open", {
+      id_or_name: "claxedo://document/document-1",
+      directory: "/repo",
+      session_id: "session-1",
+    })
+
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ document_id: "document-1" })
+  })
+
   it("prefers an exact stable id over another document whose display name collides with it", async () => {
     const request = vi.fn(async (path: string) => {
       if (path.includes("archived=all"))
@@ -181,6 +198,22 @@ describe("document discovery tools", () => {
     const names: string[] = []
     registerDocumentTools((name) => names.push(name), vi.fn())
     expect(names).toEqual(["documents_list", "documents_open"])
+  })
+
+  it("applies current directory and session defaults to open calls", async () => {
+    const handlers = new Map<string, (input: Record<string, unknown>) => Promise<unknown>>()
+    const request = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path.includes("archived=all")) return [{ id: "document-1", display_name: "Plan", archived_at: null }]
+      expect(JSON.parse(String(init?.body))).toEqual({ session_id: "session-current" })
+      return { document_id: "document-1", display_name: "Plan", path: "/repo/.claxedo/plan.md" }
+    })
+    registerDocumentTools((name, _config, handler) => handlers.set(name, handler), request, {
+      directory: "/repo",
+      sessionId: "session-current",
+    })
+
+    await handlers.get("documents_open")!({ id_or_name: "claxedo://document/document-1" })
+    expect(request).toHaveBeenCalledWith("/documents?directory=%2Frepo&archived=all", { method: "GET" })
   })
 
   it("requires one unambiguous document scope", async () => {

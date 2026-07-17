@@ -34,7 +34,7 @@ const items: LocalCredentialItem[] = [
 ]
 
 function setup(input?: { now?: () => number; collected?: LocalCredentialItem[] }) {
-  const save = vi.fn(async (_input: CredentialWrite) => ({ id: "saved" }))
+  const save = vi.fn(async (item: CredentialWrite) => ({ id: `saved-${item.account_id ?? item.provider_id}` }))
   const service = createCredentialDiscovery({
     collect: async () => input?.collected ?? items,
     save,
@@ -84,7 +84,11 @@ describe("credential discovery", () => {
       }],
     })
 
-    expect(result).toEqual({ saved: [{ provider_id: "openai", account_id: discovery.items[1]!.account_id }] })
+    expect(result).toEqual({ saved: [{
+      credential_id: "saved-account-two@example.com",
+      provider_id: "openai",
+      account_id: discovery.items[1]!.account_id,
+    }] })
     expect(save).toHaveBeenCalledOnce()
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
       provider_id: "openai",

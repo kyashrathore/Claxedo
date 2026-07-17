@@ -30,6 +30,7 @@ import {
   apiError,
   captureWorkspaceTelemetry,
   controlPlaneRateLimitError,
+  parsedBody,
   rec,
   signedOrError,
   type WorkspaceRouteOptions,
@@ -337,7 +338,9 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       .post("/create", async (c) => {
         const authResult = await signedOrError(c.req.raw, options, services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        const body = createBody.parse(await c.req.json().catch(() => ({})))
+        const parsed = parsedBody(createBody, await c.req.json().catch(() => ({})))
+        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
+        const body = parsed.body
         const cfg = await loadUserConfig()
         const driverConfig = sandboxDriverConfig(cfg)
         const requestedDriver = body.driver?.trim()
@@ -400,17 +403,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           if (!options.connections) {
             return c.json({ error: apiError("repository_connections_unavailable", "Repository connections are unavailable") }, 501)
           }
-          const listed = await options.connections.listRepositories(body.connectionId)
-          if (!listed.ok) return c.json({ error: apiError(listed.code, "Could not list repositories for this connection") }, listed.status)
-          const selected = listed.repositories.find((repository) => repository.fullName === repositoryFullName)
-          if (!selected) return c.json({ error: apiError("repository_not_found", "Repository is not available to this connection") }, 404)
-          if (!selected.permissions.read) {
-            return c.json({ error: apiError("repository_read_required", "The connection cannot read this repository") }, 403)
-          }
-          const token = await options.connections.getToken(body.connectionId, "code-host")
-          if (!token.ok) return c.json({ error: apiError(token.code, "Repository connection is not available") }, token.status)
-          repoUrl = selected.cloneUrl
-          const source = authenticatedGitHubCloneSource(selected.cloneUrl, token.response.token)
+          const access = await options.connections.repositoryForAuth(authResult.auth, body.connectionId, repositoryFullName)
+          if (!access.ok) return c.json({ error: apiError(access.code, "Repository connection is not available") }, access.status)
+          repoUrl = access.repository.cloneUrl
+          const source = authenticatedGitHubCloneSource(access.repository.cloneUrl, access.token)
           provisionRepoUrl = source.repoUrl
           provisionSecrets = [source.secret]
         }

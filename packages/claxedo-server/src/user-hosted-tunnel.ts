@@ -31,8 +31,9 @@ const machineTunnels = new Map<string, {
   tunnel: WorkspaceRelayHostTunnel
   hostId: string
   relayUrl: string
-  token: { current: string }
+  token: { current: () => Promise<string> }
   workspaceIds: string[]
+  registration: { current: Set<string> }
 }>()
 
 function normalized(input: string) {
@@ -90,8 +91,10 @@ export async function startUserHostedMachineTunnel(input: {
   workspaceIds: string[]
   hostId: string
   relayUrl: string
-  hostTunnelToken: string
-}) {
+} & (
+  | { hostTunnelTokenProvider: () => Promise<string>; hostTunnelToken?: never }
+  | { hostTunnelToken: string; hostTunnelTokenProvider?: never }
+)) {
   const workspaceIds = [...new Set(input.workspaceIds)].sort()
   if (!workspaceIds.length) throw new Error("At least one local workspace is required")
   const workspaces = await Promise.all(workspaceIds.map((workspaceId) => getWorkspace(workspaceId)))
@@ -101,21 +104,24 @@ export async function startUserHostedMachineTunnel(input: {
   }
 
   const relayUrl = normalized(input.relayUrl)
+  const hostTunnelTokenProvider = input.hostTunnelTokenProvider ?? (async () => input.hostTunnelToken)
   const existing = machineTunnels.get(input.hostId)
   if (existing?.relayUrl === relayUrl) {
-    existing.token.current = input.hostTunnelToken
+    existing.token.current = hostTunnelTokenProvider
     if (existing.workspaceIds.join("\n") !== workspaceIds.join("\n")) {
       await existing.tunnel.updateRegistration({
         workspaceIds,
-        token: input.hostTunnelToken,
+        token: await hostTunnelTokenProvider(),
       })
       existing.workspaceIds = workspaceIds
+      existing.registration.current = new Set(workspaceIds)
     }
     return { reused: true, connectionCount: 1, workspaceIds }
   }
 
   existing?.tunnel.close()
-  const token = { current: input.hostTunnelToken }
+  const token = { current: hostTunnelTokenProvider }
+  const registration = { current: new Set(workspaceIds) }
   const localBaseUrl = workspaceSupervisorServerUrl()
   const tunnel = startWorkspaceRelayHostTunnel({
     relayUrl,
@@ -125,13 +131,14 @@ export async function startUserHostedMachineTunnel(input: {
     resolveLocalUrl: ({ workspaceId, path }) => {
       // The relay carries only workspace-runtime traffic. CentralServer-owned
       // routes remain loopback-only even when a malicious relay asks for one.
+      if (!registration.current.has(workspaceId)) return
       if (routeOwnership(new URL(path, "http://workspace.local").pathname).handler !== RouteHandler.SandboxRuntime) return
       return new URL(
         `/workspaces/${encodeURIComponent(workspaceId)}/${path.replace(/^\/+/, "")}`,
         `${normalized(localBaseUrl)}/`,
       )
     },
-    tokenProvider: async () => token.current,
+    tokenProvider: () => token.current(),
     onEvent: (event) => logTunnelEvent({ workspaceId: workspaceIds.join(","), hostId: input.hostId, relayUrl }, event),
     pingIntervalMs: 15_000,
     reconnectIntervalMs: 1_000,
@@ -142,6 +149,7 @@ export async function startUserHostedMachineTunnel(input: {
     relayUrl,
     token,
     workspaceIds,
+    registration,
   })
   log.info("user-hosted machine tunnel started", {
     hostId: input.hostId,
@@ -226,6 +234,10 @@ export function stopUserHostedMachineTunnel(hostId: string) {
   existing.tunnel.close()
   machineTunnels.delete(hostId)
   return true
+}
+
+export function hasUserHostedMachineTunnel(hostId: string) {
+  return machineTunnels.has(hostId)
 }
 
 export function stopAllUserHostedWorkspaceTunnels() {

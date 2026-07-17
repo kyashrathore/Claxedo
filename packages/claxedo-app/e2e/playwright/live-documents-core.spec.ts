@@ -445,7 +445,22 @@ test.describe.serial("live Documents core backend @live", () => {
     await proveGeometry(page, source, testInfo, "real-version-restored-exact-bytes")
   })
 
-  test("/docs grants a real session tool path; bash refresh, parked write-back, dirty recovery, and restore retain identity", async ({
+  test("/docs inserts a compact document reference before a session exists", async ({ page }) => {
+    expect(createdDocument).toBeTruthy()
+    await seedProject(page)
+    await page.goto(`/w/${encodeURIComponent(workspace)}/session`)
+    const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await composer.fill("/docs")
+    await page.getByRole("listbox").last().getByRole("option", { name: /\/docs/ }).click()
+    const picker = page.getByRole("listbox", { name: "Documents" })
+    await expect(picker).toBeVisible()
+    await picker.getByRole("option", { name: new RegExp(createdDocument!.display_name) }).click()
+    await expect(composer).toContainText(`claxedo://document/${createdDocument!.id}`)
+    await expect(composer).not.toContainText(".claxedo/sessions")
+  })
+
+  test("/docs reference resolves to a real session tool path; bash refresh, parked write-back, dirty recovery, and restore retain identity", async ({
     page,
   }, testInfo) => {
     expect(createdDocument).toBeTruthy()
@@ -465,22 +480,25 @@ test.describe.serial("live Documents core backend @live", () => {
     const option = picker.getByRole("option", { name: new RegExp(createdDocument!.display_name) })
     await expect(option).toBeVisible({ timeout: 30_000 })
     await option.click()
-    await expect(composer).toContainText(`document_id: ${createdDocument!.id}`)
-    const mention = (await composer.textContent()) ?? ""
-    const grantedPath = mention.match(/ at (.+?) \(document_id:/)?.[1]
-    expect(grantedPath).toBeTruthy()
-    expect(await fs.realpath(grantedPath!)).toBe(grantedPath)
+    await expect(composer).toContainText(`claxedo://document/${createdDocument!.id}`)
+    const opened = await requestJson<{ path: string }>(`/documents/${createdDocument!.id}/agent-open`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session_id: session.id }),
+    })
+    const grantedPath = opened.path
+    expect(await fs.realpath(grantedPath)).toBe(grantedPath)
     expect(grantedPath).toContain(
       `${path.sep}.claxedo${path.sep}sessions${path.sep}${session.id}${path.sep}docs${path.sep}${createdDocument!.id}`,
     )
-    await proveGeometry(page, composer, testInfo, "real-docs-mention-grants-honest-session-file")
+    await proveGeometry(page, composer, testInfo, "real-docs-reference-resolves-honest-session-file")
 
     await page.goto(documentUrl(createdDocument!.id))
     let editor = await sourceEditor(page)
     await expect(editor).toHaveValue(preAgent)
 
     const agentEdit = "Heading\n=======\n\nreal agent ordinary bash edit\n"
-    await runGrantedPathBash(grantedPath!, agentEdit)
+    await runGrantedPathBash(grantedPath, agentEdit)
     await expect(editor).toHaveValue(agentEdit, { timeout: 30_000 })
     expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
       agentEdit,

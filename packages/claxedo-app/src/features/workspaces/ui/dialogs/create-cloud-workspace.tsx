@@ -154,10 +154,6 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
     const appendProvision = (ev: ProvisionEvent) => {
       if (ev.workspaceId !== workspaceId) return
 
-      if (ev.step === "acquiring_sandbox" && error()) {
-        setError("")
-      }
-
       const key = `${ev.step}:${ev.message ?? ""}`
       if (!seen.has(key)) {
         seen.add(key)
@@ -181,6 +177,7 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
       }
 
       if (ev.step === "error") {
+        unsub?.()
         setError(ev.message || "Provisioning failed")
       }
     }
@@ -202,7 +199,7 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
         workspaceCreateUrl({ baseUrl }),
         {
           projectId: props.projectId,
-          provider: provider(),
+          driver: provider(),
           workspaceName: workspaceName().trim() || undefined,
         },
       )
@@ -448,8 +445,23 @@ export function DialogCreateCloudWorkspace(props: DialogCreateCloudWorkspaceProp
                 </div>
               </div>
               <div class="flex justify-end gap-2">
-                <Button variant="ghost" size="large" onClick={() => { setPhase("form"); setError(""); setLoading(false) }}>
-                  {failure()?.action}
+                <Show when={failure()?.fix === "provider-account" && sandboxProviderFacts(provider()).accountUrl}>
+                  <a
+                    class="inline-flex items-center rounded-md px-3 text-13-medium text-text-interactive-base"
+                    href={sandboxProviderFacts(provider()).accountUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {failure()?.action}
+                  </a>
+                </Show>
+                <Show when={failure()?.fix === "choose-provider"}>
+                  <Button variant="ghost" size="large" onClick={() => { setPhase("form"); setError(""); setLoading(false) }}>
+                    {failure()?.action}
+                  </Button>
+                </Show>
+                <Button variant="primary" size="large" onClick={(event: MouseEvent) => void handleSubmit(event)}>
+                  Retry provisioning
                 </Button>
               </div>
             </Show>

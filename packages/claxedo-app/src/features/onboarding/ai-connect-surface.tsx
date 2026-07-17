@@ -24,7 +24,6 @@ import type { OnboardingFunnelEvent } from "./funnel"
 const providers = [
   { id: "anthropic", name: "Anthropic" },
   { id: "openai", name: "OpenAI" },
-  { id: "openrouter", name: "OpenRouter" },
 ] as const
 
 export type AIConnectSurfaceProps = {

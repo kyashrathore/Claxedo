@@ -33,9 +33,6 @@ function safeRead<T>(label: string, fallback: T, read: () => T): T {
 
 /** Create or update a credential with its secret stored in the backend. */
 export async function putCredential(input: CredentialWrite): Promise<CredentialMetadata> {
-  if (input.scope === "shared" && !input.consent) {
-    throw new Error("Shared credentials require explicit consent")
-  }
   const backend = getBackend()
   const ok = await backend.probe()
   if (!ok) {
@@ -55,6 +52,10 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
       )
       .all(),
   ).find((credential) => (credential.account_id ?? undefined) === input.account_id)
+  const scope = input.scope ?? existing?.scope ?? "local"
+  if (scope === "shared" && !input.consent && !existing?.consent_json) {
+    throw new Error("Shared credentials require explicit consent")
+  }
 
   const replacing = exclusiveAuthKinds.includes(input.kind as (typeof exclusiveAuthKinds)[number])
     ? ClaxedoDB.use((db) =>
@@ -95,7 +96,7 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
     health: null,
     expires_at: input.expires_at ?? null,
     last_validated_at: null,
-    scope: input.scope ?? existing?.scope ?? (input.source === "managed" ? "shared" : "local"),
+    scope,
     consent_json: input.consent ? JSON.stringify(input.consent) : existing?.consent_json ?? null,
     last_used_at: existing?.last_used_at ?? null,
     last_error: null,

@@ -11,12 +11,13 @@ export type SetupShellMode = "hidden" | "form" | "checklist" | "go-further"
 
 export function setupShellMode(input: {
   hasProjects: boolean
+  activationReady: boolean
   firstTurnCompleted: boolean
   setupDismissed: boolean
   checklistDismissed: boolean
 }): SetupShellMode {
-  if (input.hasProjects) return "hidden"
   if (input.firstTurnCompleted) return "go-further"
+  if (input.hasProjects && input.activationReady) return "hidden"
   if (input.checklistDismissed) return "hidden"
   if (input.setupDismissed) return "checklist"
   return "form"

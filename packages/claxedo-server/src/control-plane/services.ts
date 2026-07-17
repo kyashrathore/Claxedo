@@ -77,7 +77,7 @@ export type ControlPlaneCredentials = {
   updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number) => Promise<void>
   discoverLocalCredentials?: () => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
   saveDiscoveredCredentials?: (input: { discovery_id: string; items: CredentialDiscoverySelection[] }) => Promise<{
-    saved: Array<{ provider_id: string; account_id?: string }>
+    saved: Array<{ credential_id: string; provider_id: string; account_id?: string }>
   }>
   updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number) => Promise<boolean>
   syncLocalCredentials: (providerIds?: string[]) => Promise<CredentialSyncResult>

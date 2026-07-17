@@ -152,6 +152,8 @@ import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
+const ONBOARDING_V1 = process.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
+const ONBOARDING_DESKTOP_RAMP = process.env.CLAXEDO_ONBOARDING_DESKTOP_E2E === "1"
 const SESSION_ID = "ses_core_boot_deep_links_home"
 
 function slug(value: string) {
@@ -382,19 +384,23 @@ test.describe("core boot, deep links, and home @core", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // Behavior 2: the real zero-project owner renders the onboarding shell,
-    // driven by the same registry used by checklist/JIT surfaces.
-    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByRole("listitem")).toHaveCount(4)
-    await expect(page.getByRole("button", { name: "Pick a repository", exact: true }).first()).toBeEnabled()
-    await expect(page.getByRole("button", { name: "Connect your AI", exact: true }).first()).toBeDisabled()
-    await expect(page.getByText("Connect working AI credentials first.")).toBeVisible()
-    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-empty.png", fullPage: true })
-    await page.getByRole("button", { name: "Do this later" }).click()
-    await expect(page.getByRole("heading", { name: "Finish setup" })).toBeVisible()
-    await expect(page.getByText("0 of 4 proven")).toBeVisible()
-    await expect(page.getByTestId("setup-content-pane")).toHaveCount(0)
-    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-checklist.png", fullPage: true })
+    if (ONBOARDING_V1) {
+      // Behavior 2: the flagged onboarding owner renders the registry-driven shell.
+      await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole("listitem")).toHaveCount(4)
+      await expect(page.getByRole("button", { name: "Pick a repository", exact: true }).first()).toBeEnabled()
+      await expect(page.getByRole("button", { name: "Connect your AI", exact: true }).first()).toBeDisabled()
+      await expect(page.getByText("Connect working AI credentials first.")).toBeVisible()
+      await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-empty.png", fullPage: true })
+      await page.getByRole("button", { name: "Do this later" }).click()
+      await expect(page.getByRole("heading", { name: "Finish setup" })).toBeVisible()
+      await expect(page.getByText("0 of 4 proven")).toBeVisible()
+      await expect(page.getByTestId("setup-content-pane")).toHaveCount(0)
+      await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-checklist.png", fullPage: true })
+    } else {
+      await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
+    }
     // Not `.toHaveCount(0)`: the dead, permanently-hidden `pages/home.tsx` (see ANATOMY
     // finding) can still transiently mount a "Recent projects" text node inside its own
     // hidden subtree during a query-cache race — that is invisible DOM structure of dead
@@ -409,6 +415,120 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(nonClerkFailed(mock.requests.failed)).toEqual([])
     expect(nonClerkBadResponses(mock.requests.badResponses)).toEqual([])
     expect(mock.requests.unhandled).toEqual([])
+  })
+
+  test("the desktop-style ramp hands off from AI verification to the real draft composer", async ({ page }) => {
+    test.skip(!ONBOARDING_V1 || !ONBOARDING_DESKTOP_RAMP, "Requires the onboarding flag and non-sandbox surface")
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      projectName: "core-boot-onboarding",
+      harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+    })
+    let verified = false
+    let savedSelection: unknown
+    let credentialRequests = 0
+    await page.route("**/api/claxedo/credentials**", async (route) => {
+      credentialRequests += 1
+      const pathname = new URL(route.request().url()).pathname
+      if (pathname.endsWith("/discover")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            discovery_id: "discovery_onboarding",
+            items: [
+              { provider_id: "anthropic", kind: "subscription_session", label: "Claude", origin: "local subscription" },
+              { provider_id: "openai", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
+            ],
+          }),
+        })
+        return
+      }
+      if (pathname.endsWith("/save-discovered")) {
+        savedSelection = route.request().postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ saved: [{ credential_id: "cred_onboarding", provider_id: "anthropic" }] }),
+        })
+        return
+      }
+      if (pathname.endsWith("/cred_onboarding/verify")) {
+        verified = true
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ result: "ok" }) })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          credentials: verified ? [{
+            id: "cred_onboarding",
+            provider_id: "anthropic",
+            scope: "shared",
+            health: "ok",
+          }] : [],
+        }),
+      })
+    })
+
+    await seedOneProject(page, DIR)
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+    await expect.poll(() => credentialRequests, { timeout: 20_000 }).toBeGreaterThan(0)
+    expect(await page.evaluate(() => localStorage.getItem("opencode.global.dat:onboarding.dismissals.v1"))).toBeNull()
+    await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
+    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole("listitem").filter({ hasText: "Pick a repository" })).toContainText("✓")
+    await expect(page.getByTestId("setup-content-pane")).toContainText("Connect your AI")
+
+    await page.getByRole("button", { name: "Detect credentials" }).click()
+    await expect(page.getByText("Claude", { exact: true })).toBeVisible()
+    await page.getByRole("checkbox", { name: /Codex/ }).click()
+    await page.getByRole("button", { name: "Save selected" }).click()
+
+    await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "hidden")
+    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
+    expect(credentialRequests).toBeGreaterThanOrEqual(3)
+    expect(savedSelection).toEqual({
+      discovery_id: "discovery_onboarding",
+      items: [{ provider_id: "anthropic", scope: "shared" }],
+    })
+    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-project-ai-handoff.png", fullPage: true })
+
+    const firstPrompt = "inspect this repository and suggest a first task"
+    const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await composer.fill(firstPrompt)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expectAssistantReplyVisible(page, `ack 1: ${firstPrompt}`)
+    expect(mock.requests.promptCount).toBe(1)
+  })
+
+  test("the web compute deep link restores step 3 after project and AI are proven", async ({ page }) => {
+    test.skip(!ONBOARDING_V1 || ONBOARDING_DESKTOP_RAMP, "Requires the flagged web onboarding surface")
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
+    await page.route("**/api/claxedo/credentials**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          credentials: [{
+            id: "cred_web_onboarding",
+            provider_id: "anthropic",
+            scope: "shared",
+            health: "ok",
+          }],
+        }),
+      })
+    })
+
+    await seedOneProject(page, DIR)
+    await page.goto("/?onboarding=compute", { waitUntil: "domcontentloaded" })
+
+    await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
+    await expect(page.getByTestId("setup-content-pane")).toContainText("Add compute")
+    await expect(page.getByTestId("setup-content-pane").getByRole("button", { name: "Add compute" })).toBeEnabled()
   })
 
   // FINDING (verified by reading source — real app behavior, not a test bug): the `/`

@@ -35,6 +35,9 @@ export function ContextCard(props: {
   /** Shows the red unread dot in the head and tints the collapsed chip. */
   unread?: boolean
   unreadLabel?: string
+  /** Makes the head label itself the card's primary action (e.g. open the
+   *  full panel) — the quiet Codex pattern instead of extra head icons. */
+  onLabelSelect?: () => void
   /** Collapse to a rail (any variant). Omit onToggleCollapse to disable. */
   collapsed?: boolean
   /** The rail's content when collapsed — one small button per item (style them
@@ -54,12 +57,21 @@ export function ContextCard(props: {
 }) {
   const variantClass = () => (props.variant === "floating" ? "is-floating" : "is-inline")
   return (
-    <Show
-      when={!props.collapsed}
-      fallback={
-        <aside class={`ui-context-card is-collapsed ${variantClass()} ${props.class ?? ""}`} aria-label={props.ariaLabel}>
-          {/* Cursor's icon rail: every element is a real control — one button
-              per item, and the expand control always anchored at the bottom. */}
+    /* ONE root aside for both states (the collapse toggle only swaps the
+       inside): a single persistent element is what lets CSS transition the
+       width so surrounding content squeezes smoothly instead of jumping.
+       Variant/collapsed land in the class string — a classList with a false
+       key would strip an identically-named class a consumer passed via
+       `class`. */
+    <aside
+      class={`ui-context-card ${variantClass()} ${props.collapsed ? "is-collapsed" : ""} ${props.class ?? ""}`}
+      aria-label={props.ariaLabel}
+    >
+      <Show
+        when={!props.collapsed}
+        fallback={
+          /* Cursor's icon rail: every element is a real control — one button
+             per item, and the expand control always anchored at the bottom. */
           <div class="ui-context-card-rail">
             {props.collapsedContent}
             <button
@@ -71,14 +83,21 @@ export function ContextCard(props: {
               <Icon name="chevron-double-left" size="small" />
             </button>
           </div>
-        </aside>
-      }
-    >
-      {/* Variant lands in the class string — a classList with a false key would
-          strip an identically-named class a consumer passed via `class`. */}
-      <aside class={`ui-context-card ${variantClass()} ${props.class ?? ""}`} aria-label={props.ariaLabel}>
+        }
+      >
         <div class="ui-context-card-head">
-          <span class="ui-context-card-label text-text-weak">{props.label}</span>
+          <Show
+            when={props.onLabelSelect}
+            fallback={<span class="ui-context-card-label text-text-weak">{props.label}</span>}
+          >
+            <button
+              type="button"
+              class="ui-context-card-label ui-context-card-label-open text-text-weak"
+              onClick={() => props.onLabelSelect?.()}
+            >
+              {props.label}
+            </button>
+          </Show>
           <span class="ui-context-card-gap" aria-hidden="true" />
           <Show when={props.unread}>
             <span role="img" class="ui-context-card-dot" aria-label={props.unreadLabel ?? "unread"} />
@@ -111,8 +130,8 @@ export function ContextCard(props: {
           </Show>
         </div>
         {props.children}
-      </aside>
-    </Show>
+      </Show>
+    </aside>
   )
 }
 

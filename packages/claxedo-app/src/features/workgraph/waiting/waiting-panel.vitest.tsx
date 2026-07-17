@@ -168,23 +168,27 @@ describe("createWaitingCardController", () => {
 })
 
 describe("WaitingCard", () => {
-  test("previews items with one count and leaves management actions to the full panel", () => {
-    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem, workItem]} total={5} unread={3} onClose={() => {}} onSelect={() => {}} />)
+  test("previews items quietly — no count, no unread dot, no management actions", async () => {
+    const onOpenPanel = vi.fn()
+    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem, workItem]} onClose={() => {}} onSelect={() => {}} onOpenPanel={onOpenPanel} />)
     // Lead recap gets the rich treatment.
     expect(screen.getByText("Latest recap")).toBeInTheDocument()
     expect(screen.getByText("Idempotency keys shipped in PR #482.")).toBeInTheDocument()
-    expect(screen.getByText("5")).toBeInTheDocument()
-    expect(screen.queryByText(/unread/)).toBeNull()
+    // The card IS the signal: no count chip, no unread dot, no extra head icons.
+    expect(screen.queryByText(/waiting/)).toBeNull()
+    expect(screen.queryByRole("img", { name: /unread/ })).toBeNull()
     expect(screen.queryByRole("button", { name: "Mark all read" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Open Waiting panel" })).toBeNull()
+    // The "Needs you" head row is the way into the full panel.
+    await fireEvent.click(screen.getByRole("button", { name: "Needs you" }))
+    expect(onOpenPanel).toHaveBeenCalledOnce()
   })
 
   // Both card triggers must pair their item with the precise element that fired,
   // so the caller can anchor focus back to it — never discard the invoker.
   test("the lead recap button reports its item and its exact element", async () => {
     const onSelect = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem]} total={2} unread={2} onClose={() => {}} onSelect={onSelect} />)
+    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)
     const recapButton = screen.getByText("Latest recap").closest("button") as HTMLElement
     await fireEvent.click(recapButton)
     expect(onSelect).toHaveBeenCalledTimes(1)
@@ -194,7 +198,7 @@ describe("WaitingCard", () => {
 
   test("a compact row reports its item and its exact element", async () => {
     const onSelect = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} total={2} unread={2} onClose={() => {}} onSelect={onSelect} />)
+    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)
     const row = screen.getByRole("button", { name: /Backfill invoices/ })
     await fireEvent.click(row)
     expect(onSelect).toHaveBeenCalledTimes(1)
@@ -211,8 +215,6 @@ describe("WaitingCard", () => {
         collapsed
         onToggleCollapse={onToggleCollapse}
         items={[decisionItem]}
-        total={1}
-        unread={1}
         onClose={() => {}}
         onSelect={() => {}}
         onOpenPanel={onOpenPanel}
@@ -232,8 +234,6 @@ describe("WaitingCard", () => {
         collapsed
         onToggleCollapse={onToggleCollapse}
         items={[decisionItem]}
-        total={1}
-        unread={1}
         onClose={() => {}}
         onSelect={() => {}}
         onOpenPanel={() => {}}

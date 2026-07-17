@@ -122,7 +122,6 @@ configureSessionAppPorts({
   targetLabel: Marketplace.targetLabel,
   uninstallMcpDialogEntry: Marketplace.uninstallMcpDialogEntry,
   listDocumentMentions: DocumentMentions.listDocumentMentions,
-  openDocumentMention: DocumentMentions.openDocumentMention,
   documentMentionText: DocumentMentions.documentMentionText,
 })
 

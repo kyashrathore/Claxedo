@@ -9,6 +9,7 @@ import {
   type TunnelHttpResponseEnd,
   type TunnelHttpResponseFlow,
   type TunnelHttpResponseStart,
+  type TunnelHostRegistrationUpdate,
   type TunnelPing,
   type TunnelWsClose,
   type TunnelWsFrame,
@@ -170,6 +171,7 @@ const TRACE_FORCE_HEADER = "x-claxedo-relay-trace"
 type HostTunnelSocket = {
   hostId: string
   workspaceIds: string[]
+  connectedAt: number
   socket: WorkspaceRelayDurableObjectSocket
   pending: Map<string, PendingTunnelHttpResponse>
   channels: Map<string, UserHostedClientSocket>
@@ -739,6 +741,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         hostTunnels.set(attachment.hostId, {
           hostId: attachment.hostId,
           workspaceIds: attachment.workspaceIds,
+          connectedAt: attachment.connectedAt,
           socket,
           pending: new Map(),
           channels: new Map(),
@@ -1121,6 +1124,26 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       tunnel.socket.send?.(JSON.stringify(makeTunnelPong(parsed.message as TunnelPing)))
       return
     }
+    if (parsed.message.type === "host.registration.update") {
+      const update = parsed.message as TunnelHostRegistrationUpdate
+      const workspaceIds = [...new Set(update.workspace_ids)]
+      try {
+        await verifyHostTunnelToken(update.token, options.runtimeAccessKey, { hostId, workspaceIds })
+      } catch {
+        closeSocket(tunnel.socket, 1008, "Host tunnel registration update denied")
+        return
+      }
+      if (hostTunnels.get(hostId) !== tunnel) return
+      tunnel.workspaceIds = workspaceIds
+      tunnel.socket.serializeAttachment?.({
+        kind: "host-tunnel",
+        hostId,
+        workspaceIds,
+        connectedAt: tunnel.connectedAt,
+      })
+      directory.registerHostTunnel({ hostId, workspaceIds })
+      return
+    }
     if (parsed.message.type === "error" && parsed.message.request_id) {
       const pending = tunnel.pending.get(parsed.message.request_id)
       if (!pending) return
@@ -1268,11 +1291,12 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       throw err
     }
 
+    const connectedAt = options.now?.() ?? Date.now()
     const pair = acceptSocket({
       kind: "host-tunnel",
       hostId,
       workspaceIds,
-      connectedAt: options.now?.() ?? Date.now(),
+      connectedAt,
     })
     const previous = hostTunnels.get(hostId)
     if (previous) {
@@ -1282,6 +1306,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     hostTunnels.set(hostId, {
       hostId,
       workspaceIds,
+      connectedAt,
       socket: pair.server,
       pending: new Map(),
       channels: new Map(),
@@ -1642,6 +1667,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         hostTunnelCount: hostTunnels.size,
         clientCount: clients.size,
         hostIds: [...hostTunnels.keys()],
+        hostWorkspaceIds: Object.fromEntries([...hostTunnels].map(([hostId, tunnel]) => [hostId, tunnel.workspaceIds])),
       }
     },
     drain: drainController,

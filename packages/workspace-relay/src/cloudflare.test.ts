@@ -514,6 +514,30 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
+  test("updates a host registration on the existing socket after re-authorizing the workspace set", async () => {
+    const harness = await roomHarness()
+    const response = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken(["ws_1"])}`,
+      },
+    }))
+    expect(response.status).toBe(101)
+
+    ;(harness.pairs[0]?.server as FakeSocket).message(JSON.stringify({
+      type: "host.registration.update",
+      protocol: 1,
+      workspace_ids: ["ws_1", "ws_2"],
+      token: await harness.hostTunnelToken(["ws_1", "ws_2"]),
+    }))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(harness.room.state()).toMatchObject({
+      hostTunnelCount: 1,
+      hostWorkspaceIds: { host_1: ["ws_1", "ws_2"] },
+    })
+  })
+
   test("admits a cloud workspace client WebSocket after Runtime Access Token authorization", async () => {
     const harness = await roomHarness({
       connectWebSocket: () => new FakeSocket(),

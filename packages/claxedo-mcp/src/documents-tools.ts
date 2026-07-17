@@ -51,18 +51,27 @@ export const DOCUMENT_TOOL_SCHEMAS = {
     directory: z.string().trim().min(1).optional().describe("Local project directory when no project id is available."),
   },
   documents_open: {
-    id_or_name: z.string().trim().min(1).describe("Exact document id or case-insensitive display name."),
+    id_or_name: z
+      .string()
+      .trim()
+      .min(1)
+      .describe("Claxedo document reference, exact document id, or case-insensitive display name."),
     project_id: z.string().trim().min(1).optional().describe("Project used to resolve a display name."),
     directory: z.string().trim().min(1).optional().describe("Local project directory used to resolve a display name."),
     session_id: z
       .string()
       .trim()
       .min(1)
-      .describe("Current Claxedo session id used for the per-project local file grant."),
+      .optional()
+      .describe("Current Claxedo session id used for the per-project local file grant. Uses the runtime default when omitted."),
   },
 } as const
 
-export function registerDocumentTools(register: Register, request: Request, defaults?: { directory?: string }) {
+export function registerDocumentTools(
+  register: Register,
+  request: Request,
+  defaults?: { directory?: string; sessionId?: string },
+) {
   register(
     "documents_list",
     {
@@ -74,7 +83,7 @@ export function registerDocumentTools(register: Register, request: Request, defa
   register(
     "documents_open",
     {
-      description: "Resolve a Claxedo document by exact id or name to an honest canonical file path for this session.",
+      description: "Open a claxedo://document/... reference, exact id, or name as an honest canonical file path for this session.",
       inputSchema: DOCUMENT_TOOL_SCHEMAS.documents_open,
     },
     (input) => callDocuments(request, "documents_open", withDefaults(input, defaults)),
@@ -95,24 +104,33 @@ export async function callDocuments(
 
   const parsed = z.strictObject(DOCUMENT_TOOL_SCHEMAS.documents_open).parse(input)
   validateScope(parsed)
+  const sessionId = parsed.session_id
+  if (!sessionId) {
+    throw new DocumentToolError(
+      400,
+      "document_session_required",
+      "session_id is required to grant a session-owned document path",
+    )
+  }
+  const idOrName = documentReferenceId(parsed.id_or_name)
   const documents = await request<DocumentRow[]>(listPath(parsed, "all"), { method: "GET" })
-  const exact = documents.find((document) => document.id === parsed.id_or_name)
+  const exact = documents.find((document) => document.id === idOrName)
   const matches = exact
     ? [exact]
     : documents.filter(
-        (document) => string(document.display_name)?.toLocaleLowerCase() === parsed.id_or_name.toLocaleLowerCase(),
+        (document) => string(document.display_name)?.toLocaleLowerCase() === idOrName.toLocaleLowerCase(),
       )
   if (!matches.length)
-    throw new DocumentToolError(404, "document_not_found", `Document '${parsed.id_or_name}' was not found`)
+    throw new DocumentToolError(404, "document_not_found", `Document '${idOrName}' was not found`)
   if (matches.length > 1)
     throw new DocumentToolError(
       409,
       "document_name_ambiguous",
-      `More than one document is named '${parsed.id_or_name}'`,
+      `More than one document is named '${idOrName}'`,
     )
   const document = matches[0]!
   if (document.archived_at)
-    throw new DocumentToolError(410, "document_archived", `Document '${parsed.id_or_name}' is archived`)
+    throw new DocumentToolError(410, "document_archived", `Document '${idOrName}' is archived`)
   const documentId = string(document.id)
   if (!documentId)
     throw new DocumentToolError(502, "document_metadata_invalid", "Document index returned an entry without an id")
@@ -121,7 +139,7 @@ export async function callDocuments(
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ session_id: parsed.session_id }),
+      body: JSON.stringify({ session_id: sessionId }),
     },
   )
   const canonicalPath = string(opened.path)
@@ -156,9 +174,18 @@ function validateScope(input: { project_id?: string; directory?: string }) {
   }
 }
 
-function withDefaults(input: Record<string, unknown>, defaults?: { directory?: string }) {
-  if (input.project_id || input.directory || !defaults?.directory) return input
-  return { ...input, directory: defaults.directory }
+function withDefaults(input: Record<string, unknown>, defaults?: { directory?: string; sessionId?: string }) {
+  return {
+    ...input,
+    ...(!input.project_id && !input.directory && defaults?.directory ? { directory: defaults.directory } : {}),
+    ...(!input.session_id && defaults?.sessionId ? { session_id: defaults.sessionId } : {}),
+  }
+}
+
+export function documentReferenceId(value: string) {
+  const match = /^claxedo:\/\/document\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(value.trim())
+  if (!match) return value.trim()
+  return decodeURIComponent(match[1]!)
 }
 
 function metadata(document: DocumentRow) {

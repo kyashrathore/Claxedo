@@ -35,7 +35,31 @@ describe("onboarding Home view", () => {
   })
 
   test("returning users keep the existing Home unchanged", () => {
-    expect(onboardingHomeView({ state: { ...state, hasProject: true }, dismissals: [] }).mode).toBe("hidden")
+    expect(onboardingHomeView({
+      state: { ...state, hasProject: true, hasUsableCredential: true, credentialAvailability: "available" },
+      dismissals: [],
+    }).mode).toBe("hidden")
+  })
+
+  test("keeps project onboarding live until AI is verified", () => {
+    const view = onboardingHomeView({ state: { ...state, hasProject: true }, dismissals: [] })
+    expect(view.mode).toBe("form")
+    expect(view.activeStep).toBe("ai")
+  })
+
+  test("keeps web onboarding on compute after project and AI are proven", () => {
+    const view = onboardingHomeView({
+      state: {
+        ...state,
+        surface: "web",
+        hasProject: true,
+        hasUsableCredential: true,
+        credentialAvailability: "available",
+      },
+      dismissals: [],
+    })
+    expect(view.mode).toBe("form")
+    expect(view.activeStep).toBe("compute")
   })
 
   test("go-further cards follow surface applicability and durable dismissal", () => {

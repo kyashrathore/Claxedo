@@ -80,12 +80,16 @@
 
 /* ── Quiet summary line (not a dashboard) ───────────────── */
 
+/* Flex (a BFC), so the strip AND its divider wrap beside the pinned context
+   card. The divider lives here (not on .workgraph-tree) for that reason —
+   the tree must NOT be a BFC or the whole page would narrow end-to-end. */
 .workgraph-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem 1.25rem;
   padding: 0.15rem 0 0.9rem;
   font-size: 0.75rem;
+  border-bottom: 1px solid var(--border-weak-base);
 }
 
 .workgraph-stat {
@@ -133,7 +137,8 @@
    one substantial object. They deliberately do NOT share a visual weight. */
 
 .workgraph-tree {
-  border-top: 1px solid var(--border-weak-base);
+  /* No border here: the divider above the first project is the summary
+     strip's border-bottom, which lives inside the squeezed header band. */
 }
 
 .workgraph-project + .workgraph-project {

@@ -14,6 +14,7 @@ import {
 import { errorBody } from "./http"
 import { CredentialVerificationError, verifyCredential } from "../credentials/verify"
 import { CredentialDiscoveryError } from "../credentials/discovery"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../control-plane/auth"
 
 const putBody = z.object({
   provider_id: z.string().min(1),
@@ -60,7 +61,7 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     has_secret: !!cred.secure_ref,
     expires_at: cred.expires_at,
     last_validated_at: cred.last_validated_at,
-    scope: cred.scope ?? (cred.source === "managed" ? "shared" : "local"),
+    scope: cred.scope ?? "local",
     last_used_at: cred.last_used_at ?? null,
     last_error: cred.last_error,
     created_at: cred.created_at,
@@ -82,6 +83,7 @@ export type CredentialRoutesOptions = {
   token?: string
   fetch?: typeof fetch
   now?: () => number
+  authenticate?: (request: Request) => Promise<void>
 }
 
 export function CredentialRoutes(
@@ -89,6 +91,19 @@ export function CredentialRoutes(
   options: CredentialRoutesOptions = {},
 ) {
   const app = new Hono()
+  if (options.authenticate) {
+    app.use(async (c, next) => {
+      try {
+        await options.authenticate!(c.req.raw)
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) {
+          return c.json(controlPlaneAuthErrorBody(error), error.status)
+        }
+        throw error
+      }
+      await next()
+    })
+  }
   if (options.token) {
     const expected = `Bearer ${options.token}`
     app.use(async (c, next) => {
@@ -114,7 +129,7 @@ export function CredentialRoutes(
       try {
         const cred = await credentials.putCredential({
           ...body.data,
-          ...(body.data.scope ? {
+          ...(body.data.scope === "shared" ? {
             consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
           } : {}),
         })

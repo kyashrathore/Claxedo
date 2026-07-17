@@ -12,7 +12,7 @@ describe("remote access routes", () => {
       relayConfigured: false,
       authenticate,
       service: {
-        status: vi.fn(async () => ({ enabled: false, secondDeviceOpen: false })),
+        status: vi.fn(async () => ({ enrolled: false, enabled: false, secondDeviceOpen: false })),
         enable,
         devices: vi.fn(async () => []),
         revoke: vi.fn(async () => ({ revoked: false })),
@@ -26,6 +26,7 @@ describe("remote access routes", () => {
       device_login_configured: false,
       relay_configured: false,
       hosted_signed_in: false,
+      enrolled: false,
       enabled: false,
       second_device_open: false,
     })
@@ -39,7 +40,7 @@ describe("remote access routes", () => {
 
   test("enables, lists, and revokes enrolled machines through signed auth", async () => {
     const service = {
-      status: vi.fn(async () => ({ enabled: true, secondDeviceOpen: false })),
+      status: vi.fn(async () => ({ enrolled: true, enabled: true, secondDeviceOpen: false })),
       enable: vi.fn(async () => ({ hostId: "host_1", workspaceIds: ["ws_1", "ws_2"], connectionCount: 1 })),
       devices: vi.fn(async () => [{ hostId: "host_1", displayName: "Mac", lastSeenAt: 10, workspaceIds: ["ws_1", "ws_2"] }]),
       revoke: vi.fn(async () => ({ revoked: true })),
@@ -75,7 +76,7 @@ describe("remote access routes", () => {
       relayConfigured: true,
       authenticate: vi.fn(async () => auth),
       service: {
-        status: vi.fn(async () => ({ enabled: true, secondDeviceOpen: false })),
+        status: vi.fn(async () => ({ enrolled: true, enabled: true, secondDeviceOpen: false })),
         enable: vi.fn(),
         devices: vi.fn(async () => []),
         revoke: vi.fn(),

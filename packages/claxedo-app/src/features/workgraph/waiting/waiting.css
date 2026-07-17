@@ -213,10 +213,21 @@
 
 /* ── Contextual card placement ─────────────────────────────
    The card's LOOK lives in the shared `@/ui/context-card` shell; this file
-   only places the WorkGraph instance, matching the session Environment card:
-   the pinned card is BOUNDED and sits inside a right gutter the scroll area
-   reserves — content-sized, never a full-height rail. Only the explicit
-   reveal while the panel is open floats as a fixed overlay. */
+   only places the WorkGraph instance. The header band and the pinned card
+   share one flex row: the band squeezes beside the card, the card STRETCHES
+   to exactly the band's height (its bottom aligns with the stats divider —
+   never below it), and everything under the row is full width. The explicit
+   reveal while the panel is open is a fixed overlay. */
+
+.workgraph-headband {
+  display: flex;
+  align-items: stretch;
+}
+
+.workgraph-headband-main {
+  flex: 1;
+  min-width: 0;
+}
 
 .workgraph-card {
   position: fixed;
@@ -226,37 +237,18 @@
   width: min(92vw, 20.5rem);
 }
 
-/* Gutter-in-scroller placement (Codex's pinned summary): the scroll container
-   keeps the FULL surface width (so its scrollbar stays at the surface's right
-   edge), its content is inset by a right gutter, and the bounded card sits
-   inside that gutter — never overlapping content, never a full-height
-   sidebar, never displacing the scrollbar. Collapsed to Cursor's icon rail,
-   the gutter shrinks to a sliver. Desktop-only, matching the card's own
-   small-screen cutoff below. */
-@media (min-width: 769px) {
-  .workgraph-shell.has-context-card .workgraph-scroll {
-    padding-right: 18.2rem;
-  }
-
-  .workgraph-shell.has-context-card:has(.workgraph-card.is-collapsed) .workgraph-scroll {
-    padding-right: 4.4rem;
-  }
-}
-
 .workgraph-card.is-inline {
-  position: absolute;
-  top: 0.85rem;
-  right: 0.85rem;
-  z-index: 30;
-  width: 16.5rem;
-  max-height: calc(100% - 1.7rem);
-  overflow-y: auto;
+  position: static;
+  flex-shrink: 0;
+  width: 15rem;
+  margin-left: 1.5rem;
 }
 
-/* Collapsed: the same gutter spot holds the shell's vertical icon rail. */
+/* Collapsed: the same corner holds the shell's vertical icon rail,
+   content-sized instead of stretched to the band. */
 .workgraph-card.is-inline.is-collapsed {
-  width: auto;
-  overflow-y: visible;
+  width: 2.5rem;
+  align-self: flex-start;
 }
 
 /* Below desktop width the page needs its full width; the header's "Needs you"

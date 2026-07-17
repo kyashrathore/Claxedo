@@ -87,7 +87,6 @@ export type SessionAppPorts = {
   targetLabel: typeof Marketplace.targetLabel
   uninstallMcpDialogEntry: typeof Marketplace.uninstallMcpDialogEntry
   listDocumentMentions: typeof DocumentMentions.listDocumentMentions
-  openDocumentMention: typeof DocumentMentions.openDocumentMention
   documentMentionText: typeof DocumentMentions.documentMentionText
   useFirstTurnFunnel: () => {
     emit(event: { name: "first_turn_ok" } | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" } | { name: "first_cloud_turn_ok" }): void
@@ -168,7 +167,6 @@ export const sourceLabel = bind("sourceLabel")
 export const targetLabel = bind("targetLabel")
 export const uninstallMcpDialogEntry = bind("uninstallMcpDialogEntry")
 export const listDocumentMentions = bind("listDocumentMentions")
-export const openDocumentMention = bind("openDocumentMention")
 export const documentMentionText = bind("documentMentionText")
 export type DocumentMentionOption = DocumentMentions.DocumentMentionOption
 export type CatalogEntry = Marketplace.CatalogEntry

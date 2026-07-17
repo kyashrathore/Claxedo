@@ -33,7 +33,7 @@ export async function saveDiscoveredAIConnections(input: {
   request?: AIConnectRequest
 }) {
   const request = input.request ?? claxedoCredentialRequest
-  await request({ serverUrl: input.serverUrl, action: "save-discovered" }, {
+  const res = await request({ serverUrl: input.serverUrl, action: "save-discovered" }, {
     method: "POST",
     body: JSON.stringify({
       discovery_id: input.discoveryId,
@@ -44,11 +44,15 @@ export async function saveDiscoveredAIConnections(input: {
       })),
     }),
   })
-  const credentials = await listCredentialIds(input.serverUrl, request)
-  return Promise.all(input.items.flatMap((item) => {
-    const credential = credentials.find((candidate) => candidate.providerId === item.providerId)
-    return credential ? [verifyAIConnection({ ...credential, serverUrl: input.serverUrl, request })] : []
-  }))
+  const body = await res.json() as { saved?: unknown }
+  if (!Array.isArray(body.saved)) throw new Error("Credential discovery save returned an invalid response")
+  const credentials = body.saved.flatMap(redactedSavedCredential)
+  if (credentials.length !== input.items.length) throw new Error("Credential discovery save returned incomplete results")
+  return Promise.all(credentials.map((credential) => verifyAIConnection({
+    ...credential,
+    serverUrl: input.serverUrl,
+    request,
+  })))
 }
 
 export async function connectAIKey(input: {
@@ -145,6 +149,13 @@ function redactedCredentialId(value: unknown) {
   const item = value as Record<string, unknown>
   if (typeof item.id !== "string" || typeof item.provider_id !== "string") return
   return { credentialId: item.id, providerId: item.provider_id }
+}
+
+function redactedSavedCredential(value: unknown) {
+  if (!value || typeof value !== "object") return []
+  const item = value as Record<string, unknown>
+  if (typeof item.credential_id !== "string" || typeof item.provider_id !== "string") return []
+  return [{ credentialId: item.credential_id, providerId: item.provider_id }]
 }
 
 function isVerificationResult(value: unknown): value is AICredentialVerification {

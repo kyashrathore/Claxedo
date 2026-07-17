@@ -5,6 +5,21 @@
 
 .ui-context-card {
   padding: 0.35rem 0.1rem;
+  /* One persistent root across collapse/expand (see the shell component):
+     animating width/padding here is what makes the surrounding content
+     squeeze smoothly instead of jumping. */
+  transition:
+    width 220ms cubic-bezier(0.2, 0, 0, 1),
+    min-height 220ms cubic-bezier(0.2, 0, 0, 1),
+    padding 220ms cubic-bezier(0.2, 0, 0, 1),
+    background 220ms ease,
+    box-shadow 220ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-context-card {
+    transition: none;
+  }
 }
 
 .ui-context-card.is-floating {
@@ -14,9 +29,10 @@
   box-shadow: var(--shadow-lg-border-base);
 }
 
-/* Collapsed, the rail chip carries its own border — drop any variant surface. */
+/* Collapsed, the rail chip carries its own border — drop any variant surface.
+   The width is explicit (the rail's natural size) so it can transition. */
 .ui-context-card.is-collapsed {
-  width: auto;
+  width: 2.5rem;
   padding: 0;
   background: none;
   box-shadow: none;
@@ -37,6 +53,23 @@
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.01em;
+}
+
+/* The label-as-action variant: same quiet type, hover reveals it's clickable. */
+.ui-context-card-label-open {
+  margin: 0 -0.35rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-md);
+  text-align: left;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.ui-context-card-label-open:hover,
+.ui-context-card-label-open:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--text-base);
 }
 
 .ui-context-card-count {

@@ -106,7 +106,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   targetLabel: lazy("@/features/extensions/marketplace/api", "targetLabel"),
   uninstallMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "uninstallMcpDialogEntry"),
   listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
-  openDocumentMention: lazy("@/app/integrations/document-mentions", "openDocumentMention"),
   documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),
 }
 

@@ -8,7 +8,7 @@ function migration(name: string) {
 }
 
 describe("credential scope migration", () => {
-  test("backfills managed credentials as shared and every other source as local", () => {
+  test("backfills every legacy credential as local until the user explicitly consents to sharing", () => {
     const sqlite = new Database(":memory:")
     sqlite.exec(migration("20260411000000_provider_credentials"))
     sqlite.prepare(`
@@ -29,7 +29,7 @@ describe("credential scope migration", () => {
       FROM claxedo_provider_credential ORDER BY id
     `).all()).toEqual([
       { id: "local", scope: "local", consent_json: null, last_used_at: null },
-      { id: "managed", scope: "shared", consent_json: null, last_used_at: null },
+      { id: "managed", scope: "local", consent_json: null, last_used_at: null },
     ])
   })
 })

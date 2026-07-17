@@ -3,13 +3,13 @@ import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-f
 
 describe("provision failure taxonomy", () => {
   test.each([
-    ["API key rejected with 401 unauthorized", "bad_key", "Update API key"],
-    ["Account has no payment method", "no_payment_method", "Open provider billing"],
-    ["Sandbox quota exceeded", "quota", "Review provider quota"],
-    ["Selected region is unavailable", "region", "Choose another region"],
-    ["Clone failed unexpectedly", "unknown", "Retry provisioning"],
-  ] as const)("classifies %s", (message, expectedClass, expectedAction) => {
-    expect(classifyProvisionFailure(message)).toMatchObject({ class: expectedClass, action: expectedAction })
+    ["API key rejected with 401 unauthorized", "bad_key", "Review provider account", "provider-account"],
+    ["Account has no payment method", "no_payment_method", "Review provider account", "provider-account"],
+    ["Sandbox quota exceeded", "quota", "Review provider account", "provider-account"],
+    ["Selected region is unavailable", "region", "Choose another provider", "choose-provider"],
+    ["Clone failed unexpectedly", "unknown", "Retry provisioning", "retry"],
+  ] as const)("classifies %s", (message, expectedClass, expectedAction, expectedFix) => {
+    expect(classifyProvisionFailure(message)).toMatchObject({ class: expectedClass, action: expectedAction, fix: expectedFix })
   })
 
   test("does not navigate until the provision is explicitly ready", () => {

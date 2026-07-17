@@ -7,6 +7,7 @@ type RemoteAccessStatusBody = {
   relay_configured?: unknown
   hosted_signed_in?: unknown
   enabled?: unknown
+  enrolled?: unknown
   second_device_open?: unknown
 }
 
@@ -33,6 +34,7 @@ export function createRemoteAccessClient(input: {
         relayConfigured: body.relay_configured === true,
         hostedSignedIn: body.hosted_signed_in === true,
         enabled: body.enabled === true,
+        enrolled: body.enrolled === true,
         secondDeviceOpen: body.second_device_open === true,
       }
     },

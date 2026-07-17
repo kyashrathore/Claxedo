@@ -18,6 +18,7 @@ export function githubIntegration(options: { fetchImpl?: typeof fetch } = {}): {
       async verify(_fields: ConnectionFields, secret: string): Promise<VerifyResult> {
         try {
           const res = await fetchImpl("https://api.github.com/user", {
+            signal: AbortSignal.timeout(10_000),
             headers: {
               Authorization: `Bearer ${secret}`,
               Accept: "application/vnd.github+json",
@@ -34,9 +35,9 @@ export function githubIntegration(options: { fetchImpl?: typeof fetch } = {}): {
         }
       },
       async listRepositories(_fields: ConnectionFields, secret: string): Promise<CodeHostRepository[]> {
-        const repositories: CodeHostRepository[] = []
-        for (let page = 1; page <= 10; page++) {
+        const load = async (page: number, repositories: CodeHostRepository[]): Promise<CodeHostRepository[]> => {
           const res = await fetchImpl(`https://api.github.com/user/repos?per_page=100&page=${page}&sort=updated`, {
+            signal: AbortSignal.timeout(10_000),
             headers: {
               Authorization: `Bearer ${secret}`,
               Accept: "application/vnd.github+json",
@@ -49,10 +50,11 @@ export function githubIntegration(options: { fetchImpl?: typeof fetch } = {}): {
           if (!res.ok) throw new Error("github_repositories_unavailable")
           const body = await res.json().catch(() => undefined)
           if (!Array.isArray(body)) throw new Error("github_repositories_invalid_response")
-          repositories.push(...body.flatMap(repositoryFromGitHub))
-          if (body.length < 100) return repositories
+          const next = [...repositories, ...body.flatMap(repositoryFromGitHub)]
+          if (body.length < 100 || page === 10) return next
+          return load(page + 1, next)
         }
-        return repositories
+        return load(1, [])
       },
     },
   }

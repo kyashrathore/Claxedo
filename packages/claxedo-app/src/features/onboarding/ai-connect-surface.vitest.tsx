@@ -51,8 +51,7 @@ describe("AIConnectSurface", () => {
         { provider_id: "anthropic", kind: "oauth_token", label: "Claude", origin: "macOS Keychain" },
         { provider_id: "openai", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
       ] }),
-      Response.json({ ok: true }),
-      Response.json({ credentials: [{ id: "cred-anthropic", provider_id: "anthropic" }] }),
+      Response.json({ saved: [{ credential_id: "cred-anthropic", provider_id: "anthropic" }] }),
       Response.json({ result: "ok" }),
     ])
     const onConnected = vi.fn()

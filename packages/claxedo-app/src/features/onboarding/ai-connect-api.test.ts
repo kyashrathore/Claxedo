@@ -50,11 +50,7 @@ describe("AI connect API", () => {
 
   test("saves only selected discovered providers, then verifies each saved credential", async () => {
     const stub = requests([
-      Response.json({ ok: true }),
-      Response.json({ credentials: [
-        { id: "cred-anthropic", provider_id: "anthropic" },
-        { id: "cred-openai", provider_id: "openai" },
-      ] }),
+      Response.json({ saved: [{ credential_id: "cred-anthropic", provider_id: "anthropic" }] }),
       Response.json({ result: "ok" }),
     ])
 
@@ -67,7 +63,7 @@ describe("AI connect API", () => {
       discovery_id: "discovery-1",
       items: [{ provider_id: "anthropic", scope: "local" }],
     })
-    expect(stub.calls[2].input).toMatchObject({ credentialId: "cred-anthropic", action: "verify" })
+    expect(stub.calls[1].input).toMatchObject({ credentialId: "cred-anthropic", action: "verify" })
   })
 
   test.each(["auth_failed", "no_billing"] as const)("returns typed %s failures after API-key save", async (result) => {

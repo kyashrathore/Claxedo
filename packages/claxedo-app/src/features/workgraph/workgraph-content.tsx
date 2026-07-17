@@ -431,17 +431,23 @@ export function WorkGraphContent(props: {
   }
   // Card rows open the item's dialog right where the user is; the card head's
   // expand action is the "see it in full context" path into the shared panel.
-  const waitingCard = (mode: "inline" | "floating") => <WaitingCard mode={mode} items={card.items()} total={attentionTotal()} unread={card.unread()} collapsed={card.collapsed()} onToggleCollapse={card.toggleCollapsed} onClose={card.closeFloating} onSelect={selectWaiting} onOpenPanel={() => openPanelTab("attention")} />
+  const waitingCard = (mode: "inline" | "floating") => <WaitingCard mode={mode} items={card.items()} collapsed={card.collapsed()} onToggleCollapse={card.toggleCollapsed} onClose={card.closeFloating} onSelect={selectWaiting} onOpenPanel={() => openPanelTab("attention")} />
 
   return (
     <main
       class="workgraph-shell workgraph-surface size-full overflow-hidden text-text-base"
-      classList={{ "has-context-card": contextMode() === "inline" }}
       aria-label="WorkGraph"
     >
       <div class="workgraph-scroll">
-        <div class="workgraph-canvas mx-auto flex w-full max-w-[1680px] flex-col px-4 py-6 sm:px-8 md:px-10 md:py-10">
-          <header class="workgraph-head">
+        <div class="workgraph-canvas mx-auto w-full max-w-[1680px] px-4 py-6 sm:px-8 md:px-10 md:py-10">
+          {/* The header band (title, lede, rule, stats) and the pinned card
+              share ONE flex row: only the band squeezes beside the card, the
+              card stretches to EXACTLY the band's height (its bottom aligns
+              with the stats divider), and everything below the row is full
+              width. */}
+          <div class="workgraph-headband">
+            <div class="workgraph-headband-main">
+              <header class="workgraph-head">
             <div class="workgraph-head-top">
               <div class="min-w-0">
                 <div class="workgraph-eyebrow text-text-weaker">
@@ -469,11 +475,23 @@ export function WorkGraphContent(props: {
                 </Button>
               </div>
             </div>
-            <p class="workgraph-lede text-text-weak">Every thread of work you're shipping with AI, grouped by project. Each card is a stream; open More for its full task list.</p>
-          </header>
+                <p class="workgraph-lede text-text-weak">Every thread of work you're shipping with AI, grouped by project. Each card is a stream; open More for its full task list.</p>
+              </header>
+              <div class="workgraph-rule" aria-hidden="true" />
+              <Show when={!snapshot.error && snapshot()}>
+                <StatStrip
+                  stats={[
+                    { label: "Active", value: streams().filter((stream) => stream.lifecycleState !== "closed").length },
+                    { label: "Agents working", value: activeAttempts().length },
+                    { label: "Needs you", value: attentionTotal() },
+                  ]}
+                />
+              </Show>
+            </div>
+            <Show when={contextMode() === "inline"}>{waitingCard("inline")}</Show>
+          </div>
           <div class="workgraph-body">
             <div class="workgraph-primary">
-              <div class="workgraph-rule" aria-hidden="true" />
           <DialogRoot
             modal
             open={creating()}
@@ -617,13 +635,6 @@ export function WorkGraphContent(props: {
             </Match>
             <Match when={true}>
               <div class="space-y-4">
-                <StatStrip
-                  stats={[
-                    { label: "Active", value: streams().filter((stream) => stream.lifecycleState !== "closed").length },
-                    { label: "Agents working", value: activeAttempts().length },
-                    { label: "Needs you", value: attentionTotal() },
-                  ]}
-                />
                 <WorkGraphProjectGroups
                   streams={sortedStreams()}
                   outcomes={outcomes()}
@@ -646,9 +657,8 @@ export function WorkGraphContent(props: {
           </div>
         </div>
       </div>
-      {/* The context card FLOATS over the surface at its right edge (Codex-style
-          overlay) — never a section inside the page, never a reserved column. */}
-      <Show when={contextMode() === "inline"}>{waitingCard("inline")}</Show>
+      {/* The pinned inline card lives in the canvas flow above; only the
+          explicit reveal-over-panel is a fixed overlay. */}
       <Show when={contextMode() === "floating"}>{waitingCard("floating")}</Show>
       {/* The two WorkGraph tabs + the active view live in the one shared panel. */}
       <Show when={props.panel}>

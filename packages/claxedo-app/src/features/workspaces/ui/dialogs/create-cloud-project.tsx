@@ -38,7 +38,7 @@ async function createCloudProject(
   return api.post<CreateWorkspaceResult>(
     workspaceCreateUrl({ baseUrl }),
     {
-      provider,
+      driver: provider,
       projectName: name,
       workspaceName: "main",
       ...source,
@@ -94,6 +94,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   const [repository, setRepository] = createSignal<RepositoryChoice>()
   const [repositorySearch, setRepositorySearch] = createSignal("")
   const [repositories, setRepositories] = createSignal<RepositoryChoice[]>([])
+  const [repositoryLoadError, setRepositoryLoadError] = createSignal("")
   const [provider, setProvider] = createSignal("")
   const [providers, setProviders] = createSignal<Provider[]>([])
   const [phase, setPhase] = createSignal<"form" | "provisioning">("form")
@@ -122,7 +123,13 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       })
     void loadConnectedRepositories((path) => authFetch(
       new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(),
-    )).then(setRepositories).catch(() => setRepositories([]))
+    )).then((items) => {
+      setRepositories(items)
+      setRepositoryLoadError("")
+    }).catch((cause) => {
+      setRepositories([])
+      setRepositoryLoadError(cause instanceof Error ? cause.message : "GitHub repositories are unavailable.")
+    })
   })
 
   const lastPipelineKey = () => {
@@ -286,6 +293,9 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
               </div>
 
               <div>
+                <Show when={repositoryLoadError()}>
+                  <p class="mb-2 text-12-regular text-icon-warning-base">{repositoryLoadError()}</p>
+                </Show>
                 <Show when={repositories().length > 0}>
                   <label class="block text-sm text-text-weak mb-1">
                     Connected GitHub repository
@@ -431,8 +441,23 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                   </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-2">
-                  <Button variant="ghost" onClick={() => { setPhase("form"); setError("") }}>
-                    {failure()?.action}
+                  <Show when={failure()?.fix === "provider-account" && sandboxProviderFacts(provider()).accountUrl}>
+                    <a
+                      class="inline-flex items-center rounded-md px-3 text-13-medium text-text-interactive-base"
+                      href={sandboxProviderFacts(provider()).accountUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {failure()?.action}
+                    </a>
+                  </Show>
+                  <Show when={failure()?.fix === "choose-provider"}>
+                    <Button variant="ghost" onClick={() => { setPhase("form"); setError("") }}>
+                      {failure()?.action}
+                    </Button>
+                  </Show>
+                  <Button variant="primary" onClick={(event: MouseEvent) => void handleSubmit(event)}>
+                    Retry provisioning
                   </Button>
                 </div>
               </Show>

@@ -32,9 +32,10 @@ export function createRemoteAccessService(input: {
     workspaceIds: string[]
     hostId: string
     relayUrl: string
-    hostTunnelToken: string
+    hostTunnelTokenProvider: () => Promise<string>
   }): Promise<{ connectionCount: number; workspaceIds: string[] }>
   stopMachineTunnel(hostId: string): boolean
+  machineTunnelActive?(hostId: string): boolean
   capture(distinctId: string, event: string, properties?: Record<string, unknown>): void
 }): RemoteAccessService {
   let enrollment: {
@@ -79,16 +80,15 @@ export function createRemoteAccessService(input: {
       enrollment!.registered.add(workspace.id)
     }))
     const workspaceIds = workspaces.map((workspace) => workspace.id).sort()
-    const credential = await input.hostTunnelTokenSigner({
-      subject: enrollment.auth.user.subject,
-      hostId: enrollment.identity.hostId,
-      workspaceIds,
-    })
     const tunnel = await input.startMachineTunnel({
       workspaceIds,
       hostId: enrollment.identity.hostId,
       relayUrl: input.relayUrl,
-      hostTunnelToken: credential.hostTunnelToken,
+      hostTunnelTokenProvider: async () => (await input.hostTunnelTokenSigner({
+        subject: enrollment!.auth.user.subject,
+        hostId: enrollment!.identity.hostId,
+        workspaceIds,
+      })).hostTunnelToken,
     })
     return {
       hostId: enrollment.identity.hostId,
@@ -130,11 +130,12 @@ export function createRemoteAccessService(input: {
 
   return {
     async status(auth) {
-      if (!auth) return { enabled: false, secondDeviceOpen: false }
+      if (!auth) return { enrolled: false, enabled: false, secondDeviceOpen: false }
       const identity = await input.localHostIdentity()
       const enrolled = (await devices(auth)).some((device) => device.hostId === identity.hostId)
       return {
-        enabled: enrolled,
+        enrolled,
+        enabled: enrolled && (input.machineTunnelActive?.(identity.hostId) ?? true),
         secondDeviceOpen: (await activeLinks(input.authority, auth)).some((link) => !!link.secondDeviceOpenAt),
       }
     },
@@ -163,7 +164,7 @@ export function createRemoteAccessService(input: {
         hostId,
         paused: true,
       })))
-      input.stopMachineTunnel(hostId)
+      if (links.length > 0) input.stopMachineTunnel(hostId)
       return { revoked: links.length > 0 }
     },
     async markSecondDeviceOpen(auth, workspaceId) {
@@ -180,7 +181,7 @@ export function unavailableRemoteAccessService(): RemoteAccessService {
     throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
   }
   return {
-    status: async () => ({ enabled: false, secondDeviceOpen: false }),
+    status: async () => ({ enrolled: false, enabled: false, secondDeviceOpen: false }),
     enable: unavailable,
     devices: unavailable,
     revoke: unavailable,

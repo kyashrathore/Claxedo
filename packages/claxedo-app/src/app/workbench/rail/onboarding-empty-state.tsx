@@ -1,8 +1,8 @@
-import { createEffect, createMemo, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useNavigate } from "@solidjs/router"
+import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useServer } from "@/app/connection/server"
@@ -23,19 +23,28 @@ import {
   useRemoteAccessController,
   verifyProviderAIConnections,
   type OnboardingStepAction,
+  type OnboardingStepId,
   type SetupShellMode,
 } from "@/features/onboarding"
 import { SetupShell } from "@/features/onboarding/setup-shell"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { capture as captureTelemetry } from "@/platform/telemetry/analytics"
+import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
+import type { SessionInventoryRow } from "@/features/session/data/query/types"
 
-export function OnboardingEmptyState(props: { onNewProject?: () => void }) {
+export function OnboardingEmptyState(props: {
+  projectDirectory?: string
+  fallback?: JSX.Element | false
+  overlay?: boolean
+  onNewProject?: () => void
+}) {
   const platform = usePlatform()
   const server = useServer()
   const globalSDK = useGlobalSDK()
   const config = useConfigOptional()
   const dialog = useDialog()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const dismissals = createLocalOnboardingDismissals()
   const surface = () => platform.platform === "desktop" ? "desktop" : config?.sandboxEnabled ? "web" : "self-host"
   const machineId = () => `${platform.platform}:${server.url}`
@@ -44,6 +53,11 @@ export function OnboardingEmptyState(props: { onNewProject?: () => void }) {
     capture: captureTelemetry,
   }))
   const remoteAccess = useRemoteAccessController({ serverUrl: server.url, emit: funnel().emit })
+  const [selectedStep, setSelectedStep] = createSignal<OnboardingStepId>()
+  const requestedStep = createMemo<OnboardingStepId | undefined>(() => {
+    const step = searchParams.onboarding
+    if (step === "project" || step === "ai" || step === "compute" || step === "remote-access") return step
+  })
   const emitted = new Set<string>()
   const credentialsQuery = useQuery(() => ({
     queryKey: ["claxedo", "onboarding", "credentials", server.url, machineId()] as const,
@@ -53,18 +67,25 @@ export function OnboardingEmptyState(props: { onNewProject?: () => void }) {
       defaultScope: surface() === "desktop" ? "local" : "shared",
     }),
   }))
-  const setup = createMemo(() => {
+  const sessionInventoryQuery = useQuery(() =>
+    sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: globalSDK.url }),
+  )
+  const projectSessions = createMemo(() =>
+    sessionInventoryQuery.data?.sessions.filter((session) => session.directory === props.projectDirectory) ?? [],
+  )
+  const state = createMemo(() => {
     const remoteAvailability = remoteAccess.availability()
-    return onboardingHomeView({
-      state: onboardingState({
+    return onboardingState({
       surface: surface(),
       machineId: machineId(),
       credentials: credentialsQuery.data ?? [],
       runnableHarnesses: [],
-      hasProject: false,
+      hasProject: !!props.projectDirectory,
       sandboxProviderConfigured: false,
-      hasFirstTurn: false,
-      hasFirstCloudTurn: false,
+      hasFirstTurn: projectSessions().some((session) => session.lastTurn?.status === "completed"),
+      hasFirstCloudTurn: projectSessions().some((session) =>
+        session.lastTurn?.status === "completed" && session.environment?.kind === "cloud",
+      ),
       hostedSignedIn: remoteAccess.status.data?.hostedSignedIn === true,
       remoteAccessEnabled: remoteAccess.status.data?.enabled === true,
       remoteAccessAvailable: remoteAvailability.state !== "locked",
@@ -72,10 +93,12 @@ export function OnboardingEmptyState(props: { onNewProject?: () => void }) {
         ? remoteAvailability.reason
         : undefined,
       secondDeviceOpen: remoteAccess.status.data?.secondDeviceOpen === true,
-      }),
-      dismissals: dismissals.ids(),
     })
   })
+  const setup = createMemo(() => onboardingHomeView({
+    state: state(),
+    dismissals: dismissals.ids(),
+  }))
   const visibleSetup = createMemo(() => {
     const view = setup()
     if (view.mode === "hidden") return
@@ -142,26 +165,43 @@ export function OnboardingEmptyState(props: { onNewProject?: () => void }) {
   }
 
   return (
-    <Show
-      when={visibleSetup()}
-      fallback={
-        <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
-          <h1 class="sr-only">No projects yet</h1>
-          <span class="text-14-regular">No projects yet. Create one to get started.</span>
-          <Button icon="plus-small" onClick={() => props.onNewProject?.()}>New Project</Button>
-        </div>
-      }
+    <div
+      class="contents"
+      data-testid="onboarding-owner"
+      data-mode={setup().mode}
+      data-project={String(!!props.projectDirectory)}
+      data-usable-credential={String(state().hasUsableCredential)}
+      data-dismissals={dismissals.ids().join(",")}
     >
-      {(view) => (
-        <div class="flex h-full items-center justify-center overflow-auto p-4">
+      <Show
+        when={visibleSetup()}
+        fallback={props.fallback === false ? undefined : props.fallback ?? (
+          <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
+            <h1 class="sr-only">No projects yet</h1>
+            <span class="text-14-regular">No projects yet. Create one to get started.</span>
+            <Button icon="plus-small" onClick={() => props.onNewProject?.()}>New Project</Button>
+          </div>
+        )}
+      >
+        {(view) => (
+          <div
+            class="flex h-full items-center justify-center overflow-auto p-4"
+            classList={{ "absolute inset-0 z-20 bg-background-base": props.overlay }}
+          >
           <SetupShell
             mode={view().mode}
             steps={view().steps}
-            activeStep={view().activeStep}
+            activeStep={(() => {
+              const selected = view().steps.find((step) => step.id === (selectedStep() ?? requestedStep()))
+              return selected && !selected.done && !selected.locked ? selected.id : view().activeStep
+            })()}
             goFurtherCards={onboardingGoFurtherCards.filter((card) => view().goFurtherCards.some((item) => item.id === card.id))}
             onSelectStep={(id) => {
               const step = view().steps.find((item) => item.id === id)
-              if (step && !step.locked && step.id !== "ai") runAction(step.cta.action)
+              if (!step || step.locked) return
+              setSelectedStep(id)
+              setSearchParams({ onboarding: id })
+              if (step.id !== "ai") runAction(step.cta.action)
             }}
             onDismiss={() => {
               if (view().mode === "form") funnel().emit({ name: "setup_form_dismissed" })
@@ -222,8 +262,9 @@ export function OnboardingEmptyState(props: { onNewProject?: () => void }) {
               )
             }}
           />
-        </div>
-      )}
-    </Show>
+          </div>
+        )}
+      </Show>
+    </div>
   )
 }

@@ -4,5 +4,4 @@ ALTER TABLE `claxedo_provider_credential` ADD `consent_json` text;
 --> statement-breakpoint
 ALTER TABLE `claxedo_provider_credential` ADD `last_used_at` integer;
 --> statement-breakpoint
-UPDATE `claxedo_provider_credential`
-SET `scope` = CASE WHEN `source` = 'managed' THEN 'shared' ELSE 'local' END;
+UPDATE `claxedo_provider_credential` SET `scope` = 'local';

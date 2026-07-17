@@ -30,11 +30,16 @@ function setup() {
     pauseLocalHostLink: vi.fn(async () => ({})),
     markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 20 })),
   }
-  const startMachineTunnel = vi.fn(async ({ workspaceIds }: { workspaceIds: string[] }) => ({
+  const startMachineTunnel = vi.fn(async ({ workspaceIds }: {
+    workspaceIds: string[]
+    hostTunnelTokenProvider: () => Promise<string>
+  }) => ({
     reused: false,
     connectionCount: 1,
     workspaceIds,
   }))
+  const stopMachineTunnel = vi.fn(() => true)
+  const machineTunnelActive = vi.fn(() => true)
   const service = createRemoteAccessService({
     authority: authority as never,
     relayUrl: "https://relay.test",
@@ -52,10 +57,19 @@ function setup() {
     signHostPayload: vi.fn(() => "signature"),
     registrationPayload: vi.fn(() => "payload"),
     startMachineTunnel,
-    stopMachineTunnel: vi.fn(() => true),
+    stopMachineTunnel,
+    machineTunnelActive,
     capture: vi.fn(),
   })
-  return { authority, service, startMachineTunnel, localWorkspaces, workspaceChanged: () => workspaceChanged?.() }
+  return {
+    authority,
+    service,
+    startMachineTunnel,
+    stopMachineTunnel,
+    machineTunnelActive,
+    localWorkspaces,
+    workspaceChanged: () => workspaceChanged?.(),
+  }
 }
 
 describe("remote access service", () => {
@@ -75,8 +89,9 @@ describe("remote access service", () => {
       workspaceIds: ["ws_1", "ws_2"],
       hostId: "host_machine",
       relayUrl: "https://relay.test",
-      hostTunnelToken: "htt_1",
+      hostTunnelTokenProvider: expect.any(Function),
     })
+    await expect(startMachineTunnel.mock.calls[0]![0].hostTunnelTokenProvider()).resolves.toBe("htt_1")
   })
 
   test("adds a newly opened project through a registration update path", async () => {
@@ -93,7 +108,7 @@ describe("remote access service", () => {
   })
 
   test("groups workspace links into one device and revokes every link for the host", async () => {
-    const { authority, service } = setup()
+    const { authority, service, stopMachineTunnel } = setup()
     await expect(service.devices(auth)).resolves.toEqual([{
       hostId: "host_machine",
       displayName: "Yash's Mac",
@@ -102,6 +117,19 @@ describe("remote access service", () => {
     }])
     await expect(service.revoke(auth, "host_machine")).resolves.toEqual({ revoked: true })
     expect(authority.pauseLocalHostLink).toHaveBeenCalledTimes(2)
+    expect(stopMachineTunnel).toHaveBeenCalledWith("host_machine")
+    await expect(service.revoke(auth, "host_other")).resolves.toEqual({ revoked: false })
+    expect(stopMachineTunnel).toHaveBeenCalledTimes(1)
+  })
+
+  test("distinguishes durable enrollment from an active process-local tunnel", async () => {
+    const { service, machineTunnelActive } = setup()
+    machineTunnelActive.mockReturnValue(false)
+    await expect(service.status(auth)).resolves.toEqual({
+      enrolled: true,
+      enabled: false,
+      secondDeviceOpen: false,
+    })
   })
 
   test("persists second-device proof through the workspace authority", async () => {

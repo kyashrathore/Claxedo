@@ -19,7 +19,12 @@ export async function loadConnectedRepositories(request: (path: string) => Promi
   })
   return (await Promise.all(connections.map(async (connection) => {
     const response = await request(`/connections/${encodeURIComponent(connection.id)}/repositories`)
-    if (!response.ok) return []
+    if (!response.ok) {
+      const error = await response.json().catch(() => undefined) as { code?: unknown } | undefined
+      const code = typeof error?.code === "string" ? error.code : "repository_provider_unavailable"
+      if (code === "repository_provider_unauthorized") throw new Error("Reconnect GitHub to list repositories.")
+      throw new Error("GitHub repositories are temporarily unavailable. Retry in a moment.")
+    }
     const result = await response.json().catch(() => undefined) as { repositories?: unknown[] } | undefined
     return (result?.repositories ?? []).flatMap((value): RepositoryChoice[] => {
       if (!value || typeof value !== "object") return []

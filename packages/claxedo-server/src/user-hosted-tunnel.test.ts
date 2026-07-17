@@ -104,12 +104,15 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       workspaceIds: string[]
       localBaseUrl: string
       resolveLocalUrl: (input: { workspaceId: string; path: string }) => URL | undefined
+      tokenProvider: () => Promise<string>
     }
     expect(options.workspaceIds).toEqual(["ws_a", "ws_b"])
     expect(options.localBaseUrl).toBe("http://127.0.0.1:3001")
     expect(options.resolveLocalUrl({ workspaceId: "ws_b", path: "/api/wr/health?probe=1" })?.toString())
       .toBe("http://127.0.0.1:3001/workspaces/ws_b/api/wr/health?probe=1")
     expect(options.resolveLocalUrl({ workspaceId: "ws_b", path: "/api/claxedo/credentials" })).toBeUndefined()
+    expect(options.resolveLocalUrl({ workspaceId: "ws_unknown", path: "/api/wr/health" })).toBeUndefined()
+    await expect(options.tokenProvider()).resolves.toBe("htt_1")
 
     await expect(startUserHostedMachineTunnel({
       workspaceIds: ["ws_a", "ws_b", "ws_c"],
@@ -123,6 +126,7 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       workspaceIds: ["ws_a", "ws_b", "ws_c"],
       token: "htt_2",
     })
+    await expect(options.tokenProvider()).resolves.toBe("htt_2")
     expect(mocks.close).not.toHaveBeenCalled()
   })
 

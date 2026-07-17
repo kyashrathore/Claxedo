@@ -1,5 +1,4 @@
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
-import { IconButton } from "@opencode-ai/ui/icon-button"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Persist, persisted } from "@/platform/persistence/persist"
@@ -43,15 +42,14 @@ export function createWaitingCardController(items: () => AttentionItem[]) {
 }
 
 /** Compact contextual attention card — the Codex "pinned summary" shape.
- *  Previews the four most recent items plus the total; visibility is toggled
- *  from the surface header, and the inline card can also fold into Cursor's
- *  icon rail (`collapsed`). Rows open the item dialog directly; the head's
- *  expand action opens the full Waiting panel. */
+ *  Previews the four most recent items; visibility is toggled from the surface
+ *  header, and the inline card can also fold into Cursor's icon rail
+ *  (`collapsed`). No count, no unread dot — the card IS the signal. Rows open
+ *  the item dialog directly; the "Needs you" head opens the full Waiting
+ *  panel. */
 export function WaitingCard(props: {
   mode: "inline" | "floating"
   items: AttentionItem[]
-  total: number
-  unread: number
   /** Collapse-to-rail, inline mode only — floating reveals are always full. */
   collapsed?: boolean
   onToggleCollapse?: () => void
@@ -75,7 +73,6 @@ export function WaitingCard(props: {
     <button
       type="button"
       class="ui-context-card-rail-item"
-      classList={{ "is-unread": props.unread > 0 }}
       aria-label="Open Needs you panel"
       onClick={() => props.onOpenPanel()}
     >
@@ -89,23 +86,11 @@ export function WaitingCard(props: {
       ariaLabel="Waiting on you"
       class={`workgraph-card ${props.mode === "inline" ? "is-inline" : ""}`}
       label="Needs you"
-      count={props.total}
-      countLabel={`${props.total} waiting`}
-      unread={props.unread > 0}
-      unreadLabel={`${props.unread} unread`}
+      onLabelSelect={() => props.onOpenPanel()}
       collapsed={props.mode === "inline" ? props.collapsed : false}
       onToggleCollapse={props.mode === "inline" ? props.onToggleCollapse : undefined}
       collapsedLabel="Expand Needs you"
       collapsedContent={rail}
-      headerActions={
-        <IconButton
-          variant="ghost"
-          size="small"
-          icon="maximize"
-          aria-label="Open Needs you panel"
-          onClick={() => props.onOpenPanel()}
-        />
-      }
       onClose={props.mode === "floating" ? props.onClose : undefined}
       closeLabel="Close waiting context"
     >

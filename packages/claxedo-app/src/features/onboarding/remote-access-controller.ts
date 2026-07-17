@@ -1,4 +1,4 @@
-import { createMemo, createResource } from "solid-js"
+import { createEffect, createMemo, createResource } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -53,6 +53,22 @@ export function useRemoteAccessController(input: {
       sourceClientId: remoteAccessClientId(),
     })
   })
+  let resumed = false
+
+  async function enable() {
+    await client().enable({
+      displayName: navigator.platform || "This machine",
+      startAtLogin: startAtLogin() ?? false,
+    })
+    await Promise.all([status.refetch(), devices.refetch()])
+  }
+
+  createEffect(() => {
+    if (resumed || platform.platform !== "desktop" || startAtLogin() !== true) return
+    if (status.data?.hostedSignedIn !== true || status.data?.enrolled !== true || status.data?.enabled === true) return
+    resumed = true
+    void enable()
+  })
 
   return {
     status,
@@ -64,13 +80,7 @@ export function useRemoteAccessController(input: {
       startAtLoginActions.mutate(enabled)
       await platform.setStartAtLogin?.(enabled)
     },
-    async enable() {
-      await client().enable({
-        displayName: navigator.platform || "This machine",
-        startAtLogin: startAtLogin() ?? false,
-      })
-      await Promise.all([status.refetch(), devices.refetch()])
-    },
+    enable,
     async revoke(hostId: string) {
       await client().revoke(hostId)
       await Promise.all([status.refetch(), devices.refetch()])

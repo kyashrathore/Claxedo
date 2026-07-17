@@ -1,10 +1,13 @@
 import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 
 import { Workbench } from "../workbench/index"
 import { ContentRenderer } from "../content/index"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { OnboardingEmptyState } from "./onboarding-empty-state"
+
+const ONBOARDING_V1 = import.meta.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 
 const SessionContent = lazy(() =>
   import("../../../features/session/ui/content/session-content").then((m) => ({ default: m.SessionContent })),
@@ -14,6 +17,9 @@ type RailWorkbenchState = {
   wb: {
     state: {
       focusedPaneId?: string | null
+    }
+    selectors: {
+      focusedContent: () => string | null | undefined
     }
   }
   meta: {
@@ -29,8 +35,18 @@ export function RailWorkbenchCanvas(props: {
   emptyDraftDirectory: Accessor<string | undefined>
   onNewProject?: () => void
 }) {
+  const onboardingOverlayDirectory = createMemo(() => {
+    if (!ONBOARDING_V1) return
+    const projectDirectory = props.emptyDraftDirectory()
+    if (!projectDirectory) return
+    const contentId = props.state.wb.selectors.focusedContent()
+    if (!contentId) return projectDirectory
+    const content = props.state.meta.get(contentId)
+    if (content?.type === "session" && content.sessionId === "new") return projectDirectory
+  })
+
   return (
-    <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+    <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <Workbench
         renderContent={(id, ctx) => (
           <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
@@ -40,7 +56,9 @@ export function RailWorkbenchCanvas(props: {
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}
-            fallback={<OnboardingEmptyState onNewProject={props.onNewProject} />}
+            fallback={ONBOARDING_V1
+              ? <OnboardingEmptyState onNewProject={props.onNewProject} />
+              : <LegacyEmptyState onNewProject={props.onNewProject} />}
           >
             {(workspaceDir) => (
               <EmptyDraftSessionComposer
@@ -57,6 +75,26 @@ export function RailWorkbenchCanvas(props: {
           props.state.layout._cleanupOnClose(id, reason === "stale" ? "panic" : "user")
         }}
       />
+      <Show when={onboardingOverlayDirectory()}>
+        {(projectDirectory) => (
+          <OnboardingEmptyState
+            projectDirectory={projectDirectory()}
+            overlay
+            fallback={false}
+            onNewProject={props.onNewProject}
+          />
+        )}
+      </Show>
+    </div>
+  )
+}
+
+function LegacyEmptyState(props: { onNewProject?: () => void }) {
+  return (
+    <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
+      <h1 class="sr-only">No projects yet</h1>
+      <span class="text-14-regular">No projects yet. Create one to get started.</span>
+      <Button icon="plus-small" onClick={props.onNewProject}>New Project</Button>
     </div>
   )
 }

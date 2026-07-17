@@ -3,6 +3,7 @@ import { CredentialRoutes } from "./credential"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import type { CredentialHealth, CredentialMetadata } from "../credentials/types"
 import { CredentialDiscoveryError } from "../credentials/discovery"
+import { ControlPlaneAuthError } from "../control-plane/auth"
 
 function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())
@@ -54,6 +55,19 @@ function credentials(): ControlPlaneCredentials {
 }
 
 describe("credential routes", () => {
+  test("requires the composed principal before any credential operation", async () => {
+    const registry = credentials()
+    const authenticate = vi.fn(async () => {
+      throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization is required")
+    })
+    const response = await CredentialRoutes(registry, { authenticate }).request("http://localhost/")
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "missing_bearer_token" } })
+    expect(authenticate).toHaveBeenCalledTimes(1)
+    expect(registry.listCredentials).not.toHaveBeenCalled()
+  })
+
   test("discovers redacted credentials and saves only the selected preview", async () => {
     const registry = Object.assign(credentials(), {
       discoverLocalCredentials: vi.fn(async () => ({
@@ -68,7 +82,7 @@ describe("credential routes", () => {
         }],
       })),
       saveDiscoveredCredentials: vi.fn(async () => ({
-        saved: [{ provider_id: "openai", account_id: "account…1234567890" }],
+        saved: [{ credential_id: "cred_1", provider_id: "openai", account_id: "account…1234567890" }],
       })),
     })
     const app = CredentialRoutes(registry)
@@ -109,6 +123,7 @@ describe("credential routes", () => {
           "saved": [
             {
               "account_id": "account…1234567890",
+              "credential_id": "cred_1",
               "provider_id": "openai",
             },
           ],
@@ -421,7 +436,7 @@ describe("credential routes", () => {
               "last_used_at": null,
               "last_validated_at": 1,
               "provider_id": "unsupported-provider",
-              "scope": "shared",
+              "scope": "local",
               "source": "managed",
               "status": "available",
               "updated_at": 1,
@@ -484,7 +499,7 @@ describe("credential routes", () => {
         has_secret: true,
         expires_at: null,
         last_validated_at: 1,
-        scope: "shared",
+        scope: "local",
         last_used_at: null,
         last_error: null,
         created_at: 1,
@@ -568,9 +583,9 @@ describe("credential routes", () => {
 
   test("returns structured storage errors without leaking secret-bearing exception text", async () => {
     const registry = credentials()
-    vi.mocked(registry.putCredential).mockRejectedValueOnce(new Error("failed for sk-test-secret"))
-    vi.mocked(registry.syncLocalCredentials).mockRejectedValueOnce(new Error("failed for sk-local-secret"))
-    vi.mocked(registry.updateCredentialStatus).mockRejectedValueOnce(new Error("failed for sk-status-secret"))
+    ;(registry.putCredential as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("failed for sk-test-secret"))
+    ;(registry.syncLocalCredentials as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("failed for sk-local-secret"))
+    ;(registry.updateCredentialStatus as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("failed for sk-status-secret"))
     const app = CredentialRoutes(registry)
 
     const put = await app.request("http://localhost/", {

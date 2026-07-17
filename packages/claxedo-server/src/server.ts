@@ -117,7 +117,7 @@ import { sessionMeta } from "./session-meta"
 import { RemoteAccessRoutes } from "./routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "./routes/workspace-local-host"
-import { startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "./user-hosted-tunnel"
+import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "./user-hosted-tunnel"
 
 const execFileAsync = promisify(execFile)
 
@@ -203,7 +203,7 @@ export function localDocumentsBackend() {
   })
 }
 
-function workspaceRouteOptions(services: ControlPlaneServices, connections?: ReturnType<typeof createConnectionsHost>["service"]) {
+function workspaceRouteOptions(services: ControlPlaneServices, connections?: Pick<ReturnType<typeof createConnectionsHost>, "repositoryForAuth">) {
   return {
     ...authRouteOptions(services),
     credentials: services.credentials,
@@ -407,6 +407,7 @@ export function createApp(
       registrationPayload,
       startMachineTunnel: startUserHostedMachineTunnel,
       stopMachineTunnel: stopUserHostedMachineTunnel,
+      machineTunnelActive: hasUserHostedMachineTunnel,
       capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
     }) : unavailableRemoteAccessService(),
   }))
@@ -523,7 +524,7 @@ export function createApp(
     }),
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
-  app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost.service)))
+  app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost)))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/", centralControl.app)
   app.route(
@@ -532,6 +533,17 @@ export function createApp(
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
       ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
+      ...((signedCloudAuthRequested(process.env) || deploymentMode(process.env) === "hosted") ? {
+        authenticate: async (request: Request) => {
+          const auth = await controlPlaneAuthContext(request, {
+            config: services.auth.config,
+            ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          })
+          if (auth.mode !== "signed") {
+            throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+          }
+        },
+      } : {}),
     }),
   )
   // Connections framework

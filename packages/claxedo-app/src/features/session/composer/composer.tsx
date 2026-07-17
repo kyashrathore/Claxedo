@@ -5,7 +5,7 @@ import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
-  documentMentionText, listDocumentMentions, loadAIConnectDialog, openDocumentMention,
+  documentMentionText, listDocumentMentions, loadAIConnectDialog,
   useCommand,
   useFile,
   useLayout,
@@ -496,12 +496,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let editorActions!: ReturnType<typeof createPromptEditorActions>
   const documentPicker = createDocumentPickerController({
     directory: commandDirectory,
-    scope,
-    sessionId: resolvedSessionId,
-    draftId: resolvedDraftId,
-    promptText: () => prompt.current().map((part) => "content" in part ? part.content : "").join(""),
     list: listDocumentMentions,
-    openDocument: openDocumentMention,
     mentionText: documentMentionText,
     replaceText: (text) => editorActions.replaceText(text),
     openPopover: () => setStore("popover", "at"),
