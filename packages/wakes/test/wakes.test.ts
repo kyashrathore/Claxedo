@@ -202,6 +202,47 @@ describe("crash durability", () => {
   })
 })
 
+describe("typed durations (ms strings)", () => {
+  it("schedule({ in: '3d' }) fires exactly three days out", async () => {
+    const { clock, wakes, store } = harness()
+    const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, in: "3d", intent: {} })
+    expect((await store.get(wakeId))!.fireAt).toBe(clock.t + 3 * 86_400_000)
+  })
+
+  it("expiresIn works on watch and requestApproval, and absolute expiresAt wins over it", async () => {
+    const { clock, wakes, store } = harness()
+    const w = await wakes.watch({ sessionId: "s1", workspaceId: WS, eventKey: "e", intent: {}, expiresIn: "12h" })
+    expect((await store.get(w.wakeId))!.expiresAt).toBe(clock.t + 12 * 3_600_000)
+
+    const a = await wakes.requestApproval({ sessionId: "s1", workspaceId: WS, prompt: "?", expiresIn: "1d" })
+    expect((await store.getByToken(a.token))!.expiresAt).toBe(clock.t + 86_400_000)
+
+    const b = await wakes.watch({
+      sessionId: "s1",
+      workspaceId: WS,
+      eventKey: "e2",
+      intent: {},
+      expiresAt: clock.t + 5,
+      expiresIn: "12h",
+    })
+    expect((await store.get(b.wakeId))!.expiresAt).toBe(clock.t + 5)
+  })
+
+  it("requestApproval without any expiry is rejected", async () => {
+    const { wakes } = harness()
+    await expect(wakes.requestApproval({ sessionId: "s1", workspaceId: WS, prompt: "?" })).rejects.toThrow(
+      /expiresAt.*expiresIn/,
+    )
+  })
+
+  it("an unparseable duration is rejected at create time", async () => {
+    const { wakes } = harness()
+    await expect(
+      wakes.schedule({ workspaceId: WS, in: "3 fortnights" as never, intent: {} }),
+    ).rejects.toThrow(/invalid duration/)
+  })
+})
+
 describe("idempotency + once", () => {
   it("schedule with the same idempotencyKey creates one wake", async () => {
     const { clock, wakes } = harness()

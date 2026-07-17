@@ -25,10 +25,10 @@ const wakes = createWakes({
 })
 driver.bind(wakes)
 
-// three trigger types
-await wakes.schedule({ workspaceId, sessionId, at: Date.now() + 3 * 864e5, intent })
-await wakes.watch({ workspaceId, sessionId, eventKey: "ci:pass:x", intent, expiresAt })
-const { token } = await wakes.requestApproval({ workspaceId, sessionId, prompt, expiresAt })
+// three trigger types — durations are compile-checked `ms` strings
+await wakes.schedule({ workspaceId, sessionId, in: "3d", intent })          // or at: Date | epoch-ms
+await wakes.watch({ workspaceId, sessionId, eventKey: "ci:pass:x", intent, expiresIn: "7d" })
+const { token } = await wakes.requestApproval({ workspaceId, sessionId, prompt, expiresIn: "1d" })
 
 // fire sources
 createScheduler(wakes).start()                 // the polling backstop (guarantee)

@@ -1,5 +1,5 @@
 export { createWakes } from "./wakes"
-export type { Wakes, CreateWakesOptions } from "./wakes"
+export type { Wakes, CreateWakesOptions, DurationString } from "./wakes"
 export { createScheduler } from "./scheduler"
 export type { Scheduler } from "./scheduler"
 export { createNodeWakeDriver } from "./node-driver"

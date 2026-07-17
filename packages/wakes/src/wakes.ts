@@ -1,4 +1,5 @@
 import { ulid } from "ulid"
+import ms from "ms"
 import type {
   Actor,
   Authorize,
@@ -47,6 +48,19 @@ export interface CreateWakesOptions {
   batchLimit?: number
 }
 
+/**
+ * A compile-checked duration string from the `ms` package: "30s", "5m", "2h",
+ * "3d", "1w", "3 days"… Typos ("3dayz") are rejected by the type.
+ */
+export type DurationString = Parameters<typeof ms>[0]
+
+// Belt for the type's braces: `ms` returns undefined on an unparseable string.
+function duration(value: DurationString): number {
+  const out = ms(value)
+  if (typeof out !== "number" || Number.isNaN(out)) throw new Error(`invalid duration "${String(value)}"`)
+  return out
+}
+
 type CommonCreate = {
   sessionId?: SessionId | null
   workspaceId: WorkspaceId
@@ -59,12 +73,18 @@ type CommonCreate = {
   createdBy?: string
   depth?: number
   expiresAt?: number | Date
+  /** Relative alternative to `expiresAt`: give up this long after creation. */
+  expiresIn?: DurationString
 }
 
 export interface Wakes {
-  schedule(input: CommonCreate & { at?: number | Date; cron?: string }): Promise<{ wakeId: WakeId }>
+  /** Time trigger: absolute `at`, relative `in` ("3d"), or recurring `cron`. */
+  schedule(input: CommonCreate & { at?: number | Date; in?: DurationString; cron?: string }): Promise<{
+    wakeId: WakeId
+  }>
   watch(input: CommonCreate & { eventKey: string }): Promise<{ wakeId: WakeId }>
-  requestApproval(input: CommonCreate & { prompt: string; expiresAt: number | Date }): Promise<{
+  /** Requires an expiry: absolute `expiresAt` or relative `expiresIn`. */
+  requestApproval(input: CommonCreate & { prompt: string }): Promise<{
     token: Token
     wakeId: WakeId
   }>
@@ -87,6 +107,14 @@ export interface Wakes {
 
 const toMs = (v: number | Date | undefined | null): number | null =>
   v == null ? null : v instanceof Date ? v.getTime() : v
+
+/** Absolute `expiresAt` wins; relative `expiresIn` counts from `nowMs`. */
+function resolveExpiry(input: Pick<CommonCreate, "expiresAt" | "expiresIn">, nowMs: number): number | undefined {
+  const absolute = toMs(input.expiresAt)
+  if (absolute != null) return absolute
+  if (input.expiresIn != null) return nowMs + duration(input.expiresIn)
+  return undefined
+}
 
 export function createWakes(opts: CreateWakesOptions): Wakes {
   const { store, spawnTurn, computeNextRun, driver } = opts
@@ -219,12 +247,14 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       let schedule: string | null = null
       if (input.at != null) {
         fireAt = toMs(input.at)!
+      } else if (input.in != null) {
+        fireAt = t + duration(input.in)
       } else if (input.cron) {
         if (!computeNextRun) throw new Error("cron schedule requires the computeNextRun option")
         fireAt = computeNextRun(input.cron, t)
         schedule = input.cron
       } else {
-        throw new Error("schedule requires `at` or `cron`")
+        throw new Error("schedule requires `at`, `in`, or `cron`")
       }
       const created = await insertWake({
         triggerType: "at",
@@ -235,7 +265,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         intentJson: JSON.stringify(input.intent ?? null),
         fireAt,
         schedule,
-        expiresAt: toMs(input.expiresAt) ?? undefined,
+        expiresAt: resolveExpiry(input, t),
         depth: input.depth,
         createdBy: input.createdBy,
         idempotencyKey: input.idempotencyKey,
@@ -253,7 +283,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         serialKey: input.serialKey,
         intentJson: JSON.stringify(input.intent ?? null),
         eventKey: input.eventKey,
-        expiresAt: toMs(input.expiresAt) ?? undefined,
+        expiresAt: resolveExpiry(input, now()),
         depth: input.depth,
         createdBy: input.createdBy,
         idempotencyKey: input.idempotencyKey,
@@ -261,6 +291,8 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     },
 
     async requestApproval(input) {
+      const expiresAt = resolveExpiry(input, now())
+      if (expiresAt === undefined) throw new Error("requestApproval requires `expiresAt` or `expiresIn`")
       const { wakeId } = await insertWake({
         triggerType: "on_approval",
         sessionId: input.sessionId ?? null,
@@ -270,7 +302,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         intentJson: JSON.stringify(input.intent ?? null),
         prompt: input.prompt,
         token: generateToken(),
-        expiresAt: toMs(input.expiresAt)!,
+        expiresAt,
         depth: input.depth,
         createdBy: input.createdBy,
         idempotencyKey: input.idempotencyKey,
