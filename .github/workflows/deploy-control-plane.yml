@@ -129,6 +129,7 @@ jobs:
 
       - name: Build control-plane workspace packages
         run: |
+          bun run --cwd packages/wakes build
           bun run --cwd packages/workspace-relay-protocol build
           bun run --cwd packages/workspace-relay build
           bun run --cwd packages/claxedo-connections build
@@ -361,6 +362,7 @@ jobs:
 
       - name: Build control-plane workspace packages
         run: |
+          bun run --cwd packages/wakes build
           bun run --cwd packages/workspace-relay-protocol build
           bun run --cwd packages/workspace-relay build
           bun run --cwd packages/claxedo-connections build
