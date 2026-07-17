@@ -2,7 +2,15 @@
 title: "Wakes v2 — Fix the Wakes Package and Build WorkGraph Settlement On It"
 type: feat
 date: 2026-07-17
-status: active
+status: landed
+progress: >
+  U0-U9 complete 2026-07-17. Staging settles through wakes (release run
+  29559022315 green with the latency budgets: placement <10s, deletion <20s,
+  browser gate 30s). CLAXEDO_WAKES_SETTLEMENT=1 on staging only; production
+  stays on WorkGraphSettler pending promotion. Follow-ups still open:
+  in-transaction wake creation in workgraphCommands (createWakeInTx is ready),
+  retire WorkGraphSettler, distinct wake telemetry tag, recaps onto at-wakes,
+  live local check of the agent wake tools.
 execution: code
 builds_on: docs/plans/2026-07-17-001-feat-workgraph-event-driven-settlement-plan.md
 inputs:
