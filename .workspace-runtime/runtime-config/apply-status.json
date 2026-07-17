@@ -1,8 +1,8 @@
 {
   "state": "applied",
-  "revision": 9,
-  "acceptedAt": "2026-07-17T15:57:08.248Z",
-  "updatedAt": "2026-07-17T15:57:08.254Z",
+  "revision": 1,
+  "acceptedAt": "2026-07-17T16:28:26.425Z",
+  "updatedAt": "2026-07-17T16:28:26.436Z",
   "harness": {
     "id": "claude",
     "access": "acp",

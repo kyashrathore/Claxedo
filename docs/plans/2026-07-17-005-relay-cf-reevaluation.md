@@ -11,13 +11,15 @@
 - **H2 (sharding workaround)**: fanning upstream opens across a pool of N opener Durable Objects (each invocation owning ≤6 in-flight handshakes) multiplies the admission window to ~N×6 and materially restores holder setup at c200+. If H2 passes cleanly at c200 AND c1000 shapes, CF relay becomes re-viable and the June decision is genuinely reopened; if it fails (e.g., provider-side rate limiting of shared egress IPs dominates — `429`s persist despite sharding), the decision is re-confirmed with stronger evidence.
 - **H3 (drift check)**: CF platform or Daytona behavior changed since June (different limits text, new WS endpoint, different admission behavior). Capture `developers.cloudflare.com/workers/platform/limits` "Simultaneous open connections" text verbatim at run time and diff against the quote in the evaluation doc.
 
-## Phase 0 — recover the harness (no deploys yet)
+## Phase 0 — build a minimal fresh bench kit (no deploys yet; nothing to "recover")
 
-The June harness was removed from the committed patch. Reconstruct from:
-1. Mine these commits for remnants and context: `804b7b23c0` / `483f222f7c` (instrument cloudflare relay benchmark path), `5eeb705531` (split cloudflare gateway timings), `7c8ab06553` (cache cloudflare resolver lookups), `5122db56ff` (decision capture; added the evaluation + runbook docs). `git show <sha> --stat` then extract anything benchmark-shaped (loadgen scripts, row schemas, report generators).
-2. Inventory what survives on disk: `packages/workspace-relay/` — `wrangler.toml`, `fly.toml`, `src/cloudflare.ts` (DO relay incl. hibernation path), `src/bun.ts`/`src/server.ts` (timing attribution kept per the runbook: RAT cache, target/revocation caches, RHT coalescing, direct HTTP admission, `/health`), and the `dist-worker*` variant directories (June's build artifacts: `enam`, `fast-http`, `ws-open-limiter`, `overlap` — read their diffs to understand which knobs each variant encoded).
-3. If no loadgen survives: write a minimal one (Bun script, deployable to a Fly machine in `sin` to match June's vantage) that produces the SAME row format as the evaluation doc tables: per-row {shape (cN/loadM), HTTP p99 overhead vs direct, WS-message p99 overhead vs direct, relayed WS delivered/attempted, direct WS delivered/attempted, connect p95, upstream-open p95, holder setup success, upstream failure codes}. The June gate was **p99 overhead < 100ms** and **zero relayed-WS message loss**; keep those gates.
-4. Deliverable: `packages/workspace-relay/bench/` (new, self-contained, gitignored artifacts dir) + a `RUNBOOK.md` inside it. Gate: harness dry-runs against a local relay (`bun src/main.ts`) end-to-end before any cloud deploy.
+The June cleanup kept every load-bearing piece in `src/` — timing attribution (the trace fields benchmarks read), RAT/target/revocation caches, RHT coalescing, direct-HTTP admission, `/health`, the full DO relay in `cloudflare.ts` (incl. hibernation), `wrangler.toml`, `fly.toml`. What it deleted (throwaway loadgen scripts, generated reports, staging summaries) was deliberately disposable — do NOT mine git history for it. Build three small new things:
+
+1. **Loadgen** — one Bun script (~300 lines), deployable to a Fly machine in `sin` (June's vantage): opens N direct + N relayed HTTP/WS pairs against a target and emits the row format from `docs/tech-docs/cloudflare-relay-evaluation.md` tables: {shape (cN/loadM), HTTP p99 overhead vs direct, WS-message p99 overhead vs direct, relayed WS delivered/attempted, direct WS delivered/attempted, connect p95, upstream-open p95, holder setup success, upstream failure codes}. Keep the June gates: **p99 overhead < 100ms**, **zero relayed-WS message loss**.
+2. **Target provisioning glue** — spin one Daytona sandbox and one CF sandbox (`/proxy` WS path) via the provider APIs the product already integrates (see sandbox driver code / `credentials/sync.ts` provider list); record exact endpoints/regions.
+3. **H2 experiment variant** — the opener-DO sharded `cloudflare.ts` (new experiment code; June never had it — see Phase 2.2).
+
+Deliverable: `packages/workspace-relay/bench/` (self-contained; reports dir gitignored) + `RUNBOOK.md`. This kit is kept afterward as a permanent bench tool — the reason Phase 0 exists at all is that June's throwaway approach left nothing rerunnable. Gate: the loadgen dry-runs end-to-end against a local relay (`bun src/main.ts`) before any cloud deploy. The `dist-worker*` directories on disk are stale June build artifacts — ignore them; build variants fresh from current `src/`.
 
 ## Phase 1 — environment & credential inventory (HARD GATE)
 
@@ -72,3 +74,96 @@ Done means ALL of:
 - Branch: work on the current branch; do NOT commit; never touch production relay apps/routes — `-reeval` suffixed resources only.
 - The repo's verification convention applies: numbers in the report must come from executed runs with artifacts, never estimated. If a row can't run, the report says "did not run" + why.
 - Time-box: if Phase 0+1 exceed a day of effort or Phase 1 has ≥1 missing credential, stop and report — the owner would rather decide than have you improvise access.
+
+## Pre-flight review findings (2026-07-17, sonnet workflow, all defects adversarially verified)
+
+**Healthy (verified with evidence):** CF relay source is complete and builds (`wrangler deploy --dry-run` → 168KB bundle, DO binding resolves, hibernation + outbound-WS paths present at cloudflare.ts:685/731/567; 74/74 tests). Fly/Bun relay: all six cleaned-patch items present with file:line; **local boot smoke passed** (`/health` 200; boot-gating env var names recorded in the review output). Package suite 311/311; both build pipelines reproduce from current src; tree clean.
+
+**Confirmed defects → plan amendments (these OVERRIDE the corresponding text above):**
+
+1. **BLOCKER — DO-side WS trace instrumentation does NOT exist in current `cloudflare.ts`** (it was part of June's removed "Cloudflare Worker fast-path experiments"). The WS trace mechanism (`relay.trace` {wsUpstreamOpenMs, queuedFrames, maxQueuedDelayMs}, gated by `x-claxedo-relay-ws-trace`) lives ONLY in `bun.ts:331-345`. Phase 0's "nothing to recover" is wrong for exactly this piece, and Phase 3's "DO trace fields on every row" was unsatisfiable for CF rows as written. **Amendment: Phase 0 gains deliverable 4 — port bun.ts's `relay.trace` WS instrumentation into cloudflare.ts's WS admit paths (experiment-grade, like the H2 variant). Fallback if the port fights the runtime: scope CF rows to loadgen-observed timing (connect p95 / upstream-open wall-clock) and say so in the report.**
+2. **BLOCKER — June's Daytona snapshot identifier is unrecoverable.** `CLAXEDO_DAYTONA_SNAPSHOT` value exists nowhere: shell env, `packages/claxedo-server/.env` (which DOES hold `DAYTONA_API_KEY`), git history (`-S` search), Fly apps (`claxedo-relay-bench-0621-kyr` is suspended with ZERO secrets; `claxedo-selfhost-test` has the API key but no snapshot), and the credential-sync schema has no snapshot field. **Amendment: Phase 2.3 builds a FRESH snapshot via `packages/sandbox-manager/src/image.ts` `ensureSnapshot()`/`defaultSnapshotName()` (fallback confirmed real at :19-67). Comparability caveat goes in the report: rows compare against the fresh sandbox class, recalibrated by Row 1's direct baseline — June-row deltas are indicative, not exact.**
+3. **DEGRADED — "direct HTTP admission default-on" is false.** `CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY` has NO code default (`undefined` → unbounded; proven by main.ts:350-356 + the package's own test `main.test.ts:322`) and the committed `fly.toml` doesn't set it — while June's PASS row explicitly credits `q64`. Also verified: **no existing Fly relay app in this account** (fly.toml app names absent; only the suspended June bench app) — so Phase 2.1's "reuse if healthy" branch is dead and a fresh deploy is certain. **Amendment: Phase 2.1 MUST set `CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY=64` (and verify via `flyctl secrets list`) on the control deploy.**
+4. **DEGRADED — CF sandbox `/proxy` WS path**: the June fix IS in-tree (`packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts:212-226`, `containerFetch` proxy) but it's a separately deployed sandbox worker — Phase 2.3's CF-sandbox target requires deploying that worker too, not just calling a driver. Amendment folded into Phase 2.3.
+5. **Notes**: `wrangler.toml` has no `account_id` — deploys rely on the verified logged-in context (account `683a…af0e`, workers-write scopes confirmed) or `CLOUDFLARE_ACCOUNT_ID`. June's literal trace names (`relay_upstream_fetch`, `ws_upstream_open`…) don't exist in src — current names are the server-timing spans (`rat-verify`, `target-resolve`, `rht-cache`/`rht-mint`) and `relay.trace` fields; the loadgen must read the CURRENT names and the report must map them to June's table vocabulary.
+
+**Phase 1 pre-verified during review** (agent must still re-confirm at run time): wrangler auth ✓ (account matches), flyctl auth ✓, `DAYTONA_API_KEY` ✓ (claxedo-server/.env + `claxedo-selfhost-test` Fly secrets), Fly relay app ✗ (fresh deploy), Daytona snapshot ✗ (build fresh, amendment 2).
+
+## Phase 1 executed (2026-07-17) — live credential verification results
+
+Every item validated with a real call, not just presence. Secret values never read into logs; the Daytona probe script was deleted after the run.
+
+| Item | Status | Evidence |
+|---|---|---|
+| Cloudflare / wrangler | ✅ WORKING | `wrangler whoami`: logged in (kanusdlp@gmail.com), account `683a2c01a4d43b2fa998cde8ddedaf0e`, `workers_scripts (write)` scope; `deploy --dry-run` builds the DO worker (pre-flight). DO **paid-plan** only provable at first live deploy — first `wrangler deploy` is the residual check. |
+| Fly / flyctl | ✅ WORKING | `auth whoami` OK; `apps list` OK; `sin` region available. NO relay app exists → Phase 2.1 fresh-deploy path confirmed (with `CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY=64` per amendment 3). |
+| Daytona API key | ✅ WORKING (live call) | Resolved from the local **managed encrypted store** (`sandboxDriverAuthManaged("daytona")` — server reports the driver `configured: true, source: managed, default: true` via `GET /api/workspace/drivers`), then a live SDK `list()` call **authenticated successfully**. Key also present as a Fly secret on `claxedo-selfhost-test`. |
+| `CLAXEDO_DAYTONA_SNAPSHOT` | ✗ absent (handled) | Absent everywhere (env, repo, git `-S`, Fly secrets). Non-fatal: local driver falls back to the deterministic `SNAPSHOT_NAME` default and `ensureSnapshot()` builds it — amendment 2 applies. |
+| `DAYTONA_API_URL` / `_ORGANIZATION_ID` / `_TARGET` | unset → SDK defaults | The live probe succeeded on defaults; no action. |
+| Cloudflare **sandbox driver** | ✗ NOT configured | `GET /api/workspace/drivers`: `cloudflare configured: false`. Local construction requires `api_token` + `worker_url` (`workspace-supervisor-sandbox.ts`) — i.e. the sandbox worker (`scripts/sandbox/cloudflare-worker/`) must be deployed (wrangler OAuth suffices) and its URL+token configured during Phase 2.3. Affects **Row 6 (CF→CF control) only**; all Daytona rows unblocked. |
+| Relay boot env (resolver URL, JWKS/PEM) | ✅ generated per-run | Pre-flight boot smoke passed with ephemeral generated keys; bench provisions its own. |
+
+**Gate verdict: OPEN.** No blocking credential gaps for rows 1–5 and 7. Row 6 requires the Phase 2.3 sandbox-worker deploy + driver auth config (no new external credential needed — same CF account). Residual unknowns: CF paid-plan/DO activation (proven at first deploy), and Daytona org quota for sandbox creation (proven at first `ensureSnapshot`).
+
+## Amendment update (2026-07-17, owner): snapshot via the standard release pipeline, not local fallback
+
+Amendment 2's framing ("build a fresh snapshot locally via ensureSnapshot as a
+workaround") is superseded. The snapshot is an ordinary build artifact of the
+standard pipeline, and the pipeline is present in-tree:
+
+1. Bump + publish the npm packages (`.github/workflows/claxedo-runtime-release.yml`) —
+   the sandbox image installs published packages (bundle-first images).
+2. Build the sandbox image/snapshot (`.github/workflows/claxedo-sandbox-image.yml`,
+   which wraps `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts` +
+   Dockerfile). The resulting snapshot name is the value to configure for the run.
+3. For Row 6, the CF sandbox worker likewise deploys via
+   `.github/workflows/deploy-cloudflare-sandbox-worker.yml` — Phase 2.3 triggers
+   that job rather than hand-deploying.
+
+Local `ensureSnapshot()` remains only an offline fallback if CI can't run.
+Comparability framing corrected as well: benchmarking the CURRENT runtime image
+is the point of a re-evaluation — June-image fidelity was never a goal, so the
+missing June snapshot id is a non-issue, not a caveat to apologize for. The
+report should simply record the fresh snapshot/package versions used.
+
+## Pipeline verification executed (2026-07-17)
+
+- **Runtime npm release workflow** (`claxedo-runtime-release`): existed but was BROKEN on first-ever dispatch (run 29597332410) — `workspace-runtime` declaration build failed because `@claxedo/workgraph`'s gitignored dist was never built (new dep from the connection-tools work), with a second latent failure behind it: **`NPM_TOKEN` is not set in Actions secrets**. Fixed on branch `fix/runtime-release-workgraph-dist` (PR #27 → dev): prerequisite workgraph build + `--dry-run` now compiles (skips only publish) + tokenless `dry_run` workflow input. Validated green in CI: run 29598259742 (1m44s, all six packages built+packed at 0.5.2). **Publishing 0.5.2 for real requires the owner to set `NPM_TOKEN`, merge PR #27, then dispatch with `dry_run=false`.**
+- **Sandbox image workflow** (`claxedo-sandbox-image`): exists and WORKS — fresh dispatch on dev (run 29598415015, ~9min, success) pushed:
+  - image: `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-5-1-ae435f536c-v8`
+  - snapshot: `claxedo-workspace-runtime-0-5-1-ae435f536c-v8`
+  - buildId: `ae435f536c`
+  Phase 2.3 can pin this snapshot (or rebuild after 0.5.2 publishes) via `CLAXEDO_SNAPSHOT_NAME`/`CLAXEDO_DAYTONA_SNAPSHOT`.
+
+## Local-first deploy gate (owner directive, 2026-07-17 — binding for every deploy in this plan)
+
+Rule: **never deploy (or dispatch a CI workflow) to discover a failure. First run
+the exact same thing locally under simulated production conditions; deploy only
+after local passes.** Today's release-workflow failure (run 29597332410) is the
+motivating incident: the build break was fully reproducible in a fresh local
+worktree with the workflow's own commands — the CI dispatch taught us nothing a
+local run wouldn't have, and cost two runs.
+
+Concretely, before each deploy in this plan:
+
+- **CI workflows** (release, sandbox image): reproduce the workflow's steps
+  verbatim in a fresh worktree of the target ref — clean `bun install`, then the
+  exact `run:` commands from the YAML. The release script's `--dry-run` now
+  compiles everything (fixed today precisely so this gate works). For the image:
+  `docker build` locally with the same Dockerfile/args before dispatching CI.
+- **Cloudflare worker (relay + H2 variant + sandbox worker)**: boot under
+  **Miniflare / `wrangler dev`** (workerd — the real runtime, locally): DO
+  bindings resolve, hibernation handlers register, the loadgen smoke row runs
+  against the local worker end-to-end. Only then `wrangler deploy`.
+- **Fly relay**: boot locally in production shape — `NODE_ENV=production` with
+  the full boot-gating env set (resolver URL/token, JWKS or PEM, signing key,
+  `CLAXEDO_RELAY_DIRECT_HTTP_CONCURRENCY=64`) — and pass the loadgen smoke
+  against it before `flyctl deploy`.
+- **Loadgen**: dry-runs against a local relay before ever pointing at cloud
+  (already a Phase 0 gate).
+
+Honest limit of the gate: local simulation proves **code, config, and boot
+correctness** — it cannot reproduce **platform admission behavior** (the 6-in-
+flight-handshake window, shared egress IPs, provider rate limits are exactly
+what the real deploys exist to measure). So: local-first eliminates avoidable
+deploy failures; the benchmark rows remain the only source of platform truth.
