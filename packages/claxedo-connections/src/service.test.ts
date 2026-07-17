@@ -42,6 +42,43 @@ function harness(input: { impl?: IntegrationImpl; decl?: IntegrationDeclaration 
 }
 
 describe("connections service", () => {
+  test("lists code-host repositories through the connection secret without returning the token", async () => {
+    const seen: string[] = []
+    const { service } = harness({
+      decl: GITHUB_DECL,
+      impl: {
+        verify: async () => ({ ok: true }),
+        listRepositories: async (_fields, secret) => {
+          seen.push(secret)
+          return [{
+            id: "1",
+            name: "app",
+            fullName: "acme/app",
+            cloneUrl: "https://github.com/acme/app.git",
+            private: true,
+            permissions: { read: true, write: false },
+          }]
+        },
+      },
+    })
+    await service.connect({ integrationId: "github", fields: {}, secret: "github-secret" })
+
+    const result = await service.listRepositories("connection-1")
+    expect(result).toEqual({
+      ok: true,
+      repositories: [{
+        id: "1",
+        name: "app",
+        fullName: "acme/app",
+        cloneUrl: "https://github.com/acme/app.git",
+        private: true,
+        permissions: { read: true, write: false },
+      }],
+    })
+    expect(seen).toEqual(["github-secret"])
+    expect(JSON.stringify(result)).not.toContain("github-secret")
+  })
+
   test("connect verifies, stores namespaced credential, grants declaration capabilities", async () => {
     const { service, credentials, connections } = harness()
     const result = await service.connect({ integrationId: "fake", fields: {}, secret: "good" })

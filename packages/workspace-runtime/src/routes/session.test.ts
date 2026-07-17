@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, spyOn } from "bun:test"
 import type {
   AgentRuntimeStreamEvent,
   PromptInput,
@@ -554,6 +554,55 @@ describe("session prompt route", () => {
       parts: [],
     })
     expect(seen).toContain("session.error")
+  })
+
+  it("returns and checkpoints a completed turn when document flushing fails", async () => {
+    const directory = process.cwd()
+    const checkpoints: unknown[][] = []
+    const error = spyOn(console, "error").mockImplementation(() => {})
+    const messages = [{
+      info: buildAssistantMessage({
+        id: "asm-final",
+        sessionID: "s1",
+        parentID: "msg-user",
+        agent: "plan",
+        model: { providerID: "openai", modelID: "gpt-5.4" },
+        directory,
+        completed: Date.now(),
+      }),
+      parts: [{ id: "p1", sessionID: "s1", messageID: "asm-final", type: "text", text: "done" }],
+    }]
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter({
+        async *sendMessage(id) {
+          yield sessionIdle(id)
+        },
+        getMessages: () => messages,
+      }),
+      resolveDirectory: () => directory,
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+      flushSessionDocuments: async () => { throw new Error("write-back unavailable") },
+      afterMessageCheckpoint: (_c, _directory, _sessionId, next) => { checkpoints.push(next) },
+    })
+
+    try {
+      const response = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageID: "msg-user", parts: [{ type: "text", text: "hello" }] }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        info: { id: "asm-final", role: "assistant" },
+        parts: [{ type: "text", text: "done" }],
+      })
+      expect(checkpoints).toEqual([messages])
+      expect(error).toHaveBeenCalledWith("[runtime-document] end-of-turn write-back failed for s1:", expect.any(Error))
+    } finally {
+      error.mockRestore()
+    }
   })
 
   it("defaults message model fields from session config when the request omits them", async () => {

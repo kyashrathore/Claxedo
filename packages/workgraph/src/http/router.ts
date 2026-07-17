@@ -1,8 +1,6 @@
 import { Hono } from "hono"
 import type { Context } from "hono"
 import {
-  ChangeEnvelopeSchema,
-  ChangeCursorError,
   AttentionCursorError,
   AttentionPageSchema,
   AttentionAcknowledgementSchema,
@@ -40,9 +38,7 @@ import {
   type WorkGraphContext,
 } from "../contracts"
 import {
-  WorkGraphHttpChangesQuerySchema,
   WorkGraphHttpAttentionQuerySchema,
-  WorkGraphHttpChangesResponseSchema,
   WorkGraphHttpCommandRequestSchema,
   WorkGraphHttpContextSchema,
   WorkGraphHttpDefaultsResponseSchema,
@@ -95,7 +91,6 @@ type Variables = { workGraphContext: WorkGraphContext }
 export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(input: Readonly<{
   service: WorkGraphHttpService<Queries>
   resolveContext: WorkGraphTrustedContextResolver
-  pollIntervalMs?: number
   notifications?: NotificationService
   attentionAcknowledgements?: AttentionAcknowledgementService
   archive: WorkGraphArchivePort
@@ -105,7 +100,6 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
   reportError?: (report: WorkGraphHttpErrorReport) => void
 }>) {
   const router = new Hono<{ Variables: Variables }>()
-  const pollIntervalMs = Math.max(1, input.pollIntervalMs ?? 100)
   const now = input.now ?? Date.now
   const reportError = input.reportError ?? reportErrorToConsole
 
@@ -636,47 +630,6 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     return context.json(WorkSourceRevisionDtoSchema.parse(revision))
   })
 
-  router.get("/changes", async (context) => {
-    const query = WorkGraphHttpChangesQuerySchema.safeParse(context.req.query())
-    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid changes query", false)
-    const deadline = Date.now() + query.data.waitMs
-
-    try {
-      while (true) {
-        const changes = ChangeEnvelopeSchema.array().parse(await input.service.queries.changes.list(
-          context.get("workGraphContext"),
-          { ...(query.data.after ? { after: query.data.after } : {}), limit: query.data.limit },
-        )).slice(0, query.data.limit)
-        if (changes.some((change) =>
-          change.ownerUserId !== context.get("workGraphContext").ownerUserId ||
-          change.event.ownerUserId !== context.get("workGraphContext").ownerUserId
-        )) {
-          throw new Error("Changes query crossed its trusted owner boundary")
-        }
-        if (changes.length > 0) {
-          return context.json(WorkGraphHttpChangesResponseSchema.parse({
-            changes,
-            cursor: changes.at(-1)!.cursor,
-            timedOut: false,
-          }))
-        }
-        if (Date.now() >= deadline || query.data.waitMs === 0 || context.req.raw.signal.aborted) {
-          return context.json(WorkGraphHttpChangesResponseSchema.parse({
-            changes: [],
-            ...(query.data.after ? { cursor: query.data.after } : {}),
-            timedOut: query.data.waitMs > 0,
-          }))
-        }
-        await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(1, deadline - Date.now()))))
-      }
-    } catch (error) {
-      if (isCursorError(error, "ChangeCursorError")) {
-        return errorResponse(context, 409, "cursor_invalid", "Change cursor is no longer valid", false)
-      }
-      throw error
-    }
-  })
-
   router.onError((error, context) => {
     try {
       const workGraphContext = context.get("workGraphContext") as WorkGraphContext | undefined
@@ -716,8 +669,8 @@ function reportErrorToConsole(report: WorkGraphHttpErrorReport) {
 
 function isCursorError(
   error: unknown,
-  name: "ChangeCursorError" | "NotificationPageCursorError" | "SnapshotResumeCursorError" | "WorkSourcePageCursorError",
-): error is ChangeCursorError | NotificationPageCursorError | SnapshotResumeCursorError | WorkSourcePageCursorError {
+  name: "NotificationPageCursorError" | "SnapshotResumeCursorError" | "WorkSourcePageCursorError",
+): error is NotificationPageCursorError | SnapshotResumeCursorError | WorkSourcePageCursorError {
   return error instanceof Error && error.name === name && "code" in error && error.code === "cursor_invalid"
 }
 

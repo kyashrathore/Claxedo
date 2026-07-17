@@ -10,7 +10,11 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
   draftId?: string
   surfaceId?: string
   modelHarnessMode: boolean
+  modelConnectRequired: boolean
 }>)
+const modelConnectActions = vi.hoisted(() => [] as VoidFunction[])
+const dialogShow = vi.hoisted(() => vi.fn())
+const loadSelectProviderDialog = vi.hoisted(() => vi.fn(async () => ({ DialogSelectProvider: () => null })))
 
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (() => {
@@ -35,6 +39,8 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
     draftId: () => string | undefined
     surfaceId: () => string | undefined
     modelHarnessMode: () => boolean
+    modelConnectRequired: () => boolean
+    onModelConnect: VoidFunction
   }) => {
     const snapshot = {
       newSession: props.newSession(),
@@ -44,8 +50,10 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
       draftId: props.draftId(),
       surfaceId: props.surfaceId(),
       modelHarnessMode: props.modelHarnessMode(),
+      modelConnectRequired: props.modelConnectRequired(),
     }
     frameSnapshots.push(snapshot)
+    modelConnectActions.push(props.onModelConnect)
     return (
       <dl
         data-testid="prompt-input-frame-probe"
@@ -70,6 +78,8 @@ vi.mock("@/features/session/composer/ui/frame", () => ({
         <dd data-testid="surface-id">{snapshot.surfaceId ?? ""}</dd>
         <dt>model harness mode</dt>
         <dd data-testid="model-harness-mode">{String(snapshot.modelHarnessMode)}</dd>
+        <dt>model connect required</dt>
+        <dd data-testid="model-connect-required">{String(snapshot.modelConnectRequired)}</dd>
       </dl>
     )
   },
@@ -125,6 +135,9 @@ vi.mock("@/features/session/app-ports", () => ({
   }),
   useWorkspaceQuery: () => ({ data: [] }),
   workspacePlacement: () => undefined,
+  listDocumentMentions: vi.fn(async () => []),
+  documentMentionText: vi.fn(),
+  loadSelectProviderDialog,
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({
@@ -140,6 +153,7 @@ vi.mock("@/features/session/providers/session-selection", () => ({
       list: () => [{ id: "big-pickle", name: "Big Pickle", provider: { id: "opencode" } }],
       selected: () => ({ id: "big-pickle", name: "Big Pickle", provider: { id: "opencode" } }),
       visible: () => true,
+      ready: () => true,
       set: vi.fn(),
       restorePending: () => false,
       variant: {
@@ -183,7 +197,7 @@ vi.mock("@/platform/comments/provider", () => ({
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
   useDialog: () => ({
     active: undefined,
-    show: vi.fn(),
+    show: dialogShow,
   }),
 }))
 
@@ -222,6 +236,9 @@ vi.mock("@/features/session/providers/session-params", () => ({
 
 afterEach(() => {
   frameSnapshots.length = 0
+  modelConnectActions.length = 0
+  dialogShow.mockClear()
+  loadSelectProviderDialog.mockClear()
   cleanup()
 })
 
@@ -313,5 +330,18 @@ describe("composer component mode isolation", () => {
       newSession: true,
       modelHarnessMode: true,
     })
+  })
+
+  test("routes the signed-workspace placeholder badge to the Connect dialog", async () => {
+    const view = render(() => (
+      <PromptInput
+        mode={{ kind: "draft", draftId: "draft_connect", target: undefined }}
+      />
+    ))
+
+    expect(view.getByTestId("model-connect-required").textContent).toBe("true")
+    modelConnectActions[0]?.()
+    await vi.waitFor(() => expect(loadSelectProviderDialog).toHaveBeenCalledOnce())
+    expect(dialogShow).toHaveBeenCalledOnce()
   })
 })

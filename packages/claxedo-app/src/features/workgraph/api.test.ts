@@ -1,9 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import {
-  __resetFetchThrottleForTests,
-  __setFetchThrottleForTests,
-  throttledFetch,
-} from "@/lib/fetch-throttle"
 import { WorkGraphApiError, createWorkGraphClient, decodeWorkGraphSnapshot } from "./api"
 
 const actor = { type: "user" as const, id: "user_1" }
@@ -83,51 +78,10 @@ describe("WorkGraph API", () => {
     ])
   })
 
-  test("invalid cursor becomes an explicit reset signal", async () => {
-    const client = createWorkGraphClient({
-      baseUrl: "http://127.0.0.1:3001",
-      request: async () => Response.json({ error: { code: "cursor_invalid", message: "Snapshot required", retryable: false } }, { status: 409 }),
-    })
-    await expect(client.changes("old_cursor")).rejects.toMatchObject({
-      kind: "cursor_invalid",
-      code: "cursor_invalid",
-      retryable: false,
-      status: 409,
-    })
-  })
-
-  test("long-polling changes never starves an ordinary WorkGraph read", async () => {
-    __setFetchThrottleForTests(4)
-    const releasePolls: Array<() => void> = []
-    let snapshotStarted = false
-    const client = createWorkGraphClient({
-      baseUrl: "https://control.test",
-      request: (input, init) => throttledFetch(async () => {
-        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
-        if (url.pathname.endsWith("/changes")) {
-          return await new Promise<Response>((resolve) => {
-            releasePolls.push(() => resolve(Response.json({ changes: [], timedOut: true })))
-          })
-        }
-        snapshotStarted = true
-        return Response.json(snapshotPage([], "cursor_1", 1))
-      }, init, input),
-    })
-
-    const polls = Array.from({ length: 4 }, () => client.changes(undefined, { waitMs: 25_000 }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const snapshot = client.snapshot()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    try {
-      expect(releasePolls).toHaveLength(4)
-      expect(snapshotStarted).toBe(true)
-    } finally {
-      releasePolls.forEach((release) => release())
-      __resetFetchThrottleForTests()
-    }
-    await Promise.all([...polls, snapshot])
-  })
+  // The `/changes` long-poll is GONE (plan 2026-07-17-004): the client holds no
+  // socket of its own, so it can no longer starve an ordinary WorkGraph read out
+  // of the browser's six-per-origin connection pool. `cursor_invalid` survives
+  // only as SNAPSHOT-paging invalidation — covered by the restart tests below.
 
   test("reads the bounded Attention projection without loading a snapshot", async () => {
     const paths: string[] = []
@@ -719,6 +673,26 @@ describe("WorkGraph API", () => {
 
     await expect(client.executionCapabilities()).resolves.toEqual(executionCapabilities)
     expect(calls).toEqual([{ path: "/api/workgraph/execution-capabilities", method: "GET" }])
+  })
+
+  test("scopes execution capability discovery to a selected project directory", async () => {
+    const calls: Array<{ path: string; method: string }> = []
+    const client = createWorkGraphClient({
+      baseUrl: "http://127.0.0.1:3001",
+      request: async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
+        calls.push({ path: `${url.pathname}${url.search}`, method: init?.method ?? "GET" })
+        return Response.json(executionCapabilities)
+      },
+    })
+
+    await expect(client.executionCapabilities({ directory: "/Users/me/claxedo" })).resolves.toEqual(executionCapabilities)
+    // A blank/whitespace directory falls back to the unscoped read.
+    await expect(client.executionCapabilities({ directory: "   " })).resolves.toEqual(executionCapabilities)
+    expect(calls).toEqual([
+      { path: "/api/workgraph/execution-capabilities?directory=%2FUsers%2Fme%2Fclaxedo", method: "GET" },
+      { path: "/api/workgraph/execution-capabilities", method: "GET" },
+    ])
   })
 
   test("rejects a malformed execution capability catalog without a fallback", async () => {

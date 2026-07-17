@@ -1,12 +1,4 @@
-export { ClaxedoPageTable, ClaxedoPageStatusTable } from "./page.sql"
-export { ClaxedoDocumentTable, ClaxedoDocumentRevisionTable } from "./doc.sql"
-export {
-  ClaxedoPageArenaTable,
-  ClaxedoPageArenaAgentTable,
-  ClaxedoPageArenaWaveTable,
-  ClaxedoPageArenaMessageTable,
-  ClaxedoPageArenaDeliveryTable,
-} from "./page-arena.sql"
+export { ClaxedoDocumentIndexTable, ClaxedoDocumentStatusTable, ClaxedoLocalProjectTable } from "./document-index.sql"
 export { ClaxedoTerminalSessionTable } from "./terminal-session.sql"
 export { ClaxedoCloudSessionTable, ClaxedoCloudMessageTable, ClaxedoCloudMessageEventTable } from "./cloud-session.sql"
 export {

@@ -33,6 +33,8 @@ type Deps = {
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void> | void
+  getStartAtLogin: () => boolean
+  setStartAtLogin: (enabled: boolean) => void
   /** Optional; only provided when the browser-tab feature flag is set. */
   browser?: BrowserRegistry
 }
@@ -64,6 +66,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("run-updater", (_event: IpcMainInvokeEvent, alertOnFail: boolean) => deps.runUpdater(alertOnFail))
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
+  ipcMain.handle("get-start-at-login", () => deps.getStartAtLogin())
+  ipcMain.handle("set-start-at-login", (_event: IpcMainInvokeEvent, enabled: boolean) =>
+    deps.setStartAtLogin(Boolean(enabled)),
+  )
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     const store = getStore(name)
     const value = store.get(key)

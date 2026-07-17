@@ -127,6 +127,10 @@ class_name = "WorkGraphSettler"
 name = "WAKE_LANE"
 class_name = "ClaxedoWakeLane"
 
+[[env.staging.r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = "claxedo-documents-staging"
+
 # KV namespace for the Cloudflare credential backend (only needed once the hosted
 # surface manages provider credentials; the first surface does not).
 # [[kv_namespaces]]

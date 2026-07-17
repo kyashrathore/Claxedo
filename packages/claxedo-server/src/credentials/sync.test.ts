@@ -33,7 +33,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("./store")
 const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("./registry")
-const { syncLocalCredentials } = await import("./sync")
+const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
 const { saveUserConfig } = await import("../agent-config")
 const { ClaxedoDB } = await import("../storage/db")
 ClaxedoDB.Drizzle()
@@ -45,6 +45,7 @@ describe("syncLocalCredentials", () => {
     backend = createTestBackend()
     setBackendOverride(backend)
     process.env.HOME = path.join(root, "home")
+    await fs.rm(process.env.HOME, { recursive: true, force: true })
     mkdirSync(process.env.HOME, { recursive: true })
     delete process.env.ANTHROPIC_API_KEY
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN
@@ -393,5 +394,31 @@ describe("syncLocalCredentials", () => {
     expect(result.synced).toEqual(["codex-acp"])
     expect(secret?.tokens?.account_id).toBe("fresh-account")
     expect(secret?.tokens?.id_token).toBe("fresh-id")
+  })
+
+  test("discovers every local Codex account without exposing account names in origins", async () => {
+    const accountsDir = path.join(process.env.HOME!, ".codex", "accounts")
+    mkdirSync(accountsDir, { recursive: true })
+    await Promise.all([
+      ["first@example.com.auth.json", "first-account", "2026-04-22T00:00:00.000Z"],
+      ["second@example.com.auth.json", "second-account", "2026-04-21T00:00:00.000Z"],
+    ].map(([file, account, refreshed]) => fs.writeFile(path.join(accountsDir, file!), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: `access-${account}`,
+        refresh_token: `refresh-${account}`,
+        account_id: account,
+      },
+      last_refresh: refreshed,
+    }))))
+
+    const discovered = (await collectLocalCredentialItems())
+      .filter((item) => item.provider_id === "codex-acp")
+
+    expect(discovered.map((item) => item.account_id)).toEqual(["first-account", "second-account"])
+    expect(discovered.map((item) => item.origin)).toEqual([
+      "~/.codex/accounts/*.auth.json",
+      "~/.codex/accounts/*.auth.json",
+    ])
   })
 })

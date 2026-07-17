@@ -2,8 +2,28 @@ import { parseCommentNote, readCommentMetadata } from "@/features/session/data/c
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup } from "@/ui/session-kit"
 import { Data, Equal } from "effect"
+import { firstTurnRecoveryClass, type FirstTurnRecoveryClass } from "../onboarding/first-turn-recovery"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
+
+// Keeps the last diff per file in display order. Set-based so large
+// summaries stay linear instead of scanning the result per diff.
+export function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
+  const files = new Set<string>()
+  return (diffs ?? [])
+    .reduceRight<SummaryDiff[]>((result, diff) => {
+      if (!isSummaryDiff(diff)) return result
+      if (files.has(diff.file)) return result
+      files.add(diff.file)
+      result.push(diff)
+      return result
+    }, [])
+    .reverse()
+}
+
+function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
+  return typeof value.file === "string"
+}
 
 export type TimelineRowMap = {
   TurnGap: { userMessageID: string }
@@ -27,7 +47,7 @@ export type TimelineRowMap = {
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
-  Error: { userMessageID: string; text: string }
+  Error: { userMessageID: string; text: string; recoveryClass?: FirstTurnRecoveryClass }
 }
 
 export namespace TimelineRow {
@@ -62,6 +82,7 @@ export namespace TimelineRow {
   export class Error extends Data.TaggedClass("Error")<{
     userMessageID: string
     text: string
+    recoveryClass?: FirstTurnRecoveryClass
   }> {}
   export class Retry extends Data.TaggedClass("Retry")<{
     userMessageID: string
@@ -143,6 +164,7 @@ export namespace Timeline {
     showReasoning: boolean,
     status: SessionStatus["type"],
     isActive: boolean,
+    firstTurnRecovery = index === 0,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -242,14 +264,7 @@ export namespace Timeline {
 
     if (isActive && status === "retry") rows.push(new TimelineRow.Retry({ userMessageID: userMessage.id }))
 
-    const diffs = (userMessage.summary?.diffs ?? [])
-      .reduceRight<SummaryDiff[]>((result, diff) => {
-        if (!isSummaryDiff(diff)) return result
-        if (result.some((item) => item.file === diff.file)) return result
-        result.push(diff)
-        return result
-      }, [])
-      .reverse()
+    const diffs = uniqueSummaryDiffs(userMessage.summary?.diffs)
     if (diffs.length > 0 && (status === "idle" || !isActive)) {
       rows.push(
         new TimelineRow.DiffSummary({
@@ -267,15 +282,12 @@ export namespace Timeline {
           text: unwrapErrorMessage(
             typeof data === "string" ? data : data === undefined || data === null ? "" : String(data),
           ),
+          ...(firstTurnRecovery ? { recoveryClass: firstTurnRecoveryClass(error) } : {}),
         }),
       )
     }
 
     return rows
-  }
-
-  function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
-    return typeof value.file === "string"
   }
 
   function reasoningHeading(text: string) {

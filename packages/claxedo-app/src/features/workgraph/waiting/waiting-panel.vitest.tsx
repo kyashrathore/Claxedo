@@ -80,6 +80,16 @@ describe("WaitingPanelBody", () => {
     expect(onClear).toHaveBeenCalledOnce()
   })
 
+  test("heads the panel quietly — the list is the count, and unread is not a dot", () => {
+    // Same rule the card already follows: the items ARE the signal. Unread still
+    // drives Mark all read; it just has no red bead of its own.
+    render(() => body([decisionItem, workItem], { unread: 2 }))
+    expect(screen.getByText("Needs you")).toBeInTheDocument()
+    expect(screen.queryByRole("img", { name: /unread/ })).toBeNull()
+    expect(document.querySelector(".workgraph-attention-dot")).toBeNull()
+    expect(document.querySelector(".workgraph-count")).toBeNull()
+  })
+
   test("shows an explicit error state with retry — never a snapshot fallback", async () => {
     const retry = vi.fn()
     render(() => body([], { loaded: false, error: new Error("attention unavailable"), retry }))
@@ -130,10 +140,12 @@ describe("WaitingRow", () => {
 })
 
 describe("createWaitingCardController", () => {
-  test("derives unread state from backend acknowledgements and only dismisses the current local preview", () => {
+  test("derives unread from backend acknowledgements; unpinning is sticky until re-pinned", () => {
     createRoot(() => {
       const [items, setItems] = createSignal<AttentionItem[]>([decisionItem, workItem])
       const controller = createWaitingCardController(items)
+      // The pin preference persists module-globally; normalize before asserting.
+      controller.reveal(false)
       expect(controller.mode(false)).toBe("inline")
       expect(controller.unread()).toBe(2)
       setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
@@ -141,11 +153,14 @@ describe("createWaitingCardController", () => {
       expect(controller.unread()).toBe(0)
       controller.dismiss()
       expect(controller.mode(false)).toBeUndefined()
-      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
-      expect(controller.mode(false)).toBeUndefined()
+      // Codex's pinned-summary model: new attention arriving does NOT force
+      // the card back — the header control is the only way to re-pin it. The
+      // unread state still tracks the new item for the header dot.
       setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }, recapItem])
-      expect(controller.mode(false)).toBe("inline")
+      expect(controller.mode(false)).toBeUndefined()
       expect(controller.unread()).toBe(1)
+      controller.reveal(false)
+      expect(controller.mode(false)).toBe("inline")
     })
   })
 
@@ -163,23 +178,27 @@ describe("createWaitingCardController", () => {
 })
 
 describe("WaitingCard", () => {
-  test("previews items with one count and leaves management actions to the full panel", () => {
-    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem, workItem]} total={5} unread={3} onClose={() => {}} onSelect={() => {}} />)
+  test("previews items quietly — no count, no unread dot, no management actions", async () => {
+    const onOpenPanel = vi.fn()
+    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem, workItem]} onClose={() => {}} onSelect={() => {}} onOpenPanel={onOpenPanel} />)
     // Lead recap gets the rich treatment.
     expect(screen.getByText("Latest recap")).toBeInTheDocument()
     expect(screen.getByText("Idempotency keys shipped in PR #482.")).toBeInTheDocument()
-    expect(screen.getByText("5")).toBeInTheDocument()
-    expect(screen.queryByText(/unread/)).toBeNull()
+    // The card IS the signal: no count chip, no unread dot, no extra head icons.
+    expect(screen.queryByText(/waiting/)).toBeNull()
+    expect(screen.queryByRole("img", { name: /unread/ })).toBeNull()
     expect(screen.queryByRole("button", { name: "Mark all read" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Open Waiting panel" })).toBeNull()
+    // The "Needs you" head row is the way into the full panel.
+    await fireEvent.click(screen.getByRole("button", { name: "Needs you" }))
+    expect(onOpenPanel).toHaveBeenCalledOnce()
   })
 
   // Both card triggers must pair their item with the precise element that fired,
   // so the caller can anchor focus back to it — never discard the invoker.
   test("the lead recap button reports its item and its exact element", async () => {
     const onSelect = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem]} total={2} unread={2} onClose={() => {}} onSelect={onSelect} />)
+    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)
     const recapButton = screen.getByText("Latest recap").closest("button") as HTMLElement
     await fireEvent.click(recapButton)
     expect(onSelect).toHaveBeenCalledTimes(1)
@@ -189,11 +208,47 @@ describe("WaitingCard", () => {
 
   test("a compact row reports its item and its exact element", async () => {
     const onSelect = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} total={2} unread={2} onClose={() => {}} onSelect={onSelect} />)
+    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)
     const row = screen.getByRole("button", { name: /Backfill invoices/ })
     await fireEvent.click(row)
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect.mock.calls[0][0]).toBe(workItem)
     expect(onSelect.mock.calls[0][1]).toBe(row)
+  })
+
+  test("the inline card folds into the icon rail; floating reveals never collapse", async () => {
+    const onOpenPanel = vi.fn()
+    const onToggleCollapse = vi.fn()
+    const inline = render(() => (
+      <WaitingCard
+        mode="inline"
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+        items={[decisionItem]}
+        onClose={() => {}}
+        onSelect={() => {}}
+        onOpenPanel={onOpenPanel}
+      />
+    ))
+    // The rail keeps one real control per capability: the full panel + expand.
+    await fireEvent.click(screen.getByRole("button", { name: "Open Needs you panel" }))
+    expect(onOpenPanel).toHaveBeenCalledOnce()
+    await fireEvent.click(screen.getByRole("button", { name: "Expand Needs you" }))
+    expect(onToggleCollapse).toHaveBeenCalledOnce()
+    expect(screen.queryByRole("button", { name: /Which auth strategy/ })).toBeNull()
+    inline.unmount()
+
+    render(() => (
+      <WaitingCard
+        mode="floating"
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+        items={[decisionItem]}
+        onClose={() => {}}
+        onSelect={() => {}}
+        onOpenPanel={() => {}}
+      />
+    ))
+    expect(screen.getByRole("button", { name: /Which auth strategy/ })).toBeInTheDocument()
   })
 })

@@ -17,6 +17,7 @@ import { Dynamic } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
+import { observeElementOffsetReconnectAware } from "./message-timeline-observe-offset"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
@@ -37,6 +38,8 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
+import { FirstTurnRecoveryCard } from "@/features/session/onboarding/first-turn-recovery-card"
+import type { FirstTurnRecoveryClass } from "@/features/session/onboarding/first-turn-recovery"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextField } from "@opencode-ai/ui/text-field"
@@ -102,7 +105,7 @@ import {
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
 
-// Keep parity with the upstream row model: ../../../../app/src/pages/session/message-timeline.data
+// Keep parity with the upstream session row model.
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
 const emptyTools: ToolPart[] = []
@@ -293,6 +296,8 @@ export function MessageTimeline(props: {
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
+  onFirstTurnRecovery?: (kind: FirstTurnRecoveryClass) => void
+  firstTurnRecovery?: boolean
 }) {
   let touchGesture: number | undefined
 
@@ -459,6 +464,7 @@ export function MessageTimeline(props: {
             settings.general.showReasoningSummaries(),
             sessionStatus().type,
             activeMessageID() === userMessage.id,
+            props.firstTurnRecovery !== false && indexAccessor() === 0,
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -541,6 +547,7 @@ export function MessageTimeline(props: {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
+    observeElementOffset: observeElementOffsetReconnectAware,
     initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: () => timelineFallbackItemSize,
@@ -745,16 +752,14 @@ export function MessageTimeline(props: {
     props.setScrollRef(root)
   }
 
+  const boundaryGesture = (event: { currentTarget: HTMLDivElement; target: EventTarget | null }, delta: number) =>
+    markBoundaryGesture({ root: event.currentTarget, target: event.target, delta, onMarkScrollGesture: props.onMarkScrollGesture })
+
   const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
     prepareInteractionScroll()
-    const root = event.currentTarget
-    const delta = normalizeWheelDelta({
-      deltaY: event.deltaY,
-      deltaMode: event.deltaMode,
-      rootHeight: root.clientHeight,
-    })
+    const delta = normalizeWheelDelta({ deltaY: event.deltaY, deltaMode: event.deltaMode, rootHeight: event.currentTarget.clientHeight })
     if (!delta) return
-    markBoundaryGesture({ root, target: event.target, delta, onMarkScrollGesture: props.onMarkScrollGesture })
+    boundaryGesture(event, delta)
   }
 
   const handleListTouchStart = (event: TouchEvent) => {
@@ -771,12 +776,7 @@ export function MessageTimeline(props: {
     const delta = prev - next
     if (!delta) return
 
-    markBoundaryGesture({
-      root: event.currentTarget,
-      target: event.target,
-      delta,
-      onMarkScrollGesture: props.onMarkScrollGesture,
-    })
+    boundaryGesture(event, delta)
   }
 
   const handleListTouchEnd = () => {
@@ -785,8 +785,12 @@ export function MessageTimeline(props: {
 
   const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     prepareInteractionScroll()
-    if (event.target !== event.currentTarget) return
-    props.onMarkScrollGesture(event.currentTarget)
+    props.onMarkScrollGesture(event.target)
+  }
+
+  // Drag-to-select starts on a child node, not the list — mark it so autoscroll yields.
+  const handleListPointerMove = (event: PointerEvent) => {
+    if (event.buttons === 1) props.onMarkScrollGesture(event.target)
   }
 
   const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
@@ -1300,9 +1304,18 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <Card variant="error" class="error-card">
-                {errorRow().text}
-              </Card>
+              <Show
+                when={errorRow().recoveryClass}
+                fallback={<Card variant="error" class="error-card">{errorRow().text}</Card>}
+              >
+                {(kind) => (
+                  <FirstTurnRecoveryCard
+                    kind={kind()}
+                    detail={errorRow().text}
+                    onAction={(value) => props.onFirstTurnRecovery?.(value)}
+                  />
+                )}
+              </Show>
             </div>
           </TimelineRowFrame>
         )
@@ -1412,6 +1425,7 @@ export function MessageTimeline(props: {
         onTouchEnd={handleListTouchEnd}
         onTouchCancel={handleListTouchEnd}
         onPointerDown={handleListPointerDown}
+        onPointerMove={handleListPointerMove}
         onScroll={handleListScroll}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"

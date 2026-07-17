@@ -374,14 +374,21 @@ export const MermaidCodeBlock = CodeBlock.extend({
 
       function copySource() {
         const source = getSource()
-        navigator.clipboard.writeText(source).then(() => {
-          copyBtn.innerHTML = icons.check
-          if (copyTimer) clearTimeout(copyTimer)
-          copyTimer = setTimeout(() => {
-            copyBtn.innerHTML = icons.copy
-            copyTimer = null
-          }, 1500)
-        }).catch(() => {})
+        navigator.clipboard.writeText(source).then(
+          () => {
+            copyBtn.innerHTML = icons.check
+            if (copyTimer) clearTimeout(copyTimer)
+            copyTimer = setTimeout(() => {
+              copyBtn.innerHTML = icons.copy
+              copyTimer = null
+            }, 1500)
+          },
+          (error) => {
+            copyBtn.title = "Copy failed"
+            copyBtn.setAttribute("aria-label", "Copy failed")
+            console.error("[documents] Mermaid source copy failed", error)
+          },
+        )
       }
 
       // ── Fullscreen ───────────────────────────────────────────

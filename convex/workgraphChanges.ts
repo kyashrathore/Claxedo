@@ -522,11 +522,17 @@ async function snapshot(ctx: any, organization: string, owner: string, input: Re
   }
 }
 
+// Deletion-pending Streams are transient (a durable teardown is compensating in
+// the background), so the owner never has more than a handful at once. Bound the
+// scan rather than collect() so the owner-bounded Attention/snapshot projections
+// keep their no-unbounded-read guarantee (live-sync boundedness invariant).
+const DELETION_PENDING_SCAN_LIMIT = 1024
+
 async function deletionPendingStreamIds(ctx: any, organization: string, owner: string) {
   const rows = await ctx.db.query("workgraph_streams")
     .withIndex("by_tenant_created_id", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner))
     .filter((query: any) => query.neq(query.field("deletion"), undefined))
-    .collect()
+    .take(DELETION_PENDING_SCAN_LIMIT)
   return new Set<string>(rows.map((row: any) => row.id))
 }
 

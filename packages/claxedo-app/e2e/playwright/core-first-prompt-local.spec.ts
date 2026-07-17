@@ -144,7 +144,11 @@ test.describe("core first prompt (local) @core", () => {
   })
 
   test("first send renders the full session UI and the oracle proves the reply — behaviors 2,3,4", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+    })
 
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)

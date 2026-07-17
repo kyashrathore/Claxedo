@@ -34,14 +34,23 @@ export type HarnessModelOption = { id: string; name: string }
 export type HarnessReadiness = "ready" | "polling" | "error"
 
 export type SessionStatusEvent =
-  | { type: "session.status"; properties: { sessionID: string; status: { type: "busy" } | { type: "idle" } | { type: "retry"; attempt: number; message: string; next: number } } }
+  | {
+      type: "session.status"
+      properties: {
+        sessionID: string
+        status: { type: "busy" } | { type: "idle" } | { type: "retry"; attempt: number; message: string; next: number }
+      }
+    }
   | { type: "session.idle"; properties: { sessionID: string } }
   | { type: "session.error"; properties: { sessionID: string } }
 
 export type MockEvent =
   | SessionStatusEvent
   | { type: "message.updated"; properties: { sessionID: string; info: MockMessageInfo } }
-  | { type: "message.part.delta"; properties: { sessionID: string; messageID: string; partID: string; field: string; delta: string } }
+  | {
+      type: "message.part.delta"
+      properties: { sessionID: string; messageID: string; partID: string; field: string; delta: string }
+    }
   | { type: "message.part.updated"; properties: { sessionID: string; part: MockPart; time: number } }
   | { type: "permission.asked"; properties: Record<string, unknown> }
   | { type: "permission.replied"; properties: Record<string, unknown> }
@@ -120,6 +129,20 @@ export type MockRuntimeOptions = {
   sessionId?: string
   projectId?: string
   projectName?: string
+  /** Optional signed identity for the local worktree project row. */
+  workspaceId?: string
+  /** Optional workspace aliases merged into the local worktree project row. */
+  workspaces?: Record<
+    string,
+    {
+      id?: string
+      workspaceId?: string
+      kind?: string
+      directory?: string
+      workspace_name?: string
+      available?: boolean
+    }
+  >
   /** The harness this session is created/locked with. Defaults to "opencode". */
   harness?: Harness
   /** Per-harness model catalog for the composer's model popover. */
@@ -303,10 +326,7 @@ class EventBus {
   async drain(idleTimeoutMs: number, lastEventId?: number): Promise<LoggedEvent[]> {
     const cursor = Number.isFinite(lastEventId) ? (lastEventId as number) : 0
     if (!this.log.some((entry) => entry.seq > cursor)) {
-      await Promise.race([
-        new Promise<void>((resolve) => this.waiters.push(resolve)),
-        wait(idleTimeoutMs),
-      ])
+      await Promise.race([new Promise<void>((resolve) => this.waiters.push(resolve)), wait(idleTimeoutMs)])
     }
     return this.log.filter((entry) => entry.seq > cursor)
   }
@@ -354,7 +374,10 @@ function lastEventIdOf(route: Route): number | undefined {
 function sseBody(batch: LoggedEvent[]) {
   if (batch.length === 0) return ": heartbeat\n\n"
   return batch
-    .map(({ seq, directory, payload, flat }) => `id: ${seq}\ndata: ${JSON.stringify(flat ? payload : { directory, payload })}\n\n`)
+    .map(
+      ({ seq, directory, payload, flat }) =>
+        `id: ${seq}\ndata: ${JSON.stringify(flat ? payload : { directory, payload })}\n\n`,
+    )
     .join("")
 }
 
@@ -414,6 +437,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const SESSION_ID = options.sessionId ?? "ses_mock_runtime"
   const PROJECT_ID = options.projectId ?? "proj_mock_runtime"
   const PROJECT_NAME = options.projectName ?? "mock-runtime"
+  const localProjectRow = () => ({
+    id: PROJECT_ID,
+    worktree: DIR,
+    name: PROJECT_NAME,
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    ...(options.workspaces ? { workspaces: options.workspaces } : {}),
+    time: { created: Date.now(), updated: Date.now() },
+  })
   // `let`, not `const`: a client-driven draft-harness switch (`POST
   // /api/claxedo/agent-config/harness {type}`, see `switchDraftHarness` in
   // `src/claxedo-ui/context/harness-switcher.ts`) must be reflected in every
@@ -604,7 +635,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return { id: `${messageID}_text`, sessionID, messageID, type: "text", text }
   }
 
-  function userMessage(input: { id: string; text: string; agent: string; providerID: string; modelID: string }): MockMessageRow {
+  function userMessage(input: {
+    id: string
+    text: string
+    agent: string
+    providerID: string
+    modelID: string
+  }): MockMessageRow {
     return {
       info: {
         id: input.id,
@@ -618,7 +655,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
-  function assistantMessagePending(input: { id: string; parentID: string; agent: string; providerID: string; modelID: string }): MockMessageRow {
+  function assistantMessagePending(input: {
+    id: string
+    parentID: string
+    agent: string
+    providerID: string
+    modelID: string
+  }): MockMessageRow {
     return {
       info: {
         id: input.id,
@@ -642,7 +685,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // Turn driver — runs the busy -> pending message -> deltas -> completed ->
   // idle sequence over real ticks, per the "How streaming works" note above.
   // ------------------------------------------------------------------------
-  async function driveTurn(input: { userID: string; assistantID: string; text: string; agent: string; providerID: string; modelID: string; turn: number }) {
+  async function driveTurn(input: {
+    userID: string
+    assistantID: string
+    text: string
+    agent: string
+    providerID: string
+    modelID: string
+    turn: number
+  }) {
     await wait(timings.busy)
     emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
 
@@ -660,10 +711,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const fullText = replyTextFn(input.turn, input.text)
     if (options.errorMidTurn) {
       await wait(timings.delta)
-      const errorMessage = typeof options.errorMidTurn === "string" ? options.errorMidTurn : "mock runtime error mid-turn"
+      const errorMessage =
+        typeof options.errorMidTurn === "string" ? options.errorMidTurn : "mock runtime error mid-turn"
       messages = messages.map((row) =>
         row.info.id === input.assistantID
-          ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() }, error: { name: "MockError", data: { message: errorMessage } } } }
+          ? {
+              ...row,
+              info: {
+                ...row.info,
+                time: { ...row.info.time, completed: Date.now() },
+                error: { name: "MockError", data: { message: errorMessage } },
+              },
+            }
           : row,
       )
       emit({
@@ -698,7 +757,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
     await wait(timings.completed)
     messages = messages.map((row) =>
-      row.info.id === input.assistantID ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() } } } : row,
+      row.info.id === input.assistantID
+        ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() } } }
+        : row,
     )
     emit({
       type: "message.updated",
@@ -811,12 +872,26 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       worktree: CLOUD_WORKSPACE_ID,
       name: CLOUD_PROJECT_NAME,
       sandboxes: [CLOUD_WORKSPACE_ID],
-      workspaces: { [CLOUD_WORKSPACE_ID]: { id: CLOUD_WORKSPACE_ID, kind: "cloud" as const, workspace_name: "main", directory: CLOUD_WORKSPACE_ID, available: true } },
+      workspaces: {
+        [CLOUD_WORKSPACE_ID]: {
+          id: CLOUD_WORKSPACE_ID,
+          kind: "cloud" as const,
+          workspace_name: "main",
+          directory: CLOUD_WORKSPACE_ID,
+          available: true,
+        },
+      },
       time: { created: Date.now(), updated: Date.now() },
     }
   }
 
-  function cloudUserMessage(input: { id: string; text: string; agent: string; providerID: string; modelID: string }): MockMessageRow {
+  function cloudUserMessage(input: {
+    id: string
+    text: string
+    agent: string
+    providerID: string
+    modelID: string
+  }): MockMessageRow {
     return {
       info: {
         id: input.id,
@@ -830,7 +905,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
-  function cloudAssistantMessagePending(input: { id: string; parentID: string; agent: string; providerID: string; modelID: string }): MockMessageRow {
+  function cloudAssistantMessagePending(input: {
+    id: string
+    parentID: string
+    agent: string
+    providerID: string
+    modelID: string
+  }): MockMessageRow {
     return {
       info: {
         id: input.id,
@@ -858,7 +939,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // vocabulary. Delivered via the SAME `emit()` as the local lane: `emit()` fans out
   // through `FanoutBus` to every channel, `busRelay` included, so whichever concrete SSE
   // route ends up mattering for a given app code path already carries the event.
-  async function driveCloudTurn(input: { userID: string; assistantID: string; text: string; agent: string; providerID: string; modelID: string; turn: number }) {
+  async function driveCloudTurn(input: {
+    userID: string
+    assistantID: string
+    text: string
+    agent: string
+    providerID: string
+    modelID: string
+    turn: number
+  }) {
     // Every `emit()` call below passes `CLOUD_WORKSPACE_ID` explicitly as the SSE
     // envelope's `directory` — `emit()` defaults that param to the LOCAL lane's `DIR`,
     // which is wrong here and matters: the proven reference mock
@@ -866,7 +955,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // session events with `directory: WORKSPACE_ID`, and the client's
     // `eventDirectoryForLiveSession`/live-session routing keys off this field.
     await wait(timings.busy)
-    emit({ type: "session.status", properties: { sessionID: CLOUD_SESSION_ID, status: { type: "busy" } } }, CLOUD_WORKSPACE_ID)
+    emit(
+      { type: "session.status", properties: { sessionID: CLOUD_SESSION_ID, status: { type: "busy" } } },
+      CLOUD_WORKSPACE_ID,
+    )
 
     await wait(timings.pending)
     const assistantRow = cloudAssistantMessagePending({
@@ -877,7 +969,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       modelID: input.modelID,
     })
     cloudMessages = [...cloudMessages, assistantRow]
-    emit({ type: "message.updated", properties: { sessionID: CLOUD_SESSION_ID, info: assistantRow.info } }, CLOUD_WORKSPACE_ID)
+    emit(
+      { type: "message.updated", properties: { sessionID: CLOUD_SESSION_ID, info: assistantRow.info } },
+      CLOUD_WORKSPACE_ID,
+    )
 
     const fullText = `cloud ack ${input.turn}: ${input.text}`
     const midpoint = Math.max(1, Math.floor(fullText.length / 2))
@@ -887,23 +982,45 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     for (const chunk of chunks) {
       await wait(timings.delta / chunks.length)
       accumulated += chunk
-      emit({
-        type: "message.part.delta",
-        properties: { sessionID: CLOUD_SESSION_ID, messageID: input.assistantID, partID, field: "text", delta: chunk },
-      }, CLOUD_WORKSPACE_ID)
+      emit(
+        {
+          type: "message.part.delta",
+          properties: {
+            sessionID: CLOUD_SESSION_ID,
+            messageID: input.assistantID,
+            partID,
+            field: "text",
+            delta: chunk,
+          },
+        },
+        CLOUD_WORKSPACE_ID,
+      )
     }
     const finalPart = textPart(CLOUD_SESSION_ID, input.assistantID, accumulated)
-    cloudMessages = cloudMessages.map((row) => (row.info.id === input.assistantID ? { ...row, parts: [finalPart] } : row))
-    emit({ type: "message.part.updated", properties: { sessionID: CLOUD_SESSION_ID, part: finalPart, time: Date.now() } }, CLOUD_WORKSPACE_ID)
+    cloudMessages = cloudMessages.map((row) =>
+      row.info.id === input.assistantID ? { ...row, parts: [finalPart] } : row,
+    )
+    emit(
+      { type: "message.part.updated", properties: { sessionID: CLOUD_SESSION_ID, part: finalPart, time: Date.now() } },
+      CLOUD_WORKSPACE_ID,
+    )
 
     await wait(timings.completed)
     cloudMessages = cloudMessages.map((row) =>
-      row.info.id === input.assistantID ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() } } } : row,
+      row.info.id === input.assistantID
+        ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() } } }
+        : row,
     )
-    emit({
-      type: "message.updated",
-      properties: { sessionID: CLOUD_SESSION_ID, info: cloudMessages.find((row) => row.info.id === input.assistantID)!.info },
-    }, CLOUD_WORKSPACE_ID)
+    emit(
+      {
+        type: "message.updated",
+        properties: {
+          sessionID: CLOUD_SESSION_ID,
+          info: cloudMessages.find((row) => row.info.id === input.assistantID)!.info,
+        },
+      },
+      CLOUD_WORKSPACE_ID,
+    )
 
     await wait(timings.idle)
     emit({ type: "session.idle", properties: { sessionID: CLOUD_SESSION_ID } }, CLOUD_WORKSPACE_ID)
@@ -921,10 +1038,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
-          project: [
-            { id: PROJECT_ID, worktree: DIR, name: PROJECT_NAME, time: { created: Date.now(), updated: Date.now() } },
-            ...(cloud ? [cloudProjectRow()] : []),
-          ],
+          project: [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])],
           provider: providerResponse(),
           provider_auth: { [providerIdFor(harness)]: [{ type: "api", label: "API key" }] },
           config: { provider: { id: providerIdFor(harness), model: harnessModel().id }, agent: { id: "build" } },
@@ -978,7 +1092,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // reader does not see the same frame twice in one body. Replay frames
     // deliberately carry NO `id:` line — they must not advance an
     // id-tracking reader's cursor.
-    const body = sseBody(batch.filter((entry) => !entry.flat)) +
+    const body =
+      sseBody(batch.filter((entry) => !entry.flat)) +
       replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
@@ -1005,7 +1120,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 }),
+      body: JSON.stringify({
+        view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 },
+        items: [],
+        totalKnown: 0,
+      }),
     })
   })
 
@@ -1035,10 +1154,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()
     if (!["/project", "/experimental/project"].includes(new URL(r.request().url()).pathname)) return r.fallback()
-    return json(r, [
-      { id: PROJECT_ID, worktree: DIR, name: PROJECT_NAME, time: { created: Date.now(), updated: Date.now() } },
-      ...(cloud ? [cloudProjectRow()] : []),
-    ])
+    return json(r, [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])])
   })
 
   await page.route("**/mcp**", (r) => {
@@ -1073,7 +1189,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   })
 
   await page.route("**/api/workspace/resolve**", (r) =>
-    api(r) ? json(r, { workspaceId: `local-${SESSION_ID}`, directory: DIR, kind: "local", status: "ready" }) : r.continue(),
+    api(r)
+      ? json(r, { workspaceId: `local-${SESSION_ID}`, directory: DIR, kind: "local", status: "ready" })
+      : r.continue(),
   )
 
   await page.route("**/api/wr/diff/**", (r) => {
@@ -1082,10 +1200,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const body = pathname.endsWith("/refs")
       ? { branches: [], tags: [], recent: [] }
       : pathname.endsWith("/targets")
-      ? {}
-      : pathname.endsWith("/vcs")
-      ? []
-      : undefined
+        ? {}
+        : pathname.endsWith("/vcs")
+          ? []
+          : undefined
     if (body === undefined) return r.fallback()
     return json(r, body)
   })
@@ -1147,9 +1265,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // and a bare "**/session/status" pattern never matches a query string — requests
   // then fall through to the **/session/** catch-all and get a session row instead
   // of a status map, corrupting busy/idle logic in every consumer spec.
-  await page.route("**/session/status**", (r) =>
-    api(r) ? json(r, { [SESSION_ID]: { type: "idle" } }) : r.continue(),
-  )
+  await page.route("**/session/status**", (r) => (api(r) ? json(r, { [SESSION_ID]: { type: "idle" } }) : r.continue()))
 
   const handleSessionList = async (route: Route) => {
     if (!api(route)) return route.continue()
@@ -1346,14 +1462,25 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
       if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
-      return json(r, { workspaceId, projectID: CLOUD_PROJECT_ID, projectId: CLOUD_PROJECT_ID, directory: workspaceId, kind: "cloud", status: "ready" })
+      return json(r, {
+        workspaceId,
+        projectID: CLOUD_PROJECT_ID,
+        projectId: CLOUD_PROJECT_ID,
+        directory: workspaceId,
+        kind: "cloud",
+        status: "ready",
+      })
     })
 
     await page.route(`${base}/vcs**`, (r) => json(r, {}))
     await page.route(`${base}/mcp**`, (r) => json(r, {}))
     await page.route(`${base}/lsp**`, (r) => json(r, []))
-    await page.route(`${base}/agent**`, (r) => json(r, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }]))
-    await page.route(`${base}/app/agents**`, (r) => json(r, [{ id: "build", name: "build", description: "Build agent" }]))
+    await page.route(`${base}/agent**`, (r) =>
+      json(r, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }]),
+    )
+    await page.route(`${base}/app/agents**`, (r) =>
+      json(r, [{ id: "build", name: "build", description: "Build agent" }]),
+    )
     await page.route(`${base}/command**`, (r) => json(r, [{ name: "build", description: "Build command" }]))
     await page.route(`${base}/permission**`, (r) => json(r, []))
     await page.route(`${base}/question**`, (r) => json(r, []))
@@ -1371,12 +1498,25 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(r, {
         source: "runner",
         stale: false,
-        options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: model.id, selectOptions: harnessModels[type] ?? [model] }],
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: model.id,
+            selectOptions: harnessModels[type] ?? [model],
+          },
+        ],
       })
     })
     await page.route(`${base}/api/wr/diff/**`, (r) => {
       const pathname = new URL(r.request().url()).pathname
-      const body = pathname.endsWith("/refs") ? { branches: [], tags: [], recent: [] } : pathname.endsWith("/targets") ? {} : []
+      const body = pathname.endsWith("/refs")
+        ? { branches: [], tags: [], recent: [] }
+        : pathname.endsWith("/targets")
+          ? {}
+          : []
       return json(r, body)
     })
 
@@ -1395,7 +1535,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/global/event**`, relayEventHandler)
     await page.route(`${base}/event**`, relayEventHandler)
 
-    await page.route(`${base}/session/status**`, (r) => json(r, cloudSessionCreated ? { [CLOUD_SESSION_ID]: { type: "idle" } } : {}))
+    await page.route(`${base}/session/status**`, (r) =>
+      json(r, cloudSessionCreated ? { [CLOUD_SESSION_ID]: { type: "idle" } } : {}),
+    )
 
     const handleCloudSessionList = async (route: Route) => {
       if (!api(route)) return route.continue()
@@ -1483,12 +1625,25 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(r, {
         source: "runner",
         stale: false,
-        options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: model.id, selectOptions: harnessModels[harness] ?? [model] }],
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: model.id,
+            selectOptions: harnessModels[harness] ?? [model],
+          },
+        ],
       })
     })
     await page.route(`${relayOrigin}/api/wr/diff/**`, (r) => {
       const pathname = new URL(r.request().url()).pathname
-      const body = pathname.endsWith("/refs") ? { branches: [], tags: [], recent: [] } : pathname.endsWith("/targets") ? {} : []
+      const body = pathname.endsWith("/refs")
+        ? { branches: [], tags: [], recent: [] }
+        : pathname.endsWith("/targets")
+          ? {}
+          : []
       return json(r, body)
     })
     await page.route(`${relayOrigin}/api/wr/events`, relayEventHandler)

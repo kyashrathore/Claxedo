@@ -52,6 +52,8 @@ export type Platform = {
   storage?: (name?: string) => SyncStorage | AsyncStorage
   checkUpdate?(): Promise<{ updateAvailable: boolean; version?: string }>
   updateAndRestart?(): Promise<void>
+  getStartAtLogin?(): Promise<boolean>
+  setStartAtLogin?(enabled: boolean): Promise<void>
   fetch?: typeof fetch
   getDefaultServer?(): Promise<ServerConnection.Key | null> | ServerConnection.Key | null
   setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void

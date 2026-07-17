@@ -347,21 +347,18 @@ describe("WorkGraph MCP parity", () => {
     ])
   })
 
-  it("uses stable cursor pages for Attention, notifications, candidates, and changes", async () => {
+  it("uses stable cursor pages for Attention, notifications, and candidates", async () => {
     const request = vi.fn()
       .mockResolvedValueOnce({ items: [], total: 0, hasMore: false })
       .mockResolvedValueOnce({ notifications: [], hasMore: false })
       .mockResolvedValueOnce({ candidates: [], hasMore: false })
-      .mockResolvedValueOnce({ changes: [], cursor: "change-1", timedOut: true })
     await callWorkGraph(request, "workgraph_attention", { cursor: "attention-1", limit: 25 })
     await callWorkGraph(request, "workgraph_notifications", { cursor: "notification-1", limit: 20, state: "unread" })
     await callWorkGraph(request, "workgraph_intake", { cursor: "candidate-1", limit: 15 })
-    await callWorkGraph(request, "workgraph_changes", { cursor: "change-1", limit: 10, wait_ms: 500 })
     expect(request.mock.calls).toEqual([
       ["/api/workgraph/attention?limit=25&after=attention-1", { method: "GET" }],
       ["/api/workgraph/notifications?limit=20&after=notification-1&state=unread", { method: "GET" }],
       ["/api/workgraph/intake?limit=15&after=candidate-1", { method: "GET" }],
-      ["/api/workgraph/changes?limit=10&after=change-1&waitMs=500", { method: "GET" }],
     ])
   })
 
@@ -1027,7 +1024,6 @@ describe("WorkGraph MCP parity", () => {
       "workgraph_list",
       "workgraph_get",
       "workgraph_source_revision",
-      "workgraph_changes",
       "workgraph_current_work",
       "workgraph_refresh_context",
       "workgraph_source_views",

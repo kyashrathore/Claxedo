@@ -200,6 +200,25 @@ describe("hostedOrgCredentials (D7 org-partitioned CRUD)", () => {
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(0)
   })
 
+  test("persists verification health in the org-partitioned credential source of truth", async () => {
+    stubKv()
+    const credentials = hostedOrgCredentials("org-a", { ...FULL_ENV }, { now: () => 2_000 })
+    const meta = await credentials.putCredential({
+      ...write,
+      provider_id: "openai",
+      secret: "sk-hosted-verification-secret",
+    })
+
+    await credentials.updateCredentialHealth?.(meta.id, "auth_failed", 1_500)
+
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({
+      health: "auth_failed",
+      status: "error",
+      last_validated_at: 1_500,
+    })
+    await expect(credentials.resolveCredentialSecretById?.(meta.id)).resolves.toBe("sk-hosted-verification-secret")
+  })
+
   test("cross-org isolation: same provider id, disjoint keys, ciphertext on the wire, no enumeration", async () => {
     const kv = stubKv()
     const orgA = hostedOrgCredentials("org-a", { ...FULL_ENV })

@@ -33,6 +33,7 @@ import type {
   QuestionRequest,
 } from "@claxedo/agent-event-runtime/opencode-compat"
 import type { StatusCompat } from "./status"
+import { firstTurnErrorData } from "./first-turn-error"
 
 export type CompatPart = Part
 export type CompatPromptFormat =
@@ -350,7 +351,7 @@ export function sessionError(message: string, sessionID?: string): EventSessionE
       ...(sessionID ? { sessionID } : {}),
       error: {
         name: "UnknownError",
-        data: { message },
+        data: firstTurnErrorData(message),
       },
     },
   }

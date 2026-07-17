@@ -16,11 +16,11 @@ function makeProps() {
   const openPagesIndexCalls: Array<string | undefined> = []
   const navigateCalls: string[] = []
 
-    const props: PageActionProps & { canUsePages?: () => boolean } = {
+    const props: PageActionProps & { canUseDocuments?: () => boolean } = {
       navigate: (path: string) => navigateCalls.push(path),
       activeDirectory: () => "/workspace/main",
       projects: () => [{ id: "p1", worktree: "/workspace/main" }],
-      canUsePages: () => true,
+      canUseDocuments: () => true,
       state: {
         layout: {
           openPagesIndex: (directory?: string) => {
@@ -63,7 +63,7 @@ describe("createPageActions", () => {
 
   test("handleNewPage opens pages-index even when signed page access is unavailable", () => {
     const { props, navigateCalls, openPagesIndexCalls } = makeProps()
-    props.canUsePages = () => false
+    props.canUseDocuments = () => false
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])
@@ -72,7 +72,7 @@ describe("createPageActions", () => {
 
   test("handleNewPage opens pages-index while signed page access is unresolved", () => {
     const { props, navigateCalls, openPagesIndexCalls } = makeProps()
-    delete props.canUsePages
+    delete props.canUseDocuments
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])

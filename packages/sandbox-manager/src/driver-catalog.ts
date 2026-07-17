@@ -2,7 +2,7 @@ import type { SandboxDriverMetadata } from "./index"
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
 
-export const sandboxDriverIds = ["daytona", "modal", "vercel", "cloudflare", "docker"] as const
+export const sandboxDriverIds = ["daytona", "modal", "vercel", "cloudflare", "box", "docker"] as const
 
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
@@ -22,6 +22,9 @@ export type SandboxDriverAuth = {
   cloudflare?: {
     api_token?: string
     worker_url?: string
+  }
+  box?: {
+    api_key?: string
   }
   docker?: {
     image?: string
@@ -95,6 +98,17 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       secretBrokering: "proxy",
     },
   },
+  box: {
+    id: "box",
+    label: "Box",
+    credentialFields: [{ key: "api_key", label: "API Key", secret: true }],
+    metadata: {
+      driverRunsIn: ["node"],
+      hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
+      targetAccess: "relay",
+      secretBrokering: "none",
+    },
+  },
   docker: {
     id: "docker",
     label: "Docker",
@@ -132,6 +146,7 @@ export function sandboxDriverAuth<T extends SandboxDriverID>(
   if (id === "modal") return authModal(cfg, env) as SandboxDriverAuth[T]
   if (id === "vercel") return authVercel(cfg, env) as SandboxDriverAuth[T]
   if (id === "cloudflare") return authCloudflare(cfg, env) as SandboxDriverAuth[T]
+  if (id === "box") return authBox(cfg, env) as SandboxDriverAuth[T]
   return authDocker(cfg, env) as SandboxDriverAuth[T]
 }
 
@@ -213,6 +228,11 @@ function authCloudflare(cfg: SandboxDriverConfig | undefined, env: SandboxDriver
   const api_token = clean(cfg?.auth?.cloudflare?.api_token) ?? clean(env.CLOUDFLARE_API_TOKEN)
   const worker_url = clean(cfg?.auth?.cloudflare?.worker_url) ?? clean(env.CLOUDFLARE_SANDBOX_WORKER_URL)
   return api_token && worker_url ? { api_token, worker_url } : undefined
+}
+
+function authBox(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
+  const api_key = clean(cfg?.auth?.box?.api_key) ?? clean(env.BOX_API_KEY)
+  return api_key ? { api_key } : undefined
 }
 
 function authDocker(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {

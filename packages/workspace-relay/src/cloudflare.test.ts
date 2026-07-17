@@ -514,6 +514,30 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     })
   })
 
+  test("updates a host registration on the existing socket after re-authorizing the workspace set", async () => {
+    const harness = await roomHarness()
+    const response = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken(["ws_1"])}`,
+      },
+    }))
+    expect(response.status).toBe(101)
+
+    ;(harness.pairs[0]?.server as FakeSocket).message(JSON.stringify({
+      type: "host.registration.update",
+      protocol: 1,
+      workspace_ids: ["ws_1", "ws_2"],
+      token: await harness.hostTunnelToken(["ws_1", "ws_2"]),
+    }))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(harness.room.state()).toMatchObject({
+      hostTunnelCount: 1,
+      hostWorkspaceIds: { host_1: ["ws_1", "ws_2"] },
+    })
+  })
+
   test("admits a cloud workspace client WebSocket after Runtime Access Token authorization", async () => {
     const harness = await roomHarness({
       connectWebSocket: () => new FakeSocket(),
@@ -597,6 +621,79 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     upstreamSocket.close(1000, "done")
     expect(clientSocket.closed).toEqual({ code: 1000, reason: "done" })
+  })
+
+  test("emits a relay.trace frame on the cloud WebSocket when the trace header opts in", async () => {
+    const harness = await roomHarness({
+      connectWebSocket: () => new FakeSocket(),
+    })
+    const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+        "x-claxedo-relay-ws-trace": "1",
+      },
+    }))
+    expect(res.status).toBe(101)
+    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    const first = clientSocket.sent[0]
+    expect(typeof first).toBe("string")
+    const trace = JSON.parse(first as string) as {
+      type: string
+      wsUpstreamOpenMs: number
+      queuedFrames: number
+      maxQueuedDelayMs: number
+    }
+    expect(trace.type).toBe("relay.trace")
+    expect(typeof trace.wsUpstreamOpenMs).toBe("number")
+    expect(trace.queuedFrames).toBe(0)
+    expect(trace.maxQueuedDelayMs).toBe(0)
+  })
+
+  test("does not emit a relay.trace frame without the trace header", async () => {
+    const harness = await roomHarness({
+      connectWebSocket: () => new FakeSocket(),
+    })
+    const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    expect(res.status).toBe(101)
+    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    expect(clientSocket.sent).toHaveLength(0)
+  })
+
+  test("relay.trace reports queued frames when the upstream opens after admit", async () => {
+    const connecting = new FakeSocket()
+    connecting.readyState = 0
+    const harness = await roomHarness({
+      connectWebSocket: () => connecting,
+    })
+    const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+        "x-claxedo-relay-ws-trace": "1",
+      },
+    }))
+    expect(res.status).toBe(101)
+    const clientSocket = harness.pairs[0]?.server as FakeSocket
+    // Upstream is still connecting, so no trace has been emitted yet and
+    // client frames queue behind the pending upstream open.
+    expect(clientSocket.sent).toHaveLength(0)
+    clientSocket.message("frame-1")
+    clientSocket.message("frame-2")
+    connecting.dispatch("open")
+    const trace = JSON.parse(clientSocket.sent[0] as string) as {
+      type: string
+      queuedFrames: number
+    }
+    expect(trace.type).toBe("relay.trace")
+    expect(trace.queuedFrames).toBe(2)
+    // Queued frames flush to the upstream once it opens.
+    expect(connecting.sent).toEqual(["frame-1", "frame-2"])
   })
 
   test("closes active cloud WebSocket clients when the Runtime Access Token is revoked", async () => {

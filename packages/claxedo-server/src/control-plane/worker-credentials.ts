@@ -177,12 +177,15 @@ export function hostedOrgCredentials(
     // No KV enumeration by design: empty, never another org's rows.
     listCredentials: async () => [],
     getCredentialByProvider: async (providerId) => (await read(providerId))?.meta,
+    getCredential: async (id) => (await read(id))?.meta,
     // Available-status-only, mirroring credentials/registry.ts resolveSecret.
     resolveCredentialSecret: async (providerId) => {
       const record = await read(providerId)
       if (!record || record.meta.status !== "available") return null
       return record.secret
     },
+    // Verification retries must be able to re-check a prior failed result.
+    resolveCredentialSecretById: async (id) => (await read(id))?.secret ?? null,
     putCredential: async (input: CredentialWrite) => {
       const existing = await read(input.provider_id)
       const timestamp = now()
@@ -197,6 +200,7 @@ export function hostedOrgCredentials(
         account_id: input.account_id ?? null,
         secure_ref: refFor(input.provider_id),
         status: "available",
+        health: null,
         expires_at: input.expires_at ?? null,
         last_validated_at: null,
         last_error: null,
@@ -222,7 +226,18 @@ export function hostedOrgCredentials(
       const record = await read(id)
       if (!record) return
       record.meta.status = status
+      record.meta.health = status === "expired" ? "expired" : null
       record.meta.last_error = error ?? null
+      record.meta.updated_at = now()
+      await write(record)
+    },
+    updateCredentialHealth: async (id, health, validatedAt) => {
+      const record = await read(id)
+      if (!record) return
+      record.meta.health = health
+      record.meta.status = health === "ok" ? "available" : health === "expired" ? "expired" : "error"
+      record.meta.last_validated_at = validatedAt
+      record.meta.last_error = health === "ok" ? null : health
       record.meta.updated_at = now()
       await write(record)
     },

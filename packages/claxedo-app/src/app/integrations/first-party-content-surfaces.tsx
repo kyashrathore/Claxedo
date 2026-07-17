@@ -248,14 +248,14 @@ const SurfaceFallback = (props: { label?: string }) => (
     <span>{props.label ?? "Loading…"}</span>
   </div>
 )
-const HiddenPagesSurface = () => (
+const HiddenDocumentsSurface = () => (
   <div class="flex size-full items-center justify-center bg-background-base text-text-weak">
-    Pages are not available for this identity.
+    Documents are not available for this identity.
   </div>
 )
 
-function PagesSurface(props: { canUsePages?: boolean; children: JSX.Element }) {
-  if (props.canUsePages === false) return <HiddenPagesSurface />
+function DocumentsSurface(props: { canUseDocuments?: boolean; children: JSX.Element }) {
+  if (props.canUseDocuments === false) return <HiddenDocumentsSurface />
   return props.children
 }
 
@@ -263,7 +263,7 @@ export type ContentSurfaceRenderContext = {
   meta: ContentMeta
   ctx: PaneCtx
   fallbackDirectory?: () => string | undefined
-  canUsePages?: boolean
+  canUseDocuments?: boolean
 }
 
 export type ContentSurfaceContribution = SurfaceContribution<ContentSurfaceRenderContext, never> & {
@@ -298,11 +298,11 @@ export const firstPartyContentSurfaces: ContentSurfaceContribution[] = [
     surface: "page",
     slot: "workbench",
     renderer: (context) => (
-      <PagesSurface canUsePages={context.canUsePages}>
+      <DocumentsSurface canUseDocuments={context.canUseDocuments}>
         <Suspense fallback={<SurfaceFallback />}>
           <PageContent meta={context.meta} ctx={context.ctx} />
         </Suspense>
-      </PagesSurface>
+      </DocumentsSurface>
     ),
   },
   {
@@ -331,11 +331,11 @@ export const firstPartyContentSurfaces: ContentSurfaceContribution[] = [
     surface: "pages-index",
     slot: "workbench",
     renderer: (context) => (
-      <PagesSurface canUsePages={context.canUsePages}>
+      <DocumentsSurface canUseDocuments={context.canUseDocuments}>
         <Suspense fallback={<SurfaceFallback />}>
           <PagesIndexContent meta={context.meta} ctx={context.ctx} />
         </Suspense>
-      </PagesSurface>
+      </DocumentsSurface>
     ),
   },
   {

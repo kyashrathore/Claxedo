@@ -26,6 +26,7 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
+import { harnessSpawnEnv } from "../shared/spawn-env"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 
@@ -119,11 +120,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           ? {}
           : { resume: input.getAgentSessionId() }),
         ...(Object.keys(this.currentMcp).length ? { mcpServers: claudeMcpServers(this.currentMcp) } : {}),
-        env: {
+        env: claudeSpawnEnv({
           ...process.env,
           ...claudeAuthEnv(this.auth.anthropic),
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
-        },
+        }),
       },
     })
     this.host.lifecycle().set(input.sessionId, {
@@ -152,6 +153,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   configOptions(_currentModel: string): AgentConfigOptionRow[] {
     return [sdkModelConfigOption("claude", _currentModel)]
   }
+}
+
+export function claudeSpawnEnv(input: Record<string, string | undefined>) {
+  return harnessSpawnEnv(input)
 }
 
 function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<string, McpServerConfig> {

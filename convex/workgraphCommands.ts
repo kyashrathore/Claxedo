@@ -453,11 +453,8 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     if (!latest) throw new Error("Work Source head revision is missing")
     const previousOrigin = WorkSourceOriginSchema.parse(latest.origin)
     if (command.authoring && previousOrigin.kind !== "authoring") throw new Error("Authoring Work Source head is missing its authoring origin")
-    if (command.authoring && previousOrigin.kind === "authoring" && previousOrigin.documentRevisionNumber >= command.authoring.documentRevisionNumber) {
-      return rejected(input.operationId, "version_conflict", "Authoring document revision is not newer than the Work Source head")
-    }
-    if (command.authoring && previousOrigin.kind === "authoring" && command.authoring.parentDocumentRevisionId !== previousOrigin.documentRevisionId) {
-      return rejected(input.operationId, "version_conflict", "Authoring document revision does not descend from the Work Source head")
+    if (command.authoring && previousOrigin.kind === "authoring" && command.authoring.snapshotId === previousOrigin.snapshotId) {
+      return rejected(input.operationId, "version_conflict", "Authoring snapshot is already the Work Source head")
     }
     const revisionId = resourceId("revision", input)
     await ctx.db.insert("work_source_revisions", {

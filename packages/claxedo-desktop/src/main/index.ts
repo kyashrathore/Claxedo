@@ -49,6 +49,7 @@ import {
   spawnLocalServer,
 } from "./server"
 import { createLoadingWindow, createMainWindow, setDockIcon } from "./windows"
+import { createStartAtLogin } from "./start-at-login"
 
 type ServerConnection =
   | { variant: "existing"; url: string }
@@ -81,6 +82,7 @@ const pendingDeepLinks: string[] = []
 
 const serverReady = defer<ServerReadyData>()
 const logger = initLogging()
+const startAtLogin = createStartAtLogin(app)
 
 logger.log("app starting", {
   version: app.getVersion(),
@@ -387,6 +389,8 @@ registerIpcHandlers({
   runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail),
   checkUpdate: async () => checkUpdate(),
   installUpdate: async () => installUpdate(),
+  getStartAtLogin: () => startAtLogin.get(),
+  setStartAtLogin: (enabled) => startAtLogin.set(enabled),
   browser: browserRegistry,
 })
 

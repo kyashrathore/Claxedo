@@ -1,0 +1,105 @@
+/* Placement + tokens for the session Environment card — Codex's "pinned
+   summary" model. The card's LOOK lives in the shared `@/ui/context-card`
+   shell (`variant="floating"` supplies the raised bounded-card surface).
+
+   Placement here is gutter-in-scroller: the timeline's scroll viewport keeps
+   the FULL pane width (so its scrollbar stays on the pane's right edge) and
+   reserves a right gutter via padding while the card is mounted; the card sits
+   absolutely INSIDE that gutter. Inline — never floating over content, never a
+   full-height rail. Class namespace is `session-envcard-*` — never reuse
+   `workgraph-card*` or generic names. */
+
+.session-envcard-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
+
+.session-envcard-primary {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Bounded card, top-aligned inside the reserved gutter, content-sized. */
+.session-envcard {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 30;
+  width: 15rem;
+  max-height: calc(100% - 1.7rem);
+  overflow-y: auto;
+}
+
+/* Collapsed: the same gutter spot holds the shell's vertical icon rail. */
+.session-envcard.is-collapsed {
+  width: 2.5rem;
+  overflow-y: visible;
+}
+
+/* The squeeze animates: the gutter padding transitions on the elements that
+   carry it, so chat and composer slide smoothly instead of jumping. */
+.session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
+.session-envcard-shell [data-component="session-prompt-dock"] {
+  transition: padding-right 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell [data-component="session-prompt-dock"] {
+    transition: none;
+  }
+}
+
+/* Reserve the gutter inside the timeline's scroll viewport so chat content
+   squeezes left while the scrollbar remains on the pane edge. Keyed off the
+   card actually being mounted (`:has`) so visibility has one source of truth;
+   the collapsed rail only needs a sliver. The composer dock gets the SAME
+   inset so it stays centered on the squeezed chat column — never on the full
+   pane. */
+@media (min-width: 769px) {
+  .session-envcard-shell:has(.session-envcard) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard) [data-component="session-prompt-dock"] {
+    padding-right: 16.4rem;
+  }
+
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
+    padding-right: 3.6rem;
+  }
+}
+
+/* Below desktop width the reading column needs the full width; drop the card
+   (the gutter rule above is already scoped to desktop widths). */
+@media (max-width: 768px) {
+  .session-envcard {
+    display: none;
+  }
+}
+
+/* Information rows: muted field label, stronger trailing value. */
+.session-envcard-field {
+  color: var(--text-weak);
+}
+
+.session-envcard-value {
+  color: var(--text-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-envcard-quiet {
+  color: var(--text-weaker);
+}
+
+.session-envcard-metric {
+  font-variant-numeric: tabular-nums;
+}
+
+.session-envcard-add {
+  color: var(--icon-diff-add-base);
+}
+
+.session-envcard-del {
+  margin-left: 0.35rem;
+  color: var(--icon-diff-delete-base);
+}

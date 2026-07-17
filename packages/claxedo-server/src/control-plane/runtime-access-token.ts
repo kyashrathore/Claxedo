@@ -1,4 +1,4 @@
-import { exportJWK, importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
+import { exportJWK, importJWK, importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
 import { randomToken, sha256Hex16 } from "./web-crypto"
 
 type ExportableKey = Parameters<typeof exportJWK>[0]
@@ -31,6 +31,8 @@ export const supervisorBackplaneTokenAudience = "supervisor-backplane"
  * supervisor-backplane value above to prevent cross-flow replay.
  */
 export const supervisorBackplaneTokenIssuer = runtimeAccessTokenIssuer
+export const documentSessionTokenAudience = "document-session-writeback"
+export const documentRelayJobTokenAudience = "document-relay-job"
 
 /** Signer-enforced Runtime Access Token TTL bounds (seconds). */
 export const RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS = { min: 15 * 60, max: 60 * 60 } as const
@@ -403,4 +405,161 @@ export async function verifySupervisorBackplaneToken(
     action,
     scopes,
   }
+}
+
+export type DocumentSessionTokenClaims = Readonly<{
+  orgId: string
+  projectId: string
+  workspaceId: string
+  sessionId: string
+  documentId: string
+  operation: "document.write"
+  expiresAt: number
+  jobExpiresAt: number
+  jti: string
+}>
+
+export async function mintDocumentSessionToken(
+  input: Omit<DocumentSessionTokenClaims, "operation" | "expiresAt" | "jti"> & { ttlSeconds?: number },
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const alg = algorithm(clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM))
+  const privateKey = await loadPrivateKey(env, alg, "runtime_access_token_signer_unavailable")
+  const issuedAt = Math.floor(Date.now() / 1000)
+  const expiresAt = Math.min(input.jobExpiresAt, issuedAt + Math.min(300, Math.max(15, Math.floor(input.ttlSeconds ?? 300))))
+  if (expiresAt <= issuedAt) throw new Error("Document session job has expired")
+  const jti = randomToken()
+  const token = await new SignJWT({
+    org_id: input.orgId,
+    project_id: input.projectId,
+    workspace_id: input.workspaceId,
+    session_id: input.sessionId,
+    document_id: input.documentId,
+    operation: "document.write",
+    job_exp: input.jobExpiresAt,
+  })
+    .setProtectedHeader({ alg, kid: await resolveMintKid(env, privateKey) })
+    .setIssuer(runtimeAccessTokenIssuer)
+    .setAudience(documentSessionTokenAudience)
+    .setSubject(`session:${input.sessionId}`)
+    .setIssuedAt(issuedAt)
+    .setExpirationTime(expiresAt)
+    .setJti(jti)
+    .sign(privateKey)
+  return { token, expiresAt: expiresAt * 1000, jti }
+}
+
+export async function verifyDocumentSessionToken(
+  token: string,
+  expected: Omit<DocumentSessionTokenClaims, "operation" | "expiresAt" | "jobExpiresAt" | "jti">,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<DocumentSessionTokenClaims> {
+  const alg = algorithm(clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM))
+  const privateKey = await loadPrivateKey(env, alg, "runtime_access_token_signer_unavailable")
+  const jwk = await exportJWK(privateKey)
+  const publicJwk = { ...jwk }
+  const fields = publicJwk as Record<string, unknown>
+  for (const field of ["d", "p", "q", "dp", "dq", "qi", "oth"]) delete fields[field]
+  const key = await importJWK(publicJwk, alg)
+  const result = await jwtVerify(token, key, {
+    issuer: runtimeAccessTokenIssuer,
+    audience: documentSessionTokenAudience,
+  })
+  const payload = result.payload as Record<string, unknown>
+  const claims = {
+    orgId: stringClaim(payload, "org_id"),
+    projectId: stringClaim(payload, "project_id"),
+    workspaceId: stringClaim(payload, "workspace_id"),
+    sessionId: stringClaim(payload, "session_id"),
+    documentId: stringClaim(payload, "document_id"),
+    operation: stringClaim(payload, "operation"),
+    expiresAt: numberClaim(payload, "exp"),
+    jobExpiresAt: numberClaim(payload, "job_exp"),
+    jti: stringClaim(payload, "jti"),
+  }
+  if (claims.operation !== "document.write" || !claims.expiresAt || !claims.jobExpiresAt || !claims.jti ||
+    claims.jobExpiresAt <= Math.floor(Date.now() / 1000) ||
+    claims.orgId !== expected.orgId || claims.projectId !== expected.projectId ||
+    claims.workspaceId !== expected.workspaceId || claims.sessionId !== expected.sessionId ||
+    claims.documentId !== expected.documentId) {
+    throw new Error("Document Session Token scope is invalid")
+  }
+  return {
+    ...expected, operation: "document.write", expiresAt: claims.expiresAt,
+    jobExpiresAt: claims.jobExpiresAt, jti: claims.jti,
+  }
+}
+
+export type DocumentRelayJobScope = Readonly<{
+  userId: string
+  orgId: string
+  projectId: string
+  localWorkspaceId: string
+  cloudWorkspaceId: string
+  sessionId: string
+  documentId: string
+  operations: readonly ("hydrate" | "read" | "write" | "resolve")[]
+  jobExpiresAt: number
+}>
+
+export async function mintDocumentRelayJobToken(
+  input: DocumentRelayJobScope,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const alg = algorithm(clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM))
+  const privateKey = await loadPrivateKey(env, alg, "runtime_access_token_signer_unavailable")
+  const now = Math.floor(Date.now() / 1000)
+  const exp = Math.min(input.jobExpiresAt, now + 5 * 60)
+  if (exp <= now) throw new Error("Document relay job has expired")
+  const jti = randomToken()
+  const token = await new SignJWT({
+    user_id: input.userId,
+    org_id: input.orgId,
+    project_id: input.projectId,
+    local_workspace_id: input.localWorkspaceId,
+    cloud_workspace_id: input.cloudWorkspaceId,
+    session_id: input.sessionId,
+    document_id: input.documentId,
+    operations: input.operations,
+    job_exp: input.jobExpiresAt,
+  })
+    .setProtectedHeader({ alg, kid: await resolveMintKid(env, privateKey) })
+    .setIssuer(runtimeAccessTokenIssuer)
+    .setAudience(documentRelayJobTokenAudience)
+    .setSubject(input.userId)
+    .setIssuedAt(now)
+    .setExpirationTime(exp)
+    .setJti(jti)
+    .sign(privateKey)
+  return { token, expiresAt: exp * 1000, jti }
+}
+
+export async function verifyDocumentRelayJobToken(
+  token: string,
+  expected: Omit<DocumentRelayJobScope, "operations" | "jobExpiresAt"> & { operation: DocumentRelayJobScope["operations"][number] },
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const alg = algorithm(clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM))
+  const key = await documentVerificationKey(env, alg)
+  const result = await jwtVerify(token, key, { issuer: runtimeAccessTokenIssuer, audience: documentRelayJobTokenAudience })
+  const payload = result.payload as Record<string, unknown>
+  const operations = Array.isArray(payload.operations) ? payload.operations.filter((value): value is string => typeof value === "string") : []
+  const jobExpiresAt = numberClaim(payload, "job_exp")
+  const jti = stringClaim(payload, "jti")
+  if (!jti || !jobExpiresAt || jobExpiresAt <= Math.floor(Date.now() / 1000) || !operations.includes(expected.operation) ||
+    stringClaim(payload, "user_id") !== expected.userId || stringClaim(payload, "org_id") !== expected.orgId ||
+    stringClaim(payload, "project_id") !== expected.projectId || stringClaim(payload, "local_workspace_id") !== expected.localWorkspaceId ||
+    stringClaim(payload, "cloud_workspace_id") !== expected.cloudWorkspaceId || stringClaim(payload, "session_id") !== expected.sessionId ||
+    stringClaim(payload, "document_id") !== expected.documentId) throw new Error("Document relay job scope is invalid")
+  return { ...expected, operations, jobExpiresAt, jti }
+}
+
+async function documentVerificationKey(env: NodeJS.ProcessEnv, alg: RelayJwtAlgorithm) {
+  const publicPem = pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+  if (publicPem) return await importSPKI(publicPem, alg)
+  const privateKey = await loadPrivateKey(env, alg, "runtime_access_token_signer_unavailable")
+  const publicJwk = { ...await exportJWK(privateKey) }
+  const fields = publicJwk as Record<string, unknown>
+  for (const field of ["d", "p", "q", "dp", "dq", "qi", "oth"]) delete fields[field]
+  return await importJWK(publicJwk, alg)
 }

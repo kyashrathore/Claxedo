@@ -970,6 +970,56 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("updates a host registration on the existing WebSocket after re-authorizing the workspace set", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const directory = createWorkspaceRelayDirectory({ ttlMs: 10_000 })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      directory,
+      resolveTarget: async () => undefined,
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const initialToken = await mintHostTunnelToken({
+      subject: "user_1",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+    }, runtime.privateKey, "EdDSA")
+    const updateToken = await mintHostTunnelToken({
+      subject: "user_1",
+      hostId: "host_1",
+      workspaceIds: ["ws_1", "ws_2"],
+    }, runtime.privateKey, "EdDSA")
+    const ws = hostTunnelSocket(
+      new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
+      initialToken,
+    )
+
+    try {
+      await waitForOpen(ws)
+      ws.send(JSON.stringify({
+        type: "host.registration.update",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        workspace_ids: ["ws_1", "ws_2"],
+        token: updateToken,
+      }))
+      const deadline = Date.now() + 1_000
+      while (!directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" }) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
+      expect(directory.activeHost({ hostId: "host_1", workspaceId: "ws_2" })).toMatchObject({
+        hostId: "host_1",
+        workspaceIds: ["ws_1", "ws_2"],
+      })
+      expect(ws.readyState).toBe(WebSocket.OPEN)
+    } finally {
+      ws.close()
+      relay.stop(true)
+    }
+  })
+
   test("sends relay heartbeat pings and records host tunnel pongs", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })

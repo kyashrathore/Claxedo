@@ -20,6 +20,8 @@ function createHarness() {
     scroll: 0,
     slashQueries: [] as string[],
     slashTriggers: [] as string[],
+    documentPicker: 0,
+    documentSelections: [] as string[],
   }
   const actions = createPromptEditorActions({
     editor: () => editor,
@@ -45,6 +47,9 @@ function createHarness() {
     atOnInput: (query) => calls.atQueries.push(query),
     slashOnInput: (query) => calls.slashQueries.push(query),
     triggerSlashCommand: (id) => calls.slashTriggers.push(id),
+    openDocumentPicker: () => calls.documentPicker++,
+    closeDocumentPicker: () => {},
+    onDocumentSelect: (document) => calls.documentSelections.push(document.documentId),
   })
   return {
     actions,
@@ -64,6 +69,7 @@ function createHarness() {
       cursor = nextCursor
     },
     prompt: () => promptValue,
+    cursor: () => cursor,
   }
 }
 
@@ -155,6 +161,26 @@ describe("prompt editor actions", () => {
     })
   })
 
+  test("/docs opens the document picker and selecting a document delegates resolution", () => {
+    createRoot((dispose) => {
+      const harness = createHarness()
+      harness.actions.handleSlashSelect({ id: "documents.open", trigger: "docs", title: "Documents", type: "builtin" })
+      expect(harness.calls.documentPicker).toBe(1)
+      expect(harness.calls.slashTriggers).toEqual([])
+
+      harness.actions.handleAtSelect({
+        type: "document",
+        documentId: "doc-1",
+        display: "Plan",
+        originKind: "managed",
+        placementKind: "local",
+        status: "draft",
+      })
+      expect(harness.calls.documentSelections).toEqual(["doc-1"])
+      dispose()
+    })
+  })
+
   test("blur and composition state close editor interaction loops", () => {
     createRoot((dispose) => {
       const harness = createHarness()
@@ -164,6 +190,32 @@ describe("prompt editor actions", () => {
       harness.actions.handleBlur()
       expect(harness.actions.composing()).toBe(false)
       expect(harness.calls.popovers).toEqual([null])
+      dispose()
+    })
+  })
+
+  test("blur persists the caret into the prompt store", () => {
+    createRoot((dispose) => {
+      const harness = createHarness()
+      harness.editor.textContent = "hello world"
+      setCursorPosition(harness.editor, 6)
+
+      harness.actions.handleBlur()
+
+      expect(harness.cursor()).toBe(6)
+      expect(harness.prompt()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
+      dispose()
+    })
+  })
+
+  test("blur without an editor selection leaves the stored caret alone", () => {
+    createRoot((dispose) => {
+      const harness = createHarness()
+      harness.setPrompt([{ type: "text", content: "draft", start: 0, end: 5 }], 5)
+
+      harness.actions.handleBlur()
+
+      expect(harness.cursor()).toBe(5)
       dispose()
     })
   })

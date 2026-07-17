@@ -12,6 +12,8 @@ export function PromptModelControl(props: {
   providerID: Accessor<string | undefined>
   label: Accessor<string>
   model: Accessor<PickerState>
+  connectRequired: Accessor<boolean>
+  onConnect: VoidFunction
   controlStyle: Accessor<JSX.CSSProperties>
   chooseTitle: string
   chooseKeybind: string
@@ -40,7 +42,7 @@ export function PromptModelControl(props: {
   return (
     <Show when={!props.harnessMode()}>
       <Show
-        when={props.paidProviderCount() > 0}
+        when={!props.connectRequired() && props.paidProviderCount() > 0}
         fallback={
           <TooltipKeybind
             placement="top"
@@ -56,8 +58,13 @@ export function PromptModelControl(props: {
               class={buttonClass}
               style={props.controlStyle()}
               aria-disabled={props.providerLoading()}
+              aria-label={props.connectRequired() ? props.label() : undefined}
               onClick={() => {
                 if (props.providerLoading()) return
+                if (props.connectRequired()) {
+                  props.onConnect()
+                  return
+                }
                 props.onUnpaidClick()
               }}
             >

@@ -6,6 +6,7 @@ import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
 import { hasBacking, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
+import { SessionEnvironmentCardMount } from "./session-environment-card"
 
 export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbackDirectory?: () => string | undefined }) {
   const state = useClaxedoState()
@@ -143,13 +144,14 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                   })}
               >
                 <div
-                  class="size-full"
+                  class="size-full session-envcard-shell"
                   data-testid="session-content"
                   data-content-id={meta().id}
                   data-session-id={sessionId() ?? ""}
                   data-session-directory={dir()}
                 >
-                  {sessionPage()}
+                  <div class="session-envcard-primary">{sessionPage()}</div>
+                  <SessionEnvironmentCardMount />
                 </div>
               </SessionPaneScope>
             )}

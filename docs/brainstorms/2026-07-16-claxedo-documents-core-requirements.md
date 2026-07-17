@@ -84,39 +84,40 @@ human review and then direct multi-human editing.
 
 **Agent editing**
 
-- R19. **Ask agent** uses a normal Claxedo agent session with the document
-  supplied as context. The document does not own a chat or transcript.
-- R20. Agent execution starts only after a conflict-free flush of the exact
-  visible draft. A failed or conflicting flush keeps the document editable,
-  preserves the draft, exposes recovery, and does not start the agent.
-- R21. The active document becomes temporarily read-only while an agent is
-  changing it. Other documents and tasks remain usable.
-- R22. The agent edits a short-lived filesystem operation copy created from the
-  last successful flush. On successful completion, Claxedo automatically and
-  atomically applies the resulting patch only when the authoritative file still
-  matches that starting version. A version mismatch becomes a conflict and
-  never overwrites the newer file.
-- R23. Every terminal agent outcome—success, failure, cancellation,
-  interruption, or session loss—clears the read-only state and rereads the
-  authoritative file. Success shows a changed or unchanged result and a diff
-  against the last successful pre-agent flush. An unsuccessful operation does
-  not modify the authoritative file.
-- R24. Before applying an agent change, Claxedo persists a recovery checkpoint
-  of the authoritative file. The checkpoint survives closing or restarting the
-  editor and can restore the document after a bad agent change. Applied agent
-  changes also participate in the active editor's ordinary undo/redo history,
-  and undo autosaves the reverted content.
-- R25. If applied agent output falls outside the rich-editing contract, Claxedo
-  preserves the exact bytes, shows the diff, and transitions the document to
-  labeled source mode without losing undo for the active editor session.
+- R19. **Ask agent** uses a normal Claxedo agent session. A document mention or
+  discovery result supplies its stable document identity, display name, and an
+  honest filesystem path; the document owns neither chat nor transcript state.
+- R20. The editor eagerly flushes human edits on blur, tab close, unmount, and
+  every content-consuming action. Agent execution has no document-specific
+  start gate or read-only lock, so human and agent work can proceed concurrently.
+- R21. Agents read and edit ordinary Markdown files with their normal harness
+  tools. Repository documents remain at their canonical workspace paths;
+  managed documents outside the session filesystem are hydrated individually
+  to stable session-local paths with their current opaque base versions.
+- R22. Hydrated-document synchronization writes back the complete Markdown file
+  conditionally against its recorded base version. Success advances that base;
+  a mismatch parks synchronization as conflicted and preserves both the durable
+  document and the session draft for explicit human resolution.
+- R23. External file changes refresh a clean editor in place. When the editor
+  has a local draft, the same change enters conflict recovery with a comparison
+  of the external bytes and the preserved human draft. Save-time compare-and-
+  swap remains the final lost-update boundary without mutation locks.
+- R24. Managed documents receive automatic bounded snapshots around service
+  writes and observed external-change boundaries. Repository documents use Git
+  history and diffs for recovery; restoring any version is a conditional write
+  that preserves newer concurrent work as a conflict.
+- R25. Every refresh re-runs the Markdown compatibility detector. Content
+  outside the rich-editing contract retains its exact bytes, exposes the
+  changed-on-disk diff and recovery history, and opens in labeled source mode
+  under the same save, conflict, and external-change contracts.
 - R26. Ending, replacing, or losing an agent session has no effect on document
   identity or availability. A later session can continue from the current file.
 
 **Milestone progression**
 
-- R27. A follow-up local lifecycle milestone allows a managed document to move
-  into a repository while keeping its Claxedo identity and making the
-  repository file its sole content authority.
+- R27. The local lifecycle allows a managed document to move into a repository
+  while keeping its Claxedo identity and making the repository file its sole
+  content authority.
 - R28. Milestone two adds hosted asynchronous review: human comments, replies,
   resolution, and document-scoped access.
 - R29. Milestone three adds direct multi-human editing and the concurrency model
@@ -135,12 +136,15 @@ human review and then direct multi-human editing.
   change; unsupported Markdown is never silently discarded.
 - Human edits autosave with truthful status and remain recoverable after a save
   error or external-change conflict.
-- An agent starts from flushed content, edits an ordinary temporary file, and
-  applies its completed change only when the authoritative file still matches
-  the starting version. Every terminal outcome unlocks the editor.
-- A user can ask for an agent change, inspect and undo the result, give a
-  follow-up instruction in the normal session, and continue human editing
-  without changing document identity.
+- A user can select a document through `/docs`, and an agent can discover its
+  honest path and edit it with the session's ordinary filesystem tools.
+- A managed session copy writes back only against its recorded opaque base
+  version. A concurrent durable change parks the session copy as conflicted and
+  preserves both versions for explicit recovery.
+- An open clean editor refreshes when an agent changes the document; an editor
+  with an unsaved human draft preserves both sides in conflict recovery.
+- A user can inspect the resulting diff, give a follow-up instruction in the
+  normal session, and continue human editing without changing document identity.
 - A user can close and reopen a document after an agent change and still restore
   the pre-agent version.
 
@@ -154,12 +158,11 @@ human review and then direct multi-human editing.
   outside milestone one.
 - Remote sharing, comments, review permissions, presence, and multi-human
   editing begin in later milestones.
-- General-purpose version history and document-owned AI conversations are
-  outside milestone one. Milestone one retains targeted recovery checkpoints
-  for automatically applied agent changes.
+- Document-owned AI conversations are outside milestone one. Managed documents
+  retain bounded snapshot history, while repository documents use Git history.
 - Repository-wide Markdown discovery is outside scope; indexing is explicit.
-- Moving a managed document into a repository is a follow-up local lifecycle
-  capability and does not block milestone one.
+- A managed document can move into a repository through a journaled transition
+  that preserves its Claxedo identity and leaves one authoritative file.
 - Git hooks and Git LFS are not the durability mechanism. Managed-document
   storage and conditional synchronization are part of the Documents system.
 - Pages is pre-release with one development user, so existing Page content may
@@ -176,11 +179,13 @@ human review and then direct multi-human editing.
   most custom conversion work.
 - Semantic Markdown fidelity is the rich-editor contract; source fallback
   protects constructs outside that contract.
-- Agent changes apply automatically from an isolated filesystem operation copy
-  and remain recoverable through a persisted pre-change checkpoint, a diff, and
-  editor undo rather than an acceptance workflow.
-- Agent mutation is serialized with human editing in milestone one. Concurrency
-  arrives with the collaboration capability that requires it.
+- Agents use ordinary repository files or one session-local hydrated managed
+  file. Hydrated changes synchronize as conditional whole-file writes and park
+  on conflict without overwriting newer durable content.
+- Human and agent editing can proceed concurrently. External refresh and
+  save-time compare-and-swap preserve both sides at every lost-update boundary.
+- Managed recovery uses bounded snapshots around service writes and external
+  change boundaries. Repository recovery uses Git history and diffs.
 
 ## Dependencies / Assumptions
 
@@ -188,30 +193,21 @@ human review and then direct multi-human editing.
   against representative and adversarial Markdown fixtures with no known false
   negatives before repository files are eligible for rich editing rather than
   source mode.
-- Each deployment can provide agents filesystem-compatible access to a
-  short-lived operation copy and conditionally write the result to the correct
-  durable backend.
+- Each deployment provides agents filesystem-compatible access either to the
+  canonical repository file or to a contained session-local managed file whose
+  manifest records the conditional write-back base.
 - Unsigned cloud-agent access depends on a reachable local Claxedo application
   capable of brokering scoped document access for that operation.
 
-## Outstanding Questions
+## Implementation Contract
 
-### Deferred to Planning
-
-- [Affects R2, R7-R11][Technical] Define the common storage interface, local and
-  hosted backends, index persistence, scoped cloud-agent bridge, lazy
-  materialization, and conditional write protocol.
-- [Affects R9][Technical] Choose whether each agent runtime uses a configurable
-  Git-ignored projection, virtual filesystem commands, temporary copies, or a
-  combination.
-- [Affects R14][Technical] Define the supported Markdown corpus, fallback
-  detection, and source editor implementation.
-- [Affects R22][Technical] Define the operation-copy lifecycle, expected-version
-  check, atomic file replacement, external-change detection, and diff
-  integration at the filesystem boundary.
-- [Affects R6][Technical] Define missing-file and externally moved-file recovery
-  for indexed repository documents.
+The storage interface, local and hosted authorities, session materialization,
+Markdown subset, repository recovery, watcher behavior, size limits, relay
+capabilities, and end-to-end proof strategy are fixed in
+`docs/decisions/2026-07-17-documents-core-implementation-answers.md`. The Q8
+object-storage and Q14 session-write-back decisions are recorded beside it.
 
 ## Next Steps
 
-→ `/prompts:ce-plan` for structured implementation planning
+→ Execute and verify
+`docs/plans/2026-07-16-001-feat-documents-core-implementation-plan.md`.

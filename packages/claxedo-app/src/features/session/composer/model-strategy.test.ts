@@ -64,9 +64,9 @@ describe("model-strategy", () => {
 
   test("returns renderable model info with provider attached", () => {
     expect(firstConnectedModelInfo({
-      connected: [{ id: "opencode", models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-      defaults: { opencode: "big-pickle" },
-    })).toMatchObject({ id: "big-pickle", name: "Big Pickle", provider: { id: "opencode" } })
+      connected: [{ id: "opencode", models: { "kimi-k2.5-free": { id: "kimi-k2.5-free", name: "Kimi K2.5 Free" } } }],
+      defaults: { opencode: "kimi-k2.5-free" },
+    })).toMatchObject({ id: "kimi-k2.5-free", name: "Kimi K2.5 Free", provider: { id: "opencode" } })
   })
 
   test("runtime submit model selection keeps an explicit selected model", () => {
@@ -78,6 +78,14 @@ describe("model-strategy", () => {
       id: "sonnet",
       provider: { id: "anthropic" },
     })
+  })
+
+  test("runtime submit model selection rejects an explicit signed-workspace placeholder", () => {
+    expect(selectRuntimeModel({
+      all: [{ id: "opencode", models: { "big-pickle": { name: "Big Pickle" } } }],
+      connected: ["opencode"],
+      default: { opencode: "big-pickle" },
+    }, { id: "big-pickle", provider: { id: "opencode" } })).toBeUndefined()
   })
 
   test("runtime submit model selection parses connected provider responses", () => {
@@ -98,12 +106,12 @@ describe("model-strategy", () => {
 
   test("runtime submit model selection uses model map keys when ids are omitted", () => {
     expect(selectRuntimeModel({
-      all: [{ id: "opencode", models: { "big-pickle": { name: "Big Pickle" } } }],
+      all: [{ id: "opencode", models: { "kimi-k2.5-free": { name: "Kimi K2.5 Free" } } }],
       connected: ["opencode"],
-      default: { opencode: "big-pickle" },
+      default: { opencode: "kimi-k2.5-free" },
     }, undefined)).toMatchObject({
-      id: "big-pickle",
-      name: "Big Pickle",
+      id: "kimi-k2.5-free",
+      name: "Kimi K2.5 Free",
       provider: { id: "opencode" },
     })
   })
@@ -164,6 +172,19 @@ describe("model-strategy", () => {
       blocked: true,
       disabled: true,
       label: "Select model",
+    })
+  })
+
+  test("blocks provider-mode submit and routes to Connect for the signed-workspace placeholder", () => {
+    expect(promptModelState({
+      harnessMode: false,
+      providerLoading: false,
+      model: { id: "big-pickle", name: "Big Pickle", provider: { id: "opencode" } },
+      agent: { name: "build" },
+    })).toEqual({
+      blocked: true,
+      disabled: true,
+      label: "Connect AI",
     })
   })
 

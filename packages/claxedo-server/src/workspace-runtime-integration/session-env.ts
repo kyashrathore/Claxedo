@@ -14,6 +14,7 @@ import { normalizeClaxedoRegion } from "../region"
 import { resolveWorkspace } from "../workspace-store"
 import type { Workspace } from "../workspace-store"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../connections-host/turn-credentials"
+import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments } from "../documents/session-hydration"
 
 const SESSION_ENV_BASE = "/api/wr/session-env"
 
@@ -37,10 +38,20 @@ type ExecFrame = {
 
 type WorkspaceRuntimeSessionEnvInput = {
   workspace: Workspace
+  sessionId?: string
   directory?: string
   fetchOptions: SandboxFetchOptions
   connectionTurnCredential?: () => string | undefined
+  onHydrationFailure?: (failure: SessionHydrationFailure) => void
 }
+
+export type SessionHydrationFailure = Readonly<{
+  phase: "end-turn" | "dispose"
+  sessionId: string
+  error: unknown
+  documentId?: string
+  path?: string
+}>
 
 /**
  * Per-SessionEnv transport. `send` issues one request against the selected
@@ -135,10 +146,10 @@ function createCloudSandboxRequester(
     headers.set("accept-encoding", "identity")
     const credential = connectionTurnCredential?.()
     if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
-    return fetch(
-      `${endpoint.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(ws.id)}${sandboxPath(requestPath)}`,
-      { ...init, headers },
-    )
+    return fetch(`${endpoint.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(ws.id)}${sandboxPath(requestPath)}`, {
+      ...init,
+      headers,
+    })
   }
 
   // A failure (5xx or connectivity) means the cached target may have moved.
@@ -175,7 +186,10 @@ function createCloudSandboxRequester(
   }
 }
 
-function createEmbeddedSandboxRequester(ws: Workspace, connectionTurnCredential?: () => string | undefined): SandboxRequester {
+function createEmbeddedSandboxRequester(
+  ws: Workspace,
+  connectionTurnCredential?: () => string | undefined,
+): SandboxRequester {
   return {
     async send(requestPath, init) {
       const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
@@ -313,9 +327,7 @@ async function foldExecStream(
  * cross the boundary.
  */
 export function createWorkspaceRuntimeSessionEnv(input: WorkspaceRuntimeSessionEnvInput): SessionEnv {
-  const cwd = input.directory && input.directory.trim().length > 0
-    ? path.posix.resolve("/", input.directory)
-    : "/"
+  const cwd = input.directory && input.directory.trim().length > 0 ? path.posix.resolve("/", input.directory) : "/"
   const requester = createSandboxRequester(input.workspace, input.fetchOptions, input.connectionTurnCredential)
   const request = async (op: string, requestPath: string, init?: RequestInit) => {
     const response = await requester.send(requestPath, init)
@@ -333,24 +345,29 @@ export function createWorkspaceRuntimeSessionEnv(input: WorkspaceRuntimeSessionE
     },
     resolvePath,
     async exec(command: string, options?: SessionEnvExecOptions) {
-      const response = await requester.send(
-        `${SESSION_ENV_BASE}/exec`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            command,
-            ...(relative(options?.cwd) ? { cwd: relative(options?.cwd) } : {}),
-            ...(options?.env ? { env: options.env } : {}),
-            ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
-          }),
-          ...(options?.signal ? { signal: options.signal } : {}),
-        },
-      )
+      const response = await requester.send(`${SESSION_ENV_BASE}/exec`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          command,
+          ...(relative(options?.cwd) ? { cwd: relative(options?.cwd) } : {}),
+          ...(options?.env ? { env: options.env } : {}),
+          ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
+        }),
+        ...(options?.signal ? { signal: options.signal } : {}),
+      })
       if (!response.ok) {
         throw sessionEnvError("exec", response, await readJson(response))
       }
-      return foldExecStream(response, options)
+      const result = await foldExecStream(response, options)
+      if (input.sessionId) {
+        try {
+          await syncHydratedSessionDocuments(input.sessionId)
+        } catch (error) {
+          reportHydrationFailure(input, { phase: "end-turn", sessionId: input.sessionId, error })
+        }
+      }
+      return result
     },
     async readFile(filePath: string) {
       const response = await request(
@@ -417,6 +434,30 @@ export function createWorkspaceRuntimeSessionEnv(input: WorkspaceRuntimeSessionE
         }),
       })
     },
+    async dispose() {
+      if (!input.sessionId) return
+      for (const failure of await disposeHydratedSessionDocuments(input.sessionId)) {
+        reportHydrationFailure(input, {
+          phase: "dispose",
+          sessionId: input.sessionId,
+          documentId: failure.documentId,
+          path: failure.path,
+          error: failure.error,
+        })
+      }
+    },
+  }
+}
+
+function reportHydrationFailure(input: WorkspaceRuntimeSessionEnvInput, failure: SessionHydrationFailure) {
+  if (!input.onHydrationFailure) {
+    console.error(`[session-env] document hydration ${failure.phase} failed for ${failure.sessionId}:`, failure.error)
+    return
+  }
+  try {
+    input.onHydrationFailure(failure)
+  } catch (error) {
+    console.error(`[session-env] document hydration failure reporter failed for ${failure.sessionId}:`, error)
   }
 }
 
@@ -439,6 +480,7 @@ export function createClaxedoSessionEnvFactory(options: {
   fetchOptions: SandboxFetchOptions
   resolveWorkspace?: WorkspaceResolver
   turnCredentials?: ConnectionTurnCredentials
+  onHydrationFailure?: (failure: SessionHydrationFailure) => void
 }): SessionEnvFactory {
   const resolve: WorkspaceResolver =
     options.resolveWorkspace ?? ((input) => resolveWorkspace({ workspaceId: input.workspaceId }))
@@ -452,9 +494,11 @@ export function createClaxedoSessionEnvFactory(options: {
     }
     return createWorkspaceRuntimeSessionEnv({
       workspace,
+      sessionId: input.sessionId,
       ...(toolSandbox.directory ? { directory: toolSandbox.directory } : {}),
       fetchOptions: options.fetchOptions,
       ...(connectionTurnCredential ? { connectionTurnCredential } : {}),
+      ...(options.onHydrationFailure ? { onHydrationFailure: options.onHydrationFailure } : {}),
     })
   }
 }

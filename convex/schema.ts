@@ -189,6 +189,7 @@ export default defineSchema({
     host_id: v.string(),
     public_key: v.optional(v.string()),
     display_name: v.optional(v.string()),
+    second_device_open_at: v.optional(v.number()),
     last_seen_at: v.number(),
     expires_at: v.number(),
     paused_at: v.optional(v.number()),
@@ -1121,34 +1122,6 @@ export default defineSchema({
     expires_at: v.optional(v.number()),
     attested_at: v.number(),
   }).index("by_tenant", ["organization_id", "owner_user_id"]),
-
-  documents: defineTable({
-    document_id: v.string(),
-    organization_id: v.id("orgs"),
-    project_id: v.string(),
-    title: v.string(),
-    head_revision_id: v.string(),
-    created_at: v.number(),
-    updated_at: v.number(),
-  })
-    .index("by_document_id", ["document_id"])
-    .index("by_tenant_document", ["organization_id", "project_id", "document_id"]),
-
-  document_revisions: defineTable({
-    revision_id: v.string(),
-    document_id: v.string(),
-    revision_number: v.number(),
-    parent_revision_id: v.optional(v.string()),
-    title: v.string(),
-    markdown: v.string(),
-    content_hash: v.string(),
-    authored_at: v.number(),
-    authored_by_type: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
-    authored_by_id: v.string(),
-    created_at: v.number(),
-  })
-    .index("by_document_revision", ["document_id", "revision_id"])
-    .index("by_document_number", ["document_id", "revision_number"]),
 
   audit_events: defineTable({
     user_id: v.optional(v.id("users")),

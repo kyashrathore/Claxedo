@@ -127,12 +127,15 @@ describe("embedded local WorkGraph v2", () => {
       })]),
     })
 
-    const changes = await reloadedApp.request("/api/workgraph/changes", localAuth())
-    expect(changes.status).toBe(200)
-    const changesBody = await changes.json() as { cursor: string; changes: Array<{ cursor: string }> }
-    expect(readChangeCursor(changesBody.cursor, "local", "local")).toBe(2)
-    expect(changesBody.changes.map((change) => readChangeCursor(change.cursor, "local", "local"))).toEqual([1, 2])
-    await reloadedComposition
+    // The ordered change log still persists across compositions — asserted at the
+    // store level now that the client-facing `/changes` route is gone (plan
+    // 2026-07-17-004). Settlement/wakes/audit read this log in-process.
+    const reloaded = await reloadedComposition
+    const persistedChanges = await reloaded.service.queries.changes.list(await reloaded.resolveContext(
+      new Request("http://local/api/workgraph/changes", { headers: { "x-request-id": "request-local" } }),
+    ), { limit: 50 })
+    expect(persistedChanges.map((change) => readChangeCursor(change.cursor, "local", "local"))).toEqual([1, 2])
+    expect((await reloadedApp.request("/api/workgraph/changes", localAuth())).status).toBe(404)
   })
 
   it("exports and restores an owner archive through the embedded HTTP boundary", async () => {

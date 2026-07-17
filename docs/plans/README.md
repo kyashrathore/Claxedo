@@ -1,13 +1,46 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
+- [Onboarding v1 implementation plan](./2026-07-17-002-feat-onboarding-v1-implementation-plan.md)
+  - Technical execution of the onboarding companion: units O1–O11 (derived
+    `onboardingState()` selector + step registry, Home setup card/checklist,
+    desktop AI-connect + web OAuth/`claxedo connect`, credential→harness→model
+    resolution, web repo picker with tokened clone, compute sub-funnel +
+    provision-bug fixes, one-tunnel-per-machine remote access + Devices, shared
+    verification ops, first-prompt + failed-first-turn screens, funnel events),
+    per-unit DoD + overall DoD, dependency/blocker map, edge cases, and a
+    three-wave parallel-agent execution plan. Desktop Ramp-1 is launch-critical
+    and blocker-free; web/remote units degrade honestly behind Phase A + relay
+    deploy.
+- [Remote desktop access feasibility review](./2026-07-17-001-review-remote-desktop-access-feasibility.md)
+  - Verdict: never expose the entire local app over the relay (loopback-trust
+    showstoppers, code-cited); build "phone reaches your machine" on the
+    existing two-plane model via a desktop-native "Enable remote access"
+    toggle (app-as-daemon, **one multiplexed tunnel per machine serving all
+    workspaces** — hostId routing + workspaceIds registration list, not
+    tunnel-per-folder like the CLI; Devices list with revoke). Gap list:
+    device-login Phase A, relay deploy, session-placement decision Q10.
+- [Onboarding: product features and UX](./2026-07-16-005-feat-onboarding-product-and-ux.md)
+  - Readable companion to the onboarding-journey brainstorm: every user-facing
+    onboarding feature (setup card on Home, proven checkmarks, Discover-your-AI,
+    `claxedo connect`, web repo picker, compute sub-funnel, starter prompts,
+    failed-first-turn card, Go-further cards) with where it mounts, what it
+    looks like, why it exists, and the HLD (derived `onboardingState()` + step
+    registry, verification operations, credential→harness→model resolution,
+    PAT repo listing + tokened clone, error taxonomy, funnel events).
+- [Explicit secrets management UX](./2026-07-16-004-feat-explicit-secrets-ux-plan.md)
+  - Replaces silent local-credential harvest/fanout with explicit consent UX:
+    automatic discovery + itemized scoped save (desktop Discover dialog),
+    `claxedo connect` device-code push for web (clipboard relay rejected),
+    connections page with scope/health/reconnect, and an onboarding
+    "Connect your AI" step. Storage/encryption layer unchanged.
 - [Documents core: product features and architecture](./2026-07-16-002-feat-documents-core-architecture-and-features.md)
   - Readable companion to the implementation plan: every user-facing Documents
     feature and the mechanism that powers it — one-file authority, content-hash

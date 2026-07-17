@@ -27,6 +27,8 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useSDK } from "@/features/session/app-ports"
 import { useGlobalSDK } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
+import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
+import { promptLength } from "@/features/session/composer/ui/history"
 import { useComments } from "@/platform/comments/provider"
 import { useServer } from "@/features/session/app-ports"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
@@ -96,6 +98,7 @@ import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
+import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 
 export default function SessionPage() {
   const sessionParams = useSessionParams()
@@ -605,6 +608,13 @@ export default function SessionPage() {
     emptyUserMessages,
     { equals: same },
   )
+  const firstTurnOnboarding = createFirstTurnOnboarding({
+    directory: dir,
+    completedTurns: () => directorySessions().filter((session) => session.lastTurn?.status === "completed").length,
+    sentTurns: () => userMessages().length + directorySessions().filter((session) => session.id !== sessionID() && session.lastTurn).length,
+    messages,
+    cloud: () => resolvedWorkspaceKind() === "cloud",
+  })
   const visibleUserMessages = createMemo(
     () => {
       const revert = revertMessageID()
@@ -907,7 +917,12 @@ export default function SessionPage() {
 
     if (action === "focus-input") {
       if (composerState.blocked()) return
-      inputRef?.focus()
+      const input = inputRef
+      if (!input) return
+      input.focus()
+      // Blur may have destroyed the DOM selection (editor re-renders) — restore
+      // the caret the composer persisted into the prompt store.
+      setCursorPosition(input, prompt.cursor() ?? promptLength(prompt.current()))
     }
   }
 
@@ -1417,6 +1432,8 @@ export default function SessionPage() {
                           captureHistoryAnchor = handlers.capture
                           restoreHistoryAnchor = handlers.restore
                         }}
+                        onFirstTurnRecovery={firstTurnOnboarding.recover}
+                        firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
                       />
                     )}
                   </Show>
@@ -1491,6 +1508,8 @@ export default function SessionPage() {
               canAbort={() => supports("abort")}
               status={sessionController.status}
               activeTurn={sessionController.activeTurn}
+              beforeInput={firstTurnOnboarding.beforeInput()}
+              registerRetry={firstTurnOnboarding.registerRetry}
               sessionDirectory={dir()}
               sessionRef={activeSessionRef}
               signedControlPlane={signedControlPlane}

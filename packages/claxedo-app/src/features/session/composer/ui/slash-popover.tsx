@@ -6,6 +6,14 @@ import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 export type AtOption =
   | { type: "agent"; name: string; display: string }
   | { type: "file"; path: string; display: string; recent?: boolean }
+  | {
+      type: "document"
+      documentId: string
+      display: string
+      originKind: "managed" | "repository"
+      placementKind: "local" | "hosted"
+      status: string
+    }
 
 export interface SlashCommand {
   id: string
@@ -31,6 +39,8 @@ export const promptSlashOptionId = (id: string) => `prompt-slash-option-${id}`
 
 type PromptPopoverProps = {
   popover: "at" | "slash" | null
+  documentPicker: boolean
+  documentNotice?: string
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
   atActive?: string
@@ -54,7 +64,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         }}
         role="listbox"
         id={PROMPT_POPOVER_LISTBOX_ID}
-        aria-label={props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
+        aria-label={props.documentPicker ? "Documents" : props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-auto no-scrollbar flex flex-col p-2 rounded-[12px]
                  bg-surface-raised-stronger-non-alpha shadow-[var(--shadow-lg-border-base)]"
@@ -64,11 +74,31 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
           <Match when={props.popover === "at"}>
             <Show
               when={props.atFlat.length > 0}
-              fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyResults")}</div>}
+              fallback={<div class="text-text-weak px-2 py-1">{props.documentPicker ? props.documentNotice ?? "No documents found." : props.t("prompt.popover.emptyResults")}</div>}
             >
               <For each={props.atFlat.slice(0, 10)}>
                 {(item) => {
                   const key = props.atKey(item)
+
+                  if (item.type === "document") {
+                    return (
+                      <button
+                        role="option"
+                        id={promptAtOptionId(key)}
+                        aria-selected={props.atActive === key}
+                        class="w-full flex items-center justify-between gap-3 rounded-md px-2 py-1"
+                        classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
+                        onClick={() => props.onAtSelect(item)}
+                        onMouseEnter={() => props.setAtActive(key)}
+                      >
+                        <span class="flex items-center gap-2 min-w-0">
+                          <Icon name="prompt" size="small" class="text-icon-base shrink-0" />
+                          <span class="text-14-regular text-text-strong truncate">{item.display}</span>
+                        </span>
+                        <span class="text-11-regular text-text-subtle shrink-0">{item.status}</span>
+                      </button>
+                    )
+                  }
 
                   if (item.type === "agent") {
                     return (

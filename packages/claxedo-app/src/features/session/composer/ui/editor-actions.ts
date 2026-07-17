@@ -39,13 +39,19 @@ type PromptEditorActionsInput = {
   atOnInput: (query: string) => void
   slashOnInput: (query: string) => void
   triggerSlashCommand: (id: string) => void
+  openDocumentPicker: VoidFunction
+  closeDocumentPicker: VoidFunction
+  onDocumentSelect: (document: Extract<AtOption, { type: "document" }>) => void
 }
 
 export function createPromptEditorActions(input: PromptEditorActionsInput) {
   const mirror = { input: false }
   const [composing, setComposing] = createSignal(false)
 
-  const closePopover = () => input.setPopover(null)
+  const closePopover = () => {
+    input.setPopover(null)
+    input.closeDocumentPicker()
+  }
 
   const clearEditor = () => {
     input.editor().innerHTML = ""
@@ -230,6 +236,11 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
 
   const handleAtSelect = (option: AtOption | undefined) => {
     if (!option) return
+    if (option.type === "document") {
+      closePopover()
+      input.onDocumentSelect(option)
+      return
+    }
     if (option.type === "agent") {
       addPart({ type: "agent", name: option.name, content: "@" + option.name, start: 0, end: 0 })
       return
@@ -239,6 +250,11 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
 
   const handleSlashSelect = (cmd: SlashCommand | undefined) => {
     if (!cmd) return
+    if (cmd.id === "documents.open") {
+      input.atOnInput("")
+      input.openDocumentPicker()
+      return
+    }
     closePopover()
 
     if (cmd.type === "custom") {
@@ -255,6 +271,11 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
   }
 
   const handleBlur = () => {
+    // Persist the caret into the prompt store so a later programmatic focus
+    // (e.g. typing elsewhere on the page) can restore it — the DOM selection
+    // does not survive editor re-renders while blurred.
+    const cursor = currentCursor()
+    if (cursor !== null && cursor !== input.prompt.cursor()) input.prompt.set(input.prompt.current(), cursor)
     closePopover()
     setComposing(false)
   }
@@ -285,5 +306,10 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
     handleSlashSelect,
     isImeComposing,
     reconcile,
+    replaceText(text: string) {
+      setEditorText(text)
+      input.prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+      focusEditorEnd()
+    },
   }
 }

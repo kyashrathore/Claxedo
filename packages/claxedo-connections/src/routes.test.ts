@@ -29,7 +29,19 @@ function harness(gates: {
         { id: "token", label: "Token", secret: true },
       ],
     },
-    { verify: async (_f, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }) },
+    {
+      verify: async (_f, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }),
+      ...(gates.webhook ? {
+        listRepositories: async () => [{
+          id: "1",
+          name: "app",
+          fullName: "acme/app",
+          cloneUrl: "https://github.com/acme/app.git",
+          private: true,
+          permissions: { read: true, write: false },
+        }],
+      } : {}),
+    },
   )
   const memoryCredentials = createMemoryCredentialStore()
   const credentials = {
@@ -74,6 +86,7 @@ describe("integrations routes", () => {
       ["GET", "/attempts/x"],
       ["DELETE", "/connections/fake"],
       ["POST", "/connections/fake/reverify"],
+      ["GET", "/connections/fake/repositories"],
       ["PUT", "/connections/fake/webhook-secret"],
       ["DELETE", "/connections/fake/webhook-secret"],
       ["POST", "/connections/fake/auth-failure"],
@@ -110,6 +123,25 @@ describe("integrations routes", () => {
       tokenType: "basic",
       fields: { site_url: "https://acme.example" },
     })
+  })
+
+  test("lists visible code-host repositories without exposing the connection token", async () => {
+    const { app } = harness({ webhook: true })
+    await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const listing = await (await app.request("/")).json() as { connections: Array<{ id: string }> }
+
+    const response = await app.request(`/connections/${listing.connections[0]!.id}/repositories`)
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toEqual({ repositories: [{
+      id: "1",
+      name: "app",
+      fullName: "acme/app",
+      cloneUrl: "https://github.com/acme/app.git",
+      private: true,
+      permissions: { read: true, write: false },
+    }] })
+    expect(JSON.stringify(body)).not.toContain("good")
   })
 
   test("list returns 503 for credential-store outages while a missing credential remains broken", async () => {

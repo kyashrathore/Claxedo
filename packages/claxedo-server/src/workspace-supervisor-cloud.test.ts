@@ -111,6 +111,15 @@ const mockDockerLaunch = vi.fn(async (input: any) => ({
   driver: { id: "docker", resourceId: "docker-sdk-sb" },
   labels: input.labels,
 }))
+const mockBoxLaunch = vi.fn(async (input: any) => ({
+  workspaceId: input.workspaceId,
+  sandboxId: "bx_test01",
+  url: "https://sub-2593.on.ascii.dev?_token=t",
+  hostId: input.hostId ?? "box-sdk-host",
+  driverResourceId: "bx_test01",
+  driver: { id: "box", resourceId: "bx_test01" },
+  labels: input.labels,
+}))
 const mockVercelSnapshot = vi.fn(async () => ({ snapshotId: "snap-stop-1" }))
 
 async function captureRuntimeEnv(driver: string, options: any, input: any, hostId: string) {
@@ -187,6 +196,23 @@ const mockCreateVercelSandboxDriver = vi.fn((options: any) => ({
   suspend: vi.fn(async () => {}),
   destroy: vi.fn(async () => {}),
   snapshot: mockVercelSnapshot,
+}))
+const mockCreateBoxSandboxDriver = vi.fn((options: any) => ({
+  id: "box",
+  metadata: {
+    driverRunsIn: ["node"],
+    hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
+    targetAccess: "relay",
+  },
+  ensureHost: async (input: any) => {
+    await captureRuntimeEnv("box", options, input, "box-sdk-host")
+    return mockBoxLaunch(input)
+  },
+  resumeHost: async (input: any) => mockBoxLaunch(input.ensure),
+  touch: vi.fn(async () => {}),
+  stop: vi.fn(async () => {}),
+  suspend: vi.fn(async () => {}),
+  destroy: vi.fn(async () => {}),
 }))
 const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
   id: "docker",
@@ -496,6 +522,10 @@ vi.mock("@claxedo/sandbox-manager/drivers/daytona", () => ({
   createDaytonaSandboxDriver: (...args: unknown[]) => (mockCreateDaytonaSandboxDriver as any)(...args),
 }))
 
+vi.mock("@claxedo/sandbox-manager/drivers/box", () => ({
+  createBoxSandboxDriver: (...args: unknown[]) => (mockCreateBoxSandboxDriver as any)(...args),
+}))
+
 vi.mock("@claxedo/sandbox-manager/drivers/cloudflare", () => ({
   createCloudflareSandboxDriver: (...args: unknown[]) => (mockCreateCloudflareSandboxDriver as any)(...args),
 }))
@@ -597,18 +627,21 @@ describe("workspace-supervisor", () => {
       if (id === "modal") return { token_id: "modal-default-id", token_secret: "modal-default-secret" }
       if (id === "vercel") return { access_token: "vercel-default", team_id: "team_1", project_id: "project_1" }
       if (id === "docker") return { image: "claxedo-sandbox:test" }
+      if (id === "box") return { api_key: "bx-default" }
     })
     mockDaytonaLaunch.mockClear()
     mockCloudflareLaunch.mockClear()
     mockModalLaunch.mockClear()
     mockVercelLaunch.mockClear()
     mockDockerLaunch.mockClear()
+    mockBoxLaunch.mockClear()
     mockVercelSnapshot.mockClear()
     mockCreateDaytonaSandboxDriver.mockClear()
     mockCreateCloudflareSandboxDriver.mockClear()
     mockCreateModalSandboxDriver.mockClear()
     mockCreateVercelSandboxDriver.mockClear()
     mockCreateDockerSandboxDriver.mockClear()
+    mockCreateBoxSandboxDriver.mockClear()
     mockGetRuntimeConfigSnapshot.mockClear()
     mockGetRuntimeConfigSnapshot.mockImplementation(
       async (): Promise<any> => ({

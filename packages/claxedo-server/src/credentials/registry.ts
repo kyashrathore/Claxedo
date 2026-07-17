@@ -6,11 +6,11 @@
  */
 
 import { randomUUID } from "crypto"
-import { eq, and, inArray } from "drizzle-orm"
+import { eq, and, desc, inArray } from "drizzle-orm"
 import { ClaxedoDB } from "../storage/db"
 import { ClaxedoProviderCredentialTable } from "../storage/provider-credential.sql"
 import { getBackend } from "./store"
-import type { CredentialMetadata, CredentialWrite, CredentialStatus } from "./types"
+import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialWrite, CredentialStatus } from "./types"
 import { Log } from "../log"
 import { ensurePresetForProvider, removeAutoPresetForProvider } from "../network/policy"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
@@ -50,8 +50,12 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
           eq(ClaxedoProviderCredentialTable.kind, input.kind),
         ),
       )
-      .get(),
-  )
+      .all(),
+  ).find((credential) => (credential.account_id ?? undefined) === input.account_id)
+  const scope = input.scope ?? existing?.scope ?? "local"
+  if (scope === "shared" && !input.consent && !existing?.consent_json) {
+    throw new Error("Shared credentials require explicit consent")
+  }
 
   const replacing = exclusiveAuthKinds.includes(input.kind as (typeof exclusiveAuthKinds)[number])
     ? ClaxedoDB.use((db) =>
@@ -66,6 +70,7 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
           )
           .all(),
       )
+        .filter((credential) => (credential.account_id ?? undefined) === input.account_id)
     : []
 
   const id = existing?.id ?? randomUUID()
@@ -88,8 +93,12 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
     account_id: input.account_id ?? null,
     secure_ref: ref,
     status: "available" as const,
+    health: null,
     expires_at: input.expires_at ?? null,
-    last_validated_at: ts,
+    last_validated_at: null,
+    scope,
+    consent_json: input.consent ? JSON.stringify(input.consent) : existing?.consent_json ?? null,
+    last_used_at: existing?.last_used_at ?? null,
     last_error: null,
     created_at: existing?.created_at ?? ts,
     updated_at: ts,
@@ -125,13 +134,25 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
   // Auto-add network preset so sandbox egress is allowed for this provider
   ensurePresetForProvider(input.provider_id)
 
-  return row
+  return toMetadata(row as CredentialRow)
 }
 
 type CredentialRow = typeof ClaxedoProviderCredentialTable.$inferSelect
 
 function toMetadata(row: CredentialRow): CredentialMetadata {
-  return row as unknown as CredentialMetadata
+  const consent = (() => {
+    if (!row.consent_json) return null
+    try {
+      return JSON.parse(row.consent_json) as CredentialMetadata["consent"]
+    } catch {
+      return null
+    }
+  })()
+  return {
+    ...row,
+    scope: row.scope as CredentialScope,
+    consent,
+  } as unknown as CredentialMetadata
 }
 
 /** List all credential metadata (no secrets). */
@@ -151,6 +172,7 @@ export function getCredentialByProvider(providerId: string): CredentialMetadata 
         .select()
         .from(ClaxedoProviderCredentialTable)
         .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+        .orderBy(desc(ClaxedoProviderCredentialTable.updated_at))
         .get(),
     ),
   )
@@ -162,9 +184,10 @@ export function requireCredentialRegistryLookup(providerId: string): CredentialM
   const row = ClaxedoDB.use((db) =>
     db
       .select()
-      .from(ClaxedoProviderCredentialTable)
-      .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
-      .get(),
+        .from(ClaxedoProviderCredentialTable)
+        .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+        .orderBy(desc(ClaxedoProviderCredentialTable.updated_at))
+        .get(),
   )
   return row ? toMetadata(row) : undefined
 }
@@ -189,8 +212,42 @@ export async function resolveSecret(providerId: string): Promise<string | null> 
   if (!cred?.secure_ref) return null
   if (cred.status !== "available") return null
 
-  const backend = getBackend()
-  return backend.get(cred.secure_ref)
+  const secret = await getBackend().get(cred.secure_ref)
+  if (secret) touchCredential(cred.id)
+  return secret
+}
+
+/** Resolve one credential by storage id for a trusted verification retry. */
+export async function resolveSecretById(id: string): Promise<string | null> {
+  const cred = getCredential(id)
+  if (!cred?.secure_ref) return null
+  const secret = await getBackend().get(cred.secure_ref)
+  if (secret) touchCredential(cred.id)
+  return secret
+}
+
+function touchCredential(id: string) {
+  ClaxedoDB.use((db) => db
+    .update(ClaxedoProviderCredentialTable)
+    .set({ last_used_at: now() })
+    .where(eq(ClaxedoProviderCredentialTable.id, id))
+    .run())
+}
+
+export function updateCredentialScope(id: string, scope: CredentialScope, consentAt: number) {
+  const credential = getCredential(id)
+  if (!credential) return false
+  ClaxedoDB.use((db) => db
+    .update(ClaxedoProviderCredentialTable)
+    .set({
+      scope,
+      source: scope === "shared" ? "managed" : "local_only",
+      consent_json: JSON.stringify({ at: consentAt, surface: "scope_change" }),
+      updated_at: now(),
+    })
+    .where(eq(ClaxedoProviderCredentialTable.id, id))
+    .run())
+  return true
 }
 
 /** Update credential status (e.g. mark expired or revoked). */
@@ -200,7 +257,25 @@ export function updateCredentialStatus(id: string, status: CredentialStatus, err
       .update(ClaxedoProviderCredentialTable)
       .set({
         status,
+        health: status === "expired" ? "expired" : null,
         last_error: error ?? null,
+        updated_at: now(),
+      })
+      .where(eq(ClaxedoProviderCredentialTable.id, id))
+      .run(),
+  )
+}
+
+/** Persist the provider-backed health result consumed by every credential surface. */
+export function updateCredentialHealth(id: string, health: CredentialHealth, validatedAt: number): void {
+  ClaxedoDB.use((db) =>
+    db
+      .update(ClaxedoProviderCredentialTable)
+      .set({
+        health,
+        status: health === "ok" ? "available" : health === "expired" ? "expired" : "error",
+        last_validated_at: validatedAt,
+        last_error: health === "ok" ? null : health,
         updated_at: now(),
       })
       .where(eq(ClaxedoProviderCredentialTable.id, id))
@@ -323,7 +398,7 @@ export async function resolveAllSecrets(): Promise<Record<string, string>> {
 export async function resolveSecretsForScope(scope: CredentialSecretScope = "local"): Promise<Record<string, string>> {
   const creds = listCredentials()
     .filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
-    .filter((c) => credentialSecretInScope({ source: c.source }, scope))
+    .filter((c) => credentialSecretInScope({ source: c.source, scope: c.scope }, scope))
   const backend = getBackend()
   const result: Record<string, string> = {}
 

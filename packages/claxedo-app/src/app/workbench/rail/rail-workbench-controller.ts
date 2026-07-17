@@ -13,7 +13,7 @@ type HeaderSurfaceInput = Parameters<typeof useRailHeaderSurfaces>[0]
 export function useRailWorkbenchController(input: {
   activeDirectory: Accessor<string | undefined>
   autoResponds: HeaderSurfaceInput["autoResponds"]
-  canUsePages: Accessor<boolean>
+  canUseDocuments: Accessor<boolean>
   client: HeaderSurfaceInput["client"]
   closeTerminal?: (terminalId: string) => void | Promise<unknown>
   emptyDraftDirectory: Accessor<string | undefined>
@@ -38,7 +38,7 @@ export function useRailWorkbenchController(input: {
   const headerSurfaces = useRailHeaderSurfaces({
     state: input.state,
     client: input.client,
-    canUsePages: input.canUsePages,
+    canUseDocuments: input.canUseDocuments,
     worktreeInfo: input.worktreeInfo,
     autoResponds: input.autoResponds,
     closeTerminal: input.closeTerminal,

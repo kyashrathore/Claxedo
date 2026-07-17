@@ -1618,12 +1618,12 @@ describe("Convex WorkGraph store", () => {
       attempt: { id: "attempt_subject_owned", ownerUserId: "clerk_user_a" },
       executionReferences: { sessionId: "session_subject_owned" },
     })
-    const changes = await app.request("/changes?limit=10")
-    expect(changes.status).toBe(200)
-    expect(await changes.json()).toMatchObject({ changes: [{
+    // The change feed is server-side only now (plan 2026-07-17-004): the `/changes`
+    // route is gone, so subject mapping on the changes query is asserted in-process.
+    expect(await service.queries.changes.list(owner("clerk_user_a"), { limit: 10 })).toMatchObject([{
       ownerUserId: "clerk_user_a",
       event: { ownerUserId: "clerk_user_a" },
-    }] })
+    }])
     expect(harness.rowsFor("workgraph_streams")).toEqual([
       expect.objectContaining({ id: streamId, owner_user_id: "durable_user_a" }),
     ])
@@ -2029,8 +2029,8 @@ describe("Convex WorkGraph store", () => {
         adapterId: "claxedo_docs",
         projectId: "project-1",
         documentId: "doc-1",
-        documentRevisionId: "doc-revision-1",
-        documentRevisionNumber: 1,
+        snapshotId: "doc-revision-1",
+        placement: "local",
         authoredAt: 1,
         authoredBy: { type: "user", id: "owner_a" },
         contentHash: firstHash,
@@ -2049,7 +2049,7 @@ describe("Convex WorkGraph store", () => {
         adapterId: "claxedo_docs",
         projectId: "project-1",
         documentId: "doc-1",
-        documentRevisionId: "doc-revision-1",
+        snapshotId: "doc-revision-1",
       },
     })
     await expect(execute(harness, "owner_a", "authoring_invalid_hash", {
@@ -2060,8 +2060,8 @@ describe("Convex WorkGraph store", () => {
         adapterId: "claxedo_docs",
         projectId: "project-1",
         documentId: "doc-invalid",
-        documentRevisionId: "doc-invalid-revision",
-        documentRevisionNumber: 1,
+        snapshotId: "doc-invalid-revision",
+        placement: "local",
         authoredAt: 2,
         authoredBy: { type: "user", id: "owner_a" },
         contentHash: firstHash,
@@ -2085,9 +2085,8 @@ describe("Convex WorkGraph store", () => {
         adapterId: "claxedo_docs",
         projectId: "project-1",
         documentId: "doc-1",
-        documentRevisionId: "doc-revision-2",
-        documentRevisionNumber: 2,
-        parentDocumentRevisionId: "unrelated-document-revision",
+        snapshotId: "doc-revision-1",
+        placement: "local",
         authoredAt: 2,
         authoredBy: { type: "user", id: "owner_a" },
         contentHash: secondHash,
@@ -2103,9 +2102,8 @@ describe("Convex WorkGraph store", () => {
         adapterId: "claxedo_docs",
         projectId: "project-1",
         documentId: "doc-1",
-        documentRevisionId: "doc-revision-2",
-        documentRevisionNumber: 2,
-        parentDocumentRevisionId: "doc-revision-1",
+        snapshotId: "doc-revision-2",
+        placement: "local",
         authoredAt: 3,
         authoredBy: { type: "agent", id: "agent-1" },
         contentHash: secondHash,

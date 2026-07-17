@@ -38,6 +38,7 @@ import {
   type SessionPromptBody,
 } from "../session/service"
 import { normalizeSessionConfigUpdate } from "../session-config"
+import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -127,6 +128,7 @@ type Opts = {
   afterUpdateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessageRow[]) => Promise<void> | void
+  flushSessionDocuments?: (sessionId: string) => Promise<void>
   exposeCommandRoute?: boolean
   sessionBus: SessionBus
   publishGlobal: (event: CompatEnvelope) => void
@@ -278,6 +280,14 @@ async function after(input: void | Promise<void> | undefined) {
   try {
     await input
   } catch {}
+}
+
+async function flushDocumentsAfterTurn(opts: Opts, sessionId: string) {
+  try {
+    await (opts.flushSessionDocuments ?? flushRuntimeSessionDocuments)(sessionId)
+  } catch (error) {
+    console.error(`[runtime-document] end-of-turn write-back failed for ${sessionId}:`, error)
+  }
 }
 
 type CapabilityKey = {
@@ -552,6 +562,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      await disposeRuntimeSessionDocuments(sessionId)
       await adapter.deleteSession(sessionId, directory)
       await after(opts.afterDeleteSession?.(c, directory, sessionId))
       return c.json({ ok: true })
@@ -568,8 +579,10 @@ export function createSessionRoutes(opts: Opts) {
       const activeTurn = runtime && opts.createActiveTurnScope
         ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
         : undefined
-      const turn = runtime
-        ? await runRuntimePromptTurn({
+      const turn = await (async () => {
+        try {
+          return runtime
+            ? await runRuntimePromptTurn({
             runtime,
             sessionId: id,
             directory,
@@ -577,8 +590,8 @@ export function createSessionRoutes(opts: Opts) {
             publishGlobal: opts.publishGlobal,
             publishStatus: (event) => opts.sessionBus.publish(event),
             activeTurn,
-          })
-        : await runSessionPromptTurn({
+              })
+            : await runSessionPromptTurn({
             adapter,
             sessionId: id,
             directory,
@@ -588,7 +601,11 @@ export function createSessionRoutes(opts: Opts) {
             createActiveTurnScope: opts.createActiveTurnScope
               ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
               : undefined,
-          })
+              })
+        } finally {
+          await flushDocumentsAfterTurn(opts, id)
+        }
+      })()
       await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
       const output = sessionPromptReply(turn)
       if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
@@ -748,6 +765,8 @@ export function createSessionRoutes(opts: Opts) {
           await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
         } catch {
           opts.publishGlobal(withDir(compatScope(directory, id), sessionError("Stream error", id)))
+        } finally {
+          await flushDocumentsAfterTurn(opts, id)
           await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))
         }
       })()

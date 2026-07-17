@@ -1,13 +1,11 @@
 import { z } from "zod"
 import type { WorkGraphService } from "../application"
 import {
-  ChangeCursorSchema,
   AttentionCursorSchema,
   AttentionAcknowledgementSchema,
   AttentionListInputSchema,
   AttentionPageSchema,
   SnapshotResumeCursorSchema,
-  ChangeEnvelopeSchema,
   CommandErrorCodeSchema,
   EvidenceDtoSchema,
   EvidenceListInputSchema,
@@ -61,7 +59,15 @@ export const WorkGraphHttpContextSchema = WorkGraphContextSchema
 
 export const WorkGraphHttpDefaultsResponseSchema = WorkGraphDefaultsDtoSchema
 
-export const WorkGraphHttpExecutionCapabilitiesQuerySchema = z.strictObject({})
+export const WorkGraphHttpExecutionCapabilitiesQuerySchema = z.strictObject({
+  // Optional project selector: scopes repository (base-revision) enumeration to a
+  // directory the runtime already knows about. Must be a non-empty absolute path;
+  // the runtime port validates it against its authoritative known-projects list
+  // and fails closed on anything unrecognized. Absent → the boot repository.
+  directory: z.string().trim().min(1).refine((value) => value.startsWith("/"), {
+    message: "Execution capability directory must be an absolute path",
+  }).optional(),
+})
 export type WorkGraphHttpExecutionCapabilitiesQuery = z.infer<typeof WorkGraphHttpExecutionCapabilitiesQuerySchema>
 export const WorkGraphHttpExecutionCapabilitiesResponseSchema = ExecutionCapabilitiesSchema
 export const WorkGraphHttpExecutionCapabilitiesErrorSchema = ExecutionCapabilitiesErrorSchema
@@ -140,20 +146,6 @@ export function workGraphEvidenceListInput(query: WorkGraphHttpEvidenceListQuery
   if (query.subjectType === "outcome") return { ...common, subject: { type: "outcome", outcomeId: query.outcomeId } }
   return { ...common, subject: { type: "work_item", workItemId: query.workItemId } }
 }
-
-export const WorkGraphHttpChangesQuerySchema = z.strictObject({
-  after: ChangeCursorSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  waitMs: z.coerce.number().int().min(0).max(30_000).default(0),
-})
-export type WorkGraphHttpChangesQuery = z.infer<typeof WorkGraphHttpChangesQuerySchema>
-
-export const WorkGraphHttpChangesResponseSchema = z.strictObject({
-  changes: z.array(ChangeEnvelopeSchema),
-  cursor: ChangeCursorSchema.optional(),
-  timedOut: z.boolean(),
-})
-export type WorkGraphHttpChangesResponse = z.infer<typeof WorkGraphHttpChangesResponseSchema>
 
 export const WorkGraphHttpErrorCodeSchema = z.union([
   CommandErrorCodeSchema,
@@ -301,12 +293,6 @@ export type WorkGraphHttpQueries = Readonly<{
       context: z.infer<typeof WorkGraphContextSchema>,
       input: z.infer<typeof EvidenceListInputSchema>,
     ) => Promise<z.infer<typeof EvidencePageSchema>>
-  }>
-  changes: Readonly<{
-    list: (
-      context: z.infer<typeof WorkGraphContextSchema>,
-      input: Readonly<{ after?: z.infer<typeof ChangeCursorSchema>; limit: number }>,
-    ) => Promise<readonly z.infer<typeof ChangeEnvelopeSchema>[]>
   }>
 }>
 

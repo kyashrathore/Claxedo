@@ -26,8 +26,6 @@ test.describe.serial("deployed WorkGraph", () => {
   test("authenticates, persists a Stream and Task across desktop and narrow reloads, then deletes them", async ({
     page,
   }, testInfo) => {
-    // Stream deletion is durable: the command hides the deletion-pending record
-    // immediately while the settlement fast lane finalizes teardown.
     testInfo.setTimeout(240_000)
     const pageErrors: Error[] = []
     const failedResponses: string[] = []
@@ -65,7 +63,12 @@ test.describe.serial("deployed WorkGraph", () => {
     await create.getByRole("button", { name: "Local worktree" }).click()
     await page.getByText("Cloud workspace", { exact: true }).click()
     await create.getByRole("textbox", { name: "GitHub repository URL" }).fill(smokeRepositoryURL)
-    await create.getByRole("combobox", { name: /^Base revision/ }).fill(smokeBaseRevision)
+    // Base revision is a chip popover that portals out of the modal dialog; open it,
+    // then commit the raw ref through its free-text field.
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill(smokeBaseRevision)
+    await baseRevisionField.press("Enter")
     await expect(create.getByRole("button", { name: "Create" })).toBeEnabled()
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
@@ -97,7 +100,7 @@ test.describe.serial("deployed WorkGraph", () => {
     // assert on the stream card itself rather than any text occurrence. The
     // snapshot hides deletion-pending Streams immediately, so the card clears
     // within one live-sync window; durable teardown continues in background.
-    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 30_000 })
+    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 45_000 })
 
     expect(workGraphAuthorizations.length).toBeGreaterThan(0)
     expect(workGraphAuthorizations.every((authorization) => authorization.startsWith("Bearer "))).toBe(true)

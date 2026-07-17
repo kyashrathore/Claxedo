@@ -7,6 +7,16 @@ export type CredentialSource = "managed" | "local_only" | "env" | "upstream_sync
 /** Credential status — current lifecycle state. */
 export type CredentialStatus = "available" | "expired" | "revoked" | "error"
 
+/** Last provider-backed verification result shown across credential surfaces. */
+export type CredentialHealth = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"
+
+export type CredentialScope = "local" | "shared"
+
+export type CredentialConsent = {
+  at: number
+  surface: "desktop_discovery" | "api_key" | "scope_change" | "cli" | "migration"
+}
+
 /** Metadata stored in claxedo.db — never contains raw secret material. */
 export interface CredentialMetadata {
   id: string
@@ -18,8 +28,12 @@ export interface CredentialMetadata {
   /** Opaque backend reference (e.g. "local:<hash>" or "cf:<key-id>") */
   secure_ref?: string | null
   status: CredentialStatus
+  health?: CredentialHealth | null
   expires_at?: number | null
   last_validated_at?: number | null
+  scope?: CredentialScope
+  consent?: CredentialConsent | null
+  last_used_at?: number | null
   last_error?: string | null
   created_at: number
   updated_at: number
@@ -34,6 +48,8 @@ export interface CredentialWrite {
   account_id?: string
   secret: string
   expires_at?: number
+  scope?: CredentialScope
+  consent?: CredentialConsent
 }
 
 /** A secret backend stores and retrieves raw secret material. */

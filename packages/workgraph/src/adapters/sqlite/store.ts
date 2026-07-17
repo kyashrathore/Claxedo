@@ -1477,18 +1477,11 @@ function applyCommand(
           JSON.parse(requiredOriginReference(latest.origin_reference_json, "authoring")),
         )
       : undefined
-    if (command.authoring && previousAuthoring!.documentRevisionNumber >= command.authoring.documentRevisionNumber) {
+    if (command.authoring && previousAuthoring!.snapshotId === command.authoring.snapshotId) {
       return rejected(
         request.operationId,
         "version_conflict",
-        "Authoring document revision is not newer than the Work Source head",
-      )
-    }
-    if (command.authoring && command.authoring.parentDocumentRevisionId !== previousAuthoring!.documentRevisionId) {
-      return rejected(
-        request.operationId,
-        "version_conflict",
-        "Authoring document revision does not descend from the Work Source head",
+        "Authoring snapshot is already the Work Source head",
       )
     }
     const revisionId = ids.next("revision")

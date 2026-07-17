@@ -209,6 +209,88 @@ async function harness() {
 }
 
 describe("workspace relay host tunnel client", () => {
+  test("updates workspace registration on the existing socket", async () => {
+    const sockets: FakeWebSocket[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      localBaseUrl: "http://runtime.invalid",
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    sockets[0]!.open()
+
+    await tunnel.updateRegistration({ workspaceIds: ["ws_1", "ws_2"], token: "htt_2" })
+
+    expect(sockets).toHaveLength(1)
+    expect(JSON.parse(sockets[0]!.sent.at(-1)!)).toEqual({
+      type: "host.registration.update",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      workspace_ids: ["ws_1", "ws_2"],
+      token: "htt_2",
+    })
+    tunnel.close()
+  })
+
+  test("uses workspace-aware targets and refuses requests outside the allowed backing surface", async () => {
+    const sockets: FakeWebSocket[] = []
+    const requests: string[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1", "ws_2"],
+      localBaseUrl: "http://runtime.invalid",
+      resolveLocalUrl: ({ workspaceId, path }) => path.startsWith("/api/wr/")
+        ? new URL(`/workspaces/${workspaceId}${path}`, "http://runtime.invalid")
+        : undefined,
+      request: async (target) => {
+        requests.push(String(target))
+        return new Response("ok")
+      },
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    const socket = sockets[0]!
+    socket.open()
+    socket.receive(JSON.stringify({
+      type: "http.request",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "allowed",
+      workspace_id: "ws_2",
+      method: "GET",
+      path: "/api/wr/health",
+      headers: {},
+      end: true,
+    }))
+    socket.receive(JSON.stringify({
+      type: "http.request",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "central",
+      workspace_id: "ws_2",
+      method: "GET",
+      path: "/api/claxedo/credentials",
+      headers: {},
+      end: true,
+    }))
+    await flush()
+
+    expect(requests).toEqual(["http://runtime.invalid/workspaces/ws_2/api/wr/health"])
+    expect(socket.sent.map((item) => JSON.parse(item)).find((item) => item.request_id === "central")).toMatchObject({
+      type: "http.response.start",
+      status: 403,
+    })
+    tunnel.close()
+  })
+
   test("ignores malformed JSON and unknown tunnel frames without breaking the tunnel", () => {
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({

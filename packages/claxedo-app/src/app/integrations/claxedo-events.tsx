@@ -7,14 +7,16 @@
 
 import {
   createContext,
-  createSignal,
   onCleanup,
   useContext,
   type ParentProps,
 } from "solid-js"
+import { createStreamConnectivity } from "../connection/stream-connectivity"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
+import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
+import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
@@ -80,6 +82,8 @@ export type ClaxedoEvent =
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | SessionLifecycleEvent
+  | WorkgraphChangedEvent
+  | DocumentChangedEvent
   | ClaxedoDirectoryEvent
   | {
       type: "provision"
@@ -168,7 +172,21 @@ export function normalizeClaxedoStreamEvent(input: unknown): ClaxedoEvent | { ty
 
 type ClaxedoEventsContextValue = {
   on<T extends ClaxedoEventType>(type: T, handler: Handler<T>): () => void
+  /**
+   * ANY stream target is up (central OR any workspace relay stream). Correct for
+   * "is the app talking to anything", WRONG as a revalidation edge for a
+   * central-bus doorbell — see `centralConnected` and the rationale in
+   * `app/connection/stream-connectivity.ts`.
+   */
   connected: () => boolean
+  /**
+   * The CENTRAL control-plane stream is up. This is the stream that carries
+   * `workgraph.changed` / `document.changed` / `session.lifecycle`, so its
+   * `false → true` edge is the revalidation trigger for every consumer of those
+   * doorbells. Distinct from `connected` on purpose: with a remote workspace
+   * open the aggregate never drops to false when only the central stream flaps.
+   */
+  centralConnected: () => boolean
 }
 
 const ClaxedoEventsContext = createContext<ClaxedoEventsContextValue>()
@@ -316,10 +334,9 @@ function initialRouteDirectory() {
 
 export function ClaxedoEventsProvider(props: ParentProps) {
   const emitter = createEventEmitter()
-  const [connected, setConnected] = createSignal(false)
+  const connectivity = createStreamConnectivity()
 
   const cleanups = new Set<() => void>()
-  let connectedStreams = 0
   let stopped = false
 
   const emitEvent = (input: string) => {
@@ -351,17 +368,14 @@ export function ClaxedoEventsProvider(props: ParentProps) {
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
       reconnectTimer: null as ReturnType<typeof setTimeout> | null,
-      connected: false,
       failures: 0,
       lifecycle: "idle" as StreamSyncLifecycleState,
     }
 
-    const setStreamConnected = (value: boolean) => {
-      if (state.connected === value) return
-      state.connected = value
-      connectedStreams += value ? 1 : -1
-      setConnected(connectedStreams > 0)
-    }
+    // Per-kind accounting: this stream's bit feeds BOTH the aggregate
+    // `connected()` and, for the central target, `centralConnected()` — the edge
+    // the doorbell consumers revalidate on.
+    const setStreamConnected = connectivity.track(target.kind)
 
     const stepLifecycle = (event: StreamSyncLifecycleEvent) => {
       state.lifecycle = transitionStreamSyncLifecycle(state.lifecycle, event) ?? state.lifecycle
@@ -540,7 +554,8 @@ export function ClaxedoEventsProvider(props: ParentProps) {
 
   const value: ClaxedoEventsContextValue = {
     on: emitter.on.bind(emitter),
-    connected,
+    connected: connectivity.connected,
+    centralConnected: connectivity.centralConnected,
   }
 
   return (

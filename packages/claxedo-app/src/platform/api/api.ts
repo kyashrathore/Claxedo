@@ -189,7 +189,7 @@ function signedRuntimeEventInput(input: string | URL | Request, init?: RequestIn
 }
 
 /**
- * Get the base URL for claxedo-server API calls (PTY, pages, events, etc.)
+ * Get the base URL for claxedo-server API calls (PTY, documents, events, etc.)
  * In demo mode returns the current origin so MSW service worker intercepts requests.
  */
 export function getClaxedoServerUrl(): string {
@@ -202,7 +202,7 @@ export function getClaxedoServerUrl(): string {
   if (envUrl?.trim()) return envUrl.trim().replace(/\/+$/, "")
   // In desktop mode, claxedo-server runs on a dynamic port and the URL is
   // set via configureApiRuntime() during init. Fall back to it before the
-  // hardcoded default so PTY/events/pages calls reach the right server.
+  // hardcoded default so PTY/events/documents calls reach the right server.
   if (cfg.base) return cfg.base
   return "http://127.0.0.1:3001"
 }

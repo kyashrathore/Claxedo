@@ -15,6 +15,7 @@
  *   CLAXEDO_WORKSPACE_ID - Default workspace id for Docker/cloud workspace requests
  *   CLAXEDO_REPOSITORY_URL - Optional repository URL override for a cloud workspace
  *   CLAXEDO_AUTH_TOKEN - Optional signed remote server auth token
+ *   CLAXEDO_SESSION_ID - Optional current session id for documents_open and the documents CLI
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
@@ -27,6 +28,8 @@ import { handleProcess, type LaunchResult, type ListResponse, type ProcessClient
 import { claxedoRequestScope } from "./request-scope"
 import { claxedoMcpReadOnly } from "./tool-policy"
 import { registerWorkGraphTools } from "./workgraph-tools"
+import { registerDocumentTools } from "./documents-tools"
+import { runDocumentsCli } from "./documents-cli"
 
 const clean = (value: unknown) => {
   if (typeof value !== "string") return ""
@@ -42,6 +45,7 @@ const ORIGIN = clean(process.env.CLAXEDO_SERVER_URL) || "http://127.0.0.1:3001"
 const DEFAULT_WORKSPACE_ID = clean(process.env.CLAXEDO_WORKSPACE_ID)
 const DEFAULT_DIR = clean(process.env.OPENCODE_API_DIR) || (DEFAULT_WORKSPACE_ID ? workspaceRef(DEFAULT_WORKSPACE_ID) : process.cwd())
 const DEFAULT_REPOSITORY_URL = clean(process.env.CLAXEDO_REPOSITORY_URL)
+const DEFAULT_SESSION_ID = clean(process.env.CLAXEDO_SESSION_ID)
 const TOKEN = clean(process.env.CLAXEDO_AUTH_TOKEN)
 const READ_ONLY = claxedoMcpReadOnly()
 
@@ -212,6 +216,7 @@ function registerTool(
   config: {
     description: string
     inputSchema: Record<string, unknown>
+    _meta?: Record<string, unknown>
   },
   handler: (args: any) => Promise<unknown>,
 ) {
@@ -245,6 +250,11 @@ registerWorkGraphTools(
     }
   },
 )
+
+registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), {
+  directory: DEFAULT_DIR,
+  sessionId: DEFAULT_SESSION_ID,
+})
 
 if (!READ_ONLY) {
   registerTool(
@@ -722,4 +732,13 @@ if (!READ_ONLY) {
 registerBrowserTools(server as any, { readOnly: READ_ONLY })
 
 const transport = new StdioServerTransport()
-await server.connect(transport)
+if (process.argv[2] === "documents") {
+  process.exitCode = await runDocumentsCli(
+    process.argv.slice(3),
+    (path, init) => httpRequest(path, init, "json"),
+    { stdout: console.log, stderr: console.error },
+    { directory: DEFAULT_DIR, sessionId: DEFAULT_SESSION_ID },
+  )
+} else {
+  await server.connect(transport)
+}

@@ -18,7 +18,7 @@ import {
 // interpolated into `@media` conditions, so those literals can never import the
 // token — this source-text guard is the ONLY thing that catches a future edit
 // changing BP_MD in TS without updating the `767`/`768` literals in
-// app-shell.css / page-editor.css / renderer.ts / review-tab.tsx, etc. (WP-C3,
+// app-shell.css / document-editor.css / renderer.ts / review-tab.tsx, etc. (WP-C3,
 // inventory §5.4). Same intent as the i18n locale-parity manifest test (WP-A6).
 
 const SRC_ROOT = path.resolve(import.meta.dir, "..")
@@ -59,12 +59,6 @@ describe("breakpoint token parity: CSS @media literals stay welded to the tokens
     // ui-overrides.css — min-width equals the token exactly.
     ["app/styles/ui-overrides.css", `@media (min-width: ${BP_MD}px)`],
     ["app/styles/ui-overrides.css", `@media (min-width: ${BP_2XL}px)`],
-    // page-editor.css — cascading tier set (three bespoke, two on-scale).
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_EDITOR_WIDE}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_EDITOR_COMPACT}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_LG}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_MD}px)`],
-    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_XS}px)`],
   ]
 
   for (const [file, condition] of cases) {

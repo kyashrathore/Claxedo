@@ -23,6 +23,7 @@ import { configureSettingsAppPorts, type SettingsAppPorts } from "@/features/set
 import { configureDocumentsAppPorts, type DocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureReviewAppPorts, type ReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts, type WorkspacesAppPorts } from "@/features/workspaces/app-ports"
+import { configureWorkGraphAppPorts, type WorkGraphAppPorts } from "@/features/workgraph/app-ports"
 
 export type AppPortsTestOverrides = {
   session?: Partial<SessionAppPorts>
@@ -31,6 +32,7 @@ export type AppPortsTestOverrides = {
   documents?: Partial<DocumentsAppPorts>
   review?: Partial<ReviewAppPorts>
   workspaces?: Partial<WorkspacesAppPorts>
+  workgraph?: Partial<WorkGraphAppPorts>
 }
 
 type Thunks<P> = { [K in keyof P]: () => P[K] }
@@ -64,6 +66,7 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   useGlobalSync: lazy("@/app/providers/global-sync/provider", "useGlobalSync"),
   useTerminal: lazy("@/features/terminal/providers/provider", "useTerminal"),
   useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
+  useFirstTurnFunnel: () => () => ({ emit: () => undefined }),
   useConfigOptional: lazy("@/app/providers/config", "useConfigOptional"),
   useShellQueryOptions: lazy("@/app/integrations/sync/query-options", "useShellQueryOptions"),
   useGlobalBootstrapActions: lazy("@/app/integrations/sync/global-bootstrap", "useGlobalBootstrapActions"),
@@ -76,7 +79,10 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   isWorkspaceReady: lazy("@/features/workspaces/data/workspace-connection", "isWorkspaceReady"),
   workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),
   WorkspaceGate: lazy("@/features/workspaces/data/workspace-gate", "WorkspaceGate"),
-  useWorkspaceScopeRegistryOptional: lazy("@/features/workspaces/data/workspace-scope", "useWorkspaceScopeRegistryOptional"),
+  useWorkspaceScopeRegistryOptional: lazy(
+    "@/features/workspaces/data/workspace-scope",
+    "useWorkspaceScopeRegistryOptional",
+  ),
   DirectoryScope: lazy("@/app/workbench/context/directory-scope", "DirectoryScope"),
   StatusPopover: lazy("@/app/connection/status-popover", "StatusPopover"),
   terminalSurfaceStatus: lazy("@/app/workbench/compact-switcher/surface-status", "terminalSurfaceStatus"),
@@ -91,6 +97,8 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   loadManageModelsDialog: () => () => import("@/app/dialogs/manage-models"),
   loadSelectProviderDialog: () => () => import("@/app/dialogs/select-provider"),
   loadConnectProviderDialog: () => () => import("@/app/dialogs/connect-provider"),
+  loadAIConnectDialog: () => () => import("@/app/dialogs/connect-ai"),
+  applyAIConnectionResults: lazy("@/app/integrations/ai-connect-resolution", "applyAIConnectionResults"),
   filterMcpCatalogEntries: lazy("@/features/extensions/marketplace/api", "filterMcpCatalogEntries"),
   installDisabledReasonForEntry: lazy("@/features/extensions/marketplace/api", "installDisabledReasonForEntry"),
   installMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "installMcpDialogEntry"),
@@ -99,6 +107,8 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   sourceLabel: lazy("@/features/extensions/marketplace/api", "sourceLabel"),
   targetLabel: lazy("@/features/extensions/marketplace/api", "targetLabel"),
   uninstallMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "uninstallMcpDialogEntry"),
+  listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
+  documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),
 }
 
 const terminalThunks: Thunks<TerminalAppPorts> = {
@@ -117,6 +127,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useShellQueryOptions: lazy("@/app/integrations/sync/query-options", "useShellQueryOptions"),
   DialogConnectProvider: lazy("@/app/dialogs/connect-provider", "DialogConnectProvider"),
+  DialogAIConnect: lazy("@/app/dialogs/connect-ai", "DialogAIConnect"),
   DialogSelectProvider: lazy("@/app/dialogs/select-provider", "DialogSelectProvider"),
   DialogCustomProvider: lazy("@/app/dialogs/custom-provider", "DialogCustomProvider"),
   useModels: lazy("@/features/session/providers/models", "useModels"),
@@ -126,9 +137,11 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   DialogConnectIntegration: lazy("@/app/dialogs/connect-integration", "DialogConnectIntegration"),
   Link: lazy("@/app/controls/link", "Link"),
   useSettingsSourceViews: lazy("@/app/integrations/settings-source-views", "useSettingsSourceViews"),
+  useSandboxOnboardingFunnel: () => () => ({ emit: () => {} }),
 }
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {
+  useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useSessionSyncOptional: lazy("@/features/session/providers/session-sync", "useSessionSyncOptional"),
@@ -138,7 +151,7 @@ const documentsThunks: Thunks<DocumentsAppPorts> = {
   ensureLocalProject: lazy("@/features/workspaces/data/query/project-ensure", "ensureLocalProject"),
   surfaceRoute: lazy("@/app/workbench/state/surface-route", "surfaceRoute"),
   SessionPaneScope: lazy("@/features/session/ui/components/session-pane-scope", "SessionPaneScope"),
-  turnDocumentRevisionIntoWork: lazy("@/app/integrations/doc-workgraph", "turnDocumentRevisionIntoWork"),
+  turnDocumentIntoWork: lazy("@/app/integrations/doc-workgraph", "turnDocumentIntoWork"),
 }
 
 const reviewThunks: Thunks<ReviewAppPorts> = {
@@ -169,10 +182,17 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   sessionRefForActionWorkspace: lazy("@/app/workbench/actions/shared", "sessionRefForActionWorkspace"),
   directorySessionCacheQueryOptions: lazy("@/features/session/data/sync/queries", "directorySessionCacheQueryOptions"),
   realDirectory: lazy("@/app/workbench/state", "realDirectory"),
-  useDirectorySessionCacheActions: lazy("@/features/session/data/sync/directory-session-cache", "useDirectorySessionCacheActions"),
+  useDirectorySessionCacheActions: lazy(
+    "@/features/session/data/sync/directory-session-cache",
+    "useDirectorySessionCacheActions",
+  ),
   CloudStartupView: lazy("@/features/session/ui/components/cloud-startup-view", "CloudStartupView"),
   WorkspaceAccessDeniedView: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceAccessDeniedView"),
   isForbiddenConnectionError: lazy("@/features/session/ui/components/cloud-startup-view", "isForbiddenConnectionError"),
+}
+
+const workgraphThunks: Thunks<WorkGraphAppPorts> = {
+  useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
 }
 
 /**
@@ -186,4 +206,5 @@ export function configureAppPortsForTest(overrides: AppPortsTestOverrides = {}) 
   configureDocumentsAppPorts(portsFromThunks(documentsThunks, overrides.documents ?? {}))
   configureReviewAppPorts(portsFromThunks(reviewThunks, overrides.review ?? {}))
   configureWorkspacesAppPorts(portsFromThunks(workspacesThunks, overrides.workspaces ?? {}))
+  configureWorkGraphAppPorts(portsFromThunks(workgraphThunks, overrides.workgraph ?? {}))
 }

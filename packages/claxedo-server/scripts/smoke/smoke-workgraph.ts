@@ -71,6 +71,14 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
 
     progress("creating the authenticated Stream")
     const tokenA = await createClerkSessionToken(request, clerkSecret, sessionAOrganizationA)
+    progress("probing the hosted Documents backend")
+    const documentsProbe = await request(`${base}/documents/__claxedo_deployment_probe__`, {
+      headers: authorization(tokenA),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (documentsProbe.status !== 404) {
+      throw new Error(`Documents backend probe expected 404, got ${documentsProbe.status}: ${await documentsProbe.text()}`)
+    }
     const operationId = `smoke_${Date.now()}`
     const streamId = commandValue(
       await command(request, base, tokenA, operationId, {

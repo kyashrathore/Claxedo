@@ -56,9 +56,7 @@ export function WaitingPanelBody(props: {
         <div class="workgraph-waiting">
           <div class="workgraph-waiting-intro">
             <div class="workgraph-waiting-intro-head">
-              <Show when={props.unread > 0}><span role="img" class="workgraph-attention-dot" aria-label={`${props.unread} unread`} /></Show>
               <span class="text-[12px] font-semibold text-text-strong">Needs you</span>
-              <span class="workgraph-count" aria-label={`${props.items.length} waiting`}>{props.items.length}</span>
               <span class="workgraph-card-gap" aria-hidden="true" />
               <button type="button" class="workgraph-waiting-action" disabled={props.unread === 0} onClick={props.onMarkAllRead}>Mark all read</button>
               <button type="button" class="workgraph-waiting-action" onClick={props.onClear}>Clear</button>
@@ -106,10 +104,10 @@ export function WaitingRow(props: { view: WaitingRowView; onSelect: (element: HT
   )
 }
 
-function WaitingRowGlyph(props: { view: WaitingRowView }) {
+export function WaitingRowGlyph(props: { view: WaitingRowView }) {
   return (
-    <span class="workgraph-waiting-row-glyph" aria-hidden="true">
-      <Switch fallback={<span class="workgraph-status-dot" data-tone={props.view.critical ? "critical" : "info"} />}>
+    <span class="workgraph-waiting-row-glyph" classList={{ "is-critical": props.view.critical }} aria-hidden="true">
+      <Switch fallback={<Icon name="circle-alert" size="small" />}>
         <Match when={props.view.kind === "recap_notification"}>
           <Icon name="bullet-list" size="small" class="text-icon-weak-base" />
         </Match>

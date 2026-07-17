@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { RelayRole } from "@claxedo/workspace-relay"
+import type { RepositoryAccessResult } from "../connections-host/connections-host"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -19,6 +20,13 @@ export type WorkspaceRouteOptions = {
   verifier?: ClerkVerifier
   cliTokenEnv?: Record<string, string | undefined>
   credentials?: ControlPlaneCredentials
+  connections?: {
+    repositoryForAuth(
+      auth: SignedControlPlaneAuth | undefined,
+      id: string,
+      fullName: string,
+    ): Promise<RepositoryAccessResult>
+  }
   relayUrl?: string
   relayUrls?: ClaxedoRegionMap<string>
   defaultHomeRegion?: ClaxedoRegion

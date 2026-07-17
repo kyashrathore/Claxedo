@@ -851,7 +851,7 @@ describe("harness-scoped resolution", () => {
     const convexFilesContaining = (term: string) =>
       convexFiles.filter((file) => fs.readFileSync(path.resolve(convexSrc, file), "utf8").includes(term))
     expect(convexFiles).not.toContain("runtimeLeases.ts")
-    expect(convexFilesContaining("provider_" + "runtime_id")).toEqual(["sandboxLeases.ts"])
+    expect(convexFilesContaining("provider_" + "runtime_id")).toEqual(["sandboxLeases.ts", "schema.ts"])
     expect(convexFilesContaining("provider_" + "snapshot_id")).toEqual([])
     // migrations.ts names the table because migration #001 (D14) is the
     // retro-registered runtime_leases legacy-field backfill; the normalize
@@ -965,7 +965,7 @@ describe("harness-scoped resolution", () => {
       "agent-config.ts",
       "bootstrap.ts",
       "credential.ts",
-      "docs.ts",
+      "documents.ts",
       "events.ts",
       // Hosted (Cloudflare Worker) control-plane routes. Mounted by hosted-app.ts
       // (the Worker entrypoint), NOT by the local Node server.ts. See
@@ -999,19 +999,9 @@ describe("harness-scoped resolution", () => {
       "opencode-compat-worktree-routes.ts",
       "opencode-compat-worktree.ts",
       "opencode-compat.ts",
-      "page-arena-events.ts",
-      "page-arena-format.ts",
-      "page-arena-opencode.ts",
-      "page-arena-runtime.ts",
-      "page-arena-settings.ts",
-      "page-arena-state.ts",
-      "page-arena-store.ts",
-      "page-arena-wave-runner.ts",
-      "page-content.ts",
-      "page-store.ts",
-      "pages-arena.ts",
-      "pages.ts",
       "provider-auth.ts",
+      "remote-access.ts",
+      "repository-clone.ts",
       "sandbox-driver-routes.ts",
       "session-meta.ts",
       "workspace-cloud-connection.ts",
@@ -1031,7 +1021,8 @@ describe("harness-scoped resolution", () => {
     ])
 
     const server = fs.readFileSync(path.resolve(import.meta.dirname, "server.ts"), "utf-8")
-    const pages = fs.readFileSync(path.resolve(import.meta.dirname, "routes/pages.ts"), "utf-8")
+    const hostedApp = fs.readFileSync(path.resolve(import.meta.dirname, "hosted-app.ts"), "utf-8")
+    const documents = fs.readFileSync(path.resolve(import.meta.dirname, "routes/documents.ts"), "utf-8")
     const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "server-workgraph.ts"), "utf-8")
 
     for (const token of [
@@ -1039,9 +1030,10 @@ describe("harness-scoped resolution", () => {
       "InternalRelayResolverRoutes(",
       "BootstrapRoutes(",
       "ProviderAuthRoutes(",
+      "RemoteAccessRoutes({",
       "OpenCodeCompatRoutes(",
       "workspaceRuntimeProxy",
-      "PagesRoutes({",
+      "DocumentsRoutes({",
       "AgentConfigRoutes(",
       "SessionMetaRoutes(",
       "WorkspaceRoutes(",
@@ -1054,9 +1046,11 @@ describe("harness-scoped resolution", () => {
     ]) {
       expect(server).toContain(token)
     }
+    expect(hostedApp).toContain('"/documents"')
+    expect(hostedApp).toContain("DocumentsRoutes({")
+    expect(server).toContain("withDataDirOwnership(dataDir()")
     expect(serverWorkgraph).not.toContain("localOnlyProjection(")
-    expect(pages).toContain("authorizePage:")
-    expect(pages).toContain("PageArenaRoutes(arenaOptions)")
+    expect(documents).toContain("authorizeProject")
   })
 
   test("keeps API error response bodies structured", () => {
@@ -1141,7 +1135,6 @@ describe("harness-scoped resolution", () => {
     const bootstrap = fs.readFileSync(path.resolve(import.meta.dirname, "routes/bootstrap.ts"), "utf-8")
     const opencodeCompat = fs.readFileSync(path.resolve(import.meta.dirname, "routes/opencode-compat.ts"), "utf-8")
     const jwks = fs.readFileSync(path.resolve(import.meta.dirname, "control-plane/routes/jwks.ts"), "utf-8")
-    const pagesArena = fs.readFileSync(path.resolve(import.meta.dirname, "routes/pages-arena.ts"), "utf-8")
     const embeddedRuntime = fs.readFileSync(path.resolve(import.meta.dirname, "embedded-workspace-runtime.ts"), "utf-8")
     const opencodeMcpSync = fs.readFileSync(path.resolve(import.meta.dirname, "opencode-mcp-sync.ts"), "utf-8")
     const agentConfig = fs.readFileSync(path.resolve(import.meta.dirname, "agent-config.ts"), "utf-8")
@@ -1156,16 +1149,16 @@ describe("harness-scoped resolution", () => {
     expect(bootstrap).not.toContain("process.env")
     expect(opencodeCompat).not.toContain("process.env")
     expect(jwks).not.toContain("process.env")
-    expect(pagesArena).not.toContain("process.env")
     expect(embeddedRuntime).not.toContain("process.env")
     expect(opencodeMcpSync).not.toContain("process.env")
     expect(agentConfig).not.toContain("process.env.CLAXEDO_ACP_DIR")
     expect(controlPlaneServices).not.toContain("process.env.CONVEX_URL")
     expect(controlPlaneServices).not.toContain("process.env.CLAXEDO_CONVEX_URL")
-    expect(server).toContain("function localRelayFromEnv(sandboxManager = createWorkspaceSupervisorSandboxManager())")
-    expect(server).toContain("relay: localRelayFromEnv(sandboxManager)")
+    expect(server).toContain("function localRelayFromEnv(")
+    expect(server).toContain("sandboxManager = createWorkspaceSupervisorSandboxManager(),")
+    expect(server).toContain("relay: localRelayFromEnv(sandboxManager, authority)")
     expect(server).toContain("env: process.env")
-    expect(server).toContain("PagesRoutes({")
+    expect(server).toContain("DocumentsRoutes({")
     expect(server).toContain("services,")
     expect(server).toContain("...authRouteOptions(services)")
     expect(server).toContain("configureOpencodeMcpSync({ enabled: opencodeCompat })")
@@ -1174,7 +1167,7 @@ describe("harness-scoped resolution", () => {
     expect(server).toContain("configureAgentConfig({")
     expect(server).toContain("const authorityUrl = convexAuthorityUrlFromEnv(process.env)")
     expect(server).toContain("? createConvexAuthority({ url: authorityUrl })")
-    expect(server).toContain(": createSqliteWorkspaceAuthority(),")
+    expect(server).toContain(": createSqliteWorkspaceAuthority()")
     expect(server).toContain("JwksRoutes(process.env)")
   })
 

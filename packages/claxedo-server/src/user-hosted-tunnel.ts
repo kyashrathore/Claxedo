@@ -11,6 +11,7 @@ import {
   workspaceSupervisorServerUrl,
 } from "./workspace-supervisor"
 import { getWorkspace } from "./workspace-store"
+import { RouteHandler, routeOwnership } from "./route-ownership"
 
 const log = Log.create({ service: "user-hosted-tunnel" })
 const sandboxManager = createWorkspaceSupervisorSandboxManager()
@@ -26,6 +27,14 @@ type ActiveTunnel = {
 }
 
 const tunnels = new Map<string, ActiveTunnel>()
+const machineTunnels = new Map<string, {
+  tunnel: WorkspaceRelayHostTunnel
+  hostId: string
+  relayUrl: string
+  token: { current: () => Promise<string> }
+  workspaceIds: string[]
+  registration: { current: Set<string> }
+}>()
 
 function normalized(input: string) {
   return input.trim().replace(/\/+$/, "")
@@ -76,6 +85,78 @@ async function tunnelTarget(input: { workspaceId: string; hostId: string }) {
     url: target.url,
     release: () => releaseSupervisorSandbox(workspace.id),
   }
+}
+
+export async function startUserHostedMachineTunnel(input: {
+  workspaceIds: string[]
+  hostId: string
+  relayUrl: string
+} & (
+  | { hostTunnelTokenProvider: () => Promise<string>; hostTunnelToken?: never }
+  | { hostTunnelToken: string; hostTunnelTokenProvider?: never }
+)) {
+  const workspaceIds = [...new Set(input.workspaceIds)].sort()
+  if (!workspaceIds.length) throw new Error("At least one local workspace is required")
+  const workspaces = await Promise.all(workspaceIds.map((workspaceId) => getWorkspace(workspaceId)))
+  const invalid = workspaces.find((workspace) => !workspace || workspace.kind !== "local")
+  if (invalid !== undefined || workspaces.some((workspace) => !workspace)) {
+    throw new Error("Machine-wide remote access supports local workspaces only")
+  }
+
+  const relayUrl = normalized(input.relayUrl)
+  const hostTunnelTokenProvider = input.hostTunnelTokenProvider ?? (async () => input.hostTunnelToken)
+  const existing = machineTunnels.get(input.hostId)
+  if (existing?.relayUrl === relayUrl) {
+    existing.token.current = hostTunnelTokenProvider
+    if (existing.workspaceIds.join("\n") !== workspaceIds.join("\n")) {
+      await existing.tunnel.updateRegistration({
+        workspaceIds,
+        token: await hostTunnelTokenProvider(),
+      })
+      existing.workspaceIds = workspaceIds
+      existing.registration.current = new Set(workspaceIds)
+    }
+    return { reused: true, connectionCount: 1, workspaceIds }
+  }
+
+  existing?.tunnel.close()
+  const token = { current: hostTunnelTokenProvider }
+  const registration = { current: new Set(workspaceIds) }
+  const localBaseUrl = workspaceSupervisorServerUrl()
+  const tunnel = startWorkspaceRelayHostTunnel({
+    relayUrl,
+    hostId: input.hostId,
+    workspaceIds,
+    localBaseUrl,
+    resolveLocalUrl: ({ workspaceId, path }) => {
+      // The relay carries only workspace-runtime traffic. CentralServer-owned
+      // routes remain loopback-only even when a malicious relay asks for one.
+      if (!registration.current.has(workspaceId)) return
+      if (routeOwnership(new URL(path, "http://workspace.local").pathname).handler !== RouteHandler.SandboxRuntime) return
+      return new URL(
+        `/workspaces/${encodeURIComponent(workspaceId)}/${path.replace(/^\/+/, "")}`,
+        `${normalized(localBaseUrl)}/`,
+      )
+    },
+    tokenProvider: () => token.current(),
+    onEvent: (event) => logTunnelEvent({ workspaceId: workspaceIds.join(","), hostId: input.hostId, relayUrl }, event),
+    pingIntervalMs: 15_000,
+    reconnectIntervalMs: 1_000,
+  })
+  machineTunnels.set(input.hostId, {
+    tunnel,
+    hostId: input.hostId,
+    relayUrl,
+    token,
+    workspaceIds,
+    registration,
+  })
+  log.info("user-hosted machine tunnel started", {
+    hostId: input.hostId,
+    relayUrl,
+    workspaceIds,
+  })
+  return { reused: false, connectionCount: 1, workspaceIds }
 }
 
 export async function startUserHostedWorkspaceTunnel(input: {
@@ -147,12 +228,26 @@ export function stopUserHostedWorkspaceTunnel(input: {
   return true
 }
 
+export function stopUserHostedMachineTunnel(hostId: string) {
+  const existing = machineTunnels.get(hostId)
+  if (!existing) return false
+  existing.tunnel.close()
+  machineTunnels.delete(hostId)
+  return true
+}
+
+export function hasUserHostedMachineTunnel(hostId: string) {
+  return machineTunnels.has(hostId)
+}
+
 export function stopAllUserHostedWorkspaceTunnels() {
-  const count = tunnels.size
+  const count = tunnels.size + machineTunnels.size
   for (const existing of tunnels.values()) {
     existing.tunnel.close()
     existing.release()
   }
   tunnels.clear()
+  for (const existing of machineTunnels.values()) existing.tunnel.close()
+  machineTunnels.clear()
   return count
 }

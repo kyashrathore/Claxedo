@@ -84,7 +84,14 @@ describe("connections host", () => {
   test("connection credentials stay out of the shared fanout", async () => {
     const credentials = createCredentialStoreAdapter(credentialsPort())
     await credentials.put({ providerId: "integration:github", kind: "api_key", secret: "ghp-secret" })
-    await registry.putCredential({ provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-1" })
+    await registry.putCredential({
+      provider_id: "openai",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-1",
+      scope: "shared",
+      consent: { at: Date.now(), surface: "api_key" },
+    })
     expect(await registry.resolveSecretsForScope("shared")).toEqual({ openai: "sk-1" })
   })
 
@@ -195,6 +202,15 @@ describe("connections host", () => {
       headers: { authorization: "Bearer user-b" },
     })
     expect(forbiddenReverify.status).toBe(404)
+    await expect(host.repositoryForAuth({
+      mode: "signed",
+      token: "user-b",
+      user: { subject: "user-b", tokenIdentifier: "user-b", issuer: "https://issuer.example" },
+    }, "user-a-notion", "acme/private")).resolves.toEqual({
+      ok: false,
+      status: 404,
+      code: "connection_not_found",
+    })
     host.dispose()
   })
 

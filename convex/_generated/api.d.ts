@@ -14,7 +14,6 @@ import type * as auditEvents from "../auditEvents.js";
 import type * as billing from "../billing.js";
 import type * as channelIdentities from "../channelIdentities.js";
 import type * as crons from "../crons.js";
-import type * as docs from "../docs.js";
 import type * as http from "../http.js";
 import type * as localHostLinks from "../localHostLinks.js";
 import type * as migrations from "../migrations.js";
@@ -55,7 +54,6 @@ declare const fullApi: ApiFromModules<{
   billing: typeof billing;
   channelIdentities: typeof channelIdentities;
   crons: typeof crons;
-  docs: typeof docs;
   http: typeof http;
   localHostLinks: typeof localHostLinks;
   migrations: typeof migrations;

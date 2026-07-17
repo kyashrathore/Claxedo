@@ -4,7 +4,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { popularProviders } from "@/platform/query/provider-list"
-import { DialogConnectProvider, DialogCustomProvider, DialogSelectProvider, useGlobalSDK, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
+import { DialogAIConnect, DialogConnectProvider, DialogCustomProvider, DialogSelectProvider, useGlobalSDK, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
 import { createMemo, type Component, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Config } from "@opencode-ai/sdk/v2/client"
@@ -162,6 +162,16 @@ export const SettingsProviders: Component = () => {
       </div>
 
       <div class="flex flex-col gap-8 max-w-[720px]">
+        <div class="flex items-center justify-between gap-4 rounded-md border border-border-weak-base p-4">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-14-medium text-text-strong">Connect your AI</h3>
+            <p class="text-12-regular text-text-weak">Detect subscriptions on this machine or enter an API key.</p>
+          </div>
+          <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogAIConnect />)}>
+            Detect or connect
+          </Button>
+        </div>
+
         <div class="flex flex-col gap-1" data-component="connected-providers-section">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.providers.section.connected")}</h3>
           <SettingsList>

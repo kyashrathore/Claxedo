@@ -3,7 +3,7 @@ import {
   loadFixtures,
   type DemoFixtures,
   type DemoMessage,
-  type DemoPage,
+  type DemoDocument,
   type DemoPreview,
   type DemoPty,
   type DemoSession,
@@ -40,11 +40,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function jsonRecord(request: Request) {
   const body: unknown = await request.json().catch(() => ({}))
   return isRecord(body) ? body : {}
-}
-
-async function jsonArray(request: Request) {
-  const body: unknown = await request.json().catch(() => [])
-  return Array.isArray(body) ? body : []
 }
 
 function stringField(value: Record<string, unknown>, key: string) {
@@ -205,8 +200,8 @@ function projectInfo(state: State, dir: string) {
   }
 }
 
-function pageID() {
-  return `page_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+function documentID() {
+  return `document_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
 function stateOf(data: DemoFixtures): State {
@@ -250,8 +245,8 @@ function sessionFor(state: State, id: string) {
   return state.sessions.find((item) => item.id === id)
 }
 
-function pageFor(state: State, id: string) {
-  return state.pages.find((item) => item.id === id)
+function documentFor(state: State, id: string) {
+  return state.documents.find((item) => item.id === id)
 }
 
 function heartbeat(data: Record<string, unknown>) {
@@ -692,149 +687,101 @@ export async function createHandlers() {
         }),
       )
     }),
-    http.get(`${DEMO_BASE}/pages/statuses`, () => {
-      return HttpResponse.json([])
-    }),
-    http.put(`${DEMO_BASE}/pages/statuses`, async ({ request }) => {
-      const body = await jsonArray(request)
-      return HttpResponse.json(body)
-    }),
-    http.get(`${DEMO_BASE}/pages/events`, () => {
-      return sse(
-        heartbeat({
-          type: "pages.heartbeat",
-        }),
-      )
-    }),
-    http.get(`${DEMO_BASE}/pages`, () => {
-      return HttpResponse.json(state.pages)
-    }),
-    http.post(`${DEMO_BASE}/pages`, async ({ request }) => {
+    http.get(`${DEMO_BASE}/documents/statuses`, () => HttpResponse.json([
+      { id: "draft", name: "Draft", color: "#6b7280", position: 0, transitions: "[\"done\"]" },
+      { id: "done", name: "Done", color: "#22c55e", position: 1, transitions: "[\"draft\"]" },
+    ])),
+    http.get(`${DEMO_BASE}/documents`, () => HttpResponse.json(state.documents)),
+    http.post(`${DEMO_BASE}/documents`, async ({ request }) => {
       const body = await jsonRecord(request)
-      const page: DemoPage = {
-        id: pageID(),
-        title: stringField(body, "title") || "Untitled",
-        content: stringField(body, "content") || "",
+      const now = new Date().toISOString()
+      const id = documentID()
+      const document: DemoDocument = {
+        id,
+        project_id: stringField(body, "project_id") || "demo-project",
+        display_name: stringField(body, "display_name") || "Untitled document",
+        origin_kind: "managed",
+        placement_kind: "local",
+        placement_id: "demo-local",
+        managed_relative_path: `${id}/document.md`,
+        repository_id: null,
+        workspace_id: null,
+        repository_relative_path: null,
+        branch: null,
         status: stringField(body, "status") || "draft",
-        visibility: "private",
-        version: 1,
         session_id: null,
-        directory: stringField(body, "directory") || null,
-        source_kind: stringField(body, "source_kind") || null,
-        source_repo_root: stringField(body, "source_repo_root") || null,
-        source_repo_key: stringField(body, "source_repo_key") || null,
-        source_branch: stringField(body, "source_branch") || null,
-        source_path: stringField(body, "source_path") || null,
-        base_commit: stringField(body, "base_commit") || null,
-        base_blob_sha: stringField(body, "base_blob_sha") || null,
-        base_tree_sha: stringField(body, "base_tree_sha") || null,
-        last_materialized_commit: null,
-        last_materialized_blob_sha: null,
-        last_commit_at: null,
-        last_commit_author_id: null,
-        commit_status: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        archived_at: null,
+        created_at: now,
+        updated_at: now,
+        last_opened_at: null,
+        last_known_file_version: "demo-v1",
+        markdown: stringField(body, "markdown") || "",
+        modifiedAt: Date.now(),
       }
-      state.pages.unshift(page)
-      return HttpResponse.json(page, { status: 201 })
+      state.documents.unshift(document)
+      return HttpResponse.json(document, { status: 201 })
     }),
-    http.post(`${DEMO_BASE}/pages/from-repo`, async ({ request }) => {
+    http.post(`${DEMO_BASE}/documents/from-repo`, async ({ request }) => {
       const body = await jsonRecord(request)
-      const page: DemoPage = {
-        id: pageID(),
-        title: stringField(body, "title") || stringField(body, "path")?.split("/").at(-1) || "Untitled",
-        content: "",
-        status: stringField(body, "status") || "draft",
-        visibility: "private",
-        version: 1,
+      const now = new Date().toISOString()
+      const id = documentID()
+      const relativePath = stringField(body, "path") || "README.md"
+      const document: DemoDocument = {
+        id,
+        project_id: stringField(body, "project_id") || "demo-project",
+        display_name: stringField(body, "display_name") || relativePath.split("/").at(-1) || "Document",
+        origin_kind: "repository",
+        placement_kind: "local",
+        placement_id: stringField(body, "workspace_id") || "demo-workspace",
+        managed_relative_path: null,
+        repository_id: `demo:${relativePath}`,
+        workspace_id: stringField(body, "workspace_id") || "demo-workspace",
+        repository_relative_path: relativePath,
+        branch: "main",
+        status: "draft",
         session_id: null,
-        directory: stringField(body, "directory") || null,
-        source_kind: "git",
-        source_repo_root: stringField(body, "directory") || null,
-        source_repo_key: stringField(body, "workspace_id") || null,
-        source_branch: "main",
-        source_path: stringField(body, "path") || null,
-        base_commit: "demo",
-        base_blob_sha: "demo",
-        base_tree_sha: null,
-        last_materialized_commit: null,
-        last_materialized_blob_sha: null,
-        last_commit_at: null,
-        last_commit_author_id: null,
-        commit_status: "sourced",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        archived_at: null,
+        created_at: now,
+        updated_at: now,
+        last_opened_at: null,
+        last_known_file_version: "demo-v1",
+        markdown: "",
+        modifiedAt: Date.now(),
       }
-      state.pages.unshift(page)
-      return HttpResponse.json(page, { status: 201 })
+      state.documents.unshift(document)
+      return HttpResponse.json(document, { status: 201 })
     }),
-    http.get(`${DEMO_BASE}/pages/:id`, ({ params }) => {
-      const page = pageFor(state, routeParam(params, "id"))
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      return HttpResponse.json(page)
+    http.get(`${DEMO_BASE}/documents/:id`, ({ params }) => {
+      const document = documentFor(state, routeParam(params, "id"))
+      return document ? HttpResponse.json(document) : HttpResponse.json({ error: "Not found" }, { status: 404 })
     }),
-    http.patch(`${DEMO_BASE}/pages/:id`, async ({ params, request }) => {
-      const page = pageFor(state, routeParam(params, "id"))
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
+    http.get(`${DEMO_BASE}/documents/:id/content`, ({ params }) => {
+      const document = documentFor(state, routeParam(params, "id"))
+      if (!document) return HttpResponse.json({ error: "Not found" }, { status: 404 })
+      return HttpResponse.json({ markdown: document.markdown, version: document.last_known_file_version, modifiedAt: document.modifiedAt })
+    }),
+    http.put(`${DEMO_BASE}/documents/:id/content`, async ({ params, request }) => {
+      const document = documentFor(state, routeParam(params, "id"))
+      if (!document) return HttpResponse.json({ error: "Not found" }, { status: 404 })
       const body = await jsonRecord(request)
-      const title = stringField(body, "title")
-      const content = stringField(body, "content")
-      if (title !== undefined) page.title = title
-      if (content !== undefined) page.content = content
-      page.version += 1
-      page.updated_at = new Date().toISOString()
-      return HttpResponse.json(page)
+      document.markdown = stringField(body, "markdown") || ""
+      document.display_name = stringField(body, "display_name") || document.display_name
+      document.last_known_file_version = `demo-v${Date.now()}`
+      document.modifiedAt = Date.now()
+      document.updated_at = new Date().toISOString()
+      return HttpResponse.json({ markdown: document.markdown, version: document.last_known_file_version, modifiedAt: document.modifiedAt })
     }),
-    http.post(`${DEMO_BASE}/pages/:id/git/commit`, ({ params }) => {
-      const page = pageFor(state, routeParam(params, "id"))
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      page.commit_status = "committed"
-      page.last_materialized_commit = "demo"
-      page.last_materialized_blob_sha = "demo"
-      page.last_commit_at = new Date().toISOString()
-      page.updated_at = page.last_commit_at
-      return HttpResponse.json(page)
+    http.get(`${DEMO_BASE}/documents/:id/export`, ({ params }) => {
+      const document = documentFor(state, routeParam(params, "id"))
+      return document
+        ? new Response(document.markdown, { headers: { "Content-Type": "text/markdown" } })
+        : HttpResponse.json({ error: "Not found" }, { status: 404 })
     }),
-    http.get(`${DEMO_BASE}/pages/:id/export`, ({ params }) => {
-      const page = pageFor(state, routeParam(params, "id"))
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      return new Response(page.content, { headers: { "Content-Type": "text/markdown" } })
-    }),
-    http.delete(`${DEMO_BASE}/pages/:id`, ({ params }) => {
-      const index = state.pages.findIndex((item) => item.id === routeParam(params, "id"))
-      if (index < 0) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      state.pages.splice(index, 1)
-      return HttpResponse.json({ ok: true })
-    }),
-    http.patch(`${DEMO_BASE}/pages/:id/session`, ({ params }) => {
-      const page = pageFor(state, routeParam(params, "id"))
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      return HttpResponse.json(page)
-    }),
-    http.post(`${DEMO_BASE}/pages/:id/status`, ({ params }) => {
-      const page = pageFor(state, routeParam(params, "id"))
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      return HttpResponse.json(page)
-    }),
-    http.get(`${DEMO_BASE}/pages/:id/arena/state`, () => {
-      return HttpResponse.json(state.arenaState)
-    }),
-    http.post(`${DEMO_BASE}/pages/:id/arena/start`, () => {
-      return HttpResponse.json(state.arenaState)
-    }),
-    http.post(`${DEMO_BASE}/pages/:id/arena/message`, () => {
-      return HttpResponse.json({ ok: true, wave_id: "wave_demo", state: state.arenaState })
-    }),
-    http.post(`${DEMO_BASE}/pages/:id/arena/control`, () => {
-      return HttpResponse.json({ ok: true, state: state.arenaState })
-    }),
-    http.get(`${DEMO_BASE}/pages/:id/arena/events`, () => {
-      return sse(
-        heartbeat({
-          type: "arena.connected",
-        }),
-      )
+    http.post(`${DEMO_BASE}/documents/:id/status`, async ({ params, request }) => {
+      const document = documentFor(state, routeParam(params, "id"))
+      if (!document) return HttpResponse.json({ error: "Not found" }, { status: 404 })
+      document.status = stringField(await jsonRecord(request), "status") || document.status
+      return HttpResponse.json(document)
     }),
     http.get(`${DEMO_BASE}/api/wr/process`, () => {
       return HttpResponse.json({

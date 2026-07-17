@@ -26,7 +26,11 @@ const mocks = {
   shutdownWorkspaceSupervisor: vi.fn(async () => {}),
   listSupervisorSandboxs: vi.fn(() => []),
   close: vi.fn(),
-  startWorkspaceRelayHostTunnel: vi.fn((_options: unknown) => ({ close: mocks.close })),
+  updateRegistration: vi.fn(async () => {}),
+  startWorkspaceRelayHostTunnel: vi.fn((_options: unknown) => ({
+    close: mocks.close,
+    updateRegistration: mocks.updateRegistration,
+  })),
   getWorkspace: vi.fn(async (id: string) => ({
     id,
     directory: `/tmp/${id}`,
@@ -77,6 +81,7 @@ vi.mock("./log", () => ({
 }))
 
 const {
+  startUserHostedMachineTunnel,
   startUserHostedWorkspaceTunnel,
   stopAllUserHostedWorkspaceTunnels,
 } = await import("./user-hosted-tunnel")
@@ -87,6 +92,44 @@ afterEach(() => {
 })
 
 describe("user-hosted Workspace Relay tunnel manager", () => {
+  test("keeps one machine tunnel while registrations add local workspaces", async () => {
+    await expect(startUserHostedMachineTunnel({
+      workspaceIds: ["ws_b", "ws_a"],
+      hostId: "host_machine",
+      relayUrl: "http://relay.test/",
+      hostTunnelToken: "htt_1",
+    })).resolves.toEqual({ reused: false, connectionCount: 1, workspaceIds: ["ws_a", "ws_b"] })
+
+    const options = mocks.startWorkspaceRelayHostTunnel.mock.calls[0]![0] as {
+      workspaceIds: string[]
+      localBaseUrl: string
+      resolveLocalUrl: (input: { workspaceId: string; path: string }) => URL | undefined
+      tokenProvider: () => Promise<string>
+    }
+    expect(options.workspaceIds).toEqual(["ws_a", "ws_b"])
+    expect(options.localBaseUrl).toBe("http://127.0.0.1:3001")
+    expect(options.resolveLocalUrl({ workspaceId: "ws_b", path: "/api/wr/health?probe=1" })?.toString())
+      .toBe("http://127.0.0.1:3001/workspaces/ws_b/api/wr/health?probe=1")
+    expect(options.resolveLocalUrl({ workspaceId: "ws_b", path: "/api/claxedo/credentials" })).toBeUndefined()
+    expect(options.resolveLocalUrl({ workspaceId: "ws_unknown", path: "/api/wr/health" })).toBeUndefined()
+    await expect(options.tokenProvider()).resolves.toBe("htt_1")
+
+    await expect(startUserHostedMachineTunnel({
+      workspaceIds: ["ws_a", "ws_b", "ws_c"],
+      hostId: "host_machine",
+      relayUrl: "http://relay.test",
+      hostTunnelToken: "htt_2",
+    })).resolves.toEqual({ reused: true, connectionCount: 1, workspaceIds: ["ws_a", "ws_b", "ws_c"] })
+
+    expect(mocks.startWorkspaceRelayHostTunnel).toHaveBeenCalledTimes(1)
+    expect(mocks.updateRegistration).toHaveBeenCalledWith({
+      workspaceIds: ["ws_a", "ws_b", "ws_c"],
+      token: "htt_2",
+    })
+    await expect(options.tokenProvider()).resolves.toBe("htt_2")
+    expect(mocks.close).not.toHaveBeenCalled()
+  })
+
   test("starts a local embedded workspace tunnel through the control-plane relay path", async () => {
     await expect(startUserHostedWorkspaceTunnel({
       workspaceId: "ws_local",

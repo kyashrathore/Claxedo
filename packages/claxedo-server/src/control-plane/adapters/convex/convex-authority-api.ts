@@ -49,6 +49,7 @@ type ConvexApi = {
     heartbeatForService: ConvexMutation
     pause: ConvexMutation
     pauseForService: ConvexMutation
+    markSecondDeviceOpen: ConvexMutation
     active: ConvexQuery
   }
   workspaceShares: {

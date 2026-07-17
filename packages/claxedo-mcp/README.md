@@ -58,7 +58,6 @@ Read-only mode registers:
 - `workgraph_list`
 - `workgraph_get`
 - `workgraph_source_revision`
-- `workgraph_changes`
 - `workgraph_source_views` when the embedded/HTTP host supports it
 - `workgraph_intake` when the embedded/HTTP host supports it
 - `workgraph_get_candidate` when the embedded/HTTP host supports it
@@ -102,10 +101,14 @@ Supported environment:
 - `CLAXEDO_SERVER_URL`: Claxedo server URL. Defaults to `http://127.0.0.1:3001`.
 - `OPENCODE_API_DIR`: default local project directory.
 - `CLAXEDO_WORKSPACE_ID`: default Docker/cloud workspace id.
+- `CLAXEDO_SESSION_ID`: optional current session id for document path grants.
 - `CLAXEDO_AUTH_TOKEN`: optional signed remote server bearer token.
 - `CLAXEDO_MCP_MODE=read-only` or `CLAXEDO_MCP_READ_ONLY=1`: omit mutating tools.
 
 Current tool surface:
+
+- `documents_list`
+- `documents_open`, which accepts `claxedo://document/<id>`, an exact id, or an unambiguous display name
 
 - `process`
 - `get_logs`
@@ -125,3 +128,17 @@ Current tool surface:
   Intake staging returns the immutable source and admission proposal
   for review, and confirmation uses the same `workgraph_admit` command as the app. See
   `skills/workgraph/SKILL.md` for the current vocabulary.
+
+## Documents CLI and skill
+
+The same document contract is available without an MCP client:
+
+```sh
+claxedo-mcp documents list
+claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
+```
+
+`OPENCODE_API_DIR` and `CLAXEDO_SESSION_ID` provide the default project and
+session. The published package includes `skills/claxedo-documents/SKILL.md` so
+agent-extension installation can teach supported harnesses to resolve compact
+document references instead of copying absolute paths into prompts.

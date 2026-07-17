@@ -11,8 +11,12 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     account_id: text(),
     secure_ref: text(), // opaque backend reference — never contains raw secret material
     status: text().notNull().default("available"), // available | expired | revoked | error
+    health: text(), // ok | auth_failed | no_billing | rate_capped | expired
     expires_at: integer(),
     last_validated_at: integer(),
+    scope: text().notNull().default("local"), // local | shared
+    consent_json: text(),
+    last_used_at: integer(),
     last_error: text(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),

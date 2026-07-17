@@ -1,4 +1,5 @@
 import {
+  isSignedWorkspaceDefaultModel,
   SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
   SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
 } from "./signed-workspace-model"
@@ -63,9 +64,13 @@ export function firstConnectedModelInfo(input: {
   return sortedConnectedProviders(input.connected)
     .map((provider) => {
       const configured = input.defaults[provider.id]
+      const models = Object.values(provider.models ?? {}).filter((model) => !isSignedWorkspaceDefaultModel({
+        id: model.id,
+        provider: { id: provider.id },
+      }))
       const model = configured && !staleProviderDefaults[provider.id]?.has(configured) && provider.models?.[configured]
         ? provider.models[configured]
-        : Object.values(provider.models ?? {})[0]
+        : models[0]
       if (!model) return undefined
       return { ...model, provider }
     })
@@ -73,7 +78,7 @@ export function firstConnectedModelInfo(input: {
 }
 
 export function selectRuntimeModel(input: unknown, selected: SubmitModelInfo | undefined): SubmitModelInfo | undefined {
-  if (selected) return selected
+  if (selected && !isSignedWorkspaceDefaultModel(selected)) return selected
   const body = object(input)
   const all = runtimeProviders(body?.all)
   const connected = connectedProviderIds(body?.connected)
@@ -192,7 +197,7 @@ export function cycleModelVariant(input: VariantInput) {
 export type PromptModelStateInput = {
   harnessMode: boolean
   providerLoading: boolean
-  model?: { name?: string } | null
+  model?: { id?: string; name?: string; provider?: { id: string } } | null
   agent?: { name?: string } | null
   agentOverride?: string
 }
@@ -206,7 +211,9 @@ export function promptModelState(input: PromptModelStateInput) {
     }
   }
 
-  if (input.model) {
+  if (input.model && !isSignedWorkspaceDefaultModel(
+    input.model.id && input.model.provider ? { id: input.model.id, provider: input.model.provider } : undefined,
+  )) {
     return {
       blocked: false,
       disabled: false,
@@ -225,7 +232,7 @@ export function promptModelState(input: PromptModelStateInput) {
   return {
     blocked: true,
     disabled: true,
-    label: "Select model",
+    label: input.model ? "Connect AI" : "Select model",
   }
 }
 

@@ -17,7 +17,7 @@ const DEMO_PROJECT = "/home/demo/projects/my-app"
 type TourAction =
   | "multi-pane"
   | "pane-focus"
-  | "pages"
+  | "documents"
   | "review"
   | "switch-workspace"
   | "switch-project"
@@ -54,7 +54,7 @@ export function DemoTourController() {
         case "pane-focus":
           show(TAB_SESSION)
           break
-        case "pages":
+        case "documents":
           show(TAB_PAGE)
           break
         case "review":
@@ -89,7 +89,7 @@ function isTourStepMessage(value: unknown): value is { type: "tour-step"; action
   return [
     "multi-pane",
     "pane-focus",
-    "pages",
+    "documents",
     "review",
     "switch-workspace",
     "switch-project",

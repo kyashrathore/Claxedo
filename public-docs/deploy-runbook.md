@@ -48,6 +48,7 @@ Two ship-solo disciplines:
 | Relay / self-host on Fly | `fly releases` → redeploy the prior image                                                                 | ~1–2 min (no rebuild)         | Redeploys the _image_ only; the _current_ `fly.toml` and secrets apply, not those from the old release. A rollback is itself a deploy — it drops tunnels again                                                                                                                                                      |
 | Convex                   | **None. Roll-forward only.** Re-push the previous green git SHA (`bunx convex deploy` from that checkout) | minutes; requires the old SHA | Additive schema discipline (expand-migrate-contract) is the rollback substitute: re-pushing old code works only if every schema change was additive. Schema must still validate against _current_ data — a rollback that re-narrows a widened schema is rejected. Data written by the bad version is never reverted |
 | Sandbox image            | Re-pin `CLAXEDO_SANDBOX_BUILD_ID` / `CLAXEDO_SNAPSHOT_NAME` on the control plane                          | config change                 | Old snapshot must still exist in the registry; running sandboxes keep their epoch's image                                                                                                                                                                                                                           |
+| Documents R2             | Restore a known-good Documents Worker; use immutable snapshots for content recovery                       | minutes                       | Worker rollback never rolls back or deletes R2 objects. A pre-Documents Worker makes hosted Documents unavailable while leaving objects intact                                                                                                                                                                       |
 
 ### Worker rollback commands
 
@@ -197,6 +198,8 @@ printf '%s' "$TOKEN" | bunx wrangler secret put CLAXEDO_CONTROL_PLANE_SERVICE_TO
 
 The hosted Worker also requires `CLAXEDO_WORKSPACE_AUTHORITY_URL`, `CLERK_JWT_ISSUER`, `CLERK_JWKS_URL`, and `CLAXEDO_RUNTIME_ADMIN_TOKEN`. Hosted execution additionally requires the selected sandbox driver, relay, and runtime-token signing configuration documented in `packages/claxedo-server/wrangler.toml`. A missing required binding fails closed at boot or makes the scheduled reconciliation invocation fail visibly.
 
+Hosted Documents requires the `CLAXEDO_DOCUMENTS` R2 binding. Provision and verify `claxedo-documents-staging` and `claxedo-documents` before deployment with `bunx wrangler r2 bucket info <bucket> --json`. Both staging and production authenticated smokes probe `/documents/__claxedo_deployment_probe__`; the expected 404 proves the route reached a composed Documents backend, while a missing binding returns `document_backend_unavailable` with 503 and blocks promotion.
+
 Connections and signed WorkGraph webhooks require the encrypted per-organization credential backend. Set `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` together with `CLAXEDO_CREDENTIALS_KEK`, `CLAXEDO_CF_KV_URL`, and `CLAXEDO_CF_KV_TOKEN`; use `CLAXEDO_CREDENTIALS_KEK_NEXT` only during key rotation. Provider tokens and webhook signing secrets are then written through the Connections setup routes and never placed in WorkGraph or deployment variables.
 
 ## WorkGraph Cloud go/no-go
@@ -215,6 +218,7 @@ Connections and signed WorkGraph webhooks require the encrypted per-organization
 - [ ] The Convex change is additive and can serve the currently deployed Worker before dependent code ships.
 - [ ] The Worker and Convex deployment contain the same control-plane service token, without printing either value.
 - [ ] Signed auth, workspace authority, runtime admin, relay, sandbox, and runtime-token signing bindings are present in the target Worker environment.
+- [ ] The environment's `CLAXEDO_DOCUMENTS` binding resolves to its dedicated R2 bucket; staging and production never share a bucket.
 - [ ] Hosted Connections are either deliberately disabled or have the encrypted per-org credential configuration above; webhook signing secrets exist through Connections for every enabled webhook source.
 
 Any failed item is a no-go. Missing external credentials defer deployed acceptance; they do not invalidate repository-level Worker safety or Convex type evidence.
@@ -223,7 +227,7 @@ Any failed item is a no-go. Missing external credentials defer deployed acceptan
 
 1. [ ] Start the ordered `deploy-control-plane.yml` release for the reviewed SHA; require its additive Convex deploy and server-side schema validation to succeed first.
 2. [ ] Require the workflow to deploy the same reviewed SHA's Worker only after Convex is healthy.
-3. [ ] Confirm health, signed-auth mode, and both garbage-token 401 probes.
+3. [ ] Confirm health, signed-auth mode, both garbage-token 401 probes, and the authenticated Documents backend probe.
 4. [ ] Require the signed Stream/Task persistence, cross-tenant and cross-filter cursor denial, refreshed and expiring execution-capability, no-op Attempt result, and asynchronous compensation/cleanup smoke to pass, including isolation for one user represented in two organizations.
 5. [ ] Confirm the protected reconciliation call and the next scheduled invocation both complete without an error event.
 6. [ ] Require the reusable `deploy-claxedo-app.yml` call from the same ordered release, then run the canonical browser journey on `/workgraph`: inline Streams and Add task, one shared WorkspacePanel for Needs you and Settings, no separate intake/onboarding screen, targeted inspectors, reload, and fresh-session persistence.
@@ -232,11 +236,12 @@ Any failed item is a no-go. Missing external credentials defer deployed acceptan
 ### Roll back or roll forward
 
 - Worker-only failure: roll back the Worker version, then repeat health/auth probes against the still-additive Convex deployment.
+- Documents failure: retain both R2 buckets, restore the last known-good Documents Worker, repeat the authenticated backend probe, then use immutable Documents snapshots for content recovery if needed.
 - Convex function failure: fix forward by deploying the previous compatible function code or a new corrective commit. Convex data and schema do not roll back.
 - Credential or signing-key failure: restore the prior Worker secret/key slot, leave stored Connection ciphertext untouched, and rerun authenticated persistence plus webhook verification.
 - Reconciliation failure: stop new execution admission if necessary, retain durable Attempts/jobs, restore the Worker, and verify the next claim uses the persisted lease epoch rather than creating duplicate work.
 
-For the first 24 hours, alert on Worker composition 503s, non-401 garbage-token probes, WorkGraph command/query error rate, expired or repeatedly failed Attempt/Recap/source-plan claims, webhook signature/deduplication failures, and credential decryption/authentication failures.
+For the first 24 hours, alert on Worker composition 503s (including `document_backend_unavailable`), Documents/R2 5xx responses, repeated snapshot-maintenance or hydration/write-back failures, non-401 garbage-token probes, WorkGraph command/query error rate, expired or repeatedly failed Attempt/Recap/source-plan claims, webhook signature/deduplication failures, and credential decryption/authentication failures. Treat isolated write-back 409s as truthful conflicts; alert on a sustained increase.
 
 ### WorkGraph operational signals and alert contract
 
@@ -293,7 +298,10 @@ The control-plane smoke is behavioral, not liveness theater:
    no-op profile to a durable Attempt result, deletes the Stream, verifies
    asynchronous cleanup, and revokes the short-lived Sessions. Catalog failure
    remains explicit; the smoke never substitutes static or guessed choices.
-5. After the Pages release, the official Clerk Playwright helper signs in the
+5. `GET /documents/__claxedo_deployment_probe__` with the authenticated smoke
+   identity → exactly **404**. A 503 proves the Worker booted without its
+   Documents R2 binding and blocks staging or production promotion.
+6. After the Pages release, the official Clerk Playwright helper signs in the
    dedicated smoke user by email and activates smoke organization A. The real
    browser creates a uniquely named Stream and Task through `/workgraph`, proves
    both survive desktop and narrow hard reloads, and deletes them through the

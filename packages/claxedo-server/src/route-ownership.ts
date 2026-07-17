@@ -93,6 +93,7 @@ const ROUTE_RULES = [
     central,
   ),
   exact(["/global/config"], RouteDomain.AgentConfigRegistry, central),
+  prefix(["/api/claxedo/remote-access"], RouteDomain.ClaxedoControlPlane, central),
   prefix(
     ["/config", "/provider", "/auth", "/api/claxedo/agent-config", "/api/claxedo/credentials"],
     RouteDomain.AgentConfigRegistry,
@@ -117,8 +118,7 @@ const ROUTE_RULES = [
       "/api/workspace",
       "/api/claxedo/network-policy",
       "/api/claxedo/living-apps",
-      "/api/claxedo/docs",
-      "/pages",
+      "/documents",
       "/api/workgraph",
     ],
     RouteDomain.ClaxedoControlPlane,

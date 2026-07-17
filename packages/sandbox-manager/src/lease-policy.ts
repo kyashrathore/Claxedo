@@ -62,6 +62,13 @@ const DRIVER_PLACEMENT: Record<SandboxDriverID, SandboxDriverPlacement> = {
     canStopExplicitly: false,
     hasHealthProbe: true,
   },
+  box: {
+    canPauseAndRestartSameResource: true,
+    canCreateFilesystemSnapshot: false,
+    canStartFromPreparedImage: true,
+    canStopExplicitly: true,
+    hasHealthProbe: true,
+  },
   docker: {
     canPauseAndRestartSameResource: true,
     canCreateFilesystemSnapshot: false,

@@ -2,7 +2,7 @@
   "name": "@claxedo/sandbox-manager",
   "version": "0.5.1",
   "type": "module",
-  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, and Docker",
+  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -53,6 +53,13 @@
       "development": "./dist/driver-catalog.mjs",
       "import": "./dist/driver-catalog.mjs",
       "default": "./dist/driver-catalog.mjs"
+    },
+    "./drivers/box": {
+      "types": "./dist/drivers/box.d.ts",
+      "bun": "./dist/drivers/box.mjs",
+      "development": "./dist/drivers/box.mjs",
+      "import": "./dist/drivers/box.mjs",
+      "default": "./dist/drivers/box.mjs"
     },
     "./drivers/cloudflare": {
       "types": "./dist/drivers/cloudflare.d.ts",

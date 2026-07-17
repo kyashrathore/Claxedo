@@ -6,6 +6,7 @@ import {
   promptAgentOptions,
   promptAtOptionKey,
   promptAtOptions,
+  promptDocumentOptions,
   promptSlashCommands,
 } from "./popover-controller"
 
@@ -28,19 +29,15 @@ describe("prompt popover controller", () => {
       { type: "file", path: "src/b.ts", display: "src/b.ts", recent: true },
       { type: "file", path: "src/c.ts", display: "src/c.ts" },
     ])
-    expect(["file", "recent", "agent"].sort((a, b) => comparePromptAtGroups({ category: a }, { category: b }))).toEqual([
-      "agent",
-      "recent",
-      "file",
-    ])
+    expect(["file", "recent", "agent"].sort((a, b) => comparePromptAtGroups({ category: a }, { category: b }))).toEqual(
+      ["agent", "recent", "file"],
+    )
   })
 
   test("builds slash commands as custom commands before enabled builtin commands", () => {
     expect(
       promptSlashCommands({
-        customCommands: [
-          { name: "deploy", description: "Ship it", source: "skill" },
-        ],
+        customCommands: [{ name: "deploy", description: "Ship it", source: "skill" }],
         commandOptions: [
           { id: "suggested.ignore", title: "Ignore", slash: "ignore" },
           { id: "disabled.ignore", title: "Disabled", slash: "disabled", disabled: true },
@@ -49,6 +46,13 @@ describe("prompt popover controller", () => {
         ],
       }),
     ).toEqual([
+      {
+        id: "documents.open",
+        trigger: "docs",
+        title: "Documents",
+        description: "Attach a document as an editable file",
+        type: "builtin",
+      },
       {
         id: "custom.deploy",
         trigger: "deploy",
@@ -64,6 +68,23 @@ describe("prompt popover controller", () => {
         description: "Show help",
         keybind: "mod+/",
         type: "builtin",
+      },
+    ])
+  })
+
+  test("builds document picker options from content-free index metadata", () => {
+    expect(
+      promptDocumentOptions([
+        { documentId: "doc-1", displayName: "Plan", originKind: "managed", placementKind: "local", status: "draft" },
+      ]),
+    ).toEqual([
+      {
+        type: "document",
+        documentId: "doc-1",
+        display: "Plan",
+        originKind: "managed",
+        placementKind: "local",
+        status: "draft",
       },
     ])
   })

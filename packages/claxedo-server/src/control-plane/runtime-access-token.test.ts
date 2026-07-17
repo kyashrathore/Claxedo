@@ -7,6 +7,11 @@ import {
   verifySupervisorBackplaneToken,
   supervisorBackplaneTokenAudience,
   supervisorBackplaneTokenIssuer,
+  documentSessionTokenAudience,
+  mintDocumentSessionToken,
+  verifyDocumentSessionToken,
+  mintDocumentRelayJobToken,
+  verifyDocumentRelayJobToken,
 } from "./runtime-access-token"
 import {
   runtimeAccessTokenAudience,
@@ -131,6 +136,68 @@ describe("runtimeAccessTokenSigner", () => {
     await expect(
       sign({ subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toThrow(/signer/i)
+  })
+})
+
+describe("document session capabilities", () => {
+  test("pins document, project, workspace, and session scope", async () => {
+    const { privatePem } = await ed25519PrivateKeyPem()
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privatePem,
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
+    }
+    const scope = { orgId: "org_1", projectId: "project_1", workspaceId: "ws_1", sessionId: "session_1", documentId: "document_1", jobExpiresAt: Math.floor(Date.now() / 1000) + 3600 }
+    const capability = await mintDocumentSessionToken(scope, env)
+    const { jobExpiresAt: _jobExpiresAt, ...expected } = scope
+    await expect(verifyDocumentSessionToken(capability.token, expected, env)).resolves.toMatchObject(scope)
+    await expect(verifyDocumentSessionToken(capability.token, { ...expected, documentId: "document_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentSessionToken(capability.token, { ...expected, sessionId: "session_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentSessionToken(capability.token, { ...expected, projectId: "project_2" }, env)).rejects.toThrow()
+  })
+
+  test("rejects an expired document capability", async () => {
+    const { privatePem, privateKey } = await ed25519PrivateKeyPem()
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privatePem,
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
+    }
+    const token = await new SignJWT({
+      org_id: "org_1", project_id: "project_1", workspace_id: "ws_1",
+      session_id: "session_1", document_id: "document_1", operation: "document.write",
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(runtimeAccessTokenIssuer)
+      .setAudience(documentSessionTokenAudience)
+      .setSubject("session:session_1")
+      .setIssuedAt(Math.floor(Date.now() / 1000) - 120)
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 60)
+      .setJti("expired")
+      .sign(privateKey)
+    await expect(verifyDocumentSessionToken(token, {
+      orgId: "org_1", projectId: "project_1", workspaceId: "ws_1",
+      sessionId: "session_1", documentId: "document_1",
+    }, env)).rejects.toThrow()
+  })
+})
+
+describe("document relay job capabilities", () => {
+  test("binds both workspaces, session, project, document, operation, and absolute expiry", async () => {
+    const { privatePem } = await ed25519PrivateKeyPem()
+    const env = { CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privatePem, CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA" }
+    const scope = {
+      userId: "user_1", orgId: "org_1", projectId: "project_1", localWorkspaceId: "local_1",
+      cloudWorkspaceId: "cloud_1", sessionId: "session_1", documentId: "document_1",
+      operations: ["hydrate", "read", "write"] as const,
+      jobExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+    }
+    const job = await mintDocumentRelayJobToken(scope, env)
+    const expected = { ...scope, operation: "read" as const }
+    await expect(verifyDocumentRelayJobToken(job.token, expected, env)).resolves.toMatchObject(expected)
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, documentId: "document_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, projectId: "project_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, localWorkspaceId: "local_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, cloudWorkspaceId: "cloud_2" }, env)).rejects.toThrow()
+    await expect(verifyDocumentRelayJobToken(job.token, { ...expected, operation: "resolve" }, env)).rejects.toThrow()
   })
 })
 

@@ -189,6 +189,8 @@ export type ElectronAPI = {
   runUpdater: (alertOnFail: boolean) => Promise<void>
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void>
+  getStartAtLogin: () => Promise<boolean>
+  setStartAtLogin: (enabled: boolean) => Promise<void>
   setNativeTheme: (theme: "light" | "dark" | "system") => void
   getDroppedFilePaths: (files: File[]) => string[]
   browser: BrowserBridge

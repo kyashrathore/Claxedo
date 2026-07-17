@@ -2,7 +2,8 @@
 title: "Claxedo Documents Core — Technical Implementation Plan"
 type: feat
 date: 2026-07-16
-status: active
+status: complete
+completed: 2026-07-17
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code
@@ -231,6 +232,48 @@ works, directly on the file. The mapping:
 | MCP tools `documents_list` / `documents_open`; WorkGraph ingest snapshot | `packages/claxedo-mcp`, `packages/claxedo-server` | New/Changed |
 | Hydration manifest + write-back sync | session runtime (workspace-runtime / agent-sdk-runtime seam per Q15) | New (hosted/remote only) |
 | Deletions | `page-content.ts`, `doc.sql.ts`, `doc-store.ts`, `routes/docs.ts`, from-repo import, export-from-DB, `page-editor-ai.ts` whole-doc path | Deleted (D13) |
+
+### Placement and layering map
+
+Every new module has exactly one home, chosen to match the repo's existing
+layer conventions — nothing lands "here and there". A reviewer agent checks
+each unit's diff against this map and the import-graph guards; a file outside
+its layer is a finding, not a style nit.
+
+**claxedo-server** (layers enforced by `architecture.test.ts` import-graph
+guards and the `route-ownership.ts` / `architecture-ownership.ts` registries):
+
+| Module | Home | Pattern it follows |
+| --- | --- | --- |
+| `DocumentWorkspace` port, backends, versions, history, watch, hydration contracts | `src/documents/` | Domain services as src-root modules (`document-host/`, `workgraph-host/`, `credentials/`). SQLite/fs coupling is allowed here as a Worker-forbidden local adapter; the hosted-managed backend must stay Worker-safe or split its adapter the way `workgraph-host` splits Convex — verified against the import-graph guard. |
+| HTTP surface | `src/routes/documents.ts` | Thin route adapter only (scope resolution → service call → typed error), per the architecture-ownership "Unit 5" verdicts that keep SQLite-coupled route adapters under `routes/`. **No business logic in routes.** |
+| Index table defs | `src/storage/document-index.sql.ts` | Drizzle defs live in `storage/` (`page.sql.ts` precedent); migration under `storage/claxedo-migration/<ts>_documents_reset/`. |
+| Registry updates | `route-ownership.ts` (replace `/pages` and `/api/claxedo/docs` entries), `architecture-ownership.ts` (remove pages rows, add documents verdicts) | Mandatory, not optional — the architecture guard tests fail otherwise. |
+| Mounting | `server.ts` **and** `hosted-app.ts` | Both compositions, preserving the unsigned-local gate discipline. |
+
+**claxedo-mcp:** `src/documents-tools.ts` (+ test), following the flat
+`<domain>-tools.ts` convention (`workgraph-tools.ts`, `browser-tools.ts`),
+registered through the same `tool-policy.ts` path.
+
+**claxedo-app** (feature-module layout; `agents-md.guard` requires the
+feature `AGENTS.md` to describe the layout; debt-ratchet pins apply):
+
+| Module | Home | Rule |
+| --- | --- | --- |
+| HTTP client | `features/documents/data/documents-api.ts` | `data/` = wire clients only (existing shape). |
+| Persistence controller, recovery drafts | `features/documents/state/` | Headless state, no DOM imports (workgraph's `change-sync.ts` precedent for feature-local sync logic). |
+| Markdown contract, detector, fixtures | `features/documents/markdown/` | Pure module; no fetch, no editor imports. |
+| Editor components | `features/documents/editor/` | UI only — no persistence timers, no fetch; consumes the controller. |
+| Cross-feature actions | `features/documents/actions/` | `doc-work-action.ts` precedent (honest-unavailability doctrine). |
+| `/docs` picker exposure | `features/documents/app-ports.ts` → consumed by the session feature's composer | Features never deep-import each other; cross-feature flows go through ports/integrations (existing `app-ports.ts` seam; composer integration point per Q13). |
+| Surface wiring | `app/integrations/first-party-content-surfaces.tsx`, workbench `state/{orchestration,route-intent,surface-route,types}.ts` | Updated in place; surface ids stay `page`/`pages-index` per KTD13. |
+
+**workspace-runtime / agent-sdk-runtime:** the Q2 session grant lands beside
+`resolveWorkspacePath` (path authority lives in workspace-runtime's
+target/session-env today). The hydration write-back loop's owner is fixed by
+the Q14 ADR (candidates: workspace-runtime session env — `materializeCodexAuth`
+precedent — or a VM sidecar); it is explicitly **not** claxedo-app's and
+**not** the MCP layer's job.
 
 ### The port (target shape, refined in D1)
 
@@ -470,6 +513,95 @@ an explicitly asserted behavior before that unit is done.
   documented normalization); asserted in D5's fixture suite with real files
   from `docs/**`.
 
+## Cleanup Inventory — nothing Pages-stale remains
+
+Enumerated from the tree on 2026-07-16 (not from memory). Every row has a
+disposition and an owning unit; D13 is done only when this table is empty of
+pending rows. Three dispositions: **DELETE** (remove file + its tests),
+**REPLACE** (new-named successor per the placement map; old file deleted),
+**ADAPT** (updated in place to the new contracts).
+
+### claxedo-server
+
+| Artifact | Disposition | Unit |
+| --- | --- | --- |
+| `routes/pages.ts`, `routes/pages.test.ts` | DELETE (successor: `routes/documents.ts`) | D13 |
+| `routes/pages-auth.test.ts`, `routes/pages-git.test.ts` | REPLACE — the auth-matrix and git-guard *coverage* is rewritten against `/documents` (D3/D4), then the old specs are deleted | D13 |
+| `routes/page-store.ts` | DELETE (successor: `documents/index-store.ts`) | D13 |
+| `routes/page-content.ts` (420-line Markdown⇄Tiptap converter) | DELETE — no successor; Markdown is the wire format | D13 |
+| `routes/docs.ts`, `routes/docs.test.ts` (standalone `/api/claxedo/docs`) | DELETE with the revision system | D10 |
+| `src/doc-store.ts`, `src/document-store.ts` | DELETE with the revision system | D10 |
+| `src/document-host/` (`convex-api.ts`, `convex-store.ts`, `convex-store.test.ts` — hosted Convex adapter for the revision store) | DELETE with the revision system; coordinate with the WorkGraph goal owner (its adapter seam consumes this) | D10 |
+| `storage/page.sql.ts` | DELETE (successor: `storage/document-index.sql.ts`) | D2/D13 |
+| `storage/doc.sql.ts` | DELETE | D10 |
+| `routes/pages-arena.ts` + `routes/page-arena-{events,format,opencode,runtime,settings,state,store,wave-runner}.ts` + `storage/page-arena.sql.ts` | ADAPT or DELETE per the Q7 audit — disposition rule: **no file named `*page-arena*` remains**; Arena is either re-pointed at document index ids (renamed `document-arena*`, content via `read(handle)`) or removed pending its own design | D13 |
+| `storage/repair.ts` + `repair.test.ts` — **trap:** currently recreates `claxedo_page`, `claxedo_document`, `claxedo_document_revision`, page-status, and arena tables via `CREATE TABLE IF NOT EXISTS`; left alone it silently resurrects every dropped table | REPLACE — rewrite for the target schema only (or delete if the migration runner makes self-repair redundant) | D2 |
+| Migrations `20260310000000_initial`, `20260310000001_file_path`, `20260612000000_pages_org_project`, `20260714000100_page_docs_v2_binding` | KEEP as append-only history; add one destructive `_documents_reset` migration dropping `claxedo_page`, `claxedo_document`, `claxedo_document_revision`, and arena tables. History files are inert once `repair.ts` stops recreating them | D2 |
+| `server.ts` / `hosted-app.ts` pages+docs route mounting | ADAPT (mount `/documents`, drop `/pages` and `/api/claxedo/docs`) | D3/D13 |
+| `route-ownership.ts` (`/pages`, `/api/claxedo/docs` entries), `architecture-ownership.ts` (pages rows) | ADAPT — guard tests fail if forgotten | D3/D13 |
+| `hosted-app.test.ts`, `proxy.test.ts`, `architecture.test.ts` pages references | ADAPT | D13 |
+
+### claxedo-app — `features/documents/`
+
+| Artifact | Disposition | Unit |
+| --- | --- | --- |
+| `data/pages-api.ts` (+test) | REPLACE → `data/documents-api.ts` | D7 |
+| `data/docs-api.ts` (+test) (revision locator client) | REPLACE → snapshot-locator schema in `actions/` per D10, then DELETE | D10 |
+| `data/arena-api.ts` (+test), `editor/arena-sse.ts` (+test), `editor/page-arena-dock.tsx` | Follow the Arena disposition rule (Q7) | D13 |
+| `editor/page-editor.tsx` (1001 lines) + `page-editor-{model,utils,chrome,dock,overlay,toolbar,toc,geometry,tiptap}.*` + `page-editor.css` + `page-editor-state-flow.test.ts` + `page-editor.integration.vitest.tsx` | REPLACE → the D7 composition (`document-editor.tsx` + owned children); old files deleted, old tests deleted (not skipped) | D7/D13 |
+| `editor/page-editor-ai.ts` (+test) | SPLIT: selection quick actions extracted and retained (KTD8c); the whole-document path and 14k-char context injection DELETED | D13 |
+| `editor/page-index.tsx` (+`page-index.test.ts`, `page-index.vitest.tsx`) | REPLACE → metadata-only index per D7 | D7 |
+| `editor/tab-page.tsx` | REPLACE → open flow of the D7 composition | D7 |
+| `editor/mermaid-block.ts`, `editor/mermaid-keyboard.ts` (+tests) | ADAPT into `rich-mode` (must serialize per EC-F4) | D7 |
+| `editor/slash-commands.tsx` (+test) | ADAPT (in-editor block commands are unrelated to `/docs`; keep) | D7 |
+| `editor/status-editor-dialog.tsx`, `editor/status-editor.test.ts` | ADAPT to index metadata (KTD13 statuses) | D13 |
+| `actions/page-actions.ts` (+test) | ADAPT to index entries | D13 |
+| `actions/doc-actions.ts`, `actions/doc-work-action.ts` (+tests) | ADAPT to the snapshot locator | D10 |
+| `ui/content/page-content.tsx`, `ui/content/pages-index-content.tsx` | ADAPT (surface wrappers; ids stay per KTD13) | D7 |
+| `app-ports.ts` | ADAPT (+ `/docs` picker port) | D8 |
+| `AGENTS.md` | REWRITE for the new layout (agents-md guard requires it) | D13 |
+
+### claxedo-app — outside the feature (adapt in place)
+
+All verified references outside `features/documents/`: workbench state
+(`orchestration.ts` `openPage`/`openPagesIndex`, `route-intent.ts`,
+`surface-route.ts`, `types.ts` + their tests), `app/integrations/
+first-party-content-surfaces.tsx` (+test), `compact-switcher/
+switcher-items.ts` (`canUsePages` gate) (+tests), `rail/{global-navigation,
+rail-sidebar, rail-sidebar-shell, workbench-shell-header}.tsx`,
+`review/review-workspace.tsx`, `features/session/ui/message-timeline.tsx`
+(page-session shortcut), `app/demo/handlers.ts` (demo pages fixtures),
+`architecture/test-support/mock-api.ts` (+test) (mocked pages endpoints),
+`platform/api/api.ts` (+test), `platform/runtime/
+workspace-runtime-route-audit.test.ts`. Each is ADAPT in D7/D13: surface ids
+and route shape stay (KTD13); API paths, types, mocks, and user-visible
+strings move to Documents. e2e `core-docks.spec.ts` references are adapted in
+D14.
+
+**Explicit non-targets:** `packages/protocol` / `packages/sdk` grep hits for
+"pages" are pagination vocabulary, not the Pages product — untouched. The
+shared `@/ui/rich-text` editor stays (KTD5).
+
+### Final staleness sweep (D13 exit gate)
+
+After the sweep, these greps over `packages/**/src` (tests included,
+migrations and this docs history excluded) must return nothing:
+
+```text
+claxedo_page            page_context           markdownFromContent
+pagesApi                pages-api              markdownToDoc
+PageEditor              parsePageContent       document_revision_id
+"/pages"                page-arena             pages-arena
+canUsePages             from-repo import path  claxedo_document_revision
+```
+
+Allowed survivors, by decision (KTD13): the surface ids `page` /
+`pages-index`, the `/page/<id>` route shape, and workbench function names
+(`openPage`) that encode surface identity rather than the product name. The
+sweep list lives in a repo script (`scripts/` or a guard test beside the
+architecture guards) so it keeps running after this plan closes, not just
+once.
+
 ## Implementation Units
 
 Unit numbering is D1–D14. Requirements refer to the brainstorm (R1–R29) as
@@ -512,7 +644,10 @@ Contract gates.
 - **Files:** `packages/claxedo-server/src/storage/document-index.sql.ts`,
   destructive Drizzle migration (drop `claxedo_page`, create target tables;
   `claxedo_page_status` kept per KTD13), `documents/index-store.ts`
-  (+ tests). `doc.sql.ts` untouched until D10.
+  (+ tests). `doc.sql.ts` untouched until D10. **Also owns the
+  `storage/repair.ts` rewrite** (Cleanup Inventory trap: it recreates every
+  legacy table via `CREATE TABLE IF NOT EXISTS` and would silently resurrect
+  dropped Pages tables).
 - **Approach:** Fields per KTD12; zod-validated union so a managed entry
   cannot carry repository locator fields and vice versa. Metadata-only list
   projections at the SQL level (explicit column select — the current
@@ -785,15 +920,16 @@ Contract gates.
 - **Requirements:** Clean Replacement Rules (2026-07-15 plan); R19 (document
   owns no chat — session binding stays optional metadata).
 - **Dependencies:** D7, D9, D10; Q7 (Arena write audit, first task).
-- **Files:** delete `routes/pages.ts`, `page-content.ts`, from-repo content
-  import, DB-export endpoint (export becomes file download through
-  `read()`), the whole-document path in `page-editor-ai.ts` (selection quick
-  actions kept per KTD8); adapt Arena (`page-arena-*`) to `read(handle)`
-  context per Q7; statuses re-mounted on the index (KTD13); `canUsePages`
-  gate and strings renamed to Documents.
-- **Approach:** Deletion-by-grep discipline: after the sweep, greps for
-  `markdownFromContent|markdownToDoc|page\.content|parsePageContent` return
-  only history. Old tests for removed contracts deleted, not skipped.
+- **Files:** the **Cleanup Inventory** section is this unit's authoritative
+  work list — every row marked D13 (and any row an earlier unit left
+  pending), including the Arena disposition (Q7), the outside-the-feature
+  adaptation list, `canUsePages`, statuses re-mount (KTD13), and the
+  ownership-registry updates.
+- **Approach:** Work the inventory table row by row; a row is closed by a
+  commit that deletes/replaces/adapts it *and* its tests. Finish by
+  installing the **final staleness sweep** as a persistent guard (script or
+  guard test beside the architecture guards) so the gate outlives this plan.
+  Old tests for removed contracts deleted, not skipped.
 - **Test scenarios:** Arena still runs against a document (context injected
   from `read()`); export download equals file bytes exactly; no route
   accepts Tiptap JSON anywhere (negative tests); selection quick action
@@ -873,7 +1009,8 @@ depends on it. D14 (local scope) can run after Wave 4 and re-run after Wave 5.
 | App | D5–D9, D13 | From `packages/claxedo-app`: `tsgo -b` directly, `bun run test` (`--conditions=browser`); `bun run build` in `packages/workgraph` first when its src changed |
 | Markdown fidelity | D5 | Zero false negatives on the adversarial corpus; byte-stability on all of `docs/**`; churn bar (EC-F7) measured and reported |
 | Agent integration | D8, D9 | A real local session edits a managed document via its own file tools; transcript + on-disk hash change attached; MCP tools return no fabricated paths |
-| Grep gates | D2, D10, D13 | No content column, no Tiptap-JSON persistence, no `markdownFromContent`, no `document_revision_id` outside migrations, no `.catch(() => {})` in documents code |
+| Cleanup + staleness | D2, D10, D13 | Cleanup Inventory table has zero pending rows; the final staleness sweep (see Cleanup Inventory) returns nothing and is installed as a persistent guard; no `.catch(() => {})` in documents code |
+| Placement review | Every unit | Each unit's diff checked against the Placement and layering map + import-graph guards (`architecture.test.ts`, route-ownership registries, agents-md guard); out-of-layer files are findings |
 | Browser + vision | D7, D9, D14 | Recordings/screenshots at every claimed success point, actually reviewed with vision; visual verdict reported separately from test verdict; geometric assertions (bounding box + hit-test) in e2e |
 | Hosted | D11 | Conformance vs emulator **and** staged real-bucket smoke; repository proof does not waive deployment proof |
 | Security | D12 | Reviewed capability design doc before implementation; scoped-capability negative tests |
@@ -881,22 +1018,23 @@ depends on it. D14 (local scope) can run after Wave 4 and re-run after Wave 5.
 
 ## Definition of Done
 
-- [ ] D1 port + local backend: conformance green, EC-A cases named tests, crash-atomicity simulated, snapshot bounds + pin-aware GC proven. Progress:
-- [ ] D2 index schema: content-free union schema installed, destructive reset applied, metadata-only list proven at SQL level. Progress:
-- [ ] D3 routes: CAS (428/409) + auth matrix + size limits + snapshot restore + SSE reasons tested; standard local startup boots the server with evidence (Q3 closed). Progress:
-- [ ] D4 repository backend: EC-C1..C9 tested; conformance green; recovery states render (not blank). Progress:
-- [ ] D5 markdown contract: `@tiptap/markdown@3.23.4` adopted; adversarial corpus zero false negatives; `docs/**` byte-stability; frontmatter opaque round-trip (Q5); churn bar measured (EC-F7); fidelity report filed. Progress:
-- [ ] D6 controller: state machine fully test-named (EC-B1..B7); flush-on-blur proven; no silent catch; local recovery draft survives simulated crash. Progress:
-- [ ] D7 editor: composition ≤300 lines; open-without-edit writes nothing (API-asserted); source mode labeled with reason; index metadata-only (network-asserted); R18 a11y smoke; vision-reviewed recording of save/conflict/recovery. Progress:
-- [ ] D8 agent access: `/docs` mention working (Q13 closed); `documents_list`/`documents_open` honest (EC-D5/D6); local grant contained (EC-D11, Q2 closed); live session edits a managed doc with its own tools — transcript attached. Progress:
-- [ ] D9 reactivity + history: live refresh on agent edit (vision-reviewed recording); dirty-editor conflict preserves both sides (EC-B3); dead-watcher correctness (EC-B8); out-of-contract refresh lands in source mode with restorable previous version (EC-D2); version restore CAS-honest. Progress:
-- [ ] D10 workgraph seam: snapshot-at-ingest locator live in intake; pins enforced; `moveToRepository` journal crash-cases tested; revision tables + docs routes deleted; grep gate green. Progress:
-- [ ] D11 hosted backend + sync: conformance green; single-document hydration proven by object-count; write-back CAS conflicts park honestly (EC-D7..D10); VM-loss criterion met; staged real-bucket smoke recorded. Progress:
-- [ ] D12 relay-brokered local hydration: capability design security-reviewed; scoped-capability negative tests; live relay round-trip smoke — or unit explicitly descoped by owner decision. Progress:
-- [ ] D13 sweep: all grep gates green; Arena adapted per Q7 audit; export equals file bytes; no route accepts Tiptap JSON; selection quick actions still work editor-local. Progress:
-- [ ] D14 proof: every Success Criterion a named journey including the agent live-edit journey; geometric assertions; evidence watched with vision and visual verdict reported separately. Progress:
-- [ ] Unknowns register: Q1–Q15 each closed with a recorded answer or an explicit owner-approved default. Progress:
-- [ ] Docs: `docs/plans/README.md` updated; `contract.md` (markdown subset) and the Q8/Q14 ADRs checked in; the brainstorm annotated with the R19–R25 supersession. Progress:
+- [x] D1 port + local backend: conformance green, EC-A cases named tests, crash-atomicity simulated, snapshot bounds + pin-aware GC proven. Progress: port conformance and atomic/snapshot suites passed in the final server matrix.
+- [x] D2 index schema: content-free union schema installed, destructive reset applied, metadata-only list proven at SQL level. Progress: migration/store suites and live metadata-only list passed.
+- [x] D3 routes: CAS (428/409) + auth matrix + size limits + snapshot restore + SSE reasons tested; standard local startup boots the server with evidence (Q3 closed). Progress: route matrix passed; unsigned startup returned `/documents` 200, retired `/pages` 404, and CAS behaved correctly.
+- [x] D4 repository backend: EC-C1..C9 tested; conformance green; recovery states render (not blank). Progress: repository suite passed and the retained live browser journey renders actionable deletion recovery.
+- [x] D5 markdown contract: `@tiptap/markdown@3.23.4` adopted; adversarial corpus zero false negatives; `docs/**` byte-stability; frontmatter opaque round-trip (Q5); churn bar measured (EC-F7); fidelity report filed. Progress: production extension parity is shared and the current 61-file corpus report is recorded in release evidence.
+- [x] D6 controller: state machine fully test-named (EC-B1..B7); flush-on-blur proven; no silent catch; local recovery draft survives simulated crash. Progress: controller/recovery matrix passed; final picker race regressions passed 9/9.
+- [x] D7 editor: composition ≤300 lines; open-without-edit writes nothing (API-asserted); source mode labeled with reason; index metadata-only (network-asserted); R18 a11y smoke; vision-reviewed recording of save/conflict/recovery. Progress: headed rich canaries and retained mock/live recordings passed visual review.
+- [x] D8 agent access: `/docs` mention working (Q13 closed); `documents_list`/`documents_open` honest (EC-D5/D6); local grant contained (EC-D11, Q2 closed); live session edits a managed doc with its own tools — transcript attached. Progress: real session tool smoke and live `/docs` granted-path journey passed with exact hashes.
+- [x] D9 reactivity + history: live refresh on agent edit (vision-reviewed recording); dirty-editor conflict preserves both sides (EC-B3); dead-watcher correctness (EC-B8); out-of-contract refresh lands in source mode with restorable previous version (EC-D2); version restore CAS-honest. Progress: complete mock/live reactivity, conflict, source fallback, and restore journeys passed.
+- [x] D10 workgraph seam: snapshot-at-ingest locator live in intake; pins enforced; `moveToRepository` journal crash-cases tested; revision tables + docs routes deleted; grep gate green. Progress: WorkGraph/move suites passed and the persistent retirement guard is green.
+- [x] D11 hosted backend + sync: conformance green; single-document hydration proven by object-count; write-back CAS conflicts park honestly (EC-D7..D10); VM-loss criterion met; staged real-bucket smoke recorded. Progress: hosted/Miniflare matrix passed and authenticated staging R2 exact-byte/CAS smoke is recorded.
+- [x] D12 relay-brokered local hydration: capability design security-reviewed; scoped-capability negative tests; live relay round-trip smoke — or unit explicitly descoped by owner decision. Progress: scoped negative matrix and live relay read/write/stale-CAS smoke passed.
+- [x] D13 sweep: Cleanup Inventory has zero pending rows; final staleness sweep returns nothing and is installed as a persistent guard; Arena disposition executed per Q7 (no `*page-arena*` file remains); `repair.ts` cannot resurrect legacy tables; export equals file bytes; no route accepts Tiptap JSON; selection quick actions still work editor-local. Progress: retired files were renamed/deleted, CSS joined the guard, and the final guard passed 2/2.
+- [x] D14 proof: every Success Criterion a named journey including the agent live-edit journey; geometric assertions; evidence watched with vision and visual verdict reported separately. Progress: full mock 11/11 and live 5/5 evidence is retained under `docs/plans/evidence/documents/`.
+- [x] Placement: every new module sits at its mapped home; ownership registries updated; architecture/agents-md guards green; an independent reviewer confirmed no out-of-layer files. Progress: package architecture gate passed 165/165; final independent placement review recorded no blocker.
+- [x] Unknowns register: Q1–Q15 each closed with a recorded answer or an explicit owner-approved default. Progress: decisions are recorded in `docs/decisions/2026-07-17-documents-core-implementation-answers.md`.
+- [x] Docs: `docs/plans/README.md` updated; `contract.md` (markdown subset) and the Q8/Q14 ADRs checked in; the brainstorm annotated with the R19–R25 supersession. Progress: index, contract, ADRs, implementation answers, release transcript, and visual verdict are present.
 
 ## Execution: parallelize with agents and workflows
 

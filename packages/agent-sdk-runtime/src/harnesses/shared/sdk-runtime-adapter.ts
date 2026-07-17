@@ -41,6 +41,7 @@ import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared
 import type { AgentRuntimeStore } from "../shared/runtime-store"
 import { hasConcreteSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
+import { firstTurnErrorData } from "../../first-turn-error"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStore
@@ -415,7 +416,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       directory,
       created: projector.created(),
       completed: Date.now(),
-      error: { name: "UnknownError", data: { message: promptError } },
+      error: { name: "UnknownError", data: firstTurnErrorData(promptError) },
       variant: input.variant,
     }))
     this.store.appendEvent({

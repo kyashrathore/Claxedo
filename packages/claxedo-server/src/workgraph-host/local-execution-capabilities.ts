@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process"
+import { stat } from "node:fs/promises"
+import path from "node:path"
 import { promisify } from "node:util"
 import { normalizeHarnessIdentity, sdkModelOptions } from "@claxedo/agent-sdk-runtime"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
+import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
 import { OPENCODE_INTERNAL_BASE } from "../opencode-engine"
 import { piProviderCatalog } from "../pi-provider-catalog"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"
@@ -23,6 +26,15 @@ export function createLocalExecutionCapabilities(input: Readonly<{
   harness(): Promise<string>
   connections?: ConnectionsService
   resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
+  /**
+   * Validates a caller-supplied project directory against the server's
+   * authoritative known-projects list, returning the canonical absolute
+   * directory to enumerate refs from — or `undefined` when the directory is not
+   * a known project. Base-revision enumeration NEVER runs git against an
+   * unvalidated path: an unknown directory fails closed with a typed repository
+   * capability error. Omit to keep every read scoped to the boot repository.
+   */
+  resolveRepositoryDirectory?: (directory: string) => Promise<string | undefined> | string | undefined
   now?: () => number
 }>) {
   return createExecutionCapabilitiesPort({
@@ -63,19 +75,23 @@ export function createLocalExecutionCapabilities(input: Readonly<{
           : harnesses,
       }
     },
-    readRepository: async () => {
+    // Base-revision enumeration is directory-scoped: when the caller names a
+    // project, its refs come from THAT repository (validated first), otherwise
+    // from the boot repository — exactly the prior behavior.
+    readRepository: async (_context, request) => {
+      const directory = await resolveScopedRepositoryDirectory(input, request.directory)
       const run = promisify(execFile)
       const [, refs, remoteUrl] = await Promise.all([
-        run("git", ["-C", input.repositoryDirectory, "rev-parse", "--verify", "HEAD^{commit}"]),
+        run("git", ["-C", directory, "rev-parse", "--verify", "HEAD^{commit}"]),
         run("git", [
           "-C",
-          input.repositoryDirectory,
+          directory,
           "for-each-ref",
           "--format=%(refname:short)",
+          "--sort=-committerdate",
           "refs/heads",
-          "refs/remotes",
         ]).then((result) => result.stdout.split("\n").map((value) => value.trim()).filter(Boolean)),
-        run("git", ["-C", input.repositoryDirectory, "remote", "get-url", "origin"])
+        run("git", ["-C", directory, "remote", "get-url", "origin"])
           .then((result) => result.stdout.trim() || undefined, () => undefined),
       ])
       return { ...(remoteUrl ? { remoteUrl } : {}), baseRevisions: ["HEAD", ...refs] }
@@ -97,6 +113,44 @@ export function createLocalExecutionCapabilities(input: Readonly<{
     connectionToolIds: WorkGraphConnectionToolNames,
     ...(input.now ? { now: input.now } : {}),
   })
+}
+
+/**
+ * Resolves the directory whose refs base-revision enumeration should read.
+ *
+ * Fail-closed security invariant: git is never invoked against an arbitrary
+ * caller-supplied path. A requested directory is honored only when it is an
+ * absolute path that the server's authoritative known-projects validator
+ * recognizes AND that exists on disk. Anything else throws a typed repository
+ * capability error (never a silent boot-repo enumeration of the wrong repo).
+ * No directory → the boot repository, exactly as before.
+ */
+async function resolveScopedRepositoryDirectory(
+  input: Readonly<{
+    repositoryDirectory: string
+    resolveRepositoryDirectory?: (directory: string) => Promise<string | undefined> | string | undefined
+  }>,
+  requested: string | undefined,
+) {
+  const trimmed = requested?.trim()
+  if (!trimmed) return input.repositoryDirectory
+  if (!input.resolveRepositoryDirectory || !path.isAbsolute(trimmed)) {
+    throw unknownRepository(trimmed)
+  }
+  const resolved = (await input.resolveRepositoryDirectory(trimmed))?.trim()
+  if (!resolved || !path.isAbsolute(resolved)) throw unknownRepository(trimmed)
+  const exists = await stat(resolved).then((entry) => entry.isDirectory(), () => false)
+  if (!exists) throw unknownRepository(trimmed)
+  return resolved
+}
+
+function unknownRepository(directory: string) {
+  return new ExecutionCapabilitiesUnavailableError(
+    "repository",
+    "repository_unavailable",
+    `The requested project directory (${directory}) is not a known execution repository`,
+    false,
+  )
 }
 
 function defaultAgent(harness: string) {

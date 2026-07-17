@@ -84,8 +84,8 @@ describe("source admission", () => {
       adapterId: "claxedo_docs",
       projectId: "project-1",
       documentId: "doc-1",
-      documentRevisionId: "doc-revision-1",
-      documentRevisionNumber: 1,
+      snapshotId: "doc-revision-1",
+      placement: "local" as const,
       authoredAt: 10,
       authoredBy: owner().actor,
       contentHash: ContentHashSchema.parse(hashWorkSourceContent(firstContent)),
@@ -104,9 +104,8 @@ describe("source admission", () => {
       content: secondContent,
       revision: {
         ...first,
-        documentRevisionId: "doc-revision-2",
-        documentRevisionNumber: 2,
-        parentDocumentRevisionId: "doc-revision-1",
+        snapshotId: "doc-revision-2",
+        placement: "local",
         contentHash: ContentHashSchema.parse(hashWorkSourceContent(secondContent)),
       },
       binding: { workSourceId: id("source-1"), latestRevisionId: id("revision-1") },
@@ -116,7 +115,7 @@ describe("source admission", () => {
     expect(requests.map((request) => request.command)).toEqual([
       expect.objectContaining({ type: "create_work_source", authoring: first }),
       expect.objectContaining({ type: "propose_admission", source: expect.objectContaining({ revisionId: "revision-1" }) }),
-      expect.objectContaining({ type: "revise_work_source", expectedRevisionId: "revision-1", authoring: expect.objectContaining({ documentRevisionId: "doc-revision-2" }) }),
+      expect.objectContaining({ type: "revise_work_source", expectedRevisionId: "revision-1", authoring: expect.objectContaining({ snapshotId: "doc-revision-2" }) }),
       expect.objectContaining({ type: "propose_admission", targetStreamId: "stream-1", source: expect.objectContaining({ revisionId: "revision-2" }) }),
     ])
     await expect(adapter.turnIntoWork(owner(), {

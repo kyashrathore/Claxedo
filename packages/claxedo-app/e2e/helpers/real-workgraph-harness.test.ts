@@ -81,35 +81,29 @@ describe("real WorkGraph HTTP harness", () => {
     })
   })
 
-  test("propagates client disconnects into WorkGraph long-poll cancellation before close", async () => {
+  test("translates a client disconnect into request cancellation rather than a harness failure", async () => {
     harness = await createRealWorkGraphHarness({ port: 0 })
-    const poll = httpRequest(`${harness.apiUrl}/api/workgraph/changes?after=0&waitMs=30000`)
-    const sent = new Promise<void>((resolve, reject) => {
-      poll.once("finish", resolve)
-      poll.once("error", reject)
-    })
-    poll.end()
-    await sent
-    const disconnected = new Promise<void>((resolve) => poll.once("close", resolve))
-    poll.on("error", () => undefined)
-    poll.destroy()
+    const held = await holdRequest(harness.apiUrl)
+    harness.assertHealthy()
+
+    const disconnected = new Promise<void>((resolve) => held.once("close", resolve))
+    held.on("error", () => undefined)
+    held.destroy()
     await disconnected
+    // The harness translates the disconnect into an AbortController cancellation.
+    // Had it instead surfaced the aborted read as a real error, `respond` would
+    // have rejected, `capture` would have recorded it, and both of the following
+    // would throw.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    harness.assertHealthy()
 
     await harness.close()
     harness = undefined
   })
 
-  test("cancels an admitted long poll when the harness owns teardown", async () => {
+  test("cancels an admitted in-flight request when the harness owns teardown", async () => {
     harness = await createRealWorkGraphHarness({ port: 0 })
-    const poll = httpRequest(`${harness.apiUrl}/api/workgraph/changes?after=0&waitMs=2000`)
-    const sent = new Promise<void>((resolve, reject) => {
-      poll.once("finish", resolve)
-      poll.once("error", reject)
-    })
-    poll.on("error", () => undefined)
-    poll.end()
-    await sent
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await holdRequest(harness.apiUrl)
 
     const closing = harness.close()
     expect(await Promise.race([
@@ -138,6 +132,26 @@ describe("real WorkGraph HTTP harness", () => {
     }
   })
 })
+
+// The `/changes` long-poll is gone (plan 2026-07-17-004), so nothing the harness
+// serves stays open on its own. These teardown properties are still real, so hold
+// a request open the only way left: announce a body and never send it. The server
+// admits the request, parks in `readIncomingBody`, and stays in `activeRequests` —
+// exactly the in-flight state the long poll used to create.
+async function holdRequest(apiUrl: string) {
+  const held = httpRequest(`${apiUrl}/api/workgraph/commands`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "content-length": "1024" },
+  })
+  await new Promise<void>((resolve, reject) => {
+    held.once("socket", (socket) => socket.once("connect", resolve))
+    held.once("error", reject)
+    held.flushHeaders()
+  })
+  // Let the server parse the headers, admit the request, and park on the body.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  return held
+}
 
 async function command(token: string, title: string) {
   const response = await fetch(`${harness!.apiUrl}/api/workgraph/commands`, {

@@ -263,7 +263,7 @@ export function createRouteIntentAdapter(input: {
   inventory?: Accessor<RouteIntentInventory | undefined>
   resolveSession?: (sessionId: string) => Promise<ResolvedSessionTarget | undefined> | ResolvedSessionTarget | undefined
   currentSessionId?: Accessor<string | undefined>
-  canUsePages?: Accessor<boolean>
+  canUseDocuments?: Accessor<boolean>
   navigate: (path: string, options?: { replace?: boolean }) => void
   log?: (event: string, payload?: Record<string, unknown>) => void
 }) {
@@ -571,7 +571,7 @@ export function createRouteIntentAdapter(input: {
         if (nextId && focusedContentId() !== nextId) activate(nextId)
         return
       }
-      if (input.canUsePages?.() !== true) {
+      if (input.canUseDocuments?.() !== true) {
         redirect(workspaceSessionRoute(workspaceId))
         return
       }

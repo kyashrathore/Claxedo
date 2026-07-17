@@ -432,6 +432,68 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
+  test("connection-backed cloud create keeps the token ephemeral and persists only the clean repository URL", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      connections: {
+        repositoryForAuth: vi.fn(async () => ({
+          ok: true as const,
+          repository: {
+            id: "1",
+            name: "private-repo",
+            fullName: "acme/private-repo",
+            cloneUrl: "https://github.com/acme/private-repo.git",
+            private: true,
+            permissions: { read: true, write: false },
+          },
+          token: "github-secret",
+        })),
+      },
+    })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        connectionId: "connection-1",
+        repo: { fullName: "acme/private-repo" },
+        gitBranch: "main",
+        workspaceName: "Private Repo",
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(JSON.stringify(await res.json())).not.toContain("github-secret")
+    expect(mocks.ensureWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      repo_url: "https://github.com/acme/private-repo.git",
+    }))
+    expect(svc.authority?.createCloudWorkspace).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ repoUrl: "https://github.com/acme/private-repo.git" }),
+    )
+    expect(sandbox.ensure).toHaveBeenCalledWith("ws_1", expect.objectContaining({
+      source: {
+        kind: "git",
+        repoUrl: "https://github.com/acme/private-repo.git",
+        branch: "main",
+      },
+      secrets: [{
+        name: "CLAXEDO_GITHUB_CLONE_AUTH",
+        value: `Basic ${Buffer.from("x-access-token:github-secret").toString("base64")}`,
+        hosts: ["github.com"],
+        header: "Authorization",
+      }],
+    }))
+    expect(JSON.stringify(mocks.ensureWorkspace.mock.calls)).not.toContain("github-secret")
+  })
+
   test("signed cloud create provisions through SandboxManager when composed", async () => {
     const svc = services()
     const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "eu-west" }))

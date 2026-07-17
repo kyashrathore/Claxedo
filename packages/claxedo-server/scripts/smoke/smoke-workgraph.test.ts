@@ -48,6 +48,9 @@ describe("WorkGraph deployment smoke", () => {
       ) {
         return new Response(null, { status: 401 })
       }
+      if (url.pathname === "/documents/__claxedo_deployment_probe__") {
+        return Response.json({ error: { code: "document_not_found" } }, { status: 404 })
+      }
       if (url.pathname === "/api/workgraph/execution-capabilities") {
         return Response.json({
           schemaVersion: 1,
@@ -278,6 +281,12 @@ describe("WorkGraph deployment smoke", () => {
     ).toBe(true)
     expect(
       requests.some((entry) => entry.url.pathname === "/api/workgraph/execution-capabilities" && !entry.url.search),
+    ).toBe(true)
+    expect(
+      requests.some(
+        (entry) =>
+          entry.url.pathname === "/documents/__claxedo_deployment_probe__" && authorization(entry.init) === sourceToken,
+      ),
     ).toBe(true)
     expect(
       requests.some(

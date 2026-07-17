@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import {
-  SIGNED_WORKSPACE_DEFAULT_MODEL,
   SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
   SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
 } from "./signed-workspace-model"
@@ -8,7 +7,7 @@ import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { firstConnectedModelInfo } from "./model-strategy"
 
 describe("signed-workspace default model", () => {
-  test("runtime fallback hands a signed workspace session the documented default model", () => {
+  test("runtime fallback treats the signed workspace placeholder as no model", () => {
     const fallback = createSignedWorkspaceRuntimeFallback({
       serverUrl: () => "https://api.example.com",
       directory: () => "/repo/main",
@@ -17,7 +16,7 @@ describe("signed-workspace default model", () => {
       workspaceKind: () => "cloud",
     })
 
-    expect(fallback.model()).toEqual({ ...SIGNED_WORKSPACE_DEFAULT_MODEL })
+    expect(fallback.model()).toBeUndefined()
     expect(fallback.agent()).toEqual({ name: "build" })
   })
 
@@ -61,7 +60,7 @@ describe("signed-workspace default model", () => {
     expect(picked?.id).toBe("gpt-real")
   })
 
-  test("the placeholder is still usable when it is the only model the provider exposes", () => {
+  test("the placeholder is never usable when it is the only model the provider exposes", () => {
     const picked = firstConnectedModelInfo({
       connected: [
         {
@@ -72,6 +71,6 @@ describe("signed-workspace default model", () => {
       defaults: { [SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER]: SIGNED_WORKSPACE_DEFAULT_MODEL_ID },
     })
 
-    expect(picked?.id).toBe(SIGNED_WORKSPACE_DEFAULT_MODEL_ID)
+    expect(picked).toBeUndefined()
   })
 })

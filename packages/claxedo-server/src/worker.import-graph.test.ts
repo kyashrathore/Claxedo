@@ -148,9 +148,9 @@ describe("worker import-graph", () => {
     expect(visitedRel).toContain("hosted-app.ts")
     expect(visitedRel).toContain("workgraph-host/hosted.ts")
     expect(visitedRel).toContain("workgraph-host/hosted-runtime.ts")
-    expect(visitedRel).toContain("routes/docs.ts")
-    expect(visitedRel).toContain("document-host/convex-store.ts")
-    expect(visitedRel).toContain("document-store.ts")
+    expect(visitedRel).toContain("routes/documents.ts")
+    expect(visitedRel).not.toContain("routes/docs.ts")
+    expect(visitedRel).not.toContain("document-store.ts")
     expect(visitedRel).not.toContain("doc-store.ts")
     // A representative deep node-safe dependency should be reachable.
     expect(visitedRel).toContain("routes/hosted-workspace.ts")

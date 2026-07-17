@@ -30,6 +30,7 @@ import {
   apiError,
   captureWorkspaceTelemetry,
   controlPlaneRateLimitError,
+  parsedBody,
   rec,
   signedOrError,
   type WorkspaceRouteOptions,
@@ -40,6 +41,7 @@ import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "./works
 import { workspaceConnectionRoutes } from "./workspace-connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "./sandbox-driver-routes"
 import { workspaceShareRoutes } from "./workspace-share-routes"
+import { authenticatedGitHubCloneSource } from "./repository-clone"
 
 const createBody = z
   .object({
@@ -47,6 +49,8 @@ const createBody = z
     projectName: z.string().optional(),
     workspaceName: z.string().optional(),
     repoUrl: z.string().optional(),
+    connectionId: z.string().optional(),
+    repo: z.object({ fullName: z.string().min(3) }).strict().optional(),
     // `repoName` lets the caller override the auto-derived basename from the
     // repo URL. `remoteDirectory` carries the path the runtime should mount
     // inside the remote VM.
@@ -57,6 +61,9 @@ const createBody = z
     provision: z.boolean().optional(),
   })
   .strict()
+  .refine((body) => Boolean(body.connectionId) === Boolean(body.repo), {
+    message: "connectionId and repo must be provided together",
+  })
 
 const log = Log.create({ service: "workspace-routes" })
 
@@ -98,7 +105,8 @@ function startCloudWorkspaceProvisioning(input: {
   options: WorkspaceRouteOptions
   ws: Workspace
   driver: string
-  repoUrl?: string
+  provisionRepoUrl?: string
+  provisionSecrets?: Array<{ name: string; value: string; hosts: string[]; header?: string }>
   gitBranch?: string
   remoteDirectory: string
 }) {
@@ -109,13 +117,14 @@ function startCloudWorkspaceProvisioning(input: {
       projectId: input.ws.project_id ?? "",
     },
     workspaceRoot: input.remoteDirectory,
-    source: input.repoUrl
+    source: input.provisionRepoUrl
       ? {
           kind: "git",
-          repoUrl: input.repoUrl,
+          repoUrl: input.provisionRepoUrl,
           ...(input.gitBranch ? { branch: input.gitBranch } : {}),
         }
       : { kind: "empty" },
+    ...(input.provisionSecrets?.length ? { secrets: input.provisionSecrets } : {}),
   }) ?? Promise.reject(new Error(`sandbox manager unavailable: ${input.ws.id}`))
 
   void work.catch(async (err) => {
@@ -329,7 +338,9 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       .post("/create", async (c) => {
         const authResult = await signedOrError(c.req.raw, options, services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        const body = createBody.parse(await c.req.json().catch(() => ({})))
+        const parsed = parsedBody(createBody, await c.req.json().catch(() => ({})))
+        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
+        const body = parsed.body
         const cfg = await loadUserConfig()
         const driverConfig = sandboxDriverConfig(cfg)
         const requestedDriver = body.driver?.trim()
@@ -363,7 +374,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           requestedDriver: body.driver,
           projectId: body.projectId,
           workspaceName: body.workspaceName,
-          hasRepoUrl: !!body.repoUrl?.trim(),
+          hasRepoUrl: !!body.repoUrl?.trim() || !!body.repo,
           hasAuth: hasCredentials,
         })
         if (!hasCredentials) {
@@ -384,6 +395,21 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         const name = slug(rawWorkspaceName, "main")
 
         let repoUrl = body.repoUrl?.trim()
+        let provisionRepoUrl = repoUrl
+        let provisionSecrets: Array<{ name: string; value: string; hosts: string[]; header?: string }> | undefined
+
+        if (body.connectionId && body.repo) {
+          const repositoryFullName = body.repo.fullName
+          if (!options.connections) {
+            return c.json({ error: apiError("repository_connections_unavailable", "Repository connections are unavailable") }, 501)
+          }
+          const access = await options.connections.repositoryForAuth(authResult.auth, body.connectionId, repositoryFullName)
+          if (!access.ok) return c.json({ error: apiError(access.code, "Repository connection is not available") }, access.status)
+          repoUrl = access.repository.cloneUrl
+          const source = authenticatedGitHubCloneSource(access.repository.cloneUrl, access.token)
+          provisionRepoUrl = source.repoUrl
+          provisionSecrets = [source.secret]
+        }
 
         if (!repoUrl && body.projectId) {
           const root = await getProjectWorkspace(body.projectId)
@@ -497,7 +523,8 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           options,
           ws,
           driver: id,
-          repoUrl,
+          provisionRepoUrl,
+          provisionSecrets,
           gitBranch,
           remoteDirectory: remote_directory,
         })

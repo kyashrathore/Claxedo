@@ -7,6 +7,7 @@ import {
   connectionScopeOf,
   type AttemptStatus,
   type ConnectionFields,
+  type CodeHostRepository,
   type ConnectionRow,
   type ConnectionScope,
   type ConnectionStorePort,
@@ -41,6 +42,10 @@ export type ConnectResult =
 export type TokenResult =
   | { ok: true; response: ConnectionTokenResponse }
   | { ok: false; status: 403 | 404 | 409 | 503; code: string; credentialStatus?: string }
+
+export type RepositoryListResult =
+  | { ok: true; repositories: CodeHostRepository[] }
+  | { ok: false; status: 403 | 404 | 409 | 501 | 502 | 503; code: string }
 
 export type CapabilityHandle = {
   id: string
@@ -331,6 +336,31 @@ export function createConnectionsService(deps: {
       const verified = await entry.impl.verify(row.fields, secret)
       if (verified.ok) await deps.credentials.setStatus(providerId, "available")
       return verified
+    },
+
+    async listRepositories(id: string): Promise<RepositoryListResult> {
+      const row = await deps.connections.getById(id)
+      if (!row) return { ok: false, status: 404, code: "connection_not_found" }
+      if (!row.grantedCapabilities.includes("code-host")) {
+        return { ok: false, status: 403, code: "capability_not_granted" }
+      }
+      const entry = deps.registry.byId(row.integrationId)
+      if (!entry?.impl.listRepositories) {
+        return { ok: false, status: 501, code: "repository_listing_unsupported" }
+      }
+      const token = await getToken(id, "code-host")
+      if (!token.ok) return { ok: false, status: token.status, code: token.code }
+      try {
+        return {
+          ok: true,
+          repositories: await entry.impl.listRepositories(token.response.fields ?? row.fields, token.response.token),
+        }
+      } catch (error) {
+        const code = error instanceof Error && error.message === "github_repositories_unauthorized"
+          ? "repository_provider_unauthorized"
+          : "repository_provider_unavailable"
+        return { ok: false, status: 502, code }
+      }
     },
 
     getToken,

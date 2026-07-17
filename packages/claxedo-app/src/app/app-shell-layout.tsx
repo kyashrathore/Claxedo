@@ -70,7 +70,7 @@ export type AppShellLayoutProps = ParentProps<{
    */
   activeSessionId?: string
   globalChatEnabled?: boolean
-  canUsePages?: boolean
+  canUseDocuments?: boolean
 
   /**
    * Home directory for path shortening
@@ -209,7 +209,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const workbenchController = useRailWorkbenchController({
     activeDirectory: () => props.activeDirectory,
     autoResponds: (request, workspaceDir) => permission.autoResponds(request, workspaceDir),
-    canUsePages: () => props.canUsePages === true,
+    canUseDocuments: () => props.canUseDocuments === true,
     client: globalSDK.client,
     closeTerminal: (terminalId) => terminal?.close(terminalId),
     emptyDraftDirectory: emptyDraft.emptyDraftDirectory,
@@ -358,7 +358,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
         </nav>
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
-          canUsePages={props.canUsePages}
+          canUseDocuments={props.canUseDocuments}
           canUseTerminal={workbenchController.canUseTerminal}
           emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
           focusedPanelTarget={workbenchController.focusedPanelTarget}

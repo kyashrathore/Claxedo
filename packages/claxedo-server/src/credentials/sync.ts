@@ -10,13 +10,18 @@ import path from "path"
 
 const log = Log.create({ service: "credentials-sync" })
 
-type Item = {
+export type LocalCredentialItem = {
   provider_id: string
   kind: CredentialKind
   source: CredentialSource
   label: string
+  account_id?: string
+  origin: string
+  fresh_until?: number
   secret: string
 }
+
+type Item = Omit<LocalCredentialItem, "origin"> & { origin?: string }
 
 const acp = {
   "claude-acp": "ANTHROPIC_API_KEY",
@@ -129,11 +134,11 @@ function codexAuth() {
   }
 }
 
-function codexAccountAuth() {
+function codexAccountAuths() {
   try {
     const dir = codexAccountsPath()
-    if (!fs.existsSync(dir)) return
-    const latest = fs.readdirSync(dir)
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir)
       .filter((entry) => entry.endsWith(".auth.json"))
       .flatMap((entry) => {
         const file = path.join(dir, entry)
@@ -142,13 +147,14 @@ function codexAccountAuth() {
         if (!bundle) return []
         return [{
           data,
+          origin: "~/.codex/accounts/*.auth.json",
           refreshed: Date.parse(bundle.last_refresh) || 0,
         }]
       })
-      .sort((a, b) => b.refreshed - a.refreshed)[0]
-    return latest?.data
+      .sort((a, b) => b.refreshed - a.refreshed)
   } catch (err) {
     log.warn("Failed to read Codex account auth", { error: String(err) })
+    return []
   }
 }
 
@@ -204,6 +210,8 @@ function opencodeCodex(input: unknown, local: unknown) {
     kind: "oauth_token" as const,
     source: row?.type === "oauth" ? "upstream_sync" as const : "local_only" as const,
     label: row?.type === "oauth" ? "Synced from OpenCode auth" : "Synced from local Codex auth",
+    ...(account_id ? { account_id } : {}),
+    ...(expires ? { fresh_until: expires } : {}),
     secret: JSON.stringify({
       source: row?.type === "oauth" ? "opencode" : "codex",
       type: "codex_auth",
@@ -292,9 +300,21 @@ function kind(providerId: string): CredentialKind {
   return (sandboxDriverIds as readonly string[]).includes(providerId) ? "sandbox_driver" : "api_key"
 }
 
-function put(map: Map<string, Item>, item: Item | undefined) {
+function itemOrigin(item: Item) {
+  if (item.origin) return item.origin
+  if (item.label.includes("OpenCode")) return "~/.local/share/opencode/auth.json"
+  if (item.label.includes("Codex")) return "~/.codex/auth.json"
+  if (item.label.includes("Claude OAuth env")) return "Environment"
+  if (item.label.includes("Claude Code")) return process.platform === "darwin" ? "macOS Keychain or ~/.claude/.credentials.json" : "~/.claude/.credentials.json"
+  if (item.label.includes("local config")) return "Claxedo local config"
+  const env = /^Synced from (.+)$/.exec(item.label)?.[1]
+  return env ?? item.source
+}
+
+function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
   if (!item) return
-  map.set(item.provider_id, item)
+  const normalized = { ...item, origin: itemOrigin(item) }
+  map.set(`${item.provider_id}\u0000${item.kind}\u0000${item.account_id ?? ""}`, normalized)
 }
 
 function claudeOAuthItem(providerId: "claude-acp" | "claude-sdk", token: string | undefined) {
@@ -355,12 +375,20 @@ function vercelSandboxDriverCredentialItem(
 export async function collectLocalCredentials() {
   const cfg = await loadUserConfig()
   const sandboxDriverConfigValue = sandboxDriverConfig(cfg)
-  const map = new Map<string, Item>()
+  const map = new Map<string, LocalCredentialItem>()
   const opencode = opencodeAuth()
-  const codex = codexAccountAuth() ?? codexAuth()
+  const codexAccounts = codexAccountAuths()
+  const codex = codexAccounts[0]?.data ?? codexAuth()
 
   put(map, opencodeOpenAI(opencode?.openai))
-  put(map, opencodeCodex(opencode?.openai, codex))
+  const primaryCodex = opencodeCodex(opencode?.openai, codex)
+  put(map, primaryCodex && !opencode?.openai && codexAccounts[0]
+    ? { ...primaryCodex, origin: codexAccounts[0].origin }
+    : primaryCodex)
+  for (const account of codexAccounts.slice(1)) {
+    const item = opencodeCodex(undefined, account.data)
+    put(map, item ? { ...item, origin: account.origin } : undefined)
+  }
   put(map, opencodeCopilot(opencode?.["github-copilot"], "github-copilot"))
   put(map, opencodeCopilot(opencode?.["github-copilot-enterprise"], "github-copilot-enterprise"))
   const claudeOAuth = claudeCodeOAuthToken()
@@ -493,9 +521,14 @@ export async function collectLocalCredentials() {
   return map
 }
 
+export async function collectLocalCredentialItems() {
+  return [...(await collectLocalCredentials()).values()]
+}
+
 export async function syncLocalCredentials(ids?: string[]) {
+  log.warn("Deprecated sync-local credential path called; migrate to explicit discovery per plan 2026-07-16-004")
   const all = await collectLocalCredentials()
-  const list = ids?.length ? [...new Set(ids)] : [...all.keys()]
+  const list = ids?.length ? [...new Set(ids)] : [...new Set([...all.values()].map((item) => item.provider_id))]
   const synced: string[] = []
   const existing: string[] = []
   const missing: string[] = []
@@ -507,8 +540,8 @@ export async function syncLocalCredentials(ids?: string[]) {
       existing.push(providerId)
       continue
     }
-    const item = all.get(providerId)
-    if (!item) {
+    const items = [...all.values()].filter((item) => item.provider_id === providerId)
+    if (items.length === 0) {
       if (current) {
         existing.push(providerId)
         continue
@@ -517,7 +550,7 @@ export async function syncLocalCredentials(ids?: string[]) {
       continue
     }
     try {
-      await putCredential(item)
+      await Promise.all(items.map(putCredential))
       synced.push(providerId)
     } catch (err) {
       failed.push({

@@ -5,7 +5,13 @@ import type {
   WorkGraphContext,
 } from "../contracts"
 
-export type ExecutionCapabilitiesReadInput = Readonly<Record<string, never>>
+/**
+ * Optional discovery selector. `directory` scopes repository (base-revision)
+ * enumeration to one project the runtime already knows about; when absent, the
+ * port enumerates its boot repository exactly as before. Adapters that cannot
+ * honor a directory (e.g. hosted workspaces) ignore it.
+ */
+export type ExecutionCapabilitiesReadInput = Readonly<{ directory?: string }>
 
 export type ExecutionCapabilitiesPort = Readonly<{
   read(context: WorkGraphContext, input: ExecutionCapabilitiesReadInput): Promise<ExecutionCapabilities>

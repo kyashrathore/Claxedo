@@ -15,6 +15,7 @@ import {
   linearIntegration,
   googleIntegration,
   notionIntegration,
+  type CodeHostRepository,
   type ConnectionsService,
   type RouteGate,
 } from "@claxedo/connections"
@@ -24,6 +25,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
+  type SignedControlPlaneAuth,
 } from "../control-plane/auth"
 import { deploymentMode } from "../control-plane/deployment-mode"
 import { hostedCredentialsEnabled } from "../control-plane/worker-credentials"
@@ -33,6 +35,10 @@ import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./st
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"
 
 export const CONNECTIONS_TOKEN_HEADER = "x-claxedo-connections"
+
+export type RepositoryAccessResult =
+  | { ok: true; repository: CodeHostRepository; token: string }
+  | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
 
 /**
  * D7 (launch plan 2026-07-11-012; tenant-hardening design 015 §2 Decision 1):
@@ -229,6 +235,39 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
     return orgId ? orgTeamOwnerKey(orgId) : undefined
   }
 
+  async function repositoryForAuth(
+    auth: SignedControlPlaneAuth | undefined,
+    id: string,
+    fullName: string,
+  ): Promise<RepositoryAccessResult> {
+    if (hosted && !hostedEnabled) {
+      return { ok: false as const, status: 503, code: "connections_unavailable" }
+    }
+    if (hosted && !auth) return { ok: false as const, status: 401, code: "connection_auth_required" }
+    const orgId = auth?.user.orgId
+    if (hosted && !orgId) return { ok: false as const, status: 403, code: "connections_org_required" }
+    if (hosted && orgId && options.verifyOrgMembership) {
+      const member = await options.verifyOrgMembership({ subject: auth!.user.subject, orgId })
+      if (!member) return { ok: false as const, status: 403, code: "connections_org_membership_required" }
+    }
+    if (hosted && orgId && options.requireHostedConnectionsEntitlement) {
+      const denied = await options.requireHostedConnectionsEntitlement(orgId)
+      if (denied) return { ok: false as const, status: denied.status, code: denied.body.error.code }
+    }
+    const visible = (await service.list(hosted
+      ? { owner: subjectPersonalOwnerKey(auth!.user.subject), teamOwner: orgTeamOwnerKey(orgId!) }
+      : auth ? { owner: auth.user.subject } : {})).some((connection) => connection.id === id)
+    if (!visible) return { ok: false as const, status: 404, code: "connection_not_found" }
+    const listed = await service.listRepositories(id)
+    if (!listed.ok) return listed
+    const repository = listed.repositories.find((item) => item.fullName === fullName)
+    if (!repository) return { ok: false as const, status: 404, code: "repository_not_found" }
+    if (!repository.permissions.read) return { ok: false as const, status: 403, code: "repository_read_required" }
+    const token = await service.getToken(id, "code-host")
+    if (!token.ok) return token
+    return { ok: true as const, repository, token: token.response.token }
+  }
+
   return {
     service: service as ConnectionsService,
     routes: createIntegrationsRoutes(service, {
@@ -246,6 +285,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
           }
         : {}),
     }),
+    repositoryForAuth,
     dispose: () => service.dispose(),
   }
 }

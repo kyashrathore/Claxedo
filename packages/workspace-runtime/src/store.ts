@@ -3,7 +3,7 @@ import { createRequire } from "module"
 import path from "path"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { ACP_RECOVER } from "@claxedo/agent-sdk-runtime/adapters"
-import { normalizeAgentHarnessTransport, normalizeHarnessIdentity }
+import { firstTurnErrorData, normalizeAgentHarnessTransport, normalizeHarnessIdentity }
   from "@claxedo/agent-sdk-runtime"
 import type { AgentMessageRow, HarnessConnection, SessionConfig, SessionConfigUpdate, SessionHarness } from "@claxedo/agent-sdk-runtime"
 import {
@@ -1605,7 +1605,7 @@ export class RuntimeStore {
           directory: session?.directory ?? "",
           created: active.created_at,
           completed: input.outcome.completedAt ?? Date.now(),
-          error: { name: "UnknownError", data: { message: input.outcome.error ?? "turn failed" } },
+          error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
           ...(control.variant ? { variant: control.variant } : {}),
         })),
       })

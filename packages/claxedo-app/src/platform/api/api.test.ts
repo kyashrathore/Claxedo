@@ -24,7 +24,7 @@ mock.module("@/platform/auth/auth-client", () => ({
 }))
 
 // Use an absolute path with a cache-busting query to bypass any stale
-// mock.module("./api") registered by other test files (pages-api.test.ts).
+// mock.module("./api") may be registered by other API client tests.
 // Bun treats distinct specifiers as distinct module instances, so this
 // always evaluates the real api.ts.
 const {

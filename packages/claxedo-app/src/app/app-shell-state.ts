@@ -1,11 +1,6 @@
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import type { Params } from "@solidjs/router"
-import {
-  useLayout,
-  type LocalProject,
-  useGlobalSDK,
-  usePlatform,
-} from "@claxedo/app"
+import { useLayout, type LocalProject, useGlobalSDK, usePlatform } from "@claxedo/app"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
@@ -20,24 +15,19 @@ import { workspaceRouteIdentity } from "../features/workspaces/lib/workspace-dis
 import { useConfigOptional } from "./providers/config"
 import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
-import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { usePrincipal } from "@/platform/auth/identity-provider"
+import { documentsAccess } from "@/features/documents/access"
 import { useDirectorySessionCacheActions } from "../features/session/data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "./integrations/sync/global-bootstrap"
 import { useGlobalShellReady } from "./integrations/sync/global-readiness"
 import { useProjectInventoryActions } from "./integrations/sync/project-inventory"
-import {
-  emptySessionInventory,
-  sessionInventoryQueryOptions,
-} from "../features/session/data/sync/queries"
+import { emptySessionInventory, sessionInventoryQueryOptions } from "../features/session/data/sync/queries"
 import { parseShellRoute, shellRouteDirectory } from "@/platform/identity/route"
 import { useShellAppStateSnapshot } from "./app-state-snapshot"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
-export function useAppShellState(input: {
-  params: Params
-  pathname: Accessor<string>
-}) {
+export function useAppShellState(input: { params: Params; pathname: Accessor<string> }) {
   const layout = useLayout()
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const globalBootstrapActions = useGlobalBootstrapActions()
@@ -51,15 +41,13 @@ export function useAppShellState(input: {
   const dialog = useDialog()
   const globalSDK = useGlobalSDK()
   const principal = usePrincipal()
-  const canUsePages = () => principalHasSignedAccess(principal())
+  const canUseDocuments = () => documentsAccess({ principal: principal(), serverUrl: globalSDK.url })
   const sessionInventoryQuery = useQuery(() =>
     sessionInventoryQueryOptions<SessionInventoryRow>({
       baseUrl: globalSDK.url,
     }),
   )
-  const sessionInventory = createMemo(() =>
-    sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
-  )
+  const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
   const notification = useNotification()
   const config = useConfigOptional()
   const globalChat = () => !!config?.globalChatEnabled
@@ -95,7 +83,7 @@ export function useAppShellState(input: {
     resolveActiveDirectory({
       routeDir: routeDirectory(),
       surfaceDir: realDirectory(activeSurface()?.directory),
-    })
+    }),
   )
   const openWorkspaceIds = createMemo(() =>
     openWorkspaceScopeIds({
@@ -103,15 +91,16 @@ export function useAppShellState(input: {
       visiblePanes: state.wb.selectors.visiblePanes(),
       meta: (id) => state.meta.get(id),
       projects: projects(),
-    })
+    }),
   )
   const activeProjectId = createMemo(() => {
     const dir = activeDirectory()
     if (!dir) return
-    const project = layoutProjects().find((p) =>
-      p.worktree === dir ||
-      p.sandboxes?.includes(dir) ||
-      dir in (((p as LocalProject & { workspaces?: Record<string, unknown> }).workspaces) ?? {})
+    const project = layoutProjects().find(
+      (p) =>
+        p.worktree === dir ||
+        p.sandboxes?.includes(dir) ||
+        dir in ((p as LocalProject & { workspaces?: Record<string, unknown> }).workspaces ?? {}),
     )
     return project?.worktree
   })
@@ -147,13 +136,16 @@ export function useAppShellState(input: {
     if (!globalReady()) return
     const dir = activeDirectory()
     if (!dir) return
-    if (!canAutoOpenProject({
-      api: projectsQuery.data ?? [],
-      list: layoutProjects(),
-      dir,
-      closed: layout.projects.isClosed,
-      ignoreClosed: true,
-    })) return
+    if (
+      !canAutoOpenProject({
+        api: projectsQuery.data ?? [],
+        list: layoutProjects(),
+        dir,
+        closed: layout.projects.isClosed,
+        ignoreClosed: true,
+      })
+    )
+      return
     layout.projects.open(dir)
   }
 
@@ -162,7 +154,7 @@ export function useAppShellState(input: {
     activeSessionId,
     activeSurface,
     activeDirectory,
-    canUsePages,
+    canUseDocuments,
     config,
     dialog,
     directorySessionCacheActions,

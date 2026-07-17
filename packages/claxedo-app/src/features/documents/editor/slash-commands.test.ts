@@ -318,13 +318,6 @@ describe("slash command callbacks", () => {
     expect(calls).toContain("run")
   })
 
-  test('"highlight" calls toggleHighlight', () => {
-    const { editor, calls } = mockEditor()
-    findItem("highlight").command({ editor, range })
-    expect(calls).toContain("toggleHighlight")
-    expect(calls).toContain("run")
-  })
-
 })
 
 // ── Prompt-based command callbacks ─────────────────────────────────────

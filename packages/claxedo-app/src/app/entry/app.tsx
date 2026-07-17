@@ -50,6 +50,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { installQueryPersister } from "@/platform/query/persister"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
+import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
 
 // Cold-launch perf: defer the query persister install (subscribe + JSON.parse
 // of the persisted blob) past first paint via requestIdleCallback. Queries
@@ -333,6 +334,7 @@ function AuthenticatedProviders(props: ParentProps) {
 
   return (
     <PrincipalProvider authEnabled={config?.authEnabled === true}>
+      <RemoteAccessMarkerRecorder />
       <CloudAuthGate>
         <Show when={config?.authEnabled} fallback={props.children}>
           <CloudAutoSwitch>{props.children}</CloudAutoSwitch>

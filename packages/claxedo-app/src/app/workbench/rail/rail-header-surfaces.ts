@@ -21,7 +21,7 @@ type HeaderSurfaceClient =
 export function useRailHeaderSurfaces(input: {
   state: ClaxedoStateApi
   client: HeaderSurfaceClient
-  canUsePages: Accessor<boolean>
+  canUseDocuments: Accessor<boolean>
   worktreeInfo: (workspaceDir: string) => RailWorktreeInfo | undefined
   autoResponds: (request: NonNullable<SurfaceSessionRequests["permissions"]>[number], workspaceDir: string) => boolean
   closeTerminal?: (terminalId: string) => void | Promise<unknown>
@@ -120,7 +120,7 @@ export function useRailHeaderSurfaces(input: {
     })
   }
   const switcherItems = createMemo(() =>
-    buildSwitcherItemsFromState(input.state, { canUsePages: input.canUsePages() }).map((item) => {
+    buildSwitcherItemsFromState(input.state, { canUseDocuments: input.canUseDocuments() }).map((item) => {
       const info = item.workspaceDir ? input.worktreeInfo(item.workspaceDir) : undefined
       return {
         ...item,

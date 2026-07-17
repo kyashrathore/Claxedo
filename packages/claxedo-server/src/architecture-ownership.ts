@@ -247,7 +247,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
     tests: [
-      "routes/pages-git.test.ts",
+      "routes/documents.test.ts",
       "architecture.test.ts",
     ],
   },
@@ -439,6 +439,15 @@ export const ARCHITECTURE_OWNERSHIP = [
       "Unit 5 verdict flipped VERIFY→MOVE→DOCUMENT: imports ClaxedoDB from ../storage/db (better-sqlite3 + fs) and ../storage/living-app.sql. SQLite-coupled, so it stays a local control-plane route adapter under routes/.",
     tests: ["routes/living-apps.test.ts"],
     routeSamples: ["/api/claxedo/living-apps"],
+  },
+  {
+    area: "route",
+    module: "routes/documents.ts",
+    status: OwnershipStatus.Canonical,
+    owner: "Documents HTTP adapter",
+    reason: "Thin Worker-safe route adapter composed with placement-specific index and DocumentWorkspace backends.",
+    tests: ["routes/documents.test.ts"],
+    routeSamples: ["/documents", "/documents/document_1/content"],
   },
   {
     area: "route",

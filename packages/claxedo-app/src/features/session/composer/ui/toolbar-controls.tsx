@@ -39,6 +39,8 @@ export function PromptToolbarControls(props: {
   providerID: Accessor<string | undefined>
   modelLabel: Accessor<string>
   model: Accessor<PickerState>
+  modelConnectRequired: Accessor<boolean>
+  onModelConnect: VoidFunction
   modelTitle: string
   modelKeybind: string
   onUnpaidModelClick: VoidFunction
@@ -143,6 +145,8 @@ export function PromptToolbarControls(props: {
         providerID={props.providerID}
         label={props.modelLabel}
         model={props.model}
+        connectRequired={props.modelConnectRequired}
+        onConnect={props.onModelConnect}
         controlStyle={props.controlStyle}
         chooseTitle={props.modelTitle}
         chooseKeybind={props.modelKeybind}

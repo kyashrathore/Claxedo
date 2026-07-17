@@ -1,12 +1,15 @@
-import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { api, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { api, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
 import { useClaxedoEvents } from "@/features/workspaces/app-ports"
 import { workspaceCreateUrl, workspaceProvidersUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
+import { sandboxProviderFacts } from "./provider-facts"
+import { loadConnectedRepositories, type RepositoryChoice } from "./repository-picker"
 
 type DialogCreateCloudProjectProps = {
   onSelect: (result: string | string[] | null) => void
@@ -30,15 +33,15 @@ async function createCloudProject(
   baseUrl: string,
   provider: string,
   name: string,
-  repoUrl: string,
+  source: { repoUrl: string } | { connectionId: string; repo: { fullName: string } },
 ): Promise<CreateWorkspaceResult> {
   return api.post<CreateWorkspaceResult>(
     workspaceCreateUrl({ baseUrl }),
     {
-      provider,
+      driver: provider,
       projectName: name,
       workspaceName: "main",
-      repoUrl,
+      ...source,
     },
   )
 }
@@ -88,6 +91,10 @@ function isProvisionStep(status: string | null | undefined): status is Provision
  */
 export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   const [repoUrl, setRepoUrl] = createSignal("")
+  const [repository, setRepository] = createSignal<RepositoryChoice>()
+  const [repositorySearch, setRepositorySearch] = createSignal("")
+  const [repositories, setRepositories] = createSignal<RepositoryChoice[]>([])
+  const [repositoryLoadError, setRepositoryLoadError] = createSignal("")
   const [provider, setProvider] = createSignal("")
   const [providers, setProviders] = createSignal<Provider[]>([])
   const [phase, setPhase] = createSignal<"form" | "provisioning">("form")
@@ -97,8 +104,13 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   const events = useClaxedoEvents()
 
   const baseUrl = getDefaultBaseUrl()
+  const filteredRepositories = createMemo(() => {
+    const search = repositorySearch().trim().toLowerCase()
+    if (!search) return repositories()
+    return repositories().filter((item) => item.fullName.toLowerCase().includes(search))
+  })
 
-  createEffect(() => {
+  onMount(() => {
     void api
       .get<ProviderResponse>(workspaceProvidersUrl({ baseUrl }))
       .then((data) => {
@@ -109,6 +121,15 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
         setProviders([])
         setProvider("")
       })
+    void loadConnectedRepositories((path) => authFetch(
+      new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(),
+    )).then((items) => {
+      setRepositories(items)
+      setRepositoryLoadError("")
+    }).catch((cause) => {
+      setRepositories([])
+      setRepositoryLoadError(cause instanceof Error ? cause.message : "GitHub repositories are unavailable.")
+    })
   })
 
   const lastPipelineKey = () => {
@@ -122,6 +143,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   }
   const isReady = () => logs().some(l => l.step === "ready")
   const isRedirecting = () => logs().some(l => l.step === "redirecting")
+  const failure = () => error() ? classifyProvisionFailure(error()) : undefined
   const pipelineStepState = (key: string, idx: number): "done" | "active" | "pending" | "error" => {
     if (isReady()) return "done"
     const lastKey = lastPipelineKey()
@@ -152,7 +174,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
-    if (!repoUrl() || !provider()) return
+    if ((!repoUrl() && !repository()) || !provider()) return
 
     setPhase("provisioning")
     setLogs([])
@@ -178,10 +200,12 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       }
 
       if (ev.step === "ready") {
+        const ready = readyProvisionDirectory(ev.step, directory)
+        if (!ready) return
         unsub?.()
         setLogs((prev) => [...prev, { step: "redirecting", ts: Date.now() }])
         setTimeout(() => {
-          props.onSelect(directory)
+          props.onSelect(ready)
           dialog.close()
         }, 1200)
       }
@@ -200,8 +224,12 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
     onCleanup(unsub)
 
     try {
-      const name = repoUrl().split("/").pop()?.replace(".git", "") || "Untitled"
-      const created = await createCloudProject(baseUrl, provider(), name, repoUrl())
+      const selected = repository()
+      const source = selected
+        ? { connectionId: selected.connectionId, repo: { fullName: selected.fullName } }
+        : { repoUrl: repoUrl() }
+      const name = (selected?.name ?? repoUrl().split("/").pop()?.replace(".git", "")) || "Untitled"
+      const created = await createCloudProject(baseUrl, provider(), name, source)
 
       if (!created.directory) throw new Error("Workspace create did not return a directory")
       workspaceId = created.workspaceId
@@ -251,24 +279,85 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                     )}
                   </For>
                 </select>
+                <div class="mt-2 flex flex-col gap-0.5 text-12-regular text-text-weak">
+                  <span>{sandboxProviderFacts(provider()).cost}</span>
+                  <span>Needs: {sandboxProviderFacts(provider()).needs}</span>
+                  <Show when={sandboxProviderFacts(provider()).keyUrl}>
+                    {(url) => (
+                      <a class="text-12-medium text-text-interactive-base" href={url()} target="_blank" rel="noreferrer">
+                        Open provider key page (setup stays here)
+                      </a>
+                    )}
+                  </Show>
+                </div>
               </div>
 
               <div>
+                <Show when={repositoryLoadError()}>
+                  <p class="mb-2 text-12-regular text-icon-warning-base">{repositoryLoadError()}</p>
+                </Show>
+                <Show when={repositories().length > 0}>
+                  <label class="block text-sm text-text-weak mb-1">
+                    Connected GitHub repository
+                  </label>
+                  <input
+                    type="search"
+                    value={repositorySearch()}
+                    onInput={(event) => setRepositorySearch(event.currentTarget.value)}
+                    placeholder="Filter repositories"
+                    class="mb-2 w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                  />
+                  <select
+                    value={repository()?.id ?? ""}
+                    onInput={(event) => {
+                      setRepository(repositories().find((item) => item.id === event.currentTarget.value))
+                      if (event.currentTarget.value) setRepoUrl("")
+                    }}
+                    class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                  >
+                    <option value="">Choose a connected repository</option>
+                    <For each={filteredRepositories()}>
+                      {(item) => <option value={item.id}>{item.fullName}</option>}
+                    </For>
+                  </select>
+                  <Show when={repository()}>
+                    {(item) => (
+                      <div class="mt-1 text-11-regular text-text-weak">
+                        read {item().permissions.read ? "✓" : "✗"} · write {item().permissions.write ? "✓" : "✗"}
+                        <Show when={!item().permissions.write}> · read-only; use a token with repository write access to open PRs</Show>
+                      </div>
+                    )}
+                  </Show>
+                  <div class="my-3 text-center text-11-regular text-text-weak">or use a public URL</div>
+                </Show>
                 <label class="block text-sm text-text-weak mb-1">
                   Git Repository URL
                 </label>
                 <input
                   type="text"
                   value={repoUrl()}
-                  onInput={(e) => setRepoUrl(e.currentTarget.value)}
+                  onInput={(e) => {
+                    setRepoUrl(e.currentTarget.value)
+                    if (e.currentTarget.value) setRepository(undefined)
+                  }}
                   placeholder="https://github.com/username/repo"
                   class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
                   autofocus
                 />
+                <button
+                  type="button"
+                  class="mt-2 text-12-medium text-text-interactive-base"
+                  onClick={() => {
+                    setRepository(undefined)
+                    setRepoUrl("https://github.com/kyashrathore/Claxedo.git")
+                  }}
+                >
+                  Try the example public repository
+                </button>
               </div>
 
               <div class="flex justify-end gap-2 mt-6">
-                <Button type="submit" disabled={!repoUrl() || !provider()}>
+                <Button type="submit" disabled={(!repoUrl() && !repository()) || !provider()}>
                   Clone & Open
                 </Button>
               </div>
@@ -345,11 +434,30 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
               <Show when={error()}>
                 <div class="flex items-start gap-2 mt-2 px-3 py-2 rounded bg-surface-critical-base/10 border border-border-critical-base/20">
                   <Icon name="warning" size="small" class="text-text-on-critical-base mt-0.5 shrink-0" />
-                  <span class="text-xs text-text-on-critical-base break-words min-w-0">{error()}</span>
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="text-12-medium text-text-on-critical-base">{failure()?.title}</span>
+                    <span class="text-xs text-text-on-critical-base break-words">{failure()?.guidance}</span>
+                    <span class="text-11-regular text-text-weak/60">Provider response: {error()}</span>
+                  </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-2">
-                  <Button variant="ghost" onClick={() => { setPhase("form"); setError("") }}>
-                    Back
+                  <Show when={failure()?.fix === "provider-account" && sandboxProviderFacts(provider()).accountUrl}>
+                    <a
+                      class="inline-flex items-center rounded-md px-3 text-13-medium text-text-interactive-base"
+                      href={sandboxProviderFacts(provider()).accountUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {failure()?.action}
+                    </a>
+                  </Show>
+                  <Show when={failure()?.fix === "choose-provider"}>
+                    <Button variant="ghost" onClick={() => { setPhase("form"); setError("") }}>
+                      {failure()?.action}
+                    </Button>
+                  </Show>
+                  <Button variant="primary" onClick={(event: MouseEvent) => void handleSubmit(event)}>
+                    Retry provisioning
                   </Button>
                 </div>
               </Show>

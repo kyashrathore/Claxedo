@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto"
 import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "./agent-config"
 import { createSandboxManager, type SandboxBootSource, type SandboxEnsureResult } from "@claxedo/sandbox-manager"
+import { createBoxSandboxDriver } from "@claxedo/sandbox-manager/drivers/box"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
 import { createDockerSandboxDriver } from "@claxedo/sandbox-manager/drivers/docker"
@@ -138,7 +139,7 @@ export async function startSandbox(
     const message = err instanceof Error ? err.message : String(err)
 
     recordSupervisorSandboxStartFailure(state.ws.id, message)
-    emitProvision(state.ws.id, "error", { message })
+    emitProvision(state.ws, "error", { message })
     log.warn("Sandbox start failed", {
       workspaceId: state.ws.id,
       driver: driverId,
@@ -312,7 +313,7 @@ async function resolveSupervisorSandboxNetworkPolicy(
 }
 
 async function markSandboxAcquiring(state: WorkspaceRuntimeState) {
-  emitProvision(state.ws.id, "acquiring_sandbox")
+  emitProvision(state.ws, "acquiring_sandbox")
   const pending = await updateWorkspace(state.ws.id, {
     status: "acquiring_sandbox",
   })
@@ -406,6 +407,23 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
     throw missingSandboxDriverAuth(driverId, "access_token, team_id, and project_id")
   }
 
+  if (driverId === "box") {
+    const auth = await sandboxDriverAuthAsync(cfg, "box")
+    if (auth?.api_key) {
+      return createBoxSandboxDriver({
+        apiKey: auth.api_key,
+        ...(clean(process.env.CLAXEDO_BOX_API_URL) ? { baseUrl: clean(process.env.CLAXEDO_BOX_API_URL) } : {}),
+        ...(clean(process.env.CLAXEDO_RUNTIME_IMAGE) ? { image: clean(process.env.CLAXEDO_RUNTIME_IMAGE) } : {}),
+        ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
+          ? { runtimeCommand: clean(process.env.CLAXEDO_RUNTIME_COMMAND) }
+          : {}),
+        ...(clean(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+        env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
+      })
+    }
+    throw missingSandboxDriverAuth(driverId, "api_key")
+  }
+
   if (driverId === "docker") {
     const auth = await sandboxDriverAuthAsync(cfg, "docker")
     if (auth?.image) {
@@ -495,7 +513,7 @@ async function markSandboxReady(
 
   callbacks.scheduleStop(state)
   startSandboxHealthMonitor(state)
-  emitProvision(state.ws.id, "ready")
+  emitProvision(state.ws, "ready")
 
   log.info("sandbox ready", {
     workspaceId: state.ws.id,

@@ -51,6 +51,19 @@ web port with `PORT` (default `4444`).
 
 > The desktop shell is a separate package: `cd packages/claxedo-desktop && bun run dev`.
 
+### Onboarding v1 preview
+
+The onboarding v1 UI is build-time gated and disabled by default so normal UI
+development keeps the existing Home/empty-state behavior. Enable it explicitly:
+
+```sh
+VITE_CLAXEDO_ONBOARDING_V1=true bun run dev
+```
+
+Its Playwright acceptance flow uses the same flag. Server-side credential,
+repository, provisioning, and remote-access contracts remain available without
+mounting the preview UI.
+
 ## Tests
 
 ### Unit / component tests — `bun run test`

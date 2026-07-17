@@ -53,6 +53,34 @@ export function getCursorPosition(parent: HTMLElement): number {
   return getTextLength(preCaretRange.cloneContents())
 }
 
+export function scrollPromptCursorIntoView(input: {
+  editor: HTMLElement
+  container: HTMLElement
+  length: number
+  bottomInset: number
+}) {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  if (!input.editor.contains(range.startContainer)) return
+  if (getCursorPosition(input.editor) >= input.length) {
+    input.container.scrollTop = input.container.scrollHeight
+    return
+  }
+  const rect = range.getClientRects().item(0) ?? range.getBoundingClientRect()
+  if (!rect.height) return
+  const containerRect = input.container.getBoundingClientRect()
+  const top = rect.top - containerRect.top + input.container.scrollTop
+  const bottom = rect.bottom - containerRect.top + input.container.scrollTop
+  if (top < input.container.scrollTop + 12) {
+    input.container.scrollTop = Math.max(0, top - 12)
+    return
+  }
+  if (bottom > input.container.scrollTop + input.container.clientHeight - input.bottomInset) {
+    input.container.scrollTop = bottom - input.container.clientHeight + input.bottomInset
+  }
+}
+
 export function setCursorPosition(parent: HTMLElement, position: number) {
   let remaining = position
   let node = parent.firstChild
