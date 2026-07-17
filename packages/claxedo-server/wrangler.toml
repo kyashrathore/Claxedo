@@ -110,6 +110,10 @@ crons = ["*/15 * * * *"]
 [env.staging.vars]
 CLAXEDO_SIGNED_CLOUD_AUTH = "1"
 CLAXEDO_DEPLOYMENT_MODE = "hosted"
+# wakes-v2 U9: staging proves settlement through the wakes path (durable
+# dirty-flag wake + WakeLane DO). Production stays on WorkGraphSettler until
+# the latency budgets hold here. Rollback = delete this line and redeploy.
+CLAXEDO_WAKES_SETTLEMENT = "1"
 
 [[env.staging.r2_buckets]]
 binding = "CLAXEDO_DOCUMENTS"
