@@ -12,6 +12,11 @@ on:
         required: false
         default: latest
         type: string
+      dry_run:
+        description: "Build and pack everything but skip npm publish (no NPM_TOKEN needed)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -31,7 +36,13 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           scope: "@claxedo"
 
+      # workspace-runtime imports @claxedo/workgraph (pinned published dep), but
+      # tsc resolves the workspace copy whose dist is gitignored — build it first,
+      # same pattern as the wakes build in deploy-control-plane.yml.
+      - name: Build workspace prerequisites
+        run: bun run --cwd packages/workgraph build
+
       - name: Publish runtime packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: bun run --cwd packages/claxedo-server release:runtime --version "${{ inputs.version }}" --tag "${{ inputs.npm_tag }}"
+        run: bun run --cwd packages/claxedo-server release:runtime --version "${{ inputs.version }}" --tag "${{ inputs.npm_tag }}" ${{ inputs.dry_run && '--dry-run' || '' }}

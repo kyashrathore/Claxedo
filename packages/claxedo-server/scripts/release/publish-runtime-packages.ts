@@ -132,12 +132,13 @@ export async function publishRuntimePackages(options: {
 
   for (const item of plan) {
     console.log(`building ${item.name}@${options.version}`)
-    if (!options.dryRun) {
-      try {
-        run("npm", ["run", "build", "--workspace", item.name], root)
-      } catch (error) {
-        throw new Error(`build failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
-      }
+    // Builds run in dry-run mode too: a dry run that skips compilation cannot
+    // catch build regressions (a broken workspace-runtime build shipped past
+    // exactly such a dry run on 2026-07-17). Only publish is skipped.
+    try {
+      run("npm", ["run", "build", "--workspace", item.name], root)
+    } catch (error) {
+      throw new Error(`build failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
     }
     if (item.next.scripts?.["verify:publish"] && !options.dryRun) {
       try {
