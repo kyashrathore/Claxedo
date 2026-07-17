@@ -189,8 +189,13 @@ settle wake already holds the lane — `createLaneWakeIfIdle` in
 | Sinks | `session_turn` (agent tools) | `workgraph_settle` |
 | Down = | fires on next boot (recover + catch-up) | platform alarms/cron; no process of ours needs to be alive |
 
-Original v1 design: `docs/plans/2026-07-07-006-feat-wakes.md`. The v2
-evolution (async port, sinks, lanes, drivers, Convex store, DO) and the
+**Deep dive:** [`docs/architecture.md`](./docs/architecture.md) — the
+code-grounded walkthrough (source map, lifecycle transitions with their
+implementing functions, the claim SQL, driver internals, consumers, test map,
+extension recipes).
+
+Original v1 design: `docs/plans/2026-07-07-006-feat-wakes.md` (repo root). The
+v2 evolution (async port, sinks, lanes, drivers, Convex store, DO) and the
 settlement migration: `docs/plans/2026-07-17-002-feat-wakes-v2-settlement-plan.md`.
 
 ## License
