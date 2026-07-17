@@ -14,11 +14,18 @@ describe("document selection guard", () => {
     expect(documentSelectionIsCurrent(started, { ...started })).toBe(true)
   })
 
-  test("rejects newer typing, a new selection, and session or draft switches", () => {
+  test("rejects newer typing, a new selection, and session switches", () => {
     expect(documentSelectionIsCurrent(started, { ...started, prompt: "/docs plus newer text" })).toBe(false)
     expect(documentSelectionIsCurrent(started, { ...started, generation: 2 })).toBe(false)
     expect(documentSelectionIsCurrent(started, { ...started, sessionId: "session-b" })).toBe(false)
-    expect(documentSelectionIsCurrent(started, { ...started, draftId: "draft-b" })).toBe(false)
+  })
+
+  test("ignores transient draft bookkeeping after the selection belongs to a real session", () => {
+    expect(documentSelectionIsCurrent(started, { ...started, draftId: "draft-b" })).toBe(true)
+    expect(documentSelectionIsCurrent(
+      { ...started, sessionId: undefined },
+      { ...started, sessionId: undefined, draftId: "draft-b" },
+    )).toBe(false)
   })
 
   test("an older overlapping request cannot close a newly opened picker when it resolves last", async () => {

@@ -459,13 +459,11 @@ async function routeScope<H extends DocumentHandle>(
 ): Promise<AuthenticatedScope> {
   const auth = await authenticate(request, options)
   const explicitProject = input.projectId ?? input.project_id
-  const projectId =
-    explicitProject ??
-    (auth.auth
-      ? undefined
-      : input.directory
-        ? await requireBackend(options).index.resolveLocalProjectId(input.directory)
-        : undefined)
+  const projectId = auth.auth
+    ? explicitProject
+    : input.directory
+      ? await requireBackend(options).index.resolveLocalProjectId(input.directory)
+      : explicitProject
   if (!projectId) throw new DocumentHttpError(400, "document_project_required", "project_id or directory is required")
   if (!auth.auth) return { ...auth, projectId }
   await authorize(options, auth.auth, auth.orgId, projectId, action)

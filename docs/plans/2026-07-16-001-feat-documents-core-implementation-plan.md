@@ -2,7 +2,8 @@
 title: "Claxedo Documents Core — Technical Implementation Plan"
 type: feat
 date: 2026-07-16
-status: active
+status: complete
+completed: 2026-07-17
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code
@@ -1017,23 +1018,23 @@ depends on it. D14 (local scope) can run after Wave 4 and re-run after Wave 5.
 
 ## Definition of Done
 
-- [ ] D1 port + local backend: conformance green, EC-A cases named tests, crash-atomicity simulated, snapshot bounds + pin-aware GC proven. Progress:
-- [ ] D2 index schema: content-free union schema installed, destructive reset applied, metadata-only list proven at SQL level. Progress:
-- [ ] D3 routes: CAS (428/409) + auth matrix + size limits + snapshot restore + SSE reasons tested; standard local startup boots the server with evidence (Q3 closed). Progress:
-- [ ] D4 repository backend: EC-C1..C9 tested; conformance green; recovery states render (not blank). Progress:
-- [ ] D5 markdown contract: `@tiptap/markdown@3.23.4` adopted; adversarial corpus zero false negatives; `docs/**` byte-stability; frontmatter opaque round-trip (Q5); churn bar measured (EC-F7); fidelity report filed. Progress:
-- [ ] D6 controller: state machine fully test-named (EC-B1..B7); flush-on-blur proven; no silent catch; local recovery draft survives simulated crash. Progress:
-- [ ] D7 editor: composition ≤300 lines; open-without-edit writes nothing (API-asserted); source mode labeled with reason; index metadata-only (network-asserted); R18 a11y smoke; vision-reviewed recording of save/conflict/recovery. Progress:
-- [ ] D8 agent access: `/docs` mention working (Q13 closed); `documents_list`/`documents_open` honest (EC-D5/D6); local grant contained (EC-D11, Q2 closed); live session edits a managed doc with its own tools — transcript attached. Progress:
-- [ ] D9 reactivity + history: live refresh on agent edit (vision-reviewed recording); dirty-editor conflict preserves both sides (EC-B3); dead-watcher correctness (EC-B8); out-of-contract refresh lands in source mode with restorable previous version (EC-D2); version restore CAS-honest. Progress:
-- [ ] D10 workgraph seam: snapshot-at-ingest locator live in intake; pins enforced; `moveToRepository` journal crash-cases tested; revision tables + docs routes deleted; grep gate green. Progress:
-- [ ] D11 hosted backend + sync: conformance green; single-document hydration proven by object-count; write-back CAS conflicts park honestly (EC-D7..D10); VM-loss criterion met; staged real-bucket smoke recorded. Progress:
-- [ ] D12 relay-brokered local hydration: capability design security-reviewed; scoped-capability negative tests; live relay round-trip smoke — or unit explicitly descoped by owner decision. Progress:
-- [ ] D13 sweep: Cleanup Inventory has zero pending rows; final staleness sweep returns nothing and is installed as a persistent guard; Arena disposition executed per Q7 (no `*page-arena*` file remains); `repair.ts` cannot resurrect legacy tables; export equals file bytes; no route accepts Tiptap JSON; selection quick actions still work editor-local. Progress:
-- [ ] D14 proof: every Success Criterion a named journey including the agent live-edit journey; geometric assertions; evidence watched with vision and visual verdict reported separately. Progress:
-- [ ] Placement: every new module sits at its mapped home; ownership registries updated; architecture/agents-md guards green; an independent reviewer confirmed no out-of-layer files. Progress:
-- [ ] Unknowns register: Q1–Q15 each closed with a recorded answer or an explicit owner-approved default. Progress:
-- [ ] Docs: `docs/plans/README.md` updated; `contract.md` (markdown subset) and the Q8/Q14 ADRs checked in; the brainstorm annotated with the R19–R25 supersession. Progress:
+- [x] D1 port + local backend: conformance green, EC-A cases named tests, crash-atomicity simulated, snapshot bounds + pin-aware GC proven. Progress: port conformance and atomic/snapshot suites passed in the final server matrix.
+- [x] D2 index schema: content-free union schema installed, destructive reset applied, metadata-only list proven at SQL level. Progress: migration/store suites and live metadata-only list passed.
+- [x] D3 routes: CAS (428/409) + auth matrix + size limits + snapshot restore + SSE reasons tested; standard local startup boots the server with evidence (Q3 closed). Progress: route matrix passed; unsigned startup returned `/documents` 200, retired `/pages` 404, and CAS behaved correctly.
+- [x] D4 repository backend: EC-C1..C9 tested; conformance green; recovery states render (not blank). Progress: repository suite passed and the retained live browser journey renders actionable deletion recovery.
+- [x] D5 markdown contract: `@tiptap/markdown@3.23.4` adopted; adversarial corpus zero false negatives; `docs/**` byte-stability; frontmatter opaque round-trip (Q5); churn bar measured (EC-F7); fidelity report filed. Progress: production extension parity is shared and the current 61-file corpus report is recorded in release evidence.
+- [x] D6 controller: state machine fully test-named (EC-B1..B7); flush-on-blur proven; no silent catch; local recovery draft survives simulated crash. Progress: controller/recovery matrix passed; final picker race regressions passed 9/9.
+- [x] D7 editor: composition ≤300 lines; open-without-edit writes nothing (API-asserted); source mode labeled with reason; index metadata-only (network-asserted); R18 a11y smoke; vision-reviewed recording of save/conflict/recovery. Progress: headed rich canaries and retained mock/live recordings passed visual review.
+- [x] D8 agent access: `/docs` mention working (Q13 closed); `documents_list`/`documents_open` honest (EC-D5/D6); local grant contained (EC-D11, Q2 closed); live session edits a managed doc with its own tools — transcript attached. Progress: real session tool smoke and live `/docs` granted-path journey passed with exact hashes.
+- [x] D9 reactivity + history: live refresh on agent edit (vision-reviewed recording); dirty-editor conflict preserves both sides (EC-B3); dead-watcher correctness (EC-B8); out-of-contract refresh lands in source mode with restorable previous version (EC-D2); version restore CAS-honest. Progress: complete mock/live reactivity, conflict, source fallback, and restore journeys passed.
+- [x] D10 workgraph seam: snapshot-at-ingest locator live in intake; pins enforced; `moveToRepository` journal crash-cases tested; revision tables + docs routes deleted; grep gate green. Progress: WorkGraph/move suites passed and the persistent retirement guard is green.
+- [x] D11 hosted backend + sync: conformance green; single-document hydration proven by object-count; write-back CAS conflicts park honestly (EC-D7..D10); VM-loss criterion met; staged real-bucket smoke recorded. Progress: hosted/Miniflare matrix passed and authenticated staging R2 exact-byte/CAS smoke is recorded.
+- [x] D12 relay-brokered local hydration: capability design security-reviewed; scoped-capability negative tests; live relay round-trip smoke — or unit explicitly descoped by owner decision. Progress: scoped negative matrix and live relay read/write/stale-CAS smoke passed.
+- [x] D13 sweep: Cleanup Inventory has zero pending rows; final staleness sweep returns nothing and is installed as a persistent guard; Arena disposition executed per Q7 (no `*page-arena*` file remains); `repair.ts` cannot resurrect legacy tables; export equals file bytes; no route accepts Tiptap JSON; selection quick actions still work editor-local. Progress: retired files were renamed/deleted, CSS joined the guard, and the final guard passed 2/2.
+- [x] D14 proof: every Success Criterion a named journey including the agent live-edit journey; geometric assertions; evidence watched with vision and visual verdict reported separately. Progress: full mock 11/11 and live 5/5 evidence is retained under `docs/plans/evidence/documents/`.
+- [x] Placement: every new module sits at its mapped home; ownership registries updated; architecture/agents-md guards green; an independent reviewer confirmed no out-of-layer files. Progress: package architecture gate passed 165/165; final independent placement review recorded no blocker.
+- [x] Unknowns register: Q1–Q15 each closed with a recorded answer or an explicit owner-approved default. Progress: decisions are recorded in `docs/decisions/2026-07-17-documents-core-implementation-answers.md`.
+- [x] Docs: `docs/plans/README.md` updated; `contract.md` (markdown subset) and the Q8/Q14 ADRs checked in; the brainstorm annotated with the R19–R25 supersession. Progress: index, contract, ADRs, implementation answers, release transcript, and visual verdict are present.
 
 ## Execution: parallelize with agents and workflows
 

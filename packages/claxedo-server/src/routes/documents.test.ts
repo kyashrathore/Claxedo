@@ -313,6 +313,26 @@ describe("DocumentsRoutes", () => {
     await disposeHydratedSessionDocuments("session-document-roundtrip")
   })
 
+  test("unsigned local directory identity overrides transient workspace project metadata", async () => {
+    const response = await localApp().request("http://localhost/documents", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        project_id: "transient_workspace_project",
+        directory: "/workspace/project",
+        display_name: "Stable project document",
+      }),
+    })
+
+    expect(response.status).toBe(201)
+    const document = (await response.json()) as { id: string; project_id: string }
+    expect(document).toMatchObject({ project_id: "project_local" })
+    const archived = await localApp().request(`http://localhost/documents/${document.id}/archive`, {
+      method: "POST",
+    })
+    expect(archived.status).toBe(200)
+  })
+
   test("fails closed when the current placement cannot expose a canonical path", async () => {
     const document = await createDocument(localApp(), { project_id: "project_agent_remote" })
     const unavailableBackend = { ...backend, placement: "hosted" as const, agentOpen: undefined }

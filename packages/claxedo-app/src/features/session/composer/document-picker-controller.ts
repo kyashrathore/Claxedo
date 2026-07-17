@@ -1,7 +1,6 @@
 import { createSignal } from "solid-js"
 import {
   documentSelectionIsCurrent,
-  runForCurrentDocumentSelection,
   type DocumentSelectionState,
 } from "./document-selection"
 
@@ -60,6 +59,7 @@ export function createDocumentPickerController<Mention>(input: {
     documents,
     notice,
     show() {
+      generation += 1
       setSelectionNotice(undefined)
       setOpen(true)
       input.openPopover()
@@ -101,7 +101,12 @@ export function createDocumentPickerController<Mention>(input: {
           if (!documentSelectionIsCurrent(started, current())) return
           setSelectionNotice(`Document unavailable: ${error instanceof Error ? error.message : String(error)}`)
         })
-        .finally(() => runForCurrentDocumentSelection(started, current, () => setOpen(false)))
+        .finally(() => {
+          const next = current()
+          if (started.generation !== next.generation) return
+          if (!documentSelectionIsCurrent(started, next)) setSelectionNotice(undefined)
+          setOpen(false)
+        })
     },
   }
 }

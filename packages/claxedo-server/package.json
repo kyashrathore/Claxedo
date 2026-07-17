@@ -65,6 +65,7 @@
     "smoke:central": "bun run scripts/smoke/smoke-central.ts",
     "smoke:documents-r2": "wrangler dev --remote --port 8799 --config scripts/smoke/wrangler.documents-r2.toml",
     "smoke:documents-relay-harness": "bun run scripts/smoke/documents-relay-live-harness.ts",
+    "smoke:documents-session": "bun run scripts/smoke/documents-session-roundtrip.ts",
     "smoke:runtime": "bun run scripts/smoke/smoke-runtime.ts",
     "smoke:workgraph": "bun run scripts/smoke/smoke-workgraph.ts",
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",

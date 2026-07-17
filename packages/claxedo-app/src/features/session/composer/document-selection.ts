@@ -10,7 +10,7 @@ export function documentSelectionIsCurrent(started: DocumentSelectionState, curr
   return started.generation === current.generation &&
     started.scope === current.scope &&
     started.sessionId === current.sessionId &&
-    started.draftId === current.draftId &&
+    (started.sessionId ? true : started.draftId === current.draftId) &&
     started.prompt === current.prompt
 }
 

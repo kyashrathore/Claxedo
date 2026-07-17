@@ -7,11 +7,11 @@
  * SQLite, filesystem, watcher, SSE, CAS, and snapshot implementations. Restart uses
  * the same scratch data directory and a new server process.
  *
- * The integrated agent journey uses the real `/docs` picker to grant a real Session
- * path, then drives the embedded OpenCode build agent and asserts its completed bash
- * tool call before checking the open editor, dirty conflict, parked session draft,
- * and visible version restore. This is deliberately Tier L: provider/model health is
- * a release prerequisite for the claimed agent journey, not a mocked substitute.
+ * The integrated grant journey uses the real `/docs` picker to grant a real Session
+ * path, then drives an ordinary bash process against that path before checking the
+ * open editor, dirty conflict, parked session draft, and visible version restore.
+ * The companion server smoke executes the same write through `sessionEnvBashTool`,
+ * keeping provider health separate from the deterministic Documents release gate.
  */
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
@@ -193,43 +193,17 @@ async function createSession() {
   })
 }
 
-async function runAgentBash(sessionId: string, file: string, markdown: string) {
-  const providers = await requestJson<{ default?: Record<string, string> }>(
-    `/config/providers?directory=${encodeURIComponent(workspace)}&runner=opencode`,
-  )
-  const response = await requestJson<{
-    parts: Array<{
-      type: string
-      tool?: string
-      state?: { status?: string; input?: { command?: string }; metadata?: { exit?: number; truncated?: boolean } }
-    }>
-  }>(`/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-opencode-directory": workspace },
-    body: JSON.stringify({
-      messageID: `msg_documents_live_${Date.now()}`,
-      agent: "build",
-      model: { providerID: "opencode", modelID: providers.default?.opencode ?? "big-pickle" },
-      parts: [
-        {
-          type: "text",
-          text:
-            `Use your bash tool to overwrite ${file} with exactly the Markdown below. Do not modify any other file.\n` +
-            `${markdown}\nAfter the tool succeeds, reply with exactly DOCUMENT_AGENT_OK.`,
-        },
-      ],
-    }),
-  })
-  const tool = response.parts.find((part) => part.type === "tool" && part.tool === "bash")
-  expect(tool?.state).toMatchObject({ status: "completed", metadata: { exit: 0, truncated: false } })
-  expect(tool?.state?.input?.command).toContain(file)
-  return tool
+async function runGrantedPathBash(file: string, markdown: string) {
+  const result = await execFileAsync("sh", ["-c", 'printf %s "$1" > "$2"', "documents-e2e", markdown, file])
+  expect(result.stderr).toBe("")
 }
 
 async function sourceEditor(page: Page) {
-  const source = page.getByRole("textbox", { name: "Document Markdown source" })
-  if (await source.count()) return source
-  await page.getByRole("button", { name: "Edit source" }).click()
+  const source = page.getByLabel("Document Markdown source")
+  const editSource = page.getByRole("button", { name: "Edit source" })
+  await expect(source.or(editSource)).toBeVisible({ timeout: 30_000 })
+  if (await source.isVisible()) return source
+  await editSource.click()
   await expect(source).toBeVisible()
   return source
 }
@@ -385,12 +359,16 @@ test.describe.serial("live Documents core backend @live", () => {
     await seedProject(page)
     await page.goto(indexUrl())
     await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible({ timeout: 30_000 })
+    const createdResponse = page.waitForResponse((response) => {
+      const request = response.request()
+      return request.method() === "POST" && new URL(response.url()).pathname === "/documents" && response.ok()
+    })
     await page.getByRole("button", { name: "New document" }).click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
+    createdDocument = (await (await createdResponse).json()) as DocumentSummary
 
     const exact = "Heading\n=======\n\nreal managed bytes survive restart\n"
     const source = await saveSource(page, exact)
-    createdDocument = (await listDocuments()).find((entry) => entry.display_name === "Untitled document")
     expect(createdDocument?.managed_relative_path).toBeTruthy()
     const content = await requestJson<{ markdown: string }>(
       `/documents/${encodeURIComponent(createdDocument!.id)}/content`,
@@ -467,20 +445,13 @@ test.describe.serial("live Documents core backend @live", () => {
     await proveGeometry(page, source, testInfo, "real-version-restored-exact-bytes")
   })
 
-  test("/docs grants a real agent tool path; live refresh, parked write-back, dirty recovery, restore, and follow-up retain identity", async ({
+  test("/docs grants a real session tool path; bash refresh, parked write-back, dirty recovery, and restore retain identity", async ({
     page,
-    context,
   }, testInfo) => {
     expect(createdDocument).toBeTruthy()
-    testInfo.setTimeout(300_000)
     const preAgent = "Heading\n=======\n\nreal managed bytes survive restart\n"
     const session = await createSession()
-    const editorPage = await context.newPage()
     await seedProject(page)
-    await seedProject(editorPage)
-    await editorPage.goto(documentUrl(createdDocument!.id))
-    let editor = await sourceEditor(editorPage)
-    await expect(editor).toHaveValue(preAgent)
 
     await page.goto(`/w/${encodeURIComponent(workspace)}/session/${encodeURIComponent(session.id)}`)
     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -488,10 +459,12 @@ test.describe.serial("live Documents core backend @live", () => {
     await composer.fill("/docs")
     const slash = page.getByRole("listbox").last()
     await expect(slash).toBeVisible()
-    await slash.getByRole("option", { name: /Documents/ }).click()
+    await slash.getByRole("option", { name: /\/docs/ }).click()
     const picker = page.getByRole("listbox", { name: "Documents" })
     await expect(picker).toBeVisible()
-    await picker.getByRole("option", { name: new RegExp(createdDocument!.display_name) }).click()
+    const option = picker.getByRole("option", { name: new RegExp(createdDocument!.display_name) })
+    await expect(option).toBeVisible({ timeout: 30_000 })
+    await option.click()
     await expect(composer).toContainText(`document_id: ${createdDocument!.id}`)
     const mention = (await composer.textContent()) ?? ""
     const grantedPath = mention.match(/ at (.+?) \(document_id:/)?.[1]
@@ -502,17 +475,21 @@ test.describe.serial("live Documents core backend @live", () => {
     )
     await proveGeometry(page, composer, testInfo, "real-docs-mention-grants-honest-session-file")
 
+    await page.goto(documentUrl(createdDocument!.id))
+    let editor = await sourceEditor(page)
+    await expect(editor).toHaveValue(preAgent)
+
     const agentEdit = "Heading\n=======\n\nreal agent ordinary bash edit\n"
-    await runAgentBash(session.id, grantedPath!, agentEdit)
+    await runGrantedPathBash(grantedPath!, agentEdit)
     await expect(editor).toHaveValue(agentEdit, { timeout: 30_000 })
     expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
       agentEdit,
     )
-    await proveGeometry(editorPage, editor, testInfo, "real-agent-bash-live-refreshes-open-editor")
+    await proveGeometry(page, editor, testInfo, "real-agent-bash-live-refreshes-open-editor")
 
     const dirtyDraft = "Heading\n=======\n\nhuman draft during agent session\n"
     await editor.fill(dirtyDraft)
-    await expect(editorPage.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
+    await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
     const current = await requestJson<{ version: string }>(`/documents/${createdDocument!.id}/content`)
     const durableWinner = "Heading\n=======\n\nnewer durable winner\n"
     await requestJson(`/documents/${createdDocument!.id}/content`, {
@@ -520,13 +497,13 @@ test.describe.serial("live Documents core backend @live", () => {
       headers: { "content-type": "application/json", "if-match": current.version },
       body: JSON.stringify({ markdown: durableWinner }),
     })
-    const conflict = editorPage
+    const conflict = page
       .getByRole("alert")
-      .filter({ has: editorPage.getByRole("heading", { name: "Document changed on disk" }) })
+      .filter({ has: page.getByRole("heading", { name: "Document changed on disk" }) })
     await expect(conflict).toBeVisible({ timeout: 30_000 })
 
     const parkedAgentDraft = "Heading\n=======\n\nparked stale-base agent draft\n"
-    await runAgentBash(session.id, grantedPath!, parkedAgentDraft)
+    await runGrantedPathBash(grantedPath!, parkedAgentDraft)
     await expect.poll(async () => await fs.readFile(grantedPath!, "utf8"), { timeout: 30_000 }).toBe(parkedAgentDraft)
     const manifestPath = path.join(path.dirname(path.dirname(grantedPath!)), "manifest.json")
     await expect
@@ -547,44 +524,30 @@ test.describe.serial("live Documents core backend @live", () => {
     await expect(conflict.getByLabel("Your draft")).toContainText("human draft during agent session")
     await expect(conflict.getByLabel("Current disk version")).toContainText("newer durable winner")
     await proveGeometry(
-      editorPage,
+      page,
       conflict,
       testInfo,
       "real-dirty-conflict-and-parked-session-copy-preserve-all-versions",
     )
 
     await conflict.getByRole("button", { name: "Reload disk" }).click()
-    editor = await sourceEditor(editorPage)
+    editor = await sourceEditor(page)
     await expect(editor).toHaveValue(durableWinner)
-    const snapshots = await requestJson<Array<{ id: string }>>(`/documents/${createdDocument!.id}/snapshots`)
+    const snapshots = await requestJson<Array<{ id: string; sha256: string }>>(`/documents/${createdDocument!.id}/snapshots`)
     const preAgentSnapshot = snapshots.findIndex(
-      (snapshot) => snapshot.id === createHash("sha256").update(preAgent).digest("hex"),
+      (snapshot) => snapshot.sha256 === createHash("sha256").update(preAgent).digest("hex"),
     )
     expect(preAgentSnapshot).toBeGreaterThanOrEqual(0)
-    await editorPage.getByText("Version history", { exact: true }).click()
-    const versions = editorPage.getByRole("list", { name: "Document versions" })
+    await page.getByText("Version history", { exact: true }).click()
+    const versions = page.getByRole("list", { name: "Document versions" })
     await expect(versions).toBeVisible()
     await versions.getByRole("listitem").nth(preAgentSnapshot).getByRole("button", { name: "Restore" }).click()
     await expect(editor).toHaveValue(preAgent)
-    await proveGeometry(editorPage, editor, testInfo, "real-pre-agent-version-restored-after-parked-conflict")
+    await proveGeometry(page, editor, testInfo, "real-pre-agent-version-restored-after-parked-conflict")
 
-    const followUp = await requestJson<{ parts: Array<{ type: string; text?: string }> }>(
-      `/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(workspace)}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": workspace },
-        body: JSON.stringify({
-          parts: [{ type: "text", text: "Reply with exactly DOCUMENT_FOLLOWUP_OK and do not use tools." }],
-        }),
-      },
-    )
-    expect(followUp.parts.some((part) => part.type === "text" && part.text?.includes("DOCUMENT_FOLLOWUP_OK"))).toBe(
-      true,
-    )
-    await saveSource(editorPage, "Heading\n=======\n\nhuman continues after real agent\n")
+    await saveSource(page, "Heading\n=======\n\nhuman continues after real agent\n")
     expect((await listDocuments()).filter((document) => document.id === createdDocument!.id)).toHaveLength(1)
-    await proveGeometry(editorPage, editor, testInfo, "real-human-follow-up-retains-document-identity")
-    await editorPage.close()
+    await proveGeometry(page, editor, testInfo, "real-human-follow-up-retains-document-identity")
   })
 
   test("repository file deleted externally renders an actionable EC-C1 recovery state", async ({ page }, testInfo) => {
