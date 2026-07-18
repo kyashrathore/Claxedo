@@ -16,8 +16,9 @@ the Worker-safe app from `src/hosted-app.ts`. The design and rationale are in
 
 | Method | Path                                                                 | Notes                                                                                                                                                                      |
 | ------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | product health route                                                 | `localExecution: false` on the Worker                                                                                                                                      |
-| GET    | product mode route                                                   | status of configured deps (no secrets)                                                                                                                                     |
+| GET    | `/api/claxedo/health`                                                | `localExecution: false` on the Worker                                                                                                                                      |
+| GET    | `/api/claxedo/mode`                                                   | status of configured deps (no secrets)                                                                                                                                     |
+| GET    | `/api/claxedo/compatibility`                                         | deployed component/protocol versions for rollout checks                                                                                                                    |
 | GET    | `/.well-known/jwks.json`                                             | RAT signing public keys                                                                                                                                                    |
 | POST   | `/api/auth/device/code` · `/api/auth/device/token`                   | fail-closed until Phase A (see below)                                                                                                                                      |
 | GET    | `/api/workspace/:id/connection`                                      | mints a Runtime Access Token (user-hosted)                                                                                                                                 |
@@ -27,7 +28,11 @@ the Worker-safe app from `src/hosted-app.ts`. The design and rationale are in
 | POST   | `/api/workspace/:id/user-hosted/heartbeat`                           | client-signed; re-mints the Host Tunnel Token                                                                                                                              |
 | POST   | `/api/workspace/:id/user-hosted/pause`                               | pauses the link in Convex                                                                                                                                                  |
 | ALL    | `/api/workgraph` · `/api/workgraph/*`                                | authenticated personal WorkGraph contract backed by Convex; candidate-admission paths are backend APIs surfaced through Needs you, not a separate intake/onboarding screen |
-| GET    | product compatibility route                                          | deployed component/protocol versions for rollout checks                                                                                                                    |
+| GET    | `/api/control/sessions` · `/api/control/sessions/:id/gateway` · `/api/control/sessions/:id/messages` | signed session-visibility inventory and per-session gateway/message reads                                          |
+| POST   | `/api/auth/cli/exchange`                                             | signed-bearer → short-lived CLI session tokens (`claxedo login`); fails closed without a Convex-trusted signed identity                                                     |
+| ALL    | `/api/billing` · `/api/billing/*`                                    | Polar checkout/portal/webhook and entitlement; fails closed (503) when Polar config is absent                                                                              |
+| ALL    | `/documents` · `/documents/*`                                        | hosted Documents backed by the `CLAXEDO_DOCUMENTS` R2 binding; `document_backend_unavailable` (503) without it                                                             |
+| ALL    | `/api/claxedo/integrations`                                          | Connections setup routes (provider credential + webhook-secret registration)                                                                                               |
 | GET    | `/internal/relay/target` · `/internal/relay/revocation`              | resolver-token / loopback gated                                                                                                                                            |
 | POST   | `/internal/sandbox-manager/gc` · `/internal/sandbox-manager/release` | manual sandbox GC / lease release; `CLAXEDO_RUNTIME_ADMIN_TOKEN` gated                                                                                                     |
 | POST   | `/internal/workgraph/reconcile`                                      | on-demand invocation of the same bounded durable reconciler as cron; accepts no selector and returns counts only                                                           |
@@ -81,12 +86,30 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 | `CLAXEDO_SANDBOX_DRIVER`                                | optional cloud sandbox driver: `cloudflare`, `daytona`, or `fetch`; auto-selected from present credentials when unset |
 | Cloudflare driver                                       | `CLOUDFLARE_SANDBOX_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL` (`CLOUDFLARE_API_TOKEN` remains a compatibility fallback) |
 | Daytona driver                                          | `DAYTONA_API_KEY`, `CLAXEDO_DAYTONA_SNAPSHOT`                                                                         |
+| fetch-bridge driver                                     | `CLAXEDO_SANDBOX_DRIVER_URL` — explicit-only: requires `CLAXEDO_SANDBOX_DRIVER=fetch`, never auto-selected so a stray URL can't become the hidden model |
 | `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker (Phase A)                                                                                         |
 | `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST`           | optional telemetry (fetch-based)                                                                                      |
 
 Additional knobs — per-region relay endpoints, request rate-limit caps,
 key-rotation `_NEXT_*` extras, and device-login URL/audience/scope overrides —
 exist with sensible defaults; see the package source if you need them.
+
+### Durable Objects
+
+The Worker declares three Durable Object bindings (`wrangler.toml`; DO bindings
+are not inherited by environments, so each is mirrored under `[env.staging]`).
+Migrations are declared once at the top level and inherited.
+
+| Binding           | Class              | Role                                                                                                      |
+| ----------------- | ------------------ | -------------------------------------------------------------------------------------------------------- |
+| `WORKGRAPH_SETTLER` | `WorkGraphSettler` | The bounded WorkGraph settlement driver invoked by cron and `/internal/workgraph/reconcile`.             |
+| `WAKE_LANE`       | `ClaxedoWakeLane`  | Wakes-v2 per-lane settlement driver. The binding exists on every deploy; behavior is opt-in.             |
+| `LIVE_SYNC_ROOM`  | `LiveSyncRoom`     | Per-owner live-sync fan-out: holds hibernatable internal WebSockets, bridges them to the public SSE route, and fans nudges POSTed from any isolate. |
+
+`CLAXEDO_WAKES_SETTLEMENT="1"` flips settlement onto the wakes path (durable
+dirty-flag wake + `WAKE_LANE` DO). It is set only on `[env.staging.vars]`;
+production stays on `WORKGRAPH_SETTLER` until the staging latency budgets hold.
+Rollback is deleting the line and redeploying.
 
 ## Build and deploy
 
@@ -112,8 +135,9 @@ not `node:crypto`.
 BASE=https://claxedo-control-plane-staging.<your-subdomain>.workers.dev
 
 # Unauthenticated smoke
-curl -s "$BASE/<product-health-route>"      # {"ok":true,"mode":"hosted-control-plane","localExecution":false}
-curl -s "$BASE/<product-mode-route>"        # configured-dependency flags
+curl -s "$BASE/api/claxedo/health"          # {"ok":true,"mode":"hosted-control-plane","localExecution":false}
+curl -s "$BASE/api/claxedo/mode"            # configured-dependency flags
+curl -s "$BASE/api/claxedo/compatibility"   # deployed component/protocol versions
 curl -s "$BASE/.well-known/jwks.json"       # {"keys":[…]}
 
 # Signed smoke (TOKEN = a Clerk-issued user bearer Convex trusts)
@@ -133,6 +157,8 @@ WORKGRAPH_SMOKE_PROVIDER_ID="$PROVIDER_ID" \
 WORKGRAPH_SMOKE_MODEL_ID="$MODEL_ID" \
 WORKGRAPH_SMOKE_EFFORT="low" \
 WORKGRAPH_SMOKE_TOOLS_JSON='[]' \
+WORKGRAPH_SMOKE_REPOSITORY_URL="$REPOSITORY_URL" \
+WORKGRAPH_SMOKE_BASE_REVISION="$BASE_REVISION" \
 bun run smoke:workgraph
 ```
 

@@ -17,7 +17,7 @@ workspace, deployment, and extension backends underneath.
 | Let others reach a local worktree through Relay | A workspace can be backed by a local worktree on a user's machine and still be accessed by teammates through [Workspace Relay](./relay-and-deployment.md), when your control plane authorizes and routes that access. |
 | Support local, container, and cloud VM workspaces | The runtime only needs to run next to the project directory. That directory can live on a laptop, inside Docker/a container, or on a real cloud VM. |
 | Keep long-running services close to the agent | Managed process APIs let the agent or UI add/start/stop/restart dev servers, watchers, tests, and other long-running workspace processes, then read logs and port mappings. |
-| Add an MCP orchestration layer | [Claxedo MCP](./mcp.md) exposes runtime tools to any MCP client. Current tools cover processes, logs, session messages, log summaries, and browser panes. The same pattern can be extended with more MCP tools that call the Claxedo HTTP API stack, such as starting related sessions, summarizing browser state, comparing session outputs, or building consensus workflows. |
+| Add an MCP orchestration layer | [Claxedo MCP](./mcp.md) exposes runtime tools to any MCP client. Current tools cover processes, logs, session messages, documents, spawning background sessions, log summaries, WorkGraph, and browser panes. The same pattern can be extended with more MCP tools that call the Claxedo HTTP API stack, such as comparing session outputs or building consensus workflows. |
 
 ## One Stack, Different Workspace Backings
 
@@ -158,9 +158,11 @@ What happens after the client reads that config:
 
 1. The MCP client starts a subprocess by running `npx -y @claxedo/mcp`.
 2. That subprocess registers tools named `process`, `get_logs`,
-   `session_messages`, `summarize_logs`, and browser tools.
+   `session_messages`, `documents_list`, `documents_open`, `spawn_session`,
+   `summarize_logs`, and browser tools.
 3. When an agent in the MCP client calls one of those tools, `@claxedo/mcp`
-   makes an HTTP request to `CLAXEDO_SERVER_URL`.
+   makes an HTTP request to `CLAXEDO_SERVER_URL` (or, for browser tools, to
+   the desktop bridge — see below).
 4. `CLAXEDO_SERVER_URL` points at the Claxedo server fronting the workspace.
    By default that is the control plane on `http://127.0.0.1:3001`, which
    proxies workspace calls to the runtime — not the runtime port `4096`
@@ -169,15 +171,29 @@ What happens after the client reads that config:
 So `@claxedo/mcp` does not run the agent or own the workspace. It is a small
 tool bridge from "MCP tool call" to "Claxedo HTTP API call".
 
-What that gives the MCP client:
+What that gives the MCP client (`process`, `summarize_logs`, and
+`spawn_session` are only registered when the MCP server is not started in
+read-only mode):
 
 | MCP tool | What it does | Runtime routes it calls |
 | --- | --- | --- |
 | `process` | Lists, adds, updates, starts, stops, restarts, and removes managed process configs such as dev servers and watchers. | `/api/wr/process/*` |
 | `get_logs` | Reads terminal or managed-process output by `process_id`, process `name`, `pty_id`, or `terminal_id`. | `/api/wr/process/logs` |
 | `session_messages` | Reads structured agent session messages, or resolves the current terminal/tab agent session when running inside Claxedo. | `/session/:id/message`, `/api/wr/hook/terminal-session` |
+| `documents_list` | Lists Claxedo document index metadata for a project or directory. Returns no document content bodies. | `/documents` |
+| `documents_open` | Opens a `claxedo://document/...` reference, exact id, or name as an honest canonical file path for this session. | `/documents`, `/documents/:id/agent-open` |
+| `spawn_session` | Spawns a background hybrid Claxedo session on the control plane (model turns run centrally; tool side-effects run in the target workspace runtime or a virtual sandbox) and optionally fires an initial prompt. | `/api/control/sessions`, `/api/control/session/:id/message` |
 | `summarize_logs` | Fetches logs or accepts raw log text, creates a temporary agent session, and asks the configured harness to summarize the output. | `/api/wr/process/logs`, `/session`, `/session/:id/message` |
-| Browser tools | Lists browser tabs, captures screenshots, reads console logs, evaluates JavaScript, and navigates browser panes through the Claxedo desktop bridge. | Browser bridge routes exposed by the Claxedo server/runtime integration. |
+| Browser tools (`browser_list_tabs`, `browser_screenshot`, `browser_get_console_logs`, `browser_evaluate_js`, `browser_navigate`) | Lists browser tabs, captures screenshots, reads console logs, evaluates JavaScript, and navigates browser panes. | Not `CLAXEDO_SERVER_URL` — see below. |
+
+Browser tools use a different transport from every other tool in this table.
+They do not call `CLAXEDO_SERVER_URL`; instead `@claxedo/mcp` calls a local
+HTTP bridge exposed by the Claxedo **desktop** app (Electron), addressed by
+the `CLAXEDO_DESKTOP_URL` / `CLAXEDO_DESKTOP_TOKEN` environment variables that
+the desktop app injects into the MCP subprocess at spawn time. That bridge
+only exists when the user is running the Claxedo desktop app with
+`CLAXEDO_ENABLE_BROWSER_TAB=1`; without it, browser tool calls return a
+legible "desktop app required" error instead of making a network call.
 
 Example tool calls an MCP client could make:
 
@@ -470,15 +486,28 @@ The relay and runtime share `@claxedo/workspace-relay-protocol` so both sides
 speak the same `TunnelMessage` protocol without making the runtime depend on
 the relay server implementation.
 
-## Supported Example Shapes In This Repo
+## Runnable Examples In This Repo
 
-| Example | Shows |
-| --- | --- |
-| `examples/runtime-only-host` | A runtime-only host attaching to Relay from env. |
-| `examples/local-single-user` | Local Claxedo server startup. |
-| `examples/headless-client` | Headless client flow against the local server. |
-| `examples/extension-client` | Agent Extension route usage through the server package. |
-| `examples/hosted-team` | Hosted composition with injected auth, services, relay options, and workspace authority. |
+There is no `examples/` directory in this repo. The runnable examples live in
+[`claxedo-cookbook/`](../claxedo-cookbook/) at the repo root: an eight-recipe
+ladder, each recipe a single liftable file under
+`claxedo-cookbook/src/recipes/` that either completes with printed proof or
+prints `SKIP: <reason>`.
+
+| # | Recipe | Shows |
+| --- | --- | --- |
+| 01 | `recipe:01-hello-agent` | `@claxedo/agent-sdk-runtime` facade: runtime → session → message → real model reply |
+| 02 | `recipe:02-harness-swap` | Same `runOnce()` runs claude/codex/cursor — only the harness id string changes |
+| 03 | `recipe:03-one-event-shape` | `@claxedo/agent-event-runtime` normalizing harness-specific streams into one event envelope |
+| 04 | `recipe:04-kill-and-resume` | SQLite store durability across a killed and resumed process |
+| 05 | `recipe:05-workspace-host` | `@claxedo/workspace-runtime` loopback host: files, search, git, diffs, processes, events |
+| 06 | `recipe:06-extensions-once` | `@claxedo/agent-extensions` materialized natively for opencode, claude, codex, and cursor |
+| 07 | `recipe:07-sandbox-secrets` | `@claxedo/sandbox-manager` fail-closed secret brokering |
+| 08 | `recipe:08-place-anywhere` | `@claxedo/workspace-relay` serving the same route locally and through an authenticated tunnel |
+
+`bun install` links the `@claxedo/*` packages from this monorepo checkout;
+then run `bun run recipe:01-hello-agent`, or `bun run recipes:all` for the
+whole ladder. See `claxedo-cookbook/README.md` for per-recipe requirements.
 
 ## Read Next
 

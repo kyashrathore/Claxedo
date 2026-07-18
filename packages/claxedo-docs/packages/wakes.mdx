@@ -1,0 +1,196 @@
+---
+title: "@claxedo/wakes"
+description: "A durable alarm clock: write down \"run this later, when X happens,\" and it fires effectively once — across crashes, deploys, and machines — by time, event, or human approval."
+---
+
+`@claxedo/wakes` resumes an idle agent session from an out-of-band trigger — a
+durable wake fired by time, an external event, or an authorized approval. No
+resident process required, and no durable-execution engine: durable state is a
+database's job and durable timers are the platform's job, and this package is
+the thin, tested logic connecting them — claims, leases, lanes, and sinks.
+
+<Note>
+This is the package's **first published release**. It ships the engine,
+SQLite store, Node driver/scheduler, budgets, tokens, and agent-tool
+definitions. See [Deferred pieces](#deferred-pieces) below before you plan a
+multi-machine or hosted-MCP deployment on top of it.
+</Note>
+
+## Install
+
+```sh
+npm install @claxedo/wakes
+```
+
+## Quickstart
+
+```ts
+import { createWakes, createScheduler, createNodeWakeDriver } from "@claxedo/wakes"
+import { SqliteWakeStore } from "@claxedo/wakes/sqlite" // node-only subpath
+
+const driver = createNodeWakeDriver()
+const wakes = createWakes({
+  store: new SqliteWakeStore({ path: "wakes.db" }),
+  driver,                                             // push (optional)
+  spawnTurn: async (sessionId, result) => host.resumeSession(sessionId, result),
+  sinks: {                                            // other firing behaviors
+    my_job: async (wake, result) => host.runJob(JSON.parse(wake.intentJson)),
+  },
+  authorize: async (actor, workspaceId) => host.canApprove(actor, workspaceId),
+  computeNextRun: (cron, after) => parseCron(cron, after), // only if you use cron
+})
+driver.bind(wakes)
+
+// three trigger types — durations are compile-checked `ms` strings
+await wakes.schedule({ workspaceId, sessionId, in: "3d", intent })          // or at: Date | epoch-ms
+await wakes.watch({ workspaceId, sessionId, eventKey: "ci:pass:x", intent, expiresIn: "7d" })
+const { token } = await wakes.requestApproval({ workspaceId, sessionId, prompt, expiresIn: "1d" })
+
+// fire sources
+createScheduler(wakes).start()                 // the polling backstop (guarantee)
+// + the driver fires due-now wakes instantly  // the push path (speed)
+await wakes.deliverEvent("ci:pass:x", payload) // 'on_event' — host webhook ingress
+await wakes.resolve(token, answer, actor)      // 'on_approval' — inbound handler
+
+// turn-side: make an irreversible external effect at-most-once across re-runs
+await wakes.once(sessionId, "open-pr:branch-x", () => host.openPr(branch))
+```
+
+`@claxedo/wakes/sqlite` is a deliberately separate subpath — the root entry
+(`@claxedo/wakes`) stays edge-runtime-safe (no `better-sqlite3`) so it can be
+imported from a Cloudflare Worker or other edge runtime that only wires the
+engine plus a non-SQLite store.
+
+## The model
+
+A **wake** is one durable row:
+
+| field | meaning |
+| --- | --- |
+| `triggerType` | WHEN it fires: `at` (time/cron), `on_event` (delivered key), `on_approval` (human answer via token) |
+| `kind` | WHAT firing does: selects a registered sink (default `session_turn`) |
+| `serialKey` | WHICH lane: same-key wakes never fire concurrently; `null` = no lane |
+| `intentJson` | the payload handed to the sink |
+| `state` | `pending → firing → fired` (or `expired` / `cancelled`) |
+| `leaseUntil`, `idempotencyKey` | crash-recovery and create-dedup bookkeeping |
+
+Every transition out of `pending` is a guarded compare-and-swap — the single
+serialization point. Whoever wins the CAS fires; everyone else backs off. A
+crash mid-fire leaves the row in `firing` with a lease; when the lease lapses,
+any runner reclaims and re-drives it (the result payload was persisted at
+claim time, so an approval's answer survives the crash). Firing is
+**at-least-once**; `once()` receipts and idempotency keys make effects
+at-most-once where it matters.
+
+## The five pluggable pieces
+
+- **Store** (`WakeStore`, all-async) — owns the two hard operations: the CAS
+  and `claimDue` (the atomic "grab due wakes respecting lanes"). Because
+  claims are atomic in the database, any number of runners can race safely:
+  duplicates waste a read, never double-fire. Ships: `SqliteWakeStore`
+  (`@claxedo/wakes/sqlite`).
+- **Sinks** — plain in-process functions registered at `createWakes` time,
+  keyed by the `kind` string stored on the row. No code in the database, no
+  RPC — a wake created last week fires with this week's reviewed
+  implementation. An unregistered kind fails **before** any side effect,
+  leaving the row lease-reclaimable.
+- **Lanes** (`serialKey`) — `claimDue` never claims a key that already has a
+  `firing` row and takes at most one wake per key per batch (earliest first),
+  so same-key ordering is a property of the data layer, not of any process.
+- **Driver** (`WakeDriver`) — `nudge({serialKey, fireAt})`, a lossy hint,
+  never load-bearing. Ships `createNodeWakeDriver`: in-memory per-lane promise
+  chains that drain each lane until empty.
+- **Scheduler** — the guarantee. `createScheduler` is recover-on-boot plus a
+  non-overlapping `runDue()` interval; slow, dumb, cannot miss.
+
+## Timing semantics (read this before trusting the clock)
+
+- **Never early, close-to-on-time normally, late-but-never-lost worst case.**
+  This is reliable scheduling, not hard-realtime.
+- Recurring wakes compute the next occurrence **from the wake's own scheduled
+  time**, never from wall-clock-at-fire, so slack never drifts the grid; the
+  next-occurrence insert is idempotency-keyed so replays can't double-book.
+- Downtime **replays** missed recurring occurrences one by one on recovery (no
+  skip-to-latest mode). Expiring wakes that lapsed during downtime fire their
+  `expired: true` notification instead of the normal result.
+- A stopped Node process fires nothing until it's back — the scheduler lives
+  in the process; rows wait safely on disk. "Fires while my laptop is closed"
+  requires a hosted runner by definition.
+
+## Agent tool surface
+
+`getWakeToolDefinitions()` and `handleWakeToolCall()` (from the package root)
+are JSON-schema tool metadata and a pure, host-agnostic dispatcher — **not**
+an MCP server. A host registers these onto whatever tool surface its sessions
+already use and supplies per-turn context (`sessionId`, `workspaceId`,
+`actor`); the agent never passes `sessionId`/`workspaceId` itself, so a tool
+call can only create or cancel wakes for the session it runs in. The four
+tools are `schedule_followup`, `watch`, `request_approval`, and `cancel_wake`.
+Approval tokens stay server-side — handed to the host via
+`onApprovalRequested`, never exposed to the agent.
+
+## Deployment cheat sheet
+
+| | Local / self-host Node | Hosted Cloudflare Worker |
+| --- | --- | --- |
+| Store | `@claxedo/wakes/sqlite` | `ConvexWakeStore` (host-owned, in `claxedo-server`) |
+| Push | `createNodeWakeDriver` | `WakeLane` Durable Object |
+| Backstop | `createScheduler` (1s tick) | Cron Trigger (15 min) |
+| Sinks | `session_turn` (agent tools) | `workgraph_settle` |
+| Down = | fires on next boot (recover + catch-up) | platform alarms/cron; no process of ours needs to stay alive |
+
+## How WorkGraph uses it
+
+WorkGraph settlement keeps its own truth (lease/epoch-fenced outbox rows in
+Convex) and uses wakes only as the **doorbell**: per command burst, one
+dirty-flag wake per tenant (`kind: workgraph_settle`, `serialKey` = tenant,
+`fireAt: now`). Firing runs the tenant-scoped reconcile; unsettled results
+schedule a durable retry wake on the same lane. Burst coalescing there is
+**state-aware** — it skips creating a wake when a pending settle wake already
+holds the lane (`createLaneWakeIfIdle` in `convex/wakes.ts`) rather than
+relying on engine idempotency keys.
+
+## Deferred pieces
+
+<Warning>
+Read this before building on `@claxedo/wakes` for anything beyond a single
+Node/SQLite process.
+
+- **No MCP server ships in this package.** `getWakeToolDefinitions()` /
+  `handleWakeToolCall()` are tool metadata + a dispatcher for a host to wire
+  onto its own tool surface (e.g. an in-process agent-tool registry or an MCP
+  bridge the host builds); there is no standalone `@claxedo/wakes` MCP binary
+  today.
+- **The Convex store is not a package export.** `ConvexWakeStore` lives
+  out-of-package in the host app (`convex/wakes.ts` at the repo root and
+  `packages/claxedo-server/src/wakes-host/convex-wake-store.ts`), proven by an
+  in-memory mirror test plus the staging smoke — not by an in-repo Convex test
+  harness. The mirror and `convex/wakes.ts` must be changed together or they
+  drift silently.
+- **No Postgres adapter exists yet.** A Postgres `WakeStore` is a
+  designed-but-unbuilt port implementation, held to the same conformance
+  expectations as SQLite — multi-machine deployments without Convex need it
+  written first.
+- **Cron expressions have no parser wired.** `computeNextRun` is an injected
+  function; no deployment supplies a real cron parser yet (tests use a stub),
+  so timezones/DST are unhandled until one is chosen. Absolute-time (`at:`)
+  and duration (`in:`) wakes need none of this.
+- **`gc()` must be called by the host or terminal rows accumulate forever** —
+  the bounded delete exists but isn't wired to a periodic lane on either
+  deployment yet.
+- **Lanes apply to time-triggered claims only.** `deliverEvent` and `resolve`
+  fire immediately via the CAS guard and do not queue behind a lane.
+- **A failing wake in `runDue` aborts the rest of that pass** — there is no
+  dead-letter state yet, only counted attempts.
+</Warning>
+
+## Full API
+
+See the [README](https://github.com/kyashrathore/Claxedo/blob/dev/packages/wakes/README.md)
+and the code-grounded [architecture doc](https://github.com/kyashrathore/Claxedo/blob/dev/packages/wakes/docs/architecture.md)
+on GitHub for the full source map, lifecycle transition table, claim SQL, and
+extension recipes.
+
+<Card title="WorkGraph" href="/packages/workgraph" icon="route">
+  The first hosted consumer — wakes as the settlement doorbell.
+</Card>

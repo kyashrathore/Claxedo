@@ -24,7 +24,7 @@ lower-level packages into one per-workspace service.
 | MCP compatibility | The host exposes MCP status/connect/disconnect compatibility routes for harness-hosted MCP config. |
 | Relay attachment | The host can attach itself to Workspace Relay as a host tunnel. In that mode the relay forwards HTTP/WebSocket traffic to the local runtime URL. See [Relay And Deployment](./relay-and-deployment.md). |
 | Health and capabilities | The host reports runtime health, active harness, workspace id, process counts, and a capability manifest. Embedders can also call `host.detail()` and `host.capabilities()` directly. |
-| Drain and dispose | The standalone server handles SIGTERM/SIGINT by closing the HTTP server, closing the Relay host tunnel, stopping control-plane sync, and disposing the active adapter with a drain timeout. Embedded callers can call `host.dispose()` directly. |
+| Drain and dispose | When started with `{ signals: true }`, the standalone server handles SIGTERM/SIGINT by closing the HTTP server, closing the Relay host tunnel, and disposing the active adapter with a drain timeout. Embedded callers can call `host.dispose()` directly. |
 
 The host does not own product concerns such as end-user sign-in, organization
 authorization, billing, marketplace catalog policy, cloud VM provisioning, or
@@ -37,12 +37,16 @@ import { loopbackWorkspaceRuntimeExposure, startServer } from "@claxedo/workspac
 
 startServer(4096, {
   exposure: loopbackWorkspaceRuntimeExposure(),
-})
+}, { signals: true })
 ```
 
-`startServer(port, options)` opens the HTTP/WebSocket runtime, injects
-WebSocket handling, starts control-plane runtime sync, optionally starts a Relay
-host tunnel, installs agent hooks, and registers SIGTERM/SIGINT drain handling.
+`startServer(port, options, lifecycle)` opens the HTTP/WebSocket runtime,
+injects WebSocket handling, optionally starts a Relay host tunnel, and installs
+agent hooks. It registers SIGTERM/SIGINT (and unhandled-rejection/uncaught-exception)
+drain handling only when the third `lifecycle` argument sets `{ signals: true }`.
+By default `startServer` registers zero process-level signal listeners and never
+calls `process.exit`, so a process that owns its own lifecycle — such as the
+standalone host entrypoint above — should opt in explicitly.
 
 ## Host Shapes
 
@@ -53,15 +57,14 @@ route mounting the package handles for you.
 | Capability | Standalone process: `startServer` | Embedded app: `createWorkspaceRuntimeApp` | Low-level host: `createWorkspaceHost` |
 | --- | --- | --- | --- |
 | Opens a listening port | Yes. Calls the Node server adapter for you. | No. You pass `runtime.app.fetch` to your own server. | No. You own the server. |
-| Provides a Hono app | Internally. | Yes: returns `app`. | No. You provide a Hono app and call `host.mount(app)`. |
+| Provides a Hono app | Internally. | Yes: returns `app`. | No. You provide a Hono app and call `host.mount(app, { exposure })`. |
 | Injects WebSocket support | Yes. | Returns `injectWebSocket` and `upgradeWebSocket`; you call `injectWebSocket(server)`. | You provide WebSocket upgrade support if mounting PTY/core routes. |
-| Mounts session/harness routes | Yes. | Yes. | Yes, when you call `host.mount(app)`. |
+| Mounts session/harness routes | Yes. | Yes. | Yes, when you call `host.mount(app, { exposure })`. |
 | Mounts PTY/process/file/diff/core routes | Yes. | Yes. | Only if you pass `core` to `host.mount` or call `mountWorkspaceCore`. |
 | Applies runtime snapshots | Via `POST /api/wr/config`. | Via `POST /api/wr/config` or `runtime.host.apply(snapshot)`. | Via `host.apply(snapshot)`, and via `/api/wr/config` only if you mount that route yourself. |
 | Harness can change after startup | Yes, through config apply. | Yes, through config apply or direct `host.apply`. | Yes, through direct `host.apply`. |
 | Relay host tunnel | Yes, when `options.hostTunnel` is set. | No automatic tunnel startup. You can wire tunnel helpers yourself. | No automatic tunnel startup. You can wire tunnel helpers yourself. |
-| Control-plane heartbeat | Yes. `startServer` calls `startControlPlaneRuntimeSync`. | Not automatic. You decide whether to start sync. | Not automatic. You decide whether to start sync. |
-| Signal drain handling | Yes. Handles SIGTERM/SIGINT, closes server/tunnel/sync, then disposes host. | No. Your process owns drain. | No. Your process owns drain. |
+| Signal drain handling | Opt-in. Only when you pass `{ signals: true }` as the third `lifecycle` argument does `startServer` register SIGTERM/SIGINT handlers; it then closes the server/tunnel and disposes the host. | No. Your process owns drain. | No. Your process owns drain. |
 | Best fit | One runtime process per workspace, container, VM, or user-hosted laptop runtime. | Product already has a Node/Hono server but wants the full runtime app. | Framework/platform code that wants to compose only selected host routes and lifecycle calls. |
 
 ## Embed The Runtime App
@@ -95,16 +98,23 @@ with its default harness and receive the user's selected harness later through
 management-auth adapter wired at startup (`managementAuth` +
 `managementTarget` options): use the allow-all helper from
 `@claxedo/workspace-runtime/testing` for a local single-user host, or
-`createWorkspaceRuntimeJwtManagementAuth` (env:
+`createWorkspaceRuntimeJwtManagementAuth` (which takes an explicit
+`{ key, issuer, audience }` options object) and send the signed management JWT
+in the `x-workspace-runtime-management-token` header. The
 `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL` / `_VERIFY_PEM` / `_ISSUER` /
-`_AUDIENCE`) and send the signed management JWT in the
-`x-workspace-runtime-management-token` header.
+`_AUDIENCE` env vars are not read by `createWorkspaceRuntimeJwtManagementAuth`
+itself — they are consumed by the `managementAuthFromEnv` helper in
+`workspace-relay-env.ts`, which loads the verification key from them and
+constructs the JWT auth adapter for you.
 
 ```ts
 await fetch("http://127.0.0.1:4096/api/wr/config", {
   method: "POST",
   headers: {
     "content-type": "application/json",
+    // Required by every management-auth adapter except the allow-all
+    // testing helper, which ignores the token entirely.
+    "x-workspace-runtime-management-token": managementToken,
   },
   body: JSON.stringify({
     version: 2,
@@ -132,7 +142,7 @@ only the host routes you need.
 
 ```ts
 import { Hono } from "hono"
-import { createWorkspaceHost } from "@claxedo/workspace-runtime"
+import { createWorkspaceHost, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
 
 const app = new Hono()
 const host = createWorkspaceHost({
@@ -142,7 +152,7 @@ const host = createWorkspaceHost({
   },
 })
 
-host.mount(app)
+host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
 
 await host.apply({
   version: 2,
@@ -159,7 +169,7 @@ The low-level host object exposes:
 
 | Method | Purpose |
 | --- | --- |
-| `mount(app, options?)` | Mount session, provider, MCP, event, LSP, VCS, and compatibility routes. |
+| `mount(app, options)` | Mount session, provider, MCP, event, LSP, VCS, and compatibility routes. `options.exposure` is required; pass `options.core` to also mount PTY/process/file/diff/agent-hook/event routes as a unified host. |
 | `apply(snapshot)` | Apply harness/auth/MCP/Agent Extension config. |
 | `detail()` | Return host state, active harness, error, and harness status. |
 | `capabilities()` | Return the current runtime capability manifest. |
@@ -215,3 +225,5 @@ Implemented in:
 - `packages/workspace-runtime/src/workspace/host.ts`
 - `packages/workspace-runtime/src/workspace/core.ts`
 - `packages/workspace-runtime/src/routes/config.ts`
+- `packages/workspace-runtime/src/management-auth.ts`
+- `packages/workspace-runtime/src/workspace-relay-env.ts`

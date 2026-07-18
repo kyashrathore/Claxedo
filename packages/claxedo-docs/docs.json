@@ -43,6 +43,7 @@
               "deploy/private-vm",
               "deploy/relay-attached",
               "deploy/hosted-control-plane",
+              "deploy/self-host-fly",
               "deploy/sandbox-drivers-secrets"
             ]
           }
@@ -79,6 +80,13 @@
               "packages/mcp",
               "packages/channels",
               "packages/connections"
+            ]
+          },
+          {
+            "group": "WorkGraph & wakes",
+            "pages": [
+              "packages/workgraph",
+              "packages/wakes"
             ]
           },
           {

@@ -28,10 +28,8 @@ frame from the beginning.
 ## ACP Event Translation
 
 ```ts
-import {
-  createAcpEventTranslator,
-  createAgentEventRuntime,
-} from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
 
 const runtime = createAgentEventRuntime({
   harness: "codex",
@@ -49,7 +47,7 @@ for (const event of result.events) {
 ## OpenCode Compatibility Projection
 
 ```ts
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime"
+import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
 
 const compat = createOpencodeCompatProjection({
   sessionId: "session-1",
@@ -59,6 +57,15 @@ const compat = createOpencodeCompatProjection({
 
 const opencodeEvents = result.events.flatMap((event) => compat.ingest(event))
 ```
+
+## Root Vs Subpath Imports
+
+Use root imports (`@claxedo/agent-event-runtime`) for canonical contracts and
+harness-agnostic runtime primitives such as `createAgentEventRuntime`. Use
+subpaths for harness adapters and projections, for example
+`@claxedo/agent-event-runtime/harnesses/acp` and
+`@claxedo/agent-event-runtime/projections/opencode-compat`. Harness adapters
+and projections are not root exports.
 
 ## Determinism And Restore
 
@@ -86,6 +93,7 @@ projections:
 - `harnesses/acp`
 - `harnesses/claude`
 - `harnesses/codex`
+- `harnesses/cursor`
 - `projections/debug-trace`
 - `projections/opencode-compat`
 
@@ -112,4 +120,5 @@ Implemented in:
 - `packages/agent-event-runtime/src/harnesses/acp/event-translator.ts`
 - `packages/agent-event-runtime/src/harnesses/claude/adapter.ts`
 - `packages/agent-event-runtime/src/harnesses/codex/adapter.ts`
+- `packages/agent-event-runtime/src/harnesses/cursor/adapter.ts`
 - `packages/agent-event-runtime/src/projections/opencode-compat/projection.ts`
