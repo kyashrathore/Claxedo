@@ -10,7 +10,7 @@
  *   GET  /api/claxedo/health
  *   GET  /api/claxedo/mode
  *   GET  /api/claxedo/compatibility
- *   GET  /api/claxedo/events      (auth-gated SSE heartbeat stream)
+ *   GET  /api/claxedo/events      (auth-gated live-sync SSE stream)
  *   GET  /api/claxedo/bootstrap   (aggregate shell boot payload)
  *   GET  /global/health | /global/config
  *   GET  /project | /project/current | /path | /provider | /provider/auth
@@ -39,6 +39,7 @@ import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./route
 import { signedOrError } from "./routes/workspace-user-hosted"
 import { HostedDeviceAuthRoutes } from "./routes/hosted-device-auth"
 import { HostedShellRoutes } from "./routes/hosted-shell"
+import { nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
 import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
 import { HostedControlRoutes } from "./routes/hosted-control"
@@ -105,6 +106,13 @@ export type HostedAppOverrides = {
   entitlementGate?: EntitlementGate
   /** D11 supplies hosted document index/blob storage through this Worker-safe seam. */
   documentsBackend?: DocumentsRouteBackend
+  /**
+   * W5.2: per-owner live-sync fan-out Durable Object namespace. Present on the
+   * Cloudflare Worker (bound as LIVE_SYNC_ROOM); when present the hosted events
+   * route holds the client SSE stream in the caller's room. Absent in
+   * Node/self-host/test compositions, the route provides heartbeat fallback.
+   */
+  liveSyncRoom?: LiveSyncRoomNamespace
 }
 
 // Deployment-configured app origins (CLAXEDO_APP_ORIGINS, comma-separated).
@@ -126,6 +134,20 @@ export function configuredAppOrigins(raw: string | undefined) {
     if (exact.has(origin)) return true
     if (!origin.startsWith("https://")) return false
     return suffixes.some((suffix) => origin.endsWith(suffix) && origin.length > "https://".length + suffix.length)
+  }
+}
+
+// Safely read the request's ExecutionContext `waitUntil` (present on the
+// Cloudflare Worker; `context.executionCtx` THROWS on the Node adapter / tests
+// where no ctx is threaded). Returns undefined when unavailable so callers fall
+// back to best-effort in-request work.
+function guardedExecutionWaitUntil(context: Context): ((promise: Promise<unknown>) => void) | undefined {
+  try {
+    const execution = context.executionCtx
+    if (typeof execution?.waitUntil !== "function") return undefined
+    return execution.waitUntil.bind(execution)
+  } catch {
+    return undefined
   }
 }
 
@@ -185,7 +207,12 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   assertHostedAppBootConfig(plane)
   const { services } = plane
   const app = new Hono()
+  const liveSyncRoom = overrides.liveSyncRoom
   const settlementDispatcherByRequest = new WeakMap<Request, SettlementDispatcher>()
+  // W5.3: per-request `waitUntil`, captured in `forwardWorkGraph` from the active
+  // ExecutionContext, so the internal WorkGraph service can ring the live-sync
+  // room past the mutation response without blocking it.
+  const liveSyncWaitUntilByRequest = new WeakMap<Request, (promise: Promise<unknown>) => void>()
   const workgraph =
     overrides.workgraph ??
     createHostedWorkGraph({
@@ -203,6 +230,8 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ...(overrides.workGraphSettlementDispatcherForRequest
         ? { settlementDispatcherForRequest: (request: Request) => settlementDispatcherByRequest.get(request) }
         : {}),
+      ...(liveSyncRoom ? { liveSyncRoom } : {}),
+      waitUntilForRequest: (request: Request) => liveSyncWaitUntilByRequest.get(request),
       telemetry: services.telemetry,
     })
   const workGraphOwnerActivation = overrides.workGraphOwnerActivation
@@ -217,6 +246,19 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const attemptOperationExecutor = createHostedAttemptOperationExecutor({
     env: plane.env,
     ...(attemptTranscriptRetention ? { retainTranscript: attemptTranscriptRetention } : {}),
+    ...(liveSyncRoom
+      ? {
+          notifyChanged: async (principal: { ownerUserId: string; orgId: string }) => {
+            await nudgeLiveSyncRoom(liveSyncRoom, `org:${principal.orgId}`, {
+              type: "workgraph.changed",
+              ownerUserId: principal.ownerUserId,
+              ts: Date.now(),
+            }).catch((error) => {
+              console.error("[claxedo-server] WARN  hosted agent workgraph.changed nudge failed:", error)
+            })
+          },
+        }
+      : {}),
   })
   const attemptOperationHandler = attemptOperationExecutor
     ? createHostedAttemptOperationHandler({ env: plane.env, execute: attemptOperationExecutor })
@@ -225,13 +267,16 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     const url = new URL(context.req.url)
     url.pathname = url.pathname === "/api/workgraph" ? "/" : url.pathname.slice("/api/workgraph".length)
     const request = new Request(url, context.req.raw)
-    if (!overrides.workgraph && overrides.workGraphSettlementDispatcherForRequest) {
-      settlementDispatcherByRequest.set(
-        request,
-        overrides.workGraphSettlementDispatcherForRequest(
-          context.executionCtx.waitUntil.bind(context.executionCtx),
-        ),
-      )
+    if (!overrides.workgraph) {
+      const waitUntil = guardedExecutionWaitUntil(context)
+      if (waitUntil) {
+        // W5.3: the internal WorkGraph service reads this to ring the live-sync
+        // room after the response (it has no ExecutionContext of its own).
+        liveSyncWaitUntilByRequest.set(request, waitUntil)
+        if (overrides.workGraphSettlementDispatcherForRequest) {
+          settlementDispatcherByRequest.set(request, overrides.workGraphSettlementDispatcherForRequest(waitUntil))
+        }
+      }
     }
     return workgraph.router.fetch(request)
   }
@@ -345,6 +390,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
       ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
+      ...(liveSyncRoom ? { liveSyncRoom } : {}),
       activateOwner: ownerActivationWithTelemetry(services.telemetry, workGraphOwnerActivation),
     }),
   )
@@ -374,6 +420,11 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       ...(services.authority ? { authority: services.authority } : {}),
+      ...(liveSyncRoom
+        ? {
+            documentChangedSink: (event) => nudgeLiveSyncRoom(liveSyncRoom, `org:${event.orgId}`, event),
+          }
+        : {}),
     }),
   )
 

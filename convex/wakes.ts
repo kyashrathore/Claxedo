@@ -342,6 +342,38 @@ export const findReclaimableWakes = serviceQuery({
   },
 })
 
+// Atomic reclaim of lapsed-lease firing rows (the mutation half of
+// `findReclaimableWakes`, mirroring SqliteWakeStore.reclaimFiring): re-stamp
+// the lease to `now + lease_ms` and return only the rows this call changed.
+// Runs in one Convex transaction, so of two concurrent reclaimers exactly one
+// commits per row — the other retries against the re-stamped lease and matches
+// nothing. This is what lets `runDue`/`recover` re-drive a crashed wake's sink
+// without ever handing the same row to two drivers.
+export const reclaimFiringWakes = serviceMutation({
+  args: { now: v.number(), lease_ms: v.number(), serial_key: nullableString },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("wakes")
+      .withIndex("by_state_lease", (q: any) => q.eq("state", "firing").lte("lease_until", args.now))
+      .collect()
+    const reclaimable = docs
+      .filter((doc) => doc.lease_until != null)
+      .filter((doc) =>
+        args.serial_key === undefined
+          ? true
+          : args.serial_key === null
+            ? doc.serial_key === undefined
+            : doc.serial_key === args.serial_key,
+      )
+    const reclaimed: Doc<"wakes">[] = []
+    for (const doc of reclaimable) {
+      await ctx.db.patch(doc._id, { lease_until: args.now + args.lease_ms })
+      reclaimed.push((await ctx.db.get(doc._id))!)
+    }
+    return reclaimed.map(toWake)
+  },
+})
+
 export const listFiringWakes = serviceQuery({
   args: {},
   handler: async (ctx) => {

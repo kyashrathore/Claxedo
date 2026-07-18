@@ -98,7 +98,7 @@ export interface Wakes {
    * pass runs (expiry + reclaim + claim across all lanes).
    */
   runDue(serialKey?: string | null): Promise<{ fired: number }>
-  /** Boot sweep: re-drive every `firing` row left by a crash. Call on startup. */
+  /** Boot sweep: re-drive `firing` rows whose leases have already lapsed. */
   recover(): Promise<{ recovered: number }>
   once<T>(sessionId: SessionId, effectKey: string, fn: () => Promise<T> | T): Promise<T>
   listForSession(sessionId: SessionId): Promise<Wake[]>
@@ -358,7 +358,11 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
           }
         }
       }
-      for (const wake of await store.findReclaimable(t, serialKey)) {
+      // Atomic re-claim before driving: `findReclaimable` was a plain SELECT, so
+      // two drivers polling the same store could both see one lapsed-lease row
+      // and both run its sink. `reclaimFiring` re-stamps the lease in the same
+      // statement and hands back only the rows this call won.
+      for (const wake of await store.reclaimFiring(t, leaseMs, serialKey)) {
         await driveFiring(wake)
         fired++
       }
@@ -370,8 +374,12 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     },
 
     async recover() {
+      const t = now()
       let recovered = 0
-      for (const wake of await store.listFiring()) {
+      // A process starting alongside an older healthy process must not treat
+      // that process's live work as orphaned. Atomic reclaim still serializes
+      // competing boots, but eligibility is limited to already-lapsed leases.
+      for (const wake of await store.reclaimFiring(t, leaseMs)) {
         await driveFiring(wake)
         recovered++
       }

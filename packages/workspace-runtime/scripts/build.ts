@@ -46,6 +46,7 @@ const EXTERNALS = [
   "better-sqlite3",
   "hono",
   "node-pty",
+  "ws",
   "jsonc-parser",
   "zod",
   // Native helpers
@@ -62,6 +63,7 @@ const DECLARATION_EXTERNALS = [
   "better-sqlite3",
   "jose",
   "node-pty",
+  "ws",
   "zod",
 ]
 

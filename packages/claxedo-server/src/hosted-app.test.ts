@@ -1335,7 +1335,7 @@ describe("hosted shell boot surface", () => {
 
   test("hosted central event routes require the control-plane bearer", async () => {
     const app = createHostedApp(fakePlane())
-    for (const path of ["/api/claxedo/events", "/api/wr/events"]) {
+    for (const path of ["/api/claxedo/events", "/api/wr/events", "/global/event"]) {
       const res = await app.fetch(new Request(`http://cp.test${path}`))
       expect(res.status).toBe(401)
       expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
@@ -1344,7 +1344,7 @@ describe("hosted shell boot surface", () => {
 
   test("hosted central event routes stream an immediate heartbeat in the bus envelope", async () => {
     const app = createHostedApp(fakePlane())
-    for (const path of ["/api/claxedo/events", "/api/wr/events"]) {
+    for (const path of ["/api/claxedo/events", "/api/wr/events", "/global/event"]) {
       const res = await app.fetch(
         new Request(`http://cp.test${path}`, {
           headers: { authorization: "Bearer user_1", accept: "text/event-stream" },

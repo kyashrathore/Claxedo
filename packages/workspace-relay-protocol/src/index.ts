@@ -187,6 +187,15 @@ export function makeTunnelPong(input: TunnelPing, receivedAt = Date.now()): Tunn
   }
 }
 
+export function makeTunnelPing(sentAt = Date.now(), id: string = crypto.randomUUID()): TunnelPing {
+  return {
+    type: "ping",
+    protocol: TUNNEL_PROTOCOL_VERSION,
+    id,
+    sent_at: sentAt,
+  }
+}
+
 function validateTunnelMessageShape(row: Record<string, unknown>) {
   switch (row.type) {
     case "ping":

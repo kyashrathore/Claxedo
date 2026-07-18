@@ -1,4 +1,5 @@
 import {
+  makeTunnelPing,
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
   validateTunnelMessage,
@@ -476,12 +477,7 @@ function tunnelMessage(
 function sendTunnelPing(ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>) {
   if (ws.readyState !== WebSocket.OPEN) return
   ws.data.missedPongs += 1
-  ws.send(JSON.stringify({
-    type: "ping",
-    protocol: TUNNEL_PROTOCOL_VERSION,
-    id: crypto.randomUUID(),
-    sent_at: Date.now(),
-  }))
+  ws.send(JSON.stringify(makeTunnelPing()))
 }
 
 function clearPendingTimers(entry: PendingTunnelHttpResponse) {

@@ -3,6 +3,7 @@ import {
   DocumentAgentOpenError,
   publishDocumentEvent,
   withDocumentOperation,
+  type DocumentChangedSink,
   type DocumentsBackend,
 } from "./backend"
 import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
@@ -33,7 +34,16 @@ export class DocumentsServiceError extends Error {
   }
 }
 
-export function createDocumentsService<H extends DocumentHandle>(backend: DocumentsBackend<H>) {
+export function createDocumentsService<H extends DocumentHandle>(
+  backend: DocumentsBackend<H>,
+  options: { documentChangedSink?: DocumentChangedSink } = {},
+) {
+  const publish = (
+    scope: Parameters<typeof publishDocumentEvent>[0],
+    documentId: string,
+    reason: Parameters<typeof publishDocumentEvent>[2],
+    version?: DocumentVersion,
+  ) => publishDocumentEvent(scope, documentId, reason, version, options.documentChangedSink)
   const findEntry = async (orgId: string, documentId: string) => await backend.index.find(orgId, documentId)
 
   const requireEntry = async (scope: DocumentIndexScope, documentId: string, includeArchived = false) => {
@@ -62,7 +72,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
     withDocumentOperation(backend, documentId, async () => {
       const entry = await requireEntry(scope, documentId, includeArchived)
       const updated = await mutate(entry)
-      publishDocumentEvent(scope, documentId, reason)
+      await publish(scope, documentId, reason)
       return updated
     })
 
@@ -154,7 +164,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           throw error
         })
       const indexed = await backend.index.update(scope, documentId, { last_known_file_version: created.version })
-      publishDocumentEvent(scope, documentId, "document.created", created.version)
+      await publish(scope, documentId, "document.created", created.version)
       return indexed
     },
 
@@ -212,7 +222,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           last_known_file_version: version,
         } satisfies DocumentIndexEntry
         await backend.index.create(entry)
-        publishDocumentEvent(scope, documentId, "document.repository_indexed", version)
+        await publish(scope, documentId, "document.repository_indexed", version)
         return { entry, created: true }
       })
     },
@@ -287,7 +297,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           repository_relative_path: relocated.relativePath,
           last_known_file_version: relocated.version,
         })
-        publishDocumentEvent(scope, documentId, "document.repository_relocated", relocated.version)
+        await publish(scope, documentId, "document.repository_relocated", relocated.version)
         return updated
       })
     },
@@ -306,7 +316,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           )
         }
         const moved = await backend.moveToRepository(entry, destination)
-        publishDocumentEvent(
+        await publish(
           scope,
           documentId,
           "document.moved_to_repository",
@@ -330,7 +340,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
         const entry = await requireEntry(scope, documentId)
         const committed = await repositoryFor(entry).commit(portEntry(entry), input)
         await backend.index.update(scope, documentId, { last_known_file_version: committed.version })
-        publishDocumentEvent(scope, documentId, "document.git_committed", committed.version)
+        await publish(scope, documentId, "document.git_committed", committed.version)
         return committed
       })
     },
@@ -386,7 +396,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           if (error instanceof DocumentVersionConflictError) throw error
           throw new DocumentsServiceError("document_capability_denied", "Document Session Token was rejected")
         })
-        publishDocumentEvent(input, entry.id, "document.content_updated", written.version)
+        await publish(input, entry.id, "document.content_updated", written.version)
         return written
       })
     },
@@ -544,7 +554,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           }),
           read: () => backend.workspace.read(handle),
         })
-        publishDocumentEvent(scope, documentId, "document.content_updated", written.version)
+        await publish(scope, documentId, "document.content_updated", written.version)
         return written
       })
     },
@@ -585,7 +595,7 @@ export function createDocumentsService<H extends DocumentHandle>(backend: Docume
           }),
           read: () => backend.workspace.read(handle),
         })
-        publishDocumentEvent(scope, documentId, "document.snapshot_restored", restored.version)
+        await publish(scope, documentId, "document.snapshot_restored", restored.version)
         return restored
       })
     },

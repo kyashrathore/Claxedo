@@ -20,6 +20,7 @@ const api = anyApi as unknown as {
   wakes: {
     insertWake: Mutation
     claimDueWakes: Mutation
+    reclaimFiringWakes: Mutation
     casWake: Mutation
     putWakeReceipt: Mutation
     gcWakes: Mutation
@@ -127,6 +128,13 @@ export class ConvexWakeStore implements WakeStore {
     return (await this.run.query(
       api.wakes.findReclaimableWakes,
       this.args({ now: nowMs, ...(serialKey === undefined ? {} : { serial_key: serialKey }) }),
+    )) as Wake[]
+  }
+
+  async reclaimFiring(nowMs: number, leaseMs: number, serialKey?: string | null): Promise<Wake[]> {
+    return (await this.run.mutation(
+      api.wakes.reclaimFiringWakes,
+      this.args({ now: nowMs, lease_ms: leaseMs, ...(serialKey === undefined ? {} : { serial_key: serialKey }) }),
     )) as Wake[]
   }
 

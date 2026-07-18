@@ -230,6 +230,24 @@ export class SqliteWakeStore implements WakeStore {
     ).map(rowToWake)
   }
 
+  async reclaimFiring(nowMs: number, leaseMs: number, serialKey?: string | null): Promise<Wake[]> {
+    // Atomic re-claim: one UPDATE ... RETURNING re-stamps the lease past `nowMs`
+    // and returns only the rows this statement changed. A concurrent reclaimer
+    // then finds the row's `lease_until` beyond its horizon and matches nothing,
+    // so the returned rows are exclusively this caller's to drive.
+    const laneFilter =
+      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
+    const laneParams = typeof serialKey === "string" ? [serialKey] : []
+    const rows = this.db
+      .prepare(
+        `UPDATE wakes SET lease_until = ?
+         WHERE state = 'firing' AND lease_until IS NOT NULL AND lease_until <= ? ${laneFilter}
+         RETURNING *`,
+      )
+      .all(nowMs + leaseMs, nowMs, ...laneParams) as Row[]
+    return rows.map(rowToWake)
+  }
+
   async listFiring(): Promise<Wake[]> {
     return (this.db.prepare("SELECT * FROM wakes WHERE state = 'firing'").all() as Row[]).map(rowToWake)
   }

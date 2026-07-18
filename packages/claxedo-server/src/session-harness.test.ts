@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { describe, expect, test, beforeEach, afterAll, afterEach, vi } from "vitest"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -39,6 +39,10 @@ function processBinary(input: { connection?: { kind: string; binary?: string } }
 describe("session harness", () => {
   beforeEach(async () => {
     await fs.rm(root, { recursive: true, force: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   afterAll(async () => {
@@ -171,5 +175,17 @@ describe("session harness", () => {
     expect(entry!.config.harness).toMatchObject(acp("claude"))
     expect(typeof entry!.updatedAt).toBe("number")
     expect(entry!.updatedAt).toBeGreaterThan(0)
+  })
+
+  test("keeps the last-known-good cache when a TTL refresh reads malformed JSON", async () => {
+    const currentTime = Date.now()
+    vi.useFakeTimers()
+    vi.setSystemTime(currentTime)
+    mod.setSessionHarness("ws_refresh", "ses_refresh", acp("claude"))
+    await fs.writeFile(file(), "{incomplete", "utf8")
+
+    vi.advanceTimersByTime(60_001)
+
+    expect(mod.getSessionHarness("ws_refresh", "ses_refresh")).toMatchObject(acp("claude"))
   })
 })

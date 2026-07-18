@@ -6,6 +6,7 @@ import {
 } from "../control-plane/hosted-session-pull"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
+import { cachedIdempotency, lockKey, serialized } from "../control-plane/http-idempotency"
 import { rec, signedOrError, txt } from "./workspace-user-hosted"
 
 type Options = {
@@ -19,9 +20,6 @@ class HostedControlError extends Error {
     super(message)
   }
 }
-
-const pullLocks = new Map<string, Promise<unknown>>()
-const pullResults = new Map<string, { expiresAt: number; value: unknown }>()
 
 function num(input: unknown) {
   return typeof input === "number" && Number.isFinite(input) ? input : undefined
@@ -56,31 +54,6 @@ function idempotencyKey(input: unknown) {
 function expectedEventOrdinal(input: unknown) {
   const value = rec(input)?.expectedEventOrdinal
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : undefined
-}
-
-function pullKey(workspaceId: string, sessionId: string) {
-  return `${workspaceId}\0${sessionId}`
-}
-
-async function serialized<T>(key: string, run: () => Promise<T>) {
-  const previous = pullLocks.get(key)
-  const next = (previous ?? Promise.resolve()).catch(() => undefined).then(run)
-  pullLocks.set(key, next)
-  try {
-    return await next
-  } finally {
-    if (pullLocks.get(key) === next) pullLocks.delete(key)
-  }
-}
-
-function cached<T>(key: string | undefined, run: () => Promise<T>) {
-  if (!key) return run()
-  const hit = pullResults.get(key)
-  if (hit && hit.expiresAt > Date.now()) return Promise.resolve(hit.value as T)
-  return run().then((value) => {
-    pullResults.set(key, { expiresAt: Date.now() + 5 * 60_000, value })
-    return value
-  })
 }
 
 async function json(req: Request) {
@@ -140,9 +113,9 @@ export function HostedControlRoutes(
       const body = await json(c.req.raw)
       const sessionId = c.req.param("sessionId")
       const workspaceId = c.req.param("workspaceId")
-      const result = await cached(
+      const result = await cachedIdempotency(
         idempotencyKey(body) ? `register:${workspaceId}:${sessionId}:${idempotencyKey(body)}` : undefined,
-        () => serialized(pullKey(workspaceId, sessionId), () =>
+        () => serialized(lockKey(workspaceId, sessionId), () =>
           pullControlSession(requireServices(services), options, auth, { workspaceId, sessionId })),
       )
       return c.json(result)
@@ -158,9 +131,9 @@ export function HostedControlRoutes(
       const workspaceId = c.req.param("workspaceId")
       const sessionId = c.req.param("sessionId")
       const eventOrdinal = expectedEventOrdinal(body)
-      const result = await cached(
+      const result = await cachedIdempotency(
         idempotencyKey(body) ? `checkpoint:${workspaceId}:${sessionId}:${idempotencyKey(body)}` : undefined,
-        () => serialized(pullKey(workspaceId, sessionId), () =>
+        () => serialized(lockKey(workspaceId, sessionId), () =>
           pullControlSessionMessages(requireServices(services), options, auth, {
             workspaceId,
             sessionId,
@@ -181,9 +154,9 @@ export function HostedControlRoutes(
       const workspaceId = c.req.param("workspaceId")
       const sessionId = c.req.param("sessionId")
       const eventOrdinal = expectedEventOrdinal(body)
-      const result = await cached(
+      const result = await cachedIdempotency(
         idempotencyKey(body) ? `repair:${workspaceId}:${sessionId}:${idempotencyKey(body)}` : undefined,
-        () => serialized(pullKey(workspaceId, sessionId), async () => {
+        () => serialized(lockKey(workspaceId, sessionId), async () => {
           const session = await pullControlSession(control, options, auth, { workspaceId, sessionId })
           const messages = await pullControlSessionMessages(control, options, auth, {
             workspaceId,

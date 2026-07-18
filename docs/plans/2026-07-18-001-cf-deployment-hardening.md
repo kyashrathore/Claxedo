@@ -34,6 +34,18 @@ Single, self-contained work list. Captures every actionable item from the CF-dep
 
 ---
 
+## A2. Current implementation (2026-07-18, on `dev`)
+
+- **W2.1** uses atomic `reclaimFiring` transactions in the SQLite and Convex stores. Recovery claims only lapsed firing leases before invoking the sink, with race and live-lease positive controls.
+- **W2.2** bounds the session-harness cache to 60 seconds and Vercel snapshot IDs to 60 minutes. Refreshes preserve the previous valid session inventory on transient read or parse failures, and concurrent Vercel misses share one build request.
+- **W2.3** centralizes HTTP idempotency state in `control-plane/http-idempotency.ts` for both hosted call sites.
+- **W2.4** relies on the per-organization monotonic `source_ts` guard in `convex/billing.ts`; equal or older billing state is an idempotent no-op.
+- **W3** uses WebSocket protocol ping/pong frames on the Node tunnel client. The relay derives directory presence from attached hibernating host sockets, keeping application protocol frames available to users.
+- **W5.1–W5.3** route hosted SSE through a per-owner hibernatable `LiveSyncRoom`. WorkGraph and document mutations nudge that room after durable success, and bounded connection queues apply backpressure.
+- **Remaining scope**: W4 fenced cron coordination, W5.4 browser validation, W6 multi-instance Node coordination, and deployment validation.
+
+---
+
 ## B. The work (by wave; risk-ordered)
 
 ### Wave 1 — Naming + this doc  ·  STATUS: DONE (docs)
@@ -80,7 +92,7 @@ Single, self-contained work list. Captures every actionable item from the CF-dep
 
 ### Wave 5 — `LiveSyncRoom` DO: close the hosted live-sync gap (CF PRIMARY; the big build)
 
-Hosted SSE today is a heartbeat-only stub (`hosted-shell.ts` `eventsStream`) subscribing to no bus → **hosted has NO live-sync**. Sub-stepped; verify each under Miniflare before deploy.
+Hosted SSE routes through a per-owner `LiveSyncRoom`; the heartbeat-only stream remains the non-Worker fallback. W5.1–W5.3 are implemented and W5.4 is the remaining deployment-level browser validation.
 
 **W5.1 — `LiveSyncRoom` Durable Object.** Per-owner (owner for personal, org for teams) DO that **holds client SSE/WS** (hibernatable) and, on a nudge, **fans it to held connections**. Keyed `idFromName("owner:"+id)`. Mirrors `WorkspaceRelayRoom` hibernation-rebuild (`cloudflare.ts:741-786`). DoD: Miniflare test — N held connections in one room all receive a room-posted nudge; hibernation rebuild works; idle room parks (reuse W3 hibernation-safe holding).
 

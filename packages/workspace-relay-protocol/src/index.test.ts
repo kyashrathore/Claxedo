@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   TUNNEL_PROTOCOL_VERSION,
   isTunnelMessage,
+  makeTunnelPing,
   makeTunnelPong,
   validateTunnelMessage,
   type TunnelError,
@@ -144,6 +145,15 @@ describe("workspace relay protocol", () => {
       id: "ping_1",
       sent_at: 10,
       received_at: 20,
+    })
+  })
+
+  test("builds v1 heartbeat pings with caller-visible identity and timestamps", () => {
+    expect(makeTunnelPing(10, "ping_1")).toEqual({
+      type: "ping",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      id: "ping_1",
+      sent_at: 10,
     })
   })
 

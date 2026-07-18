@@ -57,6 +57,8 @@ import {
   type SettlementDispatcher,
   type SettlementTenant,
 } from "./settlement-dispatcher"
+import { liveSyncRoomName, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../live-sync-room"
+import type { WorkgraphChangedEvent } from "../bus"
 
 export type HostedWorkGraph = ReturnType<typeof createHostedWorkGraph>
 
@@ -102,6 +104,20 @@ export function createHostedWorkGraph(
     telemetry?: ControlPlaneTelemetry
     settlementDispatcher?: SettlementDispatcher
     settlementDispatcherForRequest?: (request: Request) => SettlementDispatcher | undefined
+    /**
+     * W5.3: per-owner/org live-sync fan-out Durable Object namespace (Cloudflare
+     * Worker only). When present, every successful WorkGraph command rings the
+     * caller's `LiveSyncRoom` with a `workgraph.changed` doorbell so a client
+     * whose SSE stream is held by another isolate reloads. Absent (Node/self-host
+     * /tests) → the single-box in-memory `claxedoBus` path stays the sole nudge.
+     */
+    liveSyncRoom?: LiveSyncRoomNamespace
+    /**
+     * Per-request `waitUntil` binding so the live-sync nudge fetch never blocks
+     * the mutation response and survives past it on the Worker. Absent → the
+     * nudge is fired best-effort inside the request (Node/tests).
+     */
+    waitUntilForRequest?: (request: Request) => ((promise: Promise<unknown>) => void) | undefined
     /** Test/custom-host seam; Cloud uses the encrypted per-org credential store. */
     webhookCredentials?: (orgId: string) => ControlPlaneCredentials
   }>,
@@ -132,6 +148,7 @@ export function createHostedWorkGraph(
   const signedAuthByContext = new WeakMap<WorkGraphContext, SignedControlPlaneAuth>()
   const settlementTenantByContext = new WeakMap<WorkGraphContext, SettlementTenant>()
   const settlementDispatcherByContext = new WeakMap<WorkGraphContext, SettlementDispatcher>()
+  const liveSyncWaitUntilByContext = new WeakMap<WorkGraphContext, (promise: Promise<unknown>) => void>()
   const webhookVerifier =
     input.webhookVerifier ??
     createHostedConnectionWebhookVerifier({
@@ -156,6 +173,35 @@ export function createHostedWorkGraph(
     ? instrumentWorkGraphCommands(rawService, operationalTelemetry, input.now)
     : rawService
   const settlementDispatcher = input.settlementDispatcher ?? noopSettlementDispatcher
+  const now = input.now ?? Date.now
+  // W5.3: ring the caller's live-sync room after a successful command so a
+  // client whose SSE stream is held by another Worker isolate reloads. The room
+  // NAME is derived from the SIGNED auth (Clerk org/subject claims), identical to
+  // how the hosted events route (`connectLiveSyncRoom`) keys the room the client
+  // is held in — so the nudge always reaches the right room. The event carries
+  // `ownerUserId = auth.user.subject` (== `context.ownerUserId`), which the room's
+  // per-connection `eventVisibleTo` narrows to the right subject inside a shared
+  // org room. Advisory + fire-and-forget: a failing nudge never fails the command.
+  const nudgeLiveSync = (context: WorkGraphContext) => {
+    const namespace = input.liveSyncRoom
+    if (!namespace) return
+    const auth = signedAuthByContext.get(context)
+    if (!auth) return
+    const event: WorkgraphChangedEvent = {
+      type: "workgraph.changed",
+      ownerUserId: auth.user.subject,
+      ts: now(),
+    }
+    const run = nudgeLiveSyncRoom(namespace, liveSyncRoomName(auth), event).then(
+      () => {},
+      (error) => {
+        console.error("[claxedo-server] WARN  hosted workgraph.changed nudge failed:", error)
+      },
+    )
+    const waitUntil = liveSyncWaitUntilByContext.get(context)
+    if (waitUntil) waitUntil(run)
+    else void run
+  }
   const service = {
     ...commandService,
     async execute(context: WorkGraphContext, request: WorkGraphCommandRequest) {
@@ -169,6 +215,7 @@ export function createHostedWorkGraph(
       } catch {
         // A settlement nudge is advisory; the durable command result owns the response.
       }
+      nudgeLiveSync(context)
       return result
     },
   }
@@ -208,6 +255,8 @@ export function createHostedWorkGraph(
     )
     const requestDispatcher = input.settlementDispatcherForRequest?.(request)
     if (requestDispatcher) settlementDispatcherByContext.set(context, requestDispatcher)
+    const requestWaitUntil = input.waitUntilForRequest?.(request)
+    if (requestWaitUntil) liveSyncWaitUntilByContext.set(context, requestWaitUntil)
     return context
   }
   const intake = createHostedWorkGraphIntake({

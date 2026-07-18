@@ -367,6 +367,42 @@ describe("workspace relay host tunnel client", () => {
     tunnel.close()
   })
 
+  test("uses protocol ping/pong control frames without changing the v1 application heartbeat", async () => {
+    const sockets: Array<FakeWebSocket & { pings: number }> = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      localBaseUrl: "http://runtime.invalid",
+      pingIntervalMs: 5,
+      webSocket: class extends FakeWebSocket {
+        pings = 0
+        private readonly pongListeners = new Set<() => void>()
+
+        on(event: "pong", listener: () => void) {
+          if (event === "pong") this.pongListeners.add(listener)
+        }
+
+        ping() {
+          this.pings += 1
+          this.pongListeners.forEach((listener) => listener())
+        }
+
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    sockets[0]!.open()
+    await new Promise((resolve) => setTimeout(resolve, 25))
+
+    expect(sockets).toHaveLength(1)
+    expect(sockets[0]!.pings).toBeGreaterThan(0)
+    expect(sockets[0]!.sent.map((frame) => JSON.parse(frame)).filter((frame) => frame.type === "ping")).toEqual([])
+    tunnel.close()
+  })
+
   test("clamps unsafe WebSocket close codes from relay frames", () => {
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({

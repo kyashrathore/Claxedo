@@ -1,5 +1,6 @@
 import {
   isTunnelMessage,
+  makeTunnelPing,
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
   type TunnelHeaderMap,
@@ -10,6 +11,7 @@ import {
   type TunnelWsFrame,
   type TunnelWsOpen,
 } from "@claxedo/workspace-relay-protocol"
+import NodeWebSocket from "ws"
 
 export type WorkspaceRelayHostTunnelOptions = {
   relayUrl: string
@@ -434,7 +436,7 @@ function forwardFrame(
 }
 
 export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelOptions): WorkspaceRelayHostTunnel {
-  const WebSocketCtor = options.webSocket ?? WebSocket
+  const WebSocketCtor = options.webSocket ?? NodeWebSocket as unknown as typeof WebSocket
   const setTimeoutFn = options.setTimeout ?? globalThis.setTimeout
   const clearTimeoutFn = options.clearTimeout ?? globalThis.clearTimeout
   const channels = new Map<string, TunnelChannel>()
@@ -535,14 +537,23 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
           scheduleReconnect("closed")
           return
         }
-        send(socket, {
-          type: "ping",
-          protocol: TUNNEL_PROTOCOL_VERSION,
-          id: crypto.randomUUID(),
-          sent_at: Date.now(),
-        })
+        if (socket.readyState !== WebSocket.OPEN) return
+        const control = socket as WebSocket & { ping?: () => void }
+        if (control.ping) {
+          // RFC WebSocket control frames are handled below the Durable Object
+          // message API, so they keep the transport alive without waking it.
+          control.ping()
+          return
+        }
+        // Injected/browser-style clients without protocol ping support retain
+        // the established v1 application heartbeat with unique identity and
+        // real timestamps.
+        socket.send(JSON.stringify(makeTunnelPing()))
       }, pingIntervalMs)
     }
+    ;(socket as WebSocket & { on?: (event: "pong", listener: () => void) => void }).on?.("pong", () => {
+      if (ws === socket) lastInboundAt = Date.now()
+    })
     socket.onmessage = (event) => {
       if (ws !== socket) return
       lastInboundAt = Date.now()

@@ -1,5 +1,5 @@
 import { streamSSE } from "hono/streaming"
-import { claxedoBus, type ClaxedoEvent } from "../bus"
+import { claxedoBus } from "../bus"
 import type { Context } from "hono"
 import {
   ControlPlaneAuthError,
@@ -10,6 +10,12 @@ import {
   type ControlPlaneAuthContext,
 } from "../control-plane/auth"
 import { isLoopbackLocalRequest } from "./local-only-projection"
+
+// The per-event visibility predicate lives in the Worker-safe `event-visibility`
+// module so the hosted `LiveSyncRoom` Durable Object can share the exact same
+// scoping. Re-exported here for back-compat (events.test.ts imports it).
+export { eventVisibleTo } from "./event-visibility"
+import { eventVisibleTo } from "./event-visibility"
 
 export type EventsHandlerOptions = {
   authConfig?: ControlPlaneAuthConfig
@@ -22,39 +28,6 @@ export type EventsHandlerOptions = {
 const LOOPBACK_AUTH: ControlPlaneAuthContext = {
   mode: "unsigned-local",
   reason: "loopback local request",
-}
-
-// Rubric S1 + per-event authorization: authenticating a subscriber is not
-// enough — the bus is server-global, so without a per-event filter any valid
-// bearer (any user, any org) would observe every other tenant's events.
-// Allowlist with default-deny: an event type is only delivered to a signed
-// subscriber if it has an explicit scope rule matching the caller's identity.
-// New event types added to the ClaxedoEvent union are therefore invisible to
-// signed subscribers until they carry a scope and gain a rule here — they can
-// leak by omission of delivery, never by omission of authorization.
-export function eventVisibleTo(ctx: ControlPlaneAuthContext, event: ClaxedoEvent): boolean {
-  // Single-user modes: the whole bus belongs to this caller.
-  if (ctx.mode === "unsigned-local") return true
-
-  switch (event.type) {
-    case "workgraph.changed":
-      // ownerUserId is stamped from auth.user.subject at publish
-      // (server-workgraph.ts); "local" marks unsigned-local publishes.
-      return event.ownerUserId === ctx.user.subject
-    case "document.changed":
-      return !!ctx.user.orgId && event.orgId === ctx.user.orgId
-    case "provision":
-      // orgId is stamped from Workspace.org_id at publish (provision-events.ts);
-      // org-less (local) workspaces stay invisible to signed subscribers.
-      return !!ctx.user.orgId && event.orgId === ctx.user.orgId
-    default:
-      // pty.*, agent.lifecycle, process.*, session.lifecycle, worktree.* carry
-      // no owner identity: they are local-execution events whose hosted
-      // equivalents flow on per-workspace runtime streams (routed off by
-      // workspaceRuntimeProxy before this handler), so a signed subscriber to
-      // the central stream is never their legitimate consumer.
-      return false
-  }
 }
 
 export function eventsHandler(options: EventsHandlerOptions = {}) {

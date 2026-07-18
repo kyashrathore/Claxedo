@@ -790,6 +790,20 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     rebuildHibernatedSockets()
   }
 
+  // Protocol-level ping/pong frames do not enter `webSocketMessage`. Before
+  // applying the process-local directory TTL, rebuild presence from the
+  // authoritative sockets the hibernation runtime still considers connected.
+  const refreshHostPresenceFromSockets = () => {
+    if (!hibernation) return
+    for (const socket of hibernation.getWebSockets()) {
+      const attachment = socketAttachment(socket)
+      if (attachment?.kind !== "host-tunnel") continue
+      if (!directory.recordPong(attachment.hostId)) {
+        directory.registerHostTunnel({ hostId: attachment.hostId, workspaceIds: attachment.workspaceIds })
+      }
+    }
+  }
+
   const watchRuntimeAccessToken = (
     client: ClientSocket,
     onInactive: (reason: string) => void,
@@ -1129,8 +1143,13 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     const parsed = validateTunnelMessage(row.value)
     const tunnel = hostTunnels.get(hostId)
     if (!parsed.ok || !tunnel) return
+    // ANY inbound frame that actually reached this handler proves the tunnel is
+    // alive, so refresh directory presence here rather than only on ping. On the
+    // hibernation path protocol-level ping/pong is handled below this message
+    // API, so real request/response/ws traffic and the on-wake rebuild are what
+    // refresh an active host's process-local presence.
+    directory.recordPong(tunnel.hostId)
     if (parsed.message.type === "ping") {
-      directory.recordPong(tunnel.hostId)
       tunnel.socket.send?.(JSON.stringify(makeTunnelPong(parsed.message as TunnelPing)))
       return
     }
@@ -1633,6 +1652,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
   return {
     async fetch(request: Request) {
       ensureHibernatedSocketsRebuilt()
+      // Must run BEFORE any presence consult on this request: the offline gate
+      // lives in `authorizeWorkspaceRelayRequest` (server.ts activeHost check),
+      // which rejects user-hosted requests ahead of the admit/forward handlers.
+      refreshHostPresenceFromSockets()
       const url = new URL(request.url)
       const roomWorkspaceId = workspaceRelayDurableObjectWorkspaceId(request)
       if (request.method === "OPTIONS" && (url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/host-tunnels/"))) {

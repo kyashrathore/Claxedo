@@ -149,6 +149,14 @@ function fakeConvexExecutor() {
         "serial_key" in args ? args.serial_key : undefined,
       ).map((w) => ({ ...w }))
     }
+    if (name.endsWith("reclaimFiringWakes")) {
+      const reclaimed = laneScope(
+        rows.filter((w) => w.state === "firing" && w.leaseUntil != null && w.leaseUntil <= (args.now as number)),
+        "serial_key" in args ? args.serial_key : undefined,
+      )
+      for (const wake of reclaimed) wake.leaseUntil = (args.now as number) + (args.lease_ms as number)
+      return reclaimed.map((w) => ({ ...w }))
+    }
     if (name.endsWith("listFiringWakes")) return rows.filter((w) => w.state === "firing").map((w) => ({ ...w }))
     if (name.endsWith("listWakesForSession")) {
       return rows.filter((w) => w.sessionId === args.session_id).map((w) => ({ ...w }))

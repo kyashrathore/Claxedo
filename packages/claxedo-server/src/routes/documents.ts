@@ -15,7 +15,7 @@ import {
   type WorkspaceAuthority,
 } from "../control-plane/authority"
 import type { ControlPlaneServices } from "../control-plane/services"
-import { DocumentAgentOpenError, type DocumentsBackend } from "../documents/backend"
+import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../documents/backend"
 import type { DocumentIndexEntry } from "../documents/index-store"
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "../documents/errors"
 import type { DocumentHandle, DocumentVersion, SnapshotID } from "../documents/port"
@@ -113,6 +113,7 @@ export type DocumentsRouteOptions<H extends DocumentHandle = DocumentHandle> = R
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   authority?: WorkspaceAuthority
+  documentChangedSink?: DocumentChangedSink
 }>
 
 type AuthenticatedScope = Readonly<{
@@ -124,7 +125,9 @@ type AuthenticatedScope = Readonly<{
 type DirectScope = AuthenticatedScope & Readonly<{ entry: DocumentIndexEntry }>
 
 export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRouteOptions<H> = {}) {
-  const documents = () => createDocumentsService(requireBackend(options))
+  const documents = () => createDocumentsService(requireBackend(options), {
+    ...(options.documentChangedSink ? { documentChangedSink: options.documentChangedSink } : {}),
+  })
   return new Hono()
     .onError((error) => errorResponse(error))
     .get("/statuses", async (context) => {

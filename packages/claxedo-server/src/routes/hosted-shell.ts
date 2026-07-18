@@ -8,7 +8,7 @@
  * embedded runtime, and no central runner, so these routes answer with the
  * minimal synthetic payloads the app actually reads:
  *
- *   GET /api/claxedo/events     — auth-gated SSE bus (heartbeats only for now)
+ *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream
  *   GET /api/claxedo/bootstrap  — aggregate boot payload (signed → Convex workspaces)
  *   GET /global/health          — { healthy, version }
  *   GET /global/config          — {}
@@ -34,8 +34,10 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
+  type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
 } from "../control-plane/auth"
+import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../live-sync-room"
 
 export type HostedShellRouteOptions = {
   authConfig: ControlPlaneAuthConfig
@@ -46,6 +48,12 @@ export type HostedShellRouteOptions = {
   listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
+  /**
+   * W5.2: per-owner live-sync fan-out Durable Object namespace (Cloudflare
+   * Worker only). The public SSE route is bridged to a hibernatable socket held
+   * by the caller's LiveSyncRoom. Absent → heartbeat fallback.
+   */
+  liveSyncRoom?: LiveSyncRoomNamespace
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
@@ -224,7 +232,8 @@ const HEARTBEAT_MS = 30_000
 // fetch+ReadableStream and arms a 45s watchdog that is only reset by `data:`
 // lines — SSE comments do NOT reset it. So keepalives must be data heartbeats
 // in the local bus envelope (`{"type":"heartbeat"}`), matching
-// `routes/events.ts`. No real bus events flow from the hosted central yet.
+// `routes/events.ts`. This fallback carries heartbeats only; hosted Worker
+// composition supplies `LiveSyncRoom` for mutation nudges.
 function eventsStream(c: Context, heartbeatMs: number) {
   const encoder = new TextEncoder()
   let timer: ReturnType<typeof setInterval> | undefined
@@ -263,14 +272,20 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
   const events = async (c: Context) => {
     try {
-      await controlPlaneAuthContext(c.req.raw, {
+      // Every live-sync subscriber passes control-plane auth. There is no
+      // loopback bypass on a hosted central. Keep the resolved context so the
+      // room routes by owner and applies the same per-event `eventVisibleTo`
+      // scoping the local Node bus does.
+      const authorize = () => controlPlaneAuthContext(c.req.raw, {
         config: options.authConfig,
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
+      const ctx = await authorize()
+      if (options.liveSyncRoom) return await connectLiveSyncRoom(options.liveSyncRoom, ctx, heartbeatMs, authorize)
+      return eventsStream(c, heartbeatMs)
     } catch (err) {
       return authErrorResponse(c, err)
     }
-    return eventsStream(c, heartbeatMs)
   }
   return new Hono()
     // Rubric S1 (mirrors routes/events.ts): every bus subscriber passes the
@@ -278,6 +293,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // loopback bypass on a hosted central.
     .get("/api/claxedo/events", events)
     .get("/api/wr/events", events)
+    .get("/global/event", events)
     .get("/api/claxedo/bootstrap", async (c) => {
       try {
         const provider = emptyProvider()

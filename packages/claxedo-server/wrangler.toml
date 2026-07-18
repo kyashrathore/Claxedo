@@ -91,6 +91,12 @@ class_name = "WorkGraphSettler"
 name = "WAKE_LANE"
 class_name = "ClaxedoWakeLane"
 
+# W5.1 per-owner live-sync fan-out DO. Holds hibernatable internal WebSockets,
+# bridges them to the public SSE route, and fans nudges POSTed from any isolate.
+[[durable_objects.bindings]]
+name = "LIVE_SYNC_ROOM"
+class_name = "LiveSyncRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["WorkGraphSettler"]
@@ -98,6 +104,13 @@ new_sqlite_classes = ["WorkGraphSettler"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["ClaxedoWakeLane"]
+
+# CF no longer allows KV-backed DO namespaces on this account (err 10099), so
+# LiveSyncRoom is declared SQLite-backed even though the SSE room keeps no
+# storage — the sqlite backing is simply unused.
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["LiveSyncRoom"]
 
 [env.staging]
 name = "claxedo-control-plane-staging"
@@ -127,9 +140,13 @@ class_name = "WorkGraphSettler"
 name = "WAKE_LANE"
 class_name = "ClaxedoWakeLane"
 
-[[env.staging.r2_buckets]]
-binding = "CLAXEDO_DOCUMENTS"
-bucket_name = "claxedo-documents-staging"
+# W5.1 live-sync fan-out DO (staging). DO bindings are NOT inherited by
+# environments, so mirror the top-level binding here. Migrations ARE inherited
+# from the top-level [[migrations]] blocks, matching how WorkGraphSettler /
+# ClaxedoWakeLane are declared (bindings duplicated, migrations top-level only).
+[[env.staging.durable_objects.bindings]]
+name = "LIVE_SYNC_ROOM"
+class_name = "LiveSyncRoom"
 
 # KV namespace for the Cloudflare credential backend (only needed once the hosted
 # surface manages provider credentials; the first surface does not).

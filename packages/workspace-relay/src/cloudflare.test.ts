@@ -154,7 +154,7 @@ async function roomHarness(input: {
     ...(input.hibernation ? {
       hibernation: {
         acceptWebSocket: (socket) => hibernatedSockets.push(socket as FakeSocket),
-        getWebSockets: () => hibernatedSockets,
+        getWebSockets: () => hibernatedSockets.filter((socket) => !socket.closed),
       },
     } : {}),
     createWebSocketPair: () => {
@@ -1958,6 +1958,86 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
     expect(res.status).toBe(503)
     await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: "user_hosted_app_offline",
+      },
+    })
+  })
+
+  test("refreshes host presence on any real host frame, not just pings, on the hibernation path", async () => {
+    let clock = 1_000_000_000_000
+    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true, now: () => clock })
+    await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+    const hostSocket = harness.hibernatedSockets[0]!
+    const realFrame = () => harness.room.webSocketMessage(hostSocket, JSON.stringify({
+      // An http response for an unknown request id is a no-op beyond the
+      // presence touch — a stand-in for ordinary host->relay traffic.
+      type: "http.response.end",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "unknown_request",
+    }))
+
+    // First frame wakes the DO and triggers the one-time hibernated-socket
+    // rebuild (which re-registers presence). Subsequent frames must keep
+    // presence fresh on their own — the keepalive ping is auto-responded and
+    // never reaches the DO, so real traffic is the only in-session refresh.
+    await realFrame()
+    clock += 40_000
+    await realFrame()
+    clock += 40_000
+    expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeTruthy()
+  })
+
+  test("an attached hibernating host socket remains authoritative after directory TTL expiry", async () => {
+    let clock = 1_000_000_000_000
+    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true, now: () => clock })
+    const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+    expect(host.status).toBe(101)
+    clock += 60_000
+
+    const online = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    expect(online.status).toBe(101)
+    expect(harness.directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeTruthy()
+  })
+
+  test("a closed hibernating host socket cannot revive expired directory presence", async () => {
+    let clock = 1_000_000_000_000
+    const harness = await roomHarness({ resolveTarget: "user-hosted", hibernation: true, now: () => clock })
+    const host = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+    expect(host.status).toBe(101)
+    const hostSocket = harness.hibernatedSockets[0]!
+
+    hostSocket.close()
+    clock += 90_000
+
+    const offline = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    expect(offline.status).toBe(503)
+    await expect(offline.json()).resolves.toMatchObject({
       error: {
         code: "user_hosted_app_offline",
       },

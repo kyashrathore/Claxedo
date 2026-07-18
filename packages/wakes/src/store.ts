@@ -41,6 +41,16 @@ export interface WakeStore {
    * rows, undefined = all).
    */
   findReclaimable(nowMs: number, serialKey?: string | null): Promise<Wake[]>
+  /**
+   * Atomically re-claim `firing` rows whose lease is at or before `nowMs`:
+   * re-stamp the lease to `nowMs + leaseMs` and return only the rows this call
+   * actually won. Because the winning caller pushes the lease past `nowMs`, a
+   * concurrent reclaimer sees nothing — so the caller may re-drive the returned
+   * rows without racing a second driver into the same side effect. `serialKey`
+   * scopes like `claimDue`. Replaces the read-then-drive `findReclaimable`
+   * path, which was a plain SELECT and could hand the same row to two drivers.
+   */
+  reclaimFiring(nowMs: number, leaseMs: number, serialKey?: string | null): Promise<Wake[]>
   /** All `firing` rows — the boot-sweep set. */
   listFiring(): Promise<Wake[]>
   listForSession(sessionId: SessionId): Promise<Wake[]>

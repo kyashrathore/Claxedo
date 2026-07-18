@@ -234,15 +234,14 @@ export function subscribeDocumentEvents(
  * Injected, never imported: this module is in the Worker import graph
  * (`hosted-app.ts` → `routes/documents.ts` → here), and `../bus` pulls
  * `@claxedo/workspace-runtime` — a FORBIDDEN_BARE dependency that
- * `worker.import-graph.test.ts` rejects. Only the local composition root
- * (`server.ts`) has a bus, so only it installs the sink; hosted stays sinkless
- * and simply emits nothing (plan §8.1: hosted has no live client sync yet).
+ * `worker.import-graph.test.ts` rejects. Composition roots inject the local
+ * bus or hosted `LiveSyncRoom` sink without adding either transport here.
  *
  * The `DocumentChangedEvent` import is type-only, so it is erased and never
  * enters the bundle — while still keeping this envelope in lockstep with the
  * bus union.
  */
-type DocumentChangedSink = (event: DocumentChangedEvent) => void
+export type DocumentChangedSink = (event: DocumentChangedEvent) => unknown | Promise<unknown>
 
 let documentChangedSink: DocumentChangedSink | undefined
 
@@ -253,11 +252,12 @@ export function setDocumentChangedSink(sink: DocumentChangedSink | undefined) {
   }
 }
 
-export function publishDocumentEvent(
+export async function publishDocumentEvent(
   scope: DocumentEventScope,
   documentId: string,
   reason: DocumentEventReason,
   version?: DocumentVersion,
+  sink = documentChangedSink,
 ) {
   const ts = Date.now()
   // ⚠ TWO SHAPES, ONE `type` DISCRIMINANT — do not pass one where the other is
@@ -282,9 +282,9 @@ export function publishDocumentEvent(
   // (`if-match`), not this hint. A dropped nudge costs freshness until the next
   // read/focus; it can never cost a lost or clobbered write. So a failing sink
   // must never fail the mutation that triggered it.
-  if (!documentChangedSink) return
+  if (!sink) return
   try {
-    documentChangedSink({
+    await sink({
       type: "document.changed",
       documentId,
       orgId: scope.orgId,

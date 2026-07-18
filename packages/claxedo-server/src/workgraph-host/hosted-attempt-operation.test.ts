@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { generateKeyPair } from "jose"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import {
@@ -40,6 +40,29 @@ describe("hosted Attempt operation endpoint", () => {
         evidenceIds: [],
       },
     })])
+  })
+
+  it("rings live-sync after an agent command without failing the durable result when the nudge fails", async () => {
+    const changed: unknown[] = []
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const execute = createHostedAttemptOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        mutation: async () => ({ ok: true, operationId: "operation-1", cursor: "1", value: null }),
+      },
+      notifyChanged: async (principal) => {
+        changed.push(principal)
+        throw new Error("room unavailable")
+      },
+    })!
+
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, operation())).resolves.toMatchObject({ ok: true })
+    expect(changed).toEqual([{ ownerUserId: "alice", orgId: "org-acme" }])
+    expect(error).toHaveBeenCalledWith(
+      "[claxedo-server] WARN  hosted agent workgraph.changed nudge failed:",
+      expect.any(Error),
+    )
+    error.mockRestore()
   })
 
   it("derives owner and organization from an exact-workspace runtime token", async () => {

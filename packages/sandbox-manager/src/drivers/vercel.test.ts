@@ -185,6 +185,62 @@ describe("VercelSandboxDriver", () => {
     })
   })
 
+  test("accepts a pre-seeded injected snapshot cache until its driver-local TTL expires", async () => {
+    const clock = { t: 1_000 }
+    const builder = sandbox({ sandboxId: "rebuilt" })
+    const runtime = sandbox({ sandboxId: "runtime" })
+    const vercel = factory({
+      create: vi.fn()
+        .mockResolvedValueOnce(runtime)
+        .mockResolvedValueOnce(builder)
+        .mockResolvedValueOnce(runtime),
+    })
+    const cache = new Map([["team_1:project_1:node22:0.5.1", "snap-seeded"]])
+    const driver = createVercelSandboxDriver({
+      ...baseOptions,
+      baseSnapshotId: undefined,
+      sandbox: vercel,
+      snapshotCache: cache,
+      now: () => clock.t,
+    })
+
+    await driver.ensureHost(input)
+    expect((vercel.create as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toMatchObject({
+      source: { type: "snapshot", snapshotId: "snap-seeded" },
+    })
+
+    clock.t += 60 * 60 * 1000 + 1
+    await driver.ensureHost({ ...input, workspaceId: "ws_2" })
+    expect(builder.snapshot).toHaveBeenCalledTimes(1)
+  })
+
+  test("concurrent snapshot misses share one in-flight build", async () => {
+    const builder = sandbox({ sandboxId: "builder" })
+    const runtimes = [sandbox({ sandboxId: "runtime-a" }), sandbox({ sandboxId: "runtime-b" })]
+    let creates = 0
+    const vercel = factory({
+      create: vi.fn(async () => {
+        creates += 1
+        if (creates === 1) return builder
+        return runtimes[creates - 2]!
+      }),
+    })
+    const driver = createVercelSandboxDriver({
+      ...baseOptions,
+      baseSnapshotId: undefined,
+      sandbox: vercel,
+      snapshotCache: new Map(),
+    })
+
+    await Promise.all([
+      driver.ensureHost(input),
+      driver.ensureHost({ ...input, workspaceId: "ws_2" }),
+    ])
+
+    expect(builder.snapshot).toHaveBeenCalledTimes(1)
+    expect(vercel.create).toHaveBeenCalledTimes(3)
+  })
+
   test("network policy maps allow-all, deny-all, and host allowlists", async () => {
     const vercel = factory()
     const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: vercel })

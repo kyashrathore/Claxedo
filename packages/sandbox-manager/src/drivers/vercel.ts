@@ -84,6 +84,7 @@ export type VercelSandboxDriverOptions = {
   keepAliveMs?: number
   sandbox?: VercelSandboxFactoryLike
   snapshotCache?: Map<string, string>
+  now?: () => number
 }
 
 const DEFAULT_RUNTIME = "node22"
@@ -95,7 +96,19 @@ const DEFAULT_OPERATION_TIMEOUT_MS = 60_000
 const DEFAULT_KEEP_ALIVE_MS = 5 * 60 * 1000
 const EXPECTED_RUNTIME_VERSION = workspaceRuntimeVersion()
 const RUNTIME_PKG = `@claxedo/workspace-runtime@${EXPECTED_RUNTIME_VERSION}`
+// Bounded TTL for built-snapshot IDs so a cached id cannot be reused
+// indefinitely (e.g. after the snapshot is deleted server-side or the process
+// runs for weeks). Kept long — a snapshot build is a ~10min operation, so a
+// short TTL would thrash expensive rebuilds; the runtime version is part of the
+// cache key and busts it on upgrade. Expiry is keyed by the same cacheKey and
+// only gates hits: the id itself still comes from the (possibly injected)
+// cache map, so a missing/expired entry just forces a rebuild.
+const SNAPSHOT_CACHE_TTL_MS = 60 * 60 * 1000
 const snapshotCache = new Map<string, string>()
+const snapshotCacheState = new WeakMap<Map<string, string>, {
+  expires: Map<string, number>
+  builds: Map<string, Promise<string>>
+}>()
 
 function nameFor(workspaceId: string) {
   return `claxedo-${workspaceId}`
@@ -151,6 +164,12 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
   const operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS
   const keepAliveMs = options.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS
   const cache = options.snapshotCache ?? snapshotCache
+  const now = options.now ?? Date.now
+  const cacheState = snapshotCacheState.get(cache) ?? {
+    expires: new Map<string, number>(),
+    builds: new Map<string, Promise<string>>(),
+  }
+  snapshotCacheState.set(cache, cacheState)
 
   function workspaceDirectory(input: SandboxDriverEnsureInput) {
     return input.workspaceRoot ?? workspaceDir
@@ -193,57 +212,73 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     if (options.baseSnapshotId) return options.baseSnapshotId
     const cacheKey = `${options.teamId}:${options.projectId}:${runtime}:${EXPECTED_RUNTIME_VERSION}`
     const hit = cache.get(cacheKey)
-    if (hit) return hit
+    const expiresAt = cacheState.expires.get(cacheKey)
+    if (hit && expiresAt === undefined) {
+      cacheState.expires.set(cacheKey, now() + SNAPSHOT_CACHE_TTL_MS)
+      return hit
+    }
+    if (hit && expiresAt !== undefined && expiresAt > now()) return hit
+    const running = cacheState.builds.get(cacheKey)
+    if (running) return running
 
-    const builder = await sandboxFactory.create({
-      ...credentials(),
-      runtime,
-      ports: [runtimePort],
-      timeout: snapshotBuildTimeoutMs,
-    })
-    await runSetup(builder, "sudo dnf install -y git make gcc-c++ python3 > /dev/null 2>&1")
-    await runSetup(builder, [
-      "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.75.5",
-      "curl https://cursor.com/install -fsS | bash",
-      "curl -fsSL https://ampcode.com/install.sh | bash",
-      "curl -fsSL https://app.factory.ai/cli | sh",
-      "sudo ln -sf $HOME/.local/bin/agent /usr/local/bin/agent",
-      "sudo ln -sf $HOME/.local/bin/cursor-agent /usr/local/bin/cursor-agent",
-      "sudo ln -sf $HOME/.local/bin/amp /usr/local/bin/amp",
-      "sudo ln -sf $HOME/.local/bin/droid /usr/local/bin/droid",
-      "command -v opencode",
-      "command -v claude",
-      "command -v codex",
-      "command -v gemini",
-      "command -v agent",
-      "command -v cursor-agent",
-      "command -v amp",
-      "command -v droid",
-      "command -v pi",
-    ].join(" && "))
-    await runSetup(builder, [
-      `sudo mkdir -p ${shell(RUNTIME_DIR)}`,
-      `sudo chown $(whoami) ${shell(RUNTIME_DIR)}`,
-      `cd ${shell(RUNTIME_DIR)}`,
-      "npm init -y",
-      `npm install ${RUNTIME_PKG} --min-release-age=2`,
-      `node -e "const fs=require('fs');const actual=JSON.parse(fs.readFileSync('${RUNTIME_DIR}/node_modules/@claxedo/workspace-runtime/package.json','utf8')).version;if(actual!=='${EXPECTED_RUNTIME_VERSION}'){throw new Error('workspace-runtime snapshot package version mismatch: expected ${EXPECTED_RUNTIME_VERSION}, got '+actual)}"`,
-      "test -x node_modules/.bin/workspace-runtime",
-      "test -x node_modules/.bin/claude-agent-acp",
-      "test -x node_modules/.bin/codex-acp",
-      `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/workspace-runtime /usr/local/bin/workspace-runtime`,
-      `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp`,
-      `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/codex-acp /usr/local/bin/codex-acp`,
-      "command -v workspace-runtime",
-      "command -v claude-agent-acp",
-      "command -v codex-acp",
-    ].join(" && "))
-    const snapshot = await builder.snapshot({
-      expiration: 0,
-      signal: AbortSignal.timeout(snapshotBuildTimeoutMs),
-    })
-    cache.set(cacheKey, snapshot.snapshotId)
-    return snapshot.snapshotId
+    const build = (async () => {
+      const builder = await sandboxFactory.create({
+        ...credentials(),
+        runtime,
+        ports: [runtimePort],
+        timeout: snapshotBuildTimeoutMs,
+      })
+      await runSetup(builder, "sudo dnf install -y git make gcc-c++ python3 > /dev/null 2>&1")
+      await runSetup(builder, [
+        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.75.5",
+        "curl https://cursor.com/install -fsS | bash",
+        "curl -fsSL https://ampcode.com/install.sh | bash",
+        "curl -fsSL https://app.factory.ai/cli | sh",
+        "sudo ln -sf $HOME/.local/bin/agent /usr/local/bin/agent",
+        "sudo ln -sf $HOME/.local/bin/cursor-agent /usr/local/bin/cursor-agent",
+        "sudo ln -sf $HOME/.local/bin/amp /usr/local/bin/amp",
+        "sudo ln -sf $HOME/.local/bin/droid /usr/local/bin/droid",
+        "command -v opencode",
+        "command -v claude",
+        "command -v codex",
+        "command -v gemini",
+        "command -v agent",
+        "command -v cursor-agent",
+        "command -v amp",
+        "command -v droid",
+        "command -v pi",
+      ].join(" && "))
+      await runSetup(builder, [
+        `sudo mkdir -p ${shell(RUNTIME_DIR)}`,
+        `sudo chown $(whoami) ${shell(RUNTIME_DIR)}`,
+        `cd ${shell(RUNTIME_DIR)}`,
+        "npm init -y",
+        `npm install ${RUNTIME_PKG} --min-release-age=2`,
+        `node -e "const fs=require('fs');const actual=JSON.parse(fs.readFileSync('${RUNTIME_DIR}/node_modules/@claxedo/workspace-runtime/package.json','utf8')).version;if(actual!=='${EXPECTED_RUNTIME_VERSION}'){throw new Error('workspace-runtime snapshot package version mismatch: expected ${EXPECTED_RUNTIME_VERSION}, got '+actual)}"`,
+        "test -x node_modules/.bin/workspace-runtime",
+        "test -x node_modules/.bin/claude-agent-acp",
+        "test -x node_modules/.bin/codex-acp",
+        `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/workspace-runtime /usr/local/bin/workspace-runtime`,
+        `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp`,
+        `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/codex-acp /usr/local/bin/codex-acp`,
+        "command -v workspace-runtime",
+        "command -v claude-agent-acp",
+        "command -v codex-acp",
+      ].join(" && "))
+      const snapshot = await builder.snapshot({
+        expiration: 0,
+        signal: AbortSignal.timeout(snapshotBuildTimeoutMs),
+      })
+      cache.set(cacheKey, snapshot.snapshotId)
+      cacheState.expires.set(cacheKey, now() + SNAPSHOT_CACHE_TTL_MS)
+      return snapshot.snapshotId
+    })()
+    cacheState.builds.set(cacheKey, build)
+    try {
+      return await build
+    } finally {
+      if (cacheState.builds.get(cacheKey) === build) cacheState.builds.delete(cacheKey)
+    }
   }
 
   async function source(input: SandboxDriverEnsureInput) {

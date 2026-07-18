@@ -38,6 +38,10 @@ export async function reconcileBillingState(input: {
   const flagged = await store.listReconcileFlagged()
   let applied = 0
   let failed = 0
+  // Concurrent/overlapping cron runs applying the same customer state are safe:
+  // the single writer no-ops any source_ts <= the last recorded one per org
+  // (convex/billing.ts:103), so a re-apply can never double-charge or clobber a
+  // newer state — idempotent by source_ts.
   for (const org of flagged) {
     try {
       const state = await polar.customers.getState({ id: org.polar_customer_id })

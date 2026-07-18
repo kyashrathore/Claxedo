@@ -141,7 +141,7 @@ describe("cancel + expiry", () => {
 describe("crash durability", () => {
   it("re-drives a firing row on recover() with no dropped result", async () => {
     let boom = true
-    const { wakes, store, spawned } = harness({
+    const { clock, wakes, store, spawned } = harness({
       spawnImpl: () => {
         if (boom) {
           boom = false
@@ -155,7 +155,9 @@ describe("crash durability", () => {
     expect((await store.getByToken(token))!.state).toBe("firing")
     expect(spawned).toHaveLength(0)
 
-    // boot sweep re-drives it — the answer survives via the persisted result
+    // Once the abandoned lease lapses, the boot sweep re-drives it — the
+    // answer survives via the persisted result.
+    clock.t += 30_000
     const { recovered } = await wakes.recover()
     expect(recovered).toBe(1)
     expect((await store.getByToken(token))!.state).toBe("fired")

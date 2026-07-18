@@ -34,6 +34,7 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
    * without its transcript.
    */
   retainTranscript?: TranscriptRetention
+  notifyChanged?: (principal: Readonly<{ ownerUserId: string; orgId: string }>) => Promise<void>
 }>) {
   const serviceToken = clean(input.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
   const url = clean(input.env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(input.env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
@@ -51,7 +52,7 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
         sessionId: request.identity.sessionId,
       })
     }
-    return CommandResultSchema.parse(await executor.mutation(
+    const result = CommandResultSchema.parse(await executor.mutation(
       api.workgraphCommands.executeForService,
       {
         service_token: serviceToken,
@@ -86,6 +87,12 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
             },
       },
     ))
+    if (result.ok) {
+      await input.notifyChanged?.(principal).catch((error) => {
+        console.error("[claxedo-server] WARN  hosted agent workgraph.changed nudge failed:", error)
+      })
+    }
+    return result
   }
 }
 

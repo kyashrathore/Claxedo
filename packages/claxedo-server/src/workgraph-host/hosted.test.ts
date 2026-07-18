@@ -13,6 +13,26 @@ import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { WorkspaceAuthority } from "../control-plane/authority"
 import { createHostedWorkGraph } from "./hosted"
 import type { SettlementDispatcher } from "./settlement-dispatcher"
+import type { ClaxedoEvent } from "../bus"
+import type { LiveSyncRoomNamespace } from "../live-sync-room"
+
+// Records every nudge POSTed to a room without a live Workers runtime: mirrors
+// the DO namespace contract (deterministic idFromName, per-name stub) and parses
+// the nudge body so a test can assert the exact room + event a command fired.
+function recordingLiveSyncNamespace() {
+  const nudges: Array<{ room: string; event: ClaxedoEvent }> = []
+  const namespace: LiveSyncRoomNamespace = {
+    idFromName: (name: string) => name,
+    get: (id: unknown) => ({
+      fetch: async (request: Request) => {
+        const event = (await request.json()) as ClaxedoEvent
+        nudges.push({ room: id as string, event })
+        return Response.json({ delivered: 1, held: 1 })
+      },
+    }),
+  }
+  return { namespace, nudges }
+}
 
 const authConfig = { enabled: true as const, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" }
 
@@ -30,6 +50,8 @@ function composition(
     dispatcher?: SettlementDispatcher
     commandResult?: CommandResult
     commandError?: Error
+    liveSyncRoom?: LiveSyncRoomNamespace
+    waitUntilForRequest?: (request: Request) => ((promise: Promise<unknown>) => void) | undefined
   }>,
 ) {
   const attested = options?.attested ?? {}
@@ -56,6 +78,8 @@ function composition(
     ...(executionCapabilities ? { executionCapabilities } : {}),
     ...(now ? { now } : {}),
     ...(options?.dispatcher ? { settlementDispatcher: options.dispatcher } : {}),
+    ...(options?.liveSyncRoom ? { liveSyncRoom: options.liveSyncRoom } : {}),
+    ...(options?.waitUntilForRequest ? { waitUntilForRequest: options.waitUntilForRequest } : {}),
     executor: {
       mutation: async (_fn, args) => {
         calls.push(args)
@@ -604,6 +628,91 @@ describe("hosted WorkGraph composition", () => {
       value: { streamId: "stream_user_a" },
     })
     expect(nudge).toHaveBeenCalledOnce()
+  })
+
+  test("W5.3: rings the caller's live-sync room with a workgraph.changed doorbell after a successful command", async () => {
+    const { namespace, nudges } = recordingLiveSyncNamespace()
+    // Capture the per-request waitUntil work so the test can deterministically
+    // await the nudge fetch (the real Worker gets this from its ExecutionContext).
+    const pending: Promise<unknown>[] = []
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      liveSyncRoom: namespace,
+      waitUntilForRequest: () => (promise) => pending.push(promise),
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "create_a",
+        command: { version: 1, type: "create_stream", title: "Ring the room" },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    await Promise.all(pending)
+    // Room name is keyed off the SIGNED Clerk claims (orgId "clerk_org_a" from the
+    // verifier), matching how the events route holds the client's SSE stream. The
+    // event's ownerUserId is the Clerk subject so the room's per-connection
+    // eventVisibleTo narrows it to the right user inside the shared org room.
+    expect(nudges).toEqual([
+      {
+        room: "org:clerk_org_a",
+        event: { type: "workgraph.changed", ownerUserId: "user_a", ts: expect.any(Number) },
+      },
+    ])
+  })
+
+  test("W5.3: does not ring the live-sync room when a command fails", async () => {
+    const { namespace, nudges } = recordingLiveSyncNamespace()
+    const pending: Promise<unknown>[] = []
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      liveSyncRoom: namespace,
+      waitUntilForRequest: () => (promise) => pending.push(promise),
+      commandResult: {
+        ok: false,
+        operationId: "delete_failure" as never,
+        error: { code: "validation_error", message: "Delete rejected", retryable: false },
+      },
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "delete_failure",
+        command: { version: 1, type: "delete_stream", streamId: "stream_a", expectedVersion: 1, reason: "Discard" },
+      }),
+    })
+
+    expect(response.status).toBe(400)
+    await Promise.all(pending)
+    expect(nudges).toEqual([])
+  })
+
+  test("W5.3: a failing room nudge never fails the successful command", async () => {
+    const failingNamespace: LiveSyncRoomNamespace = {
+      idFromName: (name: string) => name,
+      get: () => ({ fetch: async () => Response.json({ error: "room down" }, { status: 500 }) }),
+    }
+    const pending: Promise<unknown>[] = []
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      liveSyncRoom: failingNamespace,
+      waitUntilForRequest: () => (promise) => pending.push(promise),
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "create_a",
+        command: { version: 1, type: "create_stream", title: "Still succeeds" },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    // The rejected nudge promise is caught internally; awaiting it must not throw.
+    await expect(Promise.all(pending)).resolves.toBeDefined()
   })
 
   test("accepts Connection-verified provider callbacks without requiring Clerk auth", async () => {

@@ -38,6 +38,7 @@ import {
   type WorkGraphSettlerNamespace,
 } from "./workgraph-host/cloudflare-settlement-dispatcher"
 import { WakeLane, type WakeLaneNamespace, type WakeLaneState } from "./wakes-host/wake-lane"
+import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
 import { composeHostedWakes } from "./wakes-host/hosted-wakes"
 import { createWakeSettlementDispatcher } from "./wakes-host/wake-settlement-dispatcher"
 import { clean } from "./control-plane/adapters/worker/hosted-compose"
@@ -49,6 +50,12 @@ import type { SignedControlPlaneAuth } from "./control-plane/auth"
 import type { DocumentIndexEntry } from "./documents/index-store"
 
 export { WorkGraphSettler }
+
+// W5.1: the per-owner live-sync fan-out Durable Object. Cloudflare instantiates
+// DO classes itself, so it must be exported from the Worker entry module and
+// bound (LIVE_SYNC_ROOM) + migrated in wrangler.toml. It holds hosted client
+// SSE streams and fans nudges POSTed from any isolate; see src/live-sync-room.ts.
+export { LiveSyncRoom }
 
 /**
  * The concrete per-lane Durable Object (wakes-v2 U6): binds the generic
@@ -66,6 +73,7 @@ export class ClaxedoWakeLane extends WakeLane {
 type WorkerEnv = Record<string, unknown> & {
   WORKGRAPH_SETTLER?: WorkGraphSettlerNamespace
   WAKE_LANE?: WakeLaneNamespace
+  LIVE_SYNC_ROOM?: LiveSyncRoomNamespace
   CLAXEDO_WAKES_SETTLEMENT?: string
 }
 
@@ -115,6 +123,10 @@ function buildApp(env: WorkerEnv): Hono {
   const documentsBucket = (env as unknown as { CLAXEDO_DOCUMENTS?: R2BucketBinding }).CLAXEDO_DOCUMENTS
   const app = createHostedApp(plane, {
     ...(workGraphReconcile ? { workGraphReconcile } : {}),
+    // W5.2: hand the live-sync fan-out DO namespace to the hosted shell so
+    // GET /api/claxedo/events (and aliases) hold their client SSE stream in the
+    // caller's LiveSyncRoom.
+    ...(env.LIVE_SYNC_ROOM ? { liveSyncRoom: env.LIVE_SYNC_ROOM } : {}),
     ...(useWakesSettlement
       ? {
           workGraphSettlementDispatcherForRequest: (waitUntil: (promise: Promise<unknown>) => void) =>

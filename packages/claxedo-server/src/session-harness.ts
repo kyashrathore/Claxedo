@@ -20,8 +20,15 @@ type Row = {
   updatedAt: number
 }
 
+// Bounded TTL so the in-memory cache is periodically refetched from disk even
+// when the data-dir root is unchanged (guards against another process writing
+// the file). 60s keeps behavior identical within the window and cheap on the
+// common single-box case, where all writes go through save() anyway.
+const CACHE_TTL_MS = 60_000
+
 let cache: Map<string, Row> | undefined
 let cacheRoot: string | undefined
+let cacheLoadedAt = 0
 
 function rootDir() {
   return path.join(dataDir(), "agent-core")
@@ -50,11 +57,12 @@ function merge(input: SessionConfig): SessionConfig {
 
 function load() {
   const root = rootDir()
-  if (cacheRoot && cacheRoot !== root) cache = undefined
+  const previous = cacheRoot === root ? cache : undefined
   cacheRoot = root
-  if (cache) return cache
-  cache = new Map()
+  const loadedAt = Date.now()
+  if (previous && loadedAt - cacheLoadedAt < CACHE_TTL_MS) return previous
   try {
+    const next = new Map<string, Row>()
     const file = filePath(root)
     const legacyFile = legacyFilePath(root)
     const rows = JSON.parse(fs.readFileSync(fs.existsSync(file) ? file : legacyFile, "utf8")) as Array<Row | {
@@ -76,23 +84,30 @@ function load() {
         ? legacyConfig(row.runner)
         : undefined
       if (!config?.harness?.id) continue
-      cache.set(key(row.workspaceId, row.sessionId), {
+      next.set(key(row.workspaceId, row.sessionId), {
         workspaceId: row.workspaceId,
         sessionId: row.sessionId,
         config: merge(config),
         updatedAt: row.updatedAt ?? Date.now(),
       })
     }
+    cache = next
   } catch {
-    // best effort
+    // A refresh can observe a transient read error or another process between
+    // write and rename. Preserve the last-known-good snapshot for this root.
+    cache = previous ?? new Map()
   }
+  cacheLoadedAt = loadedAt
   return cache
 }
 
 function save() {
   const root = rootDir()
   fs.mkdirSync(root, { recursive: true, mode: 0o755 })
-  fs.writeFileSync(filePath(root), JSON.stringify([...load().values()], null, 2) + "\n", { mode: 0o644 })
+  const target = filePath(root)
+  const temp = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`
+  fs.writeFileSync(temp, JSON.stringify([...load().values()], null, 2) + "\n", { mode: 0o644 })
+  fs.renameSync(temp, target)
 }
 
 export function normalize(input: SessionHarness): SessionHarness {

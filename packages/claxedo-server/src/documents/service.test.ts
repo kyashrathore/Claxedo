@@ -127,6 +127,30 @@ const scope = {
 } as const
 
 describe("Documents service", () => {
+  test("rings the injected document sink after an agent runtime writeback", async () => {
+    const value = fixture()
+    const documentChangedSink = vi.fn(async () => {})
+
+    await createDocumentsService(value.backend, { documentChangedSink }).runtimeWriteback("document_1", {
+      token: "session-token",
+      orgId: "org_1",
+      projectId: "project_1",
+      workspaceId: "workspace_1",
+      sessionId: "session_1",
+      markdown: "updated by agent",
+      expectedVersion: "v1" as DocumentVersion,
+    })
+
+    expect(documentChangedSink).toHaveBeenCalledWith({
+      type: "document.changed",
+      documentId: "document_1",
+      orgId: "org_1",
+      projectId: "project_1",
+      version: "v2",
+      ts: expect.any(Number),
+    })
+  })
+
   test.each(["writeback", "renew", "resolve"] as const)(
     "fences runtime %s behind archive and rechecks live archival state",
     async (operation) => {
