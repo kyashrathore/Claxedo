@@ -11,7 +11,7 @@
   "isSignedInGates": 0,
   "isWorkspaceIdRef": 2,
   "legacyDirectoryRouteKeyRefs": 2,
-  "moduleScopeMutableState": 49,
+  "moduleScopeMutableState": 53,
   "productionTimerAllowlistTimers": 4,
   "propsDestructuring": 1,
   "queryMirrorEffects": 6,
@@ -20,7 +20,7 @@
   "setQueryDataCalls": 89,
   "setQueryDataFiles": 36,
   "signedControlPlaneAccess": 0,
-  "suppressionFlags": 6,
+  "suppressionFlags": 7,
   "timerDrivenDataPolls": 0,
   "untrackCalls": 22,
   "userHostedComparisons": 63

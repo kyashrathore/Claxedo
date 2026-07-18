@@ -137,6 +137,88 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
+  test("a command that produced no output yields empty output, not the raw envelope", () => {
+    const agent = runtime()
+
+    // Real shape observed from `ls` in an empty dir: every output field is null, so the
+    // old `?? row` fallback dumped the entire protocol payload into the tool output pane.
+    const events = agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: {
+        item: {
+          id: "call_9wdI50",
+          type: "commandExecution",
+          command: "/bin/zsh -lc ls",
+          cwd: "/tmp/workspace",
+          processId: "4512",
+          source: "unifiedExecStartup",
+          status: "completed",
+          commandActions: [{ type: "listFiles", command: "ls", path: null }],
+          aggregatedOutput: null,
+          exitCode: 0,
+          durationMs: 0,
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+        completedAtMs: 1784357339346,
+      },
+    }).events
+
+    const event = events.find((item) => item.type === "tool-output")
+    expect(event).toBeDefined()
+    const output = event && "output" in event ? event.output : undefined
+    expect(output).toBe("")
+    // The `output` field is what reaches the UI's output pane — it must carry no protocol
+    // noise. (Events also keep a `raw` copy of the source event for traceability; that is
+    // by design and is deliberately not asserted against here.)
+    expect(JSON.stringify(output)).not.toContain("commandExecution")
+    expect(JSON.stringify(output)).not.toContain("unifiedExecStartup")
+  })
+
+  test("completion preserves already-streamed output when aggregatedOutput is null", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: { id: "cmd-1", type: "commandExecution", command: "ls -la", cwd: "/repo", status: "running" },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    })
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/commandExecution/outputDelta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "total 0\n.agent-extensions" },
+    })
+
+    // Codex streams stdout via outputDelta and then completes with aggregatedOutput: null.
+    // The completion must NOT blank out what already streamed.
+    const events = agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: {
+        item: {
+          id: "cmd-1",
+          type: "commandExecution",
+          command: "ls -la",
+          cwd: "/repo",
+          status: "completed",
+          aggregatedOutput: null,
+          exitCode: 0,
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    }).events
+
+    const event = events.find((item) => item.type === "tool-output")
+    const output = event && "output" in event ? event.output : undefined
+    expect(output).toBe("total 0\n.agent-extensions")
+  })
+
   test("maps lower-level command output streams to running tool content", () => {
     const agent = runtime()
 

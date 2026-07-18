@@ -173,6 +173,51 @@ function disposeCopyButtons(root: Element) {
 
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
 
+/**
+ * Mermaid (T14) — the app registers a renderer (it owns the `mermaid` dep + theming);
+ * session-ui stays dependency-free and just calls back. Rendering is idempotent and
+ * self-healing: if the block cache replaces the DOM node, decorate re-runs and re-renders.
+ * Errors fall back to the plain code block (never mermaid's own error graphics).
+ */
+let mermaidRenderer: ((source: string) => Promise<string>) | undefined
+
+export function setMermaidRenderer(fn: ((source: string) => Promise<string>) | undefined) {
+  mermaidRenderer = fn
+}
+
+function renderMermaidBlocks(root: HTMLElement) {
+  if (!mermaidRenderer) return
+  const wrappers = Array.from(root.querySelectorAll('[data-component="markdown-code"]'))
+  for (const wrapper of wrappers) {
+    if (!(wrapper instanceof HTMLElement)) continue
+    const code = wrapper.querySelector("code")
+    const language = code?.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
+    if (language !== "mermaid" || !code) continue
+    const source = code.textContent ?? ""
+    if (!source.trim()) continue
+    if (wrapper.getAttribute("data-mermaid-source") === source) continue
+    wrapper.setAttribute("data-mermaid-source", source)
+    void mermaidRenderer(source)
+      .then((svg) => {
+        // Guard against streaming: skip if the source changed while rendering.
+        if (wrapper.getAttribute("data-mermaid-source") !== source) return
+        let diagram = wrapper.querySelector('[data-slot="mermaid-diagram"]')
+        if (!diagram) {
+          diagram = document.createElement("div")
+          diagram.setAttribute("data-slot", "mermaid-diagram")
+          wrapper.appendChild(diagram)
+        }
+        diagram.innerHTML = svg
+        wrapper.setAttribute("data-mermaid-state", "rendered")
+      })
+      .catch(() => {
+        // Fallback: keep the code block, clear the marker so a later retry is possible.
+        wrapper.removeAttribute("data-mermaid-source")
+        wrapper.removeAttribute("data-mermaid-state")
+      })
+  }
+}
+
 function codeKind(language: string | undefined) {
   const value = language?.toLowerCase()
   if (!value) return
@@ -275,9 +320,12 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
-  if (!document.body.hasAttribute("data-new-layout")) return
+  // Inline-code kinds (path/url) and code links used to be gated behind the dead
+  // `data-new-layout` flag; enable them unconditionally so path pills and URL links
+  // render in the app (T15/T16).
   markInlineCode(root)
   markCodeLinks(root)
+  renderMermaidBlocks(root)
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {

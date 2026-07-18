@@ -41,6 +41,7 @@ export type Platform = {
   version?: string
   openLink(url: string): void
   openPath?(path: string, app?: string): Promise<void>
+  showItemInFolder?(path: string): Promise<void>
   restart(): Promise<void>
   quit?(): Promise<void>
   back(): void

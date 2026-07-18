@@ -1,0 +1,33 @@
+/* AgentGlyph (T12) — stable per-agent mark; slow scan while the child runs. */
+[data-component="agent-glyph"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+[data-component="agent-glyph"] svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+[data-component="agent-glyph"][data-active="true"] {
+  animation: agent-glyph-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-glyph-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="agent-glyph"][data-active="true"] {
+    animation: none;
+  }
+}

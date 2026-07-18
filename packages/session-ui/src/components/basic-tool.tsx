@@ -1,10 +1,23 @@
-import { createEffect, For, Match, on, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js"
+import {
+  createEffect,
+  createSignal,
+  For,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  type Accessor,
+  type JSX,
+} from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
-import type { IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { formatDuration } from "./format-duration"
 
 export type TriggerTitle = {
   title: string
@@ -41,6 +54,8 @@ export interface BasicToolProps {
   triggerHref?: string
   triggerAsLink?: boolean
   clickable?: boolean
+  /** Epoch ms the tool started running; drives the live "for Xs" elapsed while pending (T6). */
+  startedAt?: number
 }
 
 const SPRING = { type: "spring" as const, visualDuration: 0.35, bounce: 0 }
@@ -91,6 +106,17 @@ export function BasicTool(props: BasicToolProps) {
   const ready = () => state.ready
   const pending = () => props.status === "pending" || props.status === "running"
   const hasChildren = () => (props.defer ? "children" in props : props.children)
+
+  // Live elapsed (T6): tick once a second only while the tool is running.
+  const [nowMs, setNowMs] = createSignal(Date.now())
+  createEffect(() => {
+    if (!pending() || typeof props.startedAt !== "number") return
+    setNowMs(Date.now())
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
+    onCleanup(() => clearInterval(id))
+  })
+  const elapsed = () =>
+    typeof props.startedAt === "number" ? formatDuration(Math.max(0, nowMs() - props.startedAt)) : ""
   const dynamicTrigger = typeof props.trigger === "function" ? props.trigger(open) : undefined
 
   let cancelReady: (() => void) | undefined
@@ -188,6 +214,11 @@ export function BasicTool(props: BasicToolProps) {
       data-hide-details={props.hideDetails ? "true" : undefined}
     >
       <div data-slot="basic-tool-tool-trigger-content">
+        <Show when={props.icon && !props.hideDetails}>
+          <span data-slot="basic-tool-tool-leading-icon">
+            <Icon name={props.icon} size="small" />
+          </span>
+        </Show>
         <div data-slot="basic-tool-tool-info">
           <Switch>
             <Match when={dynamicTrigger !== undefined}>{dynamicTrigger}</Match>
@@ -247,6 +278,9 @@ export function BasicTool(props: BasicToolProps) {
           </Switch>
         </div>
       </div>
+      <Show when={pending() && typeof props.startedAt === "number"}>
+        <span data-slot="basic-tool-tool-elapsed">{elapsed()}</span>
+      </Show>
       <Show when={hasChildren() && !props.hideDetails && !props.locked && !pending()}>
         <Collapsible.Arrow />
       </Show>
@@ -300,18 +334,29 @@ export function BasicTool(props: BasicToolProps) {
   )
 }
 
+const LABEL_KEYS = ["description", "query", "url", "filePath", "path", "pattern", "name", "command"]
+
 function label(input: Record<string, unknown> | undefined) {
-  const keys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
-  return keys.map((key) => input?.[key]).find((value): value is string => typeof value === "string" && value.length > 0)
+  return LABEL_KEYS.map((key) => input?.[key]).find(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  )
 }
 
-function args(input: Record<string, unknown> | undefined) {
+/**
+ * Arg chips for tools with no registered renderer. Keep them to short scalars: a long
+ * string (a shell command, a patch body) is already the row's subtitle or is simply noise
+ * at row width, and repeating the subtitle verbatim is what made these rows unreadable.
+ */
+function args(input: Record<string, unknown> | undefined, exclude?: string) {
   if (!input) return []
-  const skip = new Set(["description", "query", "url", "filePath", "path", "pattern", "name"])
+  const skip = new Set(LABEL_KEYS)
   return Object.entries(input)
     .filter(([key]) => !skip.has(key))
     .flatMap(([key, value]) => {
-      if (typeof value === "string") return [`${key}=${value}`]
+      if (typeof value === "string") {
+        if (!value || value === exclude || value.length > 40) return []
+        return [`${key}=${value}`]
+      }
       if (typeof value === "number") return [`${key}=${value}`]
       if (typeof value === "boolean") return [`${key}=${value}`]
       return []
@@ -324,19 +369,32 @@ export function GenericTool(props: {
   status?: string
   hideDetails?: boolean
   input?: Record<string, unknown>
+  output?: string
+  startedAt?: number
 }) {
   const i18n = useI18n()
+  const subtitle = () => label(props.input)
+  const output = () => (typeof props.output === "string" ? props.output.trim() : "")
 
   return (
     <BasicTool
       icon="mcp"
       status={props.status}
+      startedAt={props.startedAt}
       trigger={{
         title: i18n.t("ui.basicTool.called", { tool: props.tool }),
-        subtitle: label(props.input),
-        args: args(props.input),
+        subtitle: subtitle(),
+        args: args(props.input, subtitle()),
       }}
       hideDetails={props.hideDetails}
-    />
+    >
+      {/* Only pass children when there is output, so BasicTool's chevron stays hidden
+          (and the row stays non-interactive) for tools that produced nothing. */}
+      {output() ? (
+        <div data-component="tool-output" data-scrollable tabIndex={0} role="region">
+          <pre>{output()}</pre>
+        </div>
+      ) : undefined}
+    </BasicTool>
   )
 }

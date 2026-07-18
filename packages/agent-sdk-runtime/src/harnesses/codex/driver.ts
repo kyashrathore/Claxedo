@@ -36,6 +36,38 @@ type CodexActiveThread = {
   project: (method: string, payload: JsonRecord, frame: unknown) => void
 }
 
+/**
+ * The app-server reports an unknown thread as `thread not found: <uuid>`. Matched on the
+ * message because the JSON-RPC error carries no dedicated code for it.
+ */
+export function isThreadNotFound(err: unknown): boolean {
+  return /thread not found/i.test(errorMessage(err))
+}
+
+/**
+ * A Codex thread lives in the memory of the app-server process that started it, but is
+ * persisted to disk. `ensureProcess` transparently respawns a dead subprocess (crash,
+ * idle kill, host sleep), so a session that worked earlier can hand its threadId to a
+ * process that has never heard of it — the app-server answers `thread not found: <uuid>`
+ * and, without recovery, EVERY later turn in that session fails permanently.
+ *
+ * On that specific error, resume the thread by id into the current process and retry the
+ * turn exactly once. Any other error propagates untouched (never mask a real failure),
+ * and a second `thread not found` is surfaced rather than retried, so this cannot loop.
+ */
+export async function startTurnWithThreadRecovery(input: {
+  startTurn: () => Promise<JsonRecord>
+  resumeThread: () => Promise<unknown>
+}): Promise<JsonRecord> {
+  try {
+    return await input.startTurn()
+  } catch (err) {
+    if (!isThreadNotFound(err)) throw err
+    await input.resumeThread()
+    return await input.startTurn()
+  }
+}
+
 export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: CodexDriverOptions = {}): SdkRuntimeDriver {
   return new CodexAppServerDriver(host, options)
 }
@@ -157,22 +189,33 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
+    const startTurn = () => proc.request("turn/start", {
+      threadId,
+      input: codexUserInput(input.input.parts),
+      cwd: input.directory,
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+      sandboxPolicy: {
+        type: "workspaceWrite",
+        writableRoots: [input.directory],
+        networkAccess: true,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      },
+      ...(model ? { model } : {}),
+    }) as Promise<JsonRecord>
+
     try {
-      const result = await Promise.race([proc.request("turn/start", {
-        threadId,
-        input: codexUserInput(input.input.parts),
-        cwd: input.directory,
-        approvalPolicy: "on-request",
-        approvalsReviewer: "user",
-        sandboxPolicy: {
-          type: "workspaceWrite",
-          writableRoots: [input.directory],
-          networkAccess: true,
-          excludeTmpdirEnvVar: false,
-          excludeSlashTmp: false,
-        },
-        ...(model ? { model } : {}),
-      }) as Promise<JsonRecord>, turnStartFailed])
+      const result = await Promise.race([
+        startTurnWithThreadRecovery({
+          startTurn,
+          resumeThread: async () => {
+            log.info("codex thread missing from app-server process; resuming from disk", { threadId })
+            await proc.request("thread/resume", { threadId, cwd: input.directory })
+          },
+        }),
+        turnStartFailed,
+      ])
       turnId = text(record(result.turn)?.id) ?? turnId
       this.host.lifecycle().set(input.sessionId, {
         abort: input.abort,

@@ -25,6 +25,6 @@
   "platform/i18n/zh.ts": 966,
   "platform/i18n/zht.ts": 962,
   "features/session/ui/session-screen.tsx": 1551,
-  "features/session/ui/message-timeline.tsx": 1748,
+  "features/session/ui/message-timeline.tsx": 2067,
   "features/session/store/session-controller.ts": 1107
 }

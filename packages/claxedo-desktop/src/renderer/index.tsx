@@ -290,6 +290,10 @@ function bootstrapDesktop() {
         return desktopApi().openPath(path, app)
       },
 
+      async showItemInFolder(path: string) {
+        return desktopApi().showItemInFolder(path)
+      },
+
       restart: async () => {
         await desktopApi()
           .killSidecar()

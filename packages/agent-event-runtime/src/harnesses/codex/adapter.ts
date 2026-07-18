@@ -479,7 +479,18 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             return [{ type: "error", error: text(completedItem.message) ?? text(completedItem.text) ?? "Codex item failed" }]
           }
           const existing = state.toolsByItemId[id]
-          const output = completedItem.output ?? completedItem.result ?? completedItem.aggregatedOutput ?? completedItem.text ?? row
+          // Codex completes commands with every output field null in two different cases:
+          // the command genuinely printed nothing, OR stdout already arrived via
+          // `outputDelta` (which we accumulate in `toolOutputByCallId`). So fall back to
+          // the streamed buffer first, then to empty — never to `row`, which is the raw
+          // protocol payload and would dump the whole envelope into the output pane.
+          const output =
+            completedItem.output ??
+            completedItem.result ??
+            completedItem.aggregatedOutput ??
+            completedItem.text ??
+            state.toolOutputByCallId[id] ??
+            ""
           if (!existing) {
             const toolName = toolNameForItem(itemType, completedItem)
             const input = structuredInput(completedItem)

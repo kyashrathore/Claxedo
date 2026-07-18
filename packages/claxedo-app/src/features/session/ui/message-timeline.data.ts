@@ -1,6 +1,6 @@
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
-import type { PartGroup } from "@/ui/session-kit"
+import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
 import { Data, Equal } from "effect"
 import { firstTurnRecoveryClass, type FirstTurnRecoveryClass } from "../onboarding/first-turn-recovery"
 
@@ -46,6 +46,15 @@ export type TimelineRowMap = {
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
+  TurnFold: {
+    userMessageID: string
+    durationMs?: number
+    foldCount: number
+    folded: boolean
+    running?: boolean
+    tokens?: number
+    cost?: number
+  }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
   Error: { userMessageID: string; text: string; recoveryClass?: FirstTurnRecoveryClass }
 }
@@ -87,6 +96,15 @@ export namespace TimelineRow {
   export class Retry extends Data.TaggedClass("Retry")<{
     userMessageID: string
   }> {}
+  export class TurnFold extends Data.TaggedClass("TurnFold")<{
+    userMessageID: string
+    durationMs?: number
+    foldCount: number
+    folded: boolean
+    running?: boolean
+    tokens?: number
+    cost?: number
+  }> {}
 
   export type TimelineRow =
     | TurnGap
@@ -98,6 +116,7 @@ export namespace TimelineRow {
     | DiffSummary
     | Error
     | Retry
+    | TurnFold
 
   export const key = (row: TimelineRow) => {
     switch (row._tag) {
@@ -119,6 +138,8 @@ export namespace TimelineRow {
         return `error:${row.userMessageID}`
       case "Retry":
         return `retry:${row.userMessageID}`
+      case "TurnFold":
+        return `turn-fold:${row.userMessageID}`
     }
   }
 
@@ -134,6 +155,7 @@ export namespace TimelineRow {
       case "DiffSummary":
       case "Error":
       case "Retry":
+      case "TurnFold":
         return true
     }
     return false
@@ -165,6 +187,8 @@ export namespace Timeline {
     status: SessionStatus["type"],
     isActive: boolean,
     firstTurnRecovery = index === 0,
+    isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
+    foldWhileRunning = false,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -199,7 +223,6 @@ export namespace Timeline {
             ),
           ]
         : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
-    const assistantGroupCount = assistantItems.filter((item) => item.type === "part").length
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
@@ -225,8 +248,69 @@ export namespace Timeline {
       )
     }
 
+    // Turn fold (T5): when a turn is settled and produced ≥2 foldable rows (work/context
+    // groups + standalone tool parts), its work folds behind one "Worked for Xs" divider,
+    // leaving the prose visible. Auto-folds on completion; an explicit user toggle wins.
+    const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
+    const isGroupFoldable = (group: PartGroup): boolean => {
+      if (group.type === "context" || group.type === "work" || group.type === "agents") return true
+      if (group.type === "part") return partByID.get(group.ref.partID)?.type === "tool"
+      return false
+    }
+    const foldableCount = assistantItems.filter((item) => item.type === "part" && isGroupFoldable(item.group)).length
+    const completedTimes = assistantMessages
+      .map((message) => message.time.completed)
+      .filter((value): value is number => typeof value === "number")
+    const createdTime = userMessage.time?.created
+    const durationMs =
+      completedTimes.length && typeof createdTime === "number"
+        ? Math.max(0, Math.max(...completedTimes) - createdTime)
+        : undefined
+    const running = isActive && status === "busy" && !settled && !error
+    const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
+    // T7: while a turn is still running, fold its *completed* phases (≥3 groups) behind the
+    // summary but keep the latest live group visible so active work never disappears.
+    const canFoldRunning = running && foldWhileRunning && foldableCount >= 3
+    const userChoice = isFoldedChoice(userMessage.id)
+    const foldActive = canFoldSettled || canFoldRunning ? (userChoice ?? true) : false
+    const turnTokens = assistantMessages.reduce((sum, message) => {
+      const t = message.tokens
+      if (!t) return sum
+      return sum + (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0)
+    }, 0)
+    const turnCost = assistantMessages.reduce((sum, message) => sum + (message.cost ?? 0), 0)
+
+    let lastFoldableIndex = -1
+    assistantItems.forEach((item, i) => {
+      if (item.type === "part" && isGroupFoldable(item.group)) lastFoldableIndex = i
+    })
+    const shouldFold = (item: (typeof assistantItems)[number], itemIndex: number) => {
+      if (!foldActive || item.type !== "part" || !isGroupFoldable(item.group)) return false
+      // Running-only phase fold keeps the last (live) group visible.
+      if (canFoldRunning && !canFoldSettled && itemIndex === lastFoldableIndex) return false
+      return true
+    }
+    const emittedCount = assistantItems.filter((item, i) => item.type === "part" && !shouldFold(item, i)).length
+
+    // The fold row is the turn's HEADER (D§3.6): "Worked for 2m 14s" + a hairline rule
+    // sits above the turn's content, not wherever the first tool happened to land. Folded
+    // hides the work beneath it; unfolded reveals it in place.
+    if (canFoldSettled || canFoldRunning) {
+      rows.push(
+        new TimelineRow.TurnFold({
+          userMessageID: userMessage.id,
+          durationMs,
+          foldCount: foldableCount,
+          folded: foldActive,
+          running: running && !settled,
+          tokens: turnTokens,
+          cost: turnCost,
+        }),
+      )
+    }
+
     let assistantGroupIndex = 0
-    assistantItems.forEach((item) => {
+    assistantItems.forEach((item, itemIndex) => {
       if (item.type === "interrupted") {
         rows.push(
           new TimelineRow.TurnDivider({
@@ -237,12 +321,14 @@ export namespace Timeline {
         return
       }
 
+      if (shouldFold(item, itemIndex)) return
+
       rows.push(
         new TimelineRow.AssistantPart({
           userMessageID: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
-          lastAssistantPart: assistantGroupIndex === assistantGroupCount - 1,
+          lastAssistantPart: assistantGroupIndex === emittedCount - 1,
         }),
       )
       assistantGroupIndex += 1
@@ -377,7 +463,24 @@ export namespace Timeline {
   }
 }
 
-const contextGroupTools = new Set(["read", "glob", "grep", "list"])
+// Tool vocabularies span harnesses: OpenCode emits `bash`/`read`/…, Codex emits
+// `command`/`read_file`/… Keep both here or those runs never group (they'd render as
+// loud one-per-row generic rows). Mirrors TOOL_NAME_ALIASES in session-ui message-part.
+const contextGroupTools = new Set(["read", "glob", "grep", "list", "read_file"])
+const workGroupTools = new Set([
+  "bash",
+  "command",
+  "shell",
+  "local_shell",
+  "edit",
+  "edit_file",
+  "write",
+  "write_file",
+  "apply_patch",
+  "webfetch",
+  "websearch",
+  "web_search",
+])
 const hiddenTools = new Set(["todowrite"])
 const renderableParts = new Set(["compaction", "text", "reasoning", "tool"])
 
@@ -385,46 +488,122 @@ export function assistantMessageSettled(message: AssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error
 }
 
-function groupParts(parts: { messageID: string; part: Part }[]) {
-  const result: PartGroup[] = []
-  let start = -1
+type GroupablePart = { messageID: string; part: Part }
 
-  const flush = (end: number) => {
-    if (start < 0) return
-    const first = parts[start]
+function partRef(item: GroupablePart) {
+  return { messageID: item.messageID, partID: item.part.id }
+}
+
+// Representative category for a work run's icon/summary (T3): edit wins if present,
+// else web, else run-command.
+const editToolNames = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
+const webToolNames = new Set(["webfetch", "websearch", "web_search"])
+
+function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
+  if (slice.some((i) => i.part.type === "tool" && editToolNames.has(i.part.tool))) return "edit"
+  if (slice.some((i) => i.part.type === "tool" && webToolNames.has(i.part.tool))) return "webfetch"
+  return "bash"
+}
+
+// Single greedy pass (T3): consecutive context tools (read/glob/grep/list) fold into a
+// context group; consecutive work tools (bash/edit/write/apply_patch/web) fold into a
+// work group *only* when the run has ≥2 members — a lone work tool stays a standalone
+// row. Any non-groupable part flushes both runs. Runs never cross since groupParts is
+// called per (sub)turn already.
+function groupParts(parts: GroupablePart[]) {
+  const result: PartGroup[] = []
+  let contextStart = -1
+  let workStart = -1
+  let taskStart = -1
+
+  const flushContext = (end: number) => {
+    if (contextStart < 0) return
+    const first = parts[contextStart]
     if (!first) {
-      start = -1
+      contextStart = -1
       return
     }
     result.push({
       key: `context:${first.part.id}`,
       type: "context",
-      refs: parts.slice(start, end + 1).map((item) => ({
-        messageID: item.messageID,
-        partID: item.part.id,
-      })),
+      refs: parts.slice(contextStart, end + 1).map(partRef),
     })
-    start = -1
+    contextStart = -1
+  }
+
+  const flushWork = (end: number) => {
+    if (workStart < 0) return
+    const slice = parts.slice(workStart, end + 1)
+    const first = parts[workStart]
+    if (!first) {
+      workStart = -1
+      return
+    }
+    if (slice.length >= 2) {
+      result.push({
+        key: `work:${first.part.id}`,
+        type: "work",
+        tool: workGroupTool(slice),
+        refs: slice.map(partRef),
+      })
+    } else {
+      result.push({ key: `part:${first.messageID}:${first.part.id}`, type: "part", ref: partRef(first) })
+    }
+    workStart = -1
+  }
+
+  // Consecutive subagent (task) calls fold into a chip row (T12); a lone task stays a card.
+  const flushTask = (end: number) => {
+    if (taskStart < 0) return
+    const slice = parts.slice(taskStart, end + 1)
+    const first = parts[taskStart]
+    if (!first) {
+      taskStart = -1
+      return
+    }
+    if (slice.length >= 2) {
+      result.push({ key: `agents:${first.part.id}`, type: "agents", refs: slice.map(partRef) })
+    } else {
+      result.push({ key: `part:${first.messageID}:${first.part.id}`, type: "part", ref: partRef(first) })
+    }
+    taskStart = -1
   }
 
   parts.forEach((item, index) => {
-    if (item.part.type === "tool" && contextGroupTools.has(item.part.tool)) {
-      if (start < 0) start = index
+    const isContext = item.part.type === "tool" && contextGroupTools.has(item.part.tool)
+    const isWork = item.part.type === "tool" && workGroupTools.has(item.part.tool)
+    const isTask = item.part.type === "tool" && item.part.tool === "task"
+
+    if (isContext) {
+      flushWork(index - 1)
+      flushTask(index - 1)
+      if (contextStart < 0) contextStart = index
       return
     }
 
-    flush(index - 1)
-    result.push({
-      key: `part:${item.messageID}:${item.part.id}`,
-      type: "part",
-      ref: {
-        messageID: item.messageID,
-        partID: item.part.id,
-      },
-    })
+    if (isWork) {
+      flushContext(index - 1)
+      flushTask(index - 1)
+      if (workStart < 0) workStart = index
+      return
+    }
+
+    if (isTask) {
+      flushContext(index - 1)
+      flushWork(index - 1)
+      if (taskStart < 0) taskStart = index
+      return
+    }
+
+    flushContext(index - 1)
+    flushWork(index - 1)
+    flushTask(index - 1)
+    result.push({ key: `part:${item.messageID}:${item.part.id}`, type: "part", ref: partRef(item) })
   })
 
-  flush(parts.length - 1)
+  flushContext(parts.length - 1)
+  flushWork(parts.length - 1)
+  flushTask(parts.length - 1)
   return result
 }
 

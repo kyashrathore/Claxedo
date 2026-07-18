@@ -32,6 +32,8 @@ export interface Settings {
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
     showSessionProgressBar: boolean
+    timelineFoldWhileRunning: boolean
+    timelineShowTurnTokens: boolean
   }
   updates: {
     startup: boolean
@@ -117,6 +119,8 @@ const defaultSettings: Settings = {
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
     showSessionProgressBar: true,
+    timelineFoldWhileRunning: true,
+    timelineShowTurnTokens: false,
   },
   updates: {
     startup: true,
@@ -228,6 +232,20 @@ const settingsContextInput = {
         ),
         setEditToolPartsExpanded(value: boolean) {
           setStore("general", "editToolPartsExpanded", value)
+        },
+        timelineFoldWhileRunning: withFallback(
+          () => store.general?.timelineFoldWhileRunning,
+          defaultSettings.general.timelineFoldWhileRunning,
+        ),
+        setTimelineFoldWhileRunning(value: boolean) {
+          setStore("general", "timelineFoldWhileRunning", value)
+        },
+        timelineShowTurnTokens: withFallback(
+          () => store.general?.timelineShowTurnTokens,
+          defaultSettings.general.timelineShowTurnTokens,
+        ),
+        setTimelineShowTurnTokens(value: boolean) {
+          setStore("general", "timelineShowTurnTokens", value)
         },
         showSessionProgressBar: withFallback(
           () => store.general?.showSessionProgressBar,

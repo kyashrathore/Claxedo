@@ -36,6 +36,27 @@
     }
   }
 
+  /*
+   * Category icon (T1). Sized down to 14px and made to INHERIT the row's text colour so
+   * the icon, verb and trailing detail read as one uniform dim tone at rest — a separate
+   * icon token made the row look like three different shades stitched together.
+   */
+  [data-slot="basic-tool-tool-leading-icon"] {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    color: inherit;
+  }
+
+  [data-slot="basic-tool-tool-leading-icon"] [data-component="icon"] {
+    width: 14px;
+    height: 14px;
+    color: inherit;
+  }
+
   [data-slot="basic-tool-tool-spinner"] {
     width: 16px;
     height: 16px;
@@ -167,6 +188,18 @@
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
+  }
+
+  /* Live elapsed while running (T6) — muted, tabular so ticks don't shift layout. */
+  [data-slot="basic-tool-tool-elapsed"] {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 8px;
+    font-family: var(--font-family-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    line-height: var(--line-height-large);
+    color: var(--text-weaker);
   }
 }
 
@@ -327,20 +360,57 @@ body[data-new-layout] {
 }
 
 body:not([data-new-layout]) {
+  /*
+   * Muted row (T1, D§3.3). One uniform dim tone at rest across icon + verb + trailing
+   * detail — a per-element ladder (icon/base/weak/weaker) made a single row read as three
+   * mismatched shades. The row sets the colour once and the icon inherits it; hover lifts
+   * the TEXT only (the icon carries category, not attention). Hover context is the whole
+   * row (the Kobalte collapsible-trigger button).
+   */
   [data-component="tool-trigger"] {
+    color: var(--text-weak);
+
     [data-slot="basic-tool-tool-spinner"] {
-      color: var(--text-weak);
+      color: inherit;
     }
 
     [data-slot="basic-tool-tool-title"],
-    [data-slot="basic-tool-tool-title"].agent-title {
-      color: var(--text-strong);
+    [data-slot="basic-tool-tool-title"].agent-title,
+    [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
+    [data-slot="basic-tool-tool-arg"] {
+      color: var(--text-weak);
+      transition: color 0.15s ease;
     }
 
-    [data-slot="basic-tool-tool-subtitle"],
-    [data-slot="basic-tool-tool-subtitle"].clickable:hover,
+    [data-slot="basic-tool-tool-subtitle"].clickable:hover {
+      color: var(--text-strong);
+    }
+  }
+
+  @media (hover: hover) {
+    [data-slot="collapsible-trigger"]:hover [data-component="tool-trigger"] {
+      [data-slot="basic-tool-tool-title"],
+      [data-slot="basic-tool-tool-title"].agent-title,
+      [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
+      [data-slot="basic-tool-tool-arg"] {
+        color: var(--text-strong);
+      }
+    }
+  }
+
+  [data-slot="collapsible-trigger"]:focus-visible [data-component="tool-trigger"] {
+    [data-slot="basic-tool-tool-title"],
+    [data-slot="basic-tool-tool-subtitle"]:not(.subagent-link),
     [data-slot="basic-tool-tool-arg"] {
-      color: var(--text-base);
+      color: var(--text-strong);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-component="tool-trigger"] [data-slot="basic-tool-tool-title"],
+    [data-component="tool-trigger"] [data-slot="basic-tool-tool-subtitle"],
+    [data-component="tool-trigger"] [data-slot="basic-tool-tool-arg"] {
+      transition: none;
     }
   }
 

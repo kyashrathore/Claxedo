@@ -1,6 +1,4 @@
 [data-component="markdown"] {
-  --markdown-inline-code-path-color: var(--v2-text-text-code-accent);
-  --markdown-inline-code-color: var(--v2-text-text-code-accent);
   --markdown-inline-code-bg-mix: 8%;
   --markdown-shell-code-background: var(--v2-background-bg-layer-02);
   --markdown-shell-code-border: var(--v2-border-border-muted);
@@ -236,30 +234,58 @@
     }
   }
 
+  /* Mermaid (T14): once rendered, hide the source <pre> and show the themed diagram. */
+  [data-component="markdown-code"][data-mermaid-state="rendered"] > pre {
+    display: none;
+  }
+
+  [data-slot="mermaid-diagram"] {
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  [data-slot="mermaid-diagram"] svg {
+    max-width: 100%;
+    height: auto;
+  }
+
   :not(pre) > code {
     font-family: var(--font-family-mono);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
-    color: var(--v2-text-text-base);
+    color: var(--v2-text-text-base, var(--text-strong));
     font-weight: var(--font-weight-medium);
-    padding: 2px 4px;
-    border-radius: 4px;
-    background: color-mix(in oklch, var(--v2-text-text-base) var(--markdown-inline-code-bg-mix), transparent);
+    padding: 1px 0.3rem;
+    border-radius: 0.25rem;
+    /* Pill (D§3.12): hairline inset ring on a legacy token so it reads as an object in
+       both themes even when the v2 palette is absent. */
+    box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
+    background: color-mix(in oklch, var(--v2-text-text-base, var(--text-base)) var(--markdown-inline-code-bg-mix), transparent);
   }
 
+  /*
+   * Path/url inline code keeps the neutral pill — no accent tint. Tinting every detected
+   * path turned prose into a wall of green (D§1: prose is the product; decoration should
+   * not compete with it). The affordance is the pointer + hover underline, not colour.
+   */
   :not(pre) > code[data-inline-code-kind="path"] {
-    color: var(--markdown-inline-code-path-color);
-    background: color-mix(
-      in oklch,
-      var(--markdown-inline-code-path-color) var(--markdown-inline-code-bg-mix),
-      transparent
-    );
+    cursor: pointer;
+    text-underline-offset: 2px;
+  }
+
+  @media (hover: hover) {
+    :not(pre) > code[data-inline-code-kind="path"]:hover {
+      text-decoration: underline dotted 0.5px;
+      color: var(--text-strong);
+    }
   }
 
   a.external-link > code[data-inline-code-kind="url"] {
-    color: var(--markdown-inline-code-color);
     background: none;
+    box-shadow: none;
     text-decoration: underline;
-    text-decoration-color: color-mix(in oklch, var(--markdown-inline-code-color) 25%, transparent);
+    text-decoration-color: var(--border-weak-base);
     text-underline-offset: 2px;
   }
 
@@ -353,11 +379,18 @@ body:not([data-new-layout]) [data-component="markdown"] {
     border-color: var(--border-weak-base);
   }
 
+  /*
+   * Inline code reads as an object, not as syntax (T15/D§3.12). This used to paint every
+   * inline span with --syntax-string (teal #00ceb9 in dark), which turned prose into a
+   * wall of colour, and its padding/background resets silently overrode the pill defined
+   * in the base block above. Neutral pill, prose-coloured text.
+   */
   :not(pre) > code {
-    color: var(--syntax-string);
-    padding: 0;
-    border-radius: 0;
-    background: none;
+    color: var(--text-strong);
+    padding: 1px 0.3rem;
+    border-radius: 0.25rem;
+    box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
+    background: color-mix(in oklch, var(--text-base) 8%, transparent);
   }
 
   th,

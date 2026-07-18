@@ -72,3 +72,42 @@
     width: 0;
   }
 }
+
+/* Dot-wave for the jump-to-bottom button while the session is busy (T21). */
+.tl-dot-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tl-dot-wave span {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--icon-base);
+  animation: tl-dot-wave 1s ease-in-out infinite;
+}
+
+.tl-dot-wave span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.tl-dot-wave span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes tl-dot-wave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-dot-wave span {
+    animation: none;
+  }
+}

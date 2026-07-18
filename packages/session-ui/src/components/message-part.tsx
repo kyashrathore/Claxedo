@@ -58,6 +58,9 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { formatDuration } from "./format-duration"
+import { stripShellWrapper } from "./shell-wrapper"
+import { AgentGlyph } from "./agent-glyph"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
@@ -522,7 +525,7 @@ export function getToolInfo(
     }
     case "bash":
       return {
-        icon: "console",
+        icon: "terminal-square",
         title: i18n.t("ui.tool.shell"),
         subtitle: input.command,
       }
@@ -633,6 +636,28 @@ export type PartRef = {
   partID: string
 }
 
+/** Category discriminator for a work group (T3): drives icon + summary priority. */
+export type WorkGroupTool = "bash" | "edit" | "write" | "apply_patch" | "webfetch" | "websearch"
+
+export const WORK_GROUP_TOOLS = new Set<string>([
+  "bash",
+  "command",
+  "shell",
+  "local_shell",
+  "edit",
+  "edit_file",
+  "write",
+  "write_file",
+  "apply_patch",
+  "webfetch",
+  "websearch",
+  "web_search",
+])
+
+export function isWorkGroupTool(part: PartType): part is ToolPart {
+  return part.type === "tool" && WORK_GROUP_TOOLS.has(part.tool)
+}
+
 export type PartGroup =
   | {
       key: string
@@ -644,9 +669,25 @@ export type PartGroup =
       type: "context"
       refs: PartRef[]
     }
+  | {
+      key: string
+      type: "work"
+      tool: WorkGroupTool
+      refs: PartRef[]
+    }
+  | {
+      key: string
+      type: "agents"
+      refs: PartRef[]
+    }
 
 function sameRef(a: PartRef, b: PartRef) {
   return a.messageID === b.messageID && a.partID === b.partID
+}
+
+function sameRefs(a: PartRef[], b: PartRef[]) {
+  if (a.length !== b.length) return false
+  return a.every((ref, i) => sameRef(ref, b[i]!))
 }
 
 function sameGroup(a: PartGroup, b: PartGroup) {
@@ -657,9 +698,17 @@ function sameGroup(a: PartGroup, b: PartGroup) {
     if (b.type !== "part") return false
     return sameRef(a.ref, b.ref)
   }
+  if (a.type === "work") {
+    if (b.type !== "work") return false
+    if (a.tool !== b.tool) return false
+    return sameRefs(a.refs, b.refs)
+  }
+  if (a.type === "agents") {
+    if (b.type !== "agents") return false
+    return sameRefs(a.refs, b.refs)
+  }
   if (b.type !== "context") return false
-  if (a.refs.length !== b.refs.length) return false
-  return a.refs.every((ref, i) => sameRef(ref, b.refs[i]!))
+  return sameRefs(a.refs, b.refs)
 }
 
 export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly PartGroup[] | undefined) {
@@ -1173,6 +1222,193 @@ export function ContextToolGroup(props: {
   )
 }
 
+type WorkGroupCounts = { edited: number; commands: number; fetched: number; searched: number }
+
+function workGroupSummary(parts: ToolPart[]): WorkGroupCounts {
+  let edited = 0
+  let commands = 0
+  let fetched = 0
+  let searched = 0
+  for (const part of parts) {
+    // Accept both harness vocabularies (OpenCode `bash`/`edit`, Codex `command`/`edit_file`).
+    switch (part.tool) {
+      case "edit":
+      case "edit_file":
+      case "write":
+      case "write_file":
+      case "apply_patch":
+        edited += 1
+        break
+      case "bash":
+      case "command":
+      case "shell":
+      case "local_shell":
+        commands += 1
+        break
+      case "webfetch":
+        fetched += 1
+        break
+      case "websearch":
+      case "web_search":
+        searched += 1
+        break
+    }
+  }
+  return { edited, commands, fetched, searched }
+}
+
+// Icon priority (T4): edit wins when any edit exists, else web, else run-command.
+const EDIT_TOOL_NAMES = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
+const WEB_TOOL_NAMES = new Set(["webfetch", "websearch", "web_search"])
+
+function workGroupIcon(parts: ToolPart[]): IconProps["name"] {
+  if (parts.some((p) => EDIT_TOOL_NAMES.has(p.tool))) return "code-lines"
+  if (parts.some((p) => WEB_TOOL_NAMES.has(p.tool))) return "window-cursor"
+  return "terminal-square"
+}
+
+// Segmented summary (D§3.4): present-continuous while running, past tense when settled;
+// leading segment sentence-case, followers lowercase, joined with " · ".
+function workGroupSegments(counts: WorkGroupCounts, pending: boolean): string[] {
+  const segs: string[] = []
+  if (counts.edited > 0)
+    segs.push(pending ? "editing files" : `edited ${counts.edited} ${counts.edited === 1 ? "file" : "files"}`)
+  if (counts.commands > 0)
+    segs.push(pending ? "running commands" : `ran ${counts.commands} ${counts.commands === 1 ? "command" : "commands"}`)
+  if (counts.fetched > 0)
+    segs.push(pending ? "fetching pages" : `fetched ${counts.fetched} ${counts.fetched === 1 ? "page" : "pages"}`)
+  if (counts.searched > 0) segs.push(pending ? "searching the web" : "searched the web")
+  return segs
+}
+
+function workGroupTitle(counts: WorkGroupCounts, pending: boolean): string {
+  const segs = workGroupSegments(counts, pending)
+  if (segs.length === 0) return pending ? "Working" : "Worked"
+  return segs.map((seg, i) => (i === 0 ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)).join(" · ")
+}
+
+function clampLabel(value: string, max = 72) {
+  const flat = value.replace(/\s+/g, " ").trim()
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+}
+
+/**
+ * "active" header kind (D§3.4): while a member is still running, the group header shows
+ * that member's live summary instead of the settled aggregate — so a long run of tool
+ * calls stays ONE row that keeps updating, rather than appending a row per call.
+ */
+function workGroupActiveLabel(parts: ToolPart[]): string | undefined {
+  const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
+  if (!active) return undefined
+  const input = (active.state.input ?? {}) as Record<string, unknown>
+  const text = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : undefined)
+
+  switch (active.tool) {
+    case "bash":
+    case "command":
+    case "shell":
+    case "local_shell": {
+      const command = text("command")
+      return command ? clampLabel(`Running ${stripShellWrapper(command)}`) : "Running command"
+    }
+    case "edit":
+    case "edit_file":
+    case "write":
+    case "write_file": {
+      const file = text("filePath") ?? text("path")
+      return file ? clampLabel(`Editing ${getFilename(file)}`) : "Editing files"
+    }
+    case "apply_patch":
+      return "Applying patch"
+    case "webfetch": {
+      const url = text("url")
+      return url ? clampLabel(`Fetching ${url}`) : "Fetching page"
+    }
+    case "websearch":
+    case "web_search": {
+      const query = text("query")
+      return query ? clampLabel(`Searching ${query}`) : "Searching the web"
+    }
+    default:
+      return clampLabel(`Running ${active.tool}`)
+  }
+}
+
+/**
+ * WorkGroup (T4) — generalizes ContextToolGroup for bash/edit/write/apply_patch/web runs.
+ * Collapsed by default; header = category icon + segmented summary + gated chevron.
+ * Expanded body is a 224px scroll region with edge fades when it overflows; member rows
+ * are passed in as children (the app renders them so per-part open state persists) and are
+ * dimmed + icon-less via CSS (depth by dimming, D§8 rule 6).
+ */
+export function WorkGroup(props: {
+  parts: ToolPart[]
+  busy?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  onSizeChange?: () => void
+  children: JSX.Element
+}) {
+  const [localOpen, setLocalOpen] = createSignal(false)
+  const [overflowing, setOverflowing] = createSignal(false)
+  const open = () => props.open ?? localOpen()
+  const pending = createMemo(
+    () =>
+      !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
+  )
+  const summary = createMemo(() => workGroupSummary(props.parts))
+  const icon = createMemo(() => workGroupIcon(props.parts))
+  // Live label while a member runs, settled aggregate once the run finishes.
+  const title = createMemo(() => workGroupActiveLabel(props.parts) ?? workGroupTitle(summary(), pending()))
+  const handleOpenChange = (value: boolean) => {
+    if (props.open === undefined) setLocalOpen(value)
+    props.onOpenChange?.(value)
+    props.onSizeChange?.()
+  }
+
+  let listRef: HTMLDivElement | undefined
+  onMount(() => {
+    if (!listRef || typeof ResizeObserver === "undefined") return
+    const measure = () => setOverflowing(!!listRef && listRef.scrollHeight - listRef.clientHeight > 1)
+    const observer = new ResizeObserver(measure)
+    observer.observe(listRef)
+    measure()
+    onCleanup(() => observer.disconnect())
+  })
+
+  return (
+    <Collapsible
+      open={open()}
+      onOpenChange={handleOpenChange}
+      variant="ghost"
+      class="tool-collapsible"
+      data-timeline-part-ids={props.parts.map((part) => part.id).join(",")}
+    >
+      <Collapsible.Trigger>
+        <div data-component="work-group-trigger">
+          <span data-slot="work-group-icon">
+            <Icon name={icon()} size="small" />
+          </span>
+          <span data-slot="work-group-summary">
+            <TextShimmer text={title()} active={pending()} />
+          </span>
+          <Collapsible.Arrow />
+        </div>
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        <div
+          ref={listRef}
+          data-component="work-group-list"
+          data-scrollable
+          data-overflowing={overflowing() ? "true" : undefined}
+        >
+          {props.children}
+        </div>
+      </Collapsible.Content>
+    </Collapsible>
+  )
+}
+
 function UserMessageComments(props: { comments: UserMessageComment[]; bounded: boolean }) {
   const i18n = useI18n()
   const [state, setState] = createStore({ expanded: false })
@@ -1479,6 +1715,7 @@ export interface ToolProps {
   sessionID?: string
   output?: string
   status?: string
+  startedAt?: number
   hideDetails?: boolean
   defaultOpen?: boolean
   open?: boolean
@@ -1626,6 +1863,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               // @ts-expect-error
               output={part().state.output}
               status={part().state.status}
+              startedAt={(part().state as any).time?.start}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               open={controlledOpen()}
@@ -1641,12 +1879,17 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   )
 }
 
-export function MessageDivider(props: { label: string }) {
+export function MessageDivider(props: { label: string; icon?: IconProps["name"] }) {
   return (
     <div data-component="compaction-part">
       <div data-slot="compaction-part-divider">
         <span data-slot="compaction-part-line" />
         <span data-slot="compaction-part-label" class="text-12-regular text-text-weak">
+          <Show when={props.icon}>
+            <span data-slot="compaction-part-icon">
+              <Icon name={props.icon!} size="small" />
+            </span>
+          </Show>
           {props.label}
         </span>
         <span data-slot="compaction-part-line" />
@@ -1657,7 +1900,7 @@ export function MessageDivider(props: { label: string }) {
 
 PART_MAPPING["compaction"] = function CompactionPartDisplay() {
   const i18n = useI18n()
-  return <MessageDivider label={i18n.t("ui.messagePart.compaction")} />
+  return <MessageDivider label={i18n.t("ui.messagePart.compaction")} icon="archive" />
 }
 
 PART_MAPPING["text"] = function TextPartDisplay(props) {
@@ -1774,13 +2017,27 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const durationMs = createMemo(() => {
+    const time = part().time
+    if (time?.start && time?.end) return Math.max(0, time.end - time.start)
+    return undefined
+  })
+  const title = createMemo(() => {
+    if (streaming()) return "Thinking…"
+    const ms = durationMs()
+    return typeof ms === "number" ? `Thought for ${formatDuration(ms)}` : "Thought"
+  })
 
   return (
     <Show when={text()}>
       <div data-component="reasoning-part" data-timeline-part-id={part().id}>
-        <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-        </Show>
+        <BasicTool icon="brain" status={streaming() ? "running" : undefined} trigger={{ title: title() }}>
+          <div data-component="reasoning-content">
+            <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
+              <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+            </Show>
+          </div>
+        </BasicTool>
       </div>
     </Show>
   )
@@ -2054,11 +2311,9 @@ ToolRegistry.register({
               <Show
                 when={running()}
                 fallback={
-                  <Show when={newLayout()}>
-                    <span data-component="task-tool-icon">
-                      <Icon name="subagent" size="small" />
-                    </span>
-                  </Show>
+                  <span data-component="task-tool-icon">
+                    <AgentGlyph seed={childSessionId() || title()} color={tone() ?? undefined} />
+                  </span>
                 }
               >
                 <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
@@ -2106,12 +2361,28 @@ ToolRegistry.register({
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"
     const sawPending = pending()
+    // Row reads "Ran <command>" (D§3.3) — verb + the real command, not a static "Shell"
+    // label with the login-shell wrapper trailing behind it.
+    const displayCommand = createMemo(() =>
+      stripShellWrapper(String(props.input.command ?? props.metadata.command ?? "")),
+    )
     const text = createMemo(() => {
-      const cmd = props.input.command ?? props.metadata.command ?? ""
+      const cmd = displayCommand()
       const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
       return `$ ${cmd}${out ? "\n\n" + out : ""}`
     })
     const [copied, setCopied] = createSignal(false)
+
+    // Dev-server preview row (T23): surface a "Local preview · 127.0.0.1:port" chip when the
+    // command output advertises a listening localhost URL. Pure client-side regex.
+    const localUrl = createMemo(() => {
+      if (pending()) return undefined
+      const out = stripAnsi(props.output || props.metadata.output || "")
+      const match = out.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/\S*)?/i)
+      if (!match) return undefined
+      return match[0].replace(/0\.0\.0\.0/, "127.0.0.1").replace(/[.,)]+$/, "")
+    })
+    const localLabel = () => localUrl()?.replace(/^https?:\/\//, "").replace(/\/$/, "")
 
     const handleCopy = async () => {
       const content = text()
@@ -2123,17 +2394,20 @@ ToolRegistry.register({
     }
 
     return (
+      <>
       <BasicTool
         {...props}
-        icon="console"
+        icon="terminal-square"
         trigger={(open) => (
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">
               <span data-slot="basic-tool-tool-title">
-                <TextShimmer text={i18n.t("ui.tool.shell")} active={pending()} />
+                <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
               </span>
-              <Show when={!pending() && !open() && props.input.command}>
-                <ShellSubmessage text={props.input.command} animate={sawPending} />
+              {/* Keep the command in the header even while expanded — the verb alone
+                  ("Ran") says nothing, and the header is what you scan when scrolling. */}
+              <Show when={!pending() && displayCommand()}>
+                <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
               </Show>
             </div>
           </div>
@@ -2165,6 +2439,21 @@ ToolRegistry.register({
           </div>
         </div>
       </BasicTool>
+      <Show when={localUrl()}>
+        <a
+          data-component="local-preview-row"
+          href={localUrl()!}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span data-slot="local-preview-icon">
+            <Icon name="window-cursor" size="small" />
+          </span>
+          <span data-slot="local-preview-verb">Local preview</span>
+          <span data-slot="local-preview-url">{localLabel()}</span>
+        </a>
+      </Show>
+      </>
     )
   },
 })
@@ -2242,7 +2531,7 @@ ToolRegistry.register({
               </div>
               <div data-slot="message-part-actions">
                 <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff} />
+                  <DiffChanges changes={props.metadata.filediff} variant="muted-hover" />
                 </Show>
               </div>
             </div>
@@ -2491,7 +2780,10 @@ ToolRegistry.register({
                 </div>
                 <div data-slot="message-part-actions">
                   <Show when={!pending()}>
-                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
+                    <DiffChanges
+                      changes={{ additions: single()!.additions, deletions: single()!.deletions }}
+                      variant="muted-hover"
+                    />
                   </Show>
                 </div>
               </div>
@@ -2657,3 +2949,28 @@ ToolRegistry.register({
     return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
   },
 })
+
+/**
+ * Harness tool-name aliases. The registry above uses OpenCode's vocabulary, but Claxedo
+ * also drives Codex, which names its shell tool `command` (input `{command, kind}`).
+ * Unaliased names fall through to `GenericTool` — an "Called `command`" row with a raw
+ * key=value arg dump, an MCP icon, and no children (so it can't even expand). Aliasing
+ * maps them onto the real renderer so they get the right icon/verb, an expandable output
+ * pane, and — because the grouping pass keys off these names — they fold into work groups.
+ * Registered after the definitions above so the targets exist.
+ */
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  command: "bash",
+  shell: "bash",
+  local_shell: "bash",
+  read_file: "read",
+  write_file: "write",
+  edit_file: "edit",
+  web_search: "websearch",
+}
+
+for (const [alias, target] of Object.entries(TOOL_NAME_ALIASES)) {
+  if (ToolRegistry.render(alias)) continue
+  const render = ToolRegistry.render(target)
+  if (render) ToolRegistry.register({ name: alias, render })
+}

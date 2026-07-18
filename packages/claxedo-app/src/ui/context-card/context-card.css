@@ -150,13 +150,15 @@
 
 /* ── Generic rows ───────────────────────────────────────── */
 
+/* Height matches the sidebar's list rows (min-h-8 / py-1) so the hover wash reads as the
+   same control in both places — 2.1rem + 0.4rem padding made it noticeably taller. */
 .ui-context-card-row {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 0.6rem;
-  min-height: 2.1rem;
-  padding: 0.4rem 0.35rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.35rem;
   border-radius: var(--radius-md);
   text-align: left;
 }

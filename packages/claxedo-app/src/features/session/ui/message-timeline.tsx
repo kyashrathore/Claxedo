@@ -15,6 +15,7 @@ import {
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
+import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware } from "./message-timeline-observe-offset"
@@ -27,6 +28,8 @@ import {
   MessageDivider,
   Part as MessagePart,
   partDefaultOpen,
+  SubagentChipRow,
+  WorkGroup,
   type UserActions,
 } from "@/ui/session-kit"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -68,6 +71,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSessionKey } from "@/features/session/session-layout"
 import { useGlobalSDK } from "@/features/session/app-ports"
+import { useClaxedoState, usePaneId } from "@/features/session/app-ports"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSettings } from "@/platform/settings/provider"
 import { useSDK } from "@/features/session/app-ports"
@@ -104,6 +108,11 @@ import {
   captureTimelinePrependAnchor,
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
+import { createTurnFoldStore } from "./turn-fold-store"
+import { formatDuration } from "@/ui/session-kit"
+import { installTimelineMermaid } from "./mermaid-timeline"
+
+installTimelineMermaid()
 
 // Keep parity with the upstream session row model.
 const emptyMessages: MessageType[] = []
@@ -180,17 +189,79 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   )
 }
 
-function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
+  return String(tokens)
+}
+
+function TurnFoldRow(props: {
+  durationMs?: number
+  folded: boolean
+  onToggle: () => void
+  tokens?: number
+  cost?: number
+  showTokens?: boolean
+  running?: boolean
+}) {
+  // D§3.6: present tense while the turn is still working, past tense once it settles.
+  const label = () => {
+    const verb = props.running ? "Working" : "Worked"
+    return typeof props.durationMs === "number" ? `${verb} for ${formatDuration(props.durationMs)}` : verb
+  }
+  const footer = () => {
+    if (!props.showTokens || !props.tokens) return undefined
+    const parts = [`${formatTokenCount(props.tokens)} tokens`]
+    if (typeof props.cost === "number" && props.cost > 0) parts.push(`$${props.cost.toFixed(2)}`)
+    return parts.join(" · ")
+  }
+  return (
+    <div data-component="turn-fold" class="w-full">
+      <button
+        type="button"
+        aria-expanded={!props.folded}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onToggle()
+        }}
+        class="group/turn-fold flex items-center gap-1.5 h-8 rounded-[4px] px-1 -mx-1 text-text-weak hover:text-text-strong focus-visible:text-text-strong focus-visible:outline-none transition-colors"
+      >
+        <span class="text-14-medium tabular-nums">{label()}</span>
+        <span
+          class="inline-flex items-center opacity-60 group-hover/turn-fold:opacity-100 transition-transform duration-300"
+          style={{ transform: props.folded ? "rotate(0deg)" : "rotate(90deg)" }}
+        >
+          <Icon name="chevron-right" size="small" />
+        </span>
+        <Show when={footer()}>
+          <span class="ml-auto text-12-regular text-text-weaker tabular-nums">{footer()}</span>
+        </Show>
+      </button>
+      <div class="h-px w-full bg-border-weak-base" aria-hidden="true" />
+    </div>
+  )
+}
+
+function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => Promise<unknown> | void }) {
   const language = useLanguage()
-  const maxFiles = 10
+  const maxFiles = 3
   const [state, setState] = createStore({
     showAll: false,
     expanded: [] as string[],
+    undoing: false,
   })
   const showAll = () => state.showAll
   const expanded = () => state.expanded
   const overflow = createMemo(() => Math.max(0, props.diffs.length - maxFiles))
   const visible = createMemo(() => (showAll() ? props.diffs : props.diffs.slice(0, maxFiles)))
+
+  // Undo the whole turn's edits via the git-snapshot revert (T9, D§3.9).
+  const undo = () => {
+    if (!props.onUndo || state.undoing) return
+    setState("undoing", true)
+    void Promise.resolve()
+      .then(() => props.onUndo!())
+      .finally(() => setState("undoing", false))
+  }
 
   return (
     <div
@@ -204,6 +275,20 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
           {language.t(props.diffs.length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
         </span>
         <DiffChanges changes={props.diffs} />
+        <Show when={props.onUndo}>
+          <button
+            type="button"
+            data-slot="session-turn-diffs-undo"
+            class="text-12-medium text-text-weak hover:text-text-strong active:scale-[0.96] transition-transform disabled:opacity-50 cursor-pointer bg-transparent border-none px-1"
+            disabled={state.undoing}
+            onClick={(event) => {
+              event.stopPropagation()
+              undo()
+            }}
+          >
+            {language.t("ui.message.revertMessage")}
+          </button>
+        </Show>
         <Show when={overflow() > 0}>
           <span data-slot="session-turn-diffs-toggle" onClick={() => setState("showAll", !showAll())}>
             {showAll() ? language.t("ui.sessionTurn.diffs.showLess") : language.t("ui.sessionTurn.diffs.showAll")}
@@ -225,6 +310,7 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
                 <Accordion.Item value={diff.file}>
                   <StickyAccordionHeader>
                     <Accordion.Trigger>
+                      <DiffHoverCard diff={diff}>
                       <div data-slot="session-turn-diff-trigger">
                         <span data-slot="session-turn-diff-path">
                           <Show when={diff.file.includes("/")}>
@@ -241,6 +327,7 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
                           </span>
                         </div>
                       </div>
+                      </DiffHoverCard>
                     </Accordion.Trigger>
                   </StickyAccordionHeader>
                   <Accordion.Content>
@@ -271,6 +358,26 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
     <div data-slot="session-turn-diff-view" data-scrollable>
       <Dynamic component={fileComponent} mode="diff" fileDiff={view.fileDiff} />
     </div>
+  )
+}
+
+// Hover diff popover (T10, D§3.10): 800ms hover on a file row floats a diff preview.
+function DiffHoverCard(props: { diff: SummaryDiff; children: JSX.Element }) {
+  return (
+    <KobalteTooltip openDelay={800} closeDelay={100} placement="top" gutter={8}>
+      <KobalteTooltip.Trigger as="div" class="min-w-0 w-full">
+        {props.children}
+      </KobalteTooltip.Trigger>
+      <KobalteTooltip.Portal>
+        <KobalteTooltip.Content class="z-[95] max-w-[min(560px,80vw)] max-h-80 overflow-auto rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger shadow-xl">
+          <div class="flex items-center justify-between gap-3 px-3 py-2 border-b-[0.5px] border-border-weak-base text-12-regular text-text-weak">
+            <span class="truncate">{props.diff.file}</span>
+            <DiffChanges changes={props.diff} />
+          </div>
+          <TimelineDiffView diff={props.diff} />
+        </KobalteTooltip.Content>
+      </KobalteTooltip.Portal>
+    </KobalteTooltip>
   )
 }
 
@@ -312,7 +419,67 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
   const cached = timelineCache.get(ownerSessionKey)
+  const turnFold = createTurnFoldStore(ownerSessionKey)
   const platform = usePlatform()
+  const claxedoState = useClaxedoState()
+  const paneId = usePaneId()
+
+  // Workspace-relative form (what the in-app file panel keys on) vs absolute (what the
+  // OS-level desktop actions need).
+  const relativeTimelinePath = (raw: string) => raw.trim().replace(/^@/, "").replace(/^\.\//, "")
+  const resolveTimelinePath = (raw: string) => {
+    const clean = relativeTimelinePath(raw)
+    return clean.startsWith("/") ? clean : `${sdk.directory.replace(/\/$/, "")}/${clean}`
+  }
+
+  // Open a file in the workspace side panel. This reuses the exact path the terminal's
+  // file-path links already take (terminal-content.tsx `onFileLinkOpen`) rather than
+  // hand-rolling tab/review-panel calls — and notably NOT `platform.openPath`, which is
+  // desktop-only (undefined on web, so clicks silently did nothing) and hands the file to
+  // the OS instead of the panel. Same containment guard: refuse absolute paths that fall
+  // outside the workspace.
+  const openFileInPanel = (raw: string) => {
+    const path = relativeTimelinePath(raw)
+    if (!path) return
+    const workspaceDir = sdk.directory.replace(/\/$/, "")
+    if (path.startsWith("/") && !path.startsWith(`${workspaceDir}/`) && path !== workspaceDir) return
+    claxedoState.workspacePanel.open({
+      workspaceDir,
+      targetPaneId: paneId,
+      navigator: "files",
+      focus: { kind: "file", path, intent: "tab" },
+    })
+  }
+
+  // Open `@path` / path-kind inline-code chips in assistant markdown (T16). Delegated so
+  // it covers every rendered part without per-chip handlers.
+  const handleTimelinePathClick = (event: MouseEvent) => {
+    const target = event.target instanceof Element ? event.target : null
+    const code = target?.closest('[data-inline-code-kind="path"]')
+    if (!code) return
+    const raw = code.textContent?.trim()
+    if (!raw) return
+    event.preventDefault()
+    openFileInPanel(raw)
+  }
+
+  // File context menu (T11): right-click a file link/path → Open / Copy path / Reveal.
+  const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; path: string } | undefined>()
+  const timelineFileTarget = (target: EventTarget | null): string | undefined => {
+    const el = target instanceof Element ? target : null
+    const node =
+      el?.closest('[data-inline-code-kind="path"]') ??
+      el?.closest('[data-slot="message-part-title-filename"]') ??
+      el?.closest('[data-slot="session-turn-diff-filename"]')
+    const text = node?.textContent?.trim()
+    return text || undefined
+  }
+  const handleTimelineContextMenu = (event: MouseEvent) => {
+    const raw = timelineFileTarget(event.target)
+    if (!raw) return
+    event.preventDefault()
+    setContextMenu({ x: event.clientX, y: event.clientY, path: raw })
+  }
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
@@ -465,6 +632,8 @@ export function MessageTimeline(props: {
             sessionStatus().type,
             activeMessageID() === userMessage.id,
             props.firstTurnRecovery !== false && indexAccessor() === 0,
+            (userMessageID) => turnFold.isFolded(userMessageID),
+            settings.general.timelineFoldWhileRunning(),
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -711,6 +880,7 @@ export function MessageTimeline(props: {
   onCleanup(() => {
     timelineCache.delete(ownerSessionKey)
     timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen } })
+    turnFold.persist()
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     if (bottomSettleFrame !== undefined) cancelAnimationFrame(bottomSettleFrame)
@@ -1100,6 +1270,67 @@ export function MessageTimeline(props: {
       )
     }
 
+    if (row().group.type === "agents") {
+      const members = createMemo(() => {
+        const group = row().group
+        if (group.type !== "agents") return []
+        return group.refs
+          .map((ref) => getMsgPart(ref.messageID, ref.partID))
+          .filter((part): part is ToolPart => part?.type === "tool")
+      })
+      return <SubagentChipRow parts={members()} onOpen={(childSessionId) => navigate(sessionRoute(childSessionId))} />
+    }
+
+    if (row().group.type === "work") {
+      const members = createMemo(() => {
+        const group = row().group
+        if (group.type !== "work") return []
+        return group.refs
+          .map((ref) => {
+            const message = messageByID().get(ref.messageID)
+            const part = getMsgPart(ref.messageID, ref.partID)
+            if (!message || !part || part.type !== "tool") return undefined
+            return { message, part }
+          })
+          .filter((member): member is { message: AssistantMessage; part: ToolPart } => !!member)
+      })
+
+      return (
+        <WorkGroup
+          parts={members().map((member) => member.part)}
+          busy={
+            workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+          }
+          onSizeChange={onSizeChange}
+        >
+          <For each={members()}>
+            {(member) => {
+              const defaultOpen = createMemo(() =>
+                partDefaultOpen(
+                  member.part,
+                  settings.general.shellToolPartsExpanded(),
+                  settings.general.editToolPartsExpanded(),
+                ),
+              )
+              return (
+                <MessagePart
+                  part={member.part}
+                  message={member.message}
+                  turnDurationMs={turnDurationMs(row().userMessageID)}
+                  defaultOpen={defaultOpen()}
+                  toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
+                  onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
+                  deferToolContent={false}
+                  virtualizeDiff={false}
+                  onContentRendered={onSizeChange}
+                />
+              )
+            }}
+          </For>
+        </WorkGroup>
+      )
+    }
+
     const message = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return
@@ -1157,7 +1388,7 @@ export function MessageTimeline(props: {
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
-          "md:max-w-200 2xl:max-w-[1000px]": props.centered,
+          "md:max-w-192 2xl:max-w-[880px]": props.centered,
           "md:mx-auto": props.centered,
           "pt-3": previousAssistantPart(),
         }}
@@ -1245,6 +1476,7 @@ export function MessageTimeline(props: {
                   label={language.t(
                     turnDividerRow().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted",
                   )}
+                  icon={turnDividerRow().label === "compaction" ? "archive" : undefined}
                 />
               </div>
             </div>
@@ -1289,12 +1521,44 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
+      case "TurnFold": {
+        const turnFoldRow = row as Accessor<TimelineRowByTag<"TurnFold">>
+        return (
+          <TimelineRowFrame row={turnFoldRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <TurnFoldRow
+                durationMs={turnFoldRow().durationMs}
+                folded={turnFoldRow().folded}
+                tokens={turnFoldRow().tokens}
+                cost={turnFoldRow().cost}
+                running={turnFoldRow().running}
+                showTokens={settings.general.timelineShowTurnTokens()}
+                onToggle={() => {
+                  turnFold.setFolded(turnFoldRow().userMessageID, !turnFoldRow().folded)
+                  onSizeChange?.()
+                }}
+              />
+            </div>
+          </TimelineRowFrame>
+        )
+      }
       case "DiffSummary": {
         const diffSummaryRow = row as Accessor<TimelineRowByTag<"DiffSummary">>
+        const undoTurn = () => {
+          const revert = props.actions?.revert
+          const id = sessionID()
+          if (!revert || !id) return
+          return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
+            .then(() => showToast({ title: language.t("ui.message.revertMessage") }))
+            .catch(() => showToast({ title: language.t("common.requestFailed") }))
+        }
         return (
           <TimelineRowFrame row={diffSummaryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <TimelineDiffSummaryRow diffs={diffSummaryRow().diffs} />
+              <TimelineDiffSummaryRow
+                diffs={diffSummaryRow().diffs}
+                onUndo={props.actions?.revert ? undoTurn : undefined}
+              />
             </div>
           </TimelineRowFrame>
         )
@@ -1393,7 +1657,53 @@ export function MessageTimeline(props: {
       data-session-timeline-row-count={String(timelineRows().length)}
       data-session-timeline-key-count={String(virtualRowKeys().length)}
       style={{ visibility: timelineInitialRevealVisibility({ ready: initialRevealReady() }) }}
+      onClick={handleTimelinePathClick}
+      onContextMenu={handleTimelineContextMenu}
     >
+      <Show when={contextMenu()}>
+        {(menu) => (
+          <>
+            <div class="fixed inset-0 z-[90]" onClick={() => setContextMenu(undefined)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(undefined) }} />
+            <div
+              class="fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
+              style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+            >
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+                onClick={() => {
+                  openFileInPanel(menu().path)
+                  setContextMenu(undefined)
+                }}
+              >
+                <Icon name="open-file" size="small" /> Open
+              </button>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(resolveTimelinePath(menu().path))
+                  setContextMenu(undefined)
+                }}
+              >
+                <Icon name="copy" size="small" /> Copy path
+              </button>
+              <Show when={platform.showItemInFolder}>
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+                  onClick={() => {
+                    void platform.showItemInFolder?.(resolveTimelinePath(menu().path))
+                    setContextMenu(undefined)
+                  }}
+                >
+                  <Icon name="folder" size="small" /> Reveal in Finder
+                </button>
+              </Show>
+            </div>
+          </>
+        )}
+      </Show>
       <div
         class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"
         classList={{
@@ -1413,7 +1723,16 @@ export function MessageTimeline(props: {
                 "0 51px 60px 0 rgba(0,0,0,0.10), 0 15px 18px 0 rgba(0,0,0,0.12), 0 6.386px 7.513px 0 rgba(0,0,0,0.12), 0 2.31px 2.717px 0 rgba(0,0,0,0.20)",
             }}
           >
-            <Icon name="arrow-down-to-line" size="small" />
+            <Show
+              when={sessionStatus().type === "busy"}
+              fallback={<Icon name="arrow-down-to-line" size="small" />}
+            >
+              <span class="tl-dot-wave" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </Show>
           </div>
         </button>
       </div>
@@ -1445,7 +1764,7 @@ export function MessageTimeline(props: {
               "w-full": true,
               "pb-4": true,
               "pl-2 pr-3 md:pl-4 md:pr-3": true,
-              "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
+              "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
             }}
           >
             <Show when={workingStatus() !== "hidden" && settings.general.showSessionProgressBar()}>

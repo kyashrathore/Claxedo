@@ -29,6 +29,47 @@
   }
 }
 
+/*
+ * muted-hover variant (T0.2): +N -N sit at --text-weaker at rest and only light
+ * green/red while their enclosing .activity-row is hovered (mouse-capable devices).
+ * tabular-nums so digit changes never shift layout (F1/F9).
+ */
+[data-component="diff-changes"][data-variant="muted-hover"] {
+  [data-slot="diff-changes-additions"],
+  [data-slot="diff-changes-deletions"] {
+    color: var(--text-weaker);
+    font-variant-numeric: tabular-nums;
+    transition: color 0.15s ease;
+  }
+}
+
+@media (hover: hover) {
+  .activity-row:hover
+    [data-component="diff-changes"][data-variant="muted-hover"]
+    [data-slot="diff-changes-additions"],
+  [data-slot="collapsible-trigger"]:hover
+    [data-component="diff-changes"][data-variant="muted-hover"]
+    [data-slot="diff-changes-additions"] {
+    color: var(--text-diff-add-base);
+  }
+
+  .activity-row:hover
+    [data-component="diff-changes"][data-variant="muted-hover"]
+    [data-slot="diff-changes-deletions"],
+  [data-slot="collapsible-trigger"]:hover
+    [data-component="diff-changes"][data-variant="muted-hover"]
+    [data-slot="diff-changes-deletions"] {
+    color: var(--text-diff-delete-base);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="diff-changes"][data-variant="muted-hover"] [data-slot="diff-changes-additions"],
+  [data-component="diff-changes"][data-variant="muted-hover"] [data-slot="diff-changes-deletions"] {
+    transition: none;
+  }
+}
+
 [data-component="diff-changes"][data-variant="bars"] {
   width: 18px;
   height: 14px;

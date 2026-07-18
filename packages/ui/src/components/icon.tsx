@@ -26,6 +26,10 @@ const icons = {
   checklist: `<path d="M9.58342 13.7498H17.0834M9.58342 6.24984H17.0834M2.91675 6.6665L4.58341 7.9165L7.08341 4.1665M2.91675 14.1665L4.58341 15.4165L7.08341 11.6665" stroke="currentColor" stroke-linecap="square"/>`,
   console: `<path d="M3.75 5.4165L8.33333 9.99984L3.75 14.5832M10.4167 14.5832H16.25" stroke="currentColor" stroke-linecap="square"/>`,
   terminal: `<path d="M6.5 8L8.64286 10L6.5 12M10.9286 12H13.5M2 18H18V2H2V18Z" stroke="currentColor" stroke-linecap="square"/>`,
+  // Rounded-square terminal: the `>_` prompt inside a rounded frame. `console` has no
+  // frame and `terminal` uses a hard-cornered full-bleed box, neither of which matches
+  // the tool-row glyph.
+  "terminal-square": `<rect x="3.5" y="4" width="13" height="12" rx="3" stroke="currentColor"/><path d="M7 8L9 10L7 12" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 12H13" stroke="currentColor" stroke-linecap="round"/>`,
   "terminal-active": `<path d="M2 18H18V2H2V18Z" fill="currentColor" fill-opacity="0.1"/>
 <path d="M6.5 8L8.64286 10L6.5 12M10.9286 12H13.5M2 18H18V2H2V18Z" stroke="currentColor" stroke-linecap="square"/>`,
   review: `<path d="M7 14.5H13M7 7.99512H10.0049M10.0049 7.99512H13M10.0049 7.99512V5M10.0049 7.99512V11M18 18V2L2 2L2 18H18Z" stroke="currentColor"/>`,

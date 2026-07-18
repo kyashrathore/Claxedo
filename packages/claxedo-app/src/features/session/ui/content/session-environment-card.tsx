@@ -278,12 +278,28 @@ export function SessionEnvironmentCardMount() {
     () => sdk.client.vcs.get().then((res) => res.data?.branch).catch(() => undefined),
   )
 
+  // Prefer the owning Project's name over the directory basename. A session can run out
+  // of a generated runtime directory (e.g. `claxedo-live-mcp-process-8FQQ9L`) or a git
+  // worktree sandbox — in both cases the basename is an implementation detail, while the
+  // project name is what the user recognises. Falls back to the basename when the
+  // directory belongs to no known project.
+  const projectName = createMemo(() => {
+    const cwd = directory()
+    if (!cwd) return undefined
+    const owner = projects().find(
+      (project) =>
+        sameWorkspaceDirectory(project.worktree, cwd) ||
+        project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
+    )
+    return owner?.name || dirName(cwd)
+  })
+
   const source: SessionEnvironmentSource = {
     changes,
     branch: () => vcs(),
     isolation,
     worktreeDir: directory,
-    projectName: () => dirName(directory()),
+    projectName,
   }
 
   const openTab = (tab: EnvironmentPanelTab) => {
