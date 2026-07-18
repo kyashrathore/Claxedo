@@ -461,6 +461,36 @@ export namespace Timeline {
   function record(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === "object" && !Array.isArray(value)
   }
+
+  export function turnDurationMs(userMessage: UserMessage, assistantMessages: AssistantMessage[]) {
+    const end = assistantMessages.reduce<number | undefined>((max, item) => {
+      const completed = item.time.completed
+      if (typeof completed !== "number") return max
+      if (max === undefined) return completed
+      return Math.max(max, completed)
+    }, undefined)
+    if (typeof end !== "number") return
+    if (end < userMessage.time.created) return
+    return end - userMessage.time.created
+  }
+
+  // Only the opencode-native harness stamps MessageAbortedError on abort. SDK-runtime
+  // harnesses (codex/claude/cursor/ACP) emit no error and skip the finish event — the turn
+  // just goes idle with its last assistant message unsettled (no completed time, no
+  // error), so that is the abort signal for them. Pi's adapter always settles the message
+  // (completed + UnknownError) on any failure, abort included, so it never trips the
+  // unsettled branch.
+  export function turnInterrupted(
+    assistantMessages: AssistantMessage[],
+    status: SessionStatus["type"],
+    isActive: boolean,
+  ) {
+    if (assistantMessages.some((m) => m.error?.name === "MessageAbortedError")) return true
+    const last = assistantMessages[assistantMessages.length - 1]
+    if (!last) return false
+    const turnStillRunning = isActive && (status === "busy" || status === "retry")
+    return !turnStillRunning && !assistantMessageSettled(last)
+  }
 }
 
 // Tool vocabularies span harnesses: OpenCode emits `bash`/`read`/…, Codex emits

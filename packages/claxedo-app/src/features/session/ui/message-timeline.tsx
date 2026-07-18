@@ -1208,27 +1208,24 @@ export function MessageTimeline(props: {
     )
   }
 
-  const turnSettled = (userMessageID: string) =>
-    (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).some(assistantMessageSettled)
+  const turnAssistantMessages = (userMessageID: string) =>
+    assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
+  const turnSettled = (userMessageID: string) => turnAssistantMessages(userMessageID).some(assistantMessageSettled)
   const workingTurn = (userMessageID: string) =>
     sessionStatus().type !== "idle" && activeMessageID() === userMessageID && !turnSettled(userMessageID)
 
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)
     if (!message || message.role !== "user") return
-    const end = (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).reduce<number | undefined>(
-      (max, item) => {
-        const completed = item.time.completed
-        if (typeof completed !== "number") return max
-        if (max === undefined) return completed
-        return Math.max(max, completed)
-      },
-      undefined,
-    )
-    if (typeof end !== "number") return
-    if (end < message.time.created) return
-    return end - message.time.created
+    return Timeline.turnDurationMs(message, turnAssistantMessages(userMessageID))
   }
+
+  const turnInterrupted = (userMessageID: string) =>
+    Timeline.turnInterrupted(
+      turnAssistantMessages(userMessageID),
+      sessionStatus().type,
+      activeMessageID() === userMessageID,
+    )
 
   const assistantCopyPartID = (userMessageID: string) => {
     if (workingTurn(userMessageID)) return null
@@ -1317,6 +1314,7 @@ export function MessageTimeline(props: {
                   part={member.part}
                   message={member.message}
                   turnDurationMs={turnDurationMs(row().userMessageID)}
+                  turnInterrupted={turnInterrupted(row().userMessageID)}
                   defaultOpen={defaultOpen()}
                   toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
                   onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
@@ -1357,6 +1355,7 @@ export function MessageTimeline(props: {
                 message={message()}
                 showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
                 turnDurationMs={turnDurationMs(row().userMessageID)}
+                turnInterrupted={turnInterrupted(row().userMessageID)}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
