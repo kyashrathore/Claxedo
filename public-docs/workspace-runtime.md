@@ -208,6 +208,8 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/process/*` | Managed process config, lifecycle, diagnostics, port map, logs. |
 | `/api/wr/hook/*` | Agent hook routes. |
 | `/api/wr/session-env/*` | Session environment descriptors for tools-only central sessions. |
+| `/api/workgraph/tools`, `/api/workgraph/connection-binding` | WorkGraph connection tool invocation and binding routes. |
+| `/api/workgraph/attempt-tools`, `/api/workgraph/attempt-binding` | WorkGraph attempt tool invocation and binding routes. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command`, `/event` | Compatibility and session support routes. |
 | `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |
