@@ -2,7 +2,6 @@ import {
   ChangeCursorSchema,
   createChangeCursor,
   readChangeCursor,
-  ModelSelectionSchema,
   WorkGraphArchiveRestoreError,
   WorkGraphArchiveSchema,
   hashWorkGraphArchive,
@@ -41,8 +40,6 @@ const supportedTables = new Set([
   "wg_v2_decision_work_items",
   "wg_v2_evidence",
   "wg_v2_durable_effect_receipts",
-  "wg_v2_recaps",
-  "wg_v2_notifications",
   "wg_v2_record_source_revisions",
   "wg_v2_admission_proposals",
   "wg_v2_operation_results",
@@ -77,8 +74,6 @@ const ownerTables = [
   "wg_v2_decision_work_items",
   "wg_v2_evidence",
   "wg_v2_durable_effect_receipts",
-  "wg_v2_recaps",
-  "wg_v2_notifications",
   "wg_v2_record_source_revisions",
   "wg_v2_admission_proposals",
   "wg_v2_operation_results",
@@ -163,13 +158,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("workgraph")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_workgraphs
-            (organization_id, owner_user_id, id, defaults_json, recap_defaults_json, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (organization_id, owner_user_id, id, defaults_json, row_version, schema_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
           JSON.stringify(record.value.defaults.execution),
-          JSON.stringify(record.value.defaults.recap),
           record.value.version,
           record.value.schemaVersion,
           record.value.createdAt,
@@ -289,9 +283,9 @@ export function createSqliteWorkGraphArchivePort(
         records.filter(kind("stream")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_streams
             (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, visibility, pinned,
-             execution_defaults_json, recap_defaults_json, memory_card_json, last_activity_at,
+             execution_defaults_json, last_activity_at,
              activity_granularity, replacement_reset_json, row_version, schema_version, created_at, updated_at, closed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
@@ -302,8 +296,6 @@ export function createSqliteWorkGraphArchivePort(
           record.value.visibility,
           record.value.pinned ? 1 : 0,
           JSON.stringify(record.value.executionDefaults),
-          JSON.stringify(record.value.recapDefaults),
-          JSON.stringify(record.value.memory ?? {}),
           record.value.activity.lastActivityAt,
           record.value.activityGranularity,
           record.value.replacementReset === undefined ? null : JSON.stringify(record.value.replacementReset),
@@ -533,47 +525,6 @@ export function createSqliteWorkGraphArchivePort(
           record.value.schemaVersion,
           record.value.recordedAt,
         ))
-        orderedRecaps(records).forEach((record) => database.prepare(`
-          INSERT INTO wg_v2_recaps
-            (organization_id, owner_user_id, id, stream_id, previous_recap_id, activity_start_sequence,
-             activity_end_sequence, quiet_since, summary, actionable_references_json,
-             generation_profile_json, provenance_json, generation_result_json,
-             schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          context.organizationId, context.ownerUserId,
-          record.id,
-          record.value.streamId,
-          record.value.previousRecapId ?? null,
-          record.value.activityRange.fromSequence,
-          record.value.activityRange.toSequence,
-          record.value.activityRange.quietSince,
-          record.value.summary,
-          JSON.stringify(record.value.actionableReferences),
-          JSON.stringify({ model: record.value.generation.model, effort: record.value.generation.effort }),
-          JSON.stringify(record.value.provenance),
-          JSON.stringify(recapGenerationResult(record.value.generation)),
-          record.value.schemaVersion,
-          record.value.createdAt,
-        ))
-        records.filter(kind("notification")).forEach((record) => database.prepare(`
-          INSERT INTO wg_v2_notifications
-            (organization_id, owner_user_id, id, notification_kind, state, stream_id, recap_id, row_version,
-             schema_version, created_at, updated_at, read_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          context.organizationId, context.ownerUserId,
-          record.id,
-          record.value.kind,
-          record.value.state,
-          record.value.streamId,
-          record.value.recapId,
-          record.value.version,
-          record.value.schemaVersion,
-          record.value.createdAt,
-          record.value.updatedAt,
-          record.value.readAt ?? null,
-        ))
         records.filter(kind("record_source_revision")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_record_source_revisions
             (organization_id, owner_user_id, id, record_type, record_id, work_source_id,
@@ -777,7 +728,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       createdAt: timestamp(row.created_at),
       updatedAt: timestamp(row.updated_at),
       provenance: provenance(database, context, "workgraph", id(row)),
-      defaults: { execution: json(row.defaults_json), recap: json(row.recap_defaults_json) },
+      defaults: { execution: json(row.defaults_json) },
     },
   }))
   const sources = rows(database, "wg_v2_work_sources", context).map((row) => {
@@ -1062,22 +1013,6 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       },
     }
   })
-  const recaps = rows(database, "wg_v2_recaps", context).map((row) => archiveRecap(database, context, row))
-  const notifications = rows(database, "wg_v2_notifications", context).map((row) => ({
-    kind: "notification" as const,
-    id: id(row),
-    value: {
-      schemaVersion: integer(row.schema_version),
-      version: integer(row.row_version),
-      kind: string(row.notification_kind),
-      state: string(row.state),
-      streamId: string(row.stream_id),
-      recapId: string(row.recap_id),
-      createdAt: timestamp(row.created_at),
-      updatedAt: timestamp(row.updated_at),
-      ...(row.read_at === null ? {} : { readAt: timestamp(row.read_at) }),
-    },
-  }))
   const sourceReferences = rows(database, "wg_v2_record_source_revisions", context).map((row) => ({
     kind: "record_source_revision" as const,
     id: id(row),
@@ -1224,7 +1159,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
     ...workgraphs, ...sources, ...revisions, ...sourceViews, ...candidates, ...externalIdentities,
     ...streams, ...outcomes, ...workItems, ...dependencies, ...attempts, ...sessionBindings, ...agentCheckpoints,
     ...decisions, ...decisionWorkItems,
-    ...evidence, ...receipts, ...recaps, ...notifications, ...sourceReferences, ...proposals,
+    ...evidence, ...receipts, ...sourceReferences, ...proposals,
     ...operations, ...events, ...changes, ...runtimeEffects, ...migrationIntake,
     ...completedExternalEffects, ...terminalScheduledJobs,
   ]
@@ -1236,7 +1171,7 @@ function narrowSupportedArchive(archive: WorkGraphArchive) {
     "workgraph", "work_source", "work_source_revision", "source_view", "intake_candidate", "external_identity",
     "stream", "outcome", "work_item", "work_item_dependency", "attempt", "session_binding", "agent_checkpoint",
     "decision", "decision_work_item",
-    "evidence", "durable_effect_receipt", "recap", "notification", "record_source_revision",
+    "evidence", "durable_effect_receipt", "record_source_revision",
     "admission_proposal", "operation_result", "event", "change", "runtime_effect", "migration_intake",
     "completed_external_effect", "terminal_scheduled_job",
   ].includes(record.kind))
@@ -1291,67 +1226,6 @@ function archiveProposal(
         }),
         ...(row.confirmed_at === null ? {} : { confirmedAt: timestamp(row.confirmed_at) }),
       }),
-    },
-  }
-}
-
-function archiveRecap(database: Database, context: WorkGraphContext, row: Record<string, unknown>) {
-  const profile = json(row.generation_profile_json)
-  const result = json(row.generation_result_json)
-  const model = ModelSelectionSchema.safeParse(profile.model)
-  const effort = typeof profile.effort === "string" && profile.effort.trim() ? profile.effort : undefined
-  const nonSession = result.state === "succeeded" && (result.method !== "agent_session" || typeof result.sessionId !== "string")
-  const completeSuccess = result.state === "succeeded" && !nonSession && model.success && effort && Number.isFinite(result.generatedAt)
-  const completeFailure = result.state === "failed" && model.success && effort &&
-    typeof result.reason === "string" && result.reason.trim() &&
-    (Number.isFinite(result.failedAt) || Number.isFinite(result.invalidatedAt))
-  const generation = !completeSuccess && !completeFailure
-    ? {
-        state: "invalidated" as const,
-        ...(model.success ? { model: model.data } : {}),
-        ...(effort ? { effort } : {}),
-        reason: nonSession
-          ? "Retired deterministic Recap fallback is non-authoritative"
-          : "Incomplete legacy Recap generation metadata is non-authoritative",
-        source: nonSession ? "retired_non_session_generation" as const : "retired_incomplete_generation" as const,
-      }
-    : result.state === "succeeded"
-      ? {
-          state: "succeeded" as const,
-          model: model.data!,
-          effort: effort!,
-          generatedAt: timestamp(result.generatedAt),
-          method: "agent_session" as const,
-          sessionId: string(result.sessionId),
-        }
-      : {
-          state: "failed" as const,
-          model: model.data!,
-          effort: effort!,
-          ...(result.failedAt === undefined ? {} : { failedAt: timestamp(result.failedAt) }),
-          ...(result.invalidatedAt === undefined ? {} : { invalidatedAt: timestamp(result.invalidatedAt) }),
-          reason: string(result.reason),
-        }
-  return {
-    kind: "recap" as const,
-    id: id(row),
-    value: {
-      schemaVersion: integer(row.schema_version),
-      version: 1,
-      createdAt: timestamp(row.created_at),
-      updatedAt: timestamp(row.created_at),
-      provenance: recordProvenance(row.provenance_json),
-      streamId: string(row.stream_id),
-      ...(row.previous_recap_id === null ? {} : { previousRecapId: string(row.previous_recap_id) }),
-      activityRange: {
-        fromSequence: integer(row.activity_start_sequence),
-        toSequence: integer(row.activity_end_sequence),
-        quietSince: timestamp(row.quiet_since),
-      },
-      summary: string(row.summary),
-      actionableReferences: array(row.actionable_references_json),
-      generation,
-      sourceRevisionRefs: sourceReferences(database, context, "recap", id(row)),
     },
   }
 }
@@ -1511,34 +1385,6 @@ function evidenceReference(record: Extract<CanonicalWorkGraphArchiveRecord, { ki
   return { ...common, ...(record.sourceRef === undefined ? {} : { sourceRef: record.sourceRef }) }
 }
 
-function recapGenerationResult(record: Extract<CanonicalWorkGraphArchiveRecord, { kind: "recap" }>["value"]["generation"]) {
-  if (record.state === "succeeded") return {
-    state: "succeeded",
-    generatedAt: record.generatedAt,
-    method: "agent_session",
-    sessionId: record.sessionId,
-  }
-  if (record.state === "invalidated") return { state: "succeeded", method: "deterministic_fallback" }
-  return {
-    state: "failed",
-    ...(record.failedAt === undefined ? {} : { failedAt: record.failedAt }),
-    ...(record.invalidatedAt === undefined ? {} : { invalidatedAt: record.invalidatedAt }),
-    reason: record.reason,
-  }
-}
-
-function orderedRecaps(records: CanonicalWorkGraphArchiveRecord[]) {
-  const recaps = records.filter(kind("recap"))
-  const depth = (record: typeof recaps[number], seen = new Set<string>()): number => {
-    if (!record.value.previousRecapId) return 0
-    if (seen.has(record.id)) throw new WorkGraphArchiveRestoreError("malformed")
-    const previous = recaps.find((candidate) => candidate.id === record.value.previousRecapId)
-    if (!previous) throw new WorkGraphArchiveRestoreError("malformed")
-    return 1 + depth(previous, new Set([...seen, record.id]))
-  }
-  return recaps.sort((left, right) => depth(left) - depth(right) || left.id.localeCompare(right.id))
-}
-
 function subjectId(subject: Extract<CanonicalWorkGraphArchiveRecord, { kind: "evidence" }>["value"]["subject"]) {
   if (subject.type === "stream") return subject.streamId
   if (subject.type === "work_item") return subject.workItemId
@@ -1653,7 +1499,6 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     if (record.kind === "stream") {
       require("workgraph", record.value.workgraphId)
       requireSourceReferences(record)
-      if (record.value.activity.lastRecapId) require("recap", record.value.activity.lastRecapId)
       if (record.value.replacementReset) {
         if (record.value.replacementReset.state !== "completed") throw new WorkGraphArchiveRestoreError("not_quiescent")
         require("admission_proposal", record.value.replacementReset.proposalId)
@@ -1718,16 +1563,6 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     if (record.kind === "durable_effect_receipt") {
       require("stream", record.value.streamId)
       if (record.value.attemptId) require("attempt", record.value.attemptId)
-    }
-    if (record.kind === "recap") {
-      require("stream", record.value.streamId)
-      if (record.value.previousRecapId) require("recap", record.value.previousRecapId)
-      record.value.actionableReferences.forEach((reference) => require(reference.type, reference.id))
-      requireSourceReferences(record)
-    }
-    if (record.kind === "notification") {
-      require("stream", record.value.streamId)
-      require("recap", record.value.recapId)
     }
     if (record.kind === "record_source_revision") {
       require(record.value.recordType, record.value.recordId)
@@ -1808,7 +1643,7 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
   })
   records.filter(kind("record_source_revision")).forEach((reference) => {
     const record = records.find((candidate) => candidate.kind === reference.value.recordType && candidate.id === reference.value.recordId)
-    if (!record || !["stream", "outcome", "work_item", "attempt", "decision", "recap"].includes(record.kind)) {
+    if (!record || !["stream", "outcome", "work_item", "attempt", "decision"].includes(record.kind)) {
       throw new WorkGraphArchiveRestoreError("malformed")
     }
     if (!("sourceRevisionRefs" in record.value) || !record.value.sourceRevisionRefs.some((source) =>
@@ -1816,8 +1651,8 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     )) throw new WorkGraphArchiveRestoreError("malformed")
   })
   records.filter((record): record is Extract<CanonicalWorkGraphArchiveRecord, {
-    kind: "stream" | "outcome" | "work_item" | "attempt" | "decision" | "recap"
-  }> => ["stream", "outcome", "work_item", "attempt", "decision", "recap"].includes(record.kind)).forEach((record) => {
+    kind: "stream" | "outcome" | "work_item" | "attempt" | "decision"
+  }> => ["stream", "outcome", "work_item", "attempt", "decision"].includes(record.kind)).forEach((record) => {
     record.value.sourceRevisionRefs.forEach((source) => {
       if (!records.filter(kind("record_source_revision")).some((reference) =>
         reference.value.recordType === record.kind && reference.value.recordId === record.id &&

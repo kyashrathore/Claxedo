@@ -1,5 +1,33 @@
 # Claxedo MCP
 
+Give any MCP-capable agent direct access to a running Claxedo server's WorkGraph, documents, processes, logs, sessions, and browser tools over stdio.
+
+## Quickstart
+
+Run it straight from npm — no local checkout, no build step:
+
+```sh
+npx -y @claxedo/mcp
+```
+
+Point a stdio MCP client at it with a config block like:
+
+```json
+{
+  "mcpServers": {
+    "claxedo": {
+      "command": "npx",
+      "args": ["-y", "@claxedo/mcp"],
+      "env": {
+        "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+      }
+    }
+  }
+}
+```
+
+`command`/`args`/`env` are the same three fields the Claxedo marketplace config below installs under its own `servers` key (see `mcp.json` in this package) — reshape them to whatever top-level key your MCP client expects.
+
 Standalone MCP server for Claxedo runtime tools. Install it from the Claxedo marketplace under MCP Servers instead of relying on an app-managed sidecar.
 
 The default marketplace config launches the published package with `npx -y @claxedo/mcp` and points it at the local Claxedo server with `CLAXEDO_SERVER_URL`.
@@ -54,7 +82,6 @@ Read-only mode registers:
 - `workgraph_get_defaults`
 - `workgraph_execution_capabilities`
 - `workgraph_attention`
-- `workgraph_notifications`
 - `workgraph_list`
 - `workgraph_get`
 - `workgraph_source_revision`
@@ -121,7 +148,7 @@ Current tool surface:
 - `browser_navigate`
 - owner-scoped `workgraph_*` inspection, source admission, organization,
   live execution capability, Attention, execution, Decision, evidence, lifecycle,
-  Source View, candidate, notification, and exact source-revision tools. WorkGraph
+  Source View, candidate, and exact source-revision tools. WorkGraph
   calls use authenticated owner scope independently of process workspace
   selection. Local embedded tools receive that scope from the local composition;
   standalone stdio tools receive it from the server's authenticated HTTP boundary.

@@ -38,6 +38,7 @@ function sdkMessage(event: { payload: unknown }) {
 const sdkMessageTypes = {
   assistant: true,
   auth_status: true,
+  conversation_reset: true,
   prompt_suggestion: true,
   rate_limit_event: true,
   result: true,
@@ -423,6 +424,12 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
                     reason: "streaming compaction content has no stable AgentRuntimeEvent mapping yet",
                     event,
                   })
+                case "fallback":
+                  return unmappedSdkEvent({
+                    sdkEvent: "SDKPartialAssistantMessage.content_block_start(fallback)",
+                    reason: "model fallback boundaries have no dedicated AgentRuntimeEvent equivalent",
+                    event,
+                  })
                 default:
                   return assertNever(block)
               }
@@ -618,6 +625,13 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
             event,
           })
 
+        case "conversation_reset":
+          return unmappedSdkEvent({
+            sdkEvent: "SDKConversationResetMessage",
+            reason: "conversation reset has no dedicated AgentRuntimeEvent equivalent",
+            event,
+          })
+
         default:
           return assertNever(message)
       }
@@ -728,6 +742,38 @@ function translateSystemMessage(
       return unmappedSdkEvent({
         sdkEvent: "SDKElicitationCompleteMessage",
         reason: "MCP elicitation completion has no dedicated AgentRuntimeEvent equivalent",
+        event,
+      })
+
+    case "commands_changed":
+      return [{
+        type: "available-commands-update",
+        commands: message.commands.map((command) => ({
+          name: command.name,
+          description: command.description,
+        })),
+      }]
+
+    case "permission_denied":
+      return [{ type: "tool-error", toolCallId: message.tool_use_id, error: message.message }]
+
+    case "api_retry":
+    case "background_tasks_changed":
+    case "control_request_progress":
+    case "informational":
+    case "memory_recall":
+    case "mirror_error":
+    case "model_refusal_fallback":
+    case "model_refusal_no_fallback":
+    case "notification":
+    case "plugin_install":
+    case "session_state_changed":
+    case "task_updated":
+    case "thinking_tokens":
+    case "worker_shutting_down":
+      return unmappedSdkEvent({
+        sdkEvent: `SDKSystemMessage(${message.subtype})`,
+        reason: "system metadata has no dedicated AgentRuntimeEvent equivalent",
         event,
       })
 

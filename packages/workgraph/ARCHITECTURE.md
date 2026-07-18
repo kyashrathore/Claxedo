@@ -14,7 +14,7 @@ Local agent tools and workers ── direct ─┤
                               ├─ Streams, Tasks, optional Outcomes
                               ├─ Work Sources and intake
                               ├─ Attempts and Decisions
-                              ├─ Recaps and attention
+                              ├─ Attention
                               └─ events and subscriptions
                                          │
                                          ├──► Claxedo Connections
@@ -29,7 +29,7 @@ HTTP is the northbound app and standalone-MCP contract, not an internal service 
 
 ### WorkGraph
 
-WorkGraph owns personal Streams, workspace intent, Outcomes, Work Items, source views, intake candidates, Attempts, Decisions, Recaps, execution profiles, completion evidence, durable-effect receipts, activity, events, and leases.
+WorkGraph owns personal Streams, workspace intent, Outcomes, Work Items, source views, intake candidates, Attempts, Decisions, execution profiles, completion evidence, durable-effect receipts, activity, events, and leases.
 
 ### Work Sources
 
@@ -79,7 +79,7 @@ The application service dispatches a public command discriminator to the corresp
 
 ### Convex
 
-Convex is the default Claxedo Cloud adapter. Every personal record and access path is physically scoped by the trusted `(organization_id, owner_user_id)` tuple, with tuple-leading indexes for tenant reads and background work. Organization-owned Connection credentials and metadata remain separate from user-owned provider mappings, filters, source bindings, and WorkGraph state. Authenticated server queries and mutations power tenant-scoped candidate state and live execution state through the same northbound HTTP and ordered-change contract used locally. Scheduled functions process source planning, source refresh, connector outbox work, expired leases, independent-session candidates, and eight-hour Recaps. Repository verification covers migration, indexing, deletion barriers, bounded workers, archive, cleanup, and owner deletion; staged Cloud proof remains a release gate.
+Convex is the default Claxedo Cloud adapter. Every personal record and access path is physically scoped by the trusted `(organization_id, owner_user_id)` tuple, with tuple-leading indexes for tenant reads and background work. Organization-owned Connection credentials and metadata remain separate from user-owned provider mappings, filters, source bindings, and WorkGraph state. Authenticated server queries and mutations power tenant-scoped candidate state and live execution state through the same northbound HTTP and ordered-change contract used locally. Scheduled functions process source planning, source refresh, connector outbox work, expired leases, and independent-session candidates. Repository verification covers migration, indexing, deletion barriers, bounded workers, archive, cleanup, and owner deletion; staged Cloud proof remains a release gate.
 
 The hosted Worker-safe composition imports domain ports and the Convex adapter, not SQLite or Node-native database modules.
 
@@ -97,7 +97,7 @@ OSS operators can register another adapter and run the public conformance suite.
 - Source admission and matching services bind immutable revisions, rank bounded Stream and duplicate candidates, and confirm versioned proposal packages.
 - Execution, completion, and lifecycle services resolve immutable Attempt profiles, reconcile runtime state, evaluate evidence, and enforce close/delete boundaries.
 - Intake, Source View, webhook, and Session-intake services produce personal candidates and perform provider work through Connections.
-- Recap, notification, and attention services schedule incremental memory updates and expose exact actionable delivery records.
+- Attention services expose exact actionable domain records.
 
 Every service receives a `RequestContext` containing the trusted organization, owner user, actor, request ID, and verified access claims. Public WorkGraph requests never select either tenant component.
 
@@ -121,7 +121,7 @@ Work Source revisions, source views, agents, and independent sessions produce pr
 
 “Turn into work” writes a durable planning record and schedules a normal Session V2 planning job. The planner uses a stable caller-owned Session/message identity, validates one strict result shape, and may publish a reviewable proposal only against the exact current source revision, proposal version, and lease epoch. Invalid or unavailable generation records `planning_failed`; bounded retry and attention preserve the failure truth. A lost admission response is reconciled by retrying the same identity. Owner confirmation uses compare-and-set against the rendered proposal version.
 
-Placement uses compact Stream memory cards. It searches pinned and recent Streams first, then older cards on low confidence. Duplicate detection offers link, merge, or create separately and records the owner's choice.
+Placement uses compact Stream title, description, and purpose summaries. It searches pinned and recent Streams first, then older Streams on low confidence. Duplicate detection offers link, merge, or create separately and records the owner's choice.
 
 ## Execution flow
 
@@ -151,23 +151,15 @@ The Stream tracks durable-effect receipts for merged or directly integrated code
 
 While no durable effect exists, deletion is destructive and atomic from the user's perspective: cancel Attempts, destroy the Stream workspace, discard unmerged work, then remove personal graph records according to deletion policy.
 
-Once a durable effect exists, deletion is rejected. Closing records the reason, marks unfinished Work Items abandoned, preserves Attempts/Decisions/Recaps/evidence and external references, and cleans up the envelope after retained results are secured.
-
-## Recap flow
-
-Stream activity advances a quiet-window marker. After eight hours without activity, a durable worker generates a Recap from changes since the prior Recap plus current state and prior memory. Previous Recaps remain immutable timeline entries.
-
-The Recap model and effort come from Stream-owned Recap configuration. Stream creation initializes that configuration from the effective execution model and effort with an eight-hour quiet period; explicit Stream Recap settings take precedence. Local and hosted workers use ordinary tool-less Session V2 jobs with stable identity, exact activity-range binding, strict structured output, and publication fencing. Only validated output from the exact Session publishes a Recap. A requirement is created only when the effective generation profile is incomplete; repeated generation failure or missing source access creates attention without publishing a substitute Recap or notification.
-
-An actionable Recap and its single unread tenant-scoped notification commit atomically. The notification points to the exact Stream and Recap and is acknowledged with compare-and-set against the rendered delivery version.
+Once a durable effect exists, deletion is rejected. Closing records the reason, marks unfinished Work Items abandoned, preserves Attempts, Decisions, evidence, and external references, and cleans up the envelope after retained results are secured.
 
 ## WorkGraph app composition
 
 The app renders one compact `/workgraph` surface whose Streams expand in place. The existing app-global WorkspacePanel and its top-level toggle are the only secondary-panel shell and control. The panel is not owned or bounded by a workspace; individual views supply their own scope. WorkGraph contributes tenant-bound Needs you and Settings views while keeping WorkGraph domain state in the feature.
 
-The existing top-level toggle carries a small accessible attention indicator when the bounded tenant-scoped Attention projection is non-empty. The WorkGraph header Needs you and Settings controls select those top-level views in the same panel instance. Zero attention produces no WorkGraph dot, contextual card, list, or empty body content. Selecting a Needs you item opens a focused proposal, candidate, Task/Attempt, Decision, Recap, or configuration dialog over the same `/workgraph` surface. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing execution overrides and Recap configuration; each Stream row exposes its latest Recap through a hover/focus Recap icon and popover. Settings content is flush, descriptions and validation errors sit beside their fields, and the footer stays pinned. Add task remains the canonical manual work action.
+The existing top-level toggle carries a small accessible attention indicator when the bounded tenant-scoped Attention projection is non-empty. The WorkGraph header Needs you and Settings controls select those top-level views in the same panel instance. Zero attention produces no WorkGraph dot, contextual card, list, or empty body content. Selecting a Needs you item opens a focused proposal, candidate, Task/Attempt, Decision, or configuration dialog over the same `/workgraph` surface. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing execution overrides. Settings content is flush, descriptions and validation errors sit beside their fields, and the footer stays pinned. Add task remains the canonical manual work action.
 
-Attention and candidate collections use stable tenant-bound cursor pages. Targeted tenant-scoped queries load the selected item's details. An Attention, candidate, or detail-query failure remains explicit and never switches to a full-snapshot or fabricated result. Settings changes are versioned atomic commands: WorkGraph saves one execution-defaults patch, while Stream saves one execution-and-Recap patch. Clearing an override is explicit.
+Attention and candidate collections use stable tenant-bound cursor pages. Targeted tenant-scoped queries load the selected item's details. An Attention, candidate, or detail-query failure remains explicit and never switches to a full-snapshot or fabricated result. Settings changes are versioned atomic commands: WorkGraph saves one execution-defaults patch, while Stream saves one execution patch. Clearing an override is explicit.
 
 ### Execution capability catalog
 

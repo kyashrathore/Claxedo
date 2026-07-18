@@ -57,71 +57,13 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
         version: 1,
         type: "update_workgraph_defaults",
         expectedVersion: 1,
-        defaults: { execution: profile, recap: {} },
+        defaults: { execution: profile },
       },
     })).resolves.toMatchObject({
       ok: false,
       error: { code: "validation_error", message: expect.stringContaining("organization_mismatch") },
     })
     expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_operation_results").get()).toEqual({ count: 0 })
-  })
-
-  it("rejects unsupported Stream Recap settings before creating or updating a Stream", async () => {
-    const database = open()
-    const context = owner("organization_a")
-    let next = 0
-    const service = createSqliteWorkGraphService({
-      database,
-      executionCapabilities: { read: async () => capabilities(context) },
-      ids: { next: (kind) => `${kind}_${++next}` },
-    }).service
-
-    await expect(service.execute(context, {
-      operationId: "recap_create_unknown" as never,
-      command: {
-        version: 1,
-        type: "create_stream",
-        title: "Unsupported recap",
-        recap: { model: { providerId: "openai", modelId: "missing" }, effort: "high", quietHours: 8 },
-      },
-    })).resolves.toMatchObject({
-      ok: false,
-      error: { code: "validation_error", message: expect.stringContaining("unsupported_model") },
-    })
-    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_streams").get()).toEqual({ count: 0 })
-
-    const created = await service.execute(context, {
-      operationId: "recap_create_supported" as never,
-      command: { version: 1, type: "create_stream", title: "Supported recap" },
-    })
-    const streamId = valueId(created, "streamId")
-    await expect(service.execute(context, {
-      operationId: "recap_update_unknown" as never,
-      command: {
-        version: 1,
-        type: "update_stream",
-        streamId,
-        expectedVersion: 1,
-        recap: { model: { providerId: "openai", modelId: "missing" }, effort: "high", quietHours: 8 },
-      },
-    })).resolves.toMatchObject({ ok: false, error: { code: "validation_error" } })
-    expect(database.prepare("SELECT row_version, recap_defaults_json FROM wg_v2_streams WHERE id = ?").get(streamId))
-      .toEqual({ row_version: 1, recap_defaults_json: "{}" })
-  })
-
-  it("requires a connected capability catalog before persisting explicit Stream Recap execution settings", async () => {
-    const database = open()
-    const service = createSqliteWorkGraphService({ database }).service
-    await expect(service.execute(owner("organization_a"), {
-      operationId: "recap_catalog_missing" as never,
-      command: {
-        version: 1,
-        type: "create_stream",
-        title: "No catalog",
-        recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
-      },
-    })).resolves.toMatchObject({ ok: false, error: { code: "execution_unavailable" } })
-    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_streams").get()).toEqual({ count: 0 })
   })
 
   it("revalidates the resolved profile against the current catalog before Attempt admission", async () => {
@@ -143,13 +85,17 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
     }).service
     await service.execute(context, {
       operationId: "defaults" as never,
-      command: { version: 1, type: "update_workgraph_defaults", expectedVersion: 1, defaults: { execution: profile, recap: {} } },
+      command: { version: 1, type: "update_workgraph_defaults", expectedVersion: 1, defaults: { execution: profile } },
     })
     const stream = await service.execute(context, {
       operationId: "stream" as never,
       command: { version: 1, type: "create_stream", title: "Catalog drift" },
     })
     const streamId = valueId(stream, "streamId")
+    // Drift the catalog so the resolved model is no longer supported before the
+    // task exists. The drain that runs after creation must re-validate the
+    // resolved profile and skip admission — no Attempt reaches placement/launch.
+    catalog = { ...catalog, models: [{ ...catalog.models[0]!, modelId: "gpt-5-mini" }] }
     const item = await service.execute(context, {
       operationId: "item" as never,
       command: {
@@ -164,16 +110,10 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
         },
       },
     })
-    catalog = { ...catalog, models: [{ ...catalog.models[0]!, modelId: "gpt-5-mini" }] }
-
-    await expect(service.execute(context, {
-      operationId: "execute" as never,
-      command: { version: 1, type: "execute_work_item", workItemId: valueId(item, "workItemId"), executionMode: "autonomous" },
-    })).resolves.toMatchObject({
-      ok: false,
-      error: { code: "validation_error", message: expect.stringContaining("unsupported_model") },
-    })
+    expect(item).toMatchObject({ ok: true })
     expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get()).toEqual({ count: 0 })
+    expect(database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(valueId(item, "workItemId")))
+      .toEqual({ lifecycle: "pending" })
   })
 
   it("rejects owner-only legacy tables before making a partial schema change", () => {

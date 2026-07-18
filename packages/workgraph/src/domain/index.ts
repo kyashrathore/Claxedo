@@ -1,8 +1,13 @@
 export { evaluateCompletionContract } from "./completion"
 export { dependencyGraphHasCycle } from "./dependencies"
 export {
+  evaluateWorkItemLaunchability,
+  type WorkItemLaunchability,
+  type WorkItemLaunchabilityInput,
+  type WorkItemLaunchabilityReason,
+} from "./launch-readiness"
+export {
   validateExecutionProfileDefaultsAgainstCapabilities,
-  validateRecapProfileDefaultsAgainstCapabilities,
   validateResolvedExecutionProfileAgainstCapabilities,
   type ExecutionProfileCapabilityDiagnostic,
   type ExecutionProfileCapabilityDiagnosticReason,

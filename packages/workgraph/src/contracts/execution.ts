@@ -69,32 +69,8 @@ export type ResolvedGenerationProfile = z.infer<typeof ResolvedGenerationProfile
 export const ExecutionProfileLevelSchema = z.enum(["workgraph", "stream", "outcome", "work_item"])
 export type ExecutionProfileLevel = z.infer<typeof ExecutionProfileLevelSchema>
 
-export const RecapProfileDefaultsSchema = z.strictObject({
-  model: ModelSelectionSchema.optional(),
-  effort: z.string().trim().min(1).optional(),
-  quietHours: z.number().positive().optional(),
-})
-export type RecapProfileDefaults = z.infer<typeof RecapProfileDefaultsSchema>
-
-export const DEFAULT_RECAP_QUIET_HOURS = 8
-
-export function resolveRecapProfileDefaults(input: Readonly<{
-  recap?: RecapProfileDefaults
-  execution?: ExecutionProfileDefaults
-}>) {
-  const model = input.recap?.model ?? input.execution?.model
-  const effort = input.recap?.effort ?? input.execution?.effort
-  if (!model || !effort) return undefined
-  return {
-    model: { ...model },
-    effort,
-    quietHours: input.recap?.quietHours ?? DEFAULT_RECAP_QUIET_HOURS,
-  } satisfies Required<RecapProfileDefaults>
-}
-
 export const WorkGraphDefaultsSchema = z.strictObject({
   execution: ExecutionProfileDefaultsSchema,
-  recap: RecapProfileDefaultsSchema,
 })
 export type WorkGraphDefaults = z.infer<typeof WorkGraphDefaultsSchema>
 

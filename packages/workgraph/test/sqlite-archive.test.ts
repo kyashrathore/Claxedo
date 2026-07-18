@@ -145,7 +145,7 @@ describe("SQLite canonical WorkGraph archive", () => {
     } satisfies AdmissionAgentPlan
     await expect(execute("update_workgraph_defaults", {
       expectedVersion: 1,
-      defaults: { execution: planningProfile, recap: {} },
+      defaults: { execution: planningProfile },
     })).resolves.toMatchObject({ ok: true })
     await expect(createSqliteSourcePlanningRuntime({
       database: source,
@@ -514,7 +514,7 @@ describe("SQLite canonical WorkGraph archive", () => {
     expect(unavailable.prepare("SELECT COUNT(*) AS count FROM wg_v2_source_views").get()).toEqual({ count: 0 })
   })
 
-  it("round-trips terminal execution, review, provenance, recap, runtime, migration, and idempotency records", async () => {
+  it("round-trips terminal execution, review, provenance, runtime, migration, and idempotency records", async () => {
     const source = database()
     const target = database()
     const sourceArchive = createSqliteWorkGraphArchivePort(source, { now: () => 500 })
@@ -533,8 +533,6 @@ describe("SQLite canonical WorkGraph archive", () => {
       "decision_work_item",
       "evidence",
       "durable_effect_receipt",
-      "recap",
-      "notification",
       "record_source_revision",
       "admission_proposal",
       "operation_result",
@@ -650,8 +648,8 @@ describe("SQLite canonical WorkGraph archive", () => {
 function seedComprehensiveArchive(database: BetterSqlite3.Database) {
   database.exec(`
     INSERT INTO wg_v2_workgraphs
-      (organization_id, owner_user_id, id, defaults_json, recap_defaults_json, created_at, updated_at)
-    VALUES ('organization', 'owner', 'workgraph_default', '{}', '{}', 1, 2);
+      (organization_id, owner_user_id, id, defaults_json, created_at, updated_at)
+    VALUES ('organization', 'owner', 'workgraph_default', '{}', 1, 2);
 
     INSERT INTO wg_v2_work_sources
       (organization_id, owner_user_id, id, workgraph_id, title, source_kind, metadata_json, latest_revision_number, created_at, updated_at)
@@ -665,9 +663,9 @@ function seedComprehensiveArchive(database: BetterSqlite3.Database) {
 
     INSERT INTO wg_v2_streams
       (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json,
-       recap_defaults_json, memory_card_json, last_activity_at, replacement_reset_json, created_at, updated_at)
+       last_activity_at, replacement_reset_json, created_at, updated_at)
     VALUES ('organization', 'owner', 'stream_1', 'workgraph_default', 'Ship Cloud', 'Ship Cloud', 'active',
-      '{}', '{}', '{}', 10,
+      '{}', 10,
       '{"state":"completed","proposalId":"proposal_1","previousSource":{"workSourceId":"source_1","revisionId":"revision_1","contentHash":"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"},"source":{"workSourceId":"source_1","revisionId":"revision_1","contentHash":"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"},"requestedAt":7,"completedAt":9}',
       1, 10);
 
@@ -735,20 +733,6 @@ function seedComprehensiveArchive(database: BetterSqlite3.Database) {
       '{"kind":"integration","summary":"Merged PR","effect":"merged","reference":"https://example.com/pr/1"}',
       '{"actor":{"type":"agent","id":"agent_1"},"operationId":"operation_1","requestId":"request_1"}', 8);
 
-    INSERT INTO wg_v2_recaps
-      (organization_id, owner_user_id, id, stream_id, activity_start_sequence, activity_end_sequence, quiet_since,
-       summary, actionable_references_json, generation_profile_json, provenance_json,
-       generation_result_json, created_at)
-    VALUES ('organization', 'owner', 'recap_1', 'stream_1', 1, 2, 10, 'Ready to merge',
-      '[{"type":"work_item","id":"work_item_1"}]',
-      '{"model":{"providerId":"openai","modelId":"gpt-5"},"effort":"medium"}',
-      '{"actor":{"type":"agent","id":"recap_agent"}}',
-      '{"state":"succeeded","generatedAt":11,"method":"agent_session","sessionId":"session_recap_1"}', 11);
-
-    INSERT INTO wg_v2_notifications
-      (organization_id, owner_user_id, id, notification_kind, state, stream_id, recap_id, created_at, updated_at)
-    VALUES ('organization', 'owner', 'notification_1', 'actionable_recap', 'unread', 'stream_1', 'recap_1', 11, 11);
-
     INSERT INTO wg_v2_record_source_revisions
       (organization_id, owner_user_id, id, record_type, record_id, work_source_id, source_revision_id, ordinal, created_at)
     VALUES ('organization', 'owner', 'source_ref_1', 'stream', 'stream_1', 'source_1', 'revision_1', 0, 2);
@@ -782,8 +766,8 @@ function seedComprehensiveArchive(database: BetterSqlite3.Database) {
       (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json,
        lease_epoch, last_error, created_at, updated_at)
     VALUES
-      ('organization', 'owner', 'job_completed', 'stream_1', 'recap', 'stream_1:2', 10, 'completed',
-       '{"sessionId":"session_recap_1"}', 1, NULL, 10, 11),
+      ('organization', 'owner', 'job_completed', 'stream_1', 'source_plan', 'proposal_1', 10, 'completed',
+       '{"sessionId":"session_plan_1"}', 1, NULL, 10, 11),
       ('organization', 'owner', 'job_attention', 'stream_1', 'source_plan', 'proposal_attention', 10, 'failed_terminal',
        '{"automaticFailureCount":3}', 2, 'Planning exhausted', 10, 12);
   `)

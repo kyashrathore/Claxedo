@@ -11,6 +11,10 @@ module-global state, and implements no auth policy. Hosts supply storage
 
 ## Quickstart (in-memory host)
 
+```sh
+npm install @claxedo/connections
+```
+
 ```ts
 import { randomUUID } from "node:crypto"
 import {
@@ -167,3 +171,10 @@ embed pasted secrets) never surface.
 ```sh
 bun run typecheck && bun test src && bun run build
 ```
+
+## See also
+
+- [`docs/architecture.md`](docs/architecture.md) — the `CredentialStorePort` /
+  `ConnectionStorePort` split, the connect/verify/attempt state machine, the
+  token-refresh single-flight and failure semantics, and the per-provider
+  webhook verification schemes.

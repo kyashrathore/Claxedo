@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { createSqliteWorkGraphArchivePort } from "../../src"
 import { createSqliteAttemptRuntime, createSqliteWorkGraphService } from "../../src/adapters/sqlite/store"
+import { createChangeCursor } from "../../src/contracts"
 import type { CompletionContract, CompletionRequirementID, OperationID, StreamID, WorkGraphContext } from "../../src/contracts"
 import type { WorkspaceExecutionPort } from "../../src/ports"
 import { workGraphArchiveContract, workGraphAttentionContract, workGraphSnapshotRestartContract, workGraphStoreContract } from "./store-contract"
@@ -25,6 +26,26 @@ workGraphStoreContract("SQLite", async (input) => {
   const adapter = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: input.clock, ids: input.ids, execution })
   return {
     ...adapter,
+    // A user-created Work Item in an active Stream is auto-admitted by the drain
+    // that runs after every command; `admit` returns that already-admitted Attempt.
+    admit: async (owner, { workItemId }) => {
+      const operationId = branded<OperationID>(input.ids.next("admit"))
+      const row = database
+        .prepare(
+          `SELECT id, lease_epoch FROM wg_v2_attempts
+           WHERE organization_id = ? AND owner_user_id = ? AND work_item_id = ?
+           ORDER BY attempt_number DESC LIMIT 1`,
+        )
+        .get(owner.organizationId, owner.ownerUserId, workItemId) as { id: string; lease_epoch: number } | undefined
+      if (!row)
+        return { ok: false, operationId, error: { code: "blocked", message: "No admitted Attempt", retryable: false } }
+      const cursor = createChangeCursor({
+        organizationId: owner.organizationId,
+        ownerUserId: owner.ownerUserId,
+        position: 1,
+      })
+      return { ok: true, operationId, cursor, value: { attemptId: row.id, leaseEpoch: row.lease_epoch } }
+    },
     restart: async () => ({ attemptRuntime: createSqliteAttemptRuntime(database, input.clock) }),
   }
 })
@@ -151,19 +172,11 @@ describe("SQLite WorkGraph persistence", () => {
         streamId,
         expectedVersion: 1,
         title: "Ship now",
-        recap: {
-          model: { providerId: "openai", modelId: "gpt-5" },
-          quietHours: 16,
-          effort: "high",
-        },
+        execution: { effort: "high" },
       },
     })
     await expect(adapter.service.query(owner(), "streams", "read", { streamId })).resolves.toMatchObject({
-      recapDefaults: {
-        model: { providerId: "openai", modelId: "gpt-5" },
-        quietHours: 16,
-        effort: "high",
-      },
+      executionDefaults: { effort: "high" },
     })
     await adapter.service.execute(owner(), {
       operationId: operation("clear_settings"),
@@ -173,13 +186,11 @@ describe("SQLite WorkGraph persistence", () => {
         streamId,
         expectedVersion: 2,
         execution: {},
-        recap: {},
       },
     })
     await expect(adapter.service.query(owner(), "streams", "read", { streamId })).resolves.toMatchObject({
       version: 3,
       executionDefaults: {},
-      recapDefaults: {},
     })
     await adapter.service.execute(owner(), {
       operationId: operation("source"),

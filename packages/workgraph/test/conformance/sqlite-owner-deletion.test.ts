@@ -222,8 +222,8 @@ describe("SQLite WorkGraph owner deletion conformance", () => {
     const streamId = await createStream(seed, context, "autonomous_stream", "Autonomous deletion")
     const workItemId = await createWorkItem(seed, context, streamId, "autonomous_item")
     database.prepare(`
-      UPDATE wg_v2_streams SET execution_defaults_json = ?, execution_mode = 'autonomous', execution_state = 'active',
-        envelope_identity_json = ? WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      UPDATE wg_v2_streams SET execution_defaults_json = ?, envelope_identity_json = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
     `).run(
       JSON.stringify(executionProfile),
       JSON.stringify({ id: "autonomous_envelope", workspaceId: "/tmp/autonomous" }),

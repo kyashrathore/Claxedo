@@ -1,8 +1,6 @@
 import BetterSqlite3 from "better-sqlite3"
 import { afterEach, describe, expect, it } from "vitest"
-import { createSqliteNotificationStore } from "../src/adapters/sqlite/notification-store"
 import { createSqliteWorkGraphService } from "../src/adapters/sqlite/store"
-import { createNotificationService } from "../src/application/notification-service"
 import type { WorkGraphContext } from "../src/contracts"
 
 const databases: BetterSqlite3.Database[] = []
@@ -70,35 +68,6 @@ describe("SQLite tenant-bound stable cursors", () => {
       .rejects.toMatchObject({ name: "WorkSourcePageCursorError", reason: "invalid" })
   })
 
-  it("pages Notifications by owner- and state-bound keyset without duplicate shifts", async () => {
-    const database = createDatabase()
-    const workgraph = createSqliteWorkGraphService({ database }).service
-    const created = await workgraph.execute(owner("organization_a"), {
-      operationId: "operation_notification_stream" as never,
-      command: { version: 1, type: "create_stream", title: "Notifications" },
-    })
-    if (!created.ok) throw new Error("Expected Stream creation")
-    const streamId = String((created.value as { streamId: string }).streamId)
-    insertNotification(database, streamId, "notification_300", 300)
-    insertNotification(database, streamId, "notification_200", 200)
-    const notifications = createNotificationService(createSqliteNotificationStore(database))
-
-    const first = await notifications.list(owner("organization_a"), { state: "unread", limit: 1 })
-    expect(first.notifications.map((notification) => notification.id)).toEqual(["notification_300"])
-    insertNotification(database, streamId, "notification_400", 400)
-    insertNotification(database, streamId, "notification_250", 250)
-    const second = await notifications.list(owner("organization_a"), { state: "unread", after: first.nextCursor!, limit: 1 })
-    expect(second.notifications.map((notification) => notification.id)).toEqual(["notification_250"])
-    const third = await notifications.list(owner("organization_a"), { state: "unread", after: second.nextCursor!, limit: 1 })
-    expect(third.notifications.map((notification) => notification.id)).toEqual(["notification_200"])
-
-    await expect(notifications.list(owner("organization_b"), { state: "unread", after: first.nextCursor!, limit: 1 }))
-      .rejects.toMatchObject({ name: "NotificationPageCursorError", reason: "owner_mismatch" })
-    await expect(notifications.list(owner("organization_a"), { state: "read", after: first.nextCursor!, limit: 1 }))
-      .rejects.toMatchObject({ name: "NotificationPageCursorError", reason: "filter_mismatch" })
-    await expect(notifications.list(owner("organization_a"), { after: "broken" as never, limit: 1 }))
-      .rejects.toMatchObject({ name: "NotificationPageCursorError", reason: "invalid" })
-  })
 })
 
 function createDatabase() {
@@ -115,27 +84,4 @@ function owner(organizationId: string): WorkGraphContext {
     requestId: `request_${organizationId}` as never,
     access: { mode: "owner" },
   }
-}
-
-function insertNotification(database: BetterSqlite3.Database, streamId: string, notificationId: string, createdAt: number) {
-  const recapId = `recap_${notificationId}`
-  database.prepare(`
-    INSERT INTO wg_v2_recaps
-      (organization_id, owner_user_id, id, stream_id, activity_start_sequence, activity_end_sequence, quiet_since, summary,
-       actionable_references_json, generation_profile_json, provenance_json, generation_result_json, created_at)
-    VALUES ('organization_a', 'same_user', ?, ?, 1, ?, ?, 'Actionable', '[]', '{}', ?, ?, ?)
-  `).run(
-    recapId,
-    streamId,
-    createdAt,
-    createdAt,
-    JSON.stringify({ actor: { type: "system", id: "recap_test" } }),
-    JSON.stringify({ state: "succeeded", method: "agent_session", sessionId: `session_${notificationId}` }),
-    createdAt,
-  )
-  database.prepare(`
-    INSERT INTO wg_v2_notifications
-      (organization_id, owner_user_id, id, notification_kind, state, stream_id, recap_id, created_at, updated_at)
-    VALUES ('organization_a', 'same_user', ?, 'actionable_recap', 'unread', ?, ?, ?, ?)
-  `).run(notificationId, streamId, recapId, createdAt, createdAt)
 }

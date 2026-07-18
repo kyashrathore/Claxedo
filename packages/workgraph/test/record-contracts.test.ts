@@ -5,7 +5,6 @@ import {
   DecisionDtoSchema,
   OutcomeDtoSchema,
   OrderedSnapshotReferenceSchema,
-  RecapDtoSchema,
   StreamDtoSchema,
   WorkGraphSnapshotPageSchema,
   WorkGraphDefaultsDtoSchema,
@@ -27,7 +26,7 @@ const execution = {
 }
 
 describe("public WorkGraph record contracts", () => {
-  it("validates strict owner-bound WorkGraph execution and recap defaults", () => {
+  it("validates strict owner-bound WorkGraph execution defaults", () => {
     const defaults = WorkGraphDefaultsDtoSchema.parse({
       recordType: "workgraph",
       schemaVersion: 1,
@@ -36,13 +35,12 @@ describe("public WorkGraph record contracts", () => {
       version: 2,
       defaults: {
         execution: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
-        recap: { quietHours: 12, effort: "medium" },
       },
       provenance,
       ...timestamps,
     })
 
-    expect(defaults.defaults.recap.quietHours).toBe(12)
+    expect(defaults.defaults.execution.effort).toBe("high")
     expect(() => WorkGraphDefaultsDtoSchema.parse({ ...defaults, ownerUserId: "" })).toThrow()
     expect(() => WorkGraphDefaultsDtoSchema.parse({ ...defaults, credential: "secret" })).toThrow()
   })
@@ -60,9 +58,7 @@ describe("public WorkGraph record contracts", () => {
       visibility: "visible",
       pinned: true,
       executionDefaults: { effort: "high" },
-      recapDefaults: { quietHours: 8 },
-      memory: { summary: "Core contracts underway", updatedAt: timestamps.updatedAt },
-      activity: { lastActivityAt: timestamps.updatedAt, recapDueAt: timestamps.updatedAt + 28_800_000 },
+      activity: { lastActivityAt: timestamps.updatedAt },
       durableEffectCount: 0,
       sourceRevisionRefs: [],
       provenance,
@@ -137,7 +133,7 @@ describe("public WorkGraph record contracts", () => {
     expect(() => AttemptDtoSchema.parse({ ...attempt, resolvedExecution: { ...execution, model: undefined } })).toThrow()
   })
 
-  it("captures Decision options and immutable Recap activity provenance", () => {
+  it("captures Decision options and validates their recommendation", () => {
     const decision = DecisionDtoSchema.parse({
       recordType: "decision",
       schemaVersion: 1,
@@ -158,33 +154,8 @@ describe("public WorkGraph record contracts", () => {
       provenance,
       ...timestamps,
     })
-    const recap = RecapDtoSchema.parse({
-      recordType: "recap",
-      schemaVersion: 1,
-      id: "recap_01",
-      ownerUserId: "user_01",
-      streamId: "stream_01",
-      version: 1,
-      activityRange: { fromSequence: 1, toSequence: 8, quietSince: timestamps.createdAt },
-      summary: "Contracts are implemented; integration remains.",
-      actionableReferences: [{ type: "decision", id: decision.id }],
-      generation: {
-        state: "succeeded",
-        model: { providerId: "openai", modelId: "gpt-5" },
-        effort: "medium",
-        generatedAt: timestamps.updatedAt,
-        method: "agent_session",
-        sessionId: "session_01",
-      },
-      sourceRevisionRefs: [],
-      provenance,
-      ...timestamps,
-    })
-
     expect(decision.options).toHaveLength(2)
-    expect(recap.actionableReferences[0]).toEqual({ type: "decision", id: decision.id })
     expect(() => DecisionDtoSchema.parse({ ...decision, recommendationOptionId: "missing" })).toThrow()
-    expect(() => RecapDtoSchema.parse({ ...recap, activityRange: { fromSequence: 9, toSequence: 8, quietSince: 1 } })).toThrow()
   })
 
   it("binds admission proposals to exact source revisions and validates ordered snapshot pages", () => {

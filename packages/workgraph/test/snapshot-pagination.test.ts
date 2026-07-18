@@ -55,7 +55,7 @@ function root(id: string) {
     updatedAt: 1,
     provenance: { actor: { type: "system" as const, id: "test" } },
     id,
-    defaults: { execution: {}, recap: {} },
+    defaults: { execution: {} },
   }
 }
 

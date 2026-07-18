@@ -1,9 +1,23 @@
 {
   "name": "@claxedo/workgraph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/workgraph"
+  },
+  "keywords": [
+    "workgraph",
+    "ai-agents",
+    "task-management",
+    "event-sourcing",
+    "claxedo"
+  ],
+  "homepage": "https://github.com/kyashrathore/Claxedo/tree/dev/packages/workgraph",
+  "bugs": "https://github.com/kyashrathore/Claxedo/issues",
   "publishConfig": {
     "access": "public"
   },
@@ -80,6 +94,10 @@
   "files": [
     "README.md",
     "COMPATIBILITY.md",
+    "ARCHITECTURE.md",
+    "SPEC.md",
+    "PRD.md",
+    "TASKS.md",
     "LICENSE",
     "dist"
   ]

@@ -45,6 +45,25 @@ export function isThreadNotFound(err: unknown): boolean {
 }
 
 /**
+ * Number of resume+retry cycles attempted after the first `thread not found`. Two cycles
+ * (an initial resume and one further attempt) bound the recovery so a permanently-lost
+ * thread terminates instead of looping — or, before this bound existed, propagating the
+ * raw protocol string on the very next failure.
+ */
+const MAX_THREAD_RESUME_ATTEMPTS = 2
+
+/**
+ * Human copy for a permanently-lost Codex thread. Phrased so `classifyFirstTurnError`
+ * routes it to the `session` recovery class (the `session not found` phrasing matches its
+ * regex) — the app-server's own `thread not found: <uuid>` string never becomes the
+ * headline. The original protocol string (including the uuid) is appended so it survives
+ * into the client's raw-detail disclosure, which reads `error.data.message`.
+ */
+export function sessionLostMessage(cause: unknown): string {
+  return `The agent process no longer has this conversation (session not found). ${errorMessage(cause)}`
+}
+
+/**
  * A Codex thread lives in the memory of the app-server process that started it, but is
  * persisted to disk. `ensureProcess` transparently respawns a dead subprocess (crash,
  * idle kill, host sleep), so a session that worked earlier can hand its threadId to a
@@ -52,8 +71,15 @@ export function isThreadNotFound(err: unknown): boolean {
  * and, without recovery, EVERY later turn in that session fails permanently.
  *
  * On that specific error, resume the thread by id into the current process and retry the
- * turn exactly once. Any other error propagates untouched (never mask a real failure),
- * and a second `thread not found` is surfaced rather than retried, so this cannot loop.
+ * turn. Recovery is bounded to {@link MAX_THREAD_RESUME_ATTEMPTS} resume+retry cycles: if
+ * the thread is still missing after them, the state is treated as terminal and a
+ * classified, human error is thrown (see {@link sessionLostMessage}) rather than
+ * propagating the raw `thread not found: <uuid>` protocol string to the transcript.
+ *
+ * Any non-`thread not found` error propagates untouched (never mask a real failure), and
+ * the bound guarantees this cannot loop. We deliberately do NOT re-create the thread and
+ * replay the prompt: a fresh thread has none of the conversation history the UI still
+ * shows, so a silently context-free answer under a full transcript would be a lie.
  */
 export async function startTurnWithThreadRecovery(input: {
   startTurn: () => Promise<JsonRecord>
@@ -63,8 +89,19 @@ export async function startTurnWithThreadRecovery(input: {
     return await input.startTurn()
   } catch (err) {
     if (!isThreadNotFound(err)) throw err
-    await input.resumeThread()
-    return await input.startTurn()
+    let lastError = err
+    for (let attempt = 0; attempt < MAX_THREAD_RESUME_ATTEMPTS; attempt++) {
+      await input.resumeThread()
+      try {
+        return await input.startTurn()
+      } catch (retryErr) {
+        if (!isThreadNotFound(retryErr)) throw retryErr
+        lastError = retryErr
+      }
+    }
+    // Bounded recovery exhausted: the thread is genuinely gone. Surface a classified,
+    // human terminal error — never the raw protocol string as the headline.
+    throw new Error(sessionLostMessage(lastError))
   }
 }
 

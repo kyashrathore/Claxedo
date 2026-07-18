@@ -3,11 +3,9 @@ import {
   AdmissionProposalDtoSchema,
   AttemptDtoSchema,
   DecisionDtoSchema,
-  RecapDtoSchema,
   WorkItemDtoSchema,
 } from "./records"
 import { ConnectionIDSchema, OwnerUserIDSchema, StreamIDSchema } from "./ids"
-import { WorkGraphNotificationSchema } from "./notifications"
 import { SourceProviderSchema } from "./source-view"
 
 const prefix = "wgat1"
@@ -20,7 +18,6 @@ export const AttentionKindSchema = z.enum([
   "decision",
   "work_item",
   "attempt",
-  "recap_notification",
   "unorganized_ai_work",
   "configuration_required",
 ])
@@ -75,7 +72,7 @@ const WorkItemAttentionItemSchema = z
   })
   .superRefine((item, context) => {
     if (
-      !["result_ready", "blocked", "review_needed", "integration_needed", "verification_failed", "failed"].includes(
+      !["pending_approval", "result_ready", "blocked", "review_needed", "integration_needed", "verification_failed", "failed"].includes(
         item.record.state,
       )
     ) {
@@ -99,36 +96,6 @@ const AttemptAttentionItemSchema = z
       context.addIssue({ code: "custom", path: ["record", "state"], message: "Attempt is not waiting for attention" })
     }
     recordIdentity(item, context)
-  })
-
-const RecapNotificationAttentionItemSchema = z
-  .strictObject({
-    ...itemShape,
-    kind: z.literal("recap_notification"),
-    notification: WorkGraphNotificationSchema,
-    recap: RecapDtoSchema,
-  })
-  .superRefine((item, context) => {
-    if (
-      item.ownerUserId !== item.notification.ownerUserId ||
-      item.id !== item.notification.id ||
-      item.updatedAt !== item.notification.updatedAt
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["notification"],
-        message: "Attention identity must match its Recap notification",
-      })
-    }
-    if (
-      item.notification.state !== "unread" ||
-      item.notification.recapId !== item.recap.id ||
-      item.notification.streamId !== item.recap.streamId ||
-      item.notification.ownerUserId !== item.recap.ownerUserId ||
-      item.recap.actionableReferences.length === 0
-    ) {
-      context.addIssue({ code: "custom", path: ["recap"], message: "Recap notification is not actionable" })
-    }
   })
 
 const UnorganizedAIWorkAttentionItemSchema = z
@@ -166,7 +133,7 @@ const ConfigurationRequiredAttentionItemSchema = z
       z.strictObject({
         type: z.literal("generation"),
         jobId: text,
-        purpose: z.enum(["source_planning", "recap"]),
+        purpose: z.literal("source_planning"),
         scope: z.union([
           z.strictObject({ type: z.literal("workgraph") }),
           z.strictObject({ type: z.literal("stream"), streamId: StreamIDSchema }),
@@ -191,7 +158,6 @@ export const AttentionItemSchema = z.union([
   DecisionAttentionItemSchema,
   WorkItemAttentionItemSchema,
   AttemptAttentionItemSchema,
-  RecapNotificationAttentionItemSchema,
   UnorganizedAIWorkAttentionItemSchema,
   ConfigurationRequiredAttentionItemSchema,
 ]).superRefine((item, context) => {

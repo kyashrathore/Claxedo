@@ -5,7 +5,6 @@ import {
   DecisionStateSchema,
   EvidenceDtoSchema,
   ExecutionProfileDefaultsSchema,
-  IntakeStateSchema,
   OutcomeStateSchema,
   OwnerUserIDSchema,
   ResolvedExecutionProfileSchema,
@@ -43,7 +42,7 @@ describe("WorkGraph contracts", () => {
     expect(WorkItemStateSchema.parse("integration_needed")).toBe("integration_needed")
     expect(AttemptStateSchema.parse("placing")).toBe("placing")
     expect(DecisionStateSchema.parse("answered")).toBe("answered")
-    expect(IntakeStateSchema.parse("merged")).toBe("merged")
+    expect(WorkItemStateSchema.parse("pending_approval")).toBe("pending_approval")
     expect(() => WorkItemStateSchema.parse("done")).toThrow()
   })
 

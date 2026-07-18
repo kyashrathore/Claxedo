@@ -66,21 +66,6 @@ describe("Attention contracts", () => {
         requirement: { type: "connection", connectionId: "connection_1", integrationId: "github", status: "broken" },
       }),
     ).toMatchObject({ kind: "configuration_required" })
-    expect(
-      AttentionItemSchema.parse({
-        id: "recap_job_1",
-        ownerUserId: "owner_1",
-        kind: "configuration_required",
-        updatedAt: 7,
-        requirement: {
-          type: "generation",
-          jobId: "recap_job_1",
-          purpose: "recap",
-          scope: { type: "stream", streamId: "stream_1" },
-          reason: "Recap execution profile is incomplete: agent",
-        },
-      }),
-    ).toMatchObject({ requirement: { type: "generation", purpose: "recap" } })
     expect(() =>
       AttentionItemSchema.parse({
         id: "wrong_job",

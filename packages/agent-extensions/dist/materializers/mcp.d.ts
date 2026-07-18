@@ -34,14 +34,14 @@ export declare function materializeStandaloneMcp(input: {
     record?: MaterializedRuntimeRecord;
     replaceOwned?: boolean;
 }): Promise<{
-    path: string;
-    reason?: string | undefined;
-    runner: "opencode" | "claude" | "codex" | "cursor";
+    runner: "claude" | "codex" | "cursor" | "opencode";
     component: string;
     type: "mcp";
     status: "applied" | "drifted" | "skipped";
+    reason?: string | undefined;
+    path: string;
 }[] | {
-    runner: "opencode" | "claude" | "codex" | "cursor";
+    runner: "claude" | "codex" | "cursor" | "opencode";
     component: string;
     type: "mcp";
     status: "skipped";

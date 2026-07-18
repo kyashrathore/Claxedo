@@ -91,7 +91,7 @@
     "wrangler": "4.50.0"
   },
   "dependencies": {
-    "@claxedo/agent-event-runtime": "workspace:0.5.1",
+    "@claxedo/agent-event-runtime": "workspace:0.5.2",
     "@claxedo/workgraph": "workspace:*",
     "@clerk/clerk-js": "5.125.10",
     "@json-render/core": "0.14.1",

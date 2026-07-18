@@ -20,27 +20,21 @@ import {
   EvidenceDtoSchema,
   EvidencePageSchema,
   ExecutionProfileDefaultsSchema,
-  ModelSelectionSchema,
   OutcomeDtoSchema,
   readAttentionCursor,
   readChangeCursor,
   readEvidencePageCursor,
   SnapshotResumeCursorError,
   readWorkSourcePageCursor,
-  RecapDtoSchema,
-  RecapProfileDefaultsSchema,
-  resolveRecapProfileDefaults,
   ReplacementReviewSchema,
   ResolvedExecutionProfileSchema,
   StreamDtoSchema,
   WorkGraphDefaultsDtoSchema,
-  WorkGraphNotificationSchema,
   WorkItemDtoSchema,
   WorkSourceDtoSchema,
   WorkSourceRevisionDtoSchema,
   type ExecutionCapabilities,
   type ExecutionProfileDefaults,
-  type RecapProfileDefaults,
 } from "../../contracts"
 import type {
   AttentionListInput,
@@ -57,7 +51,6 @@ import type {
   EvidenceReadInput,
   EvidenceInput,
   EvidenceSubject,
-  ExecutionMode,
   OperationID,
   OutcomeID,
   StreamID,
@@ -79,7 +72,6 @@ import type {
   WorkItemID,
   AdmissionProposalDto,
   DecisionDto,
-  RecapDto,
   ReplacementReview,
   ReplacementReviewInput,
   WorkItemDto,
@@ -108,7 +100,6 @@ import { transitionDecision, transitionStream, transitionStreamVisibility } from
 import { resolveExecutionProfile } from "../../domain/execution-profile"
 import {
   validateExecutionProfileDefaultsAgainstCapabilities,
-  validateRecapProfileDefaultsAgainstCapabilities,
   validateResolvedExecutionProfileAgainstCapabilities,
 } from "../../domain/execution-capability-policy"
 import {
@@ -139,20 +130,10 @@ const sqliteAttentionRows = `
   UNION ALL
   SELECT 'work_item', id, CAST(updated_at AS INTEGER), NULL, NULL, NULL, NULL, NULL
   FROM wg_v2_work_items
-  WHERE organization_id = @organization AND owner_user_id = @owner AND lifecycle IN ('result_ready', 'blocked', 'review_needed', 'integration_needed', 'verification_failed', 'failed')
+  WHERE organization_id = @organization AND owner_user_id = @owner AND lifecycle IN ('pending_approval', 'result_ready', 'blocked', 'review_needed', 'integration_needed', 'verification_failed', 'failed')
   UNION ALL
   SELECT 'attempt', id, CAST(updated_at AS INTEGER), NULL, NULL, NULL, NULL, NULL
   FROM wg_v2_attempts WHERE organization_id = @organization AND owner_user_id = @owner AND lifecycle = 'attention'
-  UNION ALL
-  SELECT 'recap_notification', notifications.id, CAST(notifications.updated_at AS INTEGER), NULL, NULL, NULL, NULL, NULL
-  FROM wg_v2_notifications notifications
-  JOIN wg_v2_recaps recaps
-    ON recaps.organization_id = notifications.organization_id AND recaps.owner_user_id = notifications.owner_user_id AND recaps.id = notifications.recap_id
-  WHERE notifications.organization_id = @organization AND notifications.owner_user_id = @owner AND notifications.state = 'unread'
-    AND json_extract(recaps.generation_result_json, '$.state') = 'succeeded'
-    AND json_extract(recaps.generation_result_json, '$.method') = 'agent_session'
-    AND json_extract(recaps.generation_result_json, '$.sessionId') IS NOT NULL
-    AND json_array_length(recaps.actionable_references_json) > 0
   UNION ALL
   SELECT 'unorganized_ai_work', 'unorganized_ai_work', CAST(MAX(updated_at) AS INTEGER), NULL, NULL, NULL, NULL, NULL
   FROM wg_v2_intake_candidates WHERE organization_id = @organization AND owner_user_id = @owner
@@ -160,7 +141,7 @@ const sqliteAttentionRows = `
   UNION ALL
   SELECT 'configuration_required', id, CAST(updated_at AS INTEGER), job_type, subject_id, stream_id, last_error, payload_json
   FROM wg_v2_due_jobs
-  WHERE organization_id = @organization AND owner_user_id = @owner AND job_type IN ('source_plan', 'recap')
+  WHERE organization_id = @organization AND owner_user_id = @owner AND job_type = 'source_plan'
     AND status IN ('pending', 'failed', 'failed_terminal', 'attention')
     AND last_error IS NOT NULL
     AND json_extract(payload_json, '$.configurationRequirement.type') = 'generation'
@@ -177,6 +158,10 @@ export const SQLITE_WORKGRAPH_SUPPORTED_COMMANDS = [
   "update_outcome",
   "create_work_item",
   "update_work_item",
+  "approve_work_item",
+  "reject_work_item",
+  "approve_work_items",
+  "retry_work_item",
   "propose_admission",
   "retry_admission_planning",
   "dismiss_admission",
@@ -197,10 +182,7 @@ export const SQLITE_WORKGRAPH_SUPPORTED_COMMANDS = [
 ] as const
 
 export const SQLITE_WORKGRAPH_UNSUPPORTED_COMMANDS = [
-  "execute_stream",
-  "execute_work_item",
   "cancel_attempt",
-  "retry_work_item",
 ] as const
 
 type Database = BetterSqlite3.Database
@@ -279,9 +261,6 @@ type SqliteQueries = Readonly<{
   decisions: Readonly<{
     read: (context: WorkGraphContext, input: Readonly<{ decisionId: string }>) => Promise<DecisionDto | undefined>
   }>
-  recaps: Readonly<{
-    read: (context: WorkGraphContext, input: Readonly<{ recapId: string }>) => Promise<RecapDto | undefined>
-  }>
   evidence: Readonly<{
     read: (context: WorkGraphContext, input: EvidenceReadInput) => Promise<EvidenceDto | undefined>
     list: (context: WorkGraphContext, input: EvidenceListInput) => Promise<EvidencePage>
@@ -308,7 +287,7 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
   let failNextAppend = false
   let replacementRetryTimer: ReturnType<typeof setTimeout> | undefined
   let placementCompensationRetryTimer: ReturnType<typeof setTimeout> | undefined
-  let autonomousDrain: Promise<void> | undefined
+  let readyStreamsDrain: Promise<void> | undefined
   const scheduleReplacementDrain = () => {
     if (!input.execution || replacementRetryTimer || !database.open) return
     replacementRetryTimer = setTimeout(
@@ -352,10 +331,10 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
       .get()
     if (pending) schedulePlacementCompensationDrain()
   }
-  const drainAutonomousExecutions = () => {
+  const drainReadyStreams = () => {
     if (!input.execution || !input.executionCapabilities || !database.open) return Promise.resolve()
-    if (autonomousDrain) return autonomousDrain
-    autonomousDrain = drainSqliteAutonomousStreams(
+    if (readyStreamsDrain) return readyStreamsDrain
+    readyStreamsDrain = drainSqliteReadyStreams(
       database,
       input.execution,
       input.executionCapabilities,
@@ -363,9 +342,9 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
       clock.now,
       schedulePlacementCompensationDrain,
     ).finally(() => {
-      autonomousDrain = undefined
+      readyStreamsDrain = undefined
     })
-    return autonomousDrain
+    return readyStreamsDrain
   }
 
   const execute: WorkGraphCommandHandler = async (context, request) => {
@@ -541,35 +520,15 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
     }
     const result = await execute(context, request)
     if (!result.ok) return result
-    if (request.command.type === "cancel_attempt") return result
-    if (
-      request.command.type === "execute_stream" ||
-      request.command.type === "execute_work_item" ||
-      request.command.type === "retry_work_item"
-    ) {
-      const value = result.value as { attemptId?: string; attemptIds?: string[] }
-      await Promise.all(
-        (value.attemptIds ?? (value.attemptId ? [value.attemptId] : [])).map((attemptId) =>
-          launchAttempt(
-            database,
-            input.execution!,
-            context,
-            attemptId as AttemptID,
-            clock.now(),
-            ids,
-            schedulePlacementCompensationDrain,
-          ),
-        ),
-      )
-      return result
-    }
-    await drainAutonomousExecutions()
+    // Cancelling lands the Work Item in `failed` (Needs-you). The drain re-derives
+    // the stream hold so no new Attempt launches until the owner retries.
+    await drainReadyStreams()
     return result
   }
 
   const executeWithAutonomousContinuation: WorkGraphCommandHandler = async (context, request) => {
     const result = await execute(context, request)
-    if (result.ok) await drainAutonomousExecutions()
+    if (result.ok) await drainReadyStreams()
     return result
   }
 
@@ -579,7 +538,7 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
     if (request.command.type === "confirm_admission" && request.command.selection.mode === "replace") {
       queueMicrotask(() => void drainReplacementEffects())
     }
-    await drainAutonomousExecutions()
+    await drainReadyStreams()
     return result
   }
 
@@ -658,6 +617,9 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
     update_outcome: executeWithAutonomousContinuation,
     create_work_item: executeWithAutonomousContinuation,
     update_work_item: executeWithAutonomousContinuation,
+    approve_work_item: executeWithAutonomousContinuation,
+    reject_work_item: executeWithAutonomousContinuation,
+    approve_work_items: executeWithAutonomousContinuation,
     cancel_work_item: executeWithAutonomousContinuation,
     propose_admission: executeWithAutonomousContinuation,
     retry_admission_planning: executeWithAutonomousContinuation,
@@ -675,17 +637,15 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
     reopen_outcome: executeWithAutonomousContinuation,
     close_stream: executeLifecycleWithRuntime,
     delete_stream: executeLifecycleWithRuntime,
-    execute_stream: executeWithRuntime,
-    execute_work_item: executeWithRuntime,
     cancel_attempt: executeWithRuntime,
-    retry_work_item: executeWithRuntime,
+    retry_work_item: executeWithAutonomousContinuation,
   } satisfies SqliteCommands
 
   if (input.execution)
     queueMicrotask(() => {
       void drainReplacementEffects()
       void drainPlacementCompensationEffects()
-      void drainAutonomousExecutions()
+      void drainReadyStreams()
     })
 
   return {
@@ -950,7 +910,7 @@ export function renewSqliteAttemptLease(
   })()
 }
 
-async function drainSqliteAutonomousStreams(
+async function drainSqliteReadyStreams(
   database: Database,
   execution: WorkspaceExecutionPort,
   capabilityPort: ExecutionCapabilitiesPort,
@@ -961,9 +921,21 @@ async function drainSqliteAutonomousStreams(
   const streams = database
     .prepare(
       `
-    SELECT organization_id, owner_user_id, id FROM wg_v2_streams
-    WHERE execution_mode = 'autonomous' AND execution_state = 'active'
-    ORDER BY updated_at, id LIMIT 100
+    SELECT streams.organization_id, streams.owner_user_id, streams.id FROM wg_v2_streams streams
+    WHERE streams.lifecycle = 'active' AND streams.visibility <> 'archived'
+      AND (
+        EXISTS (
+          SELECT 1 FROM wg_v2_work_items items
+          WHERE items.organization_id = streams.organization_id AND items.owner_user_id = streams.owner_user_id
+            AND items.stream_id = streams.id AND items.lifecycle = 'pending'
+        )
+        OR EXISTS (
+          SELECT 1 FROM wg_v2_attempts att
+          WHERE att.organization_id = streams.organization_id AND att.owner_user_id = streams.owner_user_id
+            AND att.stream_id = streams.id AND att.lifecycle = 'admitted'
+        )
+      )
+    ORDER BY streams.updated_at, streams.id LIMIT 100
   `,
     )
     .all() as Array<{ organization_id: string; owner_user_id: string; id: StreamID }>
@@ -971,24 +943,22 @@ async function drainSqliteAutonomousStreams(
     const context = {
       organizationId: stream.organization_id,
       ownerUserId: stream.owner_user_id,
-      actor: { type: "system", id: "workgraph_autonomous_runtime" },
-      requestId: `autonomous_${stream.id}`,
+      actor: { type: "system", id: "workgraph_launch_runtime" },
+      requestId: `launch_${stream.id}`,
       access: { mode: "owner" },
     } as WorkGraphContext
-    const capabilities = await capabilityPort.read(context, {}).catch((error) => {
-      database
-        .prepare(
-          `
-        UPDATE wg_v2_streams SET execution_state = 'stopped', updated_at = ?
-        WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND execution_state = 'active'
-      `,
-        )
-        .run(now(), context.organizationId, context.ownerUserId, stream.id)
-      throw error
-    })
+    // A capability-read failure holds this Stream for the current pass only; the
+    // next drain (or an explicit capability refresh) retries it. Pause/resume,
+    // not a persisted stop, is the durable launch gate now.
+    let capabilities: ExecutionCapabilities
+    try {
+      capabilities = await capabilityPort.read(context, {})
+    } catch {
+      continue
+    }
     const occurredAt = now()
     database.transaction(() =>
-      continueSqliteAutonomousStream(database, context, stream.id, occurredAt, ids, capabilities),
+      continueSqliteStream(database, context, stream.id, occurredAt, ids, capabilities),
     )()
     const admitted = database
       .prepare(
@@ -1007,7 +977,7 @@ async function drainSqliteAutonomousStreams(
   }
 }
 
-function continueSqliteAutonomousStream(
+function continueSqliteStream(
   database: Database,
   context: WorkGraphContext,
   streamId: StreamID,
@@ -1034,70 +1004,41 @@ function continueSqliteAutonomousStream(
   const stream = database
     .prepare(
       `
-    SELECT lifecycle, execution_mode, execution_state FROM wg_v2_streams
+    SELECT lifecycle, visibility FROM wg_v2_streams
     WHERE organization_id = ? AND owner_user_id = ? AND id = ?
   `,
     )
     .get(context.organizationId, context.ownerUserId, streamId) as
-    | {
-        lifecycle: string
-        execution_mode: ExecutionMode | null
-        execution_state: string | null
-      }
+    | { lifecycle: string; visibility: string }
     | undefined
-  if (
-    !stream ||
-    stream.execution_mode !== "autonomous" ||
-    stream.execution_state !== "active" ||
-    stream.lifecycle !== "active"
-  )
-    return []
-  const attention = database
+  // Stream pause/resume is the launch gate: only `active`, non-archived Streams
+  // admit new Attempts. `reopened` Streams hold until the owner resumes.
+  if (!stream || stream.lifecycle !== "active" || stream.visibility === "archived") return []
+  // Derived stream hold (never persisted, re-evaluated every pass): a Needs-you
+  // condition — any Attempt in `attention` or any `failed` Work Item — holds all
+  // new launches until the owner resolves or retries, exactly as autonomous mode
+  // halted before. This replaces the mode-gated `execution_state = 'stopped'` writes.
+  const held = database
     .prepare(
       `
-    SELECT 1 FROM wg_v2_decisions WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND lifecycle IN ('proposed', 'pending')
+    SELECT 1 FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND lifecycle = 'attention'
     UNION ALL
-    SELECT 1 FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND lifecycle IN ('attention', 'failed')
+    SELECT 1 FROM wg_v2_work_items WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND lifecycle = 'failed'
     LIMIT 1
   `,
     )
     .get(context.organizationId, context.ownerUserId, streamId, context.organizationId, context.ownerUserId, streamId)
-  if (attention) {
-    database
-      .prepare(
-        `
-      UPDATE wg_v2_streams SET execution_state = 'stopped', updated_at = ?
-      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND execution_state = 'active'
-    `,
-      )
-      .run(occurredAt, context.organizationId, context.ownerUserId, streamId)
-    return []
-  }
+  if (held) return []
   const ready = database
     .prepare(
       `
-    SELECT items.id FROM wg_v2_work_items items
-    WHERE items.organization_id = ? AND items.owner_user_id = ? AND items.stream_id = ? AND items.lifecycle = 'pending'
-      AND NOT EXISTS (
-        SELECT 1 FROM wg_v2_work_item_dependencies dependencies
-        JOIN wg_v2_work_items blockers ON blockers.organization_id = dependencies.organization_id AND blockers.owner_user_id = dependencies.owner_user_id
-          AND blockers.id = dependencies.depends_on_work_item_id
-        WHERE dependencies.organization_id = items.organization_id AND dependencies.owner_user_id = items.owner_user_id
-          AND dependencies.work_item_id = items.id AND blockers.lifecycle <> 'completed'
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM wg_v2_decision_work_items affected
-        JOIN wg_v2_decisions decisions ON decisions.organization_id = affected.organization_id AND decisions.owner_user_id = affected.owner_user_id
-          AND decisions.id = affected.decision_id
-        WHERE affected.organization_id = items.organization_id AND affected.owner_user_id = items.owner_user_id
-          AND affected.work_item_id = items.id AND decisions.lifecycle IN ('proposed', 'pending')
-      )
+    ${SQLITE_READY_WORK_ITEMS_FRAGMENT}
     ORDER BY items.priority DESC, items.created_at, items.id
   `,
     )
     .all(context.organizationId, context.ownerUserId, streamId) as Array<{ id: WorkItemID }>
   const admissions = ready.flatMap((item) => {
-    const admitted = admitAttempt(database, context, item.id, "autonomous", occurredAt, ids, capabilities)
+    const admitted = admitAttempt(database, context, item.id, occurredAt, ids, capabilities)
     if (!admitted.ok) return []
     appendRuntimeChange(
       database,
@@ -1112,27 +1053,36 @@ function continueSqliteAutonomousStream(
     )
     return [admitted.attemptId as AttemptID]
   })
-  if (admissions.length > 0) return admissions
-  const remaining = database
-    .prepare(
-      `
-    SELECT 1 FROM wg_v2_work_items WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
-      AND lifecycle NOT IN ('completed', 'abandoned') LIMIT 1
-  `,
-    )
-    .get(context.organizationId, context.ownerUserId, streamId)
-  if (!remaining) {
-    database
-      .prepare(
-        `
-      UPDATE wg_v2_streams SET execution_state = 'completed', updated_at = ?
-      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND execution_state = 'active'
-    `,
-      )
-      .run(occurredAt, context.organizationId, context.ownerUserId, streamId)
-  }
   return admissions
 }
+
+/**
+ * The single launchability predicate shared by every drain consumer (fixing the
+ * former drain-vs-execute divergence). A `pending` (approved) Work Item is ready
+ * when: no blocker is outstanding — `completed` AND `abandoned` both satisfy, so
+ * a rejected dependency never deadlocks its dependents — and no `proposed`/
+ * `pending` Decision blocks it. Stream-level gates (pause, archive, hold) and the
+ * per-item lease/capability checks live in `continueSqliteStream` / `admitAttempt`.
+ * Mirrors the `evaluateWorkItemLaunchability` domain oracle.
+ */
+const SQLITE_READY_WORK_ITEMS_FRAGMENT = `
+    SELECT items.id FROM wg_v2_work_items items
+    WHERE items.organization_id = ? AND items.owner_user_id = ? AND items.stream_id = ? AND items.lifecycle = 'pending'
+      AND NOT EXISTS (
+        SELECT 1 FROM wg_v2_work_item_dependencies dependencies
+        JOIN wg_v2_work_items blockers ON blockers.organization_id = dependencies.organization_id AND blockers.owner_user_id = dependencies.owner_user_id
+          AND blockers.id = dependencies.depends_on_work_item_id
+        WHERE dependencies.organization_id = items.organization_id AND dependencies.owner_user_id = items.owner_user_id
+          AND dependencies.work_item_id = items.id AND blockers.lifecycle NOT IN ('completed', 'abandoned')
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM wg_v2_decision_work_items affected
+        JOIN wg_v2_decisions decisions ON decisions.organization_id = affected.organization_id AND decisions.owner_user_id = affected.owner_user_id
+          AND decisions.id = affected.decision_id
+        WHERE affected.organization_id = items.organization_id AND affected.owner_user_id = items.owner_user_id
+          AND affected.work_item_id = items.id AND decisions.lifecycle IN ('proposed', 'pending')
+      )
+`
 
 async function validateCommandCapabilities(
   port: ExecutionCapabilitiesPort | undefined,
@@ -1144,9 +1094,9 @@ async function validateCommandCapabilities(
   | Readonly<{ ok: false; code: CommandErrorCode; message: string; retryable?: boolean }>
 > {
   const profiles = executionDefaults(request)
-  const recapProfiles = streamRecapDefaults(request)
-  const admission = ["execute_stream", "execute_work_item", "retry_work_item"].includes(request.command.type)
-  if (profiles.length === 0 && recapProfiles.length === 0 && !admission) return { ok: true }
+  // Admission (Attempt launch) now happens in the drain, which reads capabilities
+  // itself; no command forces a capability read beyond validating its own profile.
+  if (profiles.length === 0) return { ok: true }
   if (!port)
     return { ok: false, code: "execution_unavailable", message: "Execution capability catalog is not configured" }
   let capabilities: ExecutionCapabilities
@@ -1172,18 +1122,6 @@ async function validateCommandCapabilities(
       })
       return result.ok ? [] : result.diagnostics
     })
-    .concat(
-      recapProfiles.flatMap((profile) => {
-        const result = validateRecapProfileDefaultsAgainstCapabilities({
-          organizationId: context.organizationId,
-          ownerUserId: context.ownerUserId,
-          now: validatedAt,
-          capabilities,
-          profile,
-        })
-        return result.ok ? [] : result.diagnostics
-      }),
-    )
   if (diagnostics.length > 0) return { ok: false, code: "validation_error", message: capabilityMessage(diagnostics) }
   return { ok: true, capabilities }
 }
@@ -1206,12 +1144,6 @@ function executionDefaults(request: WorkGraphCommandRequest): readonly Execution
     return [command.execution]
   }
   return []
-}
-
-function streamRecapDefaults(request: WorkGraphCommandRequest): readonly RecapProfileDefaults[] {
-  const command = request.command
-  if (!["create_stream", "update_stream"].includes(command.type) || !("recap" in command) || !command.recap) return []
-  return command.recap.model || command.recap.effort ? [command.recap] : []
 }
 
 function capabilityMessage(diagnostics: readonly Readonly<{ path: string; reason: string }>[]) {
@@ -1240,13 +1172,12 @@ function applyCommand(
     database
       .prepare(
         `
-      UPDATE wg_v2_workgraphs SET defaults_json = ?, recap_defaults_json = ?, row_version = row_version + 1, updated_at = ?
+      UPDATE wg_v2_workgraphs SET defaults_json = ?, row_version = row_version + 1, updated_at = ?
       WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
     `,
       )
       .run(
         JSON.stringify(command.defaults.execution),
-        JSON.stringify(command.defaults.recap),
         occurredAt,
         context.organizationId,
         context.ownerUserId,
@@ -1263,23 +1194,12 @@ function applyCommand(
         return rejected(request.operationId, "version_conflict", "Stream requires the current Work Source head")
     }
     const streamId = ids.next("stream")
-    const root = database.prepare(`
-      SELECT defaults_json FROM wg_v2_workgraphs
-      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-    `).get(context.organizationId, context.ownerUserId, rootId) as { defaults_json: string }
-    const recap = resolveRecapProfileDefaults({
-      recap: command.recap,
-      execution: {
-        ...ExecutionProfileDefaultsSchema.parse(JSON.parse(root.defaults_json)),
-        ...command.execution,
-      },
-    }) ?? command.recap ?? {}
     database
       .prepare(
         `
       INSERT INTO wg_v2_streams
-        (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json, recap_defaults_json, activity_granularity, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+        (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json, activity_granularity, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
     `,
       )
       .run(
@@ -1290,7 +1210,6 @@ function applyCommand(
         command.title,
         command.description ?? command.title,
         JSON.stringify(command.execution ?? {}),
-        JSON.stringify(recap),
         command.activityGranularity ?? "progress",
         occurredAt,
         occurredAt,
@@ -1309,7 +1228,6 @@ function applyCommand(
       UPDATE wg_v2_streams SET
         title = COALESCE(?, title), purpose = COALESCE(?, purpose),
         execution_defaults_json = COALESCE(?, execution_defaults_json),
-        recap_defaults_json = COALESCE(?, recap_defaults_json),
         activity_granularity = COALESCE(?, activity_granularity),
         row_version = row_version + 1, updated_at = ?
       WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
@@ -1319,7 +1237,6 @@ function applyCommand(
         command.title ?? null,
         command.description ?? null,
         command.execution === undefined ? null : JSON.stringify(command.execution),
-        command.recap === undefined ? null : JSON.stringify(command.recap),
         command.activityGranularity ?? null,
         occurredAt,
         context.organizationId,
@@ -1609,12 +1526,16 @@ function applyCommand(
       ) ?? true
     if (!dependenciesExist) return rejected(request.operationId, "not_found", "Dependency not found")
     const workItemId = ids.next("work_item")
+    // The materializing actor decides the initial state: human-created tasks are
+    // born approved (`pending`); agent/system-created tasks enter the approval
+    // gate (`pending_approval`) and never run until the owner approves them.
+    const bornState = context.actor.type === "user" ? "pending" : "pending_approval"
     database
       .prepare(
         `
       INSERT INTO wg_v2_work_items
-        (organization_id, owner_user_id, id, stream_id, outcome_id, source_revision_id, title, description, lifecycle, priority, execution_overrides_json, completion_contract_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+        (organization_id, owner_user_id, id, stream_id, outcome_id, source_revision_id, title, description, lifecycle, priority, execution_overrides_json, completion_contract_json, created_by_actor_type, created_by_actor_id, origin_attempt_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -1626,9 +1547,13 @@ function applyCommand(
         command.source?.revisionId ?? null,
         command.title,
         command.description ?? "",
+        bornState,
         command.priority ?? 0,
         JSON.stringify(command.execution ?? {}),
         JSON.stringify(command.completionContract),
+        context.actor.type,
+        context.actor.id,
+        null,
         occurredAt,
         occurredAt,
       )
@@ -1728,6 +1653,36 @@ function applyCommand(
             dependencyId,
             occurredAt,
           ),
+      )
+    }
+    // Agent material edits re-open the approval gate: an owner-authorized agent
+    // mutating an approved-but-not-yet-launched plan demotes it back to
+    // `pending_approval` so the owner re-approves. Human edits re-affirm (their
+    // row_version bump already CAS-invalidates any stale in-flight approval), and
+    // edits to running/terminal items never touch approval.
+    const changesMaterialField =
+      command.title !== undefined ||
+      command.description !== undefined ||
+      command.priority !== undefined ||
+      command.outcomeId !== undefined ||
+      command.dependencyIds !== undefined ||
+      command.completionContract !== undefined ||
+      command.execution !== undefined
+    if (context.actor.type === "agent" && item.lifecycle === "pending" && changesMaterialField) {
+      database
+        .prepare(
+          `
+        UPDATE wg_v2_work_items SET lifecycle = 'pending_approval', row_version = row_version + 1, updated_at = ?
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'pending'
+      `,
+        )
+        .run(occurredAt, context.organizationId, context.ownerUserId, command.workItemId)
+      return pending(
+        "work_item_restaged",
+        "work_item",
+        command.workItemId,
+        { workItemId: command.workItemId },
+        item.stream_id,
       )
     }
     return pending(
@@ -2433,8 +2388,8 @@ function applyCommand(
         .prepare(
           `
         INSERT INTO wg_v2_work_items
-          (organization_id, owner_user_id, id, stream_id, outcome_id, source_revision_id, title, description, lifecycle, execution_overrides_json, completion_contract_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+          (organization_id, owner_user_id, id, stream_id, outcome_id, source_revision_id, title, description, lifecycle, execution_overrides_json, completion_contract_json, created_by_actor_type, created_by_actor_id, origin_attempt_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
       `,
         )
         .run(
@@ -2448,6 +2403,9 @@ function applyCommand(
           item.description ?? "",
           JSON.stringify(item.execution ?? {}),
           JSON.stringify(item.completionContract),
+          context.actor.type,
+          context.actor.id,
+          null,
           occurredAt,
           occurredAt,
         )
@@ -2556,153 +2514,120 @@ function applyCommand(
       outcome.stream_id,
     )
   }
-  if (command.type === "execute_work_item") {
-    const admitted = admitAttempt(
-      database,
-      context,
-      command.workItemId,
-      command.executionMode,
-      occurredAt,
-      ids,
-      capabilities,
-    )
-    if (!admitted.ok) return rejected(request.operationId, admitted.code, admitted.message)
-    database
-      .prepare(
-        `
-      UPDATE wg_v2_streams SET execution_mode = ?, execution_state = ?, updated_at = ?
-      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-    `,
-      )
-      .run(
-        command.executionMode,
-        command.executionMode === "autonomous" ? "active" : "stopped",
-        occurredAt,
-        context.organizationId,
-        context.ownerUserId,
-        admitted.streamId,
-      )
-    return pending(
-      "attempt_admitted",
-      "attempt",
-      admitted.attemptId,
-      {
-        attemptId: admitted.attemptId,
-        workItemId: command.workItemId,
-        leaseEpoch: admitted.leaseEpoch,
-      },
-      admitted.streamId,
-    )
-  }
-  if (command.type === "retry_work_item") {
+  if (command.type === "approve_work_item") {
+    if (context.actor.type !== "user")
+      return rejected(request.operationId, "forbidden", "Only the owner can approve tasks")
     const item = ownedWorkItem(database, context, command.workItemId)
     if (!item) return rejected(request.operationId, "not_found", "Work Item not found")
     if (item.row_version !== command.expectedVersion)
       return rejected(request.operationId, "version_conflict", "Work Item version changed")
-    const previous = database
+    if (item.lifecycle !== "pending_approval")
+      return rejected(request.operationId, "invalid_transition", "Task is not awaiting approval")
+    const changed = database
       .prepare(
         `
-      SELECT execution_mode FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND work_item_id = ?
-      ORDER BY attempt_number DESC LIMIT 1
+      UPDATE wg_v2_work_items SET lifecycle = 'pending', row_version = row_version + 1, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND lifecycle = 'pending_approval'
     `,
       )
-      .get(context.organizationId, context.ownerUserId, command.workItemId) as
-      | { execution_mode: ExecutionMode | null }
-      | undefined
-    if (!previous?.execution_mode)
-      return rejected(request.operationId, "validation_error", "Retry requires an explicitly stored execution mode")
-    const admitted = admitAttempt(
-      database,
-      context,
-      command.workItemId,
-      previous.execution_mode,
-      occurredAt,
-      ids,
-      capabilities,
-    )
-    if (!admitted.ok) return rejected(request.operationId, admitted.code, admitted.message)
-    database
-      .prepare(
-        `
-      UPDATE wg_v2_streams SET execution_mode = ?, execution_state = ?, updated_at = ?
-      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-    `,
-      )
-      .run(
-        previous.execution_mode,
-        previous.execution_mode === "autonomous" ? "active" : "stopped",
-        occurredAt,
-        context.organizationId,
-        context.ownerUserId,
-        admitted.streamId,
-      )
+      .run(occurredAt, context.organizationId, context.ownerUserId, command.workItemId, command.expectedVersion)
+    if (changed.changes !== 1) return rejected(request.operationId, "version_conflict", "Work Item version changed")
     return pending(
-      "attempt_admitted",
-      "attempt",
-      admitted.attemptId,
-      {
-        attemptId: admitted.attemptId,
-        workItemId: command.workItemId,
-        leaseEpoch: admitted.leaseEpoch,
-      },
-      admitted.streamId,
+      "work_item_approved",
+      "work_item",
+      command.workItemId,
+      { workItemId: command.workItemId, version: item.row_version + 1 },
+      item.stream_id,
     )
   }
-  if (command.type === "execute_stream") {
-    const stream = ownedStream(database, context, command.streamId)
-    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
-    if (stream.lifecycle === "paused")
-      return rejected(request.operationId, "blocked", "Paused Streams do not admit new Attempts")
-    if (stream.lifecycle === "closed")
-      return rejected(request.operationId, "invalid_transition", "Closed Streams do not execute")
-    const rows = database
+  if (command.type === "reject_work_item") {
+    if (context.actor.type !== "user")
+      return rejected(request.operationId, "forbidden", "Only the owner can reject tasks")
+    const item = ownedWorkItem(database, context, command.workItemId)
+    if (!item) return rejected(request.operationId, "not_found", "Work Item not found")
+    if (item.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Work Item version changed")
+    if (item.lifecycle !== "pending_approval")
+      return rejected(request.operationId, "invalid_transition", "Task is not awaiting approval")
+    const changed = database
       .prepare(
         `
-      SELECT items.id FROM wg_v2_work_items items
-      WHERE items.organization_id = ? AND items.owner_user_id = ? AND items.stream_id = ?
-        AND items.lifecycle = 'pending'
-        AND NOT EXISTS (
-          SELECT 1 FROM wg_v2_work_item_dependencies dependencies
-          JOIN wg_v2_work_items blockers ON blockers.organization_id = dependencies.organization_id AND blockers.owner_user_id = dependencies.owner_user_id
-            AND blockers.id = dependencies.depends_on_work_item_id
-          WHERE dependencies.organization_id = items.organization_id AND dependencies.owner_user_id = items.owner_user_id AND dependencies.work_item_id = items.id
-            AND blockers.lifecycle <> 'completed'
-        )
-      ORDER BY items.priority DESC, items.created_at, items.id
-    `,
-      )
-      .all(context.organizationId, context.ownerUserId, command.streamId) as Array<{ id: WorkItemID }>
-    const results = rows.map((row) =>
-      admitAttempt(database, context, row.id, command.executionMode, occurredAt, ids, capabilities),
-    )
-    const admissions = results.filter((result) => result.ok)
-    if (admissions.length === 0) {
-      const failure = results.find((result) => !result.ok)
-      return failure
-        ? rejected(request.operationId, failure.code, failure.message)
-        : rejected(request.operationId, "blocked", "No ready Work Items can be admitted")
-    }
-    database
-      .prepare(
-        `
-      UPDATE wg_v2_streams SET execution_mode = ?, execution_state = ?, updated_at = ?
-      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      UPDATE wg_v2_work_items SET lifecycle = 'abandoned', abandoned_reason = ?, abandoned_at = ?,
+        row_version = row_version + 1, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND lifecycle = 'pending_approval'
     `,
       )
       .run(
-        command.executionMode,
-        command.executionMode === "autonomous" ? "active" : "stopped",
+        command.reason,
+        occurredAt,
         occurredAt,
         context.organizationId,
         context.ownerUserId,
-        command.streamId,
+        command.workItemId,
+        command.expectedVersion,
       )
+    if (changed.changes !== 1) return rejected(request.operationId, "version_conflict", "Work Item version changed")
     return pending(
-      "stream_execution_requested",
-      "stream",
-      command.streamId,
-      { attemptIds: admissions.map((result) => result.attemptId) },
-      command.streamId,
+      "work_item_rejected",
+      "work_item",
+      command.workItemId,
+      { workItemId: command.workItemId, reason: command.reason },
+      item.stream_id,
+    )
+  }
+  if (command.type === "approve_work_items") {
+    if (context.actor.type !== "user")
+      return rejected(request.operationId, "forbidden", "Only the owner can approve tasks")
+    // Per-entry CAS `pending_approval -> pending`. Partial success by design: one
+    // stale or missing task never blocks the rest. A server-side "approve
+    // everything staged" sweep is forbidden — the client sends the exact
+    // row_versions it rendered so it never approves an unseen edit.
+    const results = command.approvals.map((approval) => {
+      const item = ownedWorkItem(database, context, approval.workItemId)
+      if (!item) return { workItemId: approval.workItemId, outcome: "not_found" as const }
+      if (item.row_version !== approval.expectedVersion)
+        return { workItemId: approval.workItemId, outcome: "version_conflict" as const }
+      if (item.lifecycle !== "pending_approval")
+        return { workItemId: approval.workItemId, outcome: "not_staged" as const }
+      const changed = database
+        .prepare(
+          `
+        UPDATE wg_v2_work_items SET lifecycle = 'pending', row_version = row_version + 1, updated_at = ?
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND lifecycle = 'pending_approval'
+      `,
+        )
+        .run(occurredAt, context.organizationId, context.ownerUserId, approval.workItemId, approval.expectedVersion)
+      if (changed.changes !== 1)
+        return { workItemId: approval.workItemId, outcome: "version_conflict" as const }
+      return { workItemId: approval.workItemId, outcome: "approved" as const, version: item.row_version + 1 }
+    })
+    return pending("work_item_approved", "workgraph", rootId, { results })
+  }
+  if (command.type === "retry_work_item") {
+    // Pure CAS-guarded `failed -> pending` flip. Approval is preserved by
+    // construction (the retry edge never passes through `pending_approval`). The
+    // drain re-admits the item once the Stream is active and its hold clears.
+    const item = ownedWorkItem(database, context, command.workItemId)
+    if (!item) return rejected(request.operationId, "not_found", "Work Item not found")
+    if (item.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Work Item version changed")
+    if (item.lifecycle !== "failed")
+      return rejected(request.operationId, "invalid_transition", "Only a failed Work Item can be retried")
+    const changed = database
+      .prepare(
+        `
+      UPDATE wg_v2_work_items SET lifecycle = 'pending', row_version = row_version + 1, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND lifecycle = 'failed'
+    `,
+      )
+      .run(occurredAt, context.organizationId, context.ownerUserId, command.workItemId, command.expectedVersion)
+    if (changed.changes !== 1) return rejected(request.operationId, "version_conflict", "Work Item version changed")
+    return pending(
+      "work_item_state_changed",
+      "work_item",
+      command.workItemId,
+      { workItemId: command.workItemId, state: "pending" },
+      item.stream_id,
     )
   }
   if (command.type === "cancel_attempt") {
@@ -3448,7 +3373,6 @@ function createQueries(database: Database, clock: Readonly<{ now: () => number }
           ...readWorkItemRecords(database, context),
           ...readAttemptRecords(database, context),
           ...readDecisionRecords(database, context),
-          ...readRecapRecords(database, context),
           ...readAdmissionRecords(database, context),
         ].sort(compareSnapshotCursorPosition)
         const offset = resume.offset
@@ -3513,10 +3437,6 @@ function createQueries(database: Database, clock: Readonly<{ now: () => number }
     decisions: {
       read: async (context: WorkGraphContext, input: Readonly<{ decisionId: string }>) =>
         readDecisionRecords(database, context, input.decisionId)[0],
-    },
-    recaps: {
-      read: async (context: WorkGraphContext, input: Readonly<{ recapId: string }>) =>
-        readRecapRecords(database, context, input.recapId)[0],
     },
     sources: {
       list: async (context: WorkGraphContext, input: Readonly<{ after?: WorkSourcePageCursor; limit: number }>) => {
@@ -3810,7 +3730,6 @@ export function readSqliteWorkGraphPublicRecords(databaseInput: SqliteInput, con
     ...readWorkItemRecords(database, context),
     ...readAttemptRecords(database, context),
     ...readDecisionRecords(database, context),
-    ...readRecapRecords(database, context),
     ...readAdmissionRecords(database, context),
   ] satisfies WorkGraphPublicRecord[]
 }
@@ -3922,32 +3841,6 @@ function readStreamRecords(database: Database, context: WorkGraphContext, stream
         .all(...parameters) as Array<{ stream_id: string; count: number }>
     ).map((row) => [row.stream_id, row.count]),
   )
-  const latestRecaps = new Map<string, string>()
-  const recaps = database
-    .prepare(
-      `
-    SELECT id, stream_id, generation_result_json FROM wg_v2_recaps
-    WHERE organization_id = ? AND owner_user_id = ? ${streamId ? "AND stream_id = ?" : ""}
-    ORDER BY stream_id, activity_end_sequence DESC, id DESC
-  `,
-    )
-    .all(...parameters) as Array<{ id: string; stream_id: string; generation_result_json: string }>
-  recaps.forEach((recap) => {
-    if (latestRecaps.has(recap.stream_id)) return
-    const generation = JSON.parse(recap.generation_result_json) as {
-      state?: unknown
-      method?: unknown
-      sessionId?: unknown
-    }
-    if (
-      generation.state === "succeeded" &&
-      generation.method === "agent_session" &&
-      typeof generation.sessionId === "string" &&
-      generation.sessionId.trim()
-    ) {
-      latestRecaps.set(recap.stream_id, recap.id)
-    }
-  })
   const provenance = new Map<string, ReturnType<typeof recordProvenance>>()
   const provenanceRows = database
     .prepare(
@@ -4009,10 +3902,6 @@ function readStreamRecords(database: Database, context: WorkGraphContext, stream
   })
   return rows.map((row) => {
     const activityAt = Number(row.last_activity_at ?? row.updated_at)
-    const recapDefaults = RecapProfileDefaultsSchema.parse(JSON.parse(row.recap_defaults_json))
-    const recapQuietHours = recapDefaults.model && recapDefaults.effort ? (recapDefaults.quietHours ?? 0) : 0
-    const memory = JSON.parse(row.memory_card_json) as { summary?: unknown }
-    const latestRecap = latestRecaps.get(row.id)
     return StreamDtoSchema.parse({
       recordType: "stream",
       schemaVersion: 1,
@@ -4028,14 +3917,8 @@ function readStreamRecords(database: Database, context: WorkGraphContext, stream
       visibility: row.visibility,
       pinned: !!row.pinned,
       executionDefaults: JSON.parse(row.execution_defaults_json),
-      recapDefaults,
       activityGranularity: row.activity_granularity,
-      ...(typeof memory.summary === "string" && memory.summary.trim() ? { memory } : {}),
-      activity: {
-        lastActivityAt: activityAt,
-        recapDueAt: activityAt + recapQuietHours * 60 * 60 * 1000,
-        ...(latestRecap ? { lastRecapId: latestRecap } : {}),
-      },
+      activity: { lastActivityAt: activityAt },
       ...(row.replacement_reset_json ? { replacementReset: JSON.parse(row.replacement_reset_json) } : {}),
       durableEffectCount: durableEffects.get(row.id) ?? 0,
       sourceRevisionRefs: sourceRefs.get(row.id) ?? [],
@@ -4047,14 +3930,13 @@ function readWorkGraphDefaultsRecord(database: Database, context: WorkGraphConte
   const row = database
     .prepare(
       `
-    SELECT defaults_json, recap_defaults_json, row_version, created_at, updated_at
+    SELECT defaults_json, row_version, created_at, updated_at
     FROM wg_v2_workgraphs WHERE organization_id = ? AND owner_user_id = ? AND id = ?
   `,
     )
     .get(context.organizationId, context.ownerUserId, rootId) as
     | {
         defaults_json: string
-        recap_defaults_json: string
         row_version: number
         created_at: string | number
         updated_at: string | number
@@ -4071,10 +3953,7 @@ function readWorkGraphDefaultsRecord(database: Database, context: WorkGraphConte
       ? recordProvenance(database, context, "workgraph", rootId)
       : { actor: { type: "system", id: "workgraph_defaults" } },
     id: rootId,
-    defaults: {
-      execution: JSON.parse(row?.defaults_json ?? "{}"),
-      recap: JSON.parse(row?.recap_defaults_json ?? "{}"),
-    },
+    defaults: { execution: JSON.parse(row?.defaults_json ?? "{}") },
   })
 }
 
@@ -4274,93 +4153,6 @@ function readDecisionRecords(database: Database, context: WorkGraphContext, deci
   })
 }
 
-function readRecapRecords(database: Database, context: WorkGraphContext, recapId?: string) {
-  const rows = database
-    .prepare(
-      `
-    SELECT recaps.* FROM wg_v2_recaps recaps
-    WHERE recaps.organization_id = ? AND recaps.owner_user_id = ? ${recapId ? "AND recaps.id = ?" : ""} ORDER BY recaps.created_at, recaps.id
-  `,
-    )
-    .all(
-      ...(recapId
-        ? [context.organizationId, context.ownerUserId, recapId]
-        : [context.organizationId, context.ownerUserId]),
-    ) as RecapRecordRow[]
-  return rows.map((row) => {
-    const profile = JSON.parse(row.generation_profile_json) as { model?: unknown; effort?: unknown }
-    const result = JSON.parse(row.generation_result_json) as {
-      state: "succeeded" | "failed"
-      generatedAt?: number
-      failedAt?: number
-      invalidatedAt?: number
-      reason?: string
-      method?: "agent_session" | "deterministic_fallback"
-      sessionId?: string
-    }
-    const model = ModelSelectionSchema.safeParse(profile.model)
-    const effort = typeof profile.effort === "string" && profile.effort.trim() ? profile.effort : undefined
-    const nonSession = result.state === "succeeded" && (result.method === "deterministic_fallback" || !result.sessionId)
-    const completeSuccess =
-      result.state === "succeeded" && !nonSession && model.success && effort && Number.isFinite(result.generatedAt)
-    const completeFailure =
-      result.state === "failed" &&
-      model.success &&
-      effort &&
-      typeof result.reason === "string" &&
-      result.reason.trim() &&
-      (Number.isFinite(result.failedAt) || Number.isFinite(result.invalidatedAt))
-    const invalidated = !completeSuccess && !completeFailure
-    return RecapDtoSchema.parse({
-      recordType: "recap",
-      schemaVersion: 1,
-      ownerUserId: context.ownerUserId,
-      version: 1,
-      createdAt: Number(row.created_at),
-      updatedAt: Number(row.created_at),
-      provenance: JSON.parse(row.provenance_json),
-      id: row.id,
-      streamId: row.stream_id,
-      ...(row.previous_recap_id ? { previousRecapId: row.previous_recap_id } : {}),
-      activityRange: {
-        fromSequence: row.activity_start_sequence,
-        toSequence: row.activity_end_sequence,
-        quietSince: Number(row.quiet_since),
-      },
-      summary: row.summary,
-      actionableReferences: invalidated ? [] : JSON.parse(row.actionable_references_json),
-      generation: invalidated
-        ? {
-            state: "invalidated",
-            ...(model.success ? { model: model.data } : {}),
-            ...(effort ? { effort } : {}),
-            reason: nonSession
-              ? "Retired deterministic Recap fallback is non-authoritative"
-              : "Incomplete legacy Recap generation metadata is non-authoritative",
-            source: nonSession ? "retired_non_session_generation" : "retired_incomplete_generation",
-          }
-        : result.state === "succeeded"
-          ? {
-              state: "succeeded",
-              model: model.data!,
-              effort: effort!,
-              generatedAt: Number(result.generatedAt),
-              method: "agent_session",
-              sessionId: result.sessionId!,
-            }
-          : {
-              state: "failed",
-              model: model.data!,
-              effort: effort!,
-              ...(result.failedAt === undefined ? {} : { failedAt: Number(result.failedAt) }),
-              ...(result.invalidatedAt === undefined ? {} : { invalidatedAt: Number(result.invalidatedAt) }),
-              reason: result.reason!,
-            },
-      sourceRevisionRefs: readSourceRefs(database, context, "recap", row.id),
-    })
-  })
-}
-
 function readAdmissionRecords(database: Database, context: WorkGraphContext, proposalId?: string) {
   const rows = database
     .prepare(
@@ -4517,37 +4309,6 @@ function sqliteAttentionItem(database: Database, context: WorkGraphContext, row:
       record: requiredAttentionRecord(readAttemptRecords(database, context, row.id), row),
     })
   }
-  if (row.kind === "recap_notification") {
-    const notification = database
-      .prepare(
-        `
-      SELECT id, owner_user_id, row_version, state, stream_id, recap_id, created_at, updated_at, read_at
-      FROM wg_v2_notifications WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-    `,
-      )
-      .get(context.organizationId, context.ownerUserId, row.id) as NotificationAttentionRow | undefined
-    if (!notification) throw new Error(`Attention notification ${row.id} disappeared during its owner-scoped read`)
-    return AttentionItemSchema.parse({
-      kind: row.kind,
-      ownerUserId: context.ownerUserId,
-      id: row.id,
-      updatedAt: row.updated_at,
-      ...read,
-      notification: WorkGraphNotificationSchema.parse({
-        id: notification.id,
-        ownerUserId: context.ownerUserId,
-        version: notification.row_version,
-        kind: "actionable_recap",
-        state: notification.state,
-        streamId: notification.stream_id,
-        recapId: notification.recap_id,
-        createdAt: Number(notification.created_at),
-        updatedAt: Number(notification.updated_at),
-        ...(notification.read_at === null ? {} : { readAt: Number(notification.read_at) }),
-      }),
-      recap: requiredAttentionRecord(readRecapRecords(database, context, notification.recap_id), row),
-    })
-  }
   if (row.kind === "unorganized_ai_work") {
     const counts = database
       .prepare(
@@ -4669,7 +4430,6 @@ function recordReference(record: WorkGraphPublicRecord): WorkGraphRecordReferenc
   if (record.recordType === "work_item") return { type: "work_item", id: record.id }
   if (record.recordType === "attempt") return { type: "attempt", id: record.id }
   if (record.recordType === "decision") return { type: "decision", id: record.id }
-  if (record.recordType === "recap") return { type: "recap", id: record.id }
   return { type: "admission_proposal", id: record.id }
 }
 
@@ -5046,14 +4806,8 @@ async function launchAttempt(
         `,
             )
             .run(context.organizationId, context.ownerUserId, row.work_item_id, attemptId, input.leaseEpoch)
-          database
-            .prepare(
-              `
-          UPDATE wg_v2_streams SET execution_state = 'stopped', updated_at = ?
-          WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND execution_mode = 'autonomous'
-        `,
-            )
-            .run(occurredAt, context.organizationId, context.ownerUserId, row.stream_id)
+          // The Stream hold is now derived per drain pass from this Attempt being
+          // in `attention`; no persisted `execution_state` write is needed.
           appendRuntimeChange(
             database,
             context,
@@ -5106,7 +4860,6 @@ function admitAttempt(
   database: Database,
   context: WorkGraphContext,
   workItemId: WorkItemID,
-  executionMode: ExecutionMode,
   occurredAt: number,
   ids: Readonly<{ next: (kind: string) => string }>,
   capabilities: ExecutionCapabilities | undefined,
@@ -5243,8 +4996,8 @@ function admitAttempt(
     .prepare(
       `
     INSERT INTO wg_v2_attempts
-      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, execution_mode, resolved_execution_profile_json, lease_epoch, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'admitted', ?, ?, ?, ?, ?)
+      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, lease_epoch, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'admitted', ?, ?, ?, ?)
   `,
     )
     .run(
@@ -5254,7 +5007,6 @@ function admitAttempt(
       row.stream_id,
       workItemId,
       attemptNumber,
-      executionMode,
       JSON.stringify(resolved.profile),
       leaseEpoch,
       occurredAt,
@@ -5408,7 +5160,7 @@ function sourcePlanningEvidence(
     database
       .prepare(
         `
-    SELECT id, title, purpose, pinned, last_activity_at, updated_at, memory_card_json
+    SELECT id, title, purpose, pinned, last_activity_at, updated_at
     FROM wg_v2_streams
     WHERE organization_id = ? AND owner_user_id = ? AND visibility = 'visible' AND lifecycle <> 'closed' ${where}
     ORDER BY CAST(COALESCE(last_activity_at, updated_at) AS INTEGER) DESC
@@ -5424,12 +5176,11 @@ function sourcePlanningEvidence(
           pinned: number
           last_activity_at: string | number | null
           updated_at: string | number
-          memory_card_json: string
         }
         return {
           id: stream.id as StreamID,
           title: stream.title,
-          summary: `${stream.purpose} ${stream.memory_card_json}`,
+          summary: stream.purpose,
           pinned: stream.pinned === 1,
           lastActivityAt: Number(stream.last_activity_at ?? stream.updated_at),
         } satisfies MatchableStream
@@ -5437,18 +5188,9 @@ function sourcePlanningEvidence(
   const recent = readStreams("", 24)
   const pinned = readStreams("AND pinned = 1", 12)
   const primary = rankStreamMatches([...recent, ...pinned], candidate, input.now)
-  const ranked =
-    primary[0]?.confidence === "high"
-      ? primary
-      : rankStreamMatches(
-          [
-            ...recent,
-            ...pinned,
-            ...readStreams("AND memory_card_json <> '{}'", 16, 24).map((stream) => ({ ...stream, memoryOnly: true })),
-          ],
-          candidate,
-          input.now,
-        )
+  const ranked = primary[0]?.confidence === "high"
+    ? primary
+    : rankStreamMatches([...recent, ...pinned, ...readStreams("", 16, 24)], candidate, input.now)
   const placementMatches = ranked.slice(0, 4).map((match) => ({
     streamId: match.streamId,
     confidence: match.confidence,
@@ -5794,14 +5536,8 @@ function completeSqlitePlacementCompensationEffect(
       `,
         )
         .run(context.organizationId, context.ownerUserId, compensation.workItemId, compensation.attemptId)
-      database
-        .prepare(
-          `
-        UPDATE wg_v2_streams SET execution_state = 'stopped', updated_at = ?
-        WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND execution_mode = 'autonomous'
-      `,
-        )
-        .run(occurredAt, context.organizationId, context.ownerUserId, compensation.streamId)
+      // The Stream hold is derived from this Attempt landing in `attention`; no
+      // persisted `execution_state` write is needed.
       appendRuntimeChange(
         database,
         context,
@@ -6314,7 +6050,7 @@ function pending(
   type: string,
   resourceType: string,
   resourceId: string,
-  value: Record<string, string | number | string[]>,
+  value: Record<string, unknown>,
   streamId?: string,
 ): PendingResult {
   return { ok: true, type, resourceType, resourceId, value, ...(streamId ? { streamId } : {}) }
@@ -6327,9 +6063,9 @@ function rejected(operationId: OperationID, code: CommandErrorCode, message: str
 function success(
   operationId: OperationID,
   cursor: ChangeCursor,
-  value: Record<string, string | number | string[]>,
+  value: Record<string, unknown>,
 ): CommandResult {
-  return { ok: true, operationId, cursor, value }
+  return { ok: true, operationId, cursor, value } as CommandResult
 }
 
 function failure(operationId: OperationID, code: CommandErrorCode, message: string, retryable = false): CommandResult {
@@ -6403,7 +6139,7 @@ type PendingResult =
       type: string
       resourceType: string
       resourceId: string
-      value: Record<string, string | number | string[]>
+      value: Record<string, unknown>
       streamId?: string
     }>
   | Readonly<{ ok: false; result: CommandResult }>
@@ -6470,7 +6206,6 @@ type ChangeRow = {
     | "attempt"
     | "decision"
     | "evidence"
-    | "recap"
     | "admission_proposal"
   resource_id: string
   change_type:
@@ -6486,7 +6221,6 @@ type ChangeRow = {
     | "stream_updated"
     | "stream_lifecycle_changed"
     | "stream_visibility_changed"
-    | "stream_execution_requested"
     | "stream_replacement_reset_completed"
     | "stream_closed"
     | "stream_deleted"
@@ -6498,7 +6232,9 @@ type ChangeRow = {
     | "work_item_created"
     | "work_item_updated"
     | "work_item_state_changed"
-    | "work_item_execution_requested"
+    | "work_item_approved"
+    | "work_item_rejected"
+    | "work_item_restaged"
     | "attempt_admitted"
     | "attempt_state_changed"
     | "attempt_completed"
@@ -6507,7 +6243,6 @@ type ChangeRow = {
     | "decision_answered"
     | "decision_dismissed"
     | "evidence_recorded"
-    | "recap_published"
   payload_json: string
   created_at: string | number
   event_id: string
@@ -6529,9 +6264,7 @@ type StreamRecordRow = {
   visibility: string
   pinned: number
   execution_defaults_json: string
-  recap_defaults_json: string
   activity_granularity: string
-  memory_card_json: string
   replacement_reset_json: string | null
   last_activity_at: string | number | null
   row_version: number
@@ -6615,27 +6348,12 @@ type AdmissionRecordRow = {
   updated_at: string | number
   source_title: string
 }
-type RecapRecordRow = {
-  id: string
-  stream_id: string
-  previous_recap_id: string | null
-  activity_start_sequence: number
-  activity_end_sequence: number
-  summary: string
-  actionable_references_json: string
-  generation_profile_json: string
-  provenance_json: string
-  generation_result_json: string
-  quiet_since: string | number | null
-  created_at: string | number
-}
 type AttentionRow = {
   kind:
     | "admission_proposal"
     | "decision"
     | "work_item"
     | "attempt"
-    | "recap_notification"
     | "unorganized_ai_work"
     | "configuration_required"
   id: string
@@ -6646,16 +6364,4 @@ type AttentionRow = {
   last_error: string | null
   payload_json: string | null
 }
-type NotificationAttentionRow = {
-  id: string
-  owner_user_id: string
-  row_version: number
-  state: string
-  stream_id: string
-  recap_id: string
-  created_at: string | number
-  updated_at: string | number
-  read_at: string | number | null
-}
-
 class AppendFailure extends Error {}

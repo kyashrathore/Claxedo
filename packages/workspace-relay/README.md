@@ -18,6 +18,74 @@ owner for sticky host tunnels, split-brain prevention, and failover. A relay
 process, VM, or region failure drops existing user-hosted HTTP, WebSocket, SSE,
 and PTY sessions until workspace runtimes reconnect.
 
+## Quickstart
+
+```sh
+bun add @claxedo/workspace-relay jose
+```
+
+The smallest runnable relay: mint an EdDSA key pair to stand in for the
+control plane's signing key, point `resolveTarget` at a cloud-VM-style
+workspace host, boot the Bun adapter, then mint a Runtime Access Token the
+way `claxedo-control-plane` would and use it to reach the target through the
+relay.
+
+```ts
+// relay.ts
+import { generateKeyPair } from "jose"
+import { createWorkspaceRelayBun, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+
+const runtimeAccessKey = await generateKeyPair("EdDSA", { extractable: true })
+const relayHostKey = await generateKeyPair("EdDSA", { extractable: true })
+
+// Stand-in workspace host: whatever the relay forwards accepted traffic to.
+const host = Bun.serve({
+  port: 0,
+  fetch: (request) => new Response(`host saw ${new URL(request.url).pathname}`),
+})
+
+const handler = createWorkspaceRelayBun({
+  runtimeAccessKey: runtimeAccessKey.publicKey,
+  relayHostSigningKey: relayHostKey.privateKey,
+  relayHostAlgorithm: "EdDSA",
+  resolveTarget: (claims) => ({
+    workspaceId: claims.workspace_id,
+    hostId: claims.host_id,
+    baseUrl: String(host.url).replace(/\/$/, ""),
+    access: "cloud",
+    backing: "cloud-vm",
+  }),
+})
+
+const relay = Bun.serve({
+  port: 7777,
+  fetch: handler.fetch,
+  websocket: handler.websocket,
+})
+
+const token = await mintRuntimeAccessToken(
+  { subject: "user_1", orgId: "org_1", workspaceId: "ws_1", hostId: "host_1", role: "editor" },
+  runtimeAccessKey.privateKey,
+  "EdDSA",
+)
+
+console.log(`relay listening on ${relay.url}`)
+console.log(`curl -H "Authorization: Bearer ${token}" ${relay.url}workspaces/ws_1/hello`)
+```
+
+```sh
+bun run relay.ts
+```
+
+Run the printed `curl` command in another terminal — the relay verifies the
+Runtime Access Token, calls `resolveTarget`, mints a Relay Host Token, and
+forwards the request; you'll see `host saw /hello` come back. This mirrors
+what [`src/main.ts`](src/main.ts) assembles for production, minus the
+env-driven resolver client, JWKS, and graceful drain — see
+[docs/architecture.md](docs/architecture.md) for how those pieces fit
+together, and the Configuration table below for the env vars that replace
+the hardcoded values above in a real deployment.
+
 ## Deployment Security
 
 The relay is a public edge service for workspace traffic, but it is not the

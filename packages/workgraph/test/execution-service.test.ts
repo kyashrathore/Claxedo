@@ -16,8 +16,7 @@ describe("durable local execution", () => {
     const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution }), "streamId")
     const workItemId = resultId(await execute(fixture, "create_work_item", { streamId, title: "Implement", completionContract: contract }), "workItemId")
 
-    const started = await execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })
-    expect(started).toMatchObject({ ok: true, value: { workItemId } })
+    // The approved Work Item is auto-admitted and launched by the drain on creation.
     expect(calls).toEqual(["envelope", "launch"])
     expect(fixture.database.prepare(`
       SELECT attempts.lifecycle, attempts.attempt_number, attempts.session_id, items.lifecycle AS item_lifecycle,
@@ -32,7 +31,8 @@ describe("durable local execution", () => {
       item_lifecycle: "active",
       resolved_execution_profile_json: JSON.stringify(execution),
     })
-    expect(await execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })).toMatchObject({ ok: false, error: { code: "blocked" } })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId))
+      .toEqual({ count: 1 })
     expect(await execute(fixture, "delete_stream", { streamId, expectedVersion: 0, reason: "Wrong version" })).toMatchObject({ ok: false, error: { code: "version_conflict" } })
     expect(calls).toEqual(["envelope", "launch"])
     expect(await execute(fixture, "delete_stream", { streamId, expectedVersion: 1, reason: "Discard" })).toMatchObject({ ok: true })
@@ -61,8 +61,8 @@ describe("durable local execution", () => {
       description: "Provider issue CLX-101 requests a launch-readiness fix.",
       completionContract: contract,
     }), "workItemId")
-
-    await execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })
+    // Auto-admitted on creation; the launch captured the Attempt prompt.
+    expect(workItemId).toBeTruthy()
 
     expect(prompt).toContain("Resolve CLX-101")
     expect(prompt).toContain("Provider issue CLX-101 requests a launch-readiness fix.")
@@ -71,30 +71,30 @@ describe("durable local execution", () => {
     expect(prompt).toContain("capability-scoped handles")
   })
 
-  it("replays an admitted operation without launching a second Session", async () => {
+  it("admits an approved item once under the lease fence without launching a second Session", async () => {
     const calls: string[] = []
     const fixture = setup(runtime(calls))
     const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution }), "streamId")
     const workItemId = resultId(await execute(fixture, "create_work_item", { streamId, title: "Implement", completionContract: contract }), "workItemId")
-    const request = { operationId: branded<OperationID>("operation_execute"), command: { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" } } as const
-    const first = await fixture.service.execute(owner(), request as never)
-    const replay = await fixture.service.execute(owner(), request as never)
-    expect(replay).toEqual(first)
+    // Auto-admitted once on creation. A later drain (triggered by any command)
+    // finds the live lease and never launches a second Session.
+    await execute(fixture, "create_stream", { title: "Trigger another drain", execution })
     expect(calls).toEqual(["envelope", "launch"])
-    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get()).toEqual({ count: 1 })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId)).toEqual({ count: 1 })
   })
 
-  it("blocks new admission while paused and retries with a new immutable Attempt number", async () => {
+  it("does not admit while paused and retries with a new immutable Attempt number after resume", async () => {
     const fixture = setup(runtime([]))
-    const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution }), "streamId")
-    const workItemId = resultId(await execute(fixture, "create_work_item", { streamId, title: "Implement", completionContract: contract }), "workItemId")
-    await execute(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 1, state: "paused", reason: "Focus" })
-    expect(await execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })).toMatchObject({ ok: false, error: { code: "blocked" } })
+    const { streamId, workItemId } = await pausedItem(fixture)
+    // Paused: the drain skips admission entirely.
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId)).toEqual({ count: 0 })
     await execute(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 2, state: "active", reason: "Resume" })
-    await execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId)).toEqual({ count: 1 })
     fixture.database.prepare("UPDATE wg_v2_attempts SET lifecycle = 'failed', finished_at = 10 WHERE work_item_id = ?").run(workItemId)
     fixture.database.prepare("DELETE FROM wg_v2_leases WHERE resource_id = ?").run(workItemId)
+    fixture.database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'failed' WHERE id = ?").run(workItemId)
     const version = (fixture.database.prepare("SELECT row_version FROM wg_v2_work_items WHERE id = ?").get(workItemId) as { row_version: number }).row_version
+    // Retry flips failed -> pending; the drain admits a second Attempt.
     expect(await execute(fixture, "retry_work_item", { workItemId, expectedVersion: version })).toMatchObject({ ok: true })
     expect(fixture.database.prepare("SELECT attempt_number FROM wg_v2_attempts WHERE work_item_id = ? ORDER BY attempt_number").all(workItemId))
       .toEqual([{ attempt_number: 1 }, { attempt_number: 2 }])
@@ -125,7 +125,7 @@ describe("durable local execution", () => {
       dependencyIds: [firstId],
       completionContract: contract,
     }), "workItemId")
-    await execute(fixture, "execute_stream", { streamId, executionMode: "autonomous" })
+    // The first wave is auto-admitted; the dependent second wave waits.
     const attempt = fixture.database.prepare(`
       SELECT id, session_id, lease_epoch FROM wg_v2_attempts WHERE work_item_id = ?
     `).get(firstId) as { id: AttemptID; session_id: string; lease_epoch: number }
@@ -183,7 +183,7 @@ describe("durable local execution", () => {
       title: "Verify",
       completionContract: contract,
     }), "workItemId")
-    await execute(fixture, "execute_work_item", { workItemId, executionMode: "supervised" })
+    // Auto-admitted on creation.
     const attempt = fixture.database.prepare(`
       SELECT id, session_id, lease_epoch FROM wg_v2_attempts WHERE work_item_id = ?
     `).get(workItemId) as { id: AttemptID; session_id: string; lease_epoch: number }
@@ -213,9 +213,9 @@ describe("durable local execution", () => {
         return new Promise((_resolve, reject) => { failProvision = reject })
       },
     })
-    const streamId = resultId(await execute(fixture, "create_stream", { title: "Recover", execution }), "streamId")
-    const workItemId = resultId(await execute(fixture, "create_work_item", { streamId, title: "Recover safely", completionContract: contract }), "workItemId")
-    const admission = execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })
+    const { streamId, workItemId } = await pausedItem(fixture)
+    // Resuming admits the item and enters provisioning (which blocks).
+    const admission = execute(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 2, state: "active", reason: "Run" })
     await started
     const attempt = fixture.database.prepare("SELECT id FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId) as { id: AttemptID }
     await expect(fixture.attemptRuntime.renewLease(owner(), {
@@ -303,6 +303,21 @@ function resultId(result: Awaited<ReturnType<typeof execute>>, key: string) {
 }
 function branded<Type = string>(value: string) { return value as Type }
 function owner(): WorkGraphContext {
-  return { organizationId: "organization" as never, ownerUserId: branded("owner"), actor: { type: "agent", id: branded("agent") }, requestId: branded("request"), access: { mode: "owner" } }
+  return { organizationId: "organization" as never, ownerUserId: branded("owner"), actor: { type: "user", id: branded("owner") }, requestId: branded("request"), access: { mode: "owner" } }
+}
+/** Reads the auto-admitted Attempt id for a Work Item (the drain admits it on creation). */
+function attemptFor(fixture: ReturnType<typeof setup>, workItemId: string) {
+  const row = fixture.database
+    .prepare("SELECT id FROM wg_v2_attempts WHERE work_item_id = ? ORDER BY attempt_number DESC LIMIT 1")
+    .get(workItemId) as { id: string } | undefined
+  if (!row) throw new Error(`No admitted Attempt for ${workItemId}`)
+  return row.id
+}
+/** Creates an approved Work Item in a paused Stream (not auto-admitted). */
+async function pausedItem(fixture: ReturnType<typeof setup>) {
+  const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution }), "streamId")
+  await execute(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 1, state: "paused", reason: "Hold" })
+  const workItemId = resultId(await execute(fixture, "create_work_item", { streamId, title: "Implement", completionContract: contract }), "workItemId")
+  return { streamId, workItemId }
 }
 import { testExecutionCapabilities } from "./test-execution-capabilities"

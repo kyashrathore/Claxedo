@@ -276,4 +276,52 @@ describe("createSessionRoutes directory-less sessions", () => {
       { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
     ])
   })
+
+  test("preserves the cause instead of flattening a failed turn to 'Stream error'", async () => {
+    const events: CompatEnvelope[] = []
+    const runtime = {
+      turns: {
+        start: async () => {
+          throw new Error("thread not found: 019f73fb-ef5d-7fd0-9011-124481bc6ef0")
+        },
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: (event) => events.push(event),
+    })
+
+    const res = await app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      body: JSON.stringify({
+        agent: "build",
+        model: { providerID: "test", modelID: "fixture" },
+        parts: [{ type: "text", text: "hello" }],
+      }),
+    })
+
+    // prompt_async is fire-and-forget: the route acknowledges immediately.
+    expect(res.status).toBe(204)
+    // Let the detached turn run its catch/finally and publish its failure.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const sessionErrors = events.filter((event) => event.payload.type === "session.error")
+    expect(sessionErrors.length).toBeGreaterThan(0)
+    for (const event of sessionErrors) {
+      const error = (event.payload as { properties: { error: { data?: { message?: string; firstTurnErrorClass?: string } } } })
+        .properties.error
+      // The real cause survives — never the literal "Stream error".
+      expect(error.data?.message).not.toBe("Stream error")
+      expect(error.data?.message).toContain("thread not found")
+      // And it now classifies (a lost thread → session recovery, not the old workspace fallback).
+      expect(error.data?.firstTurnErrorClass).toBe("session")
+    }
+  })
 })

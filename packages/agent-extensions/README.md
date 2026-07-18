@@ -161,3 +161,10 @@ from target files. Third-party packages are always materialized verbatim.
 
 Run `agent-extensions doctor` to inspect desired state, locks, cache roots, and
 materialized paths.
+
+## Learn More
+
+- [Architecture](docs/architecture.md) — the install → lock → materialize →
+  replay data flow, the four runner materializers, and the state-locking
+  mechanism
+- [Package source](https://github.com/kyashrathore/Claxedo/tree/dev/packages/agent-extensions)

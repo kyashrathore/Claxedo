@@ -56,6 +56,26 @@ describe("cursorSdkAdapter", () => {
     }).events).toMatchObject([{ type: "thinking-delta", delta: "ing" }])
   })
 
+  test("maps usage messages", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "cursor.sdk.message",
+      payload: {
+        type: "usage",
+        agent_id: "agent-1",
+        run_id: "run-1",
+        usage: {
+          inputTokens: 120,
+          outputTokens: 30,
+          cacheReadTokens: 40,
+          cacheWriteTokens: 10,
+          totalTokens: 200,
+        },
+      },
+    }).events).toMatchObject([{ type: "usage", contextSize: 200, contextUsed: 200 }])
+  })
+
   test("maps tool call lifecycle events", () => {
     const agent = runtime()
 

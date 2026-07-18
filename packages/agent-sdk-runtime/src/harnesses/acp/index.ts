@@ -67,6 +67,7 @@ import type {
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { extractAgents } from "./session"
 import { listCommands } from "../../command-discovery"
+import { firstTurnErrorData } from "../../first-turn-error"
 import { Log } from "../../log"
 import { ACP_RECOVER } from "./recovery"
 import { recovering } from "../../status"
@@ -1094,7 +1095,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         completed: Date.now(),
         error: {
           name: "UnknownError",
-          data: { message: promptError },
+          data: firstTurnErrorData(promptError),
         },
         variant: input.variant,
       }))

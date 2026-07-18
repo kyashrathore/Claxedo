@@ -1,6 +1,6 @@
 {
   "package": "@claxedo/agent-event-runtime",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "rootPolicy": "stable canonical event contracts and harness-agnostic runtime primitives only",
   "stabilityLabels": {
     "stable": "Intended public API for external hosts.",

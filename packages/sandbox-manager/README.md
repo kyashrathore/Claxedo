@@ -13,6 +13,55 @@ The package owns the generic pieces:
 
 It deliberately does not own Claxedo product auth, billing, Convex schema, SQLite app storage, routes, or relay tokens. Applications provide those through adapters and call `createSandboxManager`.
 
+## Install
+
+```sh
+npm install @claxedo/sandbox-manager
+```
+
+## Quickstart
+
+A `SandboxManager` is three parts wired together: a `SandboxLeaseStore` (where
+lease state lives), a `SandboxDriver` (how a sandbox is actually placed), and
+`createSandboxManager` (the epoch/retry orchestration on top of both). This
+example uses the in-memory lease store and the Docker driver, so it runs
+end-to-end with only a local Docker daemon — no provider account needed:
+
+```ts
+import { createSandboxManager } from "@claxedo/sandbox-manager"
+import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
+import { createDockerSandboxDriver } from "@claxedo/sandbox-manager/drivers/docker"
+import { SANDBOX_IMAGE } from "@claxedo/sandbox-manager/image"
+
+const manager = createSandboxManager({
+  leaseStore: createMemoryLeaseStore(),
+  driver: createDockerSandboxDriver({ image: SANDBOX_IMAGE }),
+})
+
+const result = await manager.ensure("workspace-1", { homeRegion: "local" })
+
+if (result.status === "ready") {
+  console.log(`sandbox ready at ${result.url} (sandboxId: ${result.sandboxId})`)
+} else if (result.status === "provisioning") {
+  console.log(`still provisioning, retry in ${result.retryAfterMs}ms`)
+} else {
+  console.error(`unavailable: ${result.error}`)
+}
+
+// Later, on the same workspace: `ensure` re-resolves the existing lease
+// instead of placing a new sandbox.
+await manager.stop("workspace-1")
+```
+
+Swap `createDockerSandboxDriver` for `createDaytonaSandboxDriver`,
+`createModalSandboxDriver`, `createVercelSandboxDriver`,
+`createCloudflareSandboxDriver`, or `createBoxSandboxDriver` (all under
+`@claxedo/sandbox-manager/drivers/*`) to place on a hosted provider instead —
+see [`docs/architecture.md`](docs/architecture.md) for the full driver
+comparison and each provider's required options. Swap `createMemoryLeaseStore`
+for a persisted `SandboxLeaseStore` implementation (e.g. backed by SQLite or
+Convex) to survive process restarts.
+
 ## Credentials & secrets
 
 There are two distinct channels for getting values into a sandbox, chosen by

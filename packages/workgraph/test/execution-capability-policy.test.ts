@@ -13,7 +13,6 @@ import {
 } from "../src/contracts"
 import {
   validateExecutionProfileDefaultsAgainstCapabilities,
-  validateRecapProfileDefaultsAgainstCapabilities,
   validateResolvedExecutionProfileAgainstCapabilities,
   type ExecutionProfileCapabilityDiagnosticReason,
   type ExecutionProfileCapabilityValidation,
@@ -98,23 +97,6 @@ describe("ExecutionProfileCapabilityPolicy", () => {
     expect(legacy.environments.every((environment) => !("cleanup" in environment))).toBe(true)
     expect(legacy.environments.every((environment) => !("integration" in environment))).toBe(true)
     expect(legacy.environments.every((environment) => !("isolation" in environment))).toBe(true)
-  })
-
-  it("validates an explicit Stream Recap model and effort against the exact tenant catalog", () => {
-    expect(validateRecapProfileDefaultsAgainstCapabilities({
-      organizationId,
-      ownerUserId,
-      now: observedAt,
-      capabilities,
-      profile: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
-    })).toEqual({ ok: true })
-    expect(reasons(validateRecapProfileDefaultsAgainstCapabilities({
-      organizationId,
-      ownerUserId,
-      now: observedAt,
-      capabilities,
-      profile: { model: { providerId: "openai", modelId: "missing" }, effort: "high", quietHours: 8 },
-    }))).toEqual(expect.arrayContaining(["unsupported_model", "unsupported_effort"]))
   })
 
   it.each([

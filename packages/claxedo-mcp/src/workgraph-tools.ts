@@ -17,8 +17,6 @@ import {
   ExecutionProfileDefaultsSchema,
   IntakeCandidateDtoSchema,
   IntakeCandidatePageSchema,
-  RecapDtoSchema,
-  RecapProfileDefaultsSchema,
   ResolvedExecutionProfileSchema,
   SessionBindingDtoSchema,
   SourceViewDtoSchema,
@@ -31,8 +29,6 @@ import {
   WorkSourceDtoSchema,
   WorkSourceRevisionDtoSchema,
   WorkGraphDefaultsSchema,
-  WorkGraphNotificationPageSchema,
-  WorkGraphNotificationSchema,
   WorkGraphSnapshotPageSchema,
   WorkItemAttemptPageSchema,
   WorkItemDtoSchema,
@@ -56,8 +52,6 @@ export type EmbeddedWorkGraphTransport = Readonly<{
   readExecutionCapabilities?(input?: Readonly<{ directory?: string }>): Promise<unknown>
   refreshExecutionCapabilities?(): Promise<unknown>
   listAttention?(input: Readonly<{ after?: string; limit: number }>): Promise<unknown>
-  listNotifications?(input: Readonly<{ after?: string; limit: number; state?: "unread" | "read" }>): Promise<unknown>
-  markNotificationRead?(notificationId: string, expectedVersion: number): Promise<unknown>
   listSources?(input: Readonly<{ after?: string; limit: number }>): Promise<unknown>
   readSource?(workSourceId: string): Promise<unknown>
   readSourceRevision?(workSourceId: string, revisionId: string): Promise<unknown>
@@ -67,7 +61,6 @@ export type EmbeddedWorkGraphTransport = Readonly<{
   listWorkItemActivity?(workItemId: string, input: Readonly<{ granularity: "milestones" | "progress" | "detailed"; after?: string; limit: number }>): Promise<unknown>
   readAttempt?(attemptId: string): Promise<unknown>
   readDecision?(decisionId: string): Promise<unknown>
-  readRecap?(recapId: string): Promise<unknown>
   readEvidence?(evidenceId: string): Promise<unknown>
   listEvidence?(input: Readonly<{ subject: unknown; after?: string; limit: number }>): Promise<unknown>
   listSourceViews?(): Promise<unknown>
@@ -122,6 +115,13 @@ export class WorkGraphSessionAttachmentDeniedError extends Error {
 }
 
 const operation = { operation_id: z.string().describe("Unique idempotency key for this mutation.") }
+const STAGED_APPROVAL_NOTE = " Tasks you create enter Staged and do not run until the owner approves them."
+const CREATE_TOOLS_WITH_STAGED_APPROVAL = new Set<keyof typeof WORKGRAPH_TOOL_SCHEMAS>([
+  "workgraph_create_task",
+  "workgraph_create_outcome",
+  "workgraph_create_work",
+  "workgraph_create_followup",
+])
 const sourceRef = {
   work_source_id: z.string(),
   revision_id: z.string(),
@@ -143,8 +143,6 @@ export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "Read live execution capabilities", tool: "workgraph_execution_capabilities", mutating: false },
   { uiAction: "Refresh live execution capabilities", tool: "workgraph_refresh_execution_capabilities", mutating: true },
   { uiAction: "List work requiring owner attention", tool: "workgraph_attention", mutating: false },
-  { uiAction: "List WorkGraph notifications", tool: "workgraph_notifications", mutating: false },
-  { uiAction: "Mark a WorkGraph notification read", tool: "workgraph_mark_notification_read", mutating: true },
   { uiAction: "List or inspect WorkGraph", tool: "workgraph_list", mutating: false },
   { uiAction: "Get a WorkGraph record", tool: "workgraph_get", mutating: false },
   { uiAction: "Read an exact Work Source revision", tool: "workgraph_source_revision", mutating: false },
@@ -174,7 +172,6 @@ export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "Stage an intake candidate and create its bounded admission proposal", tool: "workgraph_stage_candidate", mutating: true },
   { uiAction: "Dismiss or restore an intake candidate", tool: "workgraph_update_candidate", mutating: true },
   { uiAction: "Announce a meaningful result through its Connection", tool: "workgraph_sync_candidate", mutating: true },
-  { uiAction: "Execute work", tool: "workgraph_execute", mutating: true },
   { uiAction: "Update Stream execution defaults", tool: "workgraph_update_execution", mutating: true },
   { uiAction: "Retry a Work Item", tool: "workgraph_retry", mutating: true },
   { uiAction: "Cancel a Work Item", tool: "workgraph_cancel_work", mutating: true },
@@ -188,7 +185,6 @@ export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "List or inspect evidence", tool: "workgraph_evidence", mutating: false },
   { uiAction: "List a Work Item's Attempts", tool: "workgraph_attempts", mutating: false },
   { uiAction: "Read a Task's bounded activity", tool: "workgraph_activity", mutating: false },
-  { uiAction: "Read a Recap", tool: "workgraph_recap", mutating: false },
   { uiAction: "Close a Stream or Outcome", tool: "workgraph_close", mutating: true },
   { uiAction: "Delete an eligible Stream", tool: "workgraph_delete", mutating: true },
 ] as const
@@ -199,17 +195,15 @@ export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_execution_capabilities: { directory: z.string().optional() },
   workgraph_refresh_execution_capabilities: {},
   workgraph_attention: { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
-  workgraph_notifications: { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional(), state: z.enum(["unread", "read"]).optional() },
-  workgraph_mark_notification_read: { notification_id: z.string(), expected_version: z.number().int().positive() },
-  workgraph_list: { kind: z.enum(["streams", "sources", "work", "decisions", "recaps"]), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
-  workgraph_get: { record_type: z.enum(["source", "stream", "outcome", "work_item", "attempt", "decision", "recap", "proposal"]), id: z.string() },
+  workgraph_list: { kind: z.enum(["streams", "sources", "work", "decisions"]), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
+  workgraph_get: { record_type: z.enum(["source", "stream", "outcome", "work_item", "attempt", "decision", "proposal"]), id: z.string() },
   workgraph_source_revision: { work_source_id: z.string(), revision_id: z.string() },
   workgraph_source: { ...operation, action: z.enum(["create", "revise"]), title: z.string().optional(), content: z.string(), work_source_id: z.string().optional(), expected_revision_id: z.string().optional() },
-  workgraph_create_stream: { ...operation, title: z.string(), description: z.string().optional(), source: z.object(sourceRef).optional(), execution: ExecutionProfileDefaultsSchema.optional(), recap: RecapProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
+  workgraph_create_stream: { ...operation, title: z.string(), description: z.string().optional(), source: z.object(sourceRef).optional(), execution: ExecutionProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
   workgraph_create_outcome: { ...operation, stream_id: z.string(), title: z.string(), description: z.string().optional(), success_criteria: z.array(z.string()).min(1), execution: ExecutionProfileDefaultsSchema.optional() },
   workgraph_create_task: { ...operation, stream_id: z.string(), title: z.string(), description: z.string().optional(), outcome_id: z.string().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), source: z.object(sourceRef).optional(), completion_contract: CompletionContractSchema, execution: ExecutionProfileDefaultsSchema.optional() },
   workgraph_create_work: { ...operation, kind: z.enum(["outcome", "work_item"]), stream_id: z.string(), title: z.string(), description: z.string().optional(), outcome_id: z.string().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), source: z.object(sourceRef).optional(), success_criteria: z.array(z.string()).min(1).optional(), completion_contract: CompletionContractSchema.optional(), execution: ExecutionProfileDefaultsSchema.optional() },
-  workgraph_update: { ...operation, target_type: z.enum(["stream", "outcome", "work_item"]), target_id: z.string(), expected_version: z.number().int().positive(), title: z.string().optional(), description: z.string().optional(), success_criteria: z.array(z.string()).min(1).optional(), outcome_id: z.string().nullable().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), completion_contract: CompletionContractSchema.optional(), execution: ExecutionProfileDefaultsSchema.optional(), recap: RecapProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
+  workgraph_update: { ...operation, target_type: z.enum(["stream", "outcome", "work_item"]), target_id: z.string(), expected_version: z.number().int().positive(), title: z.string().optional(), description: z.string().optional(), success_criteria: z.array(z.string()).min(1).optional(), outcome_id: z.string().nullable().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), completion_contract: CompletionContractSchema.optional(), execution: ExecutionProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
   workgraph_bind_session: { ...operation, stream_id: z.string() },
   workgraph_current_work: {},
   workgraph_select_work: { ...operation, work_item_id: z.string() },
@@ -230,8 +224,7 @@ export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_stage_candidate: { candidate_id: z.string() },
   workgraph_update_candidate: { action: z.enum(["dismiss", "restore"]), candidate_id: z.string(), expected_version: z.number().int().positive() },
   workgraph_sync_candidate: { candidate_id: z.string(), idempotency_key: z.string(), summary: z.string(), status: z.string().optional() },
-  workgraph_execute: { ...operation, target_type: z.enum(["stream", "work_item"]), target_id: z.string(), mode: z.enum(["autonomous", "supervised"]) },
-  workgraph_update_execution: { ...operation, target_type: z.enum(["stream", "outcome", "work_item"]).optional(), target_id: z.string().optional(), stream_id: z.string().optional(), expected_version: z.number().int().nonnegative(), execution: ExecutionProfileDefaultsSchema, recap: RecapProfileDefaultsSchema.optional() },
+  workgraph_update_execution: { ...operation, target_type: z.enum(["stream", "outcome", "work_item"]).optional(), target_id: z.string().optional(), stream_id: z.string().optional(), expected_version: z.number().int().nonnegative(), execution: ExecutionProfileDefaultsSchema },
   workgraph_retry: { ...operation, work_item_id: z.string(), expected_version: z.number().int().nonnegative() },
   workgraph_cancel_work: { ...operation, work_item_id: z.string(), expected_version: z.number().int().nonnegative(), reason: z.string() },
   workgraph_stream_lifecycle: { ...operation, stream_id: z.string(), expected_version: z.number().int().nonnegative(), state: z.enum(["active", "paused", "closed", "reopened"]), reason: z.string() },
@@ -244,7 +237,6 @@ export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_evidence: { action: z.enum(["list", "get"]), subject: EvidenceSubjectSchema.optional(), evidence_id: z.string().optional(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
   workgraph_attempts: { work_item_id: z.string(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
   workgraph_activity: { work_item_id: z.string(), granularity: StreamActivityGranularitySchema.optional(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
-  workgraph_recap: { action: z.literal("get").optional(), stream_id: z.string().optional(), recap_id: z.string().optional() },
   workgraph_close: { ...operation, target_type: z.enum(["stream", "outcome"]), target_id: z.string(), expected_version: z.number().int().nonnegative(), reason: z.string() },
   workgraph_delete: { ...operation, stream_id: z.string(), expected_version: z.number().int().nonnegative(), reason: z.string() },
 } satisfies Record<(typeof WORKGRAPH_CAPABILITY_MAP)[number]["tool"], Record<string, z.ZodType>>
@@ -270,7 +262,7 @@ export function registerWorkGraphTools(
     .filter((capability) => typeof transport === "function" || embeddedSupports(transport, capability.tool))
     .forEach((capability) => register(
       capability.tool,
-      { description: `[WorkGraph] ${capability.uiAction}. The server derives the organization and user from trusted request context; results include the same record and change cursor used by the app.`, inputSchema: WORKGRAPH_TOOL_SCHEMAS[capability.tool] },
+      { description: `[WorkGraph] ${capability.uiAction}. The server derives the organization and user from trusted request context; results include the same record and change cursor used by the app.${CREATE_TOOLS_WITH_STAGED_APPROVAL.has(capability.tool) ? STAGED_APPROVAL_NOTE : ""}`, inputSchema: WORKGRAPH_TOOL_SCHEMAS[capability.tool] },
       async (input) => {
         try {
           const context = (capability.tool === "workgraph_create_stream" || sessionContextTools.has(capability.tool)) && typeof creationContext === "function"
@@ -416,29 +408,6 @@ export async function callWorkGraph(
       })
       : await transport(`/api/workgraph/attention?${query}`, { method: "GET" })
     return AttentionPageSchema.parse(value)
-  }
-  if (tool === "workgraph_notifications") {
-    const query = pageQuery(input, 50)
-    if (typeof input.state === "string") query.set("state", input.state)
-    const value = typeof transport !== "function"
-      ? await requiredMethod(transport.listNotifications, tool)({
-        ...(typeof input.cursor === "string" ? { after: input.cursor } : {}),
-        limit: typeof input.limit === "number" ? input.limit : 50,
-        ...(input.state === "read" || input.state === "unread" ? { state: input.state } : {}),
-      })
-      : await transport(`/api/workgraph/notifications?${query}`, { method: "GET" })
-    return WorkGraphNotificationPageSchema.parse(value)
-  }
-  if (tool === "workgraph_mark_notification_read") {
-    const id = requiredString(input, "notification_id")
-    const expectedVersion = requiredNumber(input, "expected_version")
-    const value = typeof transport !== "function"
-      ? await requiredMethod(transport.markNotificationRead, tool)(id, expectedVersion)
-      : await transport(`/api/workgraph/notifications/${encodeURIComponent(id)}/read`, {
-        method: "POST",
-        body: JSON.stringify({ expectedVersion }),
-      })
-    return WorkGraphNotificationSchema.parse(value)
   }
   if (tool === "workgraph_source_revision") {
     const workSourceId = requiredString(input, "work_source_id")
@@ -640,20 +609,14 @@ export async function callWorkGraph(
     if (source === undefined || source === null) throw new WorkGraphRecordNotFoundError("source", workSourceId)
     return WorkSourceDtoSchema.parse(source)
   }
-  if (tool === "workgraph_get" && ["proposal", "work_item", "attempt", "decision", "recap"].includes(String(input.record_type))) {
+  if (tool === "workgraph_get" && ["proposal", "work_item", "attempt", "decision"].includes(String(input.record_type))) {
     const type = requiredString(input, "record_type")
     const id = requiredString(input, "id")
     return readDetail(transport, type, id)
   }
-  if (tool === "workgraph_recap" && typeof input.recap_id === "string") {
-    return readDetail(transport, "recap", input.recap_id)
-  }
-  if (tool === "workgraph_get" || tool === "workgraph_recap") {
+  if (tool === "workgraph_get") {
     const snapshot = await readSnapshot(transport, 100)
-    const record = tool === "workgraph_recap"
-      ? requestedRecap(snapshot.records, requiredString(input, "stream_id"), typeof input.recap_id === "string" ? input.recap_id : undefined)
-      : requestedRecord(snapshot.records, requiredString(input, "record_type"), requiredString(input, "id"))
-    return record
+    return requestedRecord(snapshot.records, requiredString(input, "record_type"), requiredString(input, "id"))
   }
   const command = WorkGraphCommandRequestSchema.parse(toCommandRequest(tool, input, creationContext))
   const result = typeof transport !== "function"
@@ -662,7 +625,35 @@ export async function callWorkGraph(
     method: "POST",
     body: JSON.stringify(command),
   })
-  return CommandResultSchema.parse(result)
+  const parsed = CommandResultSchema.parse(result)
+  if (parsed.ok && CREATE_TOOLS_WITH_STAGED_APPROVAL.has(tool)) {
+    const workItemId = parsed.value && typeof parsed.value === "object" && !Array.isArray(parsed.value) &&
+      typeof (parsed.value as Record<string, unknown>).workItemId === "string"
+      ? (parsed.value as Record<string, unknown>).workItemId as string
+      : undefined
+    if (workItemId) {
+      const state = await readCreatedWorkItemState(transport, workItemId)
+      if (state === "pending_approval") {
+        return { ...parsed, approval: { required: true, note: "Awaiting owner approval before this task can run." } }
+      }
+    }
+  }
+  return parsed
+}
+
+// Best-effort read-back so agent create tools can reliably relay the approval gate; a failure
+// here must never fail the create that already succeeded, so it degrades to no hint.
+async function readCreatedWorkItemState(transport: WorkGraphTransport, workItemId: string): Promise<string | undefined> {
+  try {
+    const value = typeof transport === "function"
+      ? await transport(`/api/workgraph/work-items/${encodeURIComponent(workItemId)}`, { method: "GET" })
+      : transport.readWorkItem
+        ? await transport.readWorkItem(workItemId)
+        : undefined
+    return WorkItemDtoSchema.parse(value).state
+  } catch {
+    return undefined
+  }
 }
 
 function readError(error: unknown, recordType: string, recordId: string): never {
@@ -684,20 +675,7 @@ function listIncludes(kind: string, recordType: string) {
   if (kind === "streams") return recordType === "stream"
   if (kind === "work") return recordType === "outcome" || recordType === "work_item" || recordType === "attempt"
   if (kind === "decisions") return recordType === "decision"
-  if (kind === "recaps") return recordType === "recap"
   return false
-}
-
-function requestedRecap(records: Awaited<ReturnType<typeof readSnapshot>>["records"], streamId: string, recapId?: string) {
-  const recaps = records.filter((record): record is Extract<(typeof records)[number], { recordType: "recap" }> =>
-    record.recordType === "recap" && record.streamId === streamId)
-  const recap = recapId
-    ? recaps.find((record) => record.id === recapId)
-    : recaps
-      .filter((record) => record.generation.state === "succeeded")
-      .sort((left, right) => right.updatedAt - left.updatedAt || right.createdAt - left.createdAt || right.id.localeCompare(left.id))[0]
-  if (recap) return recap
-  throw new WorkGraphRecordNotFoundError("recap", recapId ?? streamId)
 }
 
 async function readDetail(transport: WorkGraphTransport, type: string, id: string) {
@@ -717,16 +695,12 @@ async function readDetail(transport: WorkGraphTransport, type: string, id: strin
     const value = await directRead(transport, transportMethod(transport, "readDecision"), `/api/workgraph/decisions/${encodeURIComponent(id)}`, "decision", id)
     return DecisionDtoSchema.parse(value)
   }
-  if (type === "recap") {
-    const value = await directRead(transport, transportMethod(transport, "readRecap"), `/api/workgraph/recaps/${encodeURIComponent(id)}`, "recap", id)
-    return RecapDtoSchema.parse(value)
-  }
   throw new Error(`WorkGraph detail type '${type}' is not supported`)
 }
 
 function transportMethod(
   transport: WorkGraphTransport,
-  method: "readProposal" | "readWorkItem" | "readAttempt" | "readDecision" | "readRecap",
+  method: "readProposal" | "readWorkItem" | "readAttempt" | "readDecision",
 ) {
   if (typeof transport === "function") return undefined
   return transport[method]
@@ -805,8 +779,6 @@ function embeddedSupports(transport: EmbeddedWorkGraphTransport, tool: keyof typ
     workgraph_execution_capabilities: "readExecutionCapabilities",
     workgraph_refresh_execution_capabilities: "refreshExecutionCapabilities",
     workgraph_attention: "listAttention",
-    workgraph_notifications: "listNotifications",
-    workgraph_mark_notification_read: "markNotificationRead",
     workgraph_source_revision: "readSourceRevision",
     workgraph_source_views: "listSourceViews",
     workgraph_configure_source_view: "createSourceView",
@@ -821,7 +793,6 @@ function embeddedSupports(transport: EmbeddedWorkGraphTransport, tool: keyof typ
     workgraph_attempts: "listWorkItemAttempts",
     workgraph_activity: "listWorkItemActivity",
     workgraph_evidence: "listEvidence",
-    workgraph_recap: "readRecap",
     workgraph_bind_session: "bindSession",
     workgraph_current_work: "readSessionBinding",
     workgraph_select_work: "attachSessionTask",
@@ -846,7 +817,6 @@ function embeddedSupports(transport: EmbeddedWorkGraphTransport, tool: keyof typ
       transport.readWorkItem,
       transport.readAttempt,
       transport.readDecision,
-      transport.readRecap,
     ].every((value) => typeof value === "function")
   }
   return !method || typeof transport[method] === "function"
@@ -883,7 +853,6 @@ export function toCommandRequest(
     ...(typeof input.description === "string" ? { description: input.description } : {}),
     ...(input.source ? { source: camelSource(input.source) } : {}),
     ...(input.execution ? { execution: input.execution } : creationContext?.execution ? { execution: creationContext.execution } : {}),
-    ...(input.recap ? { recap: input.recap } : {}),
     ...(typeof input.activity_granularity === "string" ? { activityGranularity: input.activity_granularity } : {}),
   })
   if (tool === "workgraph_create_outcome" || tool === "workgraph_create_task" || tool === "workgraph_create_work" || tool === "workgraph_create_followup") {
@@ -926,7 +895,6 @@ export function toCommandRequest(
       type: "update_stream",
       streamId: id,
       ...common,
-      ...(input.recap ? { recap: input.recap } : {}),
       ...(typeof input.activity_granularity === "string" ? { activityGranularity: input.activity_granularity } : {}),
     })
     if (type === "outcome") return command(operationId, {
@@ -964,15 +932,6 @@ export function toCommandRequest(
     proposalId: requiredString(input, "proposal_id"),
     expectedVersion: input.expected_version,
   })
-  if (tool === "workgraph_execute") return command(operationId, input.target_type === "stream" ? {
-    type: "execute_stream",
-    streamId: requiredString(input, "target_id"),
-    executionMode: input.mode,
-  } : {
-    type: "execute_work_item",
-    workItemId: requiredString(input, "target_id"),
-    executionMode: input.mode,
-  })
   if (tool === "workgraph_update_execution") {
     const type = typeof input.target_type === "string" ? input.target_type : "stream"
     const id = typeof input.target_id === "string" ? input.target_id : requiredString(input, "stream_id")
@@ -993,7 +952,6 @@ export function toCommandRequest(
       streamId: id,
       expectedVersion: input.expected_version,
       execution: input.execution,
-      ...(input.recap ? { recap: input.recap } : {}),
     })
   }
   if (tool === "workgraph_retry") return command(operationId, {

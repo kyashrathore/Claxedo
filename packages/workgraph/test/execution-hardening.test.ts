@@ -8,72 +8,11 @@ const databases: BetterSqlite3.Database[] = []
 afterEach(() => databases.splice(0).forEach((database) => database.close()))
 
 describe("WorkGraph execution fencing and durable runtime effects", () => {
-  it.each([
-    ["autonomous", 2],
-    ["supervised", 1],
-  ] as const)(
-    "persists %s Stream execution and recovers only its allowed ready batches",
-    async (executionMode, expectedAttempts) => {
-      const launches: string[] = []
-      const executionRuntime = runtime({
-        launch: async (_context, input) => {
-          launches.push(input.attemptId)
-          return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
-        },
-      })
-      const fixture = setup(executionRuntime)
-      const { streamId, blockerId, dependentId } = await createDependentItems(fixture)
-
-      await expect(command(fixture, "execute_stream", { streamId, executionMode })).resolves.toMatchObject({ ok: true })
-      expect(
-        fixture.database
-          .prepare("SELECT execution_mode, execution_state FROM wg_v2_streams WHERE id = ?")
-          .get(streamId),
-      ).toEqual({
-        execution_mode: executionMode,
-        execution_state: executionMode === "autonomous" ? "active" : "stopped",
-      })
-      expect(
-        fixture.database.prepare("SELECT execution_mode FROM wg_v2_attempts WHERE work_item_id = ?").get(blockerId),
-      ).toEqual({ execution_mode: executionMode })
-
-      fixture.database
-        .prepare("UPDATE wg_v2_attempts SET lifecycle = 'result', finished_at = 2 WHERE work_item_id = ?")
-        .run(blockerId)
-      fixture.database.prepare("DELETE FROM wg_v2_leases WHERE resource_id = ?").run(blockerId)
-      fixture.database
-        .prepare("UPDATE wg_v2_work_items SET lifecycle = 'completed', completed_at = 2 WHERE id = ?")
-        .run(blockerId)
-
-      createSqliteWorkGraphService({
-        database: fixture.database,
-        executionCapabilities: testExecutionCapabilities,
-        execution: executionRuntime,
-        clock: { now: () => 3 },
-        ids: { next: (kind) => `${kind}_recovered` },
-      })
-      await expect
-        .poll(
-          () =>
-            (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count,
-        )
-        .toBe(expectedAttempts)
-      expect(
-        (
-          fixture.database
-            .prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?")
-            .get(dependentId) as { count: number }
-        ).count,
-      ).toBe(executionMode === "autonomous" ? 1 : 0)
-      expect(launches).toHaveLength(expectedAttempts)
-    },
-  )
-
-  it("continues an autonomous Stream after semantic completion makes a dependent Task ready", async () => {
+  it("continues an active Stream after semantic completion makes a dependent Task ready", async () => {
     const fixture = setup(runtime())
-    const { streamId, blockerId, dependentId } = await createDependentItems(fixture)
-    const execution = await command(fixture, "execute_stream", { streamId, executionMode: "autonomous" })
-    const attemptId = resultId(execution, "attemptIds")
+    const { blockerId, dependentId } = await createDependentItems(fixture)
+    // The blocker is auto-admitted on creation; the dependent waits for it.
+    const attemptId = attemptIdFor(fixture, blockerId)
     await fixture.attemptResults.recordResult(owner(), {
       attemptId: attemptId as never,
       workItemId: blockerId as never,
@@ -110,8 +49,8 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     const fixture = setup(executionRuntime)
     const itemId = await createItem(fixture)
     const streamId = streamFor(fixture, itemId)
-    const executed = await command(fixture, "execute_work_item", { workItemId: itemId, executionMode: "autonomous" })
-    const attemptId = resultId(executed, "attemptId")
+    // Auto-admitted on creation; simulate a crash before launch by resetting it to `admitted`.
+    const attemptId = attemptIdFor(fixture, itemId)
     fixture.database
       .prepare(
         `
@@ -139,42 +78,41 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       )
       .toBe("running")
     expect(launches).toEqual([attemptId, attemptId])
-    expect(fixture.database.prepare("SELECT execution_state FROM wg_v2_streams WHERE id = ?").get(streamId)).toEqual({
-      execution_state: "active",
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_streams WHERE id = ?").get(streamId)).toEqual({
+      lifecycle: "active",
     })
   })
 
-  it("atomically admits only one concurrent Attempt for a Work Item", async () => {
+  it("admits exactly one lease-fenced Attempt for an approved Work Item", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const results = await Promise.all([
-      command(fixture, "execute_work_item", { workItemId: item }),
-      command(fixture, "execute_work_item", { workItemId: item }),
-    ])
-    expect(results.filter((result) => result.ok)).toHaveLength(1)
-    expect(results.find((result) => !result.ok)).toMatchObject({ error: { code: "blocked" } })
+    // The drain admits the approved item once, under the per-item lease fence.
     expect(
       (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count,
     ).toBe(1)
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(item)).toEqual({
+      lifecycle: "active",
+    })
   })
 
-  it("returns the concrete admission failure when a ready Stream batch cannot launch", async () => {
+  it("does not admit a ready Work Item whose resolved execution profile is incomplete", async () => {
     const fixture = setup(runtime())
     const stream = await command(fixture, "create_stream", {
       title: "Incomplete execution",
       execution: { ...execution, agent: undefined },
     })
     const streamId = resultId(stream, "streamId")
-    await command(fixture, "create_work_item", {
+    const item = await command(fixture, "create_work_item", {
       streamId,
       title: "Ready but not executable",
       completionContract: contract,
     })
-
-    await expect(command(fixture, "execute_stream", { streamId, executionMode: "autonomous" })).resolves.toMatchObject({
-      ok: false,
-      error: { code: "validation_error", message: "Incomplete execution profile: agent" },
-    })
+    // The drain re-derives launchability and skips the item — no Attempt, task stays pending.
+    expect(
+      (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count,
+    ).toBe(0)
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(resultId(item, "workItemId")))
+      .toEqual({ lifecycle: "pending" })
   })
 
   it("lets a durable receipt win before cleanup and lets an atomic cleanup reservation block a later receipt", async () => {
@@ -212,7 +150,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
 
     const second = await createItem(fixture)
     const secondStream = streamFor(fixture, second)
-    await command(fixture, "execute_work_item", { workItemId: second })
+    // `second` is already auto-admitted on creation.
     const deleting = command(fixture, "delete_stream", {
       streamId: secondStream,
       expectedVersion: 1,
@@ -250,20 +188,15 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         },
       }),
     )
-    const itemId = await createItem(fixture)
-    const streamId = streamFor(fixture, itemId)
+    const { item: itemId, streamId } = await createPausedItem(fixture)
     fixture.database
-      .prepare(
-        `
-      UPDATE wg_v2_streams SET execution_mode = 'autonomous', execution_state = 'active', envelope_identity_json = ?
-      WHERE id = ?
-    `,
-      )
+      .prepare(`UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE id = ?`)
       .run(JSON.stringify({ id: "envelope_1", workspaceId: "/tmp/worktree" }), streamId)
 
-    const deleting = command(fixture, "delete_stream", { streamId, expectedVersion: 1, reason: "Discard" })
+    const deleting = command(fixture, "delete_stream", { streamId, expectedVersion: 2, reason: "Discard" })
     await started
-    await command(fixture, "create_stream", { title: "Trigger autonomous reconciliation" })
+    // Reconciliation runs while cleanup is reserved; the reserved Stream admits nothing.
+    await command(fixture, "create_stream", { title: "Trigger reconciliation" })
 
     expect(
       fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(itemId),
@@ -306,21 +239,24 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         },
       }),
     )
-    const item = await createItem(fixture)
-    const executing = command(fixture, "execute_work_item", { workItemId: item })
+    const { item, streamId } = await createPausedItem(fixture)
+    // Resuming the Stream admits the item and enters provisioning (which blocks).
+    const admitting = command(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 2, state: "active", reason: "Run" })
     await started
     const attempt = fixture.database
       .prepare("SELECT id, row_version FROM wg_v2_attempts WHERE work_item_id = ?")
       .get(item) as { id: string; row_version: number }
-    await expect(
-      command(fixture, "cancel_attempt", {
-        attemptId: attempt.id,
-        expectedVersion: attempt.row_version,
-        reason: "Stop",
-      }),
-    ).resolves.toMatchObject({ ok: true })
+    // Cancel commits synchronously (marks the Attempt cancelled) before joining the
+    // in-flight drain; releasing provisioning then lets both settle. Placement finds
+    // the Attempt cancelled and never launches a ghost Session.
+    const cancelling = command(fixture, "cancel_attempt", {
+      attemptId: attempt.id,
+      expectedVersion: attempt.row_version,
+      reason: "Stop",
+    })
     releaseProvision()
-    await expect(executing).resolves.toMatchObject({ ok: true })
+    await expect(cancelling).resolves.toMatchObject({ ok: true })
+    await expect(admitting).resolves.toMatchObject({ ok: true })
     expect(launches).toEqual([])
     expect(cleanups).toEqual([])
   })
@@ -335,8 +271,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       }),
     )
     const item = await createItem(fixture)
-    const admitted = await command(fixture, "execute_work_item", { workItemId: item })
-    const attemptId = resultId(admitted, "attemptId")
+    const attemptId = attemptIdFor(fixture, item)
     const attempt = fixture.database.prepare("SELECT row_version FROM wg_v2_attempts WHERE id = ?").get(attemptId) as {
       row_version: number
     }
@@ -395,8 +330,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     })
     fixture = setup(executionRuntime)
     const item = await createItem(fixture)
-    const admitted = await command(fixture, "execute_work_item", { workItemId: item })
-    const attemptId = resultId(admitted, "attemptId")
+    const attemptId = attemptIdFor(fixture, item)
 
     expect(
       fixture.database.prepare("SELECT lifecycle, lease_epoch FROM wg_v2_attempts WHERE id = ?").get(attemptId),
@@ -483,8 +417,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     })
     const fixture = setup(failingRuntime)
     const item = await createItem(fixture)
-    const admitted = await command(fixture, "execute_work_item", { workItemId: item })
-    const attemptId = resultId(admitted, "attemptId")
+    const attemptId = attemptIdFor(fixture, item)
 
     expect(
       fixture.database.prepare("SELECT lifecycle, attention_reason FROM wg_v2_attempts WHERE id = ?").get(attemptId),
@@ -503,9 +436,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
   it("persists one idempotent terminal result/change, sets result_ready, and leaves semantic completion pending", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const admitted = await command(fixture, "execute_work_item", { workItemId: item })
-    if (!admitted.ok) throw new Error("Expected admission")
-    const attemptId = resultId(admitted, "attemptId") as never
+    const attemptId = attemptIdFor(fixture, item) as never
     await fixture.attemptResults.recordResult(owner(), {
       attemptId,
       workItemId: item as never,
@@ -548,9 +479,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
   it("rejects missing or blank semantic output instead of fabricating a successful result", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const admitted = await command(fixture, "execute_work_item", { workItemId: item })
-    if (!admitted.ok) throw new Error("Expected admission")
-    const attemptId = resultId(admitted, "attemptId") as never
+    const attemptId = attemptIdFor(fixture, item) as never
     const identity = { attemptId, workItemId: item as never, leaseEpoch: 1, state: "result" as const }
 
     await expect(
@@ -572,9 +501,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
   it("recovers an expired same-Attempt lease with a fenced epoch and close terminalizes active Attempts", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const admitted = await command(fixture, "execute_work_item", { workItemId: item })
-    if (!admitted.ok) throw new Error("Expected admission")
-    const attemptId = resultId(admitted, "attemptId")
+    const attemptId = attemptIdFor(fixture, item)
     expect(
       renewSqliteAttemptLease(fixture.database, owner(), {
         attemptId: attemptId as never,
@@ -638,6 +565,25 @@ async function createItem(fixture: ReturnType<typeof setup>) {
   return resultId(item, "workItemId")
 }
 
+/**
+ * Creates an approved Work Item in a paused Stream so it is NOT auto-admitted;
+ * resume the Stream (`set_stream_lifecycle` → active, expectedVersion 2) to admit
+ * at a controlled point.
+ */
+async function createPausedItem(fixture: ReturnType<typeof setup>) {
+  const stream = await command(fixture, "create_stream", { title: `Stream ${crypto.randomUUID()}`, execution })
+  if (!stream.ok) throw new Error("Expected Stream")
+  const streamId = resultId(stream, "streamId")
+  await command(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 1, state: "paused", reason: "Hold" })
+  const item = await command(fixture, "create_work_item", {
+    streamId,
+    title: "Implement",
+    completionContract: contract,
+  })
+  if (!item.ok) throw new Error("Expected Work Item")
+  return { item: resultId(item, "workItemId"), streamId }
+}
+
 async function createDependentItems(fixture: ReturnType<typeof setup>) {
   const stream = await command(fixture, "create_stream", { title: `Stream ${crypto.randomUUID()}`, execution })
   if (!stream.ok) throw new Error("Expected Stream")
@@ -663,6 +609,18 @@ function streamFor(fixture: ReturnType<typeof setup>, item: string) {
   return (
     fixture.database.prepare("SELECT stream_id FROM wg_v2_work_items WHERE id = ?").get(item) as { stream_id: string }
   ).stream_id
+}
+
+/**
+ * A user-created Work Item in an active Stream is auto-admitted by the drain that
+ * runs after every command, so its Attempt already exists once creation resolves.
+ */
+function attemptIdFor(fixture: ReturnType<typeof setup>, item: string) {
+  const row = fixture.database
+    .prepare("SELECT id FROM wg_v2_attempts WHERE work_item_id = ? ORDER BY attempt_number DESC LIMIT 1")
+    .get(item) as { id: string } | undefined
+  if (!row) throw new Error(`No admitted Attempt for Work Item ${item}`)
+  return row.id
 }
 
 function command(fixture: ReturnType<typeof setup>, type: string, value: Record<string, unknown>) {
@@ -712,7 +670,8 @@ function owner(): WorkGraphContext {
   return {
     organizationId: "organization" as never,
     ownerUserId: "owner" as never,
-    actor: { type: "agent", id: "agent" as never },
+    // Human owner: created Work Items are born approved (`pending`) and auto-admit.
+    actor: { type: "user", id: "owner" as never },
     requestId: "request" as never,
     access: { mode: "owner" },
   }

@@ -16,7 +16,6 @@ const deletionLeaseMs = 5 * 60 * 1_000
 
 const ownerTablesInDeletionOrder = [
   "wg_v2_attention_acknowledgements",
-  "wg_v2_notifications",
   "wg_v2_decision_work_items",
   "wg_v2_evidence",
   "wg_v2_durable_effect_receipts",
@@ -35,7 +34,6 @@ const ownerTablesInDeletionOrder = [
   "wg_v2_decisions",
   "wg_v2_work_items",
   "wg_v2_outcomes",
-  "wg_v2_recaps",
   "wg_v2_stream_sequences",
   "wg_v2_streams",
   "wg_v2_external_identities",
@@ -181,7 +179,6 @@ function finalizeDeletion(
     if (!isQuiescent(database, context)) return undefined
     if (hash(JSON.stringify(readCleanupTargets(database, context))) !== prepared.targetSnapshotHash) return undefined
     const recordCount = countOwnerRecords(database, context)
-    database.prepare("UPDATE wg_v2_recaps SET previous_recap_id = NULL WHERE organization_id = ? AND owner_user_id = ?").run(context.organizationId, context.ownerUserId)
     ownerTablesInDeletionOrder.forEach((table) => {
       database.prepare(`DELETE FROM ${table} WHERE organization_id = ? AND owner_user_id = ?`).run(context.organizationId, context.ownerUserId)
     })

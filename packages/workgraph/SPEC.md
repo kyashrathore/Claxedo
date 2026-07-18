@@ -36,7 +36,7 @@ Every personal durable record includes required `organization_id` and `owner_use
 
 ### 3.1 Stream
 
-A Stream is a finite or ongoing work context and owns the primary execution workspace. It contains purpose, lifecycle, pinned state, execution defaults, Recap defaults, memory card, activity marker, base repository/revision, workspace intent and identity, durable-effect state, and linked Outcomes and sources.
+A Stream is a finite or ongoing work context and owns the primary execution workspace. It contains purpose, lifecycle, pinned state, execution defaults, activity marker, base repository/revision, workspace intent and identity, durable-effect state, and linked Outcomes and sources.
 
 ### 3.2 Outcome
 
@@ -58,31 +58,27 @@ Attempt state distinguishes admission, placement, running, attention, terminal e
 
 A Decision stores its question, options, recommendation, rationale, answer, actor provenance, affected work, and state. Agents create Decisions when execution reaches a consequential owner choice. A pending Decision appears in attention and blocks only affected and dependent work.
 
-### 3.6 Recap
-
-A Recap stores the Stream activity range, previous Recap reference, generated summary, actionable references, model/effort profile, provenance, and generation result. Recaps are immutable timeline entries.
-
-### 3.7 Work Source
+### 3.6 Work Source
 
 A Work Source stores owner-entered text, title, immutable revisions, optional source metadata, and links to admission proposals and confirmed work. Editing appends a revision. Confirmed work binds the exact revision ID and content hash used to produce it. Confirmation compares against the exact proposal version rendered for review, so a background planner publication requires a new review before it can materialize work.
 
-### 3.8 Source view and intake candidate
+### 3.7 Source view and intake candidate
 
 A personal source view binds an organization-owned Connection, provider integration, user identity in that provider, filters, refresh/webhook settings, and sync-back policy.
 
 Connector results and meaningful independent sessions create intake candidates. Candidates are not executable Work Items. Staging performs explicit admission.
 
-### 3.9 External identity
+### 3.8 External identity
 
 An external identity stores provider, organization Connection reference, external ID/key/URL, normalized metadata, and observed revision. The unique identity includes organization, owner user, provider, Connection, and external ID.
 
-### 3.10 Event and receipt
+### 3.9 Event and receipt
 
 Events include organization, owner user, Stream, sequence, schema version, operation ID, actor, payload, correlation/causation, and timestamp. Connector receipts record external effects and idempotency without secret material. Durable-effect receipts identify merged or directly integrated code, published artifacts, accepted external writes, and equivalent results that make a Stream's history externally consequential.
 
 ## 4. Storage contract
 
-The backend-neutral store covers Streams, Outcomes, Work Items, intake, Attempts, Decisions, Recaps, events, leases, idempotency, change cursors, and connector receipts.
+The backend-neutral store covers Streams, Outcomes, Work Items, intake, Attempts, Decisions, events, leases, idempotency, change cursors, and connector receipts.
 
 Every core adapter provides:
 
@@ -131,7 +127,7 @@ The owner edits and confirms the exact rendered package version. A later Work So
 - reset a wholly disposable Stream, cancelling obsolete Attempts and discarding its partial workspace state;
 - fork a new Stream from the revision while preserving the existing Stream.
 
-The reset selection carries the exact reviewed nonterminal Task IDs and versions. Confirmation requires that set to equal every current nonterminal Task in the Stream and requires every Task to reference the proposal's previous source revision. Any version drift, added unrelated work, or durable-effect receipt rejects reset and directs the owner to keep or fork. The adapter atomically abandons only the fenced set, fences active Attempt leases and launches, and records a durable reset barrier plus cleanup control effect. Replacement Tasks remain ineligible for execution until ordered Session interruption and whole-envelope cleanup are acknowledged. Completed Tasks, Attempt history, source lineage, Decisions, evidence, and Recaps remain durable.
+The reset selection carries the exact reviewed nonterminal Task IDs and versions. Confirmation requires that set to equal every current nonterminal Task in the Stream and requires every Task to reference the proposal's previous source revision. Any version drift, added unrelated work, or durable-effect receipt rejects reset and directs the owner to keep or fork. The adapter atomically abandons only the fenced set, fences active Attempt leases and launches, and records a durable reset barrier plus cleanup control effect. Replacement Tasks remain ineligible for execution until ordered Session interruption and whole-envelope cleanup are acknowledged. Completed Tasks, Attempt history, source lineage, Decisions, and evidence remain durable.
 
 The selected action is recorded with the exact old and new source revisions. Confirmed work changes only after owner approval. The Documents adapter creates and pins a content-hash snapshot from the canonical workspace file at intake, then passes those exact bytes and provenance through the same proposal, compare-and-set confirmation, and replan contract. Agent-driven and explicit source capture use the same contract without depending on a separate revision-table service.
 
@@ -149,7 +145,7 @@ Webhook handlers verify signatures, resolve affected source views, apply each ow
 
 ## 7. Stream matching and duplicates
 
-Each Stream has a compact memory card. Placement searches pinned and recent cards first and expands to older cards only on low confidence. The response includes best match, alternatives, confidence explanation, and create-new choice.
+Each Stream is matched from a compact title, description, and purpose summary. Placement searches pinned and recent Streams first and expands to older Streams only on low confidence. The response includes best match, alternatives, confidence explanation, and create-new choice.
 
 Duplicate review compares compact active/recent Outcome and Work Item representations. A match offers link, merge, or create separately. No uncertain placement or merge occurs without owner confirmation.
 
@@ -163,7 +159,7 @@ WorkGraph → Stream → optional Outcome → Task → Attempt
 
 The Work Item exposes resolved values and their source. Attempt admission stores the immutable resolved snapshot.
 
-WorkGraph and Stream settings use one versioned atomic command per save. WorkGraph Settings applies execution-default changes only. Stream Settings applies Stream execution and Recap changes together. Each command appends one ordered change and rejects a stale aggregate version without a partial write. An omitted execution field remains unchanged; an explicit clear removes the override so inheritance is recalculated from persisted parent settings. New Stream Recap settings resolve from the effective execution model and effort with an eight-hour quiet period. A configuration requirement is reserved for a generation profile that remains incomplete after that resolution.
+WorkGraph and Stream settings use one versioned atomic command per save. WorkGraph Settings applies execution-default changes only. Stream Settings applies Stream execution changes. Each command appends one ordered change and rejects a stale aggregate version without a partial write. An omitted execution field remains unchanged; an explicit clear removes the override so inheritance is recalculated from persisted parent settings.
 
 ### 8.1 Capability discovery
 
@@ -215,19 +211,13 @@ Agents create reviewable Decisions before expanding confirmed scope, removing or
 
 MCP tools bind the caller to owner, Attempt, and permitted work. Tool arguments cannot select another owner's records.
 
-## 12. Recaps and attention
+## 12. Attention
 
-New Stream activity resets its quiet window. After eight quiet hours, a durable worker reads changes since the prior Recap, current Stream state, and previous memory. It does not reread complete history.
+The tenant-scoped Attention query returns bounded, stable cursor pages covering reviewable proposals, pending Decisions, Task and Attempt attention, configuration requirements, and one aggregate for unorganized external-issue and independent-Session candidates. Candidate drilldown uses a separate bounded tenant-bound cursor. These candidates appear only through Needs you and focused dialogs; WorkGraph has no separate intake, capture, or onboarding screen. Ordered changes trigger bounded refresh; Attention and candidate failures are explicit and never cause a full-snapshot substitute read.
 
-Recap model and effort come from the Stream's Recap configuration, initialized from the Stream's effective execution profile when the owner has not selected an override. Local and hosted generation uses ordinary tool-less Session V2 jobs with stable identity, exact activity-range binding, strict output validation, and publication fencing. Only valid output from that Session can publish a Recap. An incomplete effective generation profile creates a configuration requirement. Transient failures retry from durable state; repeated failure or inaccessible sources create attention without publishing a substitute Recap or notification.
+The existing app-global WorkspacePanel and its top-level toggle are the only panel instance and panel control. WorkGraph contributes top-level Needs you and Settings views. WorkGraph header controls select those views in that same panel. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing Stream execution settings; settings fields are flush, descriptions and errors are adjacent to their fields, and the footer is pinned. A non-empty Attention page places an accessible dot on the existing toggle. Zero attention renders no WorkGraph dot, contextual card, list, or empty body content.
 
-Recaps update visible Stream memory. An actionable Recap atomically creates exactly one tenant-scoped unread notification carrying the exact Stream and Recap identifiers. Acknowledgement compares against the rendered notification version and cannot mark a newer delivery read. The Needs you view opens the exact Recap in a focused dialog before acknowledging that rendered notification version. Non-actionable Recaps and retries do not create duplicate deliveries.
-
-The tenant-scoped Attention query returns bounded, stable cursor pages covering reviewable proposals, pending Decisions, Task and Attempt attention, actionable Recaps, configuration requirements, and one aggregate for unorganized external-issue and independent-Session candidates. Candidate drilldown uses a separate bounded tenant-bound cursor. These candidates appear only through Needs you and focused dialogs; WorkGraph has no separate intake, capture, or onboarding screen. Ordered changes trigger bounded refresh; Attention and candidate failures are explicit and never cause a full-snapshot substitute read.
-
-The existing app-global WorkspacePanel and its top-level toggle are the only panel instance and panel control. WorkGraph contributes top-level Needs you and Settings views. WorkGraph header controls select those views in that same panel. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing Stream execution and Recap configuration; settings fields are flush, descriptions and errors are adjacent to their fields, and the footer is pinned. Each Stream row exposes its latest Recap through a hover/focus icon and popover. A non-empty Attention page places an accessible dot on the existing toggle. Zero attention renders no WorkGraph dot, contextual card, list, or empty body content.
-
-Selecting an Attention item uses targeted tenant-scoped reads for the proposal, candidate, Task, Attempt, evidence, Decision, or Recap. Each inspector opens as a dialog over `/workgraph`; domain resolution occurs only through the corresponding versioned command.
+Selecting an Attention item uses targeted tenant-scoped reads for the proposal, candidate, Task, Attempt, evidence, or Decision. Each inspector opens as a dialog over `/workgraph`; domain resolution occurs only through the corresponding versioned command.
 
 ## 13. Independent sessions
 
@@ -237,7 +227,7 @@ An outside session that becomes idle after producing meaningful work creates an 
 
 A Stream with no durable-effect receipts may be deleted. Deletion atomically prevents new launches, cancels active Attempts, destroys its worktree or VM, discards unmerged partial work, and removes its private records according to the adapter deletion contract.
 
-Once a durable-effect receipt exists, the Stream is closed instead of deleted. Closure abandons unfinished Work Items with an owner-visible reason, cancels active Attempts, stops future scheduling, and preserves the workspace, Outcomes, Decisions, Recaps, Attempt history, evidence, and external references.
+Once a durable-effect receipt exists, the Stream is closed instead of deleted. Closure abandons unfinished Work Items with an owner-visible reason, cancels active Attempts, stops future scheduling, and preserves the workspace, Outcomes, Decisions, Attempt history, evidence, and external references.
 
 Stream visibility can be archived to hide inactive work while preserving its records and lifecycle. Portable WorkGraph export/restore is a separate tenant-level storage operation.
 
@@ -247,7 +237,7 @@ Initial sharing is owner-controlled and read-only for a Stream or full WorkGraph
 
 Clients subscribe by authenticated tenant and optional resource filters. Reconnect supplies a durable cursor and receives current projections plus subsequent changes.
 
-Workers reconcile admitted Attempts, expired leases, due source refresh, connector outbox work, and pending Recaps from durable storage. Correctness does not depend on process memory.
+Workers reconcile admitted Attempts, expired leases, due source refresh, and connector outbox work from durable storage. Correctness does not depend on process memory.
 
 ## 16. Acceptance criteria
 
@@ -259,21 +249,20 @@ Workers reconcile admitted Attempts, expired leases, due source refresh, connect
 6. Organization Connections can produce user-filtered personal candidates without transferring credential or Connection-metadata ownership into WorkGraph.
 7. Intake candidates cannot execute before staging.
 8. Source admission binds exact Work Source revisions, binds each admission proposal to at most one intake candidate, rejects cyclic Work Item dependencies, publishes planner changes through the ordered feed, and atomically confirms the exact reviewed proposal version.
-9. Recent-first Stream matching expands to older memory cards only when the bounded recent set has low confidence.
+9. Recent-first Stream matching expands to older Streams only when the bounded recent set has low confidence.
 10. Duplicate review never silently merges work.
 11. Every ready Work Item may launch with its immutable resolved profile.
 12. Attempt completion does not bypass the Work Item completion contract.
 13. Outcome closure requires success evidence and owner confirmation.
 14. Agent scope changes create Decisions that block only affected work.
-15. Eight quiet hours schedule an incremental Recap; actionable output creates one notification carrying the exact Stream and Recap identifiers, while non-actionable output creates none.
-16. Retry, reconnect, and worker restart do not duplicate execution ownership or external effects.
-17. A Stream provisions one worktree or VM workspace; harnesses and agents own any branch or nested-worktree strategy inside it.
-18. Replanning from a later Work Source revision records the revision diff and applies only an owner-confirmed keep, replace, or fork action.
-19. A Stream without durable external effects can be deleted together with its workspace and unmerged work.
-20. A Stream with a durable external effect can only be closed, preserving history while abandoning unfinished work with provenance.
-21. The Claxedo app presents one main WorkGraph surface with inline Stream expansion and Add task as the canonical manual Task action. The app and standalone stdio MCP use the authenticated HTTP/JSON and ordered-change contract mounted in `claxedo-server`; local embedded agent tools and server workers invoke the same application services in-process; hosted embedded tools require durable Session tenant provenance.
-22. Manual or pasted Work Source text supports initial source admission without an external document service.
-23. WorkGraph reuses the existing app-global WorkspacePanel and top-level toggle for its Needs you and Settings views, and all Stream interaction remains inline on `/workgraph`.
-24. Zero attention renders no WorkGraph indicator, card, list, or empty attention state.
-25. Attention and candidate navigation remain bounded and cursor-paged, and a failed query never substitutes snapshot or fabricated data.
-26. One versioned settings command atomically applies the scope-appropriate patch, including explicit override clearing: execution defaults for WorkGraph, and execution plus Recap configuration for a Stream.
+15. Retry, reconnect, and worker restart do not duplicate execution ownership or external effects.
+16. A Stream provisions one worktree or VM workspace; harnesses and agents own any branch or nested-worktree strategy inside it.
+17. Replanning from a later Work Source revision records the revision diff and applies only an owner-confirmed keep, replace, or fork action.
+18. A Stream without durable external effects can be deleted together with its workspace and unmerged work.
+19. A Stream with a durable external effect can only be closed, preserving history while abandoning unfinished work with provenance.
+20. The Claxedo app presents one main WorkGraph surface with inline Stream expansion and Add task as the canonical manual Task action. The app and standalone stdio MCP use the authenticated HTTP/JSON and ordered-change contract mounted in `claxedo-server`; local embedded agent tools and server workers invoke the same application services in-process; hosted embedded tools require durable Session tenant provenance.
+21. Manual or pasted Work Source text supports initial source admission without an external document service.
+22. WorkGraph reuses the existing app-global WorkspacePanel and top-level toggle for its Needs you and Settings views, and all Stream interaction remains inline on `/workgraph`.
+23. Zero attention renders no WorkGraph indicator, card, list, or empty attention state.
+24. Attention and candidate navigation remain bounded and cursor-paged, and a failed query never substitutes snapshot or fabricated data.
+25. One versioned settings command atomically applies the scope-appropriate patch, including explicit override clearing: execution defaults for WorkGraph and execution settings for a Stream.

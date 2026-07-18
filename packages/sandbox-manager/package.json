@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/sandbox-manager",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
   "license": "MIT",
@@ -14,6 +14,10 @@
     "sandbox",
     "daytona",
     "modal",
+    "vercel",
+    "cloudflare",
+    "docker",
+    "box",
     "agents"
   ],
   "main": "./dist/index.mjs",
@@ -162,7 +166,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@claxedo/workspace-runtime": "0.5.1",
     "@daytona/sdk": "0.192.0",
     "@vercel/sandbox": "1.10.2",
     "modal": "0.7.5"

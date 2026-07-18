@@ -18,7 +18,7 @@ import {
   reopenOutcome,
 } from "../src/domain/completion"
 import { createAttemptAdmissionSnapshot } from "../src/domain/attempt"
-import { evaluateDecisionReadiness } from "../src/domain/decision-readiness"
+import { evaluateWorkItemLaunchability } from "../src/domain/launch-readiness"
 import { resolveExecutionProfile } from "../src/domain/execution-profile"
 import { streamRemovalEligibility } from "../src/domain/lifecycle"
 import {
@@ -219,21 +219,34 @@ describe("WorkGraph domain rules", () => {
     expect(reopenOutcome({ state: "completed", reopenedAt: 13, reopenedBy: ownerActor, reason: "Criteria changed" })).toEqual({ ok: true, state: "reopened", provenance: { reopenedAt: 13, reopenedBy: { type: "user", id: "user_01" }, reason: "Criteria changed" } })
   })
 
-  it("blocks only Decision-affected work and its transitive dependents", () => {
-    expect(evaluateDecisionReadiness({
-      workItems: [
-        { id: "a", dependencyIds: [] },
-        { id: "b", dependencyIds: ["a"] },
-        { id: "c", dependencyIds: ["b"] },
-        { id: "unrelated", dependencyIds: [] },
-      ],
-      pendingDecisions: [{ id: "decision_1", affectedWorkItemIds: ["a"] }],
-    })).toEqual([
-      { workItemId: "a", ready: false, blockingDecisionIds: ["decision_1"] },
-      { workItemId: "b", ready: false, blockingDecisionIds: ["decision_1"] },
-      { workItemId: "c", ready: false, blockingDecisionIds: ["decision_1"] },
-      { workItemId: "unrelated", ready: true, blockingDecisionIds: [] },
-    ])
+  it("derives Work Item launchability with abandoned dependencies satisfying and needs-you holding", () => {
+    const activeStream = { lifecycle: "active" as const, visibility: "visible" as const }
+    // Approval gate: only approved (`pending`) items launch.
+    expect(evaluateWorkItemLaunchability({ state: "pending_approval", stream: activeStream, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "not_approved" })
+    expect(evaluateWorkItemLaunchability({ state: "active", stream: activeStream, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "not_pending" })
+    // Pause / archive is the launch gate.
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { lifecycle: "paused", visibility: "visible" }, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "stream_not_active" })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { lifecycle: "active", visibility: "archived" }, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "stream_not_active" })
+    // A rejected (abandoned) dependency satisfies, so it never deadlocks dependents.
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: ["completed", "abandoned"] }))
+      .toEqual({ launchable: true })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: ["active"] }))
+      .toEqual({ launchable: false, reason: "deps_incomplete" })
+    // Derived needs-you hold, blocking decision, in-flight attempt, capability.
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, held: true }, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "stream_held" })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, replacementBarrier: true }, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "replacement_barrier" })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], blockingDecision: true }))
+      .toEqual({ launchable: false, reason: "blocking_decision" })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], attemptInFlight: true }))
+      .toEqual({ launchable: false, reason: "attempt_in_flight" })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], capabilityValid: false }))
+      .toEqual({ launchable: false, reason: "capability_invalid" })
   })
 
   it("resolves each execution setting from the nearest WorkGraph hierarchy level with provenance", () => {

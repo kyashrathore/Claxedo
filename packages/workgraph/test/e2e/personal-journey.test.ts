@@ -5,7 +5,6 @@ import {
   createIntakeService,
   createSourceViewService,
   createSqliteIntakeStores,
-  createSqliteRecapRuntime,
   createSqliteSourcePlanningRuntime,
   createSqliteWorkGraphService,
   listSqliteReconcilableAttempts,
@@ -81,10 +80,9 @@ describe("canonical personal WorkGraph journey", () => {
       expectedVersion: 1,
       execution: profile,
     })).toMatchObject({ ok: true })
-    const execution = await fixture.execute("execute_stream", { streamId, executionMode: "supervised" })
-    expect(execution).toMatchObject({ ok: true })
-    const attemptIds = resultIds(execution, "attemptIds")
-    expect(attemptIds).toHaveLength(2)
+    // Setting the execution profile lets the drain auto-admit the two ready approved
+    // items (backend, frontend); announce waits on backend.
+    expect((fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count).toBe(2)
     expect(fixture.runtime.provisioned).toEqual([streamId, streamId])
     expect(new Set(fixture.runtime.envelopes)).toEqual(new Set([`envelope:${streamId}`]))
 
@@ -181,7 +179,7 @@ describe("canonical personal WorkGraph journey", () => {
       completionContract: completion("proof"),
       execution: profile,
     }), "workItemId")
-    await fixture.execute("execute_work_item", { workItemId, executionMode: "supervised" })
+    // The approved item auto-admits on creation (Stream active with a complete profile).
     fixture.runtime.succeedAll()
     await fixture.reconcile()
     expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === workItemId).state).toBe("active")
@@ -200,20 +198,6 @@ describe("canonical personal WorkGraph journey", () => {
     expect(await fixture.execute("close_outcome", { outcomeId, expectedVersion: 2, reason: "All work verified" })).toMatchObject({ ok: true })
   })
 
-  it("persists a background recap after eight quiet hours without requiring a foreground request", async () => {
-    const fixture = setup()
-    const streamId = resultId(await fixture.execute("create_stream", {
-      title: "Quiet stream",
-      execution: streamTarget,
-      recap: { quietHours: 8, model: profile.model, effort: profile.effort },
-    }), "streamId")
-    fixture.advance(8 * 60 * 60 * 1000 + 1)
-    await fixture.backgroundTick()
-    expect(record(await fixture.snapshot(), "recap", (candidate) => candidate.streamId === streamId)).toMatchObject({
-      summary: expect.any(String),
-      actionableReferences: expect.any(Array),
-    })
-  })
 })
 
 function setup() {
@@ -225,18 +209,6 @@ function setup() {
   let generationConfigured = false
   const runtime = controlledExecution()
   const adapter = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, execution: runtime.port, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } })
-  const recaps = createSqliteRecapRuntime({
-    database,
-    clock: { now: () => now },
-    workerId: "e2e_recap",
-    sessionDirectory: "/repo",
-    sessions: {
-      async admit(input) { return String(input.sessionId) },
-      async result() {
-        return { state: "succeeded" as const, summary: JSON.stringify({ summary: "The Stream is current.", actionableReferences: [] }), artifacts: [] }
-      },
-    },
-  })
   const execute = (type: string, command: Record<string, unknown>) => adapter.service.execute(owner(), {
     operationId: branded<OperationID>(`operation_${++operation}`),
     command: { version: 1, type, ...command },
@@ -247,7 +219,6 @@ function setup() {
       expectedVersion: 1,
       defaults: {
         execution: runtimeDefaults,
-        recap: {},
       },
     })
     if (!result.ok) throw new Error(`Expected explicit WorkGraph generation configuration: ${result.error.message}`)
@@ -259,12 +230,6 @@ function setup() {
     runtime,
     execute,
     clock: { now: () => now },
-    advance: (milliseconds: number) => { now += milliseconds },
-    backgroundTick: async () => {
-      await configureGeneration()
-      await recaps.scheduleDue(owner())
-      await recaps.runDue(owner())
-    },
     planAdmission: async (plan: AdmissionAgentPlan) => {
       await configureGeneration()
       const runtime = createSqliteSourcePlanningRuntime({

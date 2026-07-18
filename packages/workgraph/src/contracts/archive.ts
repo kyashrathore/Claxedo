@@ -10,7 +10,6 @@ import {
 import { WorkGraphActorSchema } from "./context"
 import {
   ExecutionProfileDefaultsSchema,
-  RecapProfileDefaultsSchema,
   ResolvedExecutionProfileSchema,
   WorkGraphDefaultsSchema,
 } from "./execution"
@@ -31,7 +30,6 @@ import {
   OrganizationIDSchema,
   OutcomeIDSchema,
   OwnerUserIDSchema,
-  RecapIDSchema,
   SessionBindingIDSchema,
   StreamIDSchema,
   WorkGraphIDSchema,
@@ -56,11 +54,9 @@ import {
   AttemptResultSchema,
   DecisionAnswerSchema,
   DecisionOptionSchema,
-  RecapGenerationSchema,
   RecordProvenanceSchema,
   StreamActivitySchema,
   StreamEnvelopeSchema,
-  StreamMemorySchema,
   StreamReplacementResetSchema,
   WorkGraphRecordReferenceSchema,
 } from "./records"
@@ -92,8 +88,6 @@ export const WorkGraphArchiveRecordKindSchema = z.enum([
   "decision_work_item",
   "evidence",
   "durable_effect_receipt",
-  "recap",
-  "notification",
   "record_source_revision",
   "admission_proposal",
   "operation_result",
@@ -222,9 +216,7 @@ const StreamArchiveValueSchema = z.strictObject({
   visibility: StreamVisibilitySchema,
   pinned: z.boolean(),
   executionDefaults: ExecutionProfileDefaultsSchema,
-  recapDefaults: RecapProfileDefaultsSchema,
   activityGranularity: StreamActivityGranularitySchema.default(DEFAULT_STREAM_ACTIVITY_GRANULARITY),
-  memory: StreamMemorySchema.optional(),
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
   replacementReset: StreamReplacementResetSchema.superRefine((reset, context) => {
@@ -421,38 +413,9 @@ const DurableEffectReceiptArchiveValueSchema = z.strictObject({
   provenance: RecordProvenanceSchema,
 })
 
-const RecapArchiveValueSchema = z.strictObject({
-  ...publicMutable,
-  streamId: StreamIDSchema,
-  previousRecapId: RecapIDSchema.optional(),
-  activityRange: z
-    .strictObject({
-      fromSequence: z.number().int().positive(),
-      toSequence: z.number().int().positive(),
-      quietSince: timestamp,
-    })
-    .refine((range) => range.fromSequence <= range.toSequence, "Recap activity range must be ordered"),
-  summary: text,
-  actionableReferences: z.array(WorkGraphRecordReferenceSchema),
-  generation: RecapGenerationSchema,
-  sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
-})
-
-const NotificationArchiveValueSchema = z.strictObject({
-  schemaVersion,
-  version,
-  kind: z.literal("actionable_recap"),
-  state: z.enum(["unread", "read"]),
-  streamId: StreamIDSchema,
-  recapId: RecapIDSchema,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-  readAt: timestamp.optional(),
-})
-
 const RecordSourceRevisionArchiveValueSchema = z.strictObject({
   ...storedImmutable,
-  recordType: z.enum(["stream", "outcome", "work_item", "attempt", "decision", "recap"]),
+  recordType: z.enum(["stream", "outcome", "work_item", "attempt", "decision"]),
   recordId: text,
   workSourceId: WorkSourceIDSchema,
   sourceRevisionId: WorkSourceRevisionIDSchema,
@@ -615,8 +578,6 @@ export const WorkGraphArchiveRecordSchema = z.discriminatedUnion("kind", [
   archiveRecord("decision_work_item", DecisionWorkItemArchiveValueSchema),
   archiveRecord("evidence", EvidenceArchiveValueSchema),
   archiveRecord("durable_effect_receipt", DurableEffectReceiptArchiveValueSchema),
-  archiveRecord("recap", RecapArchiveValueSchema),
-  archiveRecord("notification", NotificationArchiveValueSchema),
   archiveRecord("record_source_revision", RecordSourceRevisionArchiveValueSchema),
   archiveRecord("admission_proposal", AdmissionProposalArchiveValueSchema),
   archiveRecord("operation_result", OperationResultArchiveValueSchema),

@@ -2,12 +2,10 @@ import { describe, expect, it, vi } from "vitest"
 import {
   createAttentionService,
   createWorkGraphAuthoringAdapter,
-  createRecapService,
   createSessionIntakeService,
   createSourceAdmissionService,
   createWorkSourceService,
   hashWorkSourceContent,
-  RECAP_QUIET_PERIOD_MS,
   workSourceModelExcerpt,
 } from "../src/application"
 import {
@@ -21,7 +19,6 @@ import {
 } from "../src/contracts"
 import type {
   OperationID,
-  RecapID,
   StreamID,
   WorkGraphContext,
   WorkSourceDto,
@@ -214,31 +211,6 @@ describe("attention and background intake", () => {
     expect(await service.onIdle(owner(), { ...session, sessionId: "noise", meaningful: false })).toBe("ignored")
     expect(createUnorganized).toHaveBeenCalledTimes(2)
     expect(createUnorganized.mock.calls[0]?.[1]).toMatchObject({ idempotencyKey: "idle-session:session-1", body: "Found auth gap" })
-  })
-})
-
-describe("quiet-period Recaps", () => {
-  it("creates one durable incremental job after eight quiet hours and resets on activity", async () => {
-    const jobs = new Map<string, unknown>()
-    const candidates = [
-      { streamId: id<StreamID>("due"), lastActivityAt: 1_000, latestSequence: 8, lastRecap: { id: id<RecapID>("recap-1"), toSequence: 5 } },
-      { streamId: id<StreamID>("active"), lastActivityAt: 1_000 + RECAP_QUIET_PERIOD_MS - 1, latestSequence: 4 },
-      { streamId: id<StreamID>("unchanged"), lastActivityAt: 1_000, latestSequence: 5, lastRecap: { id: id<RecapID>("recap-2"), toSequence: 5 } },
-    ]
-    const service = createRecapService({
-      listCandidates: async () => candidates,
-      enqueue: async (_context, job) => {
-        const key = `${job.streamId}:${job.toSequence}`
-        if (jobs.has(key)) return "existing"
-        jobs.set(key, job)
-        return "created"
-      },
-      complete: async () => {},
-    }, { now: () => 1_000 + RECAP_QUIET_PERIOD_MS })
-
-    expect(await service.scheduleDue(owner())).toBe(1)
-    expect(await service.scheduleDue(owner())).toBe(0)
-    expect([...jobs.values()]).toEqual([expect.objectContaining({ streamId: "due", previousRecapId: "recap-1", fromSequence: 6, toSequence: 8, quietSince: 1_000 })])
   })
 })
 

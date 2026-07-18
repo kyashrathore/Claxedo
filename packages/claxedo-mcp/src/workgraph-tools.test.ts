@@ -71,6 +71,94 @@ describe("WorkGraph MCP parity", () => {
     })
   })
 
+  it("tells agents up front that created Tasks enter Staged and need owner approval", () => {
+    const names: string[] = []
+    const descriptions = new Map<string, string>()
+    registerWorkGraphTools((name, config) => {
+      names.push(name)
+      descriptions.set(name, config.description)
+    }, async () => ({}), false)
+    for (const tool of ["workgraph_create_task", "workgraph_create_outcome", "workgraph_create_work", "workgraph_create_followup"]) {
+      expect(descriptions.get(tool)).toContain("Tasks you create enter Staged and do not run until the owner approves them.")
+    }
+    expect(descriptions.get("workgraph_update_execution")).not.toContain("Staged")
+    expect(descriptions.get("workgraph_get")).not.toContain("Staged")
+  })
+
+  it("flags a Staged-approval hint on create-tool results when the created Task is agent-born pending_approval", async () => {
+    const workItemDto = (state: string) => ({
+      recordType: "work_item" as const,
+      schemaVersion: 1 as const,
+      ownerUserId: "user_1",
+      id: "task-1",
+      streamId: "stream-1",
+      title: "Follow up",
+      state,
+      priority: 0,
+      dependencyIds: [],
+      sourceRevisionRefs: [],
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "tests", kind: "test", description: "Tests pass" }],
+      },
+      evidenceIds: [],
+      version: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      provenance: { actor: { type: "agent" as const, id: "session-1" }, operationId: "op-create" },
+    })
+    const embedded = {
+      execute: vi.fn(async () => ({ ok: true as const, operationId: "op-create", cursor: "cursor-1", value: { workItemId: "task-1" } })),
+      snapshot: vi.fn(async () => ({ records: [] })),
+      readStream: vi.fn(async () => undefined),
+      readWorkItem: vi.fn(async () => workItemDto("pending_approval")),
+    }
+    const input = {
+      operation_id: "op-create",
+      stream_id: "stream-1",
+      title: "Follow up",
+      completion_contract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "tests", kind: "test", description: "Tests pass" }],
+      },
+    }
+
+    const staged = await callWorkGraph(embedded, "workgraph_create_followup", input)
+    expect(staged).toMatchObject({
+      ok: true,
+      value: { workItemId: "task-1" },
+      approval: { required: true, note: "Awaiting owner approval before this task can run." },
+    })
+    expect(embedded.readWorkItem).toHaveBeenCalledWith("task-1")
+
+    embedded.readWorkItem.mockResolvedValueOnce(workItemDto("pending"))
+    const approved = await callWorkGraph(embedded, "workgraph_create_followup", { ...input, operation_id: "op-create-2" })
+    expect(approved).not.toHaveProperty("approval")
+  })
+
+  it("never lets a failed create-tool read-back mask the underlying create success", async () => {
+    const embedded = {
+      execute: vi.fn(async () => ({ ok: true as const, operationId: "op-create", cursor: "cursor-1", value: { workItemId: "task-1" } })),
+      snapshot: vi.fn(async () => ({ records: [] })),
+      readStream: vi.fn(async () => undefined),
+      readWorkItem: vi.fn(async () => { throw new Error("read-back unavailable") }),
+    }
+    const result = await callWorkGraph(embedded, "workgraph_create_followup", {
+      operation_id: "op-create",
+      stream_id: "stream-1",
+      title: "Follow up",
+      completion_contract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "tests", kind: "test", description: "Tests pass" }],
+      },
+    })
+    expect(result).toMatchObject({ ok: true, value: { workItemId: "task-1" } })
+    expect(result).not.toHaveProperty("approval")
+  })
+
   it("maps general edits to the exact versioned Stream, Outcome, and Task commands", () => {
     expect(toCommandRequest("workgraph_update", {
       operation_id: "operation-stream-update",
@@ -221,31 +309,11 @@ describe("WorkGraph MCP parity", () => {
   })
 
   it("uses the app's exact execution-default and retry commands", () => {
-    expect(z.object(WORKGRAPH_TOOL_SCHEMAS.workgraph_execute).safeParse({
-      operation_id: "operation-execute",
-      target_type: "stream",
-      target_id: "stream-1",
-    }).success).toBe(false)
-    expect(toCommandRequest("workgraph_execute", {
-      operation_id: "operation-execute",
-      target_type: "stream",
-      target_id: "stream-1",
-      mode: "supervised",
-    })).toEqual({
-      operationId: "operation-execute",
-      command: {
-        version: 1,
-        type: "execute_stream",
-        streamId: "stream-1",
-        executionMode: "supervised",
-      },
-    })
     expect(toCommandRequest("workgraph_update_defaults", {
       operation_id: "operation-defaults",
       expected_version: 1,
       defaults: {
         execution: { effort: "high" },
-        recap: { quietHours: 12 },
       },
     })).toEqual({
       operationId: "operation-defaults",
@@ -255,7 +323,6 @@ describe("WorkGraph MCP parity", () => {
         expectedVersion: 1,
         defaults: {
           execution: { effort: "high" },
-          recap: { quietHours: 12 },
         },
       },
     })
@@ -347,17 +414,14 @@ describe("WorkGraph MCP parity", () => {
     ])
   })
 
-  it("uses stable cursor pages for Attention, notifications, and candidates", async () => {
+  it("uses stable cursor pages for Attention and candidates", async () => {
     const request = vi.fn()
       .mockResolvedValueOnce({ items: [], total: 0, hasMore: false })
-      .mockResolvedValueOnce({ notifications: [], hasMore: false })
       .mockResolvedValueOnce({ candidates: [], hasMore: false })
     await callWorkGraph(request, "workgraph_attention", { cursor: "attention-1", limit: 25 })
-    await callWorkGraph(request, "workgraph_notifications", { cursor: "notification-1", limit: 20, state: "unread" })
     await callWorkGraph(request, "workgraph_intake", { cursor: "candidate-1", limit: 15 })
     expect(request.mock.calls).toEqual([
       ["/api/workgraph/attention?limit=25&after=attention-1", { method: "GET" }],
-      ["/api/workgraph/notifications?limit=20&after=notification-1&state=unread", { method: "GET" }],
       ["/api/workgraph/intake?limit=15&after=candidate-1", { method: "GET" }],
     ])
   })
@@ -373,30 +437,6 @@ describe("WorkGraph MCP parity", () => {
       "/api/workgraph/work-items/task-1/activity?limit=20&after=activity-1&granularity=progress",
       { method: "GET" },
     )
-  })
-
-  it("marks actionable Recap notifications read with optimistic concurrency", async () => {
-    const notification = {
-      id: "notification-1",
-      ownerUserId: "user_1",
-      version: 2,
-      kind: "actionable_recap" as const,
-      state: "read" as const,
-      streamId: "stream-1",
-      recapId: "recap-1",
-      createdAt: 1,
-      updatedAt: 2,
-      readAt: 2,
-    }
-    const request = vi.fn(async () => notification)
-    await expect(callWorkGraph(request, "workgraph_mark_notification_read", {
-      notification_id: "notification-1",
-      expected_version: 1,
-    })).resolves.toEqual(notification)
-    expect(request).toHaveBeenCalledWith("/api/workgraph/notifications/notification-1/read", {
-      method: "POST",
-      body: JSON.stringify({ expectedVersion: 1 }),
-    })
   })
 
   it("confirms only the exact reviewed admission proposal version and replacement Work Item set", () => {
@@ -672,7 +712,6 @@ describe("WorkGraph MCP parity", () => {
       ["work_item", "/api/workgraph/work-items/missing"],
       ["attempt", "/api/workgraph/attempts/missing"],
       ["decision", "/api/workgraph/decisions/missing"],
-      ["recap", "/api/workgraph/recaps/missing"],
     ] as const) {
       const request = vi.fn(async () => { throw new McpHttpError(404, "not_found", "missing") })
       await expect(callWorkGraph(request, "workgraph_get", { record_type: recordType, id: "missing" }))
@@ -780,7 +819,7 @@ describe("WorkGraph MCP parity", () => {
 
   it("filters snapshot lists by the requested noun and rejects misleading pagination", async () => {
     const result = await callWorkGraph(
-      vi.fn(async () => snapshotPage([streams(0, 1)[0]!, recap("recap-1", "stream_1", 2)], "change-2", 2)),
+      vi.fn(async () => snapshotPage([streams(0, 1)[0]!], "change-2", 2)),
       "workgraph_list",
       { kind: "streams" },
     ) as { records: Array<{ recordType: string }> }
@@ -804,35 +843,6 @@ describe("WorkGraph MCP parity", () => {
       }))
     await expect(callWorkGraph(request, "workgraph_get", { record_type: "outcome", id: "outcome_missing" }))
       .rejects.toBeInstanceOf(WorkGraphRecordNotFoundError)
-  })
-
-  it("throws typed not_found when a Stream has no requested Recap", async () => {
-    await expect(callWorkGraph(
-      vi.fn(async () => { throw new McpHttpError(404, "not_found", "Recap not found") }),
-      "workgraph_recap",
-      { stream_id: "stream_1", recap_id: "recap_missing" },
-    )).rejects.toMatchObject({
-      code: "not_found",
-      status: 404,
-      recordType: "recap",
-      recordId: "recap_missing",
-    })
-  })
-
-  it("returns only the latest Recap for the requested Stream when no Recap ID is supplied", async () => {
-    const records = [
-      recap("recap_old", "stream_1", 10),
-      recap("recap_other", "stream_2", 30),
-      recap("recap_latest", "stream_1", 20),
-      invalidatedRecap("recap_retired", "stream_1", 40),
-    ]
-    const result = await callWorkGraph(
-      vi.fn(async () => snapshotPage(records, "change_recaps", 30)),
-      "workgraph_recap",
-      { stream_id: "stream_1" },
-    ) as { id: string }
-
-    expect(result.id).toBe("recap_latest")
   })
 
   it("returns a typed MCP error instead of a successful empty record array", async () => {
@@ -1020,7 +1030,6 @@ describe("WorkGraph MCP parity", () => {
       "workgraph_get_defaults",
       "workgraph_execution_capabilities",
       "workgraph_attention",
-      "workgraph_notifications",
       "workgraph_list",
       "workgraph_get",
       "workgraph_source_revision",
@@ -1032,7 +1041,6 @@ describe("WorkGraph MCP parity", () => {
       "workgraph_evidence",
       "workgraph_attempts",
       "workgraph_activity",
-      "workgraph_recap",
     ])
   })
 })
@@ -1111,50 +1119,10 @@ function streams(start: number, count: number) {
     visibility: "visible" as const,
     pinned: false,
     executionDefaults: {},
-    recapDefaults: {},
-    activity: { lastActivityAt: 1, recapDueAt: 2 },
+    activity: { lastActivityAt: 1 },
     durableEffectCount: 0,
     sourceRevisionRefs: [],
   }))
-}
-
-function recap(id: string, streamId: string, updatedAt: number) {
-  return {
-    recordType: "recap" as const,
-    schemaVersion: 1 as const,
-    ownerUserId: "user_1",
-    version: 1,
-    createdAt: updatedAt,
-    updatedAt,
-    provenance: { actor },
-    id,
-    streamId,
-    activityRange: { fromSequence: 1, toSequence: 1, quietSince: updatedAt },
-    summary: `Recap ${id}`,
-    actionableReferences: [],
-    generation: {
-      state: "succeeded" as const,
-      model: { providerId: "openai", modelId: "gpt-5" },
-      effort: "medium",
-      generatedAt: updatedAt,
-      method: "agent_session" as const,
-      sessionId: `session_${id}`,
-    },
-    sourceRevisionRefs: [],
-  }
-}
-
-function invalidatedRecap(id: string, streamId: string, updatedAt: number) {
-  return {
-    ...recap(id, streamId, updatedAt),
-    generation: {
-      state: "invalidated" as const,
-      model: { providerId: "openai", modelId: "gpt-5" },
-      effort: "medium",
-      reason: "Retired non-session generation",
-      source: "retired_non_session_generation" as const,
-    },
-  }
 }
 
 function sessionBinding(overrides: Record<string, unknown> = {}) {
@@ -1176,7 +1144,7 @@ function sessionBinding(overrides: Record<string, unknown> = {}) {
   }
 }
 
-type SnapshotRecordFixture = ReturnType<typeof streams>[number] | ReturnType<typeof recap> | ReturnType<typeof invalidatedRecap>
+type SnapshotRecordFixture = ReturnType<typeof streams>[number]
 
 function snapshotPage(
   records: SnapshotRecordFixture[],

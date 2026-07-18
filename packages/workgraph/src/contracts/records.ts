@@ -3,7 +3,7 @@ import { AdmissionProposalIDSchema, ChangeCursorSchema } from "./commands"
 import { SnapshotResumeCursorSchema } from "./snapshot-cursor"
 import { CompletionContractSchema } from "./completion"
 import { WorkGraphActorSchema } from "./context"
-import { ExecutionProfileDefaultsSchema, ModelSelectionSchema, RecapProfileDefaultsSchema, ResolvedExecutionProfileSchema, WorkGraphDefaultsSchema } from "./execution"
+import { ExecutionProfileDefaultsSchema, ResolvedExecutionProfileSchema, WorkGraphDefaultsSchema } from "./execution"
 import {
   AttemptIDSchema,
   DecisionIDSchema,
@@ -11,7 +11,6 @@ import {
   OperationIDSchema,
   OutcomeIDSchema,
   OwnerUserIDSchema,
-  RecapIDSchema,
   StreamIDSchema,
   WorkGraphIDSchema,
   WorkItemIDSchema,
@@ -54,21 +53,8 @@ export const WorkGraphDefaultsDtoSchema = z.strictObject({
 })
 export type WorkGraphDefaultsDto = z.infer<typeof WorkGraphDefaultsDtoSchema>
 
-export const StreamMemorySchema = z.strictObject({
-  summary: text,
-  updatedAt: timestamp,
-  attention: z.strictObject({
-    type: z.literal("recap_failed"),
-    reason: text,
-    at: timestamp,
-  }).optional(),
-})
-export type StreamMemory = z.infer<typeof StreamMemorySchema>
-
 export const StreamActivitySchema = z.strictObject({
   lastActivityAt: timestamp,
-  recapDueAt: timestamp,
-  lastRecapId: RecapIDSchema.optional(),
 })
 export type StreamActivity = z.infer<typeof StreamActivitySchema>
 
@@ -99,9 +85,7 @@ export const StreamDtoSchema = z.strictObject({
   visibility: StreamVisibilitySchema,
   pinned: z.boolean(),
   executionDefaults: ExecutionProfileDefaultsSchema,
-  recapDefaults: RecapProfileDefaultsSchema,
   activityGranularity: StreamActivityGranularitySchema.default(DEFAULT_STREAM_ACTIVITY_GRANULARITY),
-  memory: StreamMemorySchema.optional(),
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
   replacementReset: StreamReplacementResetSchema.optional(),
@@ -145,6 +129,9 @@ export const WorkItemDtoSchema = z.strictObject({
   completionContract: CompletionContractSchema,
   evidenceIds: z.array(EvidenceIDSchema),
   executionDefaults: ExecutionProfileDefaultsSchema.optional(),
+  createdByActorType: z.enum(["user", "agent", "system"]).optional(),
+  createdByActorId: text.optional(),
+  originAttemptId: AttemptIDSchema.optional(),
   abandonedAt: timestamp.optional(),
   abandonReason: text.optional(),
 })
@@ -238,55 +225,9 @@ export const WorkGraphRecordReferenceSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("work_item"), id: WorkItemIDSchema }),
   z.strictObject({ type: z.literal("attempt"), id: AttemptIDSchema }),
   z.strictObject({ type: z.literal("decision"), id: DecisionIDSchema }),
-  z.strictObject({ type: z.literal("recap"), id: RecapIDSchema }),
   z.strictObject({ type: z.literal("admission_proposal"), id: AdmissionProposalIDSchema }),
 ])
 export type WorkGraphRecordReference = z.infer<typeof WorkGraphRecordReferenceSchema>
-
-export const RecapGenerationSchema = z.discriminatedUnion("state", [
-  z.strictObject({
-    state: z.literal("succeeded"),
-    model: ModelSelectionSchema,
-    effort: text,
-    generatedAt: timestamp,
-    method: z.literal("agent_session"),
-    sessionId: text,
-  }),
-  z.strictObject({
-    state: z.literal("failed"),
-    model: ModelSelectionSchema,
-    effort: text,
-    failedAt: timestamp.optional(),
-    invalidatedAt: timestamp.optional(),
-    reason: text,
-  }),
-  z.strictObject({
-    state: z.literal("invalidated"),
-    model: ModelSelectionSchema.optional(),
-    effort: text.optional(),
-    reason: text,
-    source: z.enum(["retired_non_session_generation", "retired_incomplete_generation"]),
-  }),
-])
-export type RecapGeneration = z.infer<typeof RecapGenerationSchema>
-
-export const RecapDtoSchema = z
-  .strictObject({
-    recordType: z.literal("recap"),
-    ...ownerRecordShape,
-    id: RecapIDSchema,
-    streamId: StreamIDSchema,
-    previousRecapId: RecapIDSchema.optional(),
-    activityRange: z
-      .strictObject({ fromSequence: z.number().int().positive(), toSequence: z.number().int().positive(), quietSince: timestamp })
-      .refine((range) => range.fromSequence <= range.toSequence, "Recap activity range must be ordered"),
-    summary: text,
-    actionableReferences: z.array(WorkGraphRecordReferenceSchema),
-    generation: RecapGenerationSchema,
-    sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
-  })
-  .transform(deepFreeze)
-export type RecapDto = z.infer<typeof RecapDtoSchema>
 
 export const AdmissionProposalStateSchema = z.enum(["planning", "planning_failed", "proposed", "confirmed", "dismissed"])
 export type AdmissionProposalState = z.infer<typeof AdmissionProposalStateSchema>
@@ -439,7 +380,6 @@ export const WorkGraphPublicRecordSchema = z.union([
   WorkItemDtoSchema,
   AttemptDtoSchema,
   DecisionDtoSchema,
-  RecapDtoSchema,
   AdmissionProposalDtoSchema,
 ])
 export type WorkGraphPublicRecord = z.infer<typeof WorkGraphPublicRecordSchema>

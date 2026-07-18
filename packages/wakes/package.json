@@ -29,6 +29,22 @@
   },
   "description": "Resume an idle agent session from an out-of-band trigger \u2014 a durable wake fired by time, an external event, or an authorized approval.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/wakes"
+  },
+  "homepage": "https://github.com/kyashrathore/Claxedo/tree/dev/packages/wakes",
+  "bugs": "https://github.com/kyashrathore/Claxedo/issues",
+  "keywords": [
+    "claxedo",
+    "wakes",
+    "scheduler",
+    "durable",
+    "agent",
+    "cron",
+    "webhooks"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
