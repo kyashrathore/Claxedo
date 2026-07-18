@@ -10,7 +10,6 @@ import type {
   EvidencePageCursor,
   IntakeCandidatePage,
   IntakeCandidatePageCursor,
-  RecapDto,
   ReplacementReview,
   StreamDto,
   WorkGraphDefaultsDto,
@@ -55,20 +54,20 @@ export type WorkGraphWaitingSource = {
   evidence: (workItemId: string) => Promise<EvidenceDto[]>
   attempt: (attemptId: string) => Promise<AttemptDetailDto>
   decision: (decisionId: string) => Promise<DecisionDto>
-  recap: (recapId: string) => Promise<RecapDto>
   /** One page of intake candidates. Pass the previous page's `nextCursor` to page. */
   candidates: (after?: IntakeCandidatePageCursor) => Promise<IntakeCandidatePage>
   defaults: () => Promise<WorkGraphDefaultsDto>
   answerDecision: (decisionId: string, expectedVersion: number, answer: { optionId?: string; answer?: string }) => Promise<CommandResult>
   dismissDecision: (decisionId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
-  markNotificationRead: (notificationId: string, expectedVersion: number) => Promise<unknown>
   confirmAdmission: (proposal: Parameters<WorkGraphClient["confirmAdmission"]>[0]) => Promise<CommandResult>
   dismissAdmission: (proposalId: string, expectedVersion: number) => Promise<CommandResult>
   stageIntakeCandidate: (candidateId: string) => Promise<unknown>
   dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => Promise<unknown>
   cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
   retryWorkItem: (workItemId: string, expectedVersion: number) => Promise<CommandResult>
-  executeWorkItem: WorkGraphClient["executeWorkItem"]
+  approveWorkItem: WorkGraphClient["approveWorkItem"]
+  rejectWorkItem: WorkGraphClient["rejectWorkItem"]
+  approveWorkItems: WorkGraphClient["approveWorkItems"]
   /**
    * Server-truth review for a Work Source *revision* admission (i.e. a proposal
    * whose `previousSource` is set). Returns the target Stream's title (needed to
@@ -95,19 +94,19 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     evidence: (id) => workItemEvidence(client, id),
     attempt: (id) => client.attempt(id),
     decision: (id) => client.decision(id),
-    recap: (id) => client.recap(id),
     candidates: (after) => client.intakeCandidates(after ? { after } : {}),
     defaults: () => client.defaults(),
     answerDecision: (id, version, answer) => client.answerDecision(id, version, answer),
     dismissDecision: (id, version, reason) => client.dismissDecision(id, version, reason),
-    markNotificationRead: (id, version) => client.markNotificationRead(id, version),
     confirmAdmission: (proposal) => client.confirmAdmission(proposal),
     dismissAdmission: (id, version) => client.dismissAdmission(id, version),
     stageIntakeCandidate: (id) => client.stageIntakeCandidate(id),
     dismissIntakeCandidate: (id, version) => client.dismissIntakeCandidate(id, version),
     cancelAttempt: (id, version, reason) => client.cancelAttempt(id, version, reason),
     retryWorkItem: (id, version) => client.retryWorkItem(id, version),
-    executeWorkItem: (id, mode) => client.executeWorkItem(id, mode),
+    approveWorkItem: (id, version) => client.approveWorkItem(id, version),
+    rejectWorkItem: (id, version, reason) => client.rejectWorkItem(id, version, reason),
+    approveWorkItems: (approvals) => client.approveWorkItems(approvals),
     replacementReview: (input) => client.replacementReview(input),
   }
 }
@@ -157,6 +156,9 @@ export type WaitingRowView = {
   meta: string
   /** Whether the leading dot should read as critical (coral) vs neutral. */
   critical: boolean
+  /** A staged work item (pending_approval): rendered with inline Approve/Reject
+   *  and a dashed glyph, visually distinct from result-review rows. */
+  staged: boolean
   item: AttentionItem
 }
 
@@ -169,17 +171,6 @@ const WORK_ITEM_TAG: Record<string, string> = {
 
 /** Maps an Attention item to a row view. Pure — no fabricated values. */
 export function toWaitingRow(item: AttentionItem): WaitingRowView {
-  if (item.kind === "recap_notification") {
-    return {
-      key: `recap:${item.id}`,
-      kind: item.kind,
-      tag: "recap",
-      title: "Actionable stream recap",
-      meta: `${item.recap.actionableReferences.length} actionable ref${item.recap.actionableReferences.length === 1 ? "" : "s"}`,
-      critical: false,
-      item,
-    }
-  }
   if (item.kind === "admission_proposal") {
     const outcomes = item.record.state === "proposed" ? item.record.proposedOutcomes.length : 0
     const tasks = item.record.state === "proposed" ? item.record.proposedWorkItems.length : 0
@@ -190,6 +181,7 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
       title: "Review proposed work",
       meta: `${tasks} task${tasks === 1 ? "" : "s"} · ${outcomes} outcome${outcomes === 1 ? "" : "s"} planned`,
       critical: false,
+      staged: false,
       item,
     }
   }
@@ -201,17 +193,24 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
       title: item.record.question,
       meta: `Decision · ${item.record.options.length} option${item.record.options.length === 1 ? "" : "s"} · affects ${item.record.affectedWorkItemIds.length}`,
       critical: true,
+      staged: false,
       item,
     }
   }
   if (item.kind === "work_item") {
+    const staged = item.record.state === "pending_approval"
     return {
       key: `work_item:${item.id}`,
       kind: item.kind,
-      tag: WORK_ITEM_TAG[item.record.state] ?? item.record.state.replaceAll("_", " "),
+      tag: staged ? "staged" : (WORK_ITEM_TAG[item.record.state] ?? item.record.state.replaceAll("_", " ")),
       title: item.record.title,
-      meta: item.record.dependencyIds.length ? `waits for ${item.record.dependencyIds.length}` : "needs your review",
+      meta: staged
+        ? "Approve to run"
+        : item.record.dependencyIds.length
+          ? `waits for ${item.record.dependencyIds.length}`
+          : "needs your review",
       critical: item.record.state === "blocked" || item.record.state === "verification_failed",
+      staged,
       item,
     }
   }
@@ -223,6 +222,7 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
       title: `Attempt ${item.record.attemptNumber}`,
       meta: item.record.attentionReason ?? "Attempt needs your attention",
       critical: true,
+      staged: false,
       item,
     }
   }
@@ -234,6 +234,7 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
       title: "Unorganized AI work",
       meta: `${item.counts.total} candidate${item.counts.total === 1 ? "" : "s"} · ${item.counts.externalIssues} issue${item.counts.externalIssues === 1 ? "" : "s"} · ${item.counts.sessions} session${item.counts.sessions === 1 ? "" : "s"}`,
       critical: false,
+      staged: false,
       item,
     }
   }
@@ -248,6 +249,7 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
         ? `${requirement.integrationId} connection ${requirement.status}${requirement.accountLabel ? ` · ${requirement.accountLabel}` : ""}`
         : `${requirement.purpose.replaceAll("_", " ")} generation needs attention`,
     critical: requirement.type === "connection" ? requirement.status === "broken" : true,
+    staged: false,
     item,
   }
 }

@@ -1,14 +1,13 @@
 import { v } from "convex/values"
-import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, ExecutionProfileDefaultsSchema, PublicEventPayloadSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor, type ExecutionMode } from "@claxedo/workgraph/contracts"
+import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, PublicEventPayloadSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor } from "@claxedo/workgraph/contracts"
 import { rankDuplicateMatches, rankStreamMatches } from "@claxedo/workgraph/matching"
 import {
   dependencyGraphHasCycle,
   evaluateCompletionContract,
   validateExecutionProfileDefaultsAgainstCapabilities,
-  validateRecapProfileDefaultsAgainstCapabilities,
   validateResolvedExecutionProfileAgainstCapabilities,
 } from "@claxedo/workgraph/domain"
-import { ExecutionCapabilitiesSchema, RecapProfileDefaultsSchema, ResolvedExecutionProfileSchema, isExecutionCapabilityCatalogFresh, resolveRecapProfileDefaults } from "@claxedo/workgraph/contracts"
+import { ExecutionCapabilitiesSchema, ResolvedExecutionProfileSchema, isExecutionCapabilityCatalogFresh } from "@claxedo/workgraph/contracts"
 import { authedMutation, serviceMutation } from "./model"
 import { requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject, workGraphOwnerDeletionBarrier } from "./workgraphModel"
 import { initializeAttentionProjection, removeAttentionRecord, syncAttentionResource, syncCandidateTransition } from "./workgraphAttention"
@@ -43,8 +42,9 @@ const supported = new Set([
   "reopen_outcome",
   "close_stream",
   "delete_stream",
-  "execute_stream",
-  "execute_work_item",
+  "approve_work_item",
+  "reject_work_item",
+  "approve_work_items",
   "cancel_attempt",
   "retry_work_item",
 ])
@@ -148,17 +148,9 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
   if (pending.streamId) {
     const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, pending.streamId)
     if (stream) {
-      const root = await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID)
-      const recap = explicitStreamRecapConfiguration(stream.recap_defaults, {
-        ...(root?.defaults ?? {}),
-        ...(stream.execution_defaults ?? {}),
-      })
-      const recapDueAt = recap ? now + recap.quietHours * 60 * 60 * 1000 : now
       await ctx.db.patch(stream._id, {
-        activity: { lastActivityAt: now, recapDueAt },
+        activity: { lastActivityAt: now },
         last_activity_at: now,
-        quiet_since: now,
-        recap_due_at: recapDueAt,
         updated_at: now,
       })
     }
@@ -218,74 +210,121 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       return rejected(input.operationId, "version_conflict", "WorkGraph defaults version changed")
     await ctx.db.patch(root._id, {
       defaults: command.defaults.execution,
-      recap_defaults: command.defaults.recap,
       row_version: root.row_version + 1,
       provenance: { actor: { type: input.actor.type, id: input.actor.id }, operationId: input.operationId },
       updated_at: now,
     })
     return pending("workgraph_defaults_updated", "workgraph", ROOT_ID, { workGraphId: ROOT_ID })
   }
-  if (command.type === "execute_work_item" || command.type === "retry_work_item") {
+  if (command.type === "approve_work_item") {
+    // Approval is owner-only: agents can never approve, reject, or launch (plan
+    // §4). CAS on row_version AND state to close the approve-vs-edit /
+    // approve-vs-delete races — 0 rows affected is a conflict, never silent success.
+    if (input.actor.type !== "user")
+      return rejected(input.operationId, "forbidden", "Only the owner can approve tasks")
     const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, command.workItemId)
     if (!item) return rejected(input.operationId, "not_found", "Work Item not found")
-    if (command.type === "retry_work_item" && item.row_version !== command.expectedVersion) {
+    if (item.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Work Item version changed")
-    }
-    const executionMode = command.type === "execute_work_item"
-      ? command.executionMode
-      : await latestAttemptExecutionMode(ctx, input.organizationId, input.ownerUserId, item.id)
-    if (!executionMode) return rejected(input.operationId, "validation_error", "Retry requires an explicitly stored execution mode")
-    const admitted = await admitAttempt(ctx, input, item, executionMode, now)
-    if (!admitted.ok) return rejected(input.operationId, admitted.code, admitted.message)
-    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
-    if (stream) await ctx.db.patch(stream._id, {
-      execution_mode: executionMode,
-      execution_state: executionMode === "autonomous" ? "active" : "stopped",
-      updated_at: now,
-    })
+    if (item.state !== "pending_approval")
+      return rejected(input.operationId, "invalid_transition", "Task is not awaiting approval")
+    await ctx.db.patch(item._id, { state: "pending", row_version: item.row_version + 1, updated_at: now })
+    // Approval is a readiness-changing mutation: drain in-transaction so an
+    // approved+ready task in an active Stream launches with no further action
+    // (the hosted nudge and CF cron are the durability backstops, §5.2 row 1).
+    const approvedStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
+    if (approvedStream) await continueStream(ctx, approvedStream, now)
     return pending(
-      "attempt_admitted",
-      "attempt",
-      admitted.attemptId,
-      { attemptId: admitted.attemptId, workItemId: item.id, leaseEpoch: admitted.leaseEpoch },
+      "work_item_approved",
+      "work_item",
+      command.workItemId,
+      { workItemId: command.workItemId, version: item.row_version + 1 },
       item.stream_id,
     )
   }
-  if (command.type === "execute_stream") {
-    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
-    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
-    if (stream.lifecycle_state === "paused")
-      return rejected(input.operationId, "blocked", "Paused Streams do not admit new Attempts")
-    if (stream.lifecycle_state === "closed")
-      return rejected(input.operationId, "invalid_transition", "Closed Streams do not execute")
-    const items = await ctx.db
-      .query("workgraph_work_items")
-      .withIndex("by_tenant_stream", (q: any) => q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("stream_id", stream.id))
-      .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
-      .collect()
-    const results = []
-    for (const item of items.filter((row: any) => row.state === "pending")) {
-      const admitted = await admitAttempt(ctx, input, item, command.executionMode, now)
-      results.push(admitted)
-    }
-    const admissions = results.filter((result) => result.ok)
-    if (admissions.length === 0) {
-      const failure = results.find((result) => !result.ok)
-      return failure
-        ? rejected(input.operationId, failure.code, failure.message)
-        : rejected(input.operationId, "blocked", "No ready Work Items can be admitted")
-    }
-    await ctx.db.patch(stream._id, {
-      execution_mode: command.executionMode,
-      execution_state: command.executionMode === "autonomous" ? "active" : "stopped",
+  if (command.type === "reject_work_item") {
+    if (input.actor.type !== "user")
+      return rejected(input.operationId, "forbidden", "Only the owner can reject tasks")
+    const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, command.workItemId)
+    if (!item) return rejected(input.operationId, "not_found", "Work Item not found")
+    if (item.row_version !== command.expectedVersion)
+      return rejected(input.operationId, "version_conflict", "Work Item version changed")
+    if (item.state !== "pending_approval")
+      return rejected(input.operationId, "invalid_transition", "Task is not awaiting approval")
+    // Reject -> the existing terminal `abandoned`. Abandoned satisfies dependencies
+    // (see readiness change) so rejecting a task unblocks its dependents.
+    await ctx.db.patch(item._id, {
+      state: "abandoned",
+      abandon_reason: command.reason,
+      abandoned_at: now,
+      row_version: item.row_version + 1,
       updated_at: now,
     })
+    // Rejection unblocks dependents (abandoned satisfies dependencies), so it is
+    // readiness-changing too: drain in-transaction.
+    const rejectedStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
+    if (rejectedStream) await continueStream(ctx, rejectedStream, now)
     return pending(
-      "stream_execution_requested",
-      "stream",
-      stream.id,
-      { attemptIds: admissions.map((item) => item.attemptId) },
-      stream.id,
+      "work_item_rejected",
+      "work_item",
+      command.workItemId,
+      { workItemId: command.workItemId, reason: command.reason },
+      item.stream_id,
+    )
+  }
+  if (command.type === "approve_work_items") {
+    if (input.actor.type !== "user")
+      return rejected(input.operationId, "forbidden", "Only the owner can approve tasks")
+    // Per-entry CAS `pending_approval -> pending`. Partial success by design: one
+    // stale or missing task never blocks the rest. The client sends the exact
+    // row_versions it rendered so it never approves an unseen edit; a server-side
+    // "approve everything staged" sweep is forbidden.
+    const results = []
+    const approvedStreams = new Set<string>()
+    for (const approval of command.approvals) {
+      const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, approval.workItemId)
+      if (!item) {
+        results.push({ workItemId: approval.workItemId, outcome: "not_found" as const })
+        continue
+      }
+      if (item.row_version !== approval.expectedVersion) {
+        results.push({ workItemId: approval.workItemId, outcome: "version_conflict" as const })
+        continue
+      }
+      if (item.state !== "pending_approval") {
+        results.push({ workItemId: approval.workItemId, outcome: "not_staged" as const })
+        continue
+      }
+      await ctx.db.patch(item._id, { state: "pending", row_version: item.row_version + 1, updated_at: now })
+      approvedStreams.add(item.stream_id)
+      results.push({ workItemId: approval.workItemId, outcome: "approved" as const, version: item.row_version + 1 })
+    }
+    for (const streamId of approvedStreams) {
+      const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, streamId)
+      if (stream) await continueStream(ctx, stream, now)
+    }
+    return pending("work_item_approved", "workgraph", ROOT_ID, { results })
+  }
+  if (command.type === "retry_work_item") {
+    // Pure CAS-guarded `failed -> pending` flip. Approval is preserved by
+    // construction (the retry edge never passes through `pending_approval`); no
+    // stored execution mode is replayed. The drain re-admits the item once the
+    // Stream is active and its derived hold clears.
+    const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, command.workItemId)
+    if (!item) return rejected(input.operationId, "not_found", "Work Item not found")
+    if (item.row_version !== command.expectedVersion)
+      return rejected(input.operationId, "version_conflict", "Work Item version changed")
+    if (item.state !== "failed")
+      return rejected(input.operationId, "invalid_transition", "Only a failed Work Item can be retried")
+    await ctx.db.patch(item._id, { state: "pending", row_version: item.row_version + 1, updated_at: now })
+    const retriedStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
+    if (retriedStream) await continueStream(ctx, retriedStream, now)
+    return pending(
+      "work_item_state_changed",
+      "work_item",
+      command.workItemId,
+      { workItemId: command.workItemId, state: "pending" },
+      item.stream_id,
     )
   }
   if (command.type === "cancel_attempt") {
@@ -332,12 +371,6 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       return rejected(input.operationId, "version_conflict", "Stream source is not the current Work Source head")
     }
     const id = resourceId("stream", input)
-    const root = await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID)
-    const recap = explicitStreamRecapConfiguration(command.recap, {
-      ...(root?.defaults ?? {}),
-      ...(command.execution ?? {}),
-    })
-    const recapDueAt = recap ? now + recap.quietHours * 60 * 60 * 1000 : now
     await ctx.db.insert("workgraph_streams", {
       organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
@@ -349,10 +382,8 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       visibility: "visible",
       pinned: false,
       execution_defaults: command.execution ?? {},
-      recap_defaults: recap ?? command.recap ?? {},
       activity_granularity: command.activityGranularity ?? "progress",
-      activity: { lastActivityAt: now, recapDueAt },
-      recap_due_at: recapDueAt,
+      activity: { lastActivityAt: now },
       durable_effect_count: 0,
       source_revision_refs: command.source ? [sourceRef(command.source)] : [],
       provenance: provenance(input),
@@ -372,7 +403,6 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       ...(command.title === undefined ? {} : { title: command.title }),
       ...(command.description === undefined ? {} : { description: command.description }),
       ...(command.execution === undefined ? {} : { execution_defaults: command.execution }),
-      ...(command.recap === undefined ? {} : { recap_defaults: command.recap }),
       ...(command.activityGranularity === undefined ? {} : { activity_granularity: command.activityGranularity }),
       row_version: stream.row_version + 1,
       updated_at: now,
@@ -532,6 +562,10 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
         return rejected(input.operationId, "not_found", "Dependency not found")
     }
     const id = resourceId("work_item", input)
+    // The materializing actor decides the born state: human-created tasks are born
+    // approved (`pending`); agent/system-created tasks enter the approval gate
+    // (`pending_approval`) and never run until the owner approves them (plan §4).
+    const bornState = input.actor.type === "user" ? "pending" : "pending_approval"
     await ctx.db.insert("workgraph_work_items", {
       organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
@@ -540,7 +574,9 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       ...(command.outcomeId === undefined ? {} : { outcome_id: command.outcomeId }),
       title: command.title,
       ...(command.description === undefined ? {} : { description: command.description }),
-      state: "pending",
+      state: bornState,
+      created_by_actor_type: input.actor.type,
+      created_by_actor_id: input.actor.id,
       priority: command.priority ?? 0,
       source_revision_refs: command.source ? [sourceRef(command.source)] : [],
       completion_contract: command.completionContract,
@@ -634,6 +670,30 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
           }),
         ),
       )
+    }
+    // Agent material edits re-open the approval gate: an owner-authorized agent
+    // mutating an approved-but-not-yet-launched plan demotes it back to
+    // `pending_approval` so the owner re-approves (plan §4 rule 2). Human edits
+    // re-affirm (their row_version bump already CAS-invalidates any stale approval),
+    // and edits to running/terminal items never touch approval.
+    const changesMaterialField =
+      command.title !== undefined ||
+      command.description !== undefined ||
+      command.priority !== undefined ||
+      command.outcomeId !== undefined ||
+      command.dependencyIds !== undefined ||
+      command.completionContract !== undefined ||
+      command.execution !== undefined
+    if (input.actor.type === "agent" && item.state === "pending" && changesMaterialField) {
+      const current = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, item.id)
+      if (current && current.state === "pending") {
+        await ctx.db.patch(current._id, {
+          state: "pending_approval",
+          row_version: current.row_version + 1,
+          updated_at: now,
+        })
+      }
+      return pending("work_item_restaged", "work_item", item.id, { workItemId: item.id }, item.stream_id)
     }
     return pending("work_item_updated", "work_item", item.id, { workItemId: item.id }, item.stream_id)
   }
@@ -1222,7 +1282,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     }
     if (completed) {
       const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, attempt.stream_id)
-      if (stream) await continueAutonomousStream(ctx, stream, now)
+      if (stream) await continueStream(ctx, stream, now)
     }
     return pending(
       "attempt_completed",
@@ -1323,7 +1383,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     }
     if (completed) {
       const currentStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, subject.stream_id)
-      if (currentStream) await continueAutonomousStream(ctx, currentStream, now)
+      if (currentStream) await continueStream(ctx, currentStream, now)
     }
     return pending("evidence_recorded", "evidence", id, { evidenceId: id, ...(completed ? { workItemState: "completed" } : {}) }, subject.stream_id)
   }
@@ -1428,16 +1488,10 @@ async function deleteStreamGraph(ctx: any, organization: string, owner: string, 
       .collect(),
     streamRows(ctx, organization, "workgraph_attempts", owner, streamId),
     streamRows(ctx, organization, "workgraph_decisions", owner, streamId),
-    ctx.db
-      .query("workgraph_recaps")
-      .withIndex("by_tenant_stream_created", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
-      .filter((q: any) => q.eq(q.field("organization_id"), organization))
-      .collect(),
     streamRows(ctx, organization, "workgraph_outcomes", owner, streamId),
     streamRows(ctx, organization, "workgraph_leases", owner, streamId),
     streamRows(ctx, organization, "workgraph_outbox", owner, streamId),
     streamRows(ctx, organization, "workgraph_due_jobs", owner, streamId),
-    streamRows(ctx, organization, "workgraph_notifications", owner, streamId),
   ])
   const rows = [...new Map([...direct.flat(), ...items].map((row: any) => [row._id, row])).values()]
   await rows.reduce((pending: Promise<unknown>, row: any) => pending.then(() => syncDeletedAttention(ctx, organization, owner, row)), Promise.resolve())
@@ -1447,8 +1501,7 @@ async function deleteStreamGraph(ctx: any, organization: string, owner: string, 
 }
 
 function syncDeletedAttention(ctx: any, organization: string, owner: string, row: any) {
-  const table = row.notification_kind ? "workgraph_notifications"
-    : row.job_type ? "workgraph_due_jobs"
+  const table = row.job_type ? "workgraph_due_jobs"
       : row.attempt_number !== undefined ? "workgraph_attempts"
         : row.question !== undefined ? "workgraph_decisions"
           : row.completion_contract !== undefined ? "workgraph_work_items"
@@ -1481,13 +1534,12 @@ async function sourcePlanningEvidence(
       .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .order("desc").take(24),
   ])
-  const matchable = (row: any, memoryOnly = false) => ({
+  const matchable = (row: any) => ({
     id: row.id,
     title: row.title,
-    summary: `${row.description ?? ""} ${JSON.stringify(row.memory ?? {})}`,
+    summary: row.description ?? "",
     pinned: row.pinned,
     lastActivityAt: row.last_activity_at ?? row.updated_at,
-    ...(memoryOnly ? { memoryOnly: true } : {}),
   })
   const visible = (row: any) => row.visibility === "visible" && row.lifecycle_state !== "closed"
   const recent = recentRows.filter(visible).slice(0, 24).map((row: any) => matchable(row))
@@ -1498,7 +1550,7 @@ async function sourcePlanningEvidence(
     : rankStreamMatches([
       ...recent,
       ...pinned,
-      ...recentRows.filter((row: any) => visible(row) && row.memory).slice(24, 40).map((row: any) => matchable(row, true)),
+      ...recentRows.filter(visible).slice(24, 40).map((row: any) => matchable(row)),
     ], candidate, input.now)
   const placementMatches = ranked.slice(0, 4).map((match: any) => ({
     streamId: match.streamId,
@@ -1630,9 +1682,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
       visibility: "visible",
       pinned: false,
       execution_defaults: proposal.execution_defaults ?? {},
-      recap_defaults: {},
-      activity: { lastActivityAt: now, recapDueAt: now },
-      recap_due_at: now,
+      activity: { lastActivityAt: now },
       durable_effect_count: 0,
       source_revision_refs: [sourceRef(command.source)],
       provenance: provenance(input),
@@ -1766,6 +1816,8 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
       title: item.title,
       ...(item.description === undefined ? {} : { description: item.description }),
       state: "pending",
+      created_by_actor_type: input.actor.type,
+      created_by_actor_id: input.actor.id,
       priority: 0,
       source_revision_refs: [sourceRef(command.source)],
       completion_contract: item.completionContract,
@@ -1885,7 +1937,7 @@ async function validateConvexReplacement(
   return { ok: true as const }
 }
 
-async function admitAttempt(ctx: any, input: CommandInput, item: any, executionMode: ExecutionMode, now: number) {
+async function admitAttempt(ctx: any, input: CommandInput, item: any, now: number) {
   const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
   if (!stream) return { ok: false as const, code: "not_found", message: "Stream not found" }
   if (stream.lifecycle_state === "paused")
@@ -1913,7 +1965,9 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, executionM
       owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, dependency.depends_on_work_item_id),
     ),
   )
-  if (blockers.some((blocker: any) => !blocker || blocker.state !== "completed"))
+  // Abandoned satisfies a dependency (change from completed-only): a rejected or
+  // otherwise-abandoned blocker must not deadlock its dependents forever (plan §5.1.4).
+  if (blockers.some((blocker: any) => !blocker || !["completed", "abandoned"].includes(blocker.state)))
     return { ok: false as const, code: "blocked", message: "Work Item dependencies are incomplete" }
   const existingLease = await ctx.db
     .query("workgraph_leases")
@@ -1988,7 +2042,6 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, executionM
     work_item_id: item.id,
     attempt_number: prior.length + 1,
     state: "admitted",
-    execution_mode: executionMode,
     resolved_execution: defaults,
     admitted_at: now,
     source_revision_refs: item.source_revision_refs ?? [],
@@ -2052,35 +2105,40 @@ export function resolveCanonicalAttemptExecutionDefaults(input: Readonly<{
   return parsed.success ? parsed.data : undefined
 }
 
-async function latestAttemptExecutionMode(ctx: any, organization: string, owner: string, workItemId: string) {
-  const attempts = await ctx.db.query("workgraph_attempts")
-    .withIndex("by_tenant_item_attempt", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("work_item_id", workItemId))
-    .filter((q: any) => q.eq(q.field("organization_id"), organization)).collect()
-  return attempts.sort((left: any, right: any) => right.attempt_number - left.attempt_number)[0]?.execution_mode as ExecutionMode | undefined
-}
-
-/** Bounded durable recovery for Streams explicitly left in autonomous mode. */
-export async function reconcileAutonomousStreams(ctx: any, organization: string, owner: string, now: number, limit: number) {
+/**
+ * Bounded durable recovery for continuous execution. Scans active-lifecycle
+ * Streams (pause/resume is the launch gate now) and drains each. Restart recovery
+ * re-derives readiness from durable rows on every pass; the CF cron is the floor.
+ */
+export async function reconcileReadyStreams(ctx: any, organization: string, owner: string, now: number, limit: number) {
   if (await workGraphOwnerDeletionBarrier(ctx, organization, owner)) return { admitted: 0 }
   const streams = await ctx.db.query("workgraph_streams")
-    .withIndex("by_tenant_execution_state_updated", (query: any) => query
+    .withIndex("by_tenant_workgraph_lifecycle", (query: any) => query
       .eq("organization_id", organization)
       .eq("owner_user_id", owner)
-      .eq("execution_state", "active"))
+      .eq("workgraph_id", ROOT_ID)
+      .eq("lifecycle_state", "active"))
     .take(Math.max(1, Math.min(100, limit)))
   const admitted: string[] = []
-  for (const stream of streams) admitted.push(...await continueAutonomousStream(ctx, stream, now))
+  for (const stream of streams) admitted.push(...await continueStream(ctx, stream, now))
   return { admitted: admitted.length }
 }
 
-async function continueAutonomousStream(ctx: any, stream: any, now: number) {
+/**
+ * Drain one Stream's approved, launchable Work Items. Re-gated from
+ * `execution_mode='autonomous' AND execution_state='active'` to
+ * `lifecycle_state === 'active'` — stream pause/resume is the launch gate. The
+ * former mode-gated `execution_state='stopped'` writes are replaced by a DERIVED
+ * hold (re-evaluated every pass, never persisted): any pending/proposed Decision,
+ * any Attempt in attention/failed, or any failed Work Item holds all new launches
+ * until the owner resolves or retries (plan §5.1.8). Only `pending` (approved)
+ * items are admitted; `pending_approval` is excluded by construction.
+ */
+async function continueStream(ctx: any, stream: any, now: number) {
   if (stream.deletion?.state === "pending" || stream.closure?.state === "pending") return []
-  if (stream.execution_mode !== "autonomous" || stream.execution_state !== "active") return []
-  if (stream.lifecycle_state === "paused") return []
-  if (stream.lifecycle_state === "closed") {
-    await ctx.db.patch(stream._id, { execution_state: "completed", updated_at: now })
-    return []
-  }
+  // Pause/resume is the launch gate; archived Streams never admit (mirrors the
+  // SQLite drain's `lifecycle = 'active' AND visibility <> 'archived'`).
+  if (stream.lifecycle_state !== "active" || stream.visibility === "archived") return []
   const [decisions, attempts, items, snapshot] = await Promise.all([
     ctx.db.query("workgraph_decisions").withIndex("by_tenant_stream", (q: any) =>
       q.eq("organization_id", stream.organization_id).eq("owner_user_id", stream.owner_user_id).eq("stream_id", stream.id))
@@ -2093,20 +2151,17 @@ async function continueAutonomousStream(ctx: any, stream: any, now: number) {
     ctx.db.query("workgraph_execution_capabilities").withIndex("by_tenant", (q: any) =>
       q.eq("organization_id", stream.organization_id).eq("owner_user_id", stream.owner_user_id)).unique(),
   ])
+  // Derived stream hold — no persisted stop write.
   if (decisions.some((decision: any) => ["proposed", "pending"].includes(decision.state)) ||
-    attempts.some((attempt: any) => ["attention", "failed"].includes(attempt.state))) {
-    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
+    attempts.some((attempt: any) => ["attention", "failed"].includes(attempt.state)) ||
+    items.some((item: any) => item.state === "failed")) {
     return []
   }
-  if (!snapshot) {
-    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
-    return []
-  }
+  // A capability-read failure holds this Stream for the current pass only; the next
+  // reconcile (or an explicit capability refresh) retries it. No persisted stop.
+  if (!snapshot) return []
   const parsedCatalog = ExecutionCapabilitiesSchema.safeParse(snapshot.catalog)
-  if (!parsedCatalog.success) {
-    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
-    return []
-  }
+  if (!parsedCatalog.success) return []
   const catalog = parsedCatalog.data
   if (
     typeof snapshot.catalog_revision !== "string" ||
@@ -2115,22 +2170,21 @@ async function continueAutonomousStream(ctx: any, stream: any, now: number) {
     snapshot.expires_at !== catalog.expiresAt ||
     !isExecutionCapabilityCatalogFresh(catalog, now)
   ) {
-    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
     return []
   }
   const ready = items.filter((item: any) => item.state === "pending")
   const admissions: string[] = []
   for (const item of ready) {
-    const operationId = `autonomous_${stream.id}_${item.id}_${item.row_version}`
+    const operationId = `ready_${stream.id}_${item.id}_${item.row_version}`
     const result = await admitAttempt(ctx, {
       organizationId: String(stream.organization_id),
       ownerUserId: String(stream.owner_user_id),
       ownerSubject: catalog.ownerUserId,
-      actor: { type: "system", id: "workgraph_autonomous_runtime" },
+      actor: { type: "system", id: "workgraph_launch_runtime" },
       requestId: operationId,
       operationId,
-      command: { version: 1, type: "execute_work_item", workItemId: item.id, executionMode: "autonomous" },
-    }, item, "autonomous", now)
+      command: { version: 1, type: "retry_work_item", workItemId: item.id, expectedVersion: item.row_version },
+    }, item, now)
     if (!result.ok) continue
     admissions.push(result.attemptId)
     await appendSystemWorkGraphChange(ctx, {
@@ -2138,12 +2192,8 @@ async function continueAutonomousStream(ctx: any, stream: any, now: number) {
       eventId: `event_${operationId}`, changeId: `change_${operationId}`, resourceType: "attempt",
       resourceId: result.attemptId, changeType: "attempt_admitted",
       payload: { attemptId: result.attemptId, workItemId: item.id, streamId: stream.id },
-      actorId: "workgraph_autonomous_runtime", now,
+      actorId: "workgraph_launch_runtime", now,
     })
-  }
-  if (admissions.length > 0) return admissions
-  if (items.every((item: any) => ["completed", "abandoned"].includes(item.state))) {
-    await ctx.db.patch(stream._id, { execution_state: "completed", updated_at: now })
   }
   return admissions
 }
@@ -2153,9 +2203,10 @@ async function validateCommandCapabilities(ctx: any, input: CommandInput, now: n
   const profile = command.type === "update_workgraph_defaults"
     ? command.defaults.execution
     : command.execution
-  const recap = ["create_stream", "update_stream"].includes(command.type) ? command.recap : undefined
-  const admission = ["execute_stream", "execute_work_item", "retry_work_item"].includes(command.type)
-  if (profile === undefined && !recap?.model && !recap?.effort && !admission) return
+  // Admission (Attempt launch) happens exclusively in the drain now, which
+  // re-validates the resolved profile against capabilities per item. Command-time
+  // capability validation therefore only guards commands that carry a profile.
+  if (profile === undefined) return
   const capabilities = await requiredExecutionCapabilities(ctx, input, now).catch((error) => ({
     error: error instanceof Error ? error.message : "Execution capability catalog is unavailable",
   }))
@@ -2170,16 +2221,6 @@ async function validateCommandCapabilities(ctx: any, input: CommandInput, now: n
         now,
         capabilities,
         profile,
-      })
-      return result.ok ? [] : result.diagnostics
-    })()),
-    ...(!recap?.model && !recap?.effort ? [] : (() => {
-      const result = validateRecapProfileDefaultsAgainstCapabilities({
-        organizationId: input.organizationId as never,
-        ownerUserId: input.ownerSubject as never,
-        now,
-        capabilities,
-        profile: recap,
       })
       return result.ok ? [] : result.diagnostics
     })()),
@@ -2217,7 +2258,6 @@ async function ensureOwnerRoot(ctx: any, input: CommandInput, now: number) {
       owner_user_id: input.ownerUserId,
       id: ROOT_ID,
       defaults: {},
-      recap_defaults: {},
       provenance: { actor: input.actor, operationId: input.operationId },
       row_version: 1,
       schema_version: 1,
@@ -2243,6 +2283,11 @@ async function syncCommandAttention(ctx: any, organization: string, owner: strin
     typeof command.value?.workItemId === "string" ? ["workgraph_work_items", command.value.workItemId] : undefined,
     typeof command.value?.attemptId === "string" ? ["workgraph_attempts", command.value.attemptId] : undefined,
     ...(Array.isArray(command.value?.attemptIds) ? command.value.attemptIds.map((id: string) => ["workgraph_attempts", id]) : []),
+    // Bulk approve returns per-item results; re-project each approved item so its
+    // Staged attention entry clears (it is now `pending`, not an attention state).
+    ...(Array.isArray(command.value?.results)
+      ? command.value.results.map((result: any) => ["workgraph_work_items", result.workItemId])
+      : []),
   ].filter((value): value is [string, string] => Boolean(value?.[0] && value[1]))
   await [...new Map(resources.map((resource) => [`${resource[0]}:${resource[1]}`, resource])).values()]
     .reduce((pending: Promise<unknown>, [table, id]) => pending.then(() => syncAttentionResource(ctx, organization, owner, table, id)), Promise.resolve())
@@ -2445,13 +2490,6 @@ function validTransition(from: string, to: string) {
     reopened: ["active"],
   }
   return transitions[from]?.includes(to) ?? false
-}
-
-function explicitStreamRecapConfiguration(value: unknown, execution?: unknown) {
-  const parsed = RecapProfileDefaultsSchema.safeParse(value ?? {})
-  const parsedExecution = ExecutionProfileDefaultsSchema.safeParse(execution ?? {})
-  if (!parsed.success || !parsedExecution.success) return undefined
-  return resolveRecapProfileDefaults({ recap: parsed.data, execution: parsedExecution.data })
 }
 
 function provenance(input: CommandInput) {

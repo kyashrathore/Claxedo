@@ -372,27 +372,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     expect(indeterminate.classifyAdmissionError?.(indeterminateError)).toBe("indeterminate")
   })
 
-  it("adopts a caller-owned durable Session ID for exact Recap retries", async () => {
-    const calls: Array<{ path: string; body?: unknown }> = []
-    const gateway = createSessionV2WorkGraphGateway(async (request) => {
-      calls.push({ path: new URL(request.url).pathname, ...(request.body ? { body: await request.clone().json() } : {}) })
-      if (new URL(request.url).pathname === "/api/session") return Response.json({ data: { id: "ses_workgraph_recap_job_1" } })
-      return Response.json({ data: { admittedSeq: 1 } })
-    })
-    await gateway.admit({
-      attemptId: "recap_job_1",
-      sessionId: "ses_workgraph_recap_job_1",
-      directory: "/repo",
-      title: "Recap",
-      prompt: "Return JSON",
-      profile,
-    })
-    expect(calls[0]).toMatchObject({ body: { id: "ses_workgraph_recap_job_1", tools: ["terminal"] } })
-    expect(calls[1]).toMatchObject({
-      path: "/api/session/ses_workgraph_recap_job_1/prompt",
-      body: { id: "msg_workgraph_recap_job_1", delivery: "steer", resume: true },
-    })
-  })
+
 
   it("registers exact Connection tools before prompt admission and removes them on cancel", async () => {
     const calls: Array<{ path: string; method: string; body?: unknown }> = []

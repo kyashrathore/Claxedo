@@ -5,9 +5,11 @@ import { FirstTurnRecoveryCard } from "./first-turn-recovery-card"
 describe("FirstTurnRecoveryCard", () => {
   test.each([
     ["credential", "Reconnect provider"],
-    ["harness", "Restart harness"],
+    ["harness", "Try again"],
     ["model", "Switch model and retry"],
-    ["workspace", "Retry workspace"],
+    ["workspace", "Retry"],
+    ["session", "Start a new session"],
+    ["unknown", "Try again"],
   ] as const)("renders exactly one %s recovery action", (kind, label) => {
     const action = vi.fn()
     const view = render(() => <FirstTurnRecoveryCard kind={kind} detail="detail" onAction={action} />)

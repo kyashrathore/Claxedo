@@ -70,11 +70,6 @@ export async function createLocalEmbeddedWorkGraph(
     auth?: LocalWorkGraphAuthOptions
     execution: WorkspaceExecutionPort
     executionCapabilities?: ExecutionCapabilitiesPort
-    recaps?: Readonly<{
-      sessions?: WorkGraphSessionGateway
-      directory?: string
-      clock?: Readonly<{ now(): number }>
-    }>
     sourcePlanning?: Readonly<{
       sessions: WorkGraphSessionGateway
       directory: string
@@ -116,16 +111,6 @@ export async function createLocalEmbeddedWorkGraph(
     changeTips,
   )
   const activityPorts = workgraph.createSqliteWorkGraphActivityPorts({ database: input.database })
-  const recaps = workgraph.createSqliteRecapRuntime({
-    database: input.database,
-    ...(input.recaps?.clock ? { clock: input.recaps.clock } : {}),
-    ...(input.recaps?.sessions
-      ? {
-          sessions: input.recaps.sessions,
-          ...(input.recaps.directory ? { sessionDirectory: input.recaps.directory } : {}),
-        }
-      : {}),
-  })
   const sourcePlanning = workgraph.createSqliteSourcePlanningRuntime({
     database: input.database,
     ...(input.sourcePlanning
@@ -136,7 +121,6 @@ export async function createLocalEmbeddedWorkGraph(
       : {}),
   })
   const sessionIntake = workgraph.createSqliteSessionIntakePort(input.database)
-  const notifications = workgraph.createNotificationService(workgraph.createSqliteNotificationStore(input.database))
   // ATTENTION PARITY: acknowledgement writes append no `wg_v2_changes` row, so
   // they carry their own nudge — otherwise a mark-all-read in one client would
   // never reach another.
@@ -198,7 +182,6 @@ export async function createLocalEmbeddedWorkGraph(
   const authenticated = workgraph.createWorkGraphHttpRouter({
     service,
     resolveContext,
-    notifications,
     attentionAcknowledgements,
     archive,
     deletion,
@@ -288,10 +271,8 @@ export async function createLocalEmbeddedWorkGraph(
     router,
     resolveContext,
     reconcile,
-    recaps,
     sourcePlanning,
     sessionIntake,
-    notifications,
     attentionAcknowledgements,
     archive,
     deletion,
@@ -302,7 +283,7 @@ export async function createLocalEmbeddedWorkGraph(
     /**
      * Nudge iff this owner's change log advanced since the last call. The server
      * reconciler drives this once per owner per tick so that writers outside the
-     * command path (attempt settlement, recaps, source planning, activity, intake
+     * command path (attempt settlement, source planning, activity, intake
      * stores) still reach clients, without costing anything when idle.
      */
     observeChanges: changeTips.observe,

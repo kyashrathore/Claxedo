@@ -53,7 +53,6 @@ describe("Convex generated API artifacts", () => {
       "workgraphConnections",
       "workgraphIntake",
       "workgraphModel",
-      "workgraphNotifications",
       "workgraphOwnerDeletion",
       "workgraphRuntime",
       "workspaceShares",

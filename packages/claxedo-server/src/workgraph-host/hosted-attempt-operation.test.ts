@@ -92,6 +92,41 @@ describe("hosted Attempt operation endpoint", () => {
     }])
   })
 
+  it("nudges the settlement dispatcher after a successful agent-tool operation", async () => {
+    const keys = await generateKeyPair("Ed25519")
+    const token = await mintRuntimeAccessToken({
+      subject: "alice",
+      orgId: "org-acme",
+      workspaceId: "workspace-1",
+      hostId: "host-1",
+      role: "owner",
+    }, keys.privateKey, "EdDSA")
+    const nudged: Array<{ ownerUserId: string; orgId: string }> = []
+    const handler = createHostedAttemptOperationHandler({
+      env: {},
+      runtimeKey: Promise.resolve(keys.publicKey),
+      execute: async (_principal, request) => ({ ok: true, operationId: request.operation.operationId, cursor: "1" as never, value: null }),
+    })
+
+    const ok = await handler(request(token, completion()), (principal) => nudged.push(principal))
+    expect(ok.status).toBe(200)
+    expect(nudged).toEqual([{ ownerUserId: "alice", orgId: "org-acme" }])
+
+    // A failing durable command does not nudge settlement.
+    const failingHandler = createHostedAttemptOperationHandler({
+      env: {},
+      runtimeKey: Promise.resolve(keys.publicKey),
+      execute: async (_principal, request) => ({
+        ok: false,
+        operationId: request.operation.operationId,
+        error: { code: "version_conflict", message: "stale", retryable: false },
+      }),
+    })
+    const rejected: unknown[] = []
+    await failingHandler(request(token, completion()), (principal) => rejected.push(principal))
+    expect(rejected).toEqual([])
+  })
+
   it("retains the transcript before accepting complete_attempt and not for checkpoints", async () => {
     const calls: string[] = []
     const execute = createHostedAttemptOperationExecutor({

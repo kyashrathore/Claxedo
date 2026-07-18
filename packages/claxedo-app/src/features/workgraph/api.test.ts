@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { WorkGraphApiError, createWorkGraphClient, decodeWorkGraphSnapshot } from "./api"
+import { WorkGraphApiError, createWorkGraphClient, decodeWorkGraphSnapshot, parseApproveWorkItemsResult } from "./api"
 
 const actor = { type: "user" as const, id: "user_1" }
 const provenance = { actor }
@@ -17,8 +17,7 @@ const stream = {
   visibility: "visible" as const,
   pinned: false,
   executionDefaults: {},
-  recapDefaults: {},
-  activity: { lastActivityAt: 1, recapDueAt: 2 },
+  activity: { lastActivityAt: 1 },
   durableEffectCount: 0,
   sourceRevisionRefs: [],
 }
@@ -94,14 +93,14 @@ describe("WorkGraph API", () => {
             {
               kind: "configuration_required",
               ownerUserId: "owner_1",
-              id: "recap_job_1",
+              id: "source_plan_job_1",
               updatedAt: 6,
               requirement: {
                 type: "generation",
-                jobId: "recap_job_1",
-                purpose: "recap",
-                scope: { type: "stream", streamId: "stream_1" },
-                reason: "Recap requires explicit valid model configuration",
+                jobId: "source_plan_job_1",
+                purpose: "source_planning",
+                scope: { type: "workgraph" },
+                reason: "Source planning requires explicit valid model configuration",
               },
             },
             {
@@ -120,7 +119,7 @@ describe("WorkGraph API", () => {
 
     await expect(client.attention(undefined, 25)).resolves.toMatchObject({
       total: 2,
-      items: [{ kind: "configuration_required", requirement: { type: "generation", purpose: "recap" } }, { kind: "unorganized_ai_work" }],
+      items: [{ kind: "configuration_required", requirement: { type: "generation", purpose: "source_planning" } }, { kind: "unorganized_ai_work" }],
     })
     expect(paths).toEqual(["/api/workgraph/attention?limit=25"])
   })
@@ -264,16 +263,16 @@ describe("WorkGraph API", () => {
       request: async (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).pathname
         calls.push({ path, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) })
-        if (path.endsWith("/defaults")) return Response.json({ recordType: "workgraph", schemaVersion: 1, ownerUserId: "user_1", version: 4, createdAt: 1, updatedAt: 2, provenance, id: "workgraph_default", defaults: { execution: { effort: "high" }, recap: { quietHours: 8 } } })
+        if (path.endsWith("/defaults")) return Response.json({ recordType: "workgraph", schemaVersion: 1, ownerUserId: "user_1", version: 4, createdAt: 1, updatedAt: 2, provenance, id: "workgraph_default", defaults: { execution: { effort: "high" } } })
         return Response.json({ ok: true, operationId: "operation_defaults", cursor: "cursor_5", value: {} })
       },
     })
 
-    expect(await client.defaults()).toMatchObject({ version: 4, defaults: { execution: { effort: "high" }, recap: { quietHours: 8 } } })
-    await client.updateWorkGraphDefaults(4, { execution: {}, recap: { effort: "low", quietHours: 12 } })
+    expect(await client.defaults()).toMatchObject({ version: 4, defaults: { execution: { effort: "high" } } })
+    await client.updateWorkGraphDefaults(4, { execution: {} })
     expect(calls).toEqual([
       { path: "/api/workgraph/defaults" },
-      { path: "/api/workgraph/commands", body: { operationId: "operation_defaults", command: { version: 1, type: "update_workgraph_defaults", expectedVersion: 4, defaults: { execution: {}, recap: { effort: "low", quietHours: 12 } } } } },
+      { path: "/api/workgraph/commands", body: { operationId: "operation_defaults", command: { version: 1, type: "update_workgraph_defaults", expectedVersion: 4, defaults: { execution: {} } } } },
     ])
   })
 
@@ -306,7 +305,6 @@ describe("WorkGraph API", () => {
       "/api/workgraph/work-items/item_1/attempts": { attempts: [{ attempt, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } }], hasMore: false },
       "/api/workgraph/attempts/attempt_1": { attempt, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } },
       "/api/workgraph/decisions/decision_1": { recordType: "decision", ...base, id: "decision_1", streamId: "stream_1", state: "pending", question: "Ship?", options: [{ id: "yes", label: "Yes" }], affectedWorkItemIds: ["item_1"], sourceRevisionRefs: [source] },
-      "/api/workgraph/recaps/recap_1": { recordType: "recap", ...base, id: "recap_1", streamId: "stream_1", activityRange: { fromSequence: 1, toSequence: 2, quietSince: 3 }, summary: "Ready", actionableReferences: [], generation: { state: "succeeded", model: { providerId: "openai", modelId: "gpt-5" }, effort: "low", generatedAt: 4, method: "agent_session", sessionId: "session_recap" }, sourceRevisionRefs: [source] },
       "/api/workgraph/intake/candidate_1": { candidateKind: "session", id: "candidate_1", ownerUserId: "user_1", version: 1, sessionId: "session_1", title: "Investigate", body: "Finding", state: "unorganized", createdAt: 1, updatedAt: 1 },
     }
     const client = createWorkGraphClient({
@@ -327,7 +325,6 @@ describe("WorkGraph API", () => {
     await expect(client.workItemAttempts("item_1", { limit: 10 })).resolves.toMatchObject({ attempts: [{ executionReferences: { sessionId: "session_1" } }] })
     await expect(client.attempt("attempt_1")).resolves.toMatchObject({ attempt: { id: "attempt_1" } })
     await expect(client.decision("decision_1")).resolves.toMatchObject({ id: "decision_1" })
-    await expect(client.recap("recap_1")).resolves.toMatchObject({ id: "recap_1" })
     await expect(client.intakeCandidate("candidate_1")).resolves.toMatchObject({ id: "candidate_1" })
     expect(calls).toEqual([
       "/api/workgraph/proposals/proposal_1",
@@ -336,7 +333,6 @@ describe("WorkGraph API", () => {
       "/api/workgraph/work-items/item_1/attempts?limit=10",
       "/api/workgraph/attempts/attempt_1",
       "/api/workgraph/decisions/decision_1",
-      "/api/workgraph/recaps/recap_1",
       "/api/workgraph/intake/candidate_1",
     ])
   })
@@ -521,11 +517,13 @@ describe("WorkGraph API", () => {
     await client.updateOutcomeExecution("outcome_1", 2, { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } })
     await client.updateStreamSettings("stream_1", 5, {
       execution: { effort: "high" },
-      recap: { effort: "low", quietHours: 12 },
       activityGranularity: "detailed",
     })
     await client.updateWorkItemExecution("item_1", 3, {})
-    await client.executeWorkItem("item_1", "supervised")
+    await client.approveWorkItem("item_1", 3)
+    await client.rejectWorkItem("item_2", 4, "Not needed")
+    await client.approveWorkItems([{ workItemId: "item_1", expectedVersion: 3 }, { workItemId: "item_3", expectedVersion: 5 }])
+    await client.setStreamLifecycle({ streamId: "stream_1", expectedVersion: 4, state: "paused", reason: "Paused from overview" })
     await client.cancelAttempt("attempt_1", 3, "Owner stopped it")
     await client.cancelWorkItem("item_1", 4, "No longer needed")
     await client.answerDecision("decision_1", 2, { optionId: "ship" })
@@ -538,9 +536,12 @@ describe("WorkGraph API", () => {
       { operationId: "operation_fixed", command: { version: 1, type: "create_outcome", streamId: "stream_1", title: "Deploy", successCriteria: ["Healthy in production"] } },
       { operationId: "operation_fixed", command: { version: 1, type: "create_work_item", streamId: "stream_1", outcomeId: "outcome_1", title: "Run deployment", dependencyIds: ["item_0"], completionContract: { version: 1, mode: "all", requirements: [{ id: "requirement_1", kind: "verification", description: "Smoke test passes", instructions: "Run smoke test" }] } } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_outcome", outcomeId: "outcome_1", expectedVersion: 2, execution: { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } } } },
-      { operationId: "operation_fixed", command: { version: 1, type: "update_stream", streamId: "stream_1", expectedVersion: 5, execution: { effort: "high" }, recap: { effort: "low", quietHours: 12 }, activityGranularity: "detailed" } },
+      { operationId: "operation_fixed", command: { version: 1, type: "update_stream", streamId: "stream_1", expectedVersion: 5, execution: { effort: "high" }, activityGranularity: "detailed" } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_work_item", workItemId: "item_1", expectedVersion: 3, execution: {} } },
-      { operationId: "operation_fixed", command: { version: 1, type: "execute_work_item", workItemId: "item_1", executionMode: "supervised" } },
+      { operationId: "operation_fixed", command: { version: 1, type: "approve_work_item", workItemId: "item_1", expectedVersion: 3 } },
+      { operationId: "operation_fixed", command: { version: 1, type: "reject_work_item", workItemId: "item_2", expectedVersion: 4, reason: "Not needed" } },
+      { operationId: "operation_fixed", command: { version: 1, type: "approve_work_items", approvals: [{ workItemId: "item_1", expectedVersion: 3 }, { workItemId: "item_3", expectedVersion: 5 }] } },
+      { operationId: "operation_fixed", command: { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 4, state: "paused", reason: "Paused from overview" } },
       { operationId: "operation_fixed", command: { version: 1, type: "cancel_attempt", attemptId: "attempt_1", expectedVersion: 3, reason: "Owner stopped it" } },
       { operationId: "operation_fixed", command: { version: 1, type: "cancel_work_item", workItemId: "item_1", expectedVersion: 4, reason: "No longer needed" } },
       { operationId: "operation_fixed", command: { version: 1, type: "answer_decision", decisionId: "decision_1", expectedVersion: 2, optionId: "ship" } },
@@ -549,6 +550,26 @@ describe("WorkGraph API", () => {
       { operationId: "operation_fixed", command: { version: 1, type: "reopen_admission", proposalId: "proposal_1", expectedVersion: 4 } },
       { operationId: "operation_fixed", command: { version: 1, type: "delete_stream", streamId: "stream_1", expectedVersion: 4, reason: "Discard prototype" } },
     ])
+  })
+
+  test("reads per-item outcomes from a partial-success bulk approve", () => {
+    const result = {
+      ok: true as const,
+      operationId: "operation_bulk",
+      cursor: "cursor_bulk",
+      value: {
+        results: [
+          { workItemId: "item_1", outcome: "approved", version: 3 },
+          { workItemId: "item_2", outcome: "version_conflict" },
+          { workItemId: "item_3", outcome: "not_staged" },
+        ],
+      },
+    }
+    const parsed = parseApproveWorkItemsResult(result)
+    expect(parsed?.results).toHaveLength(3)
+    expect(parsed?.results.filter((entry) => entry.outcome !== "approved").map((entry) => entry.workItemId)).toEqual(["item_2", "item_3"])
+    // A failed command carries no results to surface.
+    expect(parseApproveWorkItemsResult({ ok: false, operationId: "op", error: { code: "internal_error", message: "boom", retryable: true } })).toBeUndefined()
   })
 
   test("sends empty settings objects to explicitly clear Stream overrides", async () => {
@@ -562,7 +583,7 @@ describe("WorkGraph API", () => {
       },
     })
 
-    await client.updateStreamSettings("stream_1", 6, { execution: {}, recap: {} })
+    await client.updateStreamSettings("stream_1", 6, { execution: {} })
 
     expect(bodies).toEqual([{
       operationId: "operation_clear_settings",
@@ -572,7 +593,6 @@ describe("WorkGraph API", () => {
         streamId: "stream_1",
         expectedVersion: 6,
         execution: {},
-        recap: {},
       },
     }])
   })
@@ -580,11 +600,11 @@ describe("WorkGraph API", () => {
   test("rejects an invalid atomic Stream settings update response", async () => {
     const client = createWorkGraphClient({
       baseUrl: "http://127.0.0.1:3001",
-      operationId: () => "operation_recap",
-      request: async () => Response.json({ ok: true, operationId: "operation_recap", value: {} }),
+      operationId: () => "operation_settings",
+      request: async () => Response.json({ ok: true, operationId: "operation_settings", value: {} }),
     })
 
-    await expect(client.updateStreamSettings("stream_1", 5, { execution: {}, recap: { quietHours: 8 } })).rejects.toMatchObject({
+    await expect(client.updateStreamSettings("stream_1", 5, { execution: {} })).rejects.toMatchObject({
       kind: "invalid_response",
       status: 200,
     })

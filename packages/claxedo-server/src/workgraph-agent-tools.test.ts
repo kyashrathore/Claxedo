@@ -408,10 +408,8 @@ function embedded(execute: ReturnType<typeof vi.fn>) {
         workItems: { readDetail: empty, listAttempts: empty, listActivity: empty },
         attempts: { read: empty },
         decisions: { read: empty },
-        recaps: { read: empty },
         evidence: { read: empty, list: empty },
       },
     },
-    notifications: { list: empty, markRead: empty },
   }
 }

@@ -101,7 +101,7 @@ const SESSION_GROUP_PAGE_SIZE = 5
 
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
-function SessionListNotice(props: {
+export function SessionListNotice(props: {
   variant: SessionListNoticeVariant
   children: JSX.Element
   actionLabel?: string
@@ -110,8 +110,15 @@ function SessionListNotice(props: {
   return (
     <div
       data-testid={`rail-sidebar-session-list-${props.variant}`}
-      class="flex items-center gap-2 pl-9 pr-2.5 py-1 text-[11px] text-text-weaker"
+      class="flex items-center gap-2 pl-9 pr-2.5 py-1 text-[11px]"
+      classList={{
+        "text-text-weaker": props.variant !== "error",
+        "text-text-base": props.variant === "error",
+      }}
     >
+      <Show when={props.variant === "error"}>
+        <Icon name="warning" size="small" class="shrink-0 text-icon-critical-base" />
+      </Show>
       <span class="min-w-0 flex-1">{props.children}</span>
       <Show when={props.actionLabel && props.onAction}>
         <button
@@ -1470,7 +1477,9 @@ export function RailSidebar(props: RailSidebarProps) {
     <RailAccountSubmenu
       icon="gauge"
       label="Usage limits"
-      contentClass="z-[220] w-[19rem] max-h-[26rem] overflow-y-auto p-2.5"
+      // Height and scrolling belong to the panel, not the menu shell: its head
+      // and foot stay pinned while only the provider list scrolls.
+      contentClass="z-[220] w-[19rem] p-2"
     >
       <UsageLimitsPanel />
     </RailAccountSubmenu>

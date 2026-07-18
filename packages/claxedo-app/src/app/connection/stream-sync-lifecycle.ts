@@ -51,3 +51,9 @@ export function streamSyncArmedTimer(state: StreamSyncLifecycleState): StreamSyn
   if (state === "reconnect-scheduled") return "reconnect"
   return "none"
 }
+
+// The reactive projection of this FSM (per-target `createStore`, single-writer
+// `reportStreamSyncLifecycle` / reader `streamSyncLifecycleSnapshot`,
+// `StreamSyncStreamId`, `StreamSyncSnapshot`) lives in
+// `@/platform/runtime/stream-sync-status` so both the writer (app) and the
+// reader (features) can depend on it without an app<->features edge.

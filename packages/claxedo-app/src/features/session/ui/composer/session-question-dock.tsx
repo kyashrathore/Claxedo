@@ -207,7 +207,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const fail = (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err)
-    showToast({ title: language.t("common.requestFailed"), description: message })
+    showToast({ title: language.t("common.requestFailed"), description: message, variant: "error" })
   }
 
   const clearQuestionRequest = () => {

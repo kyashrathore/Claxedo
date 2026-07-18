@@ -17,7 +17,6 @@ import type {
   AdmissionProposalDto,
   AttemptDetailDto,
   DecisionDto,
-  RecapDto,
   ReplacementReview,
   ReplacementReviewInput,
   WorkItemAttemptListInput,
@@ -54,7 +53,6 @@ import {
   EvidenceDtoSchema,
   EvidencePageCursorError,
   EvidencePageSchema,
-  RecapDtoSchema,
   ReplacementReviewSchema,
   SnapshotResumeCursorError,
   TaskActivityPageCursorError,
@@ -106,8 +104,9 @@ export const CONVEX_WORKGRAPH_SUPPORTED_COMMANDS = [
   "reopen_outcome",
   "close_stream",
   "delete_stream",
-  "execute_stream",
-  "execute_work_item",
+  "approve_work_item",
+  "reject_work_item",
+  "approve_work_items",
   "cancel_attempt",
   "retry_work_item",
 ] as const
@@ -248,12 +247,6 @@ export function createConvexWorkGraphStore(input: Input) {
         read: async (context: WorkGraphContext, queryInput: Readonly<{ decisionId: string }>): Promise<DecisionDto | undefined> => {
           const decision = await read(context, "decision", queryInput)
           return decision ? publicOwner(context, DecisionDtoSchema.parse(decision)) : undefined
-        },
-      },
-      recaps: {
-        read: async (context: WorkGraphContext, queryInput: Readonly<{ recapId: string }>): Promise<RecapDto | undefined> => {
-          const recap = await read(context, "recap", queryInput)
-          return recap ? publicOwner(context, RecapDtoSchema.parse(recap)) : undefined
         },
       },
       sources: {
@@ -572,14 +565,6 @@ function publicChanges(context: WorkGraphContext, changes: readonly ChangeEnvelo
 }
 
 function publicAttentionItem(context: WorkGraphContext, item: AttentionItem): AttentionItem {
-  if (item.kind === "recap_notification") {
-    return AttentionItemSchema.parse({
-      ...item,
-      ownerUserId: context.ownerUserId,
-      notification: publicOwner(context, item.notification),
-      recap: publicOwner(context, item.recap),
-    })
-  }
   if (item.kind === "unorganized_ai_work" || item.kind === "configuration_required") {
     return AttentionItemSchema.parse(publicOwner(context, item))
   }

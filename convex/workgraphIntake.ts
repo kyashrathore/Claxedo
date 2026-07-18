@@ -600,7 +600,6 @@ async function ensureRoot(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId
     owner_user_id: ownerUserId,
     id: "workgraph_default",
     defaults: {},
-    recap_defaults: {},
     provenance: { actor: { type: "system", id: "workgraph_intake" } },
     row_version: 1,
     schema_version: 1,

@@ -175,7 +175,7 @@ export function createWorkGraphOperationalReporter(
     },
     queue(
       input: Readonly<{
-        kind: "attempt" | "recap" | "source_plan" | "session_intake"
+        kind: "attempt" | "source_plan" | "session_intake"
         backlog: number
         oldestAgeMs: number
         failed: number
@@ -196,7 +196,7 @@ export function createWorkGraphOperationalReporter(
       observe("backlog", input.backlog)
       observe("lag", input.oldestAgeMs)
       observe("expired_lease_recoveries", input.expiredRecoveries)
-      if (input.kind === "recap" || input.kind === "source_plan") observe("generation_failures", input.failed)
+      if (input.kind === "source_plan") observe("generation_failures", input.failed)
     },
     connector(
       input: Readonly<{

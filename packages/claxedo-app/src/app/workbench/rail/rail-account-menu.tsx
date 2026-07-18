@@ -1,12 +1,12 @@
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Show, createContext, createMemo, createSignal, useContext, type JSX } from "solid-js"
+import { Show, createContext, createMemo, createSignal, onCleanup, useContext, type JSX } from "solid-js"
 
 import { useConfigOptional } from "@/app/providers/config"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-display"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
-import { useLanguage } from "@claxedo/app"
+import { useLanguage, usePlatform } from "@claxedo/app"
 
 export type RailAccountMenuProps = {
   onDiagnostics?: () => void
@@ -28,16 +28,77 @@ export function RailAccountSubmenu(props: {
 }) {
   const context = useContext(RailAccountMenuContext)
   if (!context) throw new Error("RailAccountSubmenu must be rendered inside RailAccountMenu")
+
+  // Kobalte closes a hover-opened submenu the instant the pointer leaves the
+  // trigger unless the exit vector lands inside a "safe triangle" aimed at the
+  // panel (menu.tsx onItemLeave → isPointerMovingToSubmenu). That wedge's apex
+  // is the exit point, so it only holds when the panel sits beside the trigger.
+  // Ours is 24rem tall in a rail menu pinned to the viewport bottom, so the
+  // popper shifts it upward and a straight sideways exit falls outside the
+  // wedge — the panel vanished before the pointer arrived. This is also why the
+  // caret appeared to "lock" it: clicking there parked the pointer at the row's
+  // right edge, a short enough hop to survive the check. Same bug, not two.
+  //
+  // So: own the open state and debounce only the close, which makes the wedge
+  // geometry irrelevant. Kobalte exposes no closeDelay — the 100ms open and
+  // 300ms grace are hardcoded — so the grace has to live here.
+  const CLOSE_GRACE_MS = 260
+  const [open, setOpen] = createSignal(false)
+  // Clicking the trigger pins the panel: pointer grace no longer applies, so
+  // you can travel anywhere en route to it. Escape or a click outside releases.
+  const [pinned, setPinned] = createSignal(false)
+  let closeTimer: ReturnType<typeof setTimeout> | undefined
+  const cancelClose = () => {
+    if (closeTimer === undefined) return
+    clearTimeout(closeTimer)
+    closeTimer = undefined
+  }
+  const openNow = () => {
+    cancelClose()
+    setOpen(true)
+  }
+  const closeNow = () => {
+    cancelClose()
+    setPinned(false)
+    setOpen(false)
+  }
+  const scheduleClose = () => {
+    cancelClose()
+    if (pinned()) return
+    closeTimer = setTimeout(() => {
+      closeTimer = undefined
+      setOpen(false)
+    }, CLOSE_GRACE_MS)
+  }
+  onCleanup(cancelClose)
+
   return (
-    <DropdownMenu.Sub>
-      <DropdownMenu.SubTrigger aria-label={props.label}>
+    <DropdownMenu.Sub open={open()} onOpenChange={(next) => (next ? openNow() : scheduleClose())}>
+      <DropdownMenu.SubTrigger
+        aria-label={props.label}
+        onPointerEnter={cancelClose}
+        onPointerLeave={scheduleClose}
+        onClick={() => {
+          setPinned(true)
+          openNow()
+        }}
+      >
         <Show when={props.icon}>{(icon) => <Icon name={icon()} size="small" />}</Show>
         <span class="flex-1">{props.label}</span>
         <Icon name="chevron-right" size="small" class="opacity-30" />
       </DropdownMenu.SubTrigger>
       <DropdownMenu.Portal>
         <DropdownMenu.SubContent
-          onEscapeKeyDown={context.preserveRootOnClose}
+          onEscapeKeyDown={() => {
+            context.preserveRootOnClose()
+            closeNow()
+          }}
+          // A real click elsewhere is an intent to leave — skip the grace. Note
+          // this must NOT hook onFocusOutside: Kobalte's own close path focuses
+          // the parent content, which would fire it and defeat the debounce.
+          onPointerDownOutside={closeNow}
+          onPointerEnter={cancelClose}
+          onPointerLeave={scheduleClose}
           class={props.contentClass}
           style={props.contentStyle}
         >
@@ -149,10 +210,12 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
 
           <DropdownMenu.Separator />
           <DropdownMenu.Group>
-            <DropdownMenu.Item onSelect={() => select(props.onDiagnostics)}>
-              <Icon name="warning" size="small" />
-              <DropdownMenu.ItemLabel>Diagnostics</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
+            <Show when={usePlatform().platform === "desktop" || config?.sandboxEnabled !== true}>
+              <DropdownMenu.Item onSelect={() => select(props.onDiagnostics)}>
+                <Icon name="warning" size="small" />
+                <DropdownMenu.ItemLabel>Diagnostics</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+            </Show>
             <DropdownMenu.Item onSelect={() => select(props.onSettings)}>
               <Icon name="settings-gear" size="small" />
               <DropdownMenu.ItemLabel>{language.t("sidebar.settings")}</DropdownMenu.ItemLabel>

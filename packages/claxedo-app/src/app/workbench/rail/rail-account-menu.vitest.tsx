@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
   authEnabled: true,
+  sandboxEnabled: false,
+  platform: "web" as "web" | "desktop",
   status: "signed" as "loading" | "anonymous" | "signed",
   user: {} as Record<string, unknown>,
   signIn: vi.fn(async () => undefined),
@@ -19,10 +21,11 @@ vi.mock("@/platform/auth/auth-session", () => ({
 }))
 
 vi.mock("@/app/providers/config", () => ({
-  useConfigOptional: () => ({ authEnabled: state.authEnabled }),
+  useConfigOptional: () => ({ authEnabled: state.authEnabled, sandboxEnabled: state.sandboxEnabled }),
 }))
 
 vi.mock("@claxedo/app", () => ({
+  usePlatform: () => ({ platform: state.platform }),
   useLanguage: () => ({
     t: (key: string) => ({
       "sidebar.settings": "Settings",
@@ -38,6 +41,8 @@ import { RailAccountMenu } from "./rail-account-menu"
 beforeEach(() => {
   window.scrollTo = vi.fn()
   state.authEnabled = true
+  state.sandboxEnabled = false
+  state.platform = "web"
   state.status = "signed"
   state.user = { fullName: "Yash Rathore", imageUrl: "https://example.test/avatar.png" }
   state.signIn.mockClear()
@@ -141,6 +146,20 @@ describe("RailAccountMenu", () => {
     expect(props.onDiagnostics).toHaveBeenCalledOnce()
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
+  })
+
+  test("hides diagnostics in hosted cloud web and keeps it in the desktop app", async () => {
+    state.sandboxEnabled = true
+    renderMenu()
+
+    await openMenu()
+    expect(screen.queryByRole("menuitem", { name: "Diagnostics" })).toBeNull()
+
+    cleanup()
+    state.platform = "desktop"
+    renderMenu()
+    await openMenu()
+    expect(screen.getByRole("menuitem", { name: "Diagnostics" })).toBeInTheDocument()
   })
 
   test("delegates settings and help actions", async () => {

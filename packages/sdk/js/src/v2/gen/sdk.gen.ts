@@ -7034,12 +7034,22 @@ export class Workgraph extends HeyApiClient {
    *
    * Read the current owner-bound, side-effect-free execution capability catalog.
    */
-  public executionCapabilities<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+  public executionCapabilities<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
     return (options?.client ?? this.client).get<
       V2WorkgraphExecutionCapabilitiesResponses,
       V2WorkgraphExecutionCapabilitiesErrors,
       ThrowOnError
-    >({ url: "/api/workgraph/execution-capabilities", ...options })
+    >({
+      url: "/api/workgraph/execution-capabilities",
+      ...options,
+      ...params,
+    })
   }
 
   /**

@@ -45,13 +45,20 @@ export const backfillWorkGraphAdmissionAttention = attentionMigration("workgraph
 export const backfillWorkGraphDecisionAttention = attentionMigration("workgraph_decisions")
 export const backfillWorkGraphWorkItemAttention = attentionMigration("workgraph_work_items")
 export const backfillWorkGraphAttemptAttention = attentionMigration("workgraph_attempts")
-export const backfillWorkGraphNotificationAttention = attentionMigration("workgraph_notifications")
 export const backfillWorkGraphGenerationAttention = attentionMigration("workgraph_due_jobs")
 
 export const backfillWorkGraphCandidateAttention = migrations.define({
   table: "workgraph_intake_candidates",
   migrateOne: backfillCandidateAttention,
 })
+
+// Approval-gate rollout (plan 2026-07-18-003 §8.2) COMPLETED 2026-07-18: the
+// one-shot migrations `reconcileStreamLifecycleFromExecutionState`,
+// `clearWorkGraphStreamExecutionMode`, `clearWorkGraphAttemptExecutionMode`,
+// plus the recap-removal cleanups `clearWorkGraphRecapFields` /
+// `clearWorkGraphStreamRecapFields`, ran to completion (recorded in the
+// component ledger) and their definitions were removed alongside the CONTRACT
+// schema drop of the legacy execution_mode/execution_state/recap fields.
 
 // WorkGraph tenancy EXPAND -> MIGRATE. Each migration is deliberately
 // table-specific in the component ledger. Only organization provenance stored
@@ -76,8 +83,6 @@ export const scopeWorkGraphDecisionsByOrganization = workGraphTenancyMigration("
 export const scopeWorkGraphDecisionItemsByOrganization = workGraphTenancyMigration("workgraph_decision_work_items")
 export const scopeWorkGraphEvidenceByOrganization = workGraphTenancyMigration("workgraph_evidence")
 export const scopeWorkGraphDurableReceiptsByOrganization = workGraphTenancyMigration("workgraph_durable_effect_receipts")
-export const scopeWorkGraphRecapsByOrganization = workGraphTenancyMigration("workgraph_recaps")
-export const scopeWorkGraphNotificationsByOrganization = workGraphTenancyMigration("workgraph_notifications")
 export const scopeWorkGraphAdmissionProposalsByOrganization = workGraphTenancyMigration("workgraph_admission_proposals")
 export const scopeWorkGraphAttentionEntriesByOrganization = workGraphTenancyMigration("workgraph_attention_entries")
 export const scopeWorkGraphAttentionSummariesByOrganization = workGraphTenancyMigration("workgraph_attention_summaries")
@@ -101,7 +106,7 @@ export async function backfillCandidateAttention(ctx: Parameters<typeof syncCand
   await syncCandidateTransition(ctx, undefined, row)
 }
 
-function attentionMigration(table: "workgraph_admission_proposals" | "workgraph_decisions" | "workgraph_work_items" | "workgraph_attempts" | "workgraph_notifications" | "workgraph_due_jobs") {
+function attentionMigration(table: "workgraph_admission_proposals" | "workgraph_decisions" | "workgraph_work_items" | "workgraph_attempts" | "workgraph_due_jobs") {
   return migrations.define({
     table,
     migrateOne: async (ctx, row) => {
@@ -179,8 +184,6 @@ type WorkGraphTenantTable =
   | "workgraph_decision_work_items"
   | "workgraph_evidence"
   | "workgraph_durable_effect_receipts"
-  | "workgraph_recaps"
-  | "workgraph_notifications"
   | "workgraph_admission_proposals"
   | "workgraph_attention_entries"
   | "workgraph_attention_summaries"

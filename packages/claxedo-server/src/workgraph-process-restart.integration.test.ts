@@ -57,24 +57,31 @@ describe("local WorkGraph process recovery", () => {
         requirements: [{ id: "restart-proof", kind: "test", description: "Process recovery passes" }],
       },
     })) as { value: { workItemId: string } }
-    const executeRequest = {
+    // Execution modes are gone: the local (owner) create is born `pending`
+    // (approved) and the embedded drain admits + launches it. Discover the durable
+    // Attempt from the snapshot instead of an execute command's response.
+    const createItemRequest = {
       version: 1,
-      type: "execute_work_item",
-      workItemId: item.value.workItemId,
-      executionMode: "autonomous",
-    }
-    const admitted = (await command(first.origin, "restart_execute", executeRequest)) as {
-      value: { attemptId: string }
-    }
+      type: "create_work_item",
+      streamId: stream.value.streamId,
+      title: "Preserve the admitted work",
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "restart-proof", kind: "test", description: "Process recovery passes" }],
+      },
+    } as const
     const beforeCrash = await snapshot(first.origin)
-    expect(beforeCrash.records.filter((record) => record.recordType === "attempt")).toEqual([
-      expect.objectContaining({ id: admitted.value.attemptId, ownerUserId: "local", state: "running" }),
+    const beforeAttempts = beforeCrash.records.filter((record) => record.recordType === "attempt")
+    expect(beforeAttempts).toEqual([
+      expect.objectContaining({ ownerUserId: "local", state: "running" }),
     ])
+    const attemptId = (beforeAttempts[0] as { id: string }).id
     const firstRuntime = await get<{ sessions: Record<string, { admissionCount: number; result: { state: string } }> }>(
       first.origin,
       "/runtime/sessions",
     )
-    expect(firstRuntime.sessions[`session_${admitted.value.attemptId}`]).toMatchObject({
+    expect(firstRuntime.sessions[`session_${attemptId}`]).toMatchObject({
       admissionCount: 1,
       result: { state: "pending" },
     })
@@ -84,23 +91,27 @@ describe("local WorkGraph process recovery", () => {
     processes.splice(processes.indexOf(first.child), 1)
 
     const second = await startFixture(database, repository)
-    const replay = (await command(second.origin, "restart_execute", executeRequest)) as { value: { attemptId: string } }
-    expect(replay.value.attemptId).toBe(admitted.value.attemptId)
+    // operationId idempotency across SIGKILL: replaying the original create with
+    // its stored operationId returns the same Work Item and never materializes a
+    // second Task; the durable Attempt survives and the boot drain does not
+    // relaunch it (the item is `active`, not `pending`).
+    const replay = (await command(second.origin, "restart_item", createItemRequest)) as { value: { workItemId: string } }
+    expect(replay.value.workItemId).toBe(item.value.workItemId)
     const afterRestart = await snapshot(second.origin)
     expect(afterRestart.records.filter((record) => record.recordType === "attempt")).toEqual([
-      expect.objectContaining({ id: admitted.value.attemptId, ownerUserId: "local", state: "running" }),
+      expect.objectContaining({ id: attemptId, ownerUserId: "local", state: "running" }),
     ])
     const restartedRuntime = await get<{ sessions: Record<string, { admissionCount: number; directory: string }> }>(
       second.origin,
       "/runtime/sessions",
     )
-    expect(Object.keys(restartedRuntime.sessions)).toEqual([`session_${admitted.value.attemptId}`])
-    expect(restartedRuntime.sessions[`session_${admitted.value.attemptId}`]).toMatchObject({ admissionCount: 1 })
-    expect(restartedRuntime.sessions[`session_${admitted.value.attemptId}`].directory).toContain(
+    expect(Object.keys(restartedRuntime.sessions)).toEqual([`session_${attemptId}`])
+    expect(restartedRuntime.sessions[`session_${attemptId}`]).toMatchObject({ admissionCount: 1 })
+    expect(restartedRuntime.sessions[`session_${attemptId}`].directory).toContain(
       path.join(repository, ".claxedo-workgraph-worktrees"),
     )
 
-    await post(second.origin, `/runtime/sessions/session_${admitted.value.attemptId}/complete`, {
+    await post(second.origin, `/runtime/sessions/session_${attemptId}/complete`, {
       summary: "Recovered process completed the original Attempt",
       artifacts: ["commit:restart-proof"],
     })
@@ -110,9 +121,9 @@ describe("local WorkGraph process recovery", () => {
     await command(second.origin, "restart_explicit_completion", {
       version: 1,
       type: "complete_attempt",
-      attemptId: admitted.value.attemptId,
-      sessionId: `session_${admitted.value.attemptId}`,
-      workspaceId: restartedRuntime.sessions[`session_${admitted.value.attemptId}`].directory,
+      attemptId: attemptId,
+      sessionId: `session_${attemptId}`,
+      workspaceId: restartedRuntime.sessions[`session_${attemptId}`].directory,
       leaseEpoch: 1,
       summary: "Recovered process completed the original Attempt",
       artifacts: ["commit:restart-proof"],
@@ -125,7 +136,7 @@ describe("local WorkGraph process recovery", () => {
     const settled = await snapshot(second.origin)
     expect(settled.records.filter((record) => record.recordType === "attempt")).toEqual([
       expect.objectContaining({
-        id: admitted.value.attemptId,
+        id: attemptId,
         ownerUserId: "local",
         state: "result",
         result: expect.objectContaining({

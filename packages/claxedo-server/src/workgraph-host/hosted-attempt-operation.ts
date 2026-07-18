@@ -102,7 +102,15 @@ export function createHostedAttemptOperationHandler(input: Readonly<{
   runtimeKey?: Promise<RelayKey>
 }>) {
   let runtimeKey = input.runtimeKey
-  return async (request: Request) => {
+  return async (
+    request: Request,
+    // Plan 2026-07-18-003 §5.2 row 6: a successful agent-tool operation is a
+    // readiness-changing mutation — nudge the per-request settlement dispatcher so
+    // dependent launches drain sub-second instead of waiting for the CF cron. The
+    // dispatcher is built at the route where the request `waitUntil` is available,
+    // mirroring the primary command path. Advisory + fire-and-forget.
+    notifySettlement?: (principal: Readonly<{ ownerUserId: string; orgId: string }>) => void,
+  ) => {
     try {
       const token = bearer(request.headers.get("authorization"))
       if (!token) return Response.json({ error: { code: "runtime_access_token_required" } }, { status: 401 })
@@ -118,7 +126,16 @@ export function createHostedAttemptOperationHandler(input: Readonly<{
         if (error instanceof RuntimeAccessTokenVerificationUnavailableError) runtimeKey = undefined
         throw error
       })
-      return Response.json(await input.execute({ ownerUserId: claims.sub, orgId: claims.org_id }, body))
+      const principal = { ownerUserId: claims.sub, orgId: claims.org_id }
+      const result = await input.execute(principal, body)
+      if (result.ok) {
+        try {
+          notifySettlement?.(principal)
+        } catch {
+          // A settlement nudge is advisory; the durable command result owns the response.
+        }
+      }
+      return Response.json(result)
     } catch (error) {
       const failure = operationFailure(error)
       return Response.json({

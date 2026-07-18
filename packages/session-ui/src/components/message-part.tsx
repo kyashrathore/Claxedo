@@ -136,24 +136,36 @@ interface Diagnostic {
   severity?: number
 }
 
+interface DiagnosticsResult {
+  items: Diagnostic[]
+  /** Total error-severity diagnostics before the cap was applied. */
+  total: number
+}
+
+const DIAGNOSTICS_CAP = 3
+
 function getDiagnostics(
   diagnosticsByFile: Record<string, Diagnostic[]> | undefined,
   filePath: string | undefined,
-): Diagnostic[] {
-  if (!diagnosticsByFile || !filePath) return []
+): DiagnosticsResult {
+  if (!diagnosticsByFile || !filePath) return { items: [], total: 0 }
   const diagnostics = diagnosticsByFile[filePath] ?? []
-  return diagnostics.filter((d) => d.severity === 1).slice(0, 3)
+  const errors = diagnostics.filter((d) => d.severity === 1)
+  return { items: errors.slice(0, DIAGNOSTICS_CAP), total: errors.length }
 }
 
-function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
+function DiagnosticsDisplay(props: { diagnostics: DiagnosticsResult }): JSX.Element {
   const i18n = useI18n()
+  const overflow = () => props.diagnostics.total - props.diagnostics.items.length
   return (
-    <Show when={props.diagnostics.length > 0}>
+    <Show when={props.diagnostics.items.length > 0}>
       <div data-component="diagnostics">
-        <For each={props.diagnostics}>
+        <For each={props.diagnostics.items}>
           {(diagnostic) => (
             <div data-slot="diagnostic">
-              <span data-slot="diagnostic-label">{i18n.t("ui.messagePart.diagnostic.error")}</span>
+              <span data-slot="diagnostic-icon" aria-label={i18n.t("ui.messagePart.diagnostic.error")}>
+                <Icon name="circle-ban-sign" size="small" />
+              </span>
               <span data-slot="diagnostic-location">
                 [{diagnostic.range.start.line + 1}:{diagnostic.range.start.character + 1}]
               </span>
@@ -161,6 +173,9 @@ function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
             </div>
           )}
         </For>
+        <Show when={overflow() > 0}>
+          <div data-slot="diagnostic-overflow">{i18n.t("ui.messagePart.diagnostic.more", { count: overflow() })}</div>
+        </Show>
       </div>
     </Show>
   )

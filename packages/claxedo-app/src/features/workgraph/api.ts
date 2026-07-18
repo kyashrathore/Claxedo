@@ -12,7 +12,6 @@ import {
   AdmissionProposalDtoSchema,
   AttemptDetailDtoSchema,
   DecisionDtoSchema,
-  RecapDtoSchema,
   ReplacementReviewSchema,
   WorkItemAttemptPageCursorSchema,
   WorkItemAttemptPageSchema,
@@ -33,13 +32,11 @@ import {
   ExecutionCapabilitiesSchema,
   ExecutionCapabilitiesErrorSchema,
   ExecutionProfileDefaultsSchema,
-  RecapProfileDefaultsSchema,
   WorkGraphSnapshotPageSchema,
   WorkGraphSnapshotAggregationError,
   collectWorkGraphSnapshotPages,
   type AttentionCursor,
   type CommandResult,
-  type ExecutionMode,
   type EvidencePageCursor,
   type WorkItemAttemptPageCursor,
   type TaskActivityPageCursor,
@@ -54,8 +51,6 @@ import {
   type SnapshotResumeCursor,
   type IntakeCandidatePageCursor,
   type ResolvedExecutionProfile,
-  WorkGraphNotificationPageSchema,
-  WorkGraphNotificationSchema,
   CreateSourceViewInputSchema,
   IntakeCandidateDtoSchema,
   IntakeCandidatePageCursorSchema,
@@ -253,8 +248,6 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       ),
     decision: (decisionId: string) =>
       read(`/decisions/${encodeURIComponent(decisionId)}`, (value) => DecisionDtoSchema.parse(value)),
-    recap: (recapId: string) =>
-      read(`/recaps/${encodeURIComponent(recapId)}`, (value) => RecapDtoSchema.parse(value)),
     sourceRevision: (workSourceId: string, revisionId: string) =>
       read(`/sources/${encodeURIComponent(workSourceId)}/revisions/${encodeURIComponent(revisionId)}`, (value) => WorkSourceRevisionDtoSchema.parse(value)),
     workSources: (options: Readonly<{ after?: string; limit?: number }> = {}) => {
@@ -292,8 +285,6 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       return read(`/intake?${query}`, (value) => IntakeCandidatePageSchema.parse(value))
     },
     intakeCandidate: (candidateId: string) => read(`/intake/${encodeURIComponent(candidateId)}`, (value) => IntakeCandidateDtoSchema.parse(value)),
-    notifications: (state?: "unread" | "read") => read(`/notifications${state ? `?state=${state}` : ""}`, (value) => WorkGraphNotificationPageSchema.parse(value)),
-    markNotificationRead: (notificationId: string, expectedVersion: number) => write(`/notifications/${encodeURIComponent(notificationId)}/read`, { expectedVersion }, (value) => WorkGraphNotificationSchema.parse(value)),
     stageIntakeCandidate: (candidateId: string) => write(`/intake/${encodeURIComponent(candidateId)}/stage`, {}, (value) => IntakeCandidateDtoSchema.parse(value)),
     dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => write(`/intake/${encodeURIComponent(candidateId)}/dismiss`, { expectedVersion }, (value) => IntakeCandidateDtoSchema.parse(value)),
     restoreIntakeCandidate: (candidateId: string, expectedVersion: number) => write(`/intake/${encodeURIComponent(candidateId)}/restore`, { expectedVersion }, (value) => IntakeCandidateDtoSchema.parse(value)),
@@ -346,7 +337,6 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       expectedVersion: number,
       settings: Readonly<{
         execution: z.input<typeof ExecutionProfileDefaultsSchema>
-        recap: z.input<typeof RecapProfileDefaultsSchema>
         activityGranularity?: StreamActivityGranularity
       }>,
     ) => execute({
@@ -355,7 +345,6 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       streamId,
       expectedVersion,
       execution: settings.execution,
-      recap: settings.recap,
       ...(settings.activityGranularity ? { activityGranularity: settings.activityGranularity } : {}),
     }),
     updateOutcomeExecution: (outcomeId: string, expectedVersion: number, execution: z.input<typeof ExecutionProfileDefaultsSchema>) => execute({
@@ -372,17 +361,29 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       expectedVersion,
       execution,
     }),
-    executeStream: (streamId: string, executionMode: ExecutionMode) => execute({
+    // Approval is owner-only and CAS-guarded: the exact `row_version` the UI
+    // rendered is sent so an approve can never silently ratify an edit the user
+    // never saw (0 rows affected on the server ⇒ version_conflict).
+    approveWorkItem: (workItemId: string, expectedVersion: number) => execute({
       version: 1,
-      type: "execute_stream",
-      streamId,
-      executionMode,
-    }),
-    executeWorkItem: (workItemId: string, executionMode: ExecutionMode) => execute({
-      version: 1,
-      type: "execute_work_item",
+      type: "approve_work_item",
       workItemId,
-      executionMode,
+      expectedVersion,
+    }),
+    rejectWorkItem: (workItemId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "reject_work_item",
+      workItemId,
+      expectedVersion,
+      reason,
+    }),
+    // Bulk approval sends the exact rendered versions per entry; the server
+    // approves each independently and returns a per-item outcome so stale rows
+    // surface as version_conflict instead of blocking the rest.
+    approveWorkItems: (approvals: ReadonlyArray<{ workItemId: string; expectedVersion: number }>) => execute({
+      version: 1,
+      type: "approve_work_items",
+      approvals: approvals.map((approval) => ({ workItemId: approval.workItemId, expectedVersion: approval.expectedVersion })),
     }),
     cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => execute({
       version: 1,
@@ -544,6 +545,31 @@ function decodeExecutionCapabilitiesError(value: unknown, status: number) {
     parsed.data.error.capability,
     parsed.data.error.reason,
   )
+}
+
+export const ApproveWorkItemOutcomeSchema = z.enum(["approved", "version_conflict", "not_staged", "not_found"])
+export type ApproveWorkItemOutcome = z.infer<typeof ApproveWorkItemOutcomeSchema>
+
+const ApproveWorkItemsResultSchema = z.object({
+  results: z.array(z.object({
+    workItemId: z.string(),
+    outcome: ApproveWorkItemOutcomeSchema,
+    version: z.number().optional(),
+  })),
+})
+export type ApproveWorkItemsResult = z.infer<typeof ApproveWorkItemsResultSchema>
+
+/**
+ * Reads the per-item outcomes from a successful `approve_work_items` command.
+ * The command result is a partial success by design — some entries approve while
+ * others come back `version_conflict`/`not_staged`/`not_found` — so the caller
+ * needs the exact per-item breakdown to flag the rows that changed since the
+ * user looked. Returns undefined when the value is not the expected shape.
+ */
+export function parseApproveWorkItemsResult(result: CommandResult): ApproveWorkItemsResult | undefined {
+  if (!result.ok) return undefined
+  const parsed = ApproveWorkItemsResultSchema.safeParse(result.value)
+  return parsed.success ? parsed.data : undefined
 }
 
 export type WorkGraphClient = ReturnType<typeof createWorkGraphClient>

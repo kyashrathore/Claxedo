@@ -89,7 +89,7 @@ export type SessionAppPorts = {
   listDocumentMentions: typeof DocumentMentions.listDocumentMentions
   documentMentionText: typeof DocumentMentions.documentMentionText
   useFirstTurnFunnel: () => {
-    emit(event: { name: "first_turn_ok" } | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" } | { name: "first_cloud_turn_ok" }): void
+    emit(event: { name: "first_turn_ok" } | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" | "session" | "unknown" } | { name: "first_cloud_turn_ok" }): void
   }
 }
 

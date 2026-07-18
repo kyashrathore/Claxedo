@@ -2,6 +2,10 @@
   --card-pad-y: 8px;
   --card-line-pad: 12px;
 
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: transparent;
+
   [data-slot="basic-tool-tool-title"] {
     color: var(--v2-text-text-base);
   }
@@ -54,16 +58,6 @@
     opacity: 1;
     pointer-events: auto;
   }
-
-  [data-slot="tool-error-card-content"] :where(*)::selection {
-    background: var(--v2-state-bg-danger);
-    color: var(--v2-text-text-base);
-  }
-
-  [data-slot="tool-error-card-content"] :where(*)::-moz-selection {
-    background: var(--v2-state-bg-danger);
-    color: var(--v2-text-text-base);
-  }
 }
 
 body:not([data-new-layout]) [data-component="card"][data-kind="tool-error-card"] {
@@ -81,11 +75,5 @@ body:not([data-new-layout]) [data-component="card"][data-kind="tool-error-card"]
 
   [data-slot="collapsible-arrow-icon"] {
     color: var(--icon-weaker);
-  }
-
-  [data-slot="tool-error-card-content"] :where(*)::selection,
-  [data-slot="tool-error-card-content"] :where(*)::-moz-selection {
-    background: var(--surface-critical-base);
-    color: var(--text-on-critical-base);
   }
 }

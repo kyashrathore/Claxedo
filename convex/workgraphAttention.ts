@@ -10,13 +10,15 @@ type AttentionKind =
   | "decision"
   | "work_item"
   | "attempt"
-  | "recap_notification"
   | "unorganized_ai_work"
   | "configuration_required"
 type CandidateAttentionProjection = "none" | "external_issue" | "session"
 
 const maximumTimestamp = Number.MAX_SAFE_INTEGER
-const attentionWorkItemStates = new Set(["result_ready", "blocked", "review_needed", "integration_needed", "verification_failed", "failed"])
+// `pending_approval` (Staged) surfaces in Needs-you so the owner can approve/reject
+// agent-created tasks (plan §6). Approval moves the item to `pending`, which is not
+// an attention state, so the entry clears on the same doorbell.
+const attentionWorkItemStates = new Set(["pending_approval", "result_ready", "blocked", "review_needed", "integration_needed", "verification_failed", "failed"])
 const attentionJobStates = new Set(["pending", "failed", "failed_terminal", "attention"])
 
 export function attentionPositionKey(position: Readonly<{ updatedAt: number; kind: string; id: string }>) {
@@ -94,9 +96,6 @@ export async function syncAttentionRecord(ctx: Ctx, table: string, row: any) {
   if (table === "workgraph_attempts") {
     return setAttentionEntry(ctx, organization, row.owner_user_id, "attempt", row.id, table, row.updated_at, row.state === "attention")
   }
-  if (table === "workgraph_notifications") {
-    return setAttentionEntry(ctx, organization, row.owner_user_id, "recap_notification", row.id, table, row.updated_at, row.state === "unread")
-  }
   if (table === "workgraph_due_jobs") {
     const marker = row.payload?.configurationRequirement
     const active = attentionJobStates.has(row.status) && typeof row.last_error === "string" && Boolean(row.last_error.trim()) && marker?.type === "generation"
@@ -115,9 +114,7 @@ export async function removeAttentionRecord(ctx: Ctx, organization: string, owne
             ? { kind: "work_item" as const, id }
             : table === "workgraph_attempts"
               ? { kind: "attempt" as const, id }
-              : table === "workgraph_notifications"
-                ? { kind: "recap_notification" as const, id }
-                : undefined
+              : undefined
   if (!identity) return
   await setAttentionEntry(ctx, organization, owner, identity.kind, identity.id, table, 0, false)
 }

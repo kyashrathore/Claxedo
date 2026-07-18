@@ -12,11 +12,11 @@ This dated file records the stable package boundary. The authoritative product, 
 
 ## Authoritative current shape
 
-`packages/workgraph` is the user-owned AI-work domain and embedded application service. It owns personal Streams, Tasks (`Work Item` internally), optional Outcomes, backend candidate admission, Attempts, Decisions, Recaps, activity, events, source revisions, execution profiles, and connector sync receipts.
 
-The Claxedo app presents one main WorkGraph surface. Streams expand within it and Add task is the canonical manual work action. The existing app-global WorkspacePanel supplies one top-level toggle and hosts WorkGraph's Needs you and execution-only Settings views; the WorkGraph header controls select those views in the same panel. Zero attention leaves the WorkGraph attention body empty. Stream Settings is a tabless Stream-scoped dialog for execution overrides and Recap configuration, and Stream rows expose Recaps through a hover/focus icon and popover. Focused proposal, candidate, Task result, Decision, and actionable-Recap inspection uses dialogs over the main surface.
 
-Source planning and Recaps publish only valid output from their exact durable Session V2 jobs. Failed generation retries from durable state and then surfaces attention without publishing substitute content.
+
+
+
 
 ## Composition boundary
 

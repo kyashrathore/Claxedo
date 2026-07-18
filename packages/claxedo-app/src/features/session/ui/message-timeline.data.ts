@@ -2,7 +2,7 @@ import { parseCommentNote, readCommentMetadata } from "@/features/session/data/c
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
 import { Data, Equal } from "effect"
-import { firstTurnRecoveryClass, type FirstTurnRecoveryClass } from "../onboarding/first-turn-recovery"
+import { sessionRecoveryClass, type SessionErrorClass } from "../onboarding/first-turn-recovery"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -37,6 +37,7 @@ export type TimelineRowMap = {
   TurnDivider: {
     userMessageID: string
     label: "compaction" | "interrupted"
+    durationMs?: number
   }
   AssistantPart: {
     userMessageID: string
@@ -56,7 +57,7 @@ export type TimelineRowMap = {
     cost?: number
   }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
-  Error: { userMessageID: string; text: string; recoveryClass?: FirstTurnRecoveryClass }
+  Error: { userMessageID: string; text: string; recoveryClass?: SessionErrorClass }
 }
 
 export namespace TimelineRow {
@@ -73,6 +74,7 @@ export namespace TimelineRow {
   export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
     userMessageID: string
     label: "compaction" | "interrupted"
+    durationMs?: number
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string
@@ -91,7 +93,7 @@ export namespace TimelineRow {
   export class Error extends Data.TaggedClass("Error")<{
     userMessageID: string
     text: string
-    recoveryClass?: FirstTurnRecoveryClass
+    recoveryClass?: SessionErrorClass
   }> {}
   export class Retry extends Data.TaggedClass("Retry")<{
     userMessageID: string
@@ -196,7 +198,34 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
-    const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
+    const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
+    // The opencode-native harness stamps AbortedError on abort; this remains a valid signal
+    // for it (packages/core/src/v1/session.ts AbortedError → schema "MessageAbortedError").
+    const nativeInterruptedIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
+    // D2: SDK-runtime harnesses (codex/claude/cursor/ACP — all driven through
+    // agent-event-runtime's per-harness adapters) never stamp MessageAbortedError; every
+    // error there hardcodes name:"UnknownError", so that branch can never fire for them.
+    // Tracing the abort path (translateStopReason "cancelled" in the ACP adapter,
+    // completionEvents "cancelled"/"interrupted" in the codex adapter, resultEvents
+    // "interrupted" in the claude adapter, and the "cancelled" result status in the cursor
+    // adapter) shows all four converge on the same signal: they emit only
+    // `{type: "session-status", status: "idle"}` and skip the `finish` runtime event — the
+    // one that stamps `time.completed` on the assistant message. So an aborted turn there
+    // simply stops without ever settling its last assistant message (no completed time, no
+    // error). Every other terminal path (a clean finish or a real failure) always settles
+    // it one way or the other, so "turn is no longer live, and its last assistant message
+    // never settled" is a reliable, harness-agnostic signal for these families.
+    // (Pi is the exception: its adapter's catch-all always stamps completed+UnknownError on
+    // any thrown exception, abort included, so it has no distinguishable signal here and
+    // keeps falling through to the generic Error row below.)
+    const turnStillRunning = isActive && (status === "busy" || status === "retry")
+    const sdkInterrupted =
+      nativeInterruptedIndex === -1 &&
+      !turnStillRunning &&
+      !!lastAssistantMessage &&
+      !assistantMessageSettled(lastAssistantMessage)
+    const interruptedMessageIndex =
+      nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterrupted ? assistantMessages.length - 1 : -1
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error
     const settled = assistantMessages.some(assistantMessageSettled)
@@ -261,10 +290,20 @@ export namespace Timeline {
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
+    // sdkInterrupted turns never get a completed time (see above), so "You stopped after
+    // {duration}" falls back to the latest timestamp visible on the unsettled message's own
+    // parts (last streamed text/reasoning chunk, last tool state) — the closest thing to
+    // "when it stopped" that the data actually carries.
+    const interruptedActivityTime =
+      sdkInterrupted && lastAssistantMessage
+        ? lastKnownPartActivity(getMessageParts(lastAssistantMessage.id))
+        : undefined
+    const endTimes =
+      interruptedActivityTime !== undefined ? [...completedTimes, interruptedActivityTime] : completedTimes
     const createdTime = userMessage.time?.created
     const durationMs =
-      completedTimes.length && typeof createdTime === "number"
-        ? Math.max(0, Math.max(...completedTimes) - createdTime)
+      endTimes.length && typeof createdTime === "number"
+        ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
     const running = isActive && status === "busy" && !settled && !error
     const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
@@ -316,6 +355,7 @@ export namespace Timeline {
           new TimelineRow.TurnDivider({
             userMessageID: userMessage.id,
             label: "interrupted",
+            ...(typeof durationMs === "number" ? { durationMs } : {}),
           }),
         )
         return
@@ -368,7 +408,11 @@ export namespace Timeline {
           text: unwrapErrorMessage(
             typeof data === "string" ? data : data === undefined || data === null ? "" : String(data),
           ),
-          ...(firstTurnRecovery ? { recoveryClass: firstTurnRecoveryClass(error) } : {}),
+          // Attach the recovery class on every turn, not just index 0. The class is
+          // position-independent (regex/wire-stamped), the renderer mounts the card
+          // purely on its presence, and retry is registered on every submit. The
+          // firstTurnRecovery param survives for starter-prompt/telemetry gating.
+          recoveryClass: sessionRecoveryClass(error),
         }),
       )
     }
@@ -516,6 +560,24 @@ const renderableParts = new Set(["compaction", "text", "reasoning", "tool"])
 
 export function assistantMessageSettled(message: AssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error
+}
+
+// Best-effort "when did this stop" timestamp for a message that never got a completed
+// time (an sdkInterrupted turn — see constructMessageRows). Scans the message's own parts
+// for the latest start/end timestamp any part actually recorded.
+function lastKnownPartActivity(parts: Part[]): number | undefined {
+  const times = parts.flatMap((part): number[] => {
+    if (part.type === "text" || part.type === "reasoning") {
+      return [part.time?.end, part.time?.start].filter((value): value is number => typeof value === "number")
+    }
+    if (part.type === "tool") {
+      const state = part.state
+      if (state.status === "completed" || state.status === "error") return [state.time.end]
+      if (state.status === "running") return [state.time.start]
+    }
+    return []
+  })
+  return times.length ? Math.max(...times) : undefined
 }
 
 type GroupablePart = { messageID: string; part: Part }

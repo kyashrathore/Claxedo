@@ -32,7 +32,6 @@ import {
 } from "./convex-store"
 import { createHostedWorkGraphIntake } from "./hosted-intake"
 import type { ConnectionWebhookVerifier } from "@claxedo/connections"
-import { createHostedNotificationService } from "./hosted-notifications"
 import { createHostedAttentionAcknowledgementService } from "./hosted-attention"
 import { Hono } from "hono"
 import { createHostedConnectionWebhookVerifier } from "../connections-host/webhook-verifier"
@@ -267,7 +266,6 @@ export function createHostedWorkGraph(
     resolveContext,
     ...(webhookVerifier ? { webhookVerifier } : {}),
   })
-  const notifications = createHostedNotificationService({ executor, serviceToken })
   const attentionAcknowledgements = createHostedAttentionAcknowledgementService({
     executor,
     serviceToken,
@@ -331,6 +329,25 @@ export function createHostedWorkGraph(
   const readableExecutionCapabilities = executionCapabilities
     ? {
         ...executionCapabilities,
+        // Plan 2026-07-18-003 §5.2 row 9: a capability refresh can unblock Streams
+        // held by `capability_invalid`, so nudge settlement (and ring live-sync)
+        // after a successful refresh — the drain re-derives readiness and launches.
+        ...(executionCapabilities.refresh
+          ? {
+              refresh: async (context: WorkGraphContext, request: ExecutionCapabilitiesReadInput) => {
+                const result = await executionCapabilities.refresh!(context, request)
+                try {
+                  const dispatcher = settlementDispatcherByContext.get(context) ?? settlementDispatcher
+                  const tenant = settlementTenantByContext.get(context)
+                  if (tenant) dispatcher.nudge(tenant)
+                } catch {
+                  // A settlement nudge is advisory; the refresh result owns the response.
+                }
+                nudgeLiveSync(context)
+                return result
+              },
+            }
+          : {}),
         read: async (context: WorkGraphContext, request: ExecutionCapabilitiesReadInput) => {
           const auth = signedAuthByContext.get(context)
           const activation = auth ? ownerActivations.get(activationKey(auth)) : undefined
@@ -355,7 +372,6 @@ export function createHostedWorkGraph(
   const authenticated = createWorkGraphHttpRouter({
     service,
     resolveContext,
-    notifications,
     attentionAcknowledgements,
     archive,
     deletion,
@@ -376,7 +392,6 @@ export function createHostedWorkGraph(
     resolveContext,
     router,
     intake,
-    notifications,
     attentionAcknowledgements,
     archive,
     deletion,

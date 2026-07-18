@@ -86,7 +86,7 @@ The important end-to-end journeys are:
    - local: selected project directory, repository, and base revision;
    - cloud: repository URL and base revision.
 4. User creates one or more Tasks.
-5. User executes the Stream or a ready Task.
+5. Agent-created Tasks await owner approval (Staged); approved/ready Tasks launch automatically while the Stream is active (pause/resume is the launch gate — see plan 2026-07-18-003).
 6. WorkGraph admits an Attempt and creates a real Session.
 7. The Session runs autonomously in the correct project/workspace.
 8. The agent records evidence and explicitly completes the Attempt.
@@ -103,9 +103,7 @@ The important end-to-end journeys are:
 
 ### 3. Durable Attention
 
-1. Failed Tasks, Decisions, configuration requirements, unorganized work, and actionable Recaps appear under “Needs you.”
-2. Mark-all-read persists on the backend and survives reload/another client.
-3. Clear persists on the backend and does not reappear unless a newer actionable version is published.
+
 
 ### 4. Connected providers
 
@@ -291,16 +289,7 @@ This means the initial identity diagnosis was real, but at least one additional 
 
 Recommended next diagnostic:
 
-1. Add a hosted-router integration regression, not another store-only test:
-   - compose `createHostedWorkGraph`;
-   - have the executor resolve `owner_subject` to a distinct internal user ID;
-   - return the exact current staging Attention shape;
-   - request `/attention?limit=50` through the Hono router;
-   - assert `200` and public owner identity.
-2. Preserve error privacy but report the underlying exception from the WorkGraph router to telemetry/`console.error` before returning the generic 500. Do not expose it in the HTTP body.
-3. Tail the staging Worker, trigger one request, and capture the exact schema/boundary failure.
-4. Check nested ownership fields inside Attention variants, especially `work_item.record`, Attempt records, Recap notifications, and configuration requirements. The initial fix changed only the top-level item and acknowledgement.
-5. Verify the Worker bundle contains the source commit being tested. The deployed script version from the latest run was `a4beefe9-1bcc-4f8d-b93a-33d564e16665`.
+
 
 Relevant files:
 

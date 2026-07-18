@@ -334,7 +334,6 @@ export default defineSchema({
     ...workGraphOwner,
     id: v.string(),
     defaults: v.any(),
-    recap_defaults: v.any(),
     activity_granularity: v.optional(v.union(v.literal("milestones"), v.literal("progress"), v.literal("detailed"))),
     provenance: v.optional(v.any()),
     ...workGraphMutable,
@@ -458,23 +457,17 @@ export default defineSchema({
     visibility: v.string(),
     pinned: v.boolean(),
     execution_defaults: v.any(),
-    recap_defaults: v.any(),
     activity_granularity: v.optional(v.union(v.literal("milestones"), v.literal("progress"), v.literal("detailed"))),
-    memory: v.optional(v.any()),
     activity: v.any(),
-    recap_due_at: v.optional(v.number()),
     deletion: v.optional(v.any()),
     closure: v.optional(v.any()),
     replacement_reset: v.optional(v.any()),
-    execution_mode: v.optional(v.union(v.literal("autonomous"), v.literal("supervised"))),
-    execution_state: v.optional(v.union(v.literal("active"), v.literal("stopped"), v.literal("completed"))),
     envelope: v.optional(v.any()),
     stream_kind: v.optional(v.string()),
     base_repository: v.optional(v.string()),
     base_revision: v.optional(v.string()),
     envelope_intent: v.optional(v.any()),
     last_activity_at: v.optional(v.number()),
-    quiet_since: v.optional(v.number()),
     closed_at: v.optional(v.number()),
     durable_effect_count: v.number(),
     source_revision_refs: v.array(workSourceRevisionRef),
@@ -486,8 +479,6 @@ export default defineSchema({
     .index("by_tenant_created_id", ["organization_id", "owner_user_id", "created_at", "id"])
     .index("by_tenant_updated", ["organization_id", "owner_user_id", "updated_at"])
     .index("by_tenant_pinned_updated", ["organization_id", "owner_user_id", "pinned", "updated_at"])
-    .index("by_tenant_execution_state_updated", ["organization_id", "owner_user_id", "execution_state", "updated_at"])
-    .index("by_tenant_recap_due", ["organization_id", "owner_user_id", "recap_due_at"])
     .index("by_tenant_workgraph_lifecycle", [
       "organization_id",
       "owner_user_id",
@@ -537,6 +528,13 @@ export default defineSchema({
     completion_contract: v.any(),
     evidence_ids: v.array(v.string()),
     execution_defaults: v.optional(v.any()),
+    // Approval-gate origin provenance (plan 2026-07-18-003 §8.1). The actor that
+    // materialized the task decides its born state; these fields carry the audit
+    // trail so the UI/archive can attribute agent-created work. Optional and
+    // backfill-free — legacy rows read as unknown origin.
+    created_by_actor_type: v.optional(v.string()),
+    created_by_actor_id: v.optional(v.string()),
+    origin_attempt_id: v.optional(v.string()),
     abandoned_at: v.optional(v.number()),
     abandon_reason: v.optional(v.string()),
     completed_at: v.optional(v.number()),
@@ -574,7 +572,6 @@ export default defineSchema({
     attempt_number: v.number(),
     state: v.string(),
     execution_kind: v.optional(v.union(v.literal("managed"), v.literal("attached"))),
-    execution_mode: v.optional(v.union(v.literal("autonomous"), v.literal("supervised"))),
     resolved_execution: v.any(),
     admitted_at: v.number(),
     started_at: v.optional(v.number()),
@@ -763,43 +760,6 @@ export default defineSchema({
     .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
     .index("by_tenant_stream_created", ["organization_id", "owner_user_id", "stream_id", "created_at"])
     .index("by_tenant_stream_created_id", ["organization_id", "owner_user_id", "stream_id", "created_at", "id"]),
-
-  workgraph_recaps: defineTable({
-    ...workGraphOwner,
-    id: v.string(),
-    stream_id: v.string(),
-    previous_recap_id: v.optional(v.string()),
-    activity_range: v.any(),
-    summary: v.string(),
-    actionable_references: v.array(v.any()),
-    generation: v.any(),
-    source_revision_refs: v.array(workSourceRevisionRef),
-    provenance: v.any(),
-    ...workGraphCreated,
-  })
-    .index("by_tenant", ["organization_id", "owner_user_id"])
-    .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
-    .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
-    .index("by_tenant_created_id", ["organization_id", "owner_user_id", "created_at", "id"])
-    .index("by_tenant_stream_created", ["organization_id", "owner_user_id", "stream_id", "created_at"]),
-
-  workgraph_notifications: defineTable({
-    ...workGraphOwner,
-    id: v.string(),
-    notification_kind: v.literal("actionable_recap"),
-    state: v.union(v.literal("unread"), v.literal("read")),
-    stream_id: v.string(),
-    recap_id: v.string(),
-    read_at: v.optional(v.number()),
-    ...workGraphMutable,
-  })
-    .index("by_tenant", ["organization_id", "owner_user_id"])
-    .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
-    .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
-    .index("by_tenant_recap", ["organization_id", "owner_user_id", "recap_id"])
-    .index("by_tenant_created", ["organization_id", "owner_user_id", "created_at"])
-    .index("by_tenant_state_created", ["organization_id", "owner_user_id", "state", "created_at"])
-    .index("by_tenant_state_updated", ["organization_id", "owner_user_id", "state", "updated_at"]),
 
   workgraph_admission_proposals: defineTable({
     ...workGraphOwner,

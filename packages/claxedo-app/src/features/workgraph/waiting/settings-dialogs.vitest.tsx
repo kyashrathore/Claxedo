@@ -62,21 +62,20 @@ const defaultsDto = {
       effort: "high",
       tools: ["read", "edit"],
     },
-    recap: {},
   },
 } as WorkGraphDefaultsDto
 
 /** Same shape with an empty persisted profile; the panel fills it from the catalog. */
-const emptyDefaultsDto = { ...defaultsDto, defaults: { execution: {}, recap: {} } } as WorkGraphDefaultsDto
+const emptyDefaultsDto = { ...defaultsDto, defaults: { execution: {} } } as WorkGraphDefaultsDto
 
 /** A harness + model override only, so clearing the model leaves nothing stale behind. */
 const modelDefaultsDto = {
   ...defaultsDto,
-  defaults: { execution: { harness: "opencode", model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" } }, recap: {} },
+  defaults: { execution: { harness: "opencode", model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" } } },
 } as WorkGraphDefaultsDto
 
 /** A harness the catalog does not advertise — a stale selection the catalog must reject. */
-const staleDefaultsDto = { ...defaultsDto, defaults: { execution: { harness: "ghost" }, recap: {} } } as WorkGraphDefaultsDto
+const staleDefaultsDto = { ...defaultsDto, defaults: { execution: { harness: "ghost" } } } as WorkGraphDefaultsDto
 
 // The exact ExecutionCapabilities the backend advertises. `hosted_workspace` takes a
 // remote URL and picks its base revision from the advertised list; `local_worktree`
@@ -277,34 +276,6 @@ describe("WorkGraphSettingsView", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/complete default execution profile/)
   })
 
-  test("has no inner Execution/Recap tabs and pins the actions outside the scroll region", async () => {
-    const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => ok) }
-    const { container } = render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
-    // No nested tab strip anywhere, and recap is not a WorkGraph-level setting.
-    expect(screen.queryByRole("tab")).toBeNull()
-    expect(screen.queryByRole("tablist")).toBeNull()
-    expect(screen.queryByText("Recap behavior")).toBeNull()
-    // The Save/Cancel footer lives outside the scrolling field region.
-    expect(container.querySelector(".workgraph-settings-scroll")).not.toBeNull()
-    const save = screen.getByRole("button", { name: "Save" })
-    expect(save.closest(".workgraph-settings-scroll")).toBeNull()
-    expect(save.closest(".workgraph-settings-footer")).not.toBeNull()
-  })
-
-  test("preserves the loaded recap object unchanged when saving execution defaults", async () => {
-    const source = { defaults: vi.fn(async () => defaultsDto), saveDefaults: vi.fn(async () => ok) }
-    render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
-    await screen.findByRole("heading", { name: "WorkGraph settings" })
-
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
-
-    await waitFor(() => expect(source.saveDefaults).toHaveBeenCalled())
-    const [, payload] = source.saveDefaults.mock.calls[0]!
-    // The exact loaded recap object is passed through — never synthesized or substituted.
-    expect(payload.recap).toBe(defaultsDto.defaults.recap)
-  })
-
   test("keeps harness tools automatic while Connections remain explicit", async () => {
     const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
     render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
@@ -349,13 +320,51 @@ const streamDto = {
     environment: { kind: "local_worktree", directory: "/repo" },
     repository: { baseRevision: "HEAD" },
   },
-  recapDefaults: {},
-  activity: { lastActivityAt: 1, recapDueAt: 2 },
+  activity: { lastActivityAt: 1 },
   durableEffectCount: 0,
   sourceRevisionRefs: [],
 } as StreamDto
 
 describe("StreamSettingsDialog", () => {
+  test("saves the edited Stream profile with its current version and activity detail", async () => {
+    const save = vi.fn(async () => ok)
+    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
+    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    await screen.findByText("Stream settings")
+
+    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "detailed" } })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    expect(save).toHaveBeenCalledWith(
+      "stream_1",
+      7,
+      expect.objectContaining({
+        execution: expect.objectContaining({
+          harness: "pi",
+          agent: "plan",
+          model: { providerId: "google", modelId: "gemini-2.5-pro" },
+          tools: ["shell"],
+        }),
+        activityGranularity: "detailed",
+      }),
+    )
+  })
+
+  test("keeps the actions fixed outside the scrollable settings body", async () => {
+    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
+    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    await screen.findByText("Stream settings")
+
+    const scroll = document.querySelector(".workgraph-settings-scroll")
+    const footer = document.querySelector(".workgraph-settings-footer")
+    const save = screen.getByRole("button", { name: "Save" })
+    expect(scroll).toBeInTheDocument()
+    expect(footer).toContainElement(save)
+    expect(scroll).not.toContainElement(save)
+  })
+
   test("uses known projects and the shared directory picker for a local Stream", async () => {
     const choose = vi.fn(async () => "/repo/new")
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
@@ -381,26 +390,6 @@ describe("StreamSettingsDialog", () => {
     await waitFor(() => expect(screen.getByLabelText("Project directory")).toHaveTextContent("new"))
   })
 
-  test("saves execution and recap atomically at one expected version", async () => {
-    const save = vi.fn(async () => ok)
-    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
-    await screen.findByText("Stream settings")
-
-    // Harness is advertised regardless of environment, so it is a safe field to edit here.
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "opencode" } })
-    fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "detailed" } })
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
-
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-    const [streamId, version, settings] = save.mock.calls[0]!
-    expect(streamId).toBe("stream_1")
-    expect(version).toBe(7)
-    expect(settings.execution.harness).toBe("opencode")
-    expect(settings.recap).toBeDefined()
-    expect(settings.activityGranularity).toBe("detailed")
-  })
-
   test("distinguishes Stream-owned targets from WorkGraph profile defaults", async () => {
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
     render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
@@ -409,15 +398,6 @@ describe("StreamSettingsDialog", () => {
     expect(screen.queryByText("Inherit")).toBeNull()
     expect(screen.getAllByText("Select…").length).toBeGreaterThan(0)
     expect(screen.getByText("WorkGraph default: opencode")).toBeInTheDocument()
-  })
-
-  test("shows Execution and Recap behavior sections with no inner tabs", async () => {
-    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
-    await screen.findByText("Stream settings")
-    expect(screen.queryByRole("tab")).toBeNull()
-    expect(screen.getByText("Execution")).toBeInTheDocument()
-    expect(screen.getByText("Recap behavior")).toBeInTheDocument()
   })
 
   test("saves all harness tools automatically and selected Connections", async () => {
@@ -450,36 +430,6 @@ describe("StreamSettingsDialog", () => {
     const [, settings] = source.saveDefaults.mock.calls[0]!
     expect(settings.execution.connectionIds).toEqual([])
     expect(settings.execution.tools).toEqual([])
-  })
-
-  test("defaults empty Stream Recap settings from inherited execution with eight quiet hours", async () => {
-    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
-    await screen.findByText("Stream settings")
-
-    expect((screen.getByLabelText("Recap provider") as HTMLSelectElement).value).toBe("anthropic")
-    expect((screen.getByLabelText("Recap model") as HTMLSelectElement).value).toBe("anthropic/claude-sonnet-4-5")
-    expect((screen.getByLabelText("Recap effort") as HTMLSelectElement).value).toBe("high")
-    expect((screen.getByLabelText("Quiet hours") as HTMLInputElement).value).toBe("8")
-  })
-
-  test("Pi uses provider-backed model pickers without execution or Recap provider controls", async () => {
-    const save = vi.fn(async () => ok)
-    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
-    await screen.findByText("Stream settings")
-
-    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
-    expect(screen.queryByLabelText("Provider")).toBeNull()
-    expect(screen.queryByLabelText("Recap provider")).toBeNull()
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
-    fireEvent.change(screen.getByLabelText("Recap model"), { target: { value: "google/gemini-2.5-pro" } })
-    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
-
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-    const [, , settings] = save.mock.calls[0]!
-    expect(settings.execution.model).toEqual({ providerId: "openai", modelId: "gpt-5-mini" })
-    expect(settings.recap.model).toEqual({ providerId: "google", modelId: "gemini-2.5-pro" })
   })
 
   test("allows an explicit empty Connections override without exposing tool permissions", async () => {
@@ -528,19 +478,5 @@ describe("StreamSettingsDialog", () => {
     // The same exact-error contract applies to the per-stream form.
     expect(screen.getByRole("alert")).toHaveTextContent("Execution runtime is unavailable.")
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled()
-  })
-
-  test("gives recap controls accessible names distinct from the execution controls", async () => {
-    // With the catalog present, execution and recap each render a Model and Effort
-    // select; their accessible names must be unique so assistive tech (and tests)
-    // can tell them apart.
-    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save: vi.fn(async () => ok) }
-    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
-    await screen.findByText("Recap behavior")
-
-    expect(screen.getByLabelText("Model")).toBeInTheDocument()
-    expect(screen.getByLabelText("Effort")).toBeInTheDocument()
-    expect(screen.getByLabelText("Recap model")).toBeInTheDocument()
-    expect(screen.getByLabelText("Recap effort")).toBeInTheDocument()
   })
 })

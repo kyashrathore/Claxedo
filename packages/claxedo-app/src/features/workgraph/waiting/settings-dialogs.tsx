@@ -1,10 +1,8 @@
 import {
-  resolveRecapProfileDefaults,
   type CommandResult,
   type ExecutionCapabilities,
   type ExecutionEnvironmentCapability,
   type ExecutionProfileDefaults,
-  type RecapProfileDefaults,
   type StreamDto,
   type StreamActivityGranularity,
   type WorkGraphDefaultsDto,
@@ -31,14 +29,12 @@ import { ProjectPicker, type LocalProjectOption } from "../project-picker"
 
 export type WorkGraphSettingsSource = {
   defaults: () => Promise<WorkGraphDefaultsDto>
-  saveDefaults: (expectedVersion: number, defaults: { execution: ExecutionProfileDefaults; recap: RecapProfileDefaults }) => Promise<CommandResult>
+  saveDefaults: (expectedVersion: number, defaults: { execution: ExecutionProfileDefaults }) => Promise<CommandResult>
 }
 
 /**
  * WorkGraph-wide runtime defaults, rendered as the Settings view of the shared
- * WorkspacePanel (never a separate modal, never inner tabs). Recap is a
- * Stream-owned concept and is not edited here; the WorkGraph-level recap object
- * loaded with the defaults is preserved unchanged when execution defaults save.
+ * WorkspacePanel (never a separate modal, never inner tabs).
  * `active` gates the resource so the defaults are only fetched while Settings shows.
  */
 export function WorkGraphSettingsView(props: {
@@ -63,16 +59,14 @@ export function WorkGraphSettingsView(props: {
         {(current) => (
           <SettingsForm
             variant="panel"
-            showRecap={false}
+            showActivity={false}
             execution={current.defaults.execution}
-            recap={current.defaults.recap}
             capabilities={props.capabilities}
             capabilitiesError={props.capabilitiesError}
             capabilitiesLoading={props.capabilitiesLoading}
             onCancel={() => props.onClose?.()}
-            // Recap is not a WorkGraph-level setting; persist the loaded recap unchanged.
-            save={async (execution, recap) => {
-              const result = await props.source.saveDefaults(current.version, { execution, recap })
+            save={async (execution) => {
+              const result = await props.source.saveDefaults(current.version, { execution })
               if (result.ok) await refetch()
               return result
             }}
@@ -85,8 +79,7 @@ export function WorkGraphSettingsView(props: {
 
 export type StreamSettingsSource = {
   workgraphDefaults: () => Promise<WorkGraphDefaultsDto>
-  /** Atomic update of both execution and recap overrides at one expected version. */
-  save: (streamId: string, expectedVersion: number, settings: { execution: ExecutionProfileDefaults; recap: RecapProfileDefaults; activityGranularity: StreamActivityGranularity }) => Promise<CommandResult>
+  save: (streamId: string, expectedVersion: number, settings: { execution: ExecutionProfileDefaults; activityGranularity: StreamActivityGranularity }) => Promise<CommandResult>
 }
 
 type StreamSettingsProps = {
@@ -140,9 +133,8 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
             <SettingsForm
               variant="dialog"
               flush={props.flush}
-              showRecap
+              showActivity
               execution={stream.executionDefaults}
-              recap={stream.recapDefaults}
               activityGranularity={stream.activityGranularity}
               inheritedExecution={workgraph.defaults.execution}
               capabilities={props.capabilities}
@@ -151,8 +143,8 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
               localProjects={props.localProjects}
               onChooseLocalProject={props.onChooseLocalProject}
               onCancel={props.onClose}
-              save={async (execution, recap, activityGranularity) => {
-                const result = await props.source.save(stream.id, stream.version, { execution, recap, activityGranularity: activityGranularity ?? "progress" })
+              save={async (execution, activityGranularity) => {
+                const result = await props.source.save(stream.id, stream.version, { execution, activityGranularity: activityGranularity ?? "progress" })
                 if (result.ok) props.onClose()
                 return result
               }}
@@ -175,9 +167,8 @@ const humanize = (value: string) => (value ? value.charAt(0).toUpperCase() + val
 type SettingsFormProps = {
   variant: "panel" | "dialog"
   flush?: boolean
-  showRecap: boolean
+  showActivity: boolean
   execution: ExecutionProfileDefaults
-  recap: RecapProfileDefaults
   activityGranularity?: StreamActivityGranularity
   inheritedExecution?: ExecutionProfileDefaults
   capabilities?: ExecutionCapabilities
@@ -186,7 +177,7 @@ type SettingsFormProps = {
   localProjects?: readonly LocalProjectOption[]
   onChooseLocalProject?: () => Promise<string | undefined>
   onCancel: () => void
-  save: (execution: ExecutionProfileDefaults, recap: RecapProfileDefaults, activityGranularity?: StreamActivityGranularity) => Promise<CommandResult>
+  save: (execution: ExecutionProfileDefaults, activityGranularity?: StreamActivityGranularity) => Promise<CommandResult>
 }
 
 /** Remount once a capability catalog arrives so catalog-derived defaults are
@@ -222,10 +213,6 @@ function executionWithCatalogDefaults(execution: ExecutionProfileDefaults, capab
 
 function SettingsFormBody(props: SettingsFormProps) {
   const execution = executionWithCatalogDefaults(props.execution, props.capabilities, props.variant)
-  const recap = resolveRecapProfileDefaults({
-    recap: props.recap,
-    execution: { ...props.inheritedExecution, ...props.execution },
-  }) ?? props.recap
   const [environment, setEnvironment] = createSignal(execution.environment?.kind ?? "")
   const [localDirectory, setLocalDirectory] = createSignal(
     execution.environment?.kind === "local_worktree" ? execution.environment.directory ?? "" : "",
@@ -243,10 +230,6 @@ function SettingsFormBody(props: SettingsFormProps) {
   const [effort, setEffort] = createSignal(execution.effort ?? "")
   const [connectionIds, setConnectionIds] = createSignal<ConnectionId[]>([...(props.execution.connectionIds ?? [])])
   const [connectionsOverride, setConnectionsOverride] = createSignal(props.execution.connectionIds !== undefined)
-  const [recapEffort, setRecapEffort] = createSignal(recap.effort ?? "")
-  const [recapProvider, setRecapProvider] = createSignal(recap.model?.providerId ?? "")
-  const [recapModel, setRecapModel] = createSignal(modelKey(recap.model))
-  const [quietHours, setQuietHours] = createSignal(recap.quietHours?.toString() ?? "")
   const [activityGranularity, setActivityGranularity] = createSignal<StreamActivityGranularity>(props.activityGranularity ?? "progress")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
@@ -287,18 +270,6 @@ function SettingsFormBody(props: SettingsFormProps) {
   const baseRevisionCatalog = () => (hasCaps() ? baseRevisionChoices(cap()) : [])
   const toolsFor = () => (hasCaps() && harness() ? toolChoices(cap(), harness()) : [])
   const connectionsFor = () => (hasCaps() && harness() === "opencode" ? connectionChoices(cap()) : [])
-  const recapHarness = () => harness() || props.inheritedExecution?.harness || ""
-  const recapProvidersFor = () => (hasCaps() && recapHarness() ? providerChoices(cap(), recapHarness()) : [])
-  const recapModelsFor = () => {
-    if (!hasCaps() || !recapHarness()) return []
-    if (providerlessHarness(recapHarness())) return modelChoices(cap(), recapHarness())
-    return recapProvider() ? providerModelChoices(cap(), recapHarness(), recapProvider()) : []
-  }
-  const chosenRecapModel = () => recapModelsFor().find((option) => modelKey(option) === recapModel())
-  const recapEffortsFor = () => {
-    const chosen = chosenRecapModel()
-    return hasCaps() && recapHarness() && chosen ? effortChoices(cap(), recapHarness(), chosen.providerId, chosen.modelId) : []
-  }
 
   const environmentOptions = () => envKinds().map((kind) => ({ value: kind, label: humanize(kind) }))
   const harnessOptions = () => harnessIds().map((id) => ({ value: id, label: HARNESS_DISPLAY_NAMES[id] ?? humanize(id) }))
@@ -310,12 +281,6 @@ function SettingsFormBody(props: SettingsFormProps) {
   }))
   const effortOptions = () => effortsFor().map((value) => ({ value, label: value }))
   const baseRevisionOptions = () => (baseRevisionFreeText() ? [] : baseRevisionCatalog().map((value) => ({ value, label: value })))
-  const recapProviderOptions = () => recapProvidersFor().map((id) => ({ value: id, label: humanize(id) }))
-  const recapModelOptions = () => recapModelsFor().map((option) => ({
-    value: modelKey(option),
-    label: providerlessHarness(recapHarness()) ? `${option.label} (${humanize(option.providerId)})` : option.label,
-  }))
-  const recapEffortOptions = () => recapEffortsFor().map((value) => ({ value, label: value }))
   const connectionOptions = () => connectionsFor().map((connection) => ({ id: connection.id as string, label: connection.accountLabel ?? connection.integrationId }))
 
   const preferredModel = (models: ReturnType<typeof modelsFor>) => models.find((option) => option.efforts.length > 0) ?? models[0]
@@ -328,12 +293,6 @@ function SettingsFormBody(props: SettingsFormProps) {
     setProvider(next?.providerId ?? providerId)
     setModel(next ? modelKey(next) : "")
     setEffort(next?.efforts[0] ?? "")
-  }
-  const selectRecapModelDefaults = (harnessId: string, providerId: string) => {
-    const next = preferredModel(providerlessHarness(harnessId) ? modelChoices(cap(), harnessId) : providerModelChoices(cap(), harnessId, providerId))
-    setRecapProvider(next?.providerId ?? providerId)
-    setRecapModel(next ? modelKey(next) : "")
-    setRecapEffort(next?.efforts[0] ?? "")
   }
   const changeEnvironment = (kind: string) => {
     setEnvironment(kind)
@@ -350,8 +309,6 @@ function SettingsFormBody(props: SettingsFormProps) {
     const nextProvider = id ? preferredProvider(id) : ""
     setProvider(nextProvider)
     selectModelDefaults(id, nextProvider)
-    setRecapProvider(nextProvider)
-    selectRecapModelDefaults(id, nextProvider)
     if (id !== "opencode") {
       setConnectionsOverride(false)
       setConnectionIds([])
@@ -366,16 +323,6 @@ function SettingsFormBody(props: SettingsFormProps) {
     if (next) setProvider(next.providerId)
     setModel(value)
     setEffort(next?.efforts[0] ?? "")
-  }
-  const changeRecapProvider = (id: string) => {
-    setRecapProvider(id)
-    selectRecapModelDefaults(recapHarness(), id)
-  }
-  const changeRecapModel = (value: string) => {
-    const next = recapModelsFor().find((option) => modelKey(option) === value)
-    if (next) setRecapProvider(next.providerId)
-    setRecapModel(value)
-    setRecapEffort(next?.efforts[0] ?? "")
   }
 
   const automaticTools = () => {
@@ -427,12 +374,7 @@ function SettingsFormBody(props: SettingsFormProps) {
       optionValid(provider(), providerOptions()) &&
       optionValid(model(), modelOptions()) &&
       optionValid(effort(), effortOptions()) &&
-      (!connectionsOverride() || idsValid(connectionIds(), connectionOptions())) &&
-      (!props.showRecap || (
-        optionValid(recapProvider(), recapProviderOptions()) &&
-        optionValid(recapModel(), recapModelOptions()) &&
-        optionValid(recapEffort(), recapEffortOptions())
-      ))
+      (!connectionsOverride() || idsValid(connectionIds(), connectionOptions()))
     return valid ? undefined : "Some selected values aren't offered by the capability catalog. Adjust them to save."
   }
 
@@ -471,25 +413,12 @@ function SettingsFormBody(props: SettingsFormProps) {
     }
   }
 
-  const buildRecap = (): RecapProfileDefaults => {
-    const chosen = chosenRecapModel()
-    const hours = Number(quietHours())
-    return {
-      ...(chosen ? { model: { providerId: chosen.providerId, modelId: chosen.modelId } } : {}),
-      ...(recapEffort().trim() ? { effort: recapEffort().trim() } : {}),
-      ...(quietHours().trim() && Number.isFinite(hours) && hours > 0 ? { quietHours: hours } : {}),
-    }
-  }
-
   const submit = async () => {
     if (busy() || capabilityError()) return
     setBusy(true)
     setError()
     try {
-      // WorkGraph settings never edit recap, so its loaded object is passed through
-      // unchanged; the Stream form edits recap and rebuilds it from the fields.
-      const recap = props.showRecap ? buildRecap() : props.recap
-      const result = await props.save(buildExecution(), recap, props.showRecap ? activityGranularity() : undefined)
+      const result = await props.save(buildExecution(), props.showActivity ? activityGranularity() : undefined)
       if (!result.ok) setError(result.error.code === "version_conflict" ? "These settings changed elsewhere. Reload before saving." : result.error.message)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -502,7 +431,7 @@ function SettingsFormBody(props: SettingsFormProps) {
     <div class="workgraph-settings-form" classList={{ "is-dialog": !!props.flush }}>
       <div class="workgraph-settings-scroll">
         <div class="workgraph-settings">
-          <Show when={props.showRecap}>
+          <Show when={props.showActivity}>
             <div class="workgraph-settings-section-title">Execution</div>
           </Show>
           <Show when={props.variant === "dialog"}>
@@ -542,7 +471,7 @@ function SettingsFormBody(props: SettingsFormProps) {
           <Show when={harness() === "opencode"}>
             <ConnectionRow label="Connections" description="External accounts an attempt may use through scoped broker tools." options={connectionOptions()} selected={connectionIds()} onToggle={toggleConnection} override={connectionsOverride()} onOverride={setConnectionsMode} emptyLabel={emptyLabel} editable={hasCaps()} />
           </Show>
-          <Show when={props.showRecap}>
+          <Show when={props.showActivity}>
             <div class="workgraph-settings-section-title">Activity</div>
             <SelectRow
               label="Detail"
@@ -557,13 +486,6 @@ function SettingsFormBody(props: SettingsFormProps) {
               editable
               emptyLabel="Progress"
             />
-            <div class="workgraph-settings-section-title">Recap behavior</div>
-            <Show when={!providerlessHarness(recapHarness())}>
-              <SelectRow label="Provider" ariaLabel="Recap provider" description="Model service used to compose recaps." value={recapProvider()} onChange={changeRecapProvider} options={recapProviderOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
-            </Show>
-            <SelectRow label="Model" ariaLabel="Recap model" description="Model that condenses completed work into a recap." value={recapModel()} onChange={changeRecapModel} options={recapModelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
-            <SelectRow label="Effort" ariaLabel="Recap effort" description="Reasoning depth used while composing the recap." value={recapEffort()} onChange={setRecapEffort} options={recapEffortOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
-            <TextRow label="Quiet hours" description="Minimum idle window before a recap is eligible to run." value={quietHours()} onChange={setQuietHours} placeholder="e.g. 8" numeric />
           </Show>
         </div>
       </div>
@@ -621,8 +543,7 @@ function SettingRow(props: { label: string; description?: string; note?: string;
  *  the reason Save is blocked stays visible. */
 function SelectRow(props: {
   label: string
-  /** Overrides the control's accessible name when the visible label alone would collide
-   *  (e.g. the recap Model/Effort selects share a label with the execution ones). */
+  /** Overrides the control's accessible name when the visible label alone would collide. */
   ariaLabel?: string
   description?: string
   value: string

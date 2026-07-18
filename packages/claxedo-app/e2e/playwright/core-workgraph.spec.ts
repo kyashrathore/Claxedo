@@ -3,7 +3,7 @@
  *
  * Every test owns a fresh file-backed SQLite database and the real embedded
  * WorkGraph HTTP router. Playwright never intercepts a route, and fixture setup
- * uses only public commands plus the same source-planning and Recap background
+ * uses only public commands plus the same source-planning background
  * runtimes used by the product.
  */
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
@@ -79,7 +79,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 
-    await expect(page.getByRole("button", { name: "Collapse Ship the browser contract" })).toBeVisible()
+    await page.getByRole("article", { name: "Stream Ship the browser contract" }).hover()
     await page.getByRole("button", { name: "Add task" }).click()
     const taskTitle = page.getByRole("textbox", { name: "Add task to Ship the browser contract" })
     await taskTitle.fill("Verify the real SQLite journey")
@@ -121,9 +121,6 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
     await streamSettings.getByLabel("Base revision").fill("HEAD")
     await streamSettings.getByLabel("Harness").selectOption("opencode")
-    await streamSettings.getByLabel("Recap model").selectOption("openai/gpt-5")
-    await streamSettings.getByLabel("Recap effort").selectOption("high")
-    await streamSettings.getByLabel("Quiet hours").fill("6")
     await streamSettings.getByRole("button", { name: "Save" }).click()
     await expect(panel).toBeHidden()
 
@@ -134,11 +131,6 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
         executionDefaults: {
           environment: { kind: "local_worktree", directory: repositoryDirectory },
           repository: { baseRevision: "HEAD" },
-        },
-        recapDefaults: {
-          model: { providerId: "openai", modelId: "gpt-5" },
-          effort: "high",
-          quietHours: 6,
         },
       })
     harness.assertHealthy()
@@ -174,11 +166,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await page.goto("/workgraph")
     const card = page.getByRole("complementary", { name: "Waiting on you" })
     await expect(card).toBeVisible()
-    await card.getByRole("button", { name: /Review proposed work/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
-    await expect(panel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
-    const proposal = panel.getByRole("button", { name: /Review proposed work/ })
-    await expectNoSeriousAxeViolations(page, 'aside[aria-label="Workspace panel"]')
+    const proposal = card.getByRole("button", { name: /Review proposed work/ })
     await proposal.click()
     const dialog = page.getByRole("dialog", { name: "Review proposed work" })
     await expect(dialog).toBeVisible()
@@ -201,7 +189,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     // navigation reload proves the confirmed plan is materialized from SQLite;
     // no route interception or client-side substitute is involved.
     await page.reload()
-    await expect(page.getByRole("button", { name: /^(?:Expand|Collapse) Planned from AI context$/ })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream Planned from AI context" })).toBeVisible()
     harness.assertHealthy()
   })
 
@@ -429,11 +417,9 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     for (const issue of issues) {
       const streamTitle = `${issue.externalKey} · ${issue.title}`
       const taskTitle = `Resolve ${issue.externalKey}`
-      await expect(page.getByRole("button", { name: new RegExp(`^(?:Expand|Collapse) ${escapeRegex(streamTitle)}$`) })).toBeVisible()
-      await page.getByRole("button", { name: `Execute stream ${streamTitle}` }).click()
-      await page.getByRole("menu", { name: `Execute stream ${streamTitle}` })
-        .getByRole("menuitem", { name: "Autonomous" })
-        .click()
+      await expect(page.getByRole("article", { name: `Stream ${streamTitle}` })).toBeVisible()
+      // Launch is automatic and continuous: a confirmed (owner-authored) task is
+      // born approved and the active stream's drain admits it — no execute step.
       const workItemId = await workItemIdByTitle(request, taskTitle)
       await expect.poll(async () => {
         await harness.runReconcile()
@@ -445,11 +431,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       const session = harness.realSessionEvidence().find((record) => record.title === taskTitle)
       if (!session) throw new Error(`${issue.provider} execution did not create its real project Session`)
       await page.reload()
-      const streamToggle = page.getByRole("button", {
-        name: new RegExp(`^(?:Expand|Collapse) ${escapeRegex(streamTitle)}$`),
-      })
-      await expect(streamToggle).toBeVisible()
-      if (await streamToggle.getAttribute("aria-expanded") !== "true") await streamToggle.click()
+      await expect(page.getByRole("article", { name: `Stream ${streamTitle}` })).toBeVisible()
       await page.getByRole("button", { name: `Open session for ${taskTitle}` }).click()
       await expect(page).toHaveURL(`/s/${session.sessionId}`)
       await expect(page.locator("[data-session-title]").getByText(taskTitle, { exact: true }))
@@ -537,7 +519,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     const proposal = page.getByRole("dialog", { name: "Review proposed work" })
     await proposal.getByRole("button", { name: "Confirm" }).click()
     await page.reload()
-    await expect(page.getByRole("button", { name: /^(?:Expand|Collapse) Planned from AI context$/ })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream Planned from AI context" })).toBeVisible()
 
     expect(
       await harness.projectIndependentSession({
@@ -595,68 +577,6 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     harness.assertHealthy()
   })
 
-  test("publishes an agent-session Recap and lazy-loads its Stream row preview on hover and focus", async ({
-    page,
-    request,
-  }) => {
-    await configureGeneration(request)
-    await page.goto("/workgraph")
-    await page.getByRole("button", { name: "New stream" }).click()
-    const create = page.getByRole("dialog", { name: "New stream" })
-    await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Recap the launch")
-    await create.getByRole("button", { name: "Project directory" }).click()
-    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
-    await create.getByRole("button", { name: "Base revision" }).click()
-    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
-    await baseRevisionField.fill("HEAD")
-    await baseRevisionField.press("Enter")
-    await create.getByRole("button", { name: "Create" }).click()
-    const streamId = await streamIdByTitle(request, "Recap the launch")
-
-    await page.getByRole("button", { name: "Stream settings for Recap the launch" }).click()
-    const streamSettings = page.getByRole("complementary", { name: "Workspace panel" })
-    await expect(streamSettings.getByRole("heading", { name: "Stream settings" })).toBeVisible()
-    await expect(page.getByRole("dialog", { name: "Stream settings" })).toHaveCount(0)
-    await streamSettings.getByLabel("Harness").selectOption("opencode")
-    await streamSettings.getByLabel("Recap model").selectOption("openai/gpt-5")
-    await streamSettings.getByLabel("Recap effort").selectOption("high")
-    await streamSettings.getByLabel("Quiet hours").fill("8")
-    await streamSettings.getByRole("button", { name: "Save" }).click()
-    await expect(streamSettings).toBeHidden()
-
-    harness.advanceTime(9 * 60 * 60 * 1000)
-    expect(await harness.scheduleRecaps()).toBe(1)
-    const recap = await harness.runRecap()
-    if (recap.state !== "completed") throw new Error(`Recap runtime did not complete: ${recap.state}`)
-    expect(recap.output.generation).toMatchObject({ method: "agent_session" })
-    expect(recap.output.actionableReferences).toEqual([{ type: "stream", id: streamId }])
-
-    const recapRequests: string[] = []
-    page.on("request", (request) => {
-      if (/\/api\/workgraph\/recaps\//.test(new URL(request.url()).pathname)) recapRequests.push(request.url())
-    })
-    await page.reload()
-    const trigger = page.getByRole("button", { name: "Latest recap for Recap the launch" })
-    await expect(trigger).toBeVisible()
-    expect(recapRequests).toHaveLength(0)
-
-    await trigger.hover()
-    const recapPreview = page.getByRole("group", { name: "Latest recap" })
-    await expect(recapPreview.getByText("Stream activity is ready for review.", { exact: true })).toBeVisible()
-    await expect.poll(() => recapRequests.length).toBe(1)
-
-    await page.mouse.move(0, 0)
-    await page.reload()
-    recapRequests.length = 0
-    const focusTrigger = page.getByRole("button", { name: "Latest recap for Recap the launch" })
-    await expect(focusTrigger).toBeVisible()
-    expect(recapRequests).toHaveLength(0)
-    await focusTrigger.focus()
-    await expect(recapPreview.getByText("Stream activity is ready for review.", { exact: true })).toBeVisible()
-    await expect.poll(() => recapRequests.length).toBe(1)
-    harness.assertHealthy()
-  })
-
   test("executes and retries a Task in a real worktree, then inspects the true latest result from Attention", async ({
     page,
     request,
@@ -680,11 +600,9 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
 
     harness.queueExecutionResults({ state: "failed", message: "Controlled first attempt failed" })
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: "Execute stream Execution inspection" }).click()
-    const executeMenu = page.getByRole("menu", { name: "Execute stream Execution inspection" })
-    await expect(executeMenu).toBeVisible()
-    await executeMenu.getByRole("menuitem", { name: "Supervised" }).click()
-    await expect(executeMenu).toBeHidden()
+    // The owner-authored task is approved on creation; the active stream's drain
+    // launches it automatically (reconcile drives the first attempt).
+    await expect(page.getByRole("article", { name: "Stream Execution inspection" })).toBeVisible()
     await expect
       .poll(async () => {
         await harness.runReconcile()
@@ -802,10 +720,8 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     const workItemId = String(task.value.workItemId)
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: "Execute stream Real Session execution" }).click()
-    await page.getByRole("menu", { name: "Execute stream Real Session execution" })
-      .getByRole("menuitem", { name: "Supervised" })
-      .click()
+    // Approved on creation; the active stream's drain launches it automatically.
+    await expect(page.getByRole("article", { name: "Stream Real Session execution" })).toBeVisible()
     await expect.poll(async () => {
       await harness.runReconcile()
       return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
@@ -880,7 +796,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await expectAssistantReplyVisible(page, "Created MCP review pipeline with three dependency-ordered Tasks.")
 
     await page.goto("/workgraph")
-    await expect(page.getByRole("button", { name: "Collapse MCP review pipeline" })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream MCP review pipeline" })).toBeVisible()
     const taskTitles = [
       "Review the WorkGraph implementation",
       "Exercise the WorkGraph user journeys",
@@ -901,10 +817,13 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     if (tasks.some((task) => !task)) throw new Error("Claxedo MCP did not persist all three requested Tasks")
     expect(tasks.map((task) => task?.dependencyIds)).toEqual([[], [tasks[0]?.id], [tasks[1]?.id]])
 
-    await page.getByRole("button", { name: "Execute stream MCP review pipeline" }).click()
-    await page.getByRole("menu", { name: "Execute stream MCP review pipeline" })
-      .getByRole("menuitem", { name: "Autonomous" })
-      .click()
+    // Claxedo MCP created these under an active attempt, so they are born Staged
+    // (agent-authored) and must be approved before the drain will launch them.
+    // Approving all three lets the continuous drain cascade them in dependency
+    // order — no execute step.
+    for (const title of taskTitles) {
+      await page.getByRole("button", { name: `Approve task ${title}` }).click()
+    }
     await expect.poll(async () => {
       await harness.runReconcile()
       const current = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
@@ -916,8 +835,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     expect(sessions.map((session) => session.title)).toEqual(taskTitles)
     for (const session of sessions) {
       await page.reload()
-      const streamToggle = page.getByRole("button", { name: /^(?:Expand|Collapse) MCP review pipeline$/ })
-      if (await streamToggle.getAttribute("aria-expanded") !== "true") await streamToggle.click()
+      await expect(page.getByRole("article", { name: "Stream MCP review pipeline" })).toBeVisible()
       await page.getByRole("button", { name: `Open session for ${session.title}` }).click()
       await expect(page).toHaveURL(`/s/${session.sessionId}`)
       await expectAssistantReplyVisible(page, "Completed the WorkGraph Task in the real project Session.")
@@ -976,9 +894,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
 
     await page.getByRole("button", { name: "Open WorkGraph" }).click()
     await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible()
-    const streamToggle = page.getByRole("button", { name: /^(?:Expand|Collapse) Long-running Session ledger$/ })
-    await expect(streamToggle).toBeVisible()
-    if (await streamToggle.getAttribute("aria-expanded") !== "true") await streamToggle.click()
+    await expect(page.getByRole("article", { name: "Stream Long-running Session ledger" })).toBeVisible()
     const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
     const stream = snapshot.records.find((candidate) =>
       candidate.recordType === "stream" && candidate.title === "Long-running Session ledger")
@@ -1018,12 +934,9 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       completionContract: ownerConfirmation("Owner reviews the disposable implementation"),
     })
     harness.queueExecutionResults({ state: "failed", message: "Partial disposable implementation" })
-    await command(request, {
-      version: 1,
-      type: "execute_work_item",
-      workItemId: String(disposableTask.value.workItemId) as never,
-      executionMode: "supervised",
-    })
+    // Owner-authored task is approved on creation; the active stream's drain
+    // launches it — a reconcile pass admits it deterministically.
+    await harness.runReconcile()
     await expect
       .poll(async () => {
         await harness.runReconcile()
@@ -1086,12 +999,8 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       summary: "Merged through the real retained worktree",
       artifacts: ["pr:482"],
     })
-    await command(request, {
-      version: 1,
-      type: "execute_work_item",
-      workItemId: String(shippedTask.value.workItemId) as never,
-      executionMode: "supervised",
-    })
+    // Approved on creation; the active stream's drain launches it.
+    await harness.runReconcile()
     await expect
       .poll(async () => {
         const attempts = await readJson<AttemptPageResponse>(
@@ -1283,12 +1192,8 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       summary: "Manifest branch executed",
       artifacts: ["manifest.yaml"],
     })
-    await command(request, {
-      version: 1,
-      type: "execute_work_item",
-      workItemId: unrelatedId as never,
-      executionMode: "supervised",
-    })
+    // Approved on creation; the drain admits the ready branch on reconcile.
+    await harness.runReconcile()
     await completeControlledExecution(request, unrelatedId, "Manifest branch executed", ["manifest.yaml"])
     await expect
       .poll(async () => {
@@ -1316,12 +1221,9 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       summary: "Authentication branch executed",
       artifacts: ["auth.ts"],
     })
-    await command(request, {
-      version: 1,
-      type: "execute_work_item",
-      workItemId: affectedId as never,
-      executionMode: "supervised",
-    })
+    // Answering the decision unblocks the affected branch; the drain launches it
+    // automatically once its blocker is resolved — a reconcile admits it.
+    await harness.runReconcile()
     await completeControlledExecution(request, affectedId, "Authentication branch executed", ["auth.ts"])
     await expect
       .poll(async () => {
@@ -1416,7 +1318,6 @@ const generationDefaults = {
     tools: ["read", "edit"],
     connectionIds: [],
   },
-  recap: {},
 }
 
 const realGenerationDefaults = {
@@ -1424,7 +1325,6 @@ const realGenerationDefaults = {
     ...generationDefaults.execution,
     model: { providerId: "workgraph-e2e", modelId: "workgraph-model" },
   },
-  recap: {},
 }
 
 function streamTarget() {
@@ -1487,8 +1387,9 @@ async function openWaitingItemPanel(page: Page, name: RegExp) {
     await page.getByRole("button", { name: /Needs you/ }).click()
     await expect(card).toBeVisible()
   }
-  await card.getByRole("button", { name }).click()
+  await card.getByRole("button", { name: "Needs you", exact: true }).click()
   await expect(panel).toBeVisible()
+  await expect(panel.getByRole("button", { name })).toBeVisible()
   return panel
 }
 
@@ -1530,10 +1431,6 @@ async function readJson<Value>(request: APIRequestContext, pathname: string) {
   if (!response.ok())
     throw new Error(`WorkGraph read failed (${response.status()}): ${pathname}: ${await response.text()}`)
   return (await response.json()) as Value
-}
-
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 async function streamIdByTitle(request: APIRequestContext, title: string) {
@@ -1629,7 +1526,7 @@ async function expectNoSeriousAxeViolations(page: import("@playwright/test").Pag
 }
 
 type DefaultsResponse = Readonly<{
-  defaults: Readonly<{ execution: Record<string, unknown>; recap: Record<string, unknown> }>
+  defaults: Readonly<{ execution: Record<string, unknown> }>
 }>
 type SnapshotResponse = Readonly<{
   records: Array<Readonly<{
@@ -1644,7 +1541,6 @@ type SnapshotResponse = Readonly<{
 }>
 type StreamResponse = Readonly<{
   executionDefaults: Record<string, unknown>
-  recapDefaults: Record<string, unknown>
   durableEffectCount: number
 }>
 type StreamDetailResponse = Readonly<{ version: number; lifecycleState: string }>

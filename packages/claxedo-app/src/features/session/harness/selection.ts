@@ -65,7 +65,7 @@ export function harnessModelNameForSubmit(state: HarnessSelectionState) {
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
   if (state.harness === "opencode") return true
-  if (state.configError || state.readiness === "error" || state.optionsLoading) return false
+  if (state.configError || state.readiness === "error" || state.readiness === "degraded" || state.optionsLoading) return false
   return !!harnessModelKeyForSubmit(state)
 }
 

@@ -50,7 +50,6 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     evidence: vi.fn(async () => []),
     attempt: vi.fn(),
     decision: vi.fn(async () => decision),
-    recap: vi.fn(),
     candidates: vi.fn(),
     defaults: vi.fn(),
     answerDecision: vi.fn(),
@@ -62,7 +61,9 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     dismissIntakeCandidate: vi.fn(),
     cancelAttempt: vi.fn(),
     retryWorkItem: vi.fn(),
-    executeWorkItem: vi.fn(),
+    approveWorkItem: vi.fn(),
+    rejectWorkItem: vi.fn(),
+    approveWorkItems: vi.fn(),
     replacementReview: vi.fn(),
     ...overrides,
   } as WorkGraphWaitingSource
@@ -311,26 +312,61 @@ describe("TaskDialog — execution and activity", () => {
     await screen.findByText(failedWorkItem.title)
   })
 
-  test("runs a pending Task directly from the fixed footer", async () => {
-    const executeWorkItem = vi.fn(async () => ok)
-    const onResolved = vi.fn()
-    const onClose = vi.fn()
+  test("shows an approved pending Task as read-only — no Run/Approve controls", async () => {
     const item = { ...failedWorkItem, state: "pending" as const }
     const source = baseSource({
       workItem: vi.fn(async () => item),
       latestAttempt: vi.fn(async () => undefined),
-      executeWorkItem,
+    })
+
+    render(() => <TaskDialog item={item} source={source} streamItems={[item]} onClose={() => {}} onResolved={() => {}} />)
+    // Launch is automatic; the inspector reports the status and offers no button.
+    expect(await screen.findByText("Ready — will run automatically")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run task" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull()
+  })
+
+  test("approves a staged Task from the fixed footer, then resolves and closes", async () => {
+    const approveWorkItem = vi.fn(async () => ok)
+    const onResolved = vi.fn()
+    const onClose = vi.fn()
+    const item = { ...failedWorkItem, state: "pending_approval" as const }
+    const source = baseSource({
+      workItem: vi.fn(async () => item),
+      latestAttempt: vi.fn(async () => undefined),
+      approveWorkItem,
     })
 
     render(() => <TaskDialog item={item} source={source} onClose={onClose} onResolved={onResolved} />)
     expect(await screen.findByText("No attempt has run yet.")).toBeInTheDocument()
-    const run = screen.getByRole("button", { name: "Run task" })
-    expect(run.closest(".workgraph-item-dialog-footer")).not.toBeNull()
-    await fireEvent.click(run)
+    const approve = screen.getByRole("button", { name: "Approve" })
+    expect(approve.closest(".workgraph-item-dialog-footer")).not.toBeNull()
+    await fireEvent.click(approve)
 
-    await waitFor(() => expect(executeWorkItem).toHaveBeenCalledWith(item.id, "autonomous"))
-    expect(onResolved).toHaveBeenCalledOnce()
-    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => expect(approveWorkItem).toHaveBeenCalledWith(item.id, item.version))
+    await waitFor(() => expect(onResolved).toHaveBeenCalledOnce())
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+  })
+
+  test("rejects a staged Task only after a required reason is supplied", async () => {
+    const rejectWorkItem = vi.fn(async () => ok)
+    const onResolved = vi.fn()
+    const item = { ...failedWorkItem, state: "pending_approval" as const }
+    const source = baseSource({
+      workItem: vi.fn(async () => item),
+      latestAttempt: vi.fn(async () => undefined),
+      rejectWorkItem,
+    })
+
+    render(() => <TaskDialog item={item} source={source} onClose={() => {}} onResolved={onResolved} />)
+    await screen.findByText("No attempt has run yet.")
+    await fireEvent.click(screen.getByRole("button", { name: "Reject" }))
+    const reason = screen.getByRole("textbox", { name: "Reason to reject" })
+    await fireEvent.input(reason, { target: { value: "No longer needed" } })
+    await fireEvent.click(screen.getByRole("button", { name: "Reject task" }))
+
+    await waitFor(() => expect(rejectWorkItem).toHaveBeenCalledWith(item.id, item.version, "No longer needed"))
+    await waitFor(() => expect(onResolved).toHaveBeenCalledOnce())
   })
 
   test("surfaces state, dependencies, and pending requirement status as static chips", async () => {

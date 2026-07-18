@@ -351,8 +351,7 @@ function snapshot(contentHash: string) {
     visibility: "visible",
     pinned: false,
     executionDefaults: {},
-    recapDefaults: {},
-    activity: { lastActivityAt: 100, recapDueAt: 200 },
+    activity: { lastActivityAt: 100 },
     durableEffectCount: 0,
     sourceRevisionRefs: [{ workSourceId: "source_1", revisionId: "source_revision_1", contentHash }],
   }

@@ -17,6 +17,7 @@ import {
   type SlashCommand,
 } from "@/features/session/composer/ui/slash-popover"
 import { PromptSubmitControl } from "@/features/session/composer/ui/submit-control"
+import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
 import { PromptToolbarControls } from "@/features/session/composer/ui/toolbar-controls"
 import type { SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
@@ -109,6 +110,9 @@ export const PromptInputFrame: Component<{
   bootText: Accessor<string>
   submitDisabled: Accessor<boolean>
   submitExcludeFromTab: Accessor<boolean>
+  submitBlock: Accessor<SubmitBlock | null>
+  onConnectAI: VoidFunction
+  onChooseModel: VoidFunction
   roleSubmitBlocked: Accessor<boolean>
   t: (key: string) => string
   showDialog: (content: () => JSX.Element) => void
@@ -208,7 +212,8 @@ export const PromptInputFrame: Component<{
           const target = e.target
           if (!(target instanceof HTMLElement)) return
           if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"]')) return
-          if (props.harnessPending()) return
+          // The editor stays live while the harness is still polling (T5 §4): only
+          // submission is gated, so a briefly-not-ready composer is typeable.
           props.focusEditor()
         }}
       >
@@ -231,8 +236,9 @@ export const PromptInputFrame: Component<{
             aria-autocomplete={props.popover !== null ? "list" : undefined}
             aria-activedescendant={activeDescendant()}
             aria-label={props.designPlaceholder()}
-            aria-disabled={props.harnessPending()}
-            contenteditable={props.harnessPending() ? "false" : "true"}
+            // T5 §4: keep the editor editable while the harness polls — gate the
+            // submit, not the typing. A dead-looking box teaches nothing.
+            contenteditable="true"
             autocapitalize={props.mode() === "normal" ? "sentences" : "off"}
             autocorrect={props.mode() === "normal" ? "on" : "off"}
             spellcheck={props.mode() === "normal"}
@@ -333,6 +339,9 @@ export const PromptInputFrame: Component<{
           mode={props.mode}
           disabled={props.submitDisabled}
           excludeFromTab={props.submitExcludeFromTab}
+          block={props.submitBlock}
+          onConnectAI={props.onConnectAI}
+          onChooseModel={props.onChooseModel}
           readOnlyBlocked={props.roleSubmitBlocked}
           stopLabel={props.t("prompt.action.stop")}
           sendLabel={props.t("prompt.action.send")}

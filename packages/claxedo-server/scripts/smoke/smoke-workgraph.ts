@@ -200,16 +200,21 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       )
       cleanupStreams.set(tenantBStream.streamId, tenantBStream)
 
-      progress("tenant isolation passed; admitting hosted execution")
+      progress("tenant isolation passed; awaiting continuous-execution admission")
+      // Execution modes are gone: a user-created Task is born `pending` (approved),
+      // and the active Stream's continuous drain — nudged by every command's hosted
+      // settlement dispatcher and re-derived on the CF cron — admits it with no
+      // execute command. Discover the drained Attempt, then hold the same placement
+      // SLA and reconcile polling as before.
       const executeStartedAt = Date.now()
-      const attemptId = commandValue(
-        await command(request, base, tokenA, `${operationId}_execute`, {
-          version: 1,
-          type: "execute_work_item",
-          workItemId,
-          executionMode: "autonomous",
-        }),
-        "attemptId",
+      const attemptId = await waitForAdmittedAttempt(
+        request,
+        base,
+        tokenA,
+        workItemId,
+        executeStartedAt,
+        retryDelayMs,
+        progress,
       )
       const fastPathResults = await Promise.allSettled([
         waitForAttemptPlacement(
@@ -624,6 +629,34 @@ async function createBareStream(
     deleteOperationId: `${operationId}_delete`,
     reason: "Hosted fast-lane settlement smoke cleanup",
   }
+}
+
+async function waitForAdmittedAttempt(
+  request: typeof fetch,
+  base: string,
+  token: string,
+  workItemId: string,
+  startedAt: number,
+  retryDelayMs: number,
+  progress: (message: string) => void,
+) {
+  const deadline = startedAt + 10_000
+  while (Date.now() < deadline) {
+    const snapshot = await jsonRequest(request, `${base}/api/workgraph/snapshot?limit=200`, {
+      headers: authorization(token),
+      signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+    })
+    const attempt = records(snapshot).find(
+      (row) => row.recordType === "attempt" && row.workItemId === workItemId && typeof row.id === "string",
+    )
+    if (attempt && typeof attempt.id === "string") {
+      const latencyMs = Date.now() - startedAt
+      progress(`continuous drain admitted Attempt ${attempt.id} for Task ${workItemId} after ${latencyMs}ms`)
+      return attempt.id
+    }
+    await wait(Math.min(retryDelayMs, 500, Math.max(0, deadline - Date.now())))
+  }
+  throw new Error(`Continuous execution did not admit an Attempt for Task ${workItemId} within <10000ms`)
 }
 
 async function waitForAttemptPlacement(

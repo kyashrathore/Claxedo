@@ -8,7 +8,7 @@ import type { RuntimeDirectory } from "@/platform/runtime/agent/placement-table"
 import { StarterPromptChips } from "./starter-prompt-chips"
 import { createStarterPrompts } from "./starter-prompts"
 import { starterPromptQuery } from "./starter-prompts-query"
-import { firstTurnFunnelEvents, shouldShowStarterPrompts, type FirstTurnMessage, type FirstTurnRecoveryClass } from "./first-turn-recovery"
+import { firstTurnFunnelEvents, shouldShowStarterPrompts, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
 
 export function createFirstTurnOnboarding(input: {
   directory: Accessor<RuntimeDirectory>
@@ -16,6 +16,7 @@ export function createFirstTurnOnboarding(input: {
   sentTurns: Accessor<number>
   messages: Accessor<FirstTurnMessage[]>
   cloud: Accessor<boolean>
+  onStartNewSession?: () => void
 }) {
   const sdk = useSDK()
   const local = useLocal()
@@ -40,7 +41,14 @@ export function createFirstTurnOnboarding(input: {
     events.forEach(funnel.emit)
   }, { defer: true }))
 
-  const recover = (kind: FirstTurnRecoveryClass) => {
+  const recover = (kind: SessionErrorClass) => {
+    if (kind === "session") {
+      // "Start a new session" — open a fresh sibling session in the same
+      // workspace via the app's canonical new-session navigation. The lost
+      // thread's transcript stays put; the user continues in a live session.
+      input.onStartNewSession?.()
+      return
+    }
     if (kind === "credential") {
       void loadAIConnectDialog().then((module) => dialog.show(() => (
         <module.DialogAIConnect onConnected={() => retry?.()} />

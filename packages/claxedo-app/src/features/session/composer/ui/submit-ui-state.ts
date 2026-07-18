@@ -48,6 +48,11 @@ export function createPromptInputSubmitRetry(input: {
   readonly resetKey: Accessor<string>
   readonly rawHandleSubmit: (event: Event) => unknown
   readonly roleSubmitBlocked: Accessor<boolean>
+  /**
+   * Any standing block reason (T5). Actionable reasons leave the Send button
+   * clickable so it can explain itself; the handler still refuses to submit.
+   */
+  readonly submitBlocked?: Accessor<boolean>
   readonly prompt: {
     current(): Prompt
     set(prompt: Prompt, cursor?: number): void
@@ -75,7 +80,7 @@ export function createPromptInputSubmitRetry(input: {
   )
 
   const handleSubmit = async (event: Event) => {
-    if (input.roleSubmitBlocked()) return event.preventDefault()
+    if (input.roleSubmitBlocked() || input.submitBlocked?.()) return event.preventDefault()
     const currentPrompt = input.prompt.current()
     const text = currentPrompt
       .map((part) => ("content" in part ? part.content : ""))

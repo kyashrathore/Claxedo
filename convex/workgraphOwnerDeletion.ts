@@ -8,7 +8,6 @@ export const WORKGRAPH_OWNER_DELETION_BATCH_SIZE = 8
 export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_attention_entries",
   "workgraph_attention_summaries",
-  "workgraph_notifications",
   "workgraph_attempt_connection_bindings",
   "workgraph_decision_work_items",
   "workgraph_evidence",
@@ -28,7 +27,6 @@ export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_decisions",
   "workgraph_work_items",
   "workgraph_outcomes",
-  "workgraph_recaps",
   "workgraph_stream_sequences",
   "workgraph_streams",
   "workgraph_external_identities",

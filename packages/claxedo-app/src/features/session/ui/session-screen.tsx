@@ -99,6 +99,8 @@ import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
 import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
+import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
+import { SessionConnectionLine } from "@/features/session/ui/components/session-connection-line"
 
 export default function SessionPage() {
   const sessionParams = useSessionParams()
@@ -614,6 +616,7 @@ export default function SessionPage() {
     sentTurns: () => userMessages().length + directorySessions().filter((session) => session.id !== sessionID() && session.lastTurn).length,
     messages,
     cloud: () => resolvedWorkspaceKind() === "cloud",
+    onStartNewSession: () => navigateSession(),
   })
   const visibleUserMessages = createMemo(
     () => {
@@ -1508,7 +1511,16 @@ export default function SessionPage() {
               canAbort={() => supports("abort")}
               status={sessionController.status}
               activeTurn={sessionController.activeTurn}
-              beforeInput={firstTurnOnboarding.beforeInput()}
+              beforeInput={
+                <>
+                  <SessionHealthPeek
+                    directory={dir}
+                    sessionId={sessionID}
+                    fallback={firstTurnOnboarding.beforeInput()}
+                  />
+                  <SessionConnectionLine workspaceId={signedWorkspaceId} />
+                </>
+              }
               registerRetry={firstTurnOnboarding.registerRetry}
               sessionDirectory={dir()}
               sessionRef={activeSessionRef}

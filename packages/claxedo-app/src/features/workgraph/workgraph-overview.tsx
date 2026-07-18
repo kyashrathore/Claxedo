@@ -1,18 +1,16 @@
 import type {
   AttemptDto,
-  ExecutionMode,
   OutcomeDto,
-  RecapDto,
   StreamDto,
   WorkItemDto,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createResource, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { createSignal, For, type JSX, Show } from "solid-js"
 import { SemanticIcon } from "@/ui/semantic-icon"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
-import { InlineAddTask, isRetryable, KeyedById, sortByStatusBucket, taskStatusBucket, WorkItemLeaf, type Mutate } from "./work-item-rows"
+import { createDependencyResolver, InlineAddTask, isRetryable, KeyedById, sortByStatusLabel, taskStatusLabel, type TaskStatusLabel, WorkItemLeaf, type Mutate } from "./work-item-rows"
 
 /** How many tasks a Stream card previews before deferring to the panel's Tasks tab. */
 export const STREAM_CARD_TASK_PREVIEW = 4
@@ -165,28 +163,40 @@ function StreamCard(props: {
   onOpenTask: (item: WorkItemDto, invoker: HTMLElement) => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
-  const liveAttempts = () =>
-    props.attempts.filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state))
-  // The preview honors the lifecycle: what needs you first, then in-progress
-  // work, then the staged queue, with done tasks last (and first to clip).
-  const previewItems = () => sortByStatusBucket(props.items).slice(0, STREAM_CARD_TASK_PREVIEW)
+  const depsComplete = () => createDependencyResolver(props.items)
+  const streamPaused = () => props.stream.lifecycleState === "paused"
+  // The preview honors the lifecycle: what needs you first, then running work,
+  // then the staged queue, ready/waiting, with done tasks last (first to clip).
+  const previewItems = () => sortByStatusLabel(props.items, depsComplete()).slice(0, STREAM_CARD_TASK_PREVIEW)
   const hiddenCount = () => Math.max(0, props.items.length - STREAM_CARD_TASK_PREVIEW)
-  const bucketCounts = () => {
-    const counts = { attention: 0, in_progress: 0, staged: 0, done: 0 }
-    for (const item of props.items) counts[taskStatusBucket(item.state)] += 1
+  const statusCounts = () => {
+    const resolve = depsComplete()
+    const counts: Record<TaskStatusLabel, number> = { staged: 0, ready: 0, waiting: 0, running: 0, "needs-you": 0, done: 0 }
+    for (const item of props.items) counts[taskStatusLabel(item.state, resolve(item))] += 1
     return counts
   }
-  // The lifecycle staged → in progress → done, one label per non-empty bucket.
-  // The footer is only 267px wide, so these ride folded behind the stack glyph
-  // and fan out on hover; needs-you and the overflow count stay always-visible.
-  const lifecycleRows = () =>
-    [
-      bucketCounts().staged ? `${bucketCounts().staged} staged` : "",
-      bucketCounts().in_progress ? `${bucketCounts().in_progress} in progress` : "",
-      bucketCounts().done ? `${bucketCounts().done} done` : "",
-    ].filter(Boolean)
-  const lifecycleTotal = () => bucketCounts().staged + bucketCounts().in_progress + bucketCounts().done
-  const needsYouLabel = () => `${bucketCounts().attention} need${bucketCounts().attention === 1 ? "s" : ""} you`
+  const total = () => props.items.length
+  const doneCount = () => statusCounts().done
+  // Both Staged (awaiting approval) and Needs-you (attention) block on the owner,
+  // so the card face folds them into one "N need you" pill.
+  const needYou = () => statusCounts().staged + statusCounts()["needs-you"]
+  // The full breakdown — staged · ready · waiting · running · needs you · done,
+  // zero segments omitted — rides folded behind the stack glyph on the 267px
+  // footer and fans out on hover; the pill and fraction stay always-visible.
+  const breakdown = () => {
+    const counts = statusCounts()
+    return (
+      [
+        counts.staged ? `${counts.staged} staged` : "",
+        counts.ready ? `${counts.ready} ready` : "",
+        counts.waiting ? `${counts.waiting} waiting` : "",
+        counts.running ? `${counts.running} running` : "",
+        counts["needs-you"] ? `${counts["needs-you"]} needs you` : "",
+        counts.done ? `${counts.done} done` : "",
+      ] as const
+    ).filter(Boolean) as string[]
+  }
+  const needsYouLabel = () => `${needYou()} need you`
   // The execution target itself is the Project header's job; the card only
   // flags the one actionable problem — a Stream with no usable target.
   const targetMissing = () => {
@@ -202,26 +212,6 @@ function StreamCard(props: {
   // Hover and focus fan the lifecycle rows open through CSS alone; this only
   // carries the tap/click path, where there is no hover to rely on.
   const [fanOpen, setFanOpen] = createSignal(false)
-  // Recap is Stream-owned: the icon shows only when the stream has a latest recap,
-  // and the preview is fetched lazily (armed on first hover/focus) from the real
-  // recap detail — never fabricated. Hover and keyboard focus both open it.
-  const [recapOpen, setRecapOpen] = createSignal(false)
-  const [recapArmed, setRecapArmed] = createSignal(false)
-  const [recap] = createResource(
-    () => (recapArmed() ? props.stream.activity.lastRecapId : undefined),
-    (recapId) => props.client.recap(recapId),
-  )
-  let recapCloseTimer: ReturnType<typeof setTimeout> | undefined
-  const openRecap = () => {
-    clearTimeout(recapCloseTimer)
-    setRecapArmed(true)
-    setRecapOpen(true)
-  }
-  const scheduleRecapClose = () => {
-    clearTimeout(recapCloseTimer)
-    recapCloseTimer = setTimeout(() => setRecapOpen(false), 90)
-  }
-  onCleanup(() => clearTimeout(recapCloseTimer))
   // A Stream's durableEffectCount drives one explicit lifecycle action — never a
   // fallback. Zero durable effects means the Stream is disposable, so Delete
   // destroys its planned work and environment. Any durable effect means Close,
@@ -244,37 +234,32 @@ function StreamCard(props: {
       setRemoving(false)
     }
   }
-  // Execution is offered only when the current, client-observable Stream/task
-  // state matches what the backend's execute_stream would accept: the Stream is
-  // neither paused nor closed, and at least one Work Item is a ready batch
-  // member — pending with every dependency already completed. Decisions and
-  // leases are backend-only refinements we never fabricate; if a race makes the
-  // ready batch unadmittable, the server's typed rejection surfaces via mutate.
-  const executable = () => {
-    if (props.stream.lifecycleState === "paused" || props.stream.lifecycleState === "closed") return false
-    const completedIds = new Set(props.items.filter((item) => item.state === "completed").map((item) => item.id))
-    return props.items.some(
-      (item) => item.state === "pending" && item.dependencyIds.every((dependencyId) => completedIds.has(dependencyId)),
-    )
-  }
-  const [executeOpen, setExecuteOpen] = createSignal(false)
-  const [executing, setExecuting] = createSignal(false)
   const [retrying, setRetrying] = createSignal(false)
+  const [pausing, setPausing] = createSignal(false)
   const retryableItems = () =>
     props.stream.lifecycleState === "active"
       ? props.items.filter((item) => isRetryable(item, props.attempts))
       : []
-  // The mode is always explicit — the popover never defaults; the user picks
-  // supervised (one ready batch, then stop) or autonomous (keep launching newly
-  // ready tasks until blocked/attention/complete), and we call that exact mode.
-  const runExecution = async (executionMode: ExecutionMode) => {
-    if (executing()) return
-    setExecuting(true)
+  // Launch is automatic and continuous: the only launch control is the Stream's
+  // lifecycle. Pausing stops new admissions (running attempts continue);
+  // resuming re-arms the drain, which launches every approved, ready task.
+  const canPauseResume = () => props.stream.lifecycleState === "active" || props.stream.lifecycleState === "paused"
+  const togglePause = async (event: MouseEvent) => {
+    event.stopPropagation()
+    if (pausing() || !canPauseResume()) return
+    setPausing(true)
     try {
-      const launched = await props.mutate(() => props.client.executeStream(props.stream.id, executionMode))
-      if (launched) setExecuteOpen(false)
+      const paused = streamPaused()
+      await props.mutate(() =>
+        props.client.setStreamLifecycle({
+          streamId: props.stream.id,
+          expectedVersion: props.stream.version,
+          state: paused ? "active" : "paused",
+          reason: paused ? "Resumed from overview" : "Paused from overview",
+        }),
+      )
     } finally {
-      setExecuting(false)
+      setPausing(false)
     }
   }
   const retryStream = async (event: MouseEvent) => {
@@ -295,109 +280,22 @@ function StreamCard(props: {
     <article class="workgraph-streamcard" aria-label={`Stream ${props.stream.title}`}>
       <div class="workgraph-streamcard-head">
         <span class="workgraph-stream-title">{props.stream.title}</span>
-        <Show when={props.stream.activity.lastRecapId}>
-          <Popover
-            placement="bottom-start"
-            portal
-            style={{ "z-index": "400" }}
-            open={recapOpen()}
-            onOpenChange={setRecapOpen}
-            trigger={<Icon name="bullet-list" size="small" />}
-            triggerAs="button"
-            triggerProps={{
-              type: "button",
-              class: "workgraph-recap-chip",
-              "aria-label": `Latest recap for ${props.stream.title}`,
-              onClick: (event: MouseEvent) => event.stopPropagation(),
-              onMouseEnter: openRecap,
-              onMouseLeave: scheduleRecapClose,
-              onFocus: openRecap,
-              onBlur: scheduleRecapClose,
-            }}
-          >
-            <div
-              class="workgraph-recap-pop"
-              role="group"
-              aria-label="Latest recap"
-              onMouseEnter={openRecap}
-              onMouseLeave={scheduleRecapClose}
-            >
-              <Switch>
-                <Match when={recap.loading && !recap()}>
-                  <div class="workgraph-detail-status" role="status" aria-live="polite">
-                    Loading recap…
-                  </div>
-                </Match>
-                <Match when={recap.error}>
-                  <div class="workgraph-detail-status is-error" role="alert">
-                    {recap.error instanceof Error ? recap.error.message : String(recap.error)}
-                  </div>
-                </Match>
-                <Match when={recap()}>
-                  {(loaded) => (
-                    <>
-                      <div class="workgraph-recap-pop-head text-text-weaker">
-                        <span>Latest recap</span>
-                        <span>{recapGeneratedLabel(loaded(), props.relativeTime)}</span>
-                      </div>
-                      <p class="workgraph-recap-pop-summary text-text-base">{loaded().summary}</p>
-                      <div class="workgraph-recap-pop-meta text-text-weaker">
-                        {loaded().actionableReferences.length} actionable ref
-                        {loaded().actionableReferences.length === 1 ? "" : "s"}
-                      </div>
-                    </>
-                  )}
-                </Match>
-              </Switch>
-            </div>
-          </Popover>
-        </Show>
-        {/* Stream actions overlay the title's tail only while the card is
-            hovered or focused — at rest the title owns the full card width. */}
+        {/* Fixed controls stay in normal layout flow so every hit target remains
+            available and the title wraps around their reserved width. */}
         <span class="workgraph-streamcard-actions">
-        <Show when={executable()}>
-          <Popover
-            placement="bottom-end"
-            portal
-            style={{ "z-index": "400" }}
-            open={executeOpen()}
-            onOpenChange={setExecuteOpen}
-            trigger={<Icon name="console" size="small" />}
-            triggerAs="button"
-            triggerProps={{
-              type: "button",
-              class: "workgraph-row-settings",
-              "aria-label": `Execute stream ${props.stream.title}`,
-              onClick: (event: MouseEvent) => event.stopPropagation(),
-            }}
+        <Show when={canPauseResume()}>
+          <button
+            type="button"
+            class="workgraph-row-settings"
+            classList={{ "is-active": streamPaused() }}
+            aria-label={`${streamPaused() ? "Resume" : "Pause"} stream ${props.stream.title}`}
+            aria-pressed={streamPaused()}
+            title="Stop launching new tasks. Running tasks continue."
+            disabled={pausing()}
+            onClick={(event) => void togglePause(event)}
           >
-            <div class="workgraph-confirm" role="menu" aria-label={`Execute stream ${props.stream.title}`}>
-              <p class="workgraph-confirm-text">
-                <b>Supervised</b> runs the currently ready batch once and stops. <b>Autonomous</b> keeps launching newly
-                ready tasks until the Stream is blocked, needs attention, or is complete.
-              </p>
-              <div class="workgraph-confirm-actions">
-                <Button
-                  size="small"
-                  variant="secondary"
-                  role="menuitem"
-                  disabled={executing()}
-                  onClick={() => void runExecution("supervised")}
-                >
-                  Supervised
-                </Button>
-                <Button
-                  size="small"
-                  variant="primary"
-                  role="menuitem"
-                  disabled={executing()}
-                  onClick={() => void runExecution("autonomous")}
-                >
-                  Autonomous
-                </Button>
-              </div>
-            </div>
-          </Popover>
+            <Icon name={streamPaused() ? "console" : "circle-half"} size="small" />
+          </button>
         </Show>
         <Show when={retryableItems().length}>
           <button
@@ -426,7 +324,7 @@ function StreamCard(props: {
       <div class="workgraph-streamcard-tasks">
         <KeyedById records={previewItems()}>
           {(item) => (
-            <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
+            <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
           )}
         </KeyedById>
         <Show when={!props.items.length}>
@@ -461,17 +359,17 @@ function StreamCard(props: {
       </Show>
       {/* --fan-count rides the footer because two things need it: the rows'
           closing stagger, and the mask that hides the list strip they cover. */}
-      <div class="workgraph-streamcard-foot" style={{ "--fan-count": `${lifecycleRows().length}` }}>
-        {/* The lifecycle folds into one glyph + total; hover, focus, or tap
-            splits it into a row per bucket, each fanning up off the button.
-            The rows are decoration — the button's label carries the same
-            breakdown for screen readers. */}
-        <Show when={lifecycleRows().length}>
+      <div class="workgraph-streamcard-foot" style={{ "--fan-count": `${breakdown().length}` }}>
+        {/* The full breakdown folds into one glyph + done/total fraction; hover,
+            focus, or tap splits it into a row per non-empty segment, each fanning
+            up off the button. The rows are decoration — the button's label
+            carries the same breakdown for screen readers. */}
+        <Show when={breakdown().length}>
           <div class="workgraph-streamcard-lifecycle">
             <button
               type="button"
               class="workgraph-streamcard-stack"
-              aria-label={`Task breakdown for ${props.stream.title}: ${lifecycleRows().join(", ")}`}
+              aria-label={`Task breakdown for ${props.stream.title}: ${breakdown().join(", ")}`}
               aria-expanded={fanOpen()}
               data-open={fanOpen() ? "" : undefined}
               onClick={(event) => {
@@ -481,16 +379,16 @@ function StreamCard(props: {
               onBlur={() => setFanOpen(false)}
             >
               {/* A chevron claims nothing except the direction the fan opens.
-                  The count beside it is what says "how much is folded here". */}
+                  The done/total fraction beside it is the always-visible face. */}
               <Icon name="chevron-down" size="small" class="workgraph-streamcard-stack-chevron" />
-              <span class="workgraph-streamcard-stack-count">{lifecycleTotal()}</span>
+              <span class="workgraph-streamcard-stack-count">{doneCount()}/{total()}</span>
             </button>
             <span class="workgraph-streamcard-fan" aria-hidden="true">
-              <For each={lifecycleRows()}>
+              <For each={breakdown()}>
                 {(row, index) => (
                   <span
                     class="workgraph-streamcard-fan-row"
-                    style={{ "--fan-slot": `${lifecycleRows().length - index()}` }}
+                    style={{ "--fan-slot": `${breakdown().length - index()}` }}
                   >
                     {row}
                   </span>
@@ -499,11 +397,15 @@ function StreamCard(props: {
             </span>
           </div>
         </Show>
+        {/* A paused Stream is now load-bearing (it stops launches), so the face
+            names it plainly next to the fraction. */}
+        <Show when={streamPaused()}>
+          <span class="workgraph-streamcard-paused text-text-weaker">Paused</span>
+        </Show>
         {/* Needs-you sits with the lifecycle, not across the card from it: it is
-            the same fact — where the work stands. No glyph of its own; the
-            words say it, and an icon here would only repeat the alert already
-            on the rows it refers to. */}
-        <Show when={bucketCounts().attention}>
+            the same fact — where the work stands. Staged + attention both block
+            on the owner, so they fold into one always-visible pill. */}
+        <Show when={needYou()}>
           <span class="workgraph-streamcard-needs-you">{needsYouLabel()}</span>
         </Show>
         <span class="workgraph-streamcard-gap" aria-hidden="true" />
@@ -556,12 +458,4 @@ function StreamCard(props: {
       </div>
     </article>
   )
-}
-
-function recapGeneratedLabel(recap: RecapDto, relativeTime: (timestamp: number) => string) {
-  const generation = recap.generation
-  if (generation.state === "succeeded") return relativeTime(generation.generatedAt)
-  if (generation.state === "failed")
-    return generation.failedAt ? `failed · ${relativeTime(generation.failedAt)}` : "failed"
-  return "invalidated"
 }

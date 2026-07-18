@@ -1,24 +1,3 @@
----
-title: "Wakes v2 — Fix the Wakes Package and Build WorkGraph Settlement On It"
-type: feat
-date: 2026-07-17
-status: landed
-progress: >
-  U0-U9 complete 2026-07-17. Staging settles through wakes (release run
-  29559022315 green with the latency budgets: placement <10s, deletion <20s,
-  browser gate 30s). CLAXEDO_WAKES_SETTLEMENT=1 on staging only; production
-  stays on WorkGraphSettler pending promotion. Follow-ups still open:
-  in-transaction wake creation in workgraphCommands (createWakeInTx is ready),
-  retire WorkGraphSettler, distinct wake telemetry tag, recaps onto at-wakes,
-  live local check of the agent wake tools.
-execution: code
-builds_on: docs/plans/2026-07-17-001-feat-workgraph-event-driven-settlement-plan.md
-inputs:
-  - docs/plans/2026-07-17-001-feat-workgraph-event-driven-settlement-plan.md
-  - docs/plans/2026-07-07-006-feat-wakes.md
-  - docs/plans/2026-07-16-003-workgraph-staging-debug-handoff.md
-  - docs/plans/2026-07-13-001-goal-execute-workgraph-end-to-end.md
----
 
 # Wakes v2 — Fix the Wakes Package and Build WorkGraph Settlement On It
 
@@ -316,12 +295,3 @@ owned by the user — backend only.
   SHA's run.
 
 ## Follow-ups (recorded, not in this plan)
-
-1. Move recap due-times onto wakes `at`-triggers (today: Convex cron re-stamps
-   `recap_due_at`, `convex/crons.ts:29`) — after settlement has staging miles.
-2. Move recaps / source planning / session intake off the 15-minute global
-   pass onto per-tenant wakes.
-3. Postgres `WakeStore` adapter (self-host beyond SQLite) via the same
-   conformance suite.
-4. Wire `authorize` to real authority + approval-push channels (wakes v1
-   deferred list).

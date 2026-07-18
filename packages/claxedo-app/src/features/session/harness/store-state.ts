@@ -3,6 +3,7 @@ import {
   effectiveHarnessModel,
   hardFailedHarness,
   harnessHasConfigOptions,
+  type HarnessHealthStatus,
   type HarnessState,
   type HarnessType,
   type OptionsSource,
@@ -114,11 +115,24 @@ export function harnessStatusPatch(input: {
   // "Connecting" pill instead of a red "Unavailable". OpenCode is the
   // always-available local default and never polls. A hard failure — or a
   // ready:false carried by a *settled* completed switch response — is "error".
+  // A live-but-degraded harness (`/api/wr/health` reports `ok:true`/`ready:true`
+  // while `harnessHealth.status` is degraded/unavailable — the harness process was
+  // lost and is recovering) maps to the "degraded" readiness. This finally
+  // populates the union member declared at selection.ts:9 that has been inert
+  // since it was written, and drives the composer health peek + Send gate (T4).
+  // Precedence: a hard failure still wins; a still-connecting harness
+  // (`ready === false`, i.e. startup) stays "polling" — a genuinely process-lost
+  // harness reports `ready:true`, so the two never legitimately coincide, and
+  // ordering polling first avoids a startup flicker of "The agent stopped
+  // responding". OpenCode — the always-available local default — never degrades.
+  const health = input.data.harnessHealth?.status
   const readiness: HarnessStoreState["readiness"] = hardFailedHarness(input.data)
     ? "error"
     : want !== "opencode" && input.data.ready === false
       ? (input.settled ? "error" : "polling")
-      : "ready"
+      : want !== "opencode" && (health === "degraded" || health === "unavailable")
+        ? "degraded"
+        : "ready"
   return {
     harnessMode: harnessMode(want),
     harnessBinary: input.data.activeBinary ?? input.data.binary ?? "",
@@ -163,6 +177,27 @@ export function harnessSwitchStartPatch(input: {
     optionsStale: false,
     optionsLoading: harnessHasConfigOptions(input.type),
   }
+}
+
+/**
+ * The readiness transition a standing harness-health probe (T4) should apply, or
+ * `undefined` to leave readiness untouched. Deliberately narrow: it only moves
+ * between "ready" and "degraded" and never stomps a state owned by another
+ * source — a hard "error" or an in-flight "polling" is left alone, and OpenCode
+ * (the always-available local default) never degrades. This keeps the modest
+ * 20s health poll from fighting hydration / harness-switch over readiness.
+ */
+export function harnessHealthReadiness(input: {
+  harness: HarnessType
+  current: HarnessReadiness
+  health?: HarnessHealthStatus
+}): HarnessReadiness | undefined {
+  if (input.harness === "opencode") return undefined
+  if (input.health === "degraded" || input.health === "unavailable") {
+    return input.current === "error" || input.current === "polling" ? undefined : "degraded"
+  }
+  if (input.health === "ok" && input.current === "degraded") return "ready"
+  return undefined
 }
 
 function emptyOptionsPatch() {

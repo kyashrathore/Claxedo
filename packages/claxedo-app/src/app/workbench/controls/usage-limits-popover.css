@@ -1,0 +1,430 @@
+/* Usage-limits popover — the WorkGraph stream card's zone language, scaled to
+   a menu panel. Head (title over a hairline) / body (the one substantial zone)
+   / foot (hairline, folded detail that fans open on hover). At rest the panel
+   says only which harnesses exist and how consumed each is; the failures fold
+   behind a glyph in the foot and peek out on hover, exactly like the stream
+   card's lifecycle stack.
+
+   Class namespace is `usage-*` — never reuse dropdown-menu, workgraph, or
+   session-envcard names.
+
+   The type scale (`text-12-regular` / `text-12-medium`) is the shared one from
+   @opencode-ai/ui. `.usage-meta` is the one local extension: secondary meta
+   (reset countdowns, plan tag, snapshot age) needs a step below the 13px floor
+   the shared scale bottoms out at. It is defined here rather than as another
+   global so it stays scoped to this panel. */
+
+.usage-meta {
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-large);
+  color: var(--text-weaker);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The panel owns its height budget so head and foot stay pinned while only the
+   body scrolls — the menu content around it is a plain block. */
+.usage-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 24rem;
+}
+
+/* ── Head zone ─────────────────────────────────────────── */
+
+.usage-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
+}
+
+.usage-head-title {
+  color: var(--text-weak);
+}
+
+/* Refresh affordance: quiet until the head is hovered, like the rail's own
+   header actions. No scale/bounce — the spin already signals the work. */
+.usage-refresh {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  width: 20px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--icon-weak-base);
+  transition: color 120ms ease;
+}
+
+.usage-head:hover .usage-refresh,
+.usage-refresh:focus-visible {
+  color: var(--icon-base);
+}
+
+.usage-refresh[data-highlighted] {
+  background: var(--surface-raised-base-hover);
+  color: var(--icon-base);
+}
+
+/* ── Body zone ─────────────────────────────────────────── */
+
+.usage-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.usage-provider + .usage-provider {
+  border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
+}
+
+/* The whole summary line is the disclosure target — a 3px bar is far too small
+   a hit area to ask anyone to aim at. */
+.usage-provider-summary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background 110ms ease;
+}
+
+.usage-provider-summary:hover {
+  background: var(--surface-base-hover);
+}
+
+.usage-provider-summary:focus-visible {
+  outline: 2px solid var(--border-selected);
+  outline-offset: -2px;
+}
+
+.usage-provider-chevron {
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.usage-provider[data-expanded] .usage-provider-chevron {
+  transform: rotate(90deg);
+}
+
+.usage-provider-name {
+  color: var(--text-strong);
+}
+
+/* Plan tag: hairline outline, not a filled chip. A filled pill competes with
+   the bars for attention and the plan is the least actionable thing here. */
+.usage-plan {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xs);
+  color: var(--text-weaker);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.usage-provider-gap {
+  flex: 1;
+}
+
+/* Collapsed, a provider still has to answer "how used is this?" at a glance —
+   the peak window's bar stands in for the set. It fades out on expand, where
+   the full per-window list supersedes it. */
+.usage-peak {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 160ms ease;
+}
+
+.usage-provider[data-expanded] .usage-peak {
+  opacity: 0;
+}
+
+/* Accordion: grid-template-rows animates to and from intrinsic height without
+   measuring, so a provider with two windows and one with five both open at the
+   same rate. */
+.usage-provider-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.usage-provider[data-expanded] .usage-provider-detail {
+  grid-template-rows: 1fr;
+}
+
+.usage-provider-detail > div {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.usage-provider[data-expanded] .usage-provider-detail > div {
+  padding: 2px 4px 10px;
+}
+
+.usage-window {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.usage-window-label {
+  color: var(--text-weak);
+}
+
+.usage-percent {
+  color: var(--text-base);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Explicit `display` on both: inside the summary these are `<span>`s (a button's
+   content model forbids `<div>`), and an inline box drops width/height on the
+   floor — the bar silently renders at zero. */
+.usage-track {
+  display: block;
+  height: 3px;
+  width: 100%;
+  border-radius: 9999px;
+  background: var(--surface-inset-base);
+  overflow: hidden;
+}
+
+/* Must follow `.usage-track` to beat its `width: 100%` — inside the summary's
+   flex row that percentage resolves against a content-sized parent and
+   collapses the bar to 0. A fixed basis is what this one actually wants. */
+.usage-peak-track {
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+}
+
+/* Neutral by default — a quota that is merely *being used* is not a status
+   event, and a green bar per row turns the panel into a traffic light. Colour
+   is reserved for the two states worth interrupting for. */
+.usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--icon-base);
+  transition: width 450ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@starting-style {
+  .usage-fill {
+    width: 0;
+  }
+}
+
+.usage-fill.is-warning {
+  background: var(--icon-warning-base);
+}
+
+.usage-fill.is-critical {
+  background: var(--icon-critical-base);
+}
+
+.usage-percent.is-warning {
+  color: var(--icon-warning-base);
+}
+
+.usage-percent.is-critical {
+  color: var(--icon-critical-base);
+}
+
+/* ── Foot zone ─────────────────────────────────────────── */
+
+.usage-foot {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 1.6rem;
+  padding: 4px 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
+  white-space: nowrap;
+}
+
+.usage-foot-gap {
+  flex: 1;
+}
+
+/* The fan opens over the tail of the provider list, so the rows it crosses
+   would otherwise peek out around it. Mask exactly the strip the fan occupies,
+   in the panel's own fill, fading at the top so the list dissolves into the fan
+   instead of meeting a hard edge. */
+.usage-foot::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: calc(var(--fan-count, 0) * 1.5rem);
+  background: linear-gradient(
+    to top,
+    var(--surface-raised-stronger-non-alpha) 65%,
+    transparent
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 130ms ease;
+}
+
+.usage-foot:has(.usage-issues:hover)::before,
+.usage-foot:has(.usage-issues-stack:focus-visible)::before {
+  opacity: 1;
+}
+
+/* The issues control: at rest a warning glyph plus the count, holding one row
+   per failing harness folded behind it. The wrapper is the fan's origin, so it
+   stays exactly as wide as the button. */
+.usage-issues {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.usage-issues-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 1.4rem;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  color: var(--icon-warning-base);
+  transition: background 110ms ease;
+}
+
+.usage-issues-count {
+  color: var(--text-weak);
+  font-variant-numeric: tabular-nums;
+  transition: color 110ms ease;
+}
+
+.usage-issues:hover .usage-issues-stack,
+.usage-issues-stack:focus-visible {
+  background: var(--surface-base-hover);
+}
+
+.usage-issues:hover .usage-issues-count,
+.usage-issues-stack:focus-visible .usage-issues-count {
+  color: var(--text-base);
+}
+
+.usage-issues-stack:focus-visible {
+  outline: 2px solid var(--border-selected);
+  outline-offset: 1px;
+}
+
+/* The fan: every row starts stacked on the button, then splits upward into its
+   own slot. Rows are inert labels — never a hover target — so the fan can't
+   trap the pointer or flicker as it passes over them. */
+.usage-issues-fan {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.usage-issues-fan-row {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-xxs-border);
+  transform: scale(0.94);
+  transform-origin: bottom left;
+  opacity: 0;
+  transition:
+    transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease;
+  /* Closing reverses the order: the outermost row folds back in first. */
+  transition-delay: calc((var(--fan-count) - var(--fan-slot)) * 30ms);
+}
+
+.usage-issues:hover .usage-issues-fan-row,
+.usage-issues-stack:focus-visible ~ .usage-issues-fan .usage-issues-fan-row {
+  transform: translateY(calc(var(--fan-slot) * -1.5rem)) scale(1);
+  opacity: 1;
+  /* Opening runs from the button outward: nearest row leads. */
+  transition-delay: calc((var(--fan-slot) - 1) * 40ms);
+}
+
+.usage-issues-fan-label {
+  color: var(--text-base);
+}
+
+.usage-status-dot {
+  height: 5px;
+  width: 5px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--icon-weak-base);
+}
+
+.usage-status-dot.is-warning {
+  background: var(--icon-warning-base);
+}
+
+.usage-status-dot.is-critical {
+  background: var(--icon-critical-base);
+}
+
+/* ── States ────────────────────────────────────────────── */
+
+.usage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.usage-skeleton {
+  border-radius: var(--radius-xs);
+  background: var(--surface-inset-base);
+  animation: usage-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes usage-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-fill,
+  .usage-provider-detail,
+  .usage-provider-chevron,
+  .usage-peak,
+  .usage-issues-fan-row {
+    transition: none;
+  }
+
+  .usage-skeleton {
+    animation: none;
+  }
+}

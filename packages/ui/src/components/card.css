@@ -36,7 +36,9 @@
     --card-indent: calc(var(--card-icon) + var(--card-gap));
   }
 
-  &::before {
+  /* The accent rail is opt-in (`data-accent` / `accent` prop), never variant-driven.
+     `--card-accent` still tints the title icon (see below) even when the rail is off. */
+  &[data-accent]::before {
     content: "";
     position: absolute;
     left: 0;
@@ -107,9 +109,5 @@ body:not([data-new-layout]) [data-component="card"] {
 
   :where([data-card="description"], [data-slot="card-description"]) {
     color: var(--text-base);
-  }
-
-  &[data-variant="error"] {
-    --card-accent: var(--icon-critical-base) !important;
   }
 }

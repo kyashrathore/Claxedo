@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { AttentionCursorError, AttentionPageSchema, ChangeCursorError, ChangeEnvelopeSchema, SnapshotResumeCursorError, WorkGraphArchiveRestoreError, WorkGraphArchiveSchema, WorkGraphSnapshotPageSchema, WorkSourcePageCursorError, createChangeCursor, readChangeCursor, hashWorkGraphArchive } from "@claxedo/workgraph/contracts"
+import { AttentionCursorError, AttentionPageSchema, ChangeCursorError, ChangeEnvelopeSchema, SnapshotResumeCursorError, WorkGraphArchiveRestoreError, WorkGraphArchiveSchema, WorkGraphSnapshotPageSchema, WorkSourcePageCursorError, createChangeCursor, readChangeCursor, hashWorkGraphArchive, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { workGraphActivityConformance, workGraphAdapterConformance, workGraphArchiveConformance, workGraphAttentionConformance, workGraphSnapshotRestartConformance } from "@claxedo/workgraph/conformance"
 import { workGraphReplacementConformance } from "../../../workgraph/src/conformance/replacement"
 import type { AttemptRuntimePort, WorkGraphArchivePort } from "@claxedo/workgraph/ports"
 import { createWorkGraphHttpRouter } from "@claxedo/workgraph"
-import { applyWorkGraphCommand, reconcileAutonomousStreams } from "../../../../convex/workgraphCommands"
+import { applyWorkGraphCommand, reconcileReadyStreams } from "../../../../convex/workgraphCommands"
 import { readWorkGraphProjection as readTenantWorkGraphProjection } from "../../../../convex/workgraphChanges"
 import { applyWorkGraphActivityMutation, readSessionBinding, readSessionBindingForSession, readTaskActivityProjection } from "../../../../convex/workgraphActivity"
 import { claimControlEffects, claimLaunches, completeControlEffect, markRunning, recordResult, renewWorkGraphAttemptLease, settleRejectedProvision } from "../../../../convex/workgraphRuntime"
@@ -79,13 +79,11 @@ describe("Convex WorkGraph store", () => {
       dependencyIds: [firstId],
       completionContract: contract,
     }), "workItemId")
-    const admitted = await execute(harness, "owner_a", "explicit_execute", {
-      type: "execute_work_item",
-      workItemId: firstId,
-      executionMode: "autonomous",
-    })
-    await launchConvexConformanceAttempt(harness, testOrganizationId, "owner_a", admitted)
-    const attempt = harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === firstId)!
+    // firstId is user-created (born `pending`/approved); the continuous drain
+    // admits it, then the runtime launches it.
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    const attempt = admittedConvexAttempt(harness, firstId)!
+    await launchConvexConformanceAttempt(harness, testOrganizationId, "owner_a", attempt.id)
     const lease = harness.rowsFor("workgraph_leases").find((row) => row.holder_id === attempt.id)!
 
     const checkpoint = await execute(harness, "owner_a", "explicit_checkpoint", {
@@ -387,14 +385,11 @@ describe("Convex WorkGraph store", () => {
     expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === first)).toMatchObject({ row_version: 1 })
   })
 
-  test.each([
-    ["autonomous", 2],
-    ["supervised", 1],
-  ] as const)("persists %s execution and recovers only its allowed ready batches", async (executionMode, expectedAttempts) => {
+  test("continuously admits ready batches gated on stream lifecycle and abandoned-satisfies deps", async () => {
     const harness = new ConvexHarness(["owner_a"])
-    const streamId = value(await execute(harness, "owner_a", `mode_stream_${executionMode}`, {
+    const streamId = value(await execute(harness, "owner_a", "ready_stream", {
       type: "create_stream",
-      title: "Mode Stream",
+      title: "Ready Stream",
       execution: {
         environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/execution-mode.git" },
         repository: { remoteUrl: "https://github.com/claxedo/execution-mode.git", baseRevision: "HEAD" },
@@ -406,13 +401,13 @@ describe("Convex WorkGraph store", () => {
         connectionIds: [],
       },
     }), "streamId")
-    const blockerId = value(await execute(harness, "owner_a", `mode_blocker_${executionMode}`, {
+    const blockerId = value(await execute(harness, "owner_a", "ready_blocker", {
       type: "create_work_item",
       streamId,
       title: "Blocker",
       completionContract: ownerConfirmationContract(),
     }), "workItemId")
-    const dependentId = value(await execute(harness, "owner_a", `mode_dependent_${executionMode}`, {
+    const dependentId = value(await execute(harness, "owner_a", "ready_dependent", {
       type: "create_work_item",
       streamId,
       title: "Dependent",
@@ -420,36 +415,79 @@ describe("Convex WorkGraph store", () => {
       completionContract: ownerConfirmationContract(),
     }), "workItemId")
 
-    await expect(execute(harness, "owner_a", `mode_execute_${executionMode}`, {
-      type: "execute_stream",
-      streamId,
-      executionMode,
-    })).resolves.toMatchObject({ ok: true })
-    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)).toMatchObject({
-      execution_mode: executionMode,
-      execution_state: executionMode === "autonomous" ? "active" : "stopped",
-    })
+    // Active Stream: the drain admits the approved (user-created `pending`) blocker;
+    // the dependent stays held by its incomplete dependency.
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts")).toHaveLength(1)
     expect(harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === blockerId))
-      .toMatchObject({ execution_mode: executionMode })
+      .toMatchObject({ state: "admitted" })
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === dependentId)).toHaveLength(0)
 
+    // Abandon the blocker: abandoned satisfies a dependency (change from
+    // completed-only), so the dependent becomes launchable and the next drain admits it.
     const blocker = harness.rowsFor("workgraph_work_items").find((row) => row.id === blockerId)!
     const attempt = harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === blockerId)!
-    Object.assign(blocker, { state: "completed", completed_at: 2, row_version: blocker.row_version + 1 })
-    Object.assign(attempt, { state: "result", finished_at: 2, row_version: attempt.row_version + 1 })
+    Object.assign(blocker, { state: "abandoned", abandoned_at: 2, row_version: blocker.row_version + 1 })
+    Object.assign(attempt, { state: "cancelled", finished_at: 2, row_version: attempt.row_version + 1 })
     const lease = harness.rowsFor("workgraph_leases").find((row) => row.resource_id === blockerId)!
     await harness.delete(lease._id)
 
-    await reconcileAutonomousStreams(harness as never, testOrganizationId, "owner_a", 3, 10)
-    expect(harness.rowsFor("workgraph_attempts")).toHaveLength(expectedAttempts)
-    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === dependentId))
-      .toHaveLength(executionMode === "autonomous" ? 1 : 0)
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === dependentId)).toHaveLength(1)
+    // No mode columns are written any more.
+    expect(harness.rowsFor("workgraph_attempts").every((row) => row.execution_mode === undefined)).toBe(true)
   })
 
-  test("refuses autonomous admission from an expired attested capability snapshot", async () => {
+  test("a paused Stream is the launch gate: no admissions until resumed", async () => {
     const harness = new ConvexHarness(["owner_a"])
-    const streamId = value(await execute(harness, "owner_a", "stale_autonomous_stream", {
+    const streamId = value(await execute(harness, "owner_a", "paused_stream", {
       type: "create_stream",
-      title: "Stale autonomous Stream",
+      title: "Paused Stream",
+      execution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/execution-mode.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/execution-mode.git", baseRevision: "HEAD" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }), "streamId")
+    await execute(harness, "owner_a", "paused_item", {
+      type: "create_work_item",
+      streamId,
+      title: "Approved but held by pause",
+      completionContract: ownerConfirmationContract(),
+    })
+    // Pause the Stream (the launch gate); the approved Task must not admit.
+    await expect(execute(harness, "owner_a", "paused_pause", {
+      type: "set_stream_lifecycle",
+      streamId,
+      state: "paused",
+      expectedVersion: 1,
+      reason: "Hold launches",
+    })).resolves.toMatchObject({ ok: true })
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts")).toEqual([])
+
+    // Resume: the drain launches the approved Task.
+    await expect(execute(harness, "owner_a", "paused_resume", {
+      type: "set_stream_lifecycle",
+      streamId,
+      state: "active",
+      expectedVersion: 2,
+      reason: "Resume launches",
+    })).resolves.toMatchObject({ ok: true })
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts")).toHaveLength(1)
+  })
+
+  test("holds admission on an expired attested capability snapshot without persisting a stop", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "stale_stream", {
+      type: "create_stream",
+      title: "Stale capability Stream",
       execution: {
         environment: { kind: "hosted_workspace" },
         harness: "opencode",
@@ -460,28 +498,24 @@ describe("Convex WorkGraph store", () => {
         connectionIds: [],
       },
     }), "streamId")
-    await execute(harness, "owner_a", "stale_autonomous_item", {
+    await execute(harness, "owner_a", "stale_item", {
       type: "create_work_item",
       streamId,
       title: "Must wait for refresh",
       completionContract: ownerConfirmationContract(),
     })
-    Object.assign(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)!, {
-      execution_mode: "autonomous",
-      execution_state: "active",
-    })
     const snapshot = harness.rowsFor("workgraph_execution_capabilities")[0]!
     Object.assign(snapshot, { observed_at: 1, expires_at: 3 })
     Object.assign(snapshot.catalog, { observedAt: 1, expiresAt: 3 })
 
-    await expect(reconcileAutonomousStreams(harness as never, testOrganizationId, "owner_a", 3, 10))
+    await expect(reconcileReadyStreams(harness as never, testOrganizationId, "owner_a", 3, 10))
       .resolves.toEqual({ admitted: 0 })
     expect(harness.rowsFor("workgraph_attempts")).toEqual([])
-    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId))
-      .toMatchObject({ execution_state: "stopped" })
+    // The hold is derived — no persisted execution_state stop write.
+    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)?.execution_state).toBeUndefined()
   })
 
-  test("does not reconcile autonomous work while owner deletion holds the write barrier", async () => {
+  test("does not reconcile ready work while owner deletion holds the write barrier", async () => {
     const harness = new ConvexHarness(["owner_a"])
     const streamId = value(await execute(harness, "owner_a", "deleting_owner_stream", {
       type: "create_stream",
@@ -502,10 +536,6 @@ describe("Convex WorkGraph store", () => {
       title: "Must not be admitted",
       completionContract: ownerConfirmationContract(),
     })
-    Object.assign(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)!, {
-      execution_mode: "autonomous",
-      execution_state: "active",
-    })
     await harness.insert("workgraph_owner_deletion_barriers", {
       owner_user_id: "owner_a",
       operation_id: "delete_owner",
@@ -514,10 +544,146 @@ describe("Convex WorkGraph store", () => {
       updated_at: 2,
     })
 
-    await expect(reconcileAutonomousStreams(harness as never, testOrganizationId, "owner_a", 3, 10))
+    await expect(reconcileReadyStreams(harness as never, testOrganizationId, "owner_a", 3, 10))
       .resolves.toEqual({ admitted: 0 })
     expect(harness.rowsFor("workgraph_attempts")).toEqual([])
     expect(harness.rowsFor("workgraph_outbox").filter((row) => row.effect_type === "launch_attempt")).toEqual([])
+  })
+
+  test("agent-created Tasks are staged; approving admits exactly one Attempt across repeated drains", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "approve_stream", {
+      type: "create_stream",
+      title: "Approval gate",
+      execution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/approval.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/approval.git", baseRevision: "HEAD" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }), "streamId")
+    // An agent-created Task is born `pending_approval` and never admits on its own.
+    const agentCreate = await harness.transaction(() =>
+      applyWorkGraphCommand(harness, {
+        organizationId: testOrganizationId,
+        ownerUserId: "owner_a",
+        ownerSubject: "owner_a",
+        actor: { type: "agent", id: "agent_worker" },
+        requestId: "agent_create_request",
+        operationId: "agent_create_item",
+        command: { version: 1, type: "create_work_item", streamId, title: "Agent follow-up", completionContract: ownerConfirmationContract() },
+      }),
+    )
+    const workItemId = value(agentCreate, "workItemId")
+    expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)).toMatchObject({
+      state: "pending_approval",
+      created_by_actor_type: "agent",
+      created_by_actor_id: "agent_worker",
+    })
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts")).toEqual([])
+
+    // Owner approval admits it once (in-transaction drain); replayed boot drains
+    // never double-admit — the item is `active`, not `pending`, and the lease fences it.
+    const staged = harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)!
+    await expect(execute(harness, "owner_a", "approve_item", {
+      type: "approve_work_item",
+      workItemId,
+      expectedVersion: staged.row_version,
+    })).resolves.toMatchObject({ ok: true })
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === workItemId)).toHaveLength(1)
+
+    // Agents cannot approve.
+    const secondAgent = await harness.transaction(() =>
+      applyWorkGraphCommand(harness, {
+        organizationId: testOrganizationId,
+        ownerUserId: "owner_a",
+        ownerSubject: "owner_a",
+        actor: { type: "agent", id: "agent_worker" },
+        requestId: "agent_create_request_2",
+        operationId: "agent_create_item_2",
+        command: { version: 1, type: "create_work_item", streamId, title: "Second follow-up", completionContract: ownerConfirmationContract() },
+      }),
+    )
+    const secondId = value(secondAgent, "workItemId")
+    const secondStaged = harness.rowsFor("workgraph_work_items").find((row) => row.id === secondId)!
+    await expect(harness.transaction(() =>
+      applyWorkGraphCommand(harness, {
+        organizationId: testOrganizationId,
+        ownerUserId: "owner_a",
+        ownerSubject: "owner_a",
+        actor: { type: "agent", id: "agent_worker" },
+        requestId: "agent_approve_request",
+        operationId: "agent_approve_item",
+        command: { version: 1, type: "approve_work_item", workItemId: secondId, expectedVersion: secondStaged.row_version },
+      }),
+    )).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } })
+    expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === secondId)).toMatchObject({ state: "pending_approval" })
+  })
+
+  test("attaches a Session only to an approved Task and never writes an execution mode", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "attach_stream", {
+      type: "create_stream",
+      title: "Attach gate",
+    }), "streamId")
+    const workItemId = value(await execute(harness, "owner_a", "attach_item", {
+      type: "create_work_item",
+      streamId,
+      title: "Attachable",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    let activityNow = Date.now() + 1_000
+    const mutation = (command: Record<string, unknown>) => harness.transaction(() =>
+      applyWorkGraphActivityMutation(harness, {
+        organizationId: testOrganizationId,
+        ownerUserId: "owner_a",
+        actor: { type: "agent", id: "agent_attach" },
+        now: ++activityNow,
+        command,
+      }))
+    const binding = await mutation({
+      type: "bind_session",
+      operationId: "attach_bind",
+      streamId,
+      sessionId: "session_attach",
+      projectId: "project_attach",
+    })
+    if (binding.recordType !== "session_binding") throw new Error("Expected Session binding")
+    const attachment = {
+      type: "attach_session_task",
+      operationId: "attach_attempt",
+      bindingId: binding.id,
+      expectedVersion: 1,
+      workItemId,
+      resolvedExecution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/attach.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/attach.git", baseRevision: "HEAD" },
+        harness: "claxedo-v2",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }
+    // A staged Task cannot be attached (its `pending`-only gate rejects it).
+    Object.assign(harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)!, { state: "pending_approval" })
+    await expect(mutation(attachment)).rejects.toMatchObject({ code: "not_ready" })
+    expect(harness.rowsFor("workgraph_attempts")).toEqual([])
+
+    // An approved Task attaches, and the Attempt carries no execution_mode.
+    Object.assign(harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)!, { state: "pending" })
+    const attached = await mutation(attachment)
+    expect(attached.recordType).toBe("session_binding")
+    expect(harness.rowsFor("workgraph_attempts")).toHaveLength(1)
+    expect(harness.rowsFor("workgraph_attempts")[0]!.execution_mode).toBeUndefined()
   })
 
   test("version-fences a whole disposable Stream replacement until durable cleanup acknowledgment", async () => {
@@ -659,11 +825,10 @@ describe("Convex WorkGraph store", () => {
     const replacement = harness.rowsFor("workgraph_work_items").find((row) => row.title === "Replacement Task")!
     const stream = harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)!
     expect(stream).toMatchObject({ replacement_reset: { state: "pending", previousSource, source } })
-    await expect(execute(harness, "owner_a", "replace_execute_blocked", {
-      type: "execute_work_item",
-      workItemId: replacement.id,
-      executionMode: "autonomous",
-    })).resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+    // The replacement barrier (and the derived hold from the attention Attempt)
+    // block the drain from admitting the fresh replacement Task until cleanup completes.
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === replacement.id)).toHaveLength(0)
     const control = harness.rowsFor("workgraph_outbox").find((row) => row.payload?.finalize === "replace")!
     expect(control.payload).toMatchObject({ sessions: ["session_replace"], attemptIds: ["attempt_replace"] })
     await harness.patch(control._id, { status: "claimed", claimed_by: "worker", attempt_count: 1 })
@@ -811,8 +976,9 @@ describe("Convex WorkGraph store", () => {
       "reopen_outcome",
       "close_stream",
       "delete_stream",
-      "execute_stream",
-      "execute_work_item",
+      "approve_work_item",
+      "reject_work_item",
+      "approve_work_items",
       "cancel_attempt",
       "retry_work_item",
     ])
@@ -1057,7 +1223,7 @@ describe("Convex WorkGraph store", () => {
       id: "workgraph_default",
       ownerUserId: "owner_a",
       version: 1,
-      defaults: { execution: {}, recap: {} },
+      defaults: { execution: {} },
     })
 
     const command = {
@@ -1072,7 +1238,6 @@ describe("Convex WorkGraph store", () => {
           tools: [],
           connectionIds: [],
         },
-        recap: { quietHours: 12, effort: "medium" },
       },
     }
     const updated = await execute(harness, "owner_a", "defaults_once", command)
@@ -1082,7 +1247,7 @@ describe("Convex WorkGraph store", () => {
     expect(await execute(harness, "owner_a", "defaults_once", command)).toEqual(updated)
     await expect(execute(harness, "owner_a", "defaults_once", {
       ...command,
-      defaults: { execution: {}, recap: {} },
+      defaults: { execution: {} },
     })).resolves.toMatchObject({ ok: false, error: { code: "idempotency_conflict" } })
     await expect(execute(harness, "owner_a", "defaults_stale", command))
       .resolves.toMatchObject({ ok: false, error: { code: "version_conflict" } })
@@ -1094,7 +1259,7 @@ describe("Convex WorkGraph store", () => {
     await expect(readWorkGraphProjection(harness, "owner_b", "defaults", {})).resolves.toMatchObject({
       ownerUserId: "owner_b",
       version: 1,
-      defaults: { execution: {}, recap: {} },
+      defaults: { execution: {} },
     })
     await expect(readWorkGraphProjection(harness, "owner_a", "snapshot", { limit: 10 })).resolves.toMatchObject({
       records: expect.arrayContaining([
@@ -1138,11 +1303,10 @@ describe("Convex WorkGraph store", () => {
       }),
       "workItemId",
     )
-    await expect(execute(harness, "owner_a", "defaults_execute", {
-      type: "execute_work_item",
-      workItemId,
-      executionMode: "autonomous",
-    })).resolves.toMatchObject({ ok: true, value: { attemptId: expect.any(String) } })
+    // The approved Task's Attempt (admitted by the continuous drain) inherits the
+    // resolved execution profile from the WorkGraph/Stream defaults.
+    void workItemId
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
     expect(harness.rowsFor("workgraph_attempts")).toContainEqual(expect.objectContaining({
       resolved_execution: {
         ...command.defaults.execution,
@@ -1150,26 +1314,6 @@ describe("Convex WorkGraph store", () => {
         repository: { remoteUrl: "https://github.com/claxedo/inherited.git", baseRevision: "dev" },
       },
     }))
-  })
-
-  test("does not substitute root quiet hours for explicit Stream Recap configuration", async () => {
-    const harness = new ConvexHarness(["owner_a"])
-    vi.spyOn(Date, "now").mockReturnValue(1_000)
-    const streamId = value(
-      await execute(harness, "owner_a", "quiet_stream", { type: "create_stream", title: "Quiet" }),
-      "streamId",
-    )
-    vi.mocked(Date.now).mockReturnValue(1_000 + 4 * 60 * 60 * 1000)
-    await expect(execute(harness, "owner_a", "quiet_defaults", {
-      type: "update_workgraph_defaults",
-      expectedVersion: 1,
-      defaults: { execution: {}, recap: { quietHours: 2 } },
-    })).resolves.toMatchObject({ ok: true })
-
-    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)).toMatchObject({
-      activity: { lastActivityAt: 1_000, recapDueAt: 1_000 },
-      recap_due_at: 1_000,
-    })
   })
 
   test("forwards bearer auth through the interactive Convex functions without owner selection", async () => {
@@ -1514,13 +1658,6 @@ describe("Convex WorkGraph store", () => {
       source: { work_source_id: "source_1", revision_id: "revision_1", content_hash: "a".repeat(64) },
       generation: { method: "planning", attempt: 0, queuedAt: 1 },
     })
-    await harness.db.insert("workgraph_recaps", {
-      ...common, id: "recap_1", stream_id: streamId, activity_range: { fromSequence: 1, toSequence: 2, quietSince: 3 },
-      summary: "Ready", actionable_references: [],
-      generation: { state: "succeeded", model: { providerId: "openai", modelId: "gpt-5" }, effort: "low", generatedAt: 4, method: "agent_session", sessionId: "session_recap" },
-      source_revision_refs: [],
-    })
-
     expect(await (await app("owner_a").request("/proposals/proposal_1")).json()).toMatchObject({ id: "proposal_1" })
     expect(await (await app("owner_a").request(`/work-items/${workItemId}`)).json()).toMatchObject({ id: workItemId })
     const first = await (await app("owner_a").request(`/work-items/${workItemId}/attempts?limit=1`)).json() as { attempts: Array<{ attempt: { id: string } }>; nextCursor: string }
@@ -1538,7 +1675,6 @@ describe("Convex WorkGraph store", () => {
       },
     })
     expect(await (await app("owner_a").request(`/decisions/${decisionId}`)).json()).toMatchObject({ id: decisionId })
-    expect(await (await app("owner_a").request("/recaps/recap_1")).json()).toMatchObject({ id: "recap_1" })
     expect((await app("owner_b").request("/attempts/attempt_1")).status).toBe(404)
     expect((await app("owner_b").request(`/work-items/${workItemId}/attempts?limit=1&after=${encodeURIComponent(first.nextCursor)}`)).status).toBe(409)
   })
@@ -1655,15 +1791,15 @@ describe("Convex WorkGraph store", () => {
     ).resolves.toMatchObject({ ok: false, error: { code: "version_conflict" } })
 
     await expect(
-      execute(harness, "owner_a", "stream_recap_defaults", {
+      execute(harness, "owner_a", "stream_execution_defaults", {
         type: "update_stream",
         streamId: firstId,
         expectedVersion: 1,
-        recap: { quietHours: 16, effort: "high" },
+        execution: { effort: "high" },
       }),
     ).resolves.toMatchObject({ ok: true })
     await expect(readWorkGraphProjection(harness, "owner_a", "stream", { streamId: firstId })).resolves.toMatchObject({
-      recapDefaults: { quietHours: 16, effort: "high" },
+      executionDefaults: { effort: "high" },
     })
 
     await expect(
@@ -1672,13 +1808,11 @@ describe("Convex WorkGraph store", () => {
         streamId: firstId,
         expectedVersion: 2,
         execution: {},
-        recap: {},
       }),
     ).resolves.toMatchObject({ ok: true })
     await expect(readWorkGraphProjection(harness, "owner_a", "stream", { streamId: firstId })).resolves.toMatchObject({
       version: 3,
       executionDefaults: {},
-      recapDefaults: {},
     })
   })
 
@@ -1725,45 +1859,6 @@ describe("Convex WorkGraph store", () => {
     await expect(service.query(context("organization_a"), "changes", "list", {
       after: "broken" as never,
     })).rejects.toMatchObject({ code: "cursor_invalid", reason: "invalid" })
-  })
-
-  test("rejects unsupported Stream Recap capability selections before Convex mutation", async () => {
-    const harness = new ConvexHarness(["owner_a"])
-    const recap = { model: { providerId: "openai", modelId: "missing" }, effort: "high", quietHours: 8 }
-
-    await expect(execute(harness, "owner_a", "recap_capability_create", {
-      type: "create_stream",
-      title: "Unsupported recap",
-      recap,
-    })).resolves.toMatchObject({
-      ok: false,
-      error: { code: "validation_error", message: expect.stringContaining("unsupported_model") },
-    })
-    expect(harness.rowsFor("workgraph_streams")).toHaveLength(0)
-
-    const streamId = value(await execute(harness, "owner_a", "recap_capability_stream", {
-      type: "create_stream",
-      title: "Supported Stream",
-    }), "streamId")
-    await expect(execute(harness, "owner_a", "recap_capability_update", {
-      type: "update_stream",
-      streamId,
-      expectedVersion: 1,
-      recap,
-    })).resolves.toMatchObject({ ok: false, error: { code: "validation_error" } })
-    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId))
-      .toMatchObject({ row_version: 1, recap_defaults: {} })
-  })
-
-  test("returns a typed failure when explicit Stream Recap settings have no attested catalog", async () => {
-    const harness = new ConvexHarness(["owner_a"])
-    harness.rowsFor("workgraph_execution_capabilities").splice(0)
-    await expect(execute(harness, "owner_a", "recap_capability_missing", {
-      type: "create_stream",
-      title: "No attested catalog",
-      recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
-    })).resolves.toMatchObject({ ok: false, error: { code: "execution_unavailable" } })
-    expect(harness.rowsFor("workgraph_streams")).toHaveLength(0)
   })
 
   test("binds hosted snapshot resume cursors to one unchanged owner projection", async () => {
@@ -2194,13 +2289,11 @@ describe("Convex WorkGraph store", () => {
         optionId: "yes",
       }),
     ).resolves.toMatchObject({ ok: true })
-    await expect(
-      execute(harness, "owner_a", "runtime_incomplete", {
-        type: "execute_stream",
-        streamId,
-        executionMode: "autonomous",
-      }),
-    ).resolves.toMatchObject({ ok: false, error: { code: "blocked", message: "Execution profile is incomplete" } })
+    // The parity Stream has no resolved execution profile, so the continuous drain
+    // cannot admit its Task. Execution modes are gone — there is no execute command
+    // to reject; the item is simply non-launchable and produces no Attempt.
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === workItemId)).toHaveLength(0)
 
     const executableStreamId = value(
       await execute(harness, "owner_a", "runtime_stream", {
@@ -2232,20 +2325,12 @@ describe("Convex WorkGraph store", () => {
       }),
       "workItemId",
     )
-    await expect(
-      execute(harness, "owner_a", "runtime", {
-        type: "execute_work_item",
-        workItemId: executableItemId,
-        executionMode: "autonomous",
-      }),
-    ).resolves.toMatchObject({ ok: true, value: { attemptId: expect.any(String) } })
-    await expect(
-      execute(harness, "owner_a", "runtime_competitor", {
-        type: "execute_work_item",
-        workItemId: executableItemId,
-        executionMode: "autonomous",
-      }),
-    ).resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+    // The approved Task in the executable Stream is admitted by the continuous
+    // drain; a second drain does not double-admit (the per-item lease and the
+    // item's `active` state fence it), so exactly one Attempt exists.
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === executableItemId)).toHaveLength(1)
     expect(harness.rowsFor("workgraph_attempts")).toHaveLength(1)
     expect(harness.rowsFor("workgraph_outbox")).toMatchObject([{ effect_type: "launch_attempt", status: "pending" }])
     const activeItem = harness.rowsFor("workgraph_work_items").find((row) => row.id === executableItemId)!
@@ -2750,7 +2835,7 @@ describe("Convex WorkGraph store", () => {
   test("preserves completed effects and normalizes only non-claimable scheduled jobs", async () => {
     const source = new ConvexHarness(["owner_a"])
     await source.db.insert("workgraphs", {
-      owner_user_id: "owner_a", id: "workgraph_default", defaults: {}, recap_defaults: {},
+      owner_user_id: "owner_a", id: "workgraph_default", defaults: {},
       provenance: { actor: { type: "user", id: "owner_a" } }, row_version: 1, schema_version: 1,
       created_at: 1, updated_at: 1,
     })
@@ -2761,9 +2846,9 @@ describe("Convex WorkGraph store", () => {
     })
     for (const row of [
       { id: "job_completed", job_type: "session_intake", status: "completed", lease_epoch: 1 },
-      { id: "job_cancelled", job_type: "recap", status: "cancelled", lease_epoch: 1 },
+      { id: "job_cancelled", job_type: "source_plan", status: "cancelled", lease_epoch: 1 },
       { id: "job_source_attention", job_type: "source_plan", status: "failed_terminal", lease_epoch: 3 },
-      { id: "job_recap_attention", job_type: "recap", status: "failed", lease_epoch: 3 },
+      { id: "job_source_failed", job_type: "source_plan", status: "failed_terminal", lease_epoch: 3 },
     ]) await source.db.insert("workgraph_due_jobs", {
       owner_user_id: "owner_a", ...row, subject_id: row.id, due_at: 2, payload: { subject: row.id },
       row_version: 2, schema_version: 1, created_at: 1, updated_at: 3,
@@ -2876,18 +2961,6 @@ describe("Convex WorkGraph store", () => {
       external_url: "https://github.com/acme/repo/issues/1", observed_revision: "rev-1", metadata: {},
       schema_version: 1, created_at: 1, updated_at: 1,
     })
-    await source.db.insert("workgraph_recaps", {
-      owner_user_id: "owner_a", id: "recap_all", stream_id: streamId,
-      activity_range: { fromSequence: 1, toSequence: 2, quietSince: 20 }, summary: "Recap",
-      actionable_references: [{ type: "work_item", id: secondItemId }],
-      generation: { state: "succeeded", model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", generatedAt: 30, method: "agent_session", sessionId: "session_recap" },
-      source_revision_refs: [{ work_source_id: workSourceId, revision_id: revisionId, content_hash: revision.content_hash }],
-      provenance: { actor: { type: "agent", id: "recap" }, operationId: "recap_all" }, schema_version: 1, created_at: 30,
-    })
-    await source.db.insert("workgraph_notifications", {
-      owner_user_id: "owner_a", id: "notification_all", notification_kind: "actionable_recap", state: "unread",
-      stream_id: streamId, recap_id: "recap_all", row_version: 1, schema_version: 1, created_at: 30, updated_at: 30,
-    })
     await source.db.insert("workgraph_record_source_revisions", {
       owner_user_id: "owner_a", id: "record_source_all", record_type: "stream", record_id: streamId,
       work_source_id: workSourceId, source_revision_id: revisionId, ordinal: 0, schema_version: 1, created_at: 1,
@@ -2913,7 +2986,7 @@ describe("Convex WorkGraph store", () => {
     expect(new Set(exported.archive.records.map((record) => record.kind))).toEqual(new Set([
       "workgraph", "work_source", "work_source_revision", "source_view", "intake_candidate", "external_identity",
       "stream", "outcome", "work_item", "work_item_dependency", "attempt", "session_binding", "agent_checkpoint", "decision", "decision_work_item",
-      "evidence", "durable_effect_receipt", "recap", "notification", "record_source_revision", "admission_proposal",
+      "evidence", "durable_effect_receipt", "record_source_revision", "admission_proposal",
       "operation_result", "event", "change", "runtime_effect", "migration_intake", "completed_external_effect",
       "terminal_scheduled_job",
     ]))
@@ -2948,10 +3021,10 @@ describe("Convex WorkGraph store", () => {
       row_version: 1, schema_version: 1, created_at: 6, updated_at: 7,
     })
     await harness.db.insert("workgraph_due_jobs", {
-      owner_user_id: "owner_a", id: "recap_job_configuration", stream_id: "stream_1", job_type: "recap",
-      subject_id: "stream_1:1", due_at: 6, status: "pending", lease_epoch: 0,
-      payload: { configurationRequirement: { type: "generation", purpose: "recap", scope: { type: "stream", streamId: "stream_1" } } },
-      last_error: "Recap requires explicit valid model configuration", row_version: 1, schema_version: 1, created_at: 7, updated_at: 8,
+      owner_user_id: "owner_a", id: "source_plan_job_configuration", job_type: "source_plan",
+      subject_id: "source_1:1", due_at: 6, status: "pending", lease_epoch: 0,
+      payload: { configurationRequirement: { type: "generation", purpose: "source_planning", scope: { type: "workgraph" } } },
+      last_error: "Source planning requires explicit valid model configuration", row_version: 1, schema_version: 1, created_at: 7, updated_at: 8,
     })
     await harness.db.insert("workgraph_intake_candidates", {
       owner_user_id: "owner_b", id: "candidate_other", workgraph_id: "workgraph_default", candidate_kind: "session",
@@ -2975,7 +3048,7 @@ describe("Convex WorkGraph store", () => {
     expect(first).toMatchObject({
       total: 3,
       hasMore: true,
-      items: [{ kind: "configuration_required", id: "recap_job_configuration", requirement: { type: "generation", purpose: "recap" } }],
+      items: [{ kind: "configuration_required", id: "source_plan_job_configuration", requirement: { type: "generation", purpose: "source_planning" } }],
     })
     const second = AttentionPageSchema.parse(await service.query(owner("owner_a"), "attention", "list", { limit: 1, after: first.nextCursor }))
     expect(second).toMatchObject({ total: 3, hasMore: true, items: [{ kind: "configuration_required", id: "connection_broken", requirement: { type: "connection" } }] })
@@ -3160,7 +3233,7 @@ describe("Convex WorkGraph Attention conformance v1", () => {
   })) test(conformance.name, conformance.run)
 })
 
-describe("Convex AtomicWorkGraphStore conformance v6", () => {
+describe("Convex AtomicWorkGraphStore conformance v7", () => {
   for (const conformance of workGraphAdapterConformance(async (input) => {
     vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "service-secret")
     const organizationId = String(input.owners.first.organizationId)
@@ -3187,6 +3260,47 @@ describe("Convex AtomicWorkGraphStore conformance v6", () => {
       },
       restart: async () => ({ attemptRuntime: convexConformanceAttemptRuntime(harness) }),
       faults: { failNextAppend: () => harness.failNextInsert("workgraph_events") },
+      // Execution-mode commands are gone. The conformance service downgrades its
+      // user actor to `agent` (defensive service path), so items are born
+      // `pending_approval`; approve as owner, then run the continuous drain that
+      // admits approved Work Items in active Streams and return that Attempt.
+      admit: async (owner: WorkGraphContext, { workItemId }: { workItemId: string }) => {
+        const orgId = String(owner.organizationId)
+        const ownerUserId = String(owner.ownerUserId)
+        const operationId = input.ids.next("admit") as never
+        const current = harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)
+        if (current?.state === "pending_approval") {
+          await harness.transaction(() =>
+            applyWorkGraphCommand(harness, {
+              organizationId: orgId,
+              ownerUserId,
+              ownerSubject: ownerUserId,
+              actor: { type: "user", id: ownerUserId },
+              requestId: `approve_${workItemId}`,
+              operationId: `approve_${operationId}`,
+              command: { version: 1, type: "approve_work_item", workItemId, expectedVersion: current.row_version },
+            }),
+          )
+        }
+        await drainConvexReadyStreams(harness, orgId, ownerUserId)
+        const attempt = admittedConvexAttempt(harness, workItemId)
+        if (!attempt) {
+          return { ok: false, operationId, error: { code: "blocked", message: "No admitted Attempt", retryable: false } }
+        }
+        // The SQLite reference drain admits AND launches; mirror that here so the
+        // returned Attempt is running with a Session (claim the durable launch
+        // outbox effect and mark it running).
+        await launchConvexConformanceAttempt(harness, orgId, ownerUserId, attempt.id)
+        const lease = harness
+          .rowsFor("workgraph_leases")
+          .find((row) => row.resource_id === workItemId && row.holder_id === attempt.id)
+        const cursor = createChangeCursor({
+          organizationId: owner.organizationId,
+          ownerUserId: owner.ownerUserId,
+          position: 1,
+        })
+        return { ok: true, operationId, cursor, value: { attemptId: attempt.id, leaseEpoch: lease?.epoch ?? attempt.lease_epoch } }
+      },
     }
   })) test(conformance.name, conformance.run)
 })
@@ -3282,7 +3396,6 @@ function convexConformanceExecutor(harness: ConvexHarness) {
         command,
       }))
       if (!result.ok) return result
-      if (command.type === "execute_work_item") await launchConvexConformanceAttempt(harness, organizationId, ownerUserId, result)
       if (command.type === "delete_stream") await completeConvexConformanceDeletion(harness, organizationId, ownerUserId, result)
       return result
     },
@@ -3299,14 +3412,30 @@ function convexConformanceExecutor(harness: ConvexHarness) {
   }
 }
 
+/**
+ * Run the continuous-execution drain for a tenant so approved (`pending`) Work
+ * Items in active Streams are admitted. Execution modes are gone: admission is
+ * the drain's job, triggered here explicitly in tests.
+ */
+async function drainConvexReadyStreams(harness: ConvexHarness, organizationId: string, ownerUserId: string) {
+  await harness.transaction(() => reconcileReadyStreams(harness as never, organizationId, ownerUserId, Date.now(), 100))
+}
+
+/** The latest Attempt admitted by the drain for a Work Item, if any. */
+function admittedConvexAttempt(harness: ConvexHarness, workItemId: string) {
+  return harness
+    .rowsFor("workgraph_attempts")
+    .filter((row) => row.work_item_id === workItemId)
+    .sort((left, right) => right.attempt_number - left.attempt_number)[0]
+}
+
 async function launchConvexConformanceAttempt(
   harness: ConvexHarness,
   organizationId: string,
   ownerUserId: string,
-  result: { value?: unknown },
+  attemptId: string,
 ) {
-  const attemptId = (result.value as { attemptId?: string } | undefined)?.attemptId
-  if (!attemptId) throw new Error("Convex conformance admission omitted its Attempt ID")
+  if (!attemptId) throw new Error("Convex conformance launch requires an Attempt ID")
   const claims = await harness.transaction(() => handler(claimLaunches)(harness, {
     service_token: "service-secret",
     organization_id: organizationId,
@@ -3554,7 +3683,6 @@ async function materializeAttention(harness: ConvexHarness, owner: string) {
     "workgraph_decisions",
     "workgraph_work_items",
     "workgraph_attempts",
-    "workgraph_notifications",
     "workgraph_due_jobs",
   ]) {
     for (const row of harness.rowsFor(table).filter((candidate) => candidate.owner_user_id === owner)) {

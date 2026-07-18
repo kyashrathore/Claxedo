@@ -58,21 +58,6 @@
   }
 }
 
-/*
- * Usage-limits popover bars — width binds to utilization; the transition
- * animates value changes on refresh, and @starting-style gives a one-shot
- * 0→value grow on first paint (reliable in Chromium, unlike a mount signal
- * inside the Kobalte portal). See claxedo-ui/components/usage-limits-popover.tsx.
- */
-.usage-bar-fill {
-  transition: width 450ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-@starting-style {
-  .usage-bar-fill {
-    width: 0;
-  }
-}
-
 /* Dot-wave for the jump-to-bottom button while the session is busy (T21). */
 .tl-dot-wave {
   display: inline-flex;

@@ -17,6 +17,24 @@ import { ProposalContent } from "./item-dialog-proposal"
 import type { WorkGraphWaitingSource } from "./waiting-source"
 import { DetailState, DialogField, DialogSection, WorkGraphDialog } from "./workgraph-dialog"
 import type { WorkGraphSessionOpener, WorkGraphSessionReference } from "../api"
+import { createDependencyResolver, STATUS_DISPLAY, taskStatusLabel, type TaskStatusLabel } from "../work-item-rows"
+
+/** Read-only status line for an approved `pending` task: Ready (will run /
+ *  paused) when launchable, else Waiting on the named incomplete blockers. */
+function pendingStatusText(
+  item: WorkItemDto,
+  depsComplete: boolean | undefined,
+  streamPaused: boolean | undefined,
+  incompleteDependencies: { id: string; title: string }[] | undefined,
+): string {
+  if (depsComplete ?? item.dependencyIds.length === 0) {
+    return streamPaused ? "Ready — paused" : "Ready — will run automatically"
+  }
+  const count = incompleteDependencies?.length ?? item.dependencyIds.length
+  const base = `Waiting on ${count} dependenc${count === 1 ? "y" : "ies"}`
+  const titles = incompleteDependencies?.map((dep) => dep.title).join(", ")
+  return titles ? `${base}: ${titles}` : base
+}
 
 type Selection = AttentionItem | undefined
 
@@ -28,6 +46,11 @@ export function TaskDialog(props: {
   onOpenSession?: WorkGraphSessionOpener
   refreshToken?: string
   activityGranularity?: StreamActivityGranularity
+  /** Every non-abandoned task in the item's Stream — used to split Waiting vs
+   *  Ready and to name the incomplete blockers a Waiting task is held on. */
+  streamItems?: WorkItemDto[]
+  /** Whether the owning Stream is paused (an approved task reads "Ready — paused"). */
+  streamPaused?: boolean
 }) {
   const openSession = async (reference: WorkGraphSessionReference) => {
     await props.onOpenSession?.(reference)
@@ -37,25 +60,74 @@ export function TaskDialog(props: {
     props.onResolved()
     props.onClose()
   })
-  const retryable = () => props.item && ["failed", "verification_failed"].includes(props.item.state)
-  const executable = () => props.item?.state === "pending"
+  const [rejecting, setRejecting] = createSignal(false)
+  const [reason, setReason] = createSignal("")
+  const retryable = () => !!props.item && ["failed", "verification_failed"].includes(props.item.state)
+  const staged = () => props.item?.state === "pending_approval"
+  const depsComplete = () => {
+    const item = props.item
+    if (!item) return true
+    if (!props.streamItems) return item.dependencyIds.length === 0
+    return createDependencyResolver(props.streamItems)(item)
+  }
+  // The exact incomplete blockers, named — never a bare count the owner can't act on.
+  const incompleteDependencies = () => {
+    const item = props.item
+    if (!item || !props.streamItems) return []
+    const byId = new Map(props.streamItems.map((entry) => [entry.id, entry] as const))
+    return item.dependencyIds.flatMap((id) => {
+      const dep = byId.get(id)
+      if (!dep || dep.state === "completed" || dep.state === "abandoned") return []
+      return [{ id, title: dep.title }]
+    })
+  }
+  const statusLabel = (): TaskStatusLabel | undefined =>
+    props.item ? taskStatusLabel(props.item.state, depsComplete()) : undefined
+  const footerError = () => (
+    <Show when={action.error()}>
+      {(message) => <span class="workgraph-dialog-footer-error" role="alert">{message()}</span>}
+    </Show>
+  )
   const footer = () => {
     const item = props.item
-    if (!item || (!retryable() && !executable())) return
+    if (!item) return
+    if (staged()) {
+      return (
+        <>
+          {footerError()}
+          <Show
+            when={rejecting()}
+            fallback={
+              <>
+                <Button size="small" variant="ghost" disabled={action.busy()} onClick={() => setRejecting(true)}>Reject</Button>
+                <Button size="small" variant="primary" disabled={action.busy()} onClick={() => void action.run(() => props.source.approveWorkItem(item.id, item.version))}>
+                  {action.busy() ? "Approving…" : "Approve"}
+                </Button>
+              </>
+            }
+          >
+            <input
+              ref={(input) => requestAnimationFrame(() => input.isConnected && input.focus())}
+              class="workgraph-input"
+              aria-label="Reason to reject"
+              value={reason()}
+              placeholder="Reason to reject"
+              disabled={action.busy()}
+              onInput={(event) => setReason(event.currentTarget.value)}
+            />
+            <Button size="small" variant="primary" disabled={action.busy() || !reason().trim()} onClick={() => void action.run(() => props.source.rejectWorkItem(item.id, item.version, reason().trim()))}>
+              {action.busy() ? "Rejecting…" : "Reject task"}
+            </Button>
+          </Show>
+        </>
+      )
+    }
+    if (!retryable()) return
     return (
       <>
-        <Show when={action.error()}>
-          {(message) => <span class="workgraph-dialog-footer-error" role="alert">{message()}</span>}
-        </Show>
-        <Button
-          size="small"
-          variant="primary"
-          disabled={action.busy()}
-          onClick={() => void action.run(() => retryable()
-            ? props.source.retryWorkItem(item.id, item.version)
-            : props.source.executeWorkItem(item.id, "autonomous"))}
-        >
-          {action.busy() ? "Starting…" : retryable() ? "Run again" : "Run task"}
+        {footerError()}
+        <Button size="small" variant="primary" disabled={action.busy()} onClick={() => void action.run(() => props.source.retryWorkItem(item.id, item.version))}>
+          {action.busy() ? "Starting…" : "Run again"}
         </Button>
       </>
     )
@@ -63,7 +135,19 @@ export function TaskDialog(props: {
   return (
     <WorkGraphDialog open={!!props.item} onClose={props.onClose} title="Task" scrollBody footer={footer()}>
       <Show when={props.item} keyed>
-        {(item) => <TaskContent workItemId={item.id} refreshToken={props.refreshToken} activityGranularity={props.activityGranularity} source={props.source} onOpenSession={openSession} />}
+        {(item) => (
+          <TaskContent
+            workItemId={item.id}
+            refreshToken={props.refreshToken}
+            activityGranularity={props.activityGranularity}
+            source={props.source}
+            statusLabel={statusLabel()}
+            streamPaused={props.streamPaused}
+            depsComplete={depsComplete()}
+            incompleteDependencies={incompleteDependencies()}
+            onOpenSession={openSession}
+          />
+        )}
       </Show>
     </WorkGraphDialog>
   )
@@ -71,8 +155,7 @@ export function TaskDialog(props: {
 /**
  * Opens a focused dialog over the WorkGraph screen for the selected Waiting
  * item. Opening never resolves the item; it only leaves Waiting after its real
- * domain transition succeeds (except an actionable Recap notification, which
- * becomes read once the Recap is actually opened).
+ * domain transition succeeds.
  */
 type ItemContentProps = {
   item: AttentionItem
@@ -135,7 +218,6 @@ export function WaitingItemDialog(props: {
     if (kind === "admission_proposal") return "Review proposed work"
     if (kind === "work_item") return "Task"
     if (kind === "attempt") return "Attempt"
-    if (kind === "recap_notification") return "Recap"
     if (kind === "unorganized_ai_work") return "Unorganized AI work"
     if (kind === "configuration_required") return "Configuration required"
     return "Waiting"
@@ -179,14 +261,6 @@ function AfterWorkItem(props: ItemContentProps) {
 }
 
 function AfterAttempt(props: ItemContentProps) {
-  return (
-    <Show when={props.item.kind === "recap_notification" && props.item} keyed fallback={<AfterRecap {...props} />}>
-      {(item) => <RecapContent item={item} source={props.source} onResolved={props.onResolved} />}
-    </Show>
-  )
-}
-
-function AfterRecap(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "unorganized_ai_work"} fallback={<ConfigRequiredContent item={props.item} onOpenSettings={props.onOpenSettings} onClose={props.onClose} />}>
       <CandidatesContent source={props.source} onResolved={props.onResolved} />
@@ -276,6 +350,10 @@ function TaskContent(props: {
   refreshToken?: string
   activityGranularity?: StreamActivityGranularity
   source: WorkGraphWaitingSource
+  statusLabel?: TaskStatusLabel
+  streamPaused?: boolean
+  depsComplete?: boolean
+  incompleteDependencies?: { id: string; title: string }[]
   onOpenSession?: WorkGraphSessionOpener
 }) {
   const [workItem, { refetch }] = createResource(
@@ -302,11 +380,25 @@ function TaskContent(props: {
       {(item) => (
         <div class="workgraph-detail">
           <div class="workgraph-detail-head">
-            <p class="workgraph-detail-title text-text-strong">{item.title}</p>
+            <div class="flex items-center gap-2">
+              <p class="workgraph-detail-title text-text-strong">{item.title}</p>
+              <Show when={props.statusLabel}>
+                {(label) => (
+                  <span class="workgraph-detail-chip" data-status={label()}>
+                    {label() === "ready" && props.streamPaused ? "Ready · paused" : STATUS_DISPLAY[label()]}
+                  </span>
+                )}
+              </Show>
+            </div>
             <Show when={item.description?.trim()}>
               <p class="workgraph-detail-desc text-text-weak">{item.description}</p>
             </Show>
           </div>
+          {/* An approved-but-not-yet-running task is read-only: launch is
+              automatic, so the inspector reports where it stands, no Run button. */}
+          <Show when={item.state === "pending"}>
+            <div class="workgraph-detail-status" role="status">{pendingStatusText(item, props.depsComplete, props.streamPaused, props.incompleteDependencies)}</div>
+          </Show>
           <TaskChips item={item} source={props.source} />
           <DialogSection title="Latest attempt">
             <Show when={latest.loading && !latest()}>
@@ -367,6 +459,8 @@ function TaskChips(props: { item: WorkItemDto; source: WorkGraphWaitingSource })
   const evidenceNeeded = () => ["result_ready", "verification_failed"].includes(props.item.state)
   const requirementStatus = (requirement: WorkItemDto["completionContract"]["requirements"][number]) =>
     recorded().has(requirement.id) ? "evidence recorded" : evidenceNeeded() ? "evidence needed" : "pending"
+  // The exact lifecycle stays on the first chip (e.g. "failed", "result ready");
+  // the six-label badge in the dialog head carries the owner-facing status.
   return (
     <div class="workgraph-detail-chips" role="group" aria-label="Task status">
       <span class="workgraph-detail-chip">{props.item.state.replaceAll("_", " ")}</span>
@@ -569,48 +663,6 @@ function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: Wo
   )
 }
 
-// ── Recap ─────────────────────────────────────────────────────────────────
-
-function RecapContent(props: {
-  item: Extract<AttentionItem, { kind: "recap_notification" }>
-  source: WorkGraphWaitingSource
-  onResolved: () => void
-}) {
-  const [detail, { refetch }] = createResource(() => props.source.recap(props.item.recap.id))
-  // Opening the Recap is what marks its notification read; the referenced
-  // unresolved records remain separate attention. A failed mark-read leaves the
-  // recap in Waiting and surfaces explicitly — it is not swallowed.
-  const [read] = createResource(async () => {
-    await props.source.markNotificationRead(props.item.notification.id, props.item.notification.version)
-    props.onResolved()
-    return true
-  })
-  return (
-    <DetailState resource={detail} retry={refetch}>
-      {(recap) => (
-        <div class="workgraph-detail">
-          <Show when={read.error}>
-            <p class="workgraph-detail-status is-error" role="alert">
-              {`Couldn't mark this recap read: ${String((read.error as { message?: string })?.message ?? read.error)}`}
-            </p>
-          </Show>
-          <p class="text-[13px] leading-6 text-text-base">{recap.summary}</p>
-          <DialogSection title={`Actionable references (${recap.actionableReferences.length})`}>
-            <For each={recap.actionableReferences}>
-              {(reference) => (
-                <div class="workgraph-detail-plan-item font-mono text-[11px] text-text-weaker">
-                  {reference.type.replaceAll("_", " ")} · {reference.id}
-                </div>
-              )}
-            </For>
-          </DialogSection>
-          <DialogField label="Generation">{recap.generation.state}</DialogField>
-        </div>
-      )}
-    </DetailState>
-  )
-}
-
 // ── Unorganized AI work (candidates) ──────────────────────────────────────
 
 function CandidatesContent(props: { source: WorkGraphWaitingSource; onResolved: () => void }) {
@@ -705,7 +757,7 @@ function ConfigRequiredContent(props: { item: AttentionItem; onOpenSettings?: ()
                   <DialogField label="Purpose">{requirement.purpose.replaceAll("_", " ")}</DialogField>
                   <DialogField label="Reason">{requirement.reason}</DialogField>
                   <DialogField label="Job" mono>{requirement.jobId}</DialogField>
-                  <p class="text-[12px] leading-5 text-text-weak">Open WorkGraph settings to configure the execution and recap defaults this background work needs.</p>
+                  <p class="text-[12px] leading-5 text-text-weak">Open WorkGraph settings to configure the execution defaults this background work needs.</p>
                   <Show when={props.onOpenSettings}>
                     <div class="workgraph-detail-actions">
                       <Button

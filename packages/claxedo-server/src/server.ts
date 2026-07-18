@@ -1032,7 +1032,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         return workspace.directory
       },
     }),
-    recaps: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
     sourcePlanning: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
     connections: built.connections,
     resolveTeamOwner: (context) => `org:${context.organizationId}`,
@@ -1125,12 +1124,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
               access: { mode: "owner" as const },
             }
             await embedded.reconcile(context)
-            await embedded.recaps.scheduleDue(context)
-            await embedded.recaps.runDue(context)
             await embedded.sourcePlanning.runDue(context)
             // Doorbell safety net (plan 2026-07-17-004): nudge clients when this
             // owner's change log advanced by any path that does not run through
-            // `service.execute` (attempt settlement, recaps, source planning,
+            // `service.execute` (attempt settlement, source planning,
             // activity, intake). Tip-conditional, so an idle owner emits nothing.
             embedded.observeChanges(context)
           }),

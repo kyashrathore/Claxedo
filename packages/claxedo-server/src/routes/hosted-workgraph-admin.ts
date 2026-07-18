@@ -12,8 +12,6 @@ export type WorkGraphReconcileResult = Readonly<{
   background?: Readonly<{
     controls: readonly unknown[]
     intake: Readonly<{ completed: number }>
-    launched: readonly unknown[]
-    results: readonly unknown[]
     sourcePlanning: Readonly<{ launched: readonly unknown[]; results: readonly unknown[] }>
   }>
 }>
@@ -92,8 +90,6 @@ export function HostedWorkGraphAdminRoutes(options: HostedWorkGraphAdminOptions 
           ? {
               controls: result.background.controls.length,
               intake: result.background.intake.completed,
-              backgroundLaunched: result.background.launched.length,
-              backgroundResults: result.background.results.length,
               sourcePlansLaunched: result.background.sourcePlanning.launched.length,
               sourcePlanResults: result.background.sourcePlanning.results.length,
             }

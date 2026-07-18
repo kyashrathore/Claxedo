@@ -15,6 +15,7 @@ import { ProjectPicker, type LocalProjectOption } from "./project-picker"
 import { useWorkGraphSyncLifecycle, type WorkGraphEventsApi } from "./sync-lifecycle"
 import { environmentChoices } from "./waiting/settings-capabilities"
 import { WaitingCard, createWaitingCardController } from "./waiting/waiting-card"
+import { createStagedApprovals } from "./waiting/staged-approvals"
 import { TaskDialog, WaitingItemDialog } from "./waiting/item-dialogs"
 import { WaitingPanelBody } from "./waiting/waiting-panel"
 import { WorkGraphSettingsPanel } from "./settings-panel"
@@ -202,7 +203,12 @@ export function WorkGraphContent(props: {
   const selectedTaskItem = createMemo(() => selectedTask() && (
     workItems().find((item) => item.id === selectedTask()!.item.id) ?? selectedTask()!.item
   ))
-  const selectedTaskGranularity = createMemo(() => streams().find((stream) => stream.id === selectedTaskItem()?.streamId)?.activityGranularity)
+  const selectedTaskStream = createMemo(() => streams().find((stream) => stream.id === selectedTaskItem()?.streamId))
+  const selectedTaskGranularity = createMemo(() => selectedTaskStream()?.activityGranularity)
+  const selectedTaskStreamItems = createMemo(() => {
+    const streamId = selectedTaskItem()?.streamId
+    return streamId ? workItems().filter((item) => item.streamId === streamId && item.state !== "abandoned") : []
+  })
   const outcomes = createMemo(() => records().filter((record): record is OutcomeDto => record.recordType === "outcome"))
   const activeAttempts = createMemo(() => attempts().filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state)))
   const sortedStreams = createMemo(() => [...streams()].sort((a, b) => b.activity.lastActivityAt - a.activity.lastActivityAt))
@@ -257,6 +263,15 @@ export function WorkGraphContent(props: {
       setSubmitting(false)
     }
   }
+  // Owner-only staged-task approval (single, reject, and per-stream bulk with
+  // partial-conflict surfacing) lives in its own module — see staged-approvals.ts.
+  const { approveStaged, rejectStaged, approveAllStaged, bulkResult, conflictedStagedIds } = createStagedApprovals({
+    client,
+    submitting,
+    setSubmitting,
+    setMutationError,
+    reloadCanonical,
+  })
   const createStream = async (event: SubmitEvent) => {
     event.preventDefault()
     if (!title().trim()) return
@@ -457,8 +472,7 @@ export function WorkGraphContent(props: {
     defaults: () => client.defaults(),
     saveDefaults: (expectedVersion: number, next: Parameters<typeof client.updateWorkGraphDefaults>[1]) => client.updateWorkGraphDefaults(expectedVersion, next),
   }
-  // Atomic stream update: execution + recap saved in one command at one expected
-  // version. Empty override objects clear the corresponding overrides.
+  // Atomic stream update at one expected version. Empty override objects clear overrides.
   const streamSettingsSource = {
     workgraphDefaults: () => client.defaults(),
     save: (streamId: string, expectedVersion: number, settings: Parameters<typeof client.updateStreamSettings>[2]) => client.updateStreamSettings(streamId, expectedVersion, settings),
@@ -726,6 +740,12 @@ export function WorkGraphContent(props: {
                         onClear={() => void acknowledgeAttention(source.clear)}
                         onLoadMore={() => void loadAttention(attentionNextCursor())}
                         onSelect={selectWaiting}
+                        onApprove={approveStaged}
+                        onReject={rejectStaged}
+                        onApproveAllStaged={approveAllStaged}
+                        bulkResult={bulkResult()}
+                        conflictedIds={conflictedStagedIds()}
+                        busy={submitting()}
                       />
                     </Match>
                     <Match when={panel().mode() === "tasks"}>
@@ -767,7 +787,7 @@ export function WorkGraphContent(props: {
         )}
       </Show>
       <WaitingItemDialog selection={selectedWaiting()?.item} source={source} onClose={closeWaiting} onResolved={resolvedWaiting} onOpenSettings={openWorkGraphSettings} onOpenSession={props.onOpenSession} />
-      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
+      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} streamItems={selectedTaskStreamItems()} streamPaused={selectedTaskStream()?.lifecycleState === "paused"} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
     </main>
   )
 }

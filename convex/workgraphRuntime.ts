@@ -4,7 +4,7 @@ import { buildAttemptPrompt } from "@claxedo/workgraph/hosted"
 import { serviceMutation, serviceQuery } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
-import { appendSystemWorkGraphChange, reconcileAutonomousStreams } from "./workgraphCommands"
+import { appendSystemWorkGraphChange, reconcileReadyStreams } from "./workgraphCommands"
 import { assertWorkGraphOwnerWritable } from "./workgraphModel"
 
 type RuntimeMutationCtx = GenericMutationCtx<DataModel>
@@ -69,7 +69,7 @@ export const claimLaunches = serviceMutation({
     limit: v.number(),
   },
   handler: async (ctx, args) => {
-    await reconcileAutonomousStreams(ctx, args.organization_id, args.owner_user_id, args.now, args.limit)
+    await reconcileReadyStreams(ctx, args.organization_id, args.owner_user_id, args.now, args.limit)
     const rows = await ctx.db
       .query("workgraph_outbox")
       .withIndex("by_tenant", (query: any) =>
@@ -776,12 +776,10 @@ async function deleteStreamGraph(
     "workgraph_durable_effect_receipts",
     "workgraph_attempts",
     "workgraph_decisions",
-    "workgraph_recaps",
     "workgraph_outcomes",
     "workgraph_leases",
     "workgraph_outbox",
     "workgraph_due_jobs",
-    "workgraph_notifications",
     "workgraph_agent_checkpoints",
     "workgraph_session_bindings",
     "workgraph_work_items",
@@ -1191,21 +1189,9 @@ export const recordFailure = serviceMutation({
       })
       await syncAttentionRecord(ctx, "workgraph_work_items", failedItem)
     }
-    const stream = await ctx.db
-      .query("workgraph_streams")
-      .withIndex("by_tenant_id", (query: any) =>
-        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
-      )
-      .filter((query) =>
-        query.and(
-          query.eq(query.field("organization_id"), args.organization_id),
-          query.eq(query.field("id"), attempt.stream_id),
-        ),
-      )
-      .unique()
-    if (stream?.execution_mode === "autonomous") {
-      await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: args.now })
-    }
+    // The Stream halt is now DERIVED, not persisted: the drain re-evaluates a hold
+    // from live rows (a `failed` Work Item / `attention` Attempt holds new launches)
+    // every pass, so no `execution_state='stopped'` write is needed here.
     await ctx.db.delete(lease._id)
     return { settled: true }
   },
@@ -1249,21 +1235,8 @@ export const markAttention = serviceMutation({
       .unique()
     if (item)
       await ctx.db.patch(item._id, { state: "pending", row_version: item.row_version + 1, updated_at: args.now })
-    const stream = await ctx.db
-      .query("workgraph_streams")
-      .withIndex("by_tenant_id", (query: any) =>
-        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
-      )
-      .filter((query) =>
-        query.and(
-          query.eq(query.field("organization_id"), args.organization_id),
-          query.eq(query.field("id"), attempt.stream_id),
-        ),
-      )
-      .unique()
-    if (stream?.execution_mode === "autonomous") {
-      await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: args.now })
-    }
+    // The Stream halt is derived from the Attempt's `attention` state on the next
+    // drain pass — no persisted `execution_state='stopped'` write.
     await ctx.db.delete(lease._id)
     await ctx.db.patch(outbox._id, {
       status: "failed",

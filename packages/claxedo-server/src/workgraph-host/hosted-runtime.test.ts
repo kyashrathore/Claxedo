@@ -19,7 +19,6 @@ import {
   createHostedSessionTranscriptRetention,
   createHostedWorkGraphRuntime,
   HostedTranscriptRetentionError,
-  parseHostedRecapOutput,
   workGraphWorkspaceId,
 } from "./hosted-runtime"
 import type { ControlPlaneServices } from "../control-plane/services"
@@ -455,26 +454,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(mutations).toContainEqual(expect.objectContaining({ outbox_id: "control-a", ok: true }))
   })
 
-  test("accepts only strict structured ordinary-Session Recap output", () => {
-    expect(
-      parseHostedRecapOutput(
-        JSON.stringify({ summary: "Ready", actionableReferences: [{ type: "stream", id: "stream-a" }] }),
-      ),
-    ).toEqual({ summary: "Ready", actionableReferences: [{ type: "stream", id: "stream-a" }] })
-    for (const value of [
-      "plain text summary",
-      JSON.stringify({ summary: "Missing references" }),
-      JSON.stringify({ summary: "Unknown reference", actionableReferences: [{ type: "issue", id: "issue-a" }] }),
-      JSON.stringify({
-        summary: "Duplicate",
-        actionableReferences: [
-          { type: "stream", id: "stream-a" },
-          { type: "stream", id: "stream-a" },
-        ],
-      }),
-    ])
-      expect(() => parseHostedRecapOutput(value)).toThrow()
-  })
+
 
   test("recovers an expired durable Attempt after restart and fences stale completion", async () => {
     const db = new RuntimeDb({
@@ -1244,259 +1224,9 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(db.row("workgraph_attempts", "attempt-row")?.state).toBe("cancelled")
   })
 
-  test("reconciles a hosted Recap whose terminal event is on the second history page", async () => {
-    const mutations: Record<string, unknown>[] = []
-    const runtime = createHostedWorkGraphRuntime(
-      {
-        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
-        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
-      },
-      {
-        sandbox: {
-          sandboxManager: {
-            ensure: async () => ({
-              status: "ready",
-              sandboxId: "sandbox",
-              url: "https://runtime.test",
-              hostId: "host-a",
-              epoch: 1,
-              homeRegion: "us-east",
-            }),
-            target: async () => ({
-              status: "ready",
-              sandboxId: "sandbox",
-              url: "https://runtime.test",
-              hostId: "host-a",
-              epoch: 1,
-              homeRegion: "us-east",
-            }),
-          },
-        },
-        relay: {
-          provider: {
-            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
-            getRelayEndpoint: async () => "https://relay.test",
-          },
-        },
-        defaultHomeRegion: "us-east",
-      } as unknown as ControlPlaneServices,
-      {
-        executor: {
-          mutation: async (_fn, args) => {
-            if (args.limit === 500 && Object.keys(args).length === 2)
-              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
-            mutations.push(args)
-            if (mutations.length <= 3) return []
-            if (mutations.length === 4) return { completed: 1 }
-            if (mutations.length === 5)
-              return [
-                {
-                  ownerUserId: "internal-user-a",
-                  orgId: "org-a",
-                  jobId: "recap-job",
-                  leaseEpoch: 1,
-                  streamId: "stream-a",
-                  prompt: "Summarize bounded changes",
-                  profile: {
-                    agent: "build",
-                    model: { providerId: "openai", modelId: "gpt-5" },
-                    effort: "medium",
-                    tools: [],
-                  },
-                },
-              ]
-            if (mutations.length === 6 || mutations.length === 7) return { settled: true }
-            if (mutations.length === 8)
-              return [
-                {
-                  ownerUserId: "internal-user-a",
-                  orgId: "org-a",
-                  jobId: "recap-job",
-                  leaseEpoch: 1,
-                  sessionId: "ses_workgraph_recap_recap-job_1",
-                  workspaceId: String(mutations[5]?.workspace_id),
-                },
-              ]
-            if (mutations.length === 9) return { settled: true }
-            return []
-          },
-        },
-        fetch: async (input, init) => {
-          const url = new URL(String(input))
-          if (url.pathname.endsWith("/api/session")) {
-            const body = JSON.parse(String(init?.body))
-            expect(body).toMatchObject({
-              id: "ses_workgraph_recap_recap-job_1",
-              tools: [],
-              location: { directory: "/workspace" },
-            })
-            return Response.json({ id: body.id })
-          }
-          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "0")
-            return Response.json({
-              data: [
-                {
-                  type: "session.next.text.ended",
-                  durable: { seq: 1 },
-                  data: {
-                    text: JSON.stringify({ summary: "Launch is ready; billing remains.", actionableReferences: [] }),
-                  },
-                },
-              ],
-              hasMore: true,
-            })
-          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "1")
-            return Response.json({
-              data: [{ type: "session.next.step.ended", durable: { seq: 2 }, data: {} }],
-              hasMore: false,
-            })
-          return Response.json({ data: { admitted: true } })
-        },
-      },
-    )
 
-    await expect(runtime?.reconcile()).resolves.toMatchObject({
-      background: {
-        controls: [],
-        intake: { completed: 1 },
-        launched: [{ state: "running" }],
-        results: [{ settled: true }],
-      },
-    })
-    expect(mutations).toContainEqual(
-      expect.objectContaining({ job_id: "recap-job", summary: "Launch is ready; billing remains." }),
-    )
-  })
 
-  test("replays the same hosted Recap Session and prompt after a lost prompt response", async () => {
-    const mutations: Record<string, unknown>[] = []
-    const sessionBodies: Array<Record<string, unknown>> = []
-    const promptBodies: Array<Record<string, unknown>> = []
-    const admittedMessages = new Set<string>()
-    const claim = (leaseEpoch: number) => ({
-      ownerUserId: "internal-user-a",
-      orgId: "org-a",
-      jobId: "recap-lost",
-      leaseEpoch,
-      streamId: "stream-a",
-      ...(leaseEpoch === 2 ? { sessionId: "ses_workgraph_recap_recap-lost_1" } : {}),
-      prompt: "Summarize bounded changes",
-      profile: {
-        agent: "build",
-        model: { providerId: "openai", modelId: "gpt-5" },
-        effort: "medium",
-        tools: [],
-      },
-    })
-    const runtime = createHostedWorkGraphRuntime(
-      {
-        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
-        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
-      },
-      {
-        sandbox: {
-          sandboxManager: {
-            ensure: async () => ({
-              status: "ready",
-              sandboxId: "sandbox",
-              url: "https://runtime.test",
-              hostId: "host-a",
-              epoch: 1,
-              homeRegion: "us-east",
-            }),
-            target: async () => ({
-              status: "ready",
-              sandboxId: "sandbox",
-              url: "https://runtime.test",
-              hostId: "host-a",
-              epoch: 1,
-              homeRegion: "us-east",
-            }),
-          },
-        },
-        relay: {
-          provider: {
-            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
-            getRelayEndpoint: async () => "https://relay.test",
-          },
-        },
-        defaultHomeRegion: "us-east",
-      } as unknown as ControlPlaneServices,
-      {
-        executor: {
-          mutation: async (_fn, args) => {
-            if (args.limit === 500 && Object.keys(args).length === 2)
-              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
-            mutations.push(args)
-            const call = mutations.length
-            if ([1, 2, 3, 7, 8, 9, 10, 11, 12, 19, 20].includes(call)) return []
-            if (call === 4 || call === 13) return { completed: 0 }
-            if (call === 5) return [claim(1)]
-            if (call === 14) return [claim(2)]
-            if ([6, 15, 16, 18].includes(call)) return { settled: true }
-            if (call === 17)
-              return [
-                {
-                  ownerUserId: "internal-user-a",
-                  orgId: "org-a",
-                  jobId: "recap-lost",
-                  leaseEpoch: 2,
-                  sessionId: "ses_workgraph_recap_recap-lost_1",
-                  workspaceId: String(mutations[14]?.workspace_id),
-                },
-              ]
-            throw new Error(`Unexpected mutation ${call}`)
-          },
-        },
-        fetch: async (input, init) => {
-          const url = new URL(String(input))
-          if (url.pathname.endsWith("/api/session")) {
-            const body = JSON.parse(String(init?.body))
-            sessionBodies.push(body)
-            return Response.json({ id: body.id })
-          }
-          if (url.pathname.endsWith("/prompt")) {
-            const body = JSON.parse(String(init?.body))
-            promptBodies.push(body)
-            admittedMessages.add(body.id)
-            if (promptBodies.length === 1) throw new Error("response lost after durable prompt admission")
-            return Response.json({ data: { admitted: true } })
-          }
-          if (url.pathname.endsWith("/history"))
-            return Response.json({
-              data: [
-                {
-                  type: "session.next.text.ended",
-                  data: {
-                    text: JSON.stringify({ summary: "Launch is ready.", actionableReferences: [] }),
-                  },
-                },
-                { type: "session.next.step.ended", data: {} },
-              ],
-              hasMore: false,
-            })
-          return Response.json({ data: {} })
-        },
-      },
-    )
 
-    await expect(runtime?.reconcile()).resolves.toMatchObject({
-      background: { launched: [{ state: "running", settled: false }], results: [] },
-    })
-    await expect(runtime?.reconcile()).resolves.toMatchObject({
-      background: { launched: [{ state: "running", settled: true }], results: [{ settled: true }] },
-    })
-    expect(sessionBodies).toEqual([
-      expect.objectContaining({ id: "ses_workgraph_recap_recap-lost_1" }),
-      expect.objectContaining({ id: "ses_workgraph_recap_recap-lost_1" }),
-    ])
-    expect(promptBodies).toEqual([
-      expect.objectContaining({ id: "msg_recap_recap-lost" }),
-      expect.objectContaining({ id: "msg_recap_recap-lost" }),
-    ])
-    expect(admittedMessages.size).toBe(1)
-    expect(mutations.filter((mutation) => "summary" in mutation)).toHaveLength(1)
-  })
 
   test("reconciles hosted source planning whose terminal event is on the second history page", async () => {
     const mutations: Record<string, unknown>[] = []
@@ -1543,8 +1273,7 @@ describe("hosted WorkGraph runtime outbox", () => {
             mutations.push(args)
             if (mutations.length <= 3) return []
             if (mutations.length === 4) return { completed: 0 }
-            if (mutations.length <= 6) return []
-            if (mutations.length === 7)
+            if (mutations.length === 5)
               return [
                 {
                   ownerUserId: "internal-user-a",
@@ -1561,8 +1290,8 @@ describe("hosted WorkGraph runtime outbox", () => {
                   },
                 },
               ]
-            if (mutations.length === 8 || mutations.length === 9) return { settled: true }
-            if (mutations.length === 10)
+            if (mutations.length === 6 || mutations.length === 7) return { settled: true }
+            if (mutations.length === 8)
               return [
                 {
                   ownerUserId: "internal-user-a",
@@ -1570,7 +1299,7 @@ describe("hosted WorkGraph runtime outbox", () => {
                   jobId: "source-plan-job",
                   leaseEpoch: 1,
                   sessionId: "ses_workgraph_source-plan-job_1",
-                  workspaceId: String(mutations[7]?.workspace_id),
+                  workspaceId: String(mutations[5]?.workspace_id),
                 },
               ]
             return { settled: true }
@@ -1709,12 +1438,12 @@ describe("hosted WorkGraph runtime outbox", () => {
               return [{ organizationId: "org-a", ownerUserId: "user-a" }]
             mutations.push(args)
             const call = mutations.length
-            if ([1, 2, 3, 5, 6, 9, 10, 11, 12, 14, 15].includes(call)) return []
-            if (call === 4 || call === 13) return { completed: 0 }
-            if (call === 7) return [claim(1)]
-            if (call === 16) return [claim(2)]
-            if ([8, 17, 18, 20].includes(call)) return { settled: true }
-            if (call === 19)
+            if ([1, 2, 3, 7, 8, 9, 10].includes(call)) return []
+            if (call === 4 || call === 11) return { completed: 0 }
+            if (call === 5) return [claim(1)]
+            if (call === 12) return [claim(2)]
+            if ([6, 13, 14, 16].includes(call)) return { settled: true }
+            if (call === 15)
               return [
                 {
                   ownerUserId: "internal-user-a",
@@ -1722,7 +1451,7 @@ describe("hosted WorkGraph runtime outbox", () => {
                   jobId: "source-plan-lost",
                   leaseEpoch: 2,
                   sessionId: "ses_workgraph_source-plan-lost_1",
-                  workspaceId: String(mutations[16]?.workspace_id),
+                  workspaceId: String(mutations[12]?.workspace_id),
                 },
               ]
             throw new Error(`Unexpected mutation ${call}`)

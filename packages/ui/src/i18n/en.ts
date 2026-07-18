@@ -95,6 +95,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.consideringNextSteps": "Considering next steps",
 
   "ui.messagePart.diagnostic.error": "Error",
+  "ui.messagePart.diagnostic.more": "+{{count}} more",
   "ui.messagePart.title.edit": "Edit",
   "ui.messagePart.title.write": "Write",
   "ui.messagePart.option.typeOwnAnswer": "Type your own answer",
@@ -179,6 +180,7 @@ export const dict: Record<string, string> = {
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
   "ui.message.interrupted": "Interrupted",
+  "ui.message.interruptedDuration": "You stopped after {{duration}}",
   "ui.message.queued": "Queued",
   "ui.message.attachment.alt": "attachment",
 

@@ -52,8 +52,6 @@ export type RealWorkGraphHarness = Readonly<{
   worktreeDirectory: (streamId: string) => string
   runReconcile: () => ReturnType<LocalEmbeddedWorkGraph["reconcile"]>
   runSourcePlanning: () => ReturnType<LocalEmbeddedWorkGraph["sourcePlanning"]["runDue"]>
-  scheduleRecaps: () => ReturnType<LocalEmbeddedWorkGraph["recaps"]["scheduleDue"]>
-  runRecap: () => ReturnType<LocalEmbeddedWorkGraph["recaps"]["runDue"]>
   completeControlledAttempt: (
     workItemId: string,
     summary: string,
@@ -261,7 +259,6 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       now: () => now,
     }),
     sourcePlanning: { sessions: generationSessions, directory: repository },
-    recaps: { sessions: generationSessions, directory: repository, clock: { now: () => now } },
   })
   executeAttempt = (context, request) => embedded.service.execute(context, {
     operationId: request.operation.operationId,
@@ -373,8 +370,6 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     worktreeDirectory: (streamId) => path.join(directory, "worktrees", encode(organizationId), encode(ownerUserId), encode(streamId), "envelope"),
     runReconcile,
     runSourcePlanning: () => serialized(() => embedded.sourcePlanning.runDue(context())),
-    scheduleRecaps: () => serialized(() => embedded.recaps.scheduleDue(context())),
-    runRecap: () => serialized(() => embedded.recaps.runDue(context())),
     completeControlledAttempt: (workItemId, summary, artifacts) => serialized(async () => {
       const attempt = database.prepare(
         `SELECT attempts.id, attempts.session_id, attempts.lease_epoch, bindings.project_id
@@ -640,16 +635,6 @@ function createGenerationSessions(): WorkGraphSessionGateway {
           artifacts: [],
         }
       }
-      if (request.title.startsWith("Recap: ")) {
-        return {
-          state: "succeeded",
-          summary: JSON.stringify({
-            summary: "Stream activity is ready for review.",
-            actionableReferences: [{ type: "stream", id: recapStreamId(request.prompt) }],
-          }),
-          artifacts: [],
-        }
-      }
       throw new Error(`Unsupported WorkGraph background Session: ${request.title}`)
     },
   }
@@ -704,13 +689,6 @@ function connectionInvocation(serializedRequest: string) {
     throw new Error("Connection-bound real Session prompt omitted its trusted Connection or external issue identity")
   }
   return { connectionId, externalId }
-}
-
-function recapStreamId(prompt: string) {
-  const line = prompt.split("\n").find((candidate) => candidate.startsWith("Stream: "))
-  const separator = line?.lastIndexOf(" (") ?? -1
-  if (!line || separator < 0 || !line.endsWith(")")) throw new Error("Recap prompt omitted its Stream identity")
-  return line.slice(separator + 2, -1)
 }
 
 type RealSessionRuntime = Readonly<{

@@ -13990,7 +13990,9 @@ export type V2WorkgraphCommandResponse = V2WorkgraphCommandResponses[keyof V2Wor
 export type V2WorkgraphExecutionCapabilitiesData = {
   body?: never
   path?: never
-  query?: never
+  query?: {
+    directory?: string
+  }
   url: "/api/workgraph/execution-capabilities"
 }
 

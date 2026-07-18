@@ -5,6 +5,12 @@ type Variant = "normal" | "error" | "warning" | "success" | "info"
 
 export interface CardProps extends ComponentProps<"div"> {
   variant?: Variant
+  /**
+   * Opt in to the `::before` accent rail. The rail is never variant-driven — a plain
+   * `variant="error"`/`"warning"` Card must not paint it (D§1: failure whispers).
+   * `--card-accent` still tints the title icon regardless of this flag.
+   */
+  accent?: boolean
 }
 
 export interface CardTitleProps extends ComponentProps<"div"> {
@@ -36,12 +42,14 @@ function mix(style: ComponentProps<"div">["style"], value?: string) {
 }
 
 export function Card(props: CardProps) {
-  const [split, rest] = splitProps(props, ["variant", "style", "class", "classList"])
+  const [split, rest] = splitProps(props, ["variant", "accent", "style", "class", "classList"])
   const variant = () => split.variant ?? "normal"
-  const accent = () => {
+  // Colours the title icon / tool-error icon (both read `--card-accent`). Legacy tokens only —
+  // never feeds the rail on its own; the rail requires the separate `accent` opt-in below.
+  const accentColor = () => {
     const v = variant()
-    if (v === "error") return "var(--v2-state-fg-danger)"
-    if (v === "warning") return "var(--icon-warning-active)"
+    if (v === "error") return "var(--icon-critical-base)"
+    if (v === "warning") return "var(--icon-warning-base)"
     if (v === "success") return "var(--icon-success-active)"
     if (v === "info") return "var(--icon-info-active)"
     return
@@ -51,7 +59,8 @@ export function Card(props: CardProps) {
       {...rest}
       data-component="card"
       data-variant={variant()}
-      style={mix(split.style, accent())}
+      data-accent={split.accent ? "" : undefined}
+      style={mix(split.style, accentColor())}
       classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,

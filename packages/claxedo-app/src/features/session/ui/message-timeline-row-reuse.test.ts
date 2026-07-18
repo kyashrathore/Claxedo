@@ -63,7 +63,7 @@ describe("timeline row reuse", () => {
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
   })
 
-  test("only a failed first turn receives the typed recovery card row", () => {
+  test("every failed turn receives the typed recovery card row, not only the first", () => {
     const failed = assistantMessage("msg_assistant", "msg_user", { completed: 20 })
     failed.error = {
       name: "UnknownError",
@@ -74,7 +74,95 @@ describe("timeline row reuse", () => {
     const later = Timeline.constructMessageRows(userMessage("msg_later"), () => [], [failed], 1, false, "idle", false)
 
     expect(first.find((row) => row._tag === "Error")).toEqual(expect.objectContaining({ recoveryClass: "credential" }))
-    expect(later.find((row) => row._tag === "Error" && row.recoveryClass !== undefined)).toBeUndefined()
+    expect(later.find((row) => row._tag === "Error")).toEqual(expect.objectContaining({ recoveryClass: "credential" }))
+  })
+})
+
+// T8 / D2: `error?.name === "MessageAbortedError"` only ever fires for the opencode-native
+// harness. SDK-runtime harnesses (codex/claude/cursor/ACP) leave an aborted turn's last
+// assistant message unsettled instead (no time.completed, no error) — see
+// message-timeline.data.ts's sdkInterrupted derivation for the traced abort paths.
+describe("T8: interrupted-turn detection (D2)", () => {
+  test("opencode-native MessageAbortedError still renders the interrupted divider, not an Error row", () => {
+    const aborted = assistantMessage("msg_assistant", "msg_user", {})
+    aborted.error = { name: "MessageAbortedError", data: { message: "Aborted" } } as AssistantMessage["error"]
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [aborted], 0, false, "idle", false)
+
+    expect(rows.map((row) => row._tag)).toContain("TurnDivider")
+    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
+      expect.objectContaining({ label: "interrupted" }),
+    )
+    expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
+  })
+
+  test("an SDK-runtime harness abort (no error, no completed time, turn no longer active) renders the interrupted divider, not an Error row", () => {
+    // No `error`, no `completed` — exactly what codex/claude/cursor/ACP leave behind on abort.
+    const unsettled = assistantMessage("msg_assistant", "msg_user", {})
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [unsettled], 0, false, "idle", false)
+
+    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
+      expect.objectContaining({ label: "interrupted" }),
+    )
+    expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
+  })
+
+  test("an SDK-runtime abort on the currently-active turn (status flipped to idle) also renders the divider", () => {
+    const unsettled = assistantMessage("msg_assistant", "msg_user", {})
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [unsettled], 0, false, "idle", true)
+
+    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
+      expect.objectContaining({ label: "interrupted" }),
+    )
+  })
+
+  test("a genuinely still-running turn (busy, unsettled) is not misclassified as interrupted", () => {
+    const running = assistantMessage("msg_assistant", "msg_user", {})
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [running], 0, false, "busy", true)
+
+    expect(rows.find((row) => row._tag === "TurnDivider")).toBeUndefined()
+  })
+
+  test("a turn mid-retry (status retry, unsettled) is not misclassified as interrupted", () => {
+    const retrying = assistantMessage("msg_assistant", "msg_user", {})
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [retrying], 0, false, "retry", true)
+
+    expect(rows.find((row) => row._tag === "TurnDivider")).toBeUndefined()
+    expect(rows.find((row) => row._tag === "Retry")).toBeDefined()
+  })
+
+  test("a normal (settled) error keeps rendering the Error row, not the interrupted divider", () => {
+    const failed = assistantMessage("msg_assistant", "msg_user", { completed: 20 })
+    failed.error = { name: "UnknownError", data: { message: "boom" } } as AssistantMessage["error"]
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [failed], 0, false, "idle", false)
+
+    expect(rows.find((row) => row._tag === "Error")).toBeDefined()
+    expect(rows.find((row) => row._tag === "TurnDivider")).toBeUndefined()
+  })
+
+  test("the interrupted divider carries a duration derived from the unsettled message's last part activity", () => {
+    const unsettled = assistantMessage("msg_assistant", "msg_user", {})
+    const parts: Part[] = [
+      { ...textPart("part_text", "msg_assistant", "partial output"), time: { start: 5, end: 45 } } as Part,
+    ]
+
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      (messageID) => (messageID === "msg_assistant" ? parts : []),
+      [unsettled],
+      0,
+      false,
+      "idle",
+      false,
+    )
+
+    const divider = rows.find((row) => row._tag === "TurnDivider")
+    expect(divider).toEqual(expect.objectContaining({ label: "interrupted", durationMs: 44 }))
   })
 })
 

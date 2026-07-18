@@ -89,7 +89,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       "/api/wr/health",
       undefined,
       sandboxFetchOptions(c, options),
-    ).catch(() => ({
+    ).catch((): SandboxHealth => ({
       ok: false,
       status: "configured",
       agentType: saved.id,
@@ -110,10 +110,23 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       status: body.ok ? "ready" : body.status ?? "error",
       ready: body.ok ?? false,
       agentType: body.agentType ?? saved.id,
-      activeType: body.agentType ?? harnessKey(saved) ?? saved.id,
+      // The saved harness KEY (access-qualified, e.g. "claude-acp") stays
+      // authoritative for `activeType`. `/api/wr/health` now forwards a live
+      // `agentType` (D1 fix), but that is the base harness id (e.g. "claude")
+      // and would drop the access qualifier the harness dropdown / decode rely
+      // on — keep it as a last-resort fallback only.
+      activeType: harnessKey(saved) ?? body.agentType ?? saved.id,
       activeHarness: saved,
       activeBinary: body.acpBinary ?? harnessBinary(saved) ?? null,
       error: body.error ?? undefined,
+      ...(body.harnessHealth?.status
+        ? {
+            harnessHealth: {
+              status: body.harnessHealth.status,
+              ...(body.harnessHealth.reason ? { reason: body.harnessHealth.reason } : {}),
+            },
+          }
+        : {}),
     })
   } catch (err) {
     return c.json({

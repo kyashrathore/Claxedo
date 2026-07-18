@@ -42,7 +42,7 @@ import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
 import { FirstTurnRecoveryCard } from "@/features/session/onboarding/first-turn-recovery-card"
-import type { FirstTurnRecoveryClass } from "@/features/session/onboarding/first-turn-recovery"
+import type { SessionErrorClass } from "@/features/session/onboarding/first-turn-recovery"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextField } from "@opencode-ai/ui/text-field"
@@ -403,7 +403,7 @@ export function MessageTimeline(props: {
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
-  onFirstTurnRecovery?: (kind: FirstTurnRecoveryClass) => void
+  onFirstTurnRecovery?: (kind: SessionErrorClass) => void
   firstTurnRecovery?: boolean
 }) {
   let touchGesture: number | undefined
@@ -1467,16 +1467,21 @@ export function MessageTimeline(props: {
       }
       case "TurnDivider": {
         const turnDividerRow = row as Accessor<TimelineRowByTag<"TurnDivider">>
+        // D§3.6 / C4: terminal states are a centred hairline divider, a peer of the
+        // "Worked for" fold row — never a card. "interrupted" durationMs (when derivable,
+        // T8) reuses the same formatDuration voice as "Worked for {duration}".
+        const label = () => {
+          if (turnDividerRow().label === "compaction") return language.t("ui.messagePart.compaction")
+          const durationMs = turnDividerRow().durationMs
+          return typeof durationMs === "number"
+            ? language.t("ui.message.interruptedDuration", { duration: formatDuration(durationMs) })
+            : language.t("ui.message.interrupted")
+        }
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-compaction">
-                <MessageDivider
-                  label={language.t(
-                    turnDividerRow().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted",
-                  )}
-                  icon={turnDividerRow().label === "compaction" ? "archive" : undefined}
-                />
+                <MessageDivider label={label()} icon={turnDividerRow().label === "compaction" ? "archive" : undefined} />
               </div>
             </div>
           </TimelineRowFrame>
@@ -1549,7 +1554,7 @@ export function MessageTimeline(props: {
           if (!revert || !id) return
           return Promise.resolve(revert({ sessionID: id, messageID: diffSummaryRow().userMessageID }))
             .then(() => showToast({ title: language.t("ui.message.revertMessage") }))
-            .catch(() => showToast({ title: language.t("common.requestFailed") }))
+            .catch(() => showToast({ title: language.t("common.requestFailed"), variant: "error" }))
         }
         return (
           <TimelineRowFrame row={diffSummaryRow}>

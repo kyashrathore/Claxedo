@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
-  firstTurnRecovery,
-  firstTurnRecoveryClass,
+  sessionRecovery,
+  sessionRecoveryClass,
   firstTurnOutcome,
   firstTurnFunnelEvents,
   shouldShowStarterPrompts,
@@ -16,20 +16,24 @@ describe("first-turn recovery", () => {
 
   test.each([
     ["credential", "Reconnect provider"],
-    ["harness", "Restart harness"],
+    ["harness", "Try again"],
     ["model", "Switch model and retry"],
-    ["workspace", "Retry workspace"],
+    ["workspace", "Retry"],
+    ["session", "Start a new session"],
+    ["unknown", "Try again"],
   ] as const)("maps %s to one recovery action", (kind, label) => {
-    expect(firstTurnRecovery(kind)).toEqual(expect.objectContaining({ kind, label }))
+    expect(sessionRecovery(kind)).toEqual(expect.objectContaining({ kind, label }))
   })
 
   test("reads the server classification and has a legacy-message fallback", () => {
-    expect(firstTurnRecoveryClass({
+    expect(sessionRecoveryClass({
       name: "UnknownError",
       data: { message: "bad token", firstTurnErrorClass: "credential" },
     })).toBe("credential")
-    expect(firstTurnRecoveryClass({ name: "UnknownError", data: { message: "model not found" } })).toBe("model")
-    expect(firstTurnRecoveryClass({ name: "UnknownError", data: { message: "harness_switch_not_supported" } })).toBe("harness")
+    expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "model not found" } })).toBe("model")
+    expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "harness_switch_not_supported" } })).toBe("harness")
+    expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "thread not found: abc" } })).toBe("session")
+    expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "Stream error" } })).toBe("unknown")
   })
 
   test("emits a typed outcome only when the first turn settles", () => {

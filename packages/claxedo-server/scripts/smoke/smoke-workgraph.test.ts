@@ -107,11 +107,11 @@ describe("WorkGraph deployment smoke", () => {
           return Response.json({ ok: true, value: { streamId } })
         }
         if (body.command.type === "create_work_item") {
-          return Response.json({ ok: true, value: { workItemId: "item_1" } })
-        }
-        if (body.command.type === "execute_work_item") {
+          // Execution modes are gone: a user-created Task is born approved and the
+          // continuous drain (nudged by this command) admits it. The Attempt then
+          // surfaces in the snapshot for the smoke to discover.
           executionAdmitted = true
-          return Response.json({ ok: true, value: { attemptId: "attempt_1" } })
+          return Response.json({ ok: true, value: { workItemId: "item_1" } })
         }
         if (body.command.type === "delete_stream") {
           const stream = streams.get(body.command.streamId)
@@ -189,7 +189,15 @@ describe("WorkGraph deployment smoke", () => {
         if (url.searchParams.get("limit") === "1") {
           return Response.json({ records: [{ id: "workgraph_1" }], nextCursor: "cursor_org_a_user_a" })
         }
-        return Response.json({ records: [{ id: "stream_1" }, { id: "item_1" }] })
+        // The continuous drain admitted the approved Task; its Attempt is visible
+        // in the snapshot so the smoke can discover it without an execute command.
+        return Response.json({
+          records: [
+            { id: "stream_1" },
+            { id: "item_1" },
+            ...(executionAdmitted ? [{ recordType: "attempt", id: "attempt_1", workItemId: "item_1", state: "admitted" }] : []),
+          ],
+        })
       }
       return Response.json({ error: "unexpected request" }, { status: 500 })
     }
@@ -252,10 +260,13 @@ describe("WorkGraph deployment smoke", () => {
     for (const pathname of ["/api/workgraph/streams/stream_2", "/api/workgraph/streams/stream_3"]) {
       expect(requests.findLastIndex((entry) => entry.url.pathname === pathname)).toBeLessThan(firstManualReconcile)
     }
+    // The continuous-execution Attempt discovery (snapshot limit=200) is the fast
+    // path; it runs before the concurrent tenant B deletion, which runs before any
+    // manual reconcile.
     const executeRequest = requests.findIndex(
       (entry) =>
-        entry.url.pathname === "/api/workgraph/commands" &&
-        JSON.parse(String(entry.init?.body)).command.type === "execute_work_item",
+        entry.url.pathname === "/api/workgraph/snapshot" &&
+        entry.url.searchParams.get("limit") === "200",
     )
     const tenantBDeleteRequest = requests.findIndex(
       (entry) =>
@@ -263,6 +274,7 @@ describe("WorkGraph deployment smoke", () => {
         authorization(entry.init) === otherUserToken &&
         JSON.parse(String(entry.init?.body)).command.type === "delete_stream",
     )
+    expect(executeRequest).toBeGreaterThanOrEqual(0)
     expect(executeRequest).toBeLessThan(tenantBDeleteRequest)
     expect(tenantBDeleteRequest).toBeLessThan(firstManualReconcile)
     expect(requests.filter((entry) => entry.url.pathname.endsWith("/tokens/convex"))).not.toHaveLength(0)

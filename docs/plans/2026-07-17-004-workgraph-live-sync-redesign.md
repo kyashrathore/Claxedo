@@ -135,9 +135,7 @@ Ownership matrix (no two agents share a file): Wave1 = workgraph + claxedo-serve
 - **Hosted WorkGraph goes from 25s sync to none — ACCEPTED as a deliberate trade.** Hosted composition doesn't use `createLocalEmbeddedWorkGraph`, so it never publishes the doorbell. No shipped hosted customer exists; live hosted sync is the settlement/wakes plan's push channel.
 - **Orphaned `/changes` cursor telemetry (reporter, monitors, env thresholds): DELETE deliberately** — it alerts on a removed surface. (Any piece load-bearing for the tip-watcher stays.)
 
-### Accepted design deviations from §3
-- **Doorbell + ~1s tip watcher, not a pure post-commit doorbell**: `service.execute` is not the only change-row writer (activity, intake, recap, source-planning, attempt settlement, archive append directly). Publishing happens at three points, the third a tip-conditional reconciler (~1s worst-case staleness for those paths; idle cost still zero). Accepted.
-- `packages/protocol` needed no change — the Wave-1 instruction to remove a changes entry was wrong; none existed.
+
 
 ### Real bugs found and fixed during implementation
 - Attention writes never appended change rows (latent pre-existing bug): mark-read/clear from a second client was invisible to any log-derived signal. Now explicitly nudged, with a test proving the log gap was real.

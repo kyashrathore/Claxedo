@@ -40,18 +40,17 @@ Task observability is implemented as a bounded durable ledger. Attempts, evidenc
 
 ### Done
 
-- The personal WorkGraph domain, trusted tuple tenancy, SQLite and Convex adapters, archive/restore, deletion barriers, ordered changes, Attention, notifications, Recaps, Work Sources, Decisions, evidence, and Attempt lifecycle exist with repository coverage.
-- WorkGraph is the app-level destination after Marketplace, with inline Streams and Tasks, Needs you, execution defaults, Stream-scoped environment/repository/base-revision settings, project-directory selection, Recap settings, and focused inspectors.
+- The personal WorkGraph domain, trusted tuple tenancy, SQLite and Convex adapters, archive/restore, deletion barriers, ordered changes, Attention, Work Sources, Decisions, evidence, and Attempt lifecycle exist with repository coverage.
+- WorkGraph is the app-level destination after Marketplace, with inline Streams and Tasks, Needs you, execution defaults, Stream-scoped environment/repository/base-revision settings, project-directory selection, and focused inspectors.
 - Local Stream execution creates project-scoped worktrees and real Sessions; Session links now route through the owning project rather than opening an unscoped shell.
 - WorkGraph change synchronization uses bounded long polling, and opening WorkGraph no longer depends on repeated full snapshots.
-- Notification acknowledgement and clearing are persisted through the backend instead of being browser-only state.
 - GitHub, Linear, and Jira Connections, Source View contracts, webhook/refresh ingestion, candidate staging, source planning, and sync primitives exist without storing provider credentials in WorkGraph.
 - Connections settings now create, edit, pause, refresh, and delete personal GitHub, Linear, and Jira Source Views. Each mapping carries an explicit Stream target, GitHub can infer its cloud repository, Linear and Jira require a selected project, and admission materializes the mapping on the new Stream.
-- Local embedded WorkGraph agent tools and the standalone authenticated MCP expose creation, reads, source admission, execution, retry, cancellation, findings, evidence, Decisions, Recaps, and lifecycle operations.
+- Local embedded WorkGraph agent tools and the standalone authenticated MCP expose creation, reads, source admission, execution, retry, cancellation, findings, evidence, Decisions, and lifecycle operations.
 - Execution capability discovery is tenant-scoped, server-attested, side-effect free on read, and aligned with Session-composer harnesses; Pi does not require a provider selection.
 - Cleanup, integration, isolation, and permitted-tools controls are no longer user-facing WorkGraph execution settings; the selected harness and environment own those concerns.
 - Prompt failures, provisioning failures, child-isolation failures, cancellation, and deletion have durable compensation paths; organization-scoped Connection metadata survives owner deletion.
-- Public event credential-key filtering, Connection-tool Session authority checks, callback timeout/size controls, durable hosted Recap identities, catalog workspace cleanup, real E2E command gating, and legacy migration timestamp conversion are fixed in the current checkout.
+- Public event credential-key filtering, Connection-tool Session authority checks, callback timeout/size controls, catalog workspace cleanup, real E2E command gating, and legacy migration timestamp conversion are fixed in the current checkout.
 - WorkGraph does not form one product-wide DAG. Stream → optional Outcome → Task is a fixed containment hierarchy. Separately, each Stream may have a Task prerequisite DAG used for scheduling: every prerequisite edge connects two Tasks in that Stream, and SQLite and Convex atomically reject self-cycles, direct cycles, transitive cycles, and cross-Stream edges without changing the previous prerequisite set. Outcomes, Attempts, activity, findings, and evidence are not prerequisite-graph vertices.
 - Deterministic GitHub, Linear, and Jira provider journeys pass settings → candidate → admission → execution → sync-back → cleanup through the real local composition.
 - A project chat creates a dependency-ordered multi-Task Stream through real Claxedo MCP, autonomous execution runs every Task in a real project Session, and each transcript reopens inside its owning project.
@@ -206,8 +205,12 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Pending
-  Pending --> Running: Attempt admitted or Session attached
+  [*] --> PendingApproval: Agent-created Task (Staged)
+  [*] --> Pending: Human-created or human-confirmed Task
+  PendingApproval --> Pending: Owner approves
+  PendingApproval --> Abandoned: Owner rejects
+  Pending --> PendingApproval: Agent materially edits approved Task
+  Pending --> Running: Auto-admitted when deps satisfied and Stream active
   Running --> Waiting: Decision or owner action required
   Waiting --> Running: Decision resolved
   Running --> ResultReady: Attempt reports result
@@ -287,7 +290,7 @@ The original U1-U10 delivered the foundation summarized under **Done**. Stable u
   3. Owner deletion removes bindings/checkpoints while organization-owned Connection metadata remains.
   4. Snapshot resume remains stable when activity is appended beneath the cursor.
   5. Archive/export/restore preserves activity ordering and active Session binding.
-  6. Large histories page without N+1 transcript, Recap, Attempt, or evidence reads.
+  6. Large histories page without N+1 transcript, Attempt, or evidence reads.
   7. Updating A to depend on B is rejected atomically when B already reaches A, in both SQLite and Convex, while the previous dependency set remains unchanged.
   8. Archive restore rejects cyclic same-Stream Task prerequisite graphs without materializing partial edges. The current legacy migration imports no prerequisite edges; any future migration that does must apply the same validation.
 - **Verification:** The next adapter-conformance version passes for SQLite and Convex, including restart, deletion, pagination, and archive cases.
@@ -406,7 +409,7 @@ The original U1-U10 delivered the foundation summarized under **Done**. Stable u
   2. A signed user cannot access another organization/user WorkGraph, Session, callback, Source View, or provider receipt.
   3. Hosted autonomous execution advances a multi-wave Stream and opens each real Session transcript.
   4. Killing a worker during prompt, completion, provider sync, and workspace cleanup recovers without duplication or indefinite running state.
-  5. Telemetry exposes candidate lag, Attempt age, failed/retried work, Recap age, provider sync failure, and cleanup compensation.
+  5. Telemetry exposes candidate lag, Attempt age, failed/retried work, provider sync failure, and cleanup compensation.
   6. Rollback and roll-forward preserve additive Convex data and resume background reconciliation.
 - **Verification:** Deployed browser and smoke suites pass, dashboards and alerts are observed, rollback rehearsal succeeds, cleanup is confirmed, and documentation states only proven status.
 

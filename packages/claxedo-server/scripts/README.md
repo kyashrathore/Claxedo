@@ -47,19 +47,7 @@ WORKGRAPH_SMOKE_TOOLS_JSON='[]' \
 bun run smoke:workgraph
 ```
 
-`WORKGRAPH_SMOKE_RECONCILE_TOKEN` is the deployed Worker's
-`CLAXEDO_RUNTIME_ADMIN_TOKEN`; the remaining values must name one deliberately
-configured no-op profile in the live capability catalog. Both organizations and
-both users are explicit release inputs: user A must be a member of organizations
-A and B, user B must be a member of organization A, and the organizations must be
-distinct. The script supplies Clerk's `active_organization_id` when creating each
-test Session; it never selects an organization through a WorkGraph query or
-default. The script uses the protected, selector-free reconcile route to avoid
-waiting for cron, requires
-durable Workspace and Session references on the Attempt result, verifies
-asynchronous cleanup, and revokes all three smoke Sessions before exit.
-Connections, Recaps, and the full browser journey remain separate
-release-acceptance gates.
+
 
 ## `maintenance/`
 

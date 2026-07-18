@@ -26,10 +26,6 @@ crons.interval("sweep stale runtime leases", { minutes: 10 }, internal.sandboxLe
   ready_heartbeat_stale_after_ms: 30 * 60 * 1000,
 })
 
-crons.interval("schedule quiet WorkGraph recaps", { minutes: 15 }, internal.workgraphBackground.scheduleDueRecaps, {
-  limit: 100,
-})
-
 // D5 billing reconciliation sweep, Convex half (launch plan 012 §1 / ADR 014
 // §3): Polar disables a webhook endpoint after 10 consecutive failed
 // deliveries, so mirror-via-webhook needs a truth-keeper. This cron FLAGS

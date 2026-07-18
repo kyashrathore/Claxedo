@@ -130,6 +130,54 @@
   outline-offset: 1px;
 }
 
+/* Staged tasks lead the panel in their own per-stream group so the bulk approve
+   is scoped and the rows read as a distinct "awaiting approval" set. */
+.workgraph-staged-group {
+  border-bottom: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
+}
+
+.workgraph-staged-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem 0.2rem;
+}
+
+.workgraph-staged-conflict {
+  padding: 0 0.85rem 0.4rem;
+  font-size: 0.6875rem;
+}
+
+.workgraph-staged-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.workgraph-staged-open {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  outline: none;
+}
+
+.workgraph-waiting-row.is-staged {
+  cursor: default;
+}
+
+.workgraph-waiting-row.is-staged:hover {
+  background: transparent;
+}
+
+.workgraph-waiting-row.is-conflicted {
+  background: color-mix(in srgb, var(--icon-critical-base) 8%, transparent);
+}
+
+.workgraph-waiting-row.is-conflicted .workgraph-waiting-row-meta {
+  color: var(--icon-critical-base);
+}
+
 .workgraph-waiting-list {
   display: flex;
   flex-direction: column;
@@ -262,45 +310,6 @@
 /* Used by the waiting-panel intro head, not the card shell. */
 .workgraph-card-gap {
   flex: 1;
-}
-
-.workgraph-card-recap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  width: 100%;
-  margin-top: 0.35rem;
-  padding: 0.5rem 0.55rem;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-md);
-  background: var(--surface-base);
-  text-align: left;
-  transition: border-color 110ms ease;
-}
-
-.workgraph-card-recap:hover {
-  border-color: var(--border-strong-base);
-}
-
-.workgraph-card-recap:focus-visible {
-  outline: 2px solid var(--border-selected);
-  outline-offset: 1px;
-}
-
-.workgraph-card-recap-label {
-  font-family: var(--font-family-mono);
-  font-size: 0.5625rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.workgraph-card-recap-body {
-  font-size: 0.75rem;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .workgraph-card-rows {

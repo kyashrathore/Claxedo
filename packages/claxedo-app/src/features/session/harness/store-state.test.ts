@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  harnessHealthReadiness,
   harnessStatusPatch,
   harnessSwitchStartPatch,
   initialHarnessStoreState,
@@ -177,6 +178,47 @@ describe("harness store state projectors", () => {
     expect(harnessStatusPatch({
       data: { type: "opencode", ready: false },
     })).toMatchObject({ harnessMode: "opencode", readiness: "ready" })
+
+    // A live-but-degraded harness (`/api/wr/health` reports ok:true while
+    // harnessHealth.status is degraded/unavailable — process lost + recovering)
+    // maps to the "degraded" readiness that drives the composer health peek +
+    // Send gate (T4). This finally exercises the union member at selection.ts:9.
+    expect(harnessStatusPatch({
+      data: { type: "codex-app-server", status: "ready", ready: true, harnessHealth: { status: "degraded", reason: "harness_process_lost" } },
+    })).toMatchObject({ harness: "codex-app-server", readiness: "degraded" })
+    expect(harnessStatusPatch({
+      data: { type: "codex-app-server", status: "ready", ready: true, harnessHealth: { status: "unavailable" } },
+    })).toMatchObject({ readiness: "degraded" })
+    // A healthy harnessHealth report does not degrade a ready harness.
+    expect(harnessStatusPatch({
+      data: { type: "codex-app-server", status: "ready", ready: true, harnessHealth: { status: "ok" } },
+    })).toMatchObject({ readiness: "ready" })
+    // A hard failure still wins over degraded health.
+    expect(harnessStatusPatch({
+      data: { type: "codex-app-server", status: "error", harnessHealth: { status: "degraded" } },
+    })).toMatchObject({ readiness: "error" })
+    // OpenCode never degrades even if a stray health frame arrives.
+    expect(harnessStatusPatch({
+      data: { type: "opencode", ready: true, harnessHealth: { status: "degraded" } },
+    })).toMatchObject({ harnessMode: "opencode", readiness: "ready" })
+  })
+
+  test("derives the standing health-probe readiness transition (T4)", () => {
+    // Degraded/unavailable health degrades a settled harness.
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready", health: "degraded" })).toBe("degraded")
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready", health: "unavailable" })).toBe("degraded")
+    // Recovery: healthy health clears a prior degraded state back to ready.
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "degraded", health: "ok" })).toBe("ready")
+    // No-op transitions leave readiness untouched (undefined).
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready", health: "ok" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "degraded", health: "degraded" })).toBe("degraded")
+    // The probe never stomps a state owned by hydration / hard failure.
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "error", health: "degraded" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "polling", health: "degraded" })).toBeUndefined()
+    // OpenCode never degrades.
+    expect(harnessHealthReadiness({ harness: "opencode", current: "ready", health: "degraded" })).toBeUndefined()
+    // Missing health is a no-op.
+    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready" })).toBeUndefined()
   })
 
   test("keeps hydration and switch patches aligned with options policy", () => {

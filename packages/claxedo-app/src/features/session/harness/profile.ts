@@ -5,7 +5,9 @@ export { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
 
 export type HarnessType = HarnessId
 export type OptionsSource = "harness" | "catalog" | "empty"
-export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string }
+export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
+export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
+export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
 export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<{ id: string; name: string }> }
 export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsSource; stale: boolean }
 
@@ -91,6 +93,18 @@ export function decodeHarnessState(value: unknown): HarnessState | undefined {
     ...(typeof raw.error === "string" ? { error: raw.error } : {}),
     ...(typeof raw.ready === "boolean" ? { ready: raw.ready } : {}),
     ...(typeof raw.workspaceId === "string" ? { workspaceId: raw.workspaceId } : {}),
+    ...(decodeHarnessHealth(raw.harnessHealth) ? { harnessHealth: decodeHarnessHealth(raw.harnessHealth)! } : {}),
+  }
+}
+
+function decodeHarnessHealth(value: unknown): HarnessHealth | undefined {
+  const raw = record(value)
+  if (!raw) return undefined
+  const status = raw.status === "ok" || raw.status === "degraded" || raw.status === "unavailable" ? raw.status : undefined
+  if (!status) return undefined
+  return {
+    status,
+    ...(typeof raw.reason === "string" ? { reason: raw.reason } : {}),
   }
 }
 

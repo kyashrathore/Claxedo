@@ -36,8 +36,6 @@ describe("hosted WorkGraph reconciliation admin route", () => {
         results: 1,
         controls: 1,
         intake: 0,
-        backgroundLaunched: 1,
-        backgroundResults: 0,
         sourcePlansLaunched: 1,
         sourcePlanResults: 1,
       },
@@ -110,8 +108,6 @@ function result() {
     background: {
       controls: [{}],
       intake: { completed: 0 },
-      launched: [{}],
-      results: [],
       sourcePlanning: { launched: [{}], results: [{}] },
     },
   }

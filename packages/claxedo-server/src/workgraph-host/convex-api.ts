@@ -26,10 +26,6 @@ type WorkGraphConvexApi = {
     readWebhookForService: ConvexQuery
     executeWebhookForService: ConvexMutation
   }
-  workgraphNotifications: {
-    readForService: ConvexQuery
-    executeForService: ConvexMutation
-  }
   workgraphArchive: {
     exportForService: ConvexQuery
     restoreForService: ConvexMutation

@@ -189,110 +189,9 @@ describe("embedded local WorkGraph v2", () => {
       .toEqual({ count: 0 })
   })
 
-  it("keeps a due Recap retryable without publishing when no ordinary Session gateway is configured", async () => {
-    const embedded = await composition(databaseFile())
-    const app = new Hono()
-    mountEmbeddedWorkGraph(app, embedded)
-    await command(app, "recap_stream", {
-      version: 1,
-      type: "create_stream",
-      title: "Quiet launch",
-      recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
-    })
-    embedded.database.prepare("UPDATE wg_v2_events SET occurred_at = ?").run(Date.now() - 8 * 60 * 60 * 1000)
-    const context = {
-      organizationId: "local" as never,
-      ownerUserId: "local" as never,
-      actor: { type: "system" as const, id: "recap_worker" as never },
-      requestId: "recap_tick" as never,
-      access: { mode: "owner" as const },
-    }
-    expect(await embedded.recaps.scheduleDue(context)).toBe(1)
-    await expect(embedded.recaps.runDue(context)).resolves.toMatchObject({
-      state: "failed",
-      error: expect.objectContaining({ message: "Recap generation requires an ordinary Session gateway" }),
-    })
-    expect(await (await app.request("/api/workgraph/snapshot", localAuth())).json()).toMatchObject({
-      records: expect.not.arrayContaining([expect.objectContaining({ recordType: "recap" })]),
-    })
-  })
 
-  it("generates local Recaps through the normal Session V2 gateway and publishes its actionable notification", async () => {
-    const admissions: Array<Record<string, unknown>> = []
-    let streamId = ""
-    const embedded = await createLocalEmbeddedWorkGraph({
-      database: trackedDatabase(databaseFile()),
-      execution: terminalExecution(),
-      executionCapabilities: localExecutionCapabilities(),
-      recaps: {
-        directory: "/repo",
-        sessions: {
-          async admit(input) { admissions.push(input); return String(input.sessionId) },
-          async cancel() {},
-          async result() {
-            return {
-              state: "succeeded",
-              summary: JSON.stringify({ summary: "DNS approval remains.", actionableReferences: [{ type: "stream", id: streamId }] }),
-              artifacts: [],
-            }
-          },
-        },
-      },
-    })
-    const app = new Hono()
-    mountEmbeddedWorkGraph(app, embedded)
-    await command(app, "recap_session_defaults", {
-      version: 1,
-      type: "update_workgraph_defaults",
-      expectedVersion: 1,
-      defaults: {
-        execution: {
-          harness: "claxedo-v2",
-          agent: "build",
-          model: { providerId: "openai", modelId: "gpt-5" },
-          effort: "high",
-        },
-        recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
-      },
-    })
-    const created = await command(app, "recap_session_stream", {
-      version: 1,
-      type: "create_stream",
-      title: "Session-backed recap",
-      execution: {
-        environment: { kind: "local_worktree", directory: "/repo" },
-        repository: { baseRevision: "HEAD" },
-      },
-      recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
-    })
-    streamId = ((await created.json()) as { value: { streamId: string } }).value.streamId
-    embedded.database.prepare("UPDATE wg_v2_events SET occurred_at = ? WHERE stream_id = ?").run(Date.now() - 8 * 60 * 60 * 1000, streamId)
-    const context = {
-      organizationId: "local" as never,
-      ownerUserId: "local" as never,
-      actor: { type: "system" as const, id: "recap_worker" as never },
-      requestId: "recap_session_tick" as never,
-      access: { mode: "owner" as const },
-    }
-    expect(await embedded.recaps.scheduleDue(context)).toBe(1)
-    await expect(embedded.recaps.runDue(context)).resolves.toMatchObject({ state: "completed" })
-    expect(admissions).toEqual([expect.objectContaining({
-      sessionId: expect.stringMatching(/^ses_workgraph_recap_job_/),
-      directory: "/repo",
-      profile: expect.objectContaining({ model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [] }),
-      prompt: expect.stringContaining("Activity range: 1-1"),
-    })])
-    expect(await (await app.request("/api/workgraph/snapshot", localAuth())).json()).toMatchObject({
-      records: expect.arrayContaining([expect.objectContaining({
-        recordType: "recap",
-        summary: "DNS approval remains.",
-        generation: expect.objectContaining({ method: "agent_session", sessionId: admissions[0]?.sessionId }),
-      })]),
-    })
-    expect(await (await app.request("/api/workgraph/notifications?state=unread", localAuth())).json()).toMatchObject({
-      notifications: [expect.objectContaining({ streamId, state: "unread" })],
-    })
-  })
+
+
 
   it("mounts owner-scoped Source View and intake routes through shared Connections", async () => {
     const database = trackedDatabase(databaseFile())
@@ -501,7 +400,9 @@ describe("embedded local WorkGraph v2", () => {
       completionContract: { version: 1, mode: "all", requirements: [{ id: "proof", kind: "test", description: "Tests pass" }] },
     })
     const workItemId = ((await item.json()) as { value: { workItemId: string } }).value.workItemId
-    expect((await command(app, "operation_execute", { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" })).status).toBe(200)
+    // Execution modes are gone: a local (owner) create is born `pending` (approved),
+    // and the embedded SQLite drain that runs after every command admits and
+    // launches it with no execute command.
     await embedded.reconcile({ organizationId: "local" as never, ownerUserId: "local" as never, actor: { type: "system", id: "reconciler" as never }, requestId: "reconcile" as never, access: { mode: "owner" } })
     const beforeCompletion = await app.request("/api/workgraph/snapshot", localAuth())
     expect(((await beforeCompletion.json()) as { records: Array<{ recordType: string; state?: string }> }).records)

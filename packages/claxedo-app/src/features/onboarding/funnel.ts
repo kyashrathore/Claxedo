@@ -2,7 +2,7 @@ import type { OnboardingStepId } from "./registry"
 import type { OnboardingSurface } from "./state"
 import type { OnboardingGoFurtherCardId } from "./go-further"
 
-type FirstTurnFailureClass = "credential" | "harness" | "model" | "workspace"
+type FirstTurnFailureClass = "credential" | "harness" | "model" | "workspace" | "session" | "unknown"
 
 export type OnboardingFunnelEvent =
   | { name: "signup" }

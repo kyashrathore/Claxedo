@@ -5,6 +5,7 @@ import { createWorkGraphClient } from "./api"
 import { WorkGraphContent } from "./workgraph-content"
 import { StreamTasksPanelBody } from "./stream-tasks-panel"
 import { WorkGraphProjectGroups } from "./workgraph-overview"
+import { taskStatusLabel } from "./work-item-rows"
 
 // Persisted UI state (if any) lives in localStorage; reset it so each test
 // starts from a first-visit default rather than a prior test's leftovers.
@@ -12,10 +13,23 @@ beforeEach(() => localStorage.clear())
 afterEach(() => cleanup())
 
 describe("WorkGraph overview actions", () => {
-  test("opens a pending Task inspector and starts it autonomously", async () => {
+  test("opens an approved pending Task inspector as read-only — will run automatically, no Run button", async () => {
+    const request = workGraphRequest({ records: () => [stream, outcome, pendingItem], command: () => success() })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: `Open task ${pendingItem.title}` }))
+    // Launch is automatic: the inspector reports where the task stands and never
+    // offers a Run button (the old execute_work_item path is deleted).
+    expect(await screen.findByText("Ready — will run automatically")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Run task" })).toBeNull()
+  })
+
+  test("approves a staged Task from its row with the exact approve_work_item command", async () => {
     const commands: Array<Record<string, unknown>> = []
     const request = workGraphRequest({
-      records: () => [stream, outcome, pendingItem],
+      records: () => [stream, outcome, stagedItem],
       command: (command) => {
         commands.push(command)
         return success()
@@ -25,16 +39,39 @@ describe("WorkGraph overview actions", () => {
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    await fireEvent.click(await screen.findByRole("button", { name: `Open task ${pendingItem.title}` }))
-    expect(await screen.findByText("No attempt has run yet.")).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole("button", { name: "Run task" }))
+    await fireEvent.click(await screen.findByRole("button", { name: `Approve task ${stagedItem.title}` }))
+    await waitFor(() =>
+      expect(commands).toContainEqual({ version: 1, type: "approve_work_item", workItemId: stagedItem.id, expectedVersion: 1 }),
+    )
+  })
 
-    await waitFor(() => expect(commands).toContainEqual({
-      version: 1,
-      type: "execute_work_item",
-      workItemId: pendingItem.id,
-      executionMode: "autonomous",
-    }))
+  test("rejects a staged Task only after a required reason is supplied", async () => {
+    const commands: Array<Record<string, unknown>> = []
+    const request = workGraphRequest({
+      records: () => [stream, outcome, stagedItem],
+      command: (command) => {
+        commands.push(command)
+        return success()
+      },
+    })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: `Reject task ${stagedItem.title}` }))
+    const reason = await screen.findByRole("textbox", { name: `Reject reason for ${stagedItem.title}` })
+    await fireEvent.input(reason, { target: { value: "Duplicate of an existing task" } })
+    await fireEvent.click(screen.getByRole("button", { name: `Confirm reject ${stagedItem.title}` }))
+
+    await waitFor(() =>
+      expect(commands).toContainEqual({
+        version: 1,
+        type: "reject_work_item",
+        workItemId: stagedItem.id,
+        expectedVersion: 1,
+        reason: "Duplicate of an existing task",
+      }),
+    )
   })
 
   test("describes the Stream-owned execution target without inheritance language", async () => {
@@ -343,36 +380,9 @@ describe("WorkGraph overview actions", () => {
     expect(attemptReads).toEqual([])
   })
 
-  test("shows a Stream-owned recap marker only when a latest recap exists, opening a focus/hover preview", async () => {
-    let recapReads = 0
-    const baseRequest = workGraphRequest({ records: () => [streamWithRecap], command: () => success() })
-    const request = (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
-      if (url.pathname.includes("/recaps/")) recapReads += 1
-      return baseRequest(input, init)
-    }
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
 
-    const chip = await screen.findByRole("button", { name: "Latest recap for Ship Claxedo cloud" })
-    // Hover and keyboard focus on the same mounted trigger share the one lazy read.
-    fireEvent.mouseEnter(chip)
-    fireEvent.focus(chip)
-    expect(await screen.findByText("Shipped idempotency keys and cleaned up retries.")).toBeInTheDocument()
-    expect(screen.getByText(/2 actionable refs/)).toBeInTheDocument()
-    expect(recapReads).toBe(1)
-  })
 
-  test("renders no recap marker for a stream without a latest recap", async () => {
-    const request = workGraphRequest({ records: () => [stream], command: () => success() })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
 
-    await screen.findByText("Ship Claxedo cloud")
-    expect(screen.queryByRole("button", { name: /Latest recap for/ })).toBeNull()
-  })
 
   test("names the inline Add task input for its Stream instead of leaving it placeholder-only", async () => {
     const request = workGraphRequest({ records: () => [stream], command: () => success() })
@@ -443,7 +453,7 @@ describe("WorkGraph overview actions", () => {
     expect(await screen.findByRole("textbox", { name: "Add task to Claxedo cloud is live" })).toBeInTheDocument()
   })
 
-  test("executes a Stream's ready batch once with the exact supervised command", async () => {
+  test("pauses an active Stream with the exact set_stream_lifecycle command", async () => {
     const commands: Array<Record<string, unknown>> = []
     const request = workGraphRequest({
       records: () => [stream, outcome, pendingItem],
@@ -456,103 +466,59 @@ describe("WorkGraph overview actions", () => {
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    // The ready batch (a pending item with no incomplete dependencies) makes the
-    // Stream executable, so the compact trigger appears next to its row controls.
-    await fireEvent.click(await screen.findByRole("button", { name: "Execute stream Ship Claxedo cloud" }))
-    await fireEvent.click(await screen.findByRole("menuitem", { name: "Supervised" }))
-
-    // Exactly the supervised mode — never an implicit default, never autonomous.
+    // Pause is THE launch control now — no execute popover exists.
+    expect(screen.queryByRole("button", { name: "Execute stream Ship Claxedo cloud" })).toBeNull()
+    await fireEvent.click(await screen.findByRole("button", { name: "Pause stream Ship Claxedo cloud" }))
     await waitFor(() =>
       expect(commands).toEqual([
-        { version: 1, type: "execute_stream", streamId: "stream_1", executionMode: "supervised" },
+        { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "paused", reason: "Paused from overview" },
       ]),
     )
-    expect(commands.some((command) => command.executionMode === "autonomous")).toBe(false)
   })
 
-  test("executes a Stream autonomously with the exact autonomous command", async () => {
-    const commands: Array<Record<string, unknown>> = []
-    const request = workGraphRequest({
-      records: () => [stream, outcome, pendingItem],
-      command: (command) => {
-        commands.push(command)
-        return success()
-      },
-    })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
-
-    await fireEvent.click(await screen.findByRole("button", { name: "Execute stream Ship Claxedo cloud" }))
-    await fireEvent.click(await screen.findByRole("menuitem", { name: "Autonomous" }))
-
-    await waitFor(() =>
-      expect(commands).toEqual([
-        { version: 1, type: "execute_stream", streamId: "stream_1", executionMode: "autonomous" },
-      ]),
-    )
-    expect(commands.some((command) => command.executionMode === "supervised")).toBe(false)
-  })
-
-  test("clicking the execute trigger opens its menu without disturbing the card", async () => {
-    const request = workGraphRequest({ records: () => [stream, outcome, pendingItem], command: () => success() })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
-
-    // The item is visible in the card's task preview; clicking the trigger must
-    // open the menu, not collapse the card's tasks out from under it.
-    expect(await screen.findByText("Remove obsolete setup")).toBeInTheDocument()
-    await fireEvent.click(await screen.findByRole("button", { name: "Execute stream Ship Claxedo cloud" }))
-    expect(await screen.findByRole("menu", { name: "Execute stream Ship Claxedo cloud" })).toBeInTheDocument()
-    expect(screen.getByText("Remove obsolete setup")).toBeInTheDocument()
-  })
-
-  test("offers no execute trigger when no Work Item is a ready batch member", async () => {
-    // The only task is already active, so there is no pending, dependency-free
-    // Work Item to admit — execution is not semantically allowed.
-    const request = workGraphRequest({ records: () => [stream, outcome, activeItem], command: () => success() })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
-
-    await screen.findByText("Deploy production")
-    expect(screen.queryByRole("button", { name: "Execute stream Ship Claxedo cloud" })).toBeNull()
-  })
-
-  test("offers no execute trigger while the ready item waits on an incomplete dependency", async () => {
-    const blocker = { ...pendingItem, id: "item_blocker", title: "Provision cluster", state: "active" as const }
-    const blocked = { ...pendingItem, id: "item_blocked", title: "Deploy service", dependencyIds: ["item_blocker"] }
-    const request = workGraphRequest({ records: () => [stream, outcome, blocker, blocked], command: () => success() })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
-
-    // The pending item's dependency is not completed, so the batch is not ready.
-    await screen.findByText("Deploy service")
-    expect(screen.queryByRole("button", { name: "Execute stream Ship Claxedo cloud" })).toBeNull()
-  })
-
-  test("offers no execute trigger for a paused Stream even with a ready batch", async () => {
+  test("resumes a paused Stream with the exact set_stream_lifecycle command and marks it paused", async () => {
     const pausedStream = { ...stream, lifecycleState: "paused" as const }
-    const request = workGraphRequest({ records: () => [pausedStream, outcome, pendingItem], command: () => success() })
+    const commands: Array<Record<string, unknown>> = []
+    const request = workGraphRequest({
+      records: () => [pausedStream, outcome, pendingItem],
+      command: (command) => {
+        commands.push(command)
+        return success()
+      },
+    })
     render(() =>
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    await screen.findByText("Ship Claxedo cloud")
-    expect(screen.queryByRole("button", { name: "Execute stream Ship Claxedo cloud" })).toBeNull()
+    // A paused Stream is load-bearing: the card names it and its approved ready
+    // tasks read "Ready · paused" rather than "Queued".
+    expect(await screen.findByText("Paused")).toBeInTheDocument()
+    expect(screen.getByText("Ready · paused")).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("button", { name: "Resume stream Ship Claxedo cloud" }))
+    await waitFor(() =>
+      expect(commands).toEqual([
+        { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "active", reason: "Resumed from overview" },
+      ]),
+    )
   })
+})
 
-  test("exposes the lazy recap popover with a stable accessible role and name", async () => {
-    const request = workGraphRequest({ records: () => [streamWithRecap], command: () => success() })
-    render(() =>
-      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
-    )
-
-    fireEvent.focus(await screen.findByRole("button", { name: "Latest recap for Ship Claxedo cloud" }))
-    // Stable regardless of the loading/error/loaded content the popover shows inside.
-    expect(await screen.findByRole("group", { name: "Latest recap" })).toBeInTheDocument()
+describe("taskStatusLabel six-label truth table", () => {
+  test.each([
+    ["pending_approval", true, "staged"],
+    ["pending_approval", false, "staged"],
+    ["pending", false, "waiting"],
+    ["pending", true, "ready"],
+    ["active", true, "running"],
+    ["result_ready", true, "needs-you"],
+    ["review_needed", true, "needs-you"],
+    ["integration_needed", true, "needs-you"],
+    ["blocked", true, "needs-you"],
+    ["verification_failed", true, "needs-you"],
+    ["failed", true, "needs-you"],
+    ["completed", true, "done"],
+  ] as const)("%s with depsComplete=%s ⇒ %s", (state, depsComplete, expected) => {
+    expect(taskStatusLabel(state, depsComplete)).toBe(expected)
   })
 })
 
@@ -561,8 +527,8 @@ describe("WorkGraph project grouping", () => {
     environment: { kind: "local_worktree" as const, directory },
     repository: { baseRevision: "dev" },
   })
-  const leadStream = { ...stream, id: "stream_1", title: "Ship Claxedo cloud", executionDefaults: targeted("/Users/me/claxedo"), activity: { lastActivityAt: 2, recapDueAt: 2 } }
-  const secondStream = { ...stream, id: "stream_2", title: "Migrate billing", executionDefaults: targeted("/Users/me/billing"), activity: { lastActivityAt: 1, recapDueAt: 2 } }
+  const leadStream = { ...stream, id: "stream_1", title: "Ship Claxedo cloud", executionDefaults: targeted("/Users/me/claxedo"), activity: { lastActivityAt: 2 } }
+  const secondStream = { ...stream, id: "stream_2", title: "Migrate billing", executionDefaults: targeted("/Users/me/billing"), activity: { lastActivityAt: 1 } }
 
   test("groups Streams under one static header per Project with every card visible", async () => {
     const request = workGraphRequest({ records: () => [leadStream, secondStream], command: () => success() })
@@ -591,40 +557,44 @@ describe("WorkGraph project grouping", () => {
     expect(screen.queryByRole("region", { name: "Project billing" })).toBeNull()
   })
 
-  test("orders a card's task preview by lifecycle bucket and summarizes it in the footer", async () => {
-    const staged = { ...pendingItem, id: "item_staged", title: "Draft the plan", outcomeId: undefined }
-    const secondStaged = { ...staged, id: "item_staged_2", title: "Write the docs" }
-    const running = { ...staged, id: "item_running", title: "Ship the API", state: "active" as const }
-    const blocked = { ...staged, id: "item_blocked", title: "Unblock the deploy", state: "blocked" as const }
-    const done = { ...staged, id: "item_done", title: "Land the schema", state: "completed" as const }
+  test("orders a card's task preview by status and summarizes the full breakdown in the footer", async () => {
+    // A genuinely staged task (awaiting approval), two approved ready tasks
+    // (pending, no incomplete deps), one running, one needs-you, one done.
+    const staged = { ...pendingItem, id: "item_pa", title: "Draft the plan", state: "pending_approval" as const, outcomeId: undefined }
+    const ready = { ...pendingItem, id: "item_ready", title: "Ship the API", outcomeId: undefined }
+    const running = { ...ready, id: "item_running", title: "Cut the release", state: "active" as const }
+    const needsYou = { ...ready, id: "item_blocked", title: "Unblock the deploy", state: "blocked" as const }
+    const done = { ...ready, id: "item_done", title: "Land the schema", state: "completed" as const }
     const request = workGraphRequest({
-      records: () => [stream, done, staged, running, secondStaged, blocked],
+      records: () => [stream, done, staged, running, ready, needsYou],
       command: () => success(),
     })
     render(() =>
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
-    // Preview order: needs-you, in progress, then the staged queue — the done
-    // task is pushed past the 4-row preview and lives behind "Show 1 more".
+    // Preview order: needs-you, running, staged, ready — the done task is pushed
+    // past the 4-row preview and lives behind "Show 1 more".
     await screen.findByText("Unblock the deploy")
     const rows = screen.getAllByRole("button", { name: /^Open task / })
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
       "Open task Unblock the deploy",
-      "Open task Ship the API",
+      "Open task Cut the release",
       "Open task Draft the plan",
-      "Open task Write the docs",
+      "Open task Ship the API",
     ])
-    // The lifecycle folds behind the stack glyph — the total on the button, a
-    // row per bucket in the fan, and the same breakdown in the button's label
-    // for anyone who never hovers.
+    // The full breakdown folds behind the stack glyph — done/total on the button,
+    // a row per non-empty segment in the fan, and the same breakdown in the
+    // button's label (staged · ready · waiting · running · needs you · done).
     expect(
-      screen.getByRole("button", { name: "Task breakdown for Ship Claxedo cloud: 2 staged, 1 in progress, 1 done" }),
+      screen.getByRole("button", { name: "Task breakdown for Ship Claxedo cloud: 1 staged, 1 ready, 1 running, 1 needs you, 1 done" }),
     ).toBeInTheDocument()
-    expect(screen.getByText("2 staged")).toBeInTheDocument()
-    expect(screen.getByText("1 in progress")).toBeInTheDocument()
-    expect(screen.getByText("1 done")).toBeInTheDocument()
+    expect(screen.getByText("1 staged")).toBeInTheDocument()
+    expect(screen.getByText("1 ready")).toBeInTheDocument()
+    expect(screen.getByText("1 running")).toBeInTheDocument()
     expect(screen.getByText("1 needs you")).toBeInTheDocument()
+    // Staged + needs-you both block on the owner, so the pill folds them into one.
+    expect(screen.getByText("2 need you")).toBeInTheDocument()
     // The overflow continues the task list rather than reporting from the footer.
     expect(screen.getByRole("button", { name: "All tasks for Ship Claxedo cloud" })).toHaveTextContent("Show 1 more")
   })
@@ -650,9 +620,7 @@ function workGraphRequest(input: {
     const url = new URL(typeof request === "string" ? request : request instanceof URL ? request : request.url)
     const pathname = url.pathname
     if (pathname.includes("/attention")) return Response.json({ items: [], total: 0, hasMore: false })
-    if (pathname.includes("/recaps/")) return Response.json(recap)
     if (pathname.includes("/attempts/") && input.attempt) return Response.json(input.attempt(pathname.split("/").at(-1)!))
-    if (pathname.endsWith("/notifications")) return Response.json({ notifications: [], hasMore: false })
     if (pathname.endsWith("/evidence")) return Response.json({ evidence: [], hasMore: false })
     if (pathname.includes("/work-items/") && pathname.endsWith("/activity")) {
       return Response.json({ entries: [], hasMore: false })
@@ -678,7 +646,7 @@ function workGraphRequest(input: {
         updatedAt: 1,
         provenance: { actor: { type: "user", id: "user_1" } },
         id: "workgraph_default",
-        defaults: { execution: {}, recap: {} },
+        defaults: { execution: {} },
       })
     if (pathname.endsWith("/commands")) {
       const body = JSON.parse(String(init?.body)) as { command: Record<string, unknown> }
@@ -718,42 +686,11 @@ const stream = {
   visibility: "visible" as const,
   pinned: false,
   executionDefaults: {},
-  recapDefaults: {},
-  activity: { lastActivityAt: 1, recapDueAt: 2 },
+  activity: { lastActivityAt: 1 },
   durableEffectCount: 0,
   sourceRevisionRefs: [],
 }
 const durableStream = { ...stream, durableEffectCount: 2 }
-const streamWithRecap = {
-  ...stream,
-  activity: { lastActivityAt: 1, recapDueAt: 2, lastRecapId: "recap_1" },
-}
-const recap = {
-  recordType: "recap" as const,
-  schemaVersion: 1 as const,
-  ownerUserId: "user_1",
-  version: 1,
-  createdAt: 1,
-  updatedAt: 1,
-  provenance,
-  id: "recap_1",
-  streamId: "stream_1",
-  activityRange: { fromSequence: 1, toSequence: 5, quietSince: 10 },
-  summary: "Shipped idempotency keys and cleaned up retries.",
-  actionableReferences: [
-    { type: "work_item", id: "item_1" },
-    { type: "attempt", id: "attempt_1" },
-  ],
-  generation: {
-    state: "succeeded",
-    model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" },
-    effort: "high",
-    generatedAt: 1,
-    method: "agent_session",
-    sessionId: "session_1",
-  },
-  sourceRevisionRefs: [],
-}
 const outcome = {
   recordType: "outcome" as const,
   schemaVersion: 1 as const,
@@ -802,6 +739,7 @@ const pendingItem = {
   evidenceIds: [],
 }
 const activeItem = { ...pendingItem, id: "item_active", title: "Deploy production", state: "active" as const }
+const stagedItem = { ...pendingItem, id: "item_pa", title: "Draft the migration", state: "pending_approval" as const }
 const runningAttempt = {
   recordType: "attempt" as const,
   schemaVersion: 1 as const,

@@ -3,7 +3,7 @@
  *
  * The editor works in ProseMirror/Tiptap docs, but callers persist a plain
  * markdown string (e.g. a stream description used across MCP tools, summaries
- * and recaps). prosemirror-markdown does the heavy lifting; we only re-key its
+ * and summaries). prosemirror-markdown does the heavy lifting; we only re-key its
  * default node/mark handlers to Tiptap's StarterKit + Link schema names
  * (`codeBlock` not `code_block`, `bold` not `strong`, …).
  */

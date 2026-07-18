@@ -24,15 +24,12 @@ const workItem = attention({
   // @ts-expect-error test fixture
   record: { id: "item_1", state: "blocked", title: "Backfill invoices", dependencyIds: ["dep"], version: 1 },
 })
-const recapItem = attention({
-  kind: "recap_notification",
-  id: "notif_1",
+const stagedItem = attention({
+  kind: "work_item",
+  id: "item_pa",
   // @ts-expect-error test fixture
-  notification: { id: "notif_1", version: 1 },
-  // @ts-expect-error test fixture
-  recap: { id: "recap_1", summary: "Idempotency keys shipped in PR #482.", actionableReferences: [{ type: "work_item", id: "i1" }, { type: "attempt", id: "a1" }] },
+  record: { id: "item_pa", state: "pending_approval", title: "Draft the plan", dependencyIds: [], version: 3, streamId: "stream_1" },
 })
-
 type BodyOverrides = Partial<Parameters<typeof WaitingPanelBody>[0]>
 function body(items: AttentionItem[], overrides: BodyOverrides = {}) {
   const base = {
@@ -53,10 +50,9 @@ function body(items: AttentionItem[], overrides: BodyOverrides = {}) {
 
 describe("WaitingPanelBody", () => {
   test("renders a row per attention item with its kind tag", () => {
-    render(() => body([decisionItem, workItem, recapItem]))
+    render(() => body([decisionItem, workItem]))
     expect(screen.getByText("Which auth strategy?")).toBeInTheDocument()
     expect(screen.getByText("Backfill invoices")).toBeInTheDocument()
-    expect(screen.getByText("Actionable stream recap")).toBeInTheDocument()
     expect(screen.getByText("blocked")).toBeInTheDocument()
   })
 
@@ -116,6 +112,55 @@ describe("WaitingPanelBody", () => {
   })
 })
 
+describe("WaitingPanelBody — staged approval", () => {
+  test("renders staged rows with inline Approve/Reject and a per-stream bulk approve", () => {
+    render(() => body([stagedItem], { onApprove: () => {}, onReject: () => {}, onApproveAllStaged: () => {} }))
+    expect(screen.getByText("Draft the plan")).toBeInTheDocument()
+    // The verb distinguishes staged from result-review.
+    expect(screen.getByText("Approve to run")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Approve all staged (1)" })).toBeInTheDocument()
+  })
+
+  test("bulk approve hands the caller the stream id and its exact staged items", async () => {
+    const onApproveAllStaged = vi.fn()
+    render(() => body([stagedItem], { onApprove: () => {}, onReject: () => {}, onApproveAllStaged }))
+    await fireEvent.click(screen.getByRole("button", { name: "Approve all staged (1)" }))
+    expect(onApproveAllStaged).toHaveBeenCalledTimes(1)
+    expect(onApproveAllStaged.mock.calls[0][0]).toBe("stream_1")
+    expect(onApproveAllStaged.mock.calls[0][1]).toEqual([stagedItem])
+  })
+
+  test("surfaces a partial bulk conflict and flags the conflicted row, which stays staged", () => {
+    render(() =>
+      body([stagedItem], {
+        onApprove: () => {},
+        onReject: () => {},
+        onApproveAllStaged: () => {},
+        bulkResult: { streamId: "stream_1", approved: 4, conflicted: 1 },
+        conflictedIds: new Set(["item_pa"]),
+      }),
+    )
+    expect(screen.getByText("4 approved · 1 changed since you looked — re-review")).toBeInTheDocument()
+    // The conflicted row is still present (still staged) and visibly flagged.
+    expect(screen.getByText("Changed since you looked — re-review")).toBeInTheDocument()
+    expect(document.querySelector(".workgraph-waiting-row.is-staged.is-conflicted")).not.toBeNull()
+  })
+
+  test("rejecting a staged row demands a reason before it fires", async () => {
+    const onReject = vi.fn()
+    render(() => body([stagedItem], { onApprove: () => {}, onReject, onApproveAllStaged: () => {} }))
+    await fireEvent.click(screen.getByRole("button", { name: "Reject" }))
+    const reason = screen.getByRole("textbox", { name: "Reject reason for Draft the plan" })
+    // Empty reason cannot submit.
+    expect(screen.getByRole("button", { name: "Reject task" })).toBeDisabled()
+    await fireEvent.input(reason, { target: { value: "Duplicate" } })
+    await fireEvent.click(screen.getByRole("button", { name: "Reject task" }))
+    expect(onReject).toHaveBeenCalledWith(stagedItem, "Duplicate")
+  })
+})
+
 describe("WaitingRow", () => {
   // The shared row backs both the ordinary panel list and the compact contextual
   // card. Each trigger must report its own exact button element via
@@ -156,7 +201,7 @@ describe("createWaitingCardController", () => {
       // Codex's pinned-summary model: new attention arriving does NOT force
       // the card back — the header control is the only way to re-pin it. The
       // unread state still tracks the new item for the header dot.
-      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }, recapItem])
+      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, id: "item_2", readAt: undefined, updatedAt: 3 }])
       expect(controller.mode(false)).toBeUndefined()
       expect(controller.unread()).toBe(1)
       controller.reveal(false)
@@ -180,10 +225,8 @@ describe("createWaitingCardController", () => {
 describe("WaitingCard", () => {
   test("previews items quietly — no count, no unread dot, no management actions", async () => {
     const onOpenPanel = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem, workItem]} onClose={() => {}} onSelect={() => {}} onOpenPanel={onOpenPanel} />)
-    // Lead recap gets the rich treatment.
-    expect(screen.getByText("Latest recap")).toBeInTheDocument()
-    expect(screen.getByText("Idempotency keys shipped in PR #482.")).toBeInTheDocument()
+    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} onClose={() => {}} onSelect={() => {}} onOpenPanel={onOpenPanel} />)
+    expect(screen.getByText("Which auth strategy?")).toBeInTheDocument()
     // The card IS the signal: no count chip, no unread dot, no extra head icons.
     expect(screen.queryByText(/waiting/)).toBeNull()
     expect(screen.queryByRole("img", { name: /unread/ })).toBeNull()
@@ -196,16 +239,6 @@ describe("WaitingCard", () => {
 
   // Both card triggers must pair their item with the precise element that fired,
   // so the caller can anchor focus back to it — never discard the invoker.
-  test("the lead recap button reports its item and its exact element", async () => {
-    const onSelect = vi.fn()
-    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)
-    const recapButton = screen.getByText("Latest recap").closest("button") as HTMLElement
-    await fireEvent.click(recapButton)
-    expect(onSelect).toHaveBeenCalledTimes(1)
-    expect(onSelect.mock.calls[0][0]).toBe(recapItem)
-    expect(onSelect.mock.calls[0][1]).toBe(recapButton)
-  })
-
   test("a compact row reports its item and its exact element", async () => {
     const onSelect = vi.fn()
     render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} onClose={() => {}} onSelect={onSelect} onOpenPanel={() => {}} />)

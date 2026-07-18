@@ -26,8 +26,6 @@ const workGraphTables = [
   "workgraph_decision_work_items",
   "workgraph_evidence",
   "workgraph_durable_effect_receipts",
-  "workgraph_recaps",
-  "workgraph_notifications",
   "workgraph_admission_proposals",
   "workgraph_attention_entries",
   "workgraph_attention_summaries",
@@ -91,7 +89,6 @@ describe("Convex WorkGraph persistence policy", () => {
       "workgraph_work_items",
       "workgraph_attempts",
       "workgraph_decisions",
-      "workgraph_recaps",
     ] as const) {
       expect(schema.tables[tableName].validator.fields.source_revision_refs).toMatchObject({
         isOptional: "required",
@@ -117,7 +114,6 @@ describe("Convex WorkGraph persistence policy", () => {
         "workgraphChanges.ts",
         "workgraphCommands.ts",
         "workgraphIntake.ts",
-        "workgraphNotifications.ts",
         "workgraphRuntime.ts",
       ].map((file) => readFile(new URL(`../../../../convex/${file}`, import.meta.url), "utf8")),
     )
@@ -125,7 +121,7 @@ describe("Convex WorkGraph persistence policy", () => {
 
     expect(runtime).not.toMatch(/\.query\("(?:workgraph|work_|work_sources)[^\n]*"\)\s*\.filter/)
     expect(runtime).not.toMatch(/withIndex\("by_owner/)
-    expect(runtime).not.toMatch(/withIndex\("by_(?:execution_state_updated|recap_due|state_updated)/)
+    expect(runtime).not.toMatch(/withIndex\("by_(?:execution_state_updated|state_updated)/)
     const staleTenants = runtime.slice(
       runtime.indexOf("export const listStaleTenants"),
       runtime.indexOf("export const claimLaunches"),
@@ -140,8 +136,6 @@ describe("Convex WorkGraph persistence policy", () => {
       "claimControlEffects",
       "listRunning",
       "drainSessionIntake",
-      "claimRecaps",
-      "listRunningRecaps",
       "claimSourcePlans",
       "listRunningSourcePlans",
     ]) {
@@ -161,12 +155,10 @@ describe("Convex WorkGraph persistence policy", () => {
       "workgraph_durable_effect_receipts",
       "workgraph_attempts",
       "workgraph_decisions",
-      "workgraph_recaps",
       "workgraph_outcomes",
       "workgraph_leases",
       "workgraph_outbox",
       "workgraph_due_jobs",
-      "workgraph_notifications",
       "workgraph_agent_checkpoints",
       "workgraph_session_bindings",
       "workgraph_work_items",

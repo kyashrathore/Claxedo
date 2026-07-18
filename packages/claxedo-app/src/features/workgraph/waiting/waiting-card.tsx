@@ -1,5 +1,5 @@
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { ContextCard, ContextCardIcon } from "@/ui/context-card/context-card"
@@ -54,19 +54,13 @@ export function WaitingCard(props: {
   collapsed?: boolean
   onToggleCollapse?: () => void
   onClose: () => void
-  /** Reports the selected item paired with its exact invoking element (the lead
-   *  recap button or a compact row button) so the caller can restore focus.
+  /** Reports the selected item paired with its exact invoking element so the caller can restore focus.
    *  Rows open the item directly (a dialog), never a detour. */
   onSelect: (item: AttentionItem, element: HTMLElement) => void
   /** Opens the full Waiting list in the shared panel. */
   onOpenPanel: () => void
 }) {
   const preview = createMemo(() => props.items.slice(0, 4))
-  const leadRecap = createMemo(() => {
-    const first = preview()[0]
-    return first && first.kind === "recap_notification" ? first : undefined
-  })
-  const rows = createMemo(() => (leadRecap() ? preview().slice(1) : preview()))
 
   // The collapsed rail keeps one real control per capability: the full panel.
   const rail = (
@@ -94,16 +88,8 @@ export function WaitingCard(props: {
       onClose={props.mode === "floating" ? props.onClose : undefined}
       closeLabel="Close waiting context"
     >
-      <Show when={leadRecap()}>
-        {(recap) => (
-          <button type="button" class="workgraph-card-recap" onClick={(event) => props.onSelect(recap(), event.currentTarget)}>
-            <span class="workgraph-card-recap-label text-text-weaker">Latest recap</span>
-            <span class="workgraph-card-recap-body text-text-base">{recap().recap.summary}</span>
-          </button>
-        )}
-      </Show>
       <div class="workgraph-card-rows">
-        <For each={rows()}>{(item) => <WaitingRow view={toWaitingRow(item)} onSelect={(element) => props.onSelect(item, element)} compact />}</For>
+        <For each={preview()}>{(item) => <WaitingRow view={toWaitingRow(item)} onSelect={(element) => props.onSelect(item, element)} compact />}</For>
       </div>
     </ContextCard>
   )

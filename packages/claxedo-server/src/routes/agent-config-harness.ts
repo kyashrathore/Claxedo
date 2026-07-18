@@ -79,6 +79,12 @@ export function harnessFromRequest(input: unknown, fallback?: { type?: unknown; 
   })
 }
 
+export type SandboxHarnessHealth = {
+  status?: "ok" | "degraded" | "unavailable"
+  reason?: string
+  message?: string
+}
+
 export type SandboxHealth = {
   ok?: boolean
   status?: string
@@ -86,6 +92,7 @@ export type SandboxHealth = {
   acpBinary?: string | null
   model?: string | null
   error?: string | null
+  harnessHealth?: SandboxHarnessHealth
 }
 
 type RuntimeSessionConfig = {

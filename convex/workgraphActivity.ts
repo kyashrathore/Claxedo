@@ -435,7 +435,6 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
     attempt_number: (latest?.attempt_number ?? 0) + 1,
     state: "running",
     execution_kind: "attached",
-    execution_mode: "supervised",
     resolved_execution: input.resolvedExecution,
     admitted_at: context.now,
     started_at: context.now,

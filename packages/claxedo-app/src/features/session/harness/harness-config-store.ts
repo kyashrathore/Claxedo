@@ -25,6 +25,9 @@ import {
   harnessWorkspaceRuntimeRef,
   type HarnessScopeInput,
 } from "./store-policy"
+import { decodeHarnessState } from "./profile"
+import { harnessHealthReadiness } from "./store-state"
+import { harnessConfigUrl } from "./harness-config-routes"
 import type {
   HarnessType,
   OptionsResponse,
@@ -236,9 +239,38 @@ export function createHarnessConfigStore() {
     return harnessStore.applyDraftDefault(application, input)
   }
 
+  // Standing harness-health probe (T4). Hydration/reprobe short-circuit an
+  // existing session on its stored session-config (`harnessStateFromSessionConfig`
+  // forces ready:true), so they never observe a harness that DIED after settling.
+  // This hits the harness route directly — which now forwards `/api/wr/health`'s
+  // `harnessHealth` (D1 fix) — and moves readiness ready<->degraded so the
+  // composer health peek + Send gate react. Deliberately does NOT re-fetch config
+  // options, re-save preferences, or touch harness/model identity: it only
+  // transitions readiness, and only when it owns that transition.
+  const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
+    if (!input?.directory) return
+    const current = harnessStore.read(scope)
+    if (current.harness === "opencode") return
+    const res = await harnessRuntime
+      .localHarnessConfigFetch(input)(
+        harnessConfigUrl({ serverUrl: base, directory: input.directory, sessionId: input.sessionId }),
+      )
+      .catch(() => undefined)
+    if (!res?.ok) return
+    const data = decodeHarnessState(await res.json().catch(() => undefined))
+    if (!data) return
+    const next = harnessHealthReadiness({
+      harness: current.harness,
+      current: harnessStore.read(scope).readiness,
+      health: data.harnessHealth?.status,
+    })
+    if (next) harnessStore.setReadiness(scope, next)
+  }
+
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
+    probeHealth: probeHarnessHealth,
     // Give up on a harness that never left "polling": surface the terminal
     // "error" readiness so the selector shows the "Unavailable" affordance and
     // submit stays blocked (harnessReadyForSubmit is false for "error").

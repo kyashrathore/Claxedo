@@ -14,12 +14,6 @@ export function createLocalEmbeddedWorkGraphTransport(
     readStream: (streamId) => embedded.service.queries.streams.read(resolveContext(), { streamId: streamId as never }),
     readDefaults: () => embedded.service.queries.defaults.read(resolveContext(), {}),
     listAttention: (input) => embedded.service.queries.attention.list(resolveContext(), input as never),
-    listNotifications: (input) => embedded.notifications.list(resolveContext(), input as never),
-    markNotificationRead: (notificationId, expectedVersion) =>
-      embedded.notifications.markRead(resolveContext(), {
-        id: notificationId as never,
-        expectedVersion,
-      }),
     listSources: (input) => embedded.service.queries.sources.list(resolveContext(), input as never),
     readSource: (workSourceId) =>
       embedded.service.queries.sources.read(resolveContext(), { workSourceId: workSourceId as never }),
@@ -42,7 +36,6 @@ export function createLocalEmbeddedWorkGraphTransport(
       } as never),
     readAttempt: (attemptId) => embedded.service.queries.attempts.read(resolveContext(), { attemptId }),
     readDecision: (decisionId) => embedded.service.queries.decisions.read(resolveContext(), { decisionId }),
-    readRecap: (recapId) => embedded.service.queries.recaps.read(resolveContext(), { recapId }),
     readEvidence: (evidenceId) =>
       embedded.service.queries.evidence.read(resolveContext(), { evidenceId: evidenceId as never }),
     listEvidence: (input) => embedded.service.queries.evidence.list(resolveContext(), input as never),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   HARNESS_DISPLAY_NAMES,
+  decodeHarnessState,
   decodeSessionConfig,
   effectiveHarnessModel,
   extractModelsFromConfigOptions,
@@ -146,6 +147,20 @@ describe("harness profile", () => {
         access: "acp",
       },
     }).harness?.type).toBe("cursor-acp")
+  })
+
+  test("decodes harness health forwarded from the health route (T4)", () => {
+    expect(decodeHarnessState({
+      type: "codex-app-server",
+      ready: true,
+      harnessHealth: { status: "degraded", reason: "harness_process_lost" },
+    })?.harnessHealth).toEqual({ status: "degraded", reason: "harness_process_lost" })
+    // Unknown / malformed health status is dropped rather than carried through.
+    expect(decodeHarnessState({
+      type: "codex-app-server",
+      harnessHealth: { status: "bogus" },
+    })?.harnessHealth).toBeUndefined()
+    expect(decodeHarnessState({ type: "codex-app-server" })?.harnessHealth).toBeUndefined()
   })
 
   test("separates hard failures from not-ready status", () => {

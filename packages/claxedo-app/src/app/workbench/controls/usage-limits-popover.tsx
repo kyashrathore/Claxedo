@@ -2,7 +2,7 @@
 // Shows remaining quota windows per installed harness (Claude 5h/weekly, Codex
 // session/weekly, ...) from claxedo-server's /api/claxedo/usage-limits, which
 // probes tokentracker-cli against the machine's local harness credentials.
-import { Index, Show, Switch, Match, createMemo, createSignal, onMount, type JSX } from "solid-js"
+import { Index, Show, Switch, Match, createMemo, createSignal, type JSX } from "solid-js"
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/solid-query"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -15,9 +15,10 @@ import {
   type UsageProvider,
   type UsageWindow,
 } from "@/features/settings/data/usage-limits-api"
+import "./usage-limits-popover.css"
 
 type Bar = { label: string; percent: number; resetsAt: string | null }
-type Entry = { name: string; label: string; provider: UsageProvider; bars: Bar[] }
+type Entry = { name: string; label: string; provider: UsageProvider; bars: Bar[]; peak: number }
 
 // tokentracker exposes utilization two ways: Claude windows carry `utilization`
 // (0-100), Codex-style windows carry `used_percent`. Normalize to one number.
@@ -93,12 +94,14 @@ function formatAge(updatedAt: number): string {
   return `${mins}m ago`
 }
 
-// Severity colour by utilization — calm below 70, amber approaching the cap,
-// red once nearly exhausted. Bar fill + the percent numeral share the tone.
-function tone(percent: number): { fill: string; text: string } {
-  if (percent >= 90) return { fill: "bg-icon-critical-base", text: "text-icon-critical-base" }
-  if (percent >= 70) return { fill: "bg-icon-warning-base", text: "text-icon-warning-base" }
-  return { fill: "bg-icon-success-base", text: "text-text-base" }
+// Severity by utilization: neutral until the quota is actually worth reacting
+// to, amber approaching the cap, red once nearly exhausted. Returned as a state
+// suffix so the bar fill and the percent numeral stay in lockstep (see the
+// `.usage-fill.is-*` / `.usage-percent.is-*` pairs in the stylesheet).
+function tone(percent: number): "" | " is-warning" | " is-critical" {
+  if (percent >= 90) return " is-critical"
+  if (percent >= 70) return " is-warning"
+  return ""
 }
 
 function isProvider(v: UsageProvider | string): v is UsageProvider {
@@ -107,80 +110,92 @@ function isProvider(v: UsageProvider | string): v is UsageProvider {
 
 // A short, human status for a provider that has no renderable bars.
 function issueStatus(p: UsageProvider): { dot: string; text: string } {
-  if (p.auth_action_required === "reauth") return { dot: "bg-icon-warning-base", text: "Sign in again" }
+  if (p.auth_action_required === "reauth") return { dot: " is-warning", text: "Sign in again" }
   if (typeof p.retry_at === "string") {
     // This is a 429 on the provider's usage-*stats* endpoint (e.g. Anthropic's
     // oauth/usage), NOT the user's model quota — say so, so it doesn't read as
     // "your Claude is capped". The countdown is the stats endpoint's reset.
     const at = formatReset(p.retry_at)
-    return { dot: "bg-icon-warning-base", text: at ? `Usage check throttled · retry ${at}` : "Usage check throttled" }
+    return { dot: " is-warning", text: at ? `Usage check throttled · retry ${at}` : "Usage check throttled" }
   }
-  if (p.error) return { dot: "bg-icon-critical-base", text: p.error }
-  return { dot: "bg-icon-base/40", text: "No active limits" }
+  if (p.error) return { dot: " is-critical", text: p.error }
+  return { dot: "", text: "No active limits" }
 }
 
 function UsageBar(props: { bar: Bar }): JSX.Element {
-  const t = createMemo(() => tone(props.bar.percent))
+  const state = createMemo(() => tone(props.bar.percent))
   const reset = createMemo(() => formatReset(props.bar.resetsAt))
   // Width binds straight to the value; the transition animates when the number
   // changes on refresh. `@starting-style` gives a one-shot 0→value grow on first
   // paint without a mount signal (which was unreliable inside the portal).
+  // A true 0 renders an empty track — the old 2% floor drew a sliver that read
+  // as "barely started" when the real answer is "untouched".
   return (
-    <div class="flex flex-col gap-1.5">
-      <div class="flex items-baseline justify-between">
-        <span class="text-xs text-text-weak">{props.bar.label}</span>
+    <div class="usage-window">
+      <div class="flex items-baseline justify-between gap-2">
+        <span class="text-12-regular usage-window-label">{props.bar.label}</span>
         <div class="flex items-baseline gap-1.5">
           <Show when={reset()}>
-            <span class="text-2xs text-text-weaker">resets {reset()}</span>
+            <span class="usage-meta">resets {reset()}</span>
           </Show>
-          <span class={`text-xs font-semibold tabular-nums ${t().text}`}>{props.bar.percent}%</span>
+          <span class={`text-12-medium usage-percent${state()}`}>{props.bar.percent}%</span>
         </div>
       </div>
-      <div class="h-1.5 w-full rounded-full bg-surface-inset-base overflow-hidden">
-        <div
-          class={`usage-bar-fill h-full rounded-full ${t().fill}`}
-          style={{ width: `${Math.max(props.bar.percent, 2)}%` }}
-        />
+      <div class="usage-track">
+        <div class={`usage-fill${state()}`} style={{ width: `${props.bar.percent}%` }} />
       </div>
     </div>
   )
 }
 
-function ProviderCard(props: { entry: Entry; index: number }): JSX.Element {
-  const [shown, setShown] = createSignal(false)
-  onMount(() => requestAnimationFrame(() => setShown(true)))
+// One provider = one disclosure. Collapsed it still answers "how consumed is
+// this?" via the peak window's bar; expanded it lists every window. Only one is
+// open at a time, so the panel's height stays roughly stable as you browse.
+function ProviderCard(props: { entry: Entry; expanded: boolean; onToggle: () => void }): JSX.Element {
+  const peakState = createMemo(() => tone(props.entry.peak))
   return (
-    <div
-      class="flex flex-col gap-2.5 py-3 transition-all duration-300 ease-out"
-      style={{
-        opacity: shown() ? "1" : "0",
-        transform: shown() ? "translateY(0)" : "translateY(4px)",
-        "transition-delay": `${props.index * 45}ms`,
-      }}
-    >
-      <div class="flex items-center justify-between">
-        <span class="text-sm font-medium text-text-base">{props.entry.label}</span>
+    <div class="usage-provider" data-expanded={props.expanded ? "" : undefined}>
+      <button
+        type="button"
+        class="usage-provider-summary"
+        aria-expanded={props.expanded}
+        onClick={props.onToggle}
+      >
+        <Icon name="chevron-right" size="small" class="usage-provider-chevron" />
+        <span class="text-12-medium usage-provider-name">{props.entry.label}</span>
         <Show when={props.entry.provider.plan_label}>
-          <span class="rounded-full bg-surface-raised-base px-2 py-0.5 text-2xs uppercase tracking-wider text-text-weaker">
-            {props.entry.provider.plan_label}
-          </span>
+          <span class="usage-meta usage-plan">{props.entry.provider.plan_label}</span>
         </Show>
-      </div>
-      <div class="flex flex-col gap-3">
-        <Index each={props.entry.bars}>
-          {(bar) => <UsageBar bar={bar()} />}
-        </Index>
+        <span class="usage-provider-gap" />
+        {/* aria-hidden: the expanded rows carry the same numbers with their
+            window labels, so a screen reader would otherwise hear the peak
+            twice with no way to tell which window it belonged to. */}
+        <span class="usage-peak" aria-hidden="true">
+          <span class="usage-track usage-peak-track">
+            <span class={`usage-fill${peakState()}`} style={{ width: `${props.entry.peak}%` }} />
+          </span>
+          <span class={`text-12-medium usage-percent${peakState()}`}>{props.entry.peak}%</span>
+        </span>
+      </button>
+      <div class="usage-provider-detail">
+        <div>
+          <Index each={props.entry.bars}>
+            {(bar) => <UsageBar bar={bar()} />}
+          </Index>
+        </div>
       </div>
     </div>
   )
 }
 
-function SkeletonRow(props: { delay: number }): JSX.Element {
+function SkeletonRow(): JSX.Element {
   return (
-    <div class="flex flex-col gap-2.5 py-3">
-      <div class="h-3 w-20 rounded bg-surface-inset-base animate-pulse" style={{ "animation-delay": `${props.delay}ms` }} />
-      <div class="h-1.5 w-full rounded-full bg-surface-inset-base animate-pulse" style={{ "animation-delay": `${props.delay + 80}ms` }} />
-      <div class="h-1.5 w-full rounded-full bg-surface-inset-base animate-pulse" style={{ "animation-delay": `${props.delay + 160}ms` }} />
+    <div class="usage-provider">
+      <div class="usage-provider-summary">
+        <div class="usage-skeleton h-3 w-20" />
+        <span class="usage-provider-gap" />
+        <div class="usage-skeleton h-[3px] w-10" />
+      </div>
     </div>
   )
 }
@@ -209,13 +224,26 @@ export function UsageLimitsPanel(): JSX.Element {
       if (!isProvider(provider) || !provider.configured) continue
       const label = USAGE_PROVIDER_LABELS[name] ?? name
       const bars = provider.error ? [] : providerBars(name, provider)
-      if (bars.length > 0) healthy.push({ name, label, provider, bars })
-      else issues.push({ name, label, provider, bars })
+      const peak = bars.length > 0 ? Math.max(...bars.map((b) => b.percent)) : 0
+      if (bars.length > 0) healthy.push({ name, label, provider, bars, peak })
+      else issues.push({ name, label, provider, bars, peak })
     }
     // Most-consumed first — that's the row a user opened this to check.
-    healthy.sort((a, b) => Math.max(...b.bars.map((x) => x.percent)) - Math.max(...a.bars.map((x) => x.percent)))
+    healthy.sort((a, b) => b.peak - a.peak)
     return { healthy, issues }
   })
+
+  // Tri-state disclosure: `undefined` means untouched, so the default tracks the
+  // data (the most-consumed provider opens itself). Once the user picks, their
+  // choice sticks — including an explicit "all collapsed" (`null`), which a
+  // plain `string | null` signal could not distinguish from untouched.
+  const [choice, setChoice] = createSignal<string | null | undefined>(undefined)
+  const expandedName = createMemo(() => {
+    const picked = choice()
+    if (picked !== undefined) return picked
+    return partition().healthy[0]?.name ?? null
+  })
+  const toggle = (name: string) => setChoice(expandedName() === name ? null : name)
 
   const isFirstLoad = createMemo(() => query.isPending && !query.data)
   const total = createMemo(() => partition().healthy.length + partition().issues.length)
@@ -244,18 +272,13 @@ export function UsageLimitsPanel(): JSX.Element {
   const spinning = createMemo(() => refreshing() || query.isFetching)
 
   return (
-    <div class="flex flex-col">
-      <div class="flex items-center justify-between px-1 pb-2 mb-1 border-b border-border-weak-base/20">
-        <div class="flex items-baseline gap-2">
-          <span class="text-xs font-semibold text-text-base tracking-wide">Usage limits</span>
-          <Show when={query.data && !isFirstLoad()}>
-            <span class="text-2xs text-text-weaker">{formatAge(query.dataUpdatedAt)}</span>
-          </Show>
-        </div>
+    <div class="usage-panel">
+      <div class="usage-head">
+        <span class="text-12-medium usage-head-title">Usage limits</span>
         <DropdownMenu.Item
           aria-label="Refresh usage limits"
           closeOnSelect={false}
-          class="ml-auto !flex !h-5 !w-5 !p-0 items-center justify-center rounded text-icon-base transition-colors hover:text-text-base hover:bg-surface-base-hover active:scale-90"
+          class="usage-refresh"
           onSelect={() => void doRefresh()}
         >
           {/* Spin the wrapper, not the Icon: ClaxedoIcon forwards `class` through a
@@ -266,55 +289,73 @@ export function UsageLimitsPanel(): JSX.Element {
         </DropdownMenu.Item>
       </div>
 
-      <Switch>
-        <Match when={isFirstLoad()}>
-          <div class="flex flex-col divide-y divide-border-weak-base/10 px-1">
-            <SkeletonRow delay={0} />
-            <SkeletonRow delay={120} />
-          </div>
-        </Match>
-        <Match when={query.isError}>
-          <div class="flex flex-col items-center gap-1 py-8 text-center">
-            <Icon name="warning" size="small" class="text-icon-critical-base" />
-            <span class="text-xs text-text-weak">{(query.error as Error)?.message ?? "Failed to load usage"}</span>
-          </div>
-        </Match>
-        <Match when={total() === 0}>
-          <div class="flex flex-col items-center gap-1.5 py-8 text-center">
-            <Icon name="gauge" class="text-icon-base/50" />
-            <span class="text-xs text-text-weak">No signed-in harnesses</span>
-            <span class="text-2xs text-text-weaker px-4">Log in to a coding agent on this machine to track its limits here.</span>
-          </div>
-        </Match>
-        <Match when={total() > 0}>
-          <div class="px-1">
-            <div class="flex flex-col divide-y divide-border-weak-base/10">
-              <Index each={partition().healthy}>
-                {(entry, i) => <ProviderCard entry={entry()} index={i} />}
-              </Index>
+      <div class="usage-body">
+        <Switch>
+          <Match when={isFirstLoad()}>
+            <SkeletonRow />
+            <SkeletonRow />
+          </Match>
+          <Match when={query.isError}>
+            <div class="usage-empty">
+              <Icon name="warning" size="small" class="text-icon-critical-base" />
+              <span class="text-12-regular text-text-weak">{(query.error as Error)?.message ?? "Failed to load usage"}</span>
             </div>
-            <Show when={partition().issues.length > 0}>
-              <div class="mt-1.5 pt-2 border-t border-border-weak-base/20">
-                <span class="text-2xs uppercase tracking-wider text-text-weaker">Needs attention</span>
-                <div class="mt-1.5 flex flex-col gap-1.5">
-                  <Index each={partition().issues}>
-                    {(entry) => {
-                      const status = createMemo(() => issueStatus(entry().provider))
-                      return (
-                        <div class="flex items-center gap-2 py-0.5">
-                          <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${status().dot}`} />
-                          <span class="text-xs text-text-weak shrink-0">{entry().label}</span>
-                          <span class="text-2xs text-text-weaker truncate">{status().text}</span>
-                        </div>
-                      )
-                    }}
-                  </Index>
-                </div>
+          </Match>
+          <Match when={total() === 0}>
+            <div class="usage-empty">
+              <Icon name="gauge" size="small" class="text-icon-weak-base" />
+              <span class="text-12-regular text-text-weak">No signed-in harnesses</span>
+              <span class="usage-meta">Log in to a coding agent on this machine to track its limits here.</span>
+            </div>
+          </Match>
+          <Match when={total() > 0}>
+            <Index each={partition().healthy}>
+              {(entry) => (
+                <ProviderCard
+                  entry={entry()}
+                  expanded={expandedName() === entry().name}
+                  onToggle={() => toggle(entry().name)}
+                />
+              )}
+            </Index>
+          </Match>
+        </Switch>
+      </div>
+
+      {/* Foot: failures fold behind a glyph and fan open on hover, so a panel
+          about quotas is not dominated by the harnesses that have none. */}
+      <Show when={query.data && !isFirstLoad()}>
+        <div class="usage-foot" style={{ "--fan-count": partition().issues.length }}>
+          <Show when={partition().issues.length > 0}>
+            <div class="usage-issues">
+              <button
+                type="button"
+                class="usage-issues-stack"
+                aria-label={`${partition().issues.length} harnesses need attention`}
+              >
+                <Icon name="warning" size="small" />
+                <span class="usage-meta usage-issues-count">{partition().issues.length}</span>
+              </button>
+              <div class="usage-issues-fan">
+                <Index each={partition().issues}>
+                  {(entry, i) => {
+                    const status = createMemo(() => issueStatus(entry().provider))
+                    return (
+                      <div class="usage-issues-fan-row" style={{ "--fan-slot": i + 1 }}>
+                        <span class={`usage-status-dot${status().dot}`} />
+                        <span class="usage-meta usage-issues-fan-label">{entry().label}</span>
+                        <span class="usage-meta">{status().text}</span>
+                      </div>
+                    )
+                  }}
+                </Index>
               </div>
-            </Show>
-          </div>
-        </Match>
-      </Switch>
+            </div>
+          </Show>
+          <span class="usage-foot-gap" />
+          <span class="usage-meta">{formatAge(query.dataUpdatedAt)}</span>
+        </div>
+      </Show>
     </div>
   )
 }

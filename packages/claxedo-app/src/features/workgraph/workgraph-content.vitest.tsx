@@ -839,8 +839,7 @@ const stream = {
   visibility: "visible" as const,
   pinned: false,
   executionDefaults: {},
-  recapDefaults: {},
-  activity: { lastActivityAt: 1, recapDueAt: 2 },
+  activity: { lastActivityAt: 1 },
   durableEffectCount: 0,
   sourceRevisionRefs: [],
 }
@@ -897,7 +896,7 @@ const defaultsDto = {
   updatedAt: 1,
   provenance,
   id: "workgraph_default",
-  defaults: { execution: {}, recap: {} },
+  defaults: { execution: {} },
 }
 
 // The enumerable execution capability catalog the settings forms project their

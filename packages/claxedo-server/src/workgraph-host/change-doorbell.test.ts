@@ -238,7 +238,7 @@ describe("WorkGraph doorbell publish points", () => {
     expect(published).toEqual([])
 
     // Stand in for any writer outside `service.execute` (attempt settlement,
-    // recaps, source planning, activity, intake) by appending a change row.
+    // source planning, activity, intake) by appending a change row.
     appendForeignChange(embedded.database)
 
     embedded.observeChanges(context())

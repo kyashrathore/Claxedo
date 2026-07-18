@@ -1,5 +1,5 @@
 import { evaluateCompletionContract } from "@claxedo/workgraph/domain"
-import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ModelSelectionSchema, RecapProfileDefaultsSchema, ReplacementReviewSchema, SnapshotResumeCursorError, TaskActivityPageCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, decodeSnapshotResumeCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
+import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ReplacementReviewSchema, SnapshotResumeCursorError, TaskActivityPageCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, decodeSnapshotResumeCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
 import { ConvexError, v } from "convex/values"
 import { authedQuery, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
@@ -30,7 +30,6 @@ const query = v.union(
   v.object({ kind: v.literal("replacement_review"), streamId: v.string(), previousSource: v.object({ workSourceId: v.string(), revisionId: v.string(), contentHash: v.string() }) }),
   v.object({ kind: v.literal("attempt"), attemptId: v.string() }),
   v.object({ kind: v.literal("decision"), decisionId: v.string() }),
-  v.object({ kind: v.literal("recap"), recapId: v.string() }),
   v.object({ kind: v.literal("evidence"), evidenceId: v.string() }),
   v.object({ kind: v.literal("evidence_list"), subject: evidenceSubject, limit: v.number(), after: v.optional(v.string()) }),
 )
@@ -135,10 +134,6 @@ export async function readWorkGraphProjection(ctx: any, organization: string, ow
   if (kind === "decision") {
     const decision = await owned(ctx, "workgraph_decisions", organization, owner, requireText(input.decisionId, "decisionId"))
     return decision ? decisionDto(ctx, organization, decision, owner) : null
-  }
-  if (kind === "recap") {
-    const recap = await owned(ctx, "workgraph_recaps", organization, owner, requireText(input.recapId, "recapId"))
-    return recap ? recapDto(recap, owner) : null
   }
   if (kind === "evidence") {
     const evidence = await owned(ctx, "workgraph_evidence", organization, owner, requireText(input.evidenceId, "evidenceId"))
@@ -305,7 +300,7 @@ async function attentionPage(ctx: any, organization: string, owner: string, inpu
   // deletion request already resolved them from the owner's point of view.
   const deleting = await deletionPendingStreamIds(ctx, organization, owner)
   const page = deleting.size === 0 ? built : built.filter((item: any) => {
-    const streamId = item?.record?.streamId ?? item?.notification?.streamId
+    const streamId = item?.record?.streamId
     return !streamId || !deleting.has(streamId)
   })
   const hasMore = rows.length > limit
@@ -349,14 +344,7 @@ async function attentionProjectionItem(ctx: any, organization: string, owner: st
   if (entry.kind === "decision") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: await decisionDto(ctx, organization, row, owner) })
   if (entry.kind === "work_item") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: await workItemDto(ctx, organization, row, owner) })
   if (entry.kind === "attempt") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: attemptDto(row, owner) })
-  if (entry.kind !== "recap_notification") throw new Error(`Unsupported Attention projection kind ${String(entry.kind)}`)
-  const recap = await owned(ctx, "workgraph_recaps", organization, owner, row.recap_id)
-  if (!recap) throw new Error(`Attention Recap ${row.recap_id} disappeared during its owner-scoped read`)
-  return AttentionItemSchema.parse({
-    kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read,
-    notification: { id: row.id, ownerUserId: owner, version: row.row_version, kind: "actionable_recap", state: row.state, streamId: row.stream_id, recapId: row.recap_id, createdAt: row.created_at, updatedAt: row.updated_at, ...(row.read_at === undefined ? {} : { readAt: row.read_at }) },
-    recap: recapDto(recap, owner),
-  })
+  throw new Error(`Unsupported Attention projection kind ${String(entry.kind)}`)
 }
 async function evidencePage(ctx: any, organization: string, owner: string, subject: EvidenceSubject, input: Record<string, any>) {
   const limit = requireLimit(input.limit)
@@ -483,7 +471,6 @@ async function snapshot(ctx: any, organization: string, owner: string, input: Re
     { table: "workgraph_work_items", recordType: "work_item", dto: (row: any) => workItemDto(ctx, organization, row, owner) },
     { table: "workgraph_attempts", recordType: "attempt", dto: (row: any) => attemptDto(row, owner) },
     { table: "workgraph_decisions", recordType: "decision", dto: (row: any) => decisionDto(ctx, organization, row, owner) },
-    { table: "workgraph_recaps", recordType: "recap", dto: (row: any) => recapDto(row, owner) },
     { table: "workgraph_admission_proposals", recordType: "admission_proposal", dto: (row: any) => admissionDto(row, owner) },
   ]
   // A deletion-pending Stream is already gone from the owner's point of view —
@@ -569,7 +556,7 @@ function defaultsDto(row: any, owner: string) {
     recordType: "workgraph", schemaVersion: 1, ownerUserId: owner, version: row?.row_version ?? 1,
     createdAt: row?.created_at ?? 0, updatedAt: row?.updated_at ?? 0,
     provenance: row ? recordProvenance(row) : { actor: { type: "system", id: "workgraph_defaults" } },
-    id: "workgraph_default", defaults: { execution: row?.defaults ?? {}, recap: row?.recap_defaults ?? {} },
+    id: "workgraph_default", defaults: { execution: row?.defaults ?? {} },
   }
 }
 
@@ -597,18 +584,12 @@ async function changes(ctx: any, organization: string, owner: string, kind: stri
 }
 
 function streamDto(row: any, owner: string) {
-  const recap = RecapProfileDefaultsSchema.safeParse(row.recap_defaults ?? {})
-  const recapQuietHours = recap.success && recap.data.model && recap.data.effort ? recap.data.quietHours ?? 0 : 0
   return {
     recordType: "stream", schemaVersion: 1, ownerUserId: owner, version: row.row_version, createdAt: row.created_at, updatedAt: row.updated_at,
     provenance: recordProvenance(row), id: row.id, title: row.title, ...(row.description === undefined ? {} : { description: row.description }),
     lifecycleState: row.lifecycle_state, visibility: row.visibility, pinned: row.pinned, executionDefaults: row.execution_defaults ?? {},
-    recapDefaults: row.recap_defaults ?? {}, ...(row.memory === undefined ? {} : { memory: row.memory }),
     activityGranularity: row.activity_granularity ?? "progress",
-    activity: Object.keys(row.activity ?? {}).length ? row.activity : {
-      lastActivityAt: row.updated_at,
-      recapDueAt: row.updated_at + recapQuietHours * 60 * 60 * 1000,
-    },
+    activity: Object.keys(row.activity ?? {}).length ? row.activity : { lastActivityAt: row.updated_at },
     ...(row.envelope === undefined ? {} : { envelope: row.envelope }),
     ...(row.replacement_reset === undefined ? {} : { replacementReset: row.replacement_reset }),
     durableEffectCount: row.durable_effect_count,
@@ -644,6 +625,9 @@ async function workItemDto(ctx: any, organization: string, row: any, owner: stri
     dependencyIds: dependencies.map((dependency: any) => dependency.depends_on_work_item_id), sourceRevisionRefs: refs(row.source_revision_refs),
     completionContract: row.completion_contract, evidenceIds: row.evidence_ids,
     ...(row.execution_defaults === undefined ? {} : { executionDefaults: row.execution_defaults }),
+    ...(row.created_by_actor_type === undefined ? {} : { createdByActorType: row.created_by_actor_type }),
+    ...(row.created_by_actor_id === undefined ? {} : { createdByActorId: row.created_by_actor_id }),
+    ...(row.origin_attempt_id === undefined ? {} : { originAttemptId: row.origin_attempt_id }),
     ...(row.abandoned_at === undefined ? {} : { abandonedAt: row.abandoned_at }), ...(row.abandon_reason === undefined ? {} : { abandonReason: row.abandon_reason }),
   }
 }
@@ -684,32 +668,6 @@ async function decisionDto(ctx: any, organization: string, row: any, owner: stri
     ...(row.rationale === undefined ? {} : { rationale: row.rationale }), affectedWorkItemIds: affected.map((link: any) => link.work_item_id),
     sourceRevisionRefs: refs(row.source_revision_refs), ...(row.answer === undefined ? {} : { answer: row.answer }),
     ...(row.dismissed_at === undefined ? {} : { dismissedAt: row.dismissed_at }), ...(row.dismiss_reason === undefined ? {} : { dismissReason: row.dismiss_reason }),
-  }
-}
-
-function recapDto(row: any, owner: string) {
-  const invalidated = row.generation?.method === "deterministic_fallback" ||
-    (row.generation?.state === "succeeded" && !row.generation?.sessionId)
-  const legacyModel = ModelSelectionSchema.safeParse(row.generation?.model)
-  const legacyEffort = typeof row.generation?.effort === "string" && row.generation.effort.trim()
-    ? row.generation.effort
-    : undefined
-  return {
-    recordType: "recap", schemaVersion: 1, ownerUserId: owner, version: 1, createdAt: row.created_at, updatedAt: row.created_at,
-    provenance: recordProvenance(row), id: row.id, streamId: row.stream_id,
-    ...(row.previous_recap_id === undefined ? {} : { previousRecapId: row.previous_recap_id }), activityRange: row.activity_range,
-    summary: row.summary,
-    actionableReferences: invalidated ? [] : row.actionable_references,
-    generation: invalidated
-      ? {
-          state: "invalidated",
-          ...(legacyModel.success ? { model: legacyModel.data } : {}),
-          ...(legacyEffort ? { effort: legacyEffort } : {}),
-          reason: "Retired deterministic Recap fallback is non-authoritative",
-          source: "retired_non_session_generation",
-        }
-      : row.generation,
-    sourceRevisionRefs: refs(row.source_revision_refs),
   }
 }
 

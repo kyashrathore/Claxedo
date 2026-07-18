@@ -1,7 +1,14 @@
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
 import { Icon } from "@opencode-ai/ui/icon"
-import { For, Match, Show, Switch } from "solid-js"
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { toWaitingRow, type WaitingRowView } from "./waiting-source"
+
+/** A staged (pending_approval) work_item Attention item. */
+type StagedItem = Extract<AttentionItem, { kind: "work_item" }>
+
+function isStaged(item: AttentionItem): item is StagedItem {
+  return item.kind === "work_item" && item.record.state === "pending_approval"
+}
 
 /** Body of the shared Needs-you panel tab. Purely presentational; the caller
  *  owns the attention resource, pagination, and refetching. */
@@ -19,7 +26,32 @@ export function WaitingPanelBody(props: {
   onClear: () => void
   onLoadMore?: () => void
   onSelect: (item: AttentionItem, element: HTMLElement) => void
+  /** Approve a single staged task (owner-only; CAS on the rendered version). */
+  onApprove?: (item: AttentionItem) => void
+  /** Reject a single staged task with a required reason. */
+  onReject?: (item: AttentionItem, reason: string) => void
+  /** Approve every staged task in a Stream, sending the exact rendered versions. */
+  onApproveAllStaged?: (streamId: string, items: AttentionItem[]) => void
+  /** Per-stream partial-conflict summary after a bulk approve. */
+  bulkResult?: { streamId: string; approved: number; conflicted: number }
+  /** Work item ids that came back version_conflict and stay Staged (flagged). */
+  conflictedIds?: ReadonlySet<string>
+  /** Whether a staged command is in flight (disables the affordances). */
+  busy?: boolean
 }) {
+  // Staged tasks lead the panel, grouped per Stream so the bulk "Approve all
+  // staged" is scoped to one Stream (never a blind approve-everything sweep).
+  const stagedGroups = createMemo(() => {
+    const groups = new Map<string, StagedItem[]>()
+    for (const item of props.items) {
+      if (!isStaged(item)) continue
+      const group = groups.get(item.record.streamId) ?? []
+      group.push(item)
+      groups.set(item.record.streamId, group)
+    }
+    return [...groups.entries()].map(([streamId, items]) => ({ streamId, items }))
+  })
+  const rest = createMemo(() => props.items.filter((item) => !isStaged(item)))
   // Zero attention is a successful, reassuring state. Keep it distinct from
   // loading and failures so an empty panel never reads like missing content.
   return (
@@ -63,8 +95,49 @@ export function WaitingPanelBody(props: {
             </div>
             <p class="text-[11px] leading-4 text-text-base">Decisions, proposed work, and discovered candidates. Open one to act on it.</p>
           </div>
+          <For each={stagedGroups()}>
+            {(group) => (
+              <div class="workgraph-staged-group" aria-label="Staged tasks awaiting approval">
+                <div class="workgraph-staged-group-head">
+                  <span class="text-[11px] font-semibold text-text-strong">Staged · {group.items.length} awaiting approval</span>
+                  <span class="workgraph-card-gap" aria-hidden="true" />
+                  <button
+                    type="button"
+                    class="workgraph-waiting-action"
+                    disabled={props.busy || !props.onApproveAllStaged}
+                    onClick={() => props.onApproveAllStaged?.(group.streamId, group.items)}
+                  >
+                    Approve all staged ({group.items.length})
+                  </button>
+                </div>
+                <Show when={props.bulkResult?.streamId === group.streamId ? props.bulkResult : undefined}>
+                  {(result) => (
+                    <p class="workgraph-staged-conflict text-text-weaker" role="status">
+                      {result().approved} approved · {result().conflicted} changed since you looked — re-review
+                    </p>
+                  )}
+                </Show>
+                <ul class="workgraph-waiting-list">
+                  <For each={group.items}>
+                    {(item) => (
+                      <li>
+                        <StagedWaitingRow
+                          view={toWaitingRow(item)}
+                          conflicted={!!props.conflictedIds?.has(item.record.id)}
+                          busy={props.busy}
+                          onSelect={(element) => props.onSelect(item, element)}
+                          onApprove={props.onApprove ? () => props.onApprove?.(item) : undefined}
+                          onReject={props.onReject ? (reason) => props.onReject?.(item, reason) : undefined}
+                        />
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
+            )}
+          </For>
           <ul class="workgraph-waiting-list">
-            <For each={props.items}>
+            <For each={rest()}>
               {(item) => (
                 <li>
                   <WaitingRow view={toWaitingRow(item)} onSelect={(element) => props.onSelect(item, element)} />
@@ -104,12 +177,100 @@ export function WaitingRow(props: { view: WaitingRowView; onSelect: (element: HT
   )
 }
 
+/** A staged task row: distinct from result-review rows (dashed glyph, verb
+ *  "Approve to run") and carrying inline Approve/Reject. Reject reveals a
+ *  required-reason field. A version_conflict from a bulk approve flags the row
+ *  and keeps it Staged. The row is a div (not a button) so the action controls
+ *  are valid interactive descendants. */
+function StagedWaitingRow(props: {
+  view: WaitingRowView
+  conflicted?: boolean
+  busy?: boolean
+  onSelect: (element: HTMLElement) => void
+  onApprove?: () => void
+  onReject?: (reason: string) => void
+}) {
+  const [rejecting, setRejecting] = createSignal(false)
+  const [reason, setReason] = createSignal("")
+  return (
+    <div class="workgraph-waiting-row is-staged" classList={{ "is-conflicted": props.conflicted }}>
+      <span class="workgraph-waiting-row-glyph" aria-hidden="true">
+        <Icon name="circle-dashed" size="small" />
+      </span>
+      <button
+        type="button"
+        class="workgraph-waiting-row-main workgraph-staged-open"
+        aria-label={`Open task ${props.view.title}`}
+        onClick={(event) => props.onSelect(event.currentTarget)}
+      >
+        <span class="workgraph-waiting-row-title text-text-base">{props.view.title}</span>
+        <span class="workgraph-waiting-row-meta text-text-base">
+          {props.conflicted ? "Changed since you looked — re-review" : "Approve to run"}
+        </span>
+      </button>
+      <Show
+        when={rejecting()}
+        fallback={
+          <span class="workgraph-staged-actions">
+            <button
+              type="button"
+              class="workgraph-waiting-action"
+              disabled={props.busy || !props.onApprove}
+              onClick={() => props.onApprove?.()}
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              class="workgraph-waiting-action"
+              disabled={props.busy || !props.onReject}
+              onClick={() => setRejecting(true)}
+            >
+              Reject
+            </button>
+          </span>
+        }
+      >
+        <span class="workgraph-staged-actions">
+          <input
+            ref={(input) => requestAnimationFrame(() => input.isConnected && input.focus())}
+            class="workgraph-input"
+            aria-label={`Reject reason for ${props.view.title}`}
+            value={reason()}
+            placeholder="Reason to reject"
+            disabled={props.busy}
+            onInput={(event) => setReason(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && reason().trim()) {
+                event.preventDefault()
+                props.onReject?.(reason().trim())
+              }
+              if (event.key === "Escape") {
+                setRejecting(false)
+                setReason("")
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="workgraph-waiting-action"
+            disabled={props.busy || !reason().trim()}
+            onClick={() => props.onReject?.(reason().trim())}
+          >
+            Reject task
+          </button>
+        </span>
+      </Show>
+    </div>
+  )
+}
+
 export function WaitingRowGlyph(props: { view: WaitingRowView }) {
   return (
     <span class="workgraph-waiting-row-glyph" classList={{ "is-critical": props.view.critical }} aria-hidden="true">
       <Switch fallback={<Icon name="circle-alert" size="small" />}>
-        <Match when={props.view.kind === "recap_notification"}>
-          <Icon name="bullet-list" size="small" class="text-icon-weak-base" />
+        <Match when={props.view.staged}>
+          <Icon name="circle-dashed" size="small" />
         </Match>
         <Match when={props.view.kind === "admission_proposal"}>
           <span class="workgraph-outcome-marker" />

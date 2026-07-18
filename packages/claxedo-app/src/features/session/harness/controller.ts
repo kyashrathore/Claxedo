@@ -13,6 +13,13 @@ export type HarnessSelectionControllerStore = {
   hydrate(scope: string, input?: HarnessScopeInput): void | Promise<void>
   /** Re-run a hydration probe for a scope still stuck in "polling". */
   reprobe(scope: string, input?: HarnessScopeInput): void | Promise<void>
+  /**
+   * Standing harness-health probe (T4): fetch the harness route directly and move
+   * readiness ready<->degraded from the forwarded `harnessHealth`. Unlike
+   * `reprobe`, it bypasses the session-config short-circuit so a harness that died
+   * after settling is observed on an existing session.
+   */
+  probeHealth(scope: string, input?: HarnessScopeInput): void | Promise<void>
   /** Transition a never-settling harness to the terminal "error" readiness. */
   markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string): void | Promise<void>
@@ -75,6 +82,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
     },
     hydrate: (scope: string, input?: HarnessScopeInput) => store.hydrate(scope, input),
     reprobe: (scope: string, input?: HarnessScopeInput) => store.reprobe(scope, input),
+    probeHealth: (scope: string, input?: HarnessScopeInput) => store.probeHealth(scope, input),
     markUnavailable: (scope: string) => store.markUnavailable(scope),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string) =>
       store.setHarness(scope, type, input, binary),

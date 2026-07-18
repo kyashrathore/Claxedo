@@ -4,7 +4,7 @@ import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
-import { RailSidebar, type ProjectItem } from "./rail-sidebar"
+import { RailSidebar, SessionListNotice, type ProjectItem } from "./rail-sidebar"
 
 vi.mock("@claxedo/app", () => ({
   getAvatarColors: () => ({ background: "#000", color: "#fff" }),
@@ -203,5 +203,25 @@ describe("RailSidebar disclosure controls", () => {
 
     expect(screen.getByRole("button", { name: "Collapse workspace" })).toHaveAttribute("aria-expanded", "true")
     expect(onWorkspaceSelect).not.toHaveBeenCalled()
+  })
+})
+
+describe("SessionListNotice variant styling", () => {
+  afterEach(() => cleanup())
+
+  test("error variant renders a critical glyph and testid the loading variant lacks", () => {
+    render(() => <SessionListNotice variant="error">Could not load sessions.</SessionListNotice>)
+
+    const notice = screen.getByTestId("rail-sidebar-session-list-error")
+    expect(notice.querySelector('use[href="#opencode-icon-warning"]')).not.toBeNull()
+    expect(notice.querySelector('[data-slot="icon-svg"]')).toHaveClass("text-icon-critical-base")
+  })
+
+  test("loading variant renders no critical glyph", () => {
+    render(() => <SessionListNotice variant="loading">Loading sessions...</SessionListNotice>)
+
+    const notice = screen.getByTestId("rail-sidebar-session-list-loading")
+    expect(notice.querySelector('use[href="#opencode-icon-warning"]')).toBeNull()
+    expect(notice.querySelector('[data-component="icon"]')).toBeNull()
   })
 })

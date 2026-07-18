@@ -5,7 +5,7 @@ import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
-  documentMentionText, listDocumentMentions, loadAIConnectDialog,
+  documentMentionText, listDocumentMentions,
   useCommand,
   useFile,
   useLayout,
@@ -40,7 +40,7 @@ import { registerPromptModeCommands } from "@/features/session/composer/ui/mode-
 import { createPromptEditLoader, createPromptExampleRotation, promptCaretState } from "@/features/session/composer/ui/lifecycle"
 import { PromptInputFrame } from "@/features/session/composer/ui/frame"
 import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
-import { promptDesignPlaceholder, submitBlockedByWorkspaceRole } from "@/features/session/composer/role-gate"
+import { promptDesignPlaceholder } from "@/features/session/composer/role-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
 import { createPanePreferences } from "@/features/session/preferences/pane"
@@ -55,8 +55,8 @@ import { registeredConversationHasUserMessage } from "../conversation/conversati
 import { promptSessionStatusStage, subscribePromptSessionStatusMeta } from "../store/session-status-dispatcher"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { PROMPT_EXAMPLES } from "./examples"
-import { composerHarnessId, isComposerHarnessMode } from "./mode"
 import { composerModeSnapshot } from "./mode-snapshot"
+import { createComposerHarnessMode } from "./harness-mode-helpers"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
@@ -65,7 +65,7 @@ import { createModelSelectionPicker } from "@/features/session/commands/model-se
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createDocumentPickerController } from "./document-picker-controller"
 import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
-import { openComposerAIConnect } from "./ai-connect"
+import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
 const idleSessionStatus = { type: "idle" as const }
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -84,25 +84,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const platform = usePlatform()
   const harnessController = props.harnessSubmitController ?? createHarnessSubmitController(undefined)
   const harnessSelectionController = props.harnessSelectionController
-  const isHarnessMode = (scope: string) => {
-    const mode = composerMode()
-    if (mode.kind === "session") return isComposerHarnessMode(mode)
-    return harnessController.isHarnessMode(scope) || isComposerHarnessMode(mode)
-  }
-  const toolbarHarnessMode = (scope: string) => {
-    const mode = composerMode()
-    return isComposerHarnessMode(mode) ||
-      harnessController.isHarnessMode(scope) ||
-      !!harnessSelectionController?.read(scope).isHarnessMode
-  }
-  const harnessReadiness = (scope: string) => harnessController.readiness(scope)
-  const harnessReadyForSubmit = (scope: string) => harnessController.readyForSubmit(scope)
-  const currentHarnessType = (scope: string) => {
-    const mode = composerMode()
-    if (mode.kind === "session") return composerHarnessId(mode)
-    const harness = harnessController.harness(scope)
-    return harness === "opencode" ? composerHarnessId(mode) : harness
-  }
   let principal: ReturnType<typeof usePrincipal> | undefined
   try {
     principal = usePrincipal()
@@ -112,6 +93,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
+  // Captured so the no-model explain-on-intent action can open the model picker
+  // that already lives in this composer's toolbar (reuse, no new picker).
+  let rootEl: HTMLDivElement | undefined
   let restoreEndOnFocus = true
 
   const inset = 56
@@ -128,6 +112,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const composerMode = createMemo(() => props.mode)
+  const { isHarnessMode, toolbarHarnessMode, harnessReadiness, harnessReadyForSubmit, currentHarnessType } =
+    createComposerHarnessMode({ composerMode, harnessController, harnessSelectionController })
   const modeSnapshot = createMemo(() => composerModeSnapshot({
     mode: composerMode(),
     sdkDirectory: sdk.directory,
@@ -182,12 +168,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const nextScope = scope()
     const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
     return next
-  })
-  const harnessSubmitBlocked = createMemo(() => {
-    const nextScope = scope()
-    const draftDefaultState = harnessSelectionController?.read(nextScope).draftDefaultState
-    if (draftDefaultState === "saved-model-unavailable" || draftDefaultState === "choose-model") return true
-    return isHarnessMode(nextScope) && !harnessReadyForSubmit(nextScope)
   })
   const fade = createMemo(() => (harnessPending() ? 0.45 : 1))
   const panePreferences = createMemo(() => createPanePreferences(localStorage))
@@ -591,7 +571,28 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!id) return permission.isAutoAcceptingDirectory(directory)
     return permission.isAutoAccepting(id, directory)
   })
-  const roleSubmitBlocked = createMemo(() => submitBlockedByWorkspaceRole(props.workspaceId?.()))
+  // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
+  // derivation plus the two intent actions that resolve an actionable block.
+  const { roleSubmitBlocked, submitBlock, submitInertBlocked, openAIConnect, openModelPicker } =
+    createComposerSubmitBlockWiring({
+      workspaceId: props.workspaceId,
+      scope,
+      isHarnessMode,
+      harnessReadiness,
+      harnessReadyForSubmit,
+      harnessSelectionController,
+      harnessController,
+      toolbarState,
+      providers,
+      local,
+      booting,
+      stoppable,
+      blank,
+      showDialog: (content) => dialog.show(content),
+      harnessDirectory,
+      resolvedSessionId,
+      rootEl: () => rootEl,
+    })
   const { abort, handleSubmit: rawHandleSubmit } = createPromptSubmit({
     info,
     sessionID: resolvedSessionId,
@@ -633,6 +634,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     resetKey: composerBootScope,
     rawHandleSubmit,
     roleSubmitBlocked,
+    // Clickability must never become submittability. Viewer-role hard-blocks
+    // unconditionally (via roleSubmitBlocked); every other block reason also
+    // guards the handler — except while a turn is running, so Stop stays live.
+    submitBlocked: () => !stoppable() && submitBlock() !== null,
     prompt,
     imageCount: () => imageAttachments().length,
     commentCount,
@@ -680,7 +685,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const designPlaceholder = () => promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: store.mode, shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
-      rootRef={() => undefined}
+      rootRef={(el) => (rootEl = el)}
       editorRef={bindEditorRef}
       scrollRef={(el) => (scrollRef = el)}
       className={props.class}
@@ -755,11 +760,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       modelLabel={() => toolbarState.readiness().label ?? language.t("dialog.model.select.title")}
       model={pickerModel}
       modelConnectRequired={() => isSignedWorkspaceDefaultModel(toolbarState.currentModel())}
-      onModelConnect={() => void openComposerAIConnect({ loadDialog: loadAIConnectDialog, show: dialog.show, providers,
-        scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(), harnessSelectionController,
-        harnessSubmitController: harnessController, setModel: (model) => harnessSelectionController
-          ? harnessSelectionController.setModel(scope(), model, { directory: harnessDirectory(), sessionId: resolvedSessionId() })
-          : local.model.set(model) })}
+      onModelConnect={openAIConnect}
       onModelClose={restoreFocus}
       showVariantSelector={() => !toolbarHarnessMode(scope()) && toolbarState.variants().length > 1}
       variants={toolbarState.variants}
@@ -777,15 +778,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       working={working}
       blank={blank}
       bootText={bootText}
-      submitDisabled={() =>
-        harnessPending() ||
-        harnessSubmitBlocked() ||
-        toolbarState.modelSubmitBlocked() ||
-        roleSubmitBlocked() ||
-        booting() ||
-        (!stoppable() && blank())
-      }
-      submitExcludeFromTab={() => harnessPending() || harnessSubmitBlocked() || toolbarState.modelSubmitBlocked() || roleSubmitBlocked()}
+      submitDisabled={submitInertBlocked}
+      submitExcludeFromTab={submitInertBlocked}
+      submitBlock={submitBlock}
+      onConnectAI={openAIConnect}
+      onChooseModel={openModelPicker}
       roleSubmitBlocked={roleSubmitBlocked}
       t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       showDialog={(content) => dialog.show(content)}

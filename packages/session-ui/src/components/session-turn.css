@@ -228,7 +228,7 @@
 
 body:not([data-new-layout]) [data-component="session-turn"] {
   .error-card {
-    color: var(--text-on-critical-base);
+    color: var(--text-base);
   }
 
   [data-slot="session-turn-diffs-header"] {

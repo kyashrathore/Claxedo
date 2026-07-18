@@ -27,6 +27,7 @@ import {
   type StreamSyncLifecycleEvent,
   type StreamSyncLifecycleState,
 } from "../connection/stream-sync-lifecycle"
+import { reportStreamSyncLifecycle, type StreamSyncStreamId } from "@/platform/runtime/stream-sync-status"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createTransport } from "@/platform/runtime/transport"
@@ -377,8 +378,15 @@ export function ClaxedoEventsProvider(props: ParentProps) {
     // the doorbell consumers revalidate on.
     const setStreamConnected = connectivity.track(target.kind)
 
+    // Stable per-target key for the reactive projection (T7): the shared
+    // control-plane stream is `"central"`; a signed workspace's own stream is
+    // keyed by its workspaceId so `SessionConnectionLine` can read the stream
+    // that actually carries that session's events.
+    const streamId: StreamSyncStreamId = target.kind === "central" ? "central" : `workspace:${target.workspaceId}`
+
     const stepLifecycle = (event: StreamSyncLifecycleEvent) => {
       state.lifecycle = transitionStreamSyncLifecycle(state.lifecycle, event) ?? state.lifecycle
+      reportStreamSyncLifecycle(streamId, state.lifecycle)
       return state.lifecycle
     }
 

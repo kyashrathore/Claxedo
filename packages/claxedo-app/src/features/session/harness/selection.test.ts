@@ -111,6 +111,21 @@ describe("harness selection", () => {
       dynamicModels: [],
       readiness: "error",
     })).toBe(false)
+    // A degraded harness (process lost / recovering) blocks Send (T4) even with a
+    // valid model, so the composer health peek can name the condition first.
+    expect(harnessReadyForSubmit({
+      ...base,
+      harness: "codex-app-server",
+      selectedModel: "gpt-5.5",
+      dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+      readiness: "degraded",
+    })).toBe(false)
+    // OpenCode short-circuits to ready even if a degraded readiness leaks in.
+    expect(harnessReadyForSubmit({
+      ...base,
+      harness: "opencode",
+      readiness: "degraded",
+    })).toBe(true)
   })
 
   test("returns canonical ModelKey for selectable harness models", () => {

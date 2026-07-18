@@ -439,7 +439,22 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     if (workgraph.operationalTelemetry) {
       app.use("/internal/workgraph/attempt-operation", workGraphHttpTelemetry(workgraph.operationalTelemetry))
     }
-    app.post("/internal/workgraph/attempt-operation", (context) => attemptOperationHandler(context.req.raw))
+    app.post("/internal/workgraph/attempt-operation", (context) => {
+      // Build the per-request settlement dispatcher from the ExecutionContext
+      // `waitUntil` (same as forwardWorkGraph) so a successful agent-tool operation
+      // nudges continuous execution without waiting for the CF cron backstop.
+      const waitUntil = guardedExecutionWaitUntil(context)
+      const dispatcher =
+        waitUntil && overrides.workGraphSettlementDispatcherForRequest
+          ? overrides.workGraphSettlementDispatcherForRequest(waitUntil)
+          : undefined
+      return attemptOperationHandler(
+        context.req.raw,
+        dispatcher
+          ? (principal) => dispatcher.nudge({ organizationId: principal.orgId, ownerUserId: principal.ownerUserId })
+          : undefined,
+      )
+    })
   }
 
   // WP-BILLING (D4, ADR 014 addendum): Polar webhook + checkout + portal live

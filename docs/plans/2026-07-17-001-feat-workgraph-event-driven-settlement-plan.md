@@ -17,7 +17,6 @@ inputs:
   - docs/plans/2026-07-13-001-goal-execute-workgraph-end-to-end.md
   - docs/plans/2026-07-07-006-feat-wakes.md
 ---
-
 # WorkGraph Event-Driven Settlement — Fast Lane + Cron Backstop
 
 ## The problem, in plain words
@@ -120,37 +119,11 @@ swap to it in a few lines. Nothing built here is throwaway.
 
 ## Grounding facts (verified 2026-07-17 in this worktree)
 
-- The reconciler is `createHostedWorkGraphRuntime().reconcile` in
-  `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`. A pass:
-  `listWorkerTenants` (limit 500) → per-tenant `claimLaunches` → launch → per-
-  tenant `listRunning` → poll every running Session's full event history →
-  background phase (`claimControlEffects` — deletion lives HERE, at the END —
-  then intake, recaps, source plans).
-- Every trigger path shares the per-isolate skip-if-busy guard
-  `packages/claxedo-server/src/workgraph-host/reconcile-serialize.ts`. It is
-  per-isolate only; it cannot see a pass in another isolate.
-- Cron lanes in `packages/claxedo-server/wrangler.toml`: production `*/15`,
-  staging `*/15` + `* * * * *` (the every-minute lane runs ONLY the WorkGraph
-  reconciler, `worker.ts` branches on `controller.cron === "* * * * *"`).
-- Deletion's control effect only interrupts sessions and calls
-  `manager.release(workspaceId)` (`hosted-runtime.ts` `reconcileBackground`);
-  physical destroy is the GC reaper's job. Execution placement is
-  `manager.ensure(...)` before Session create.
-- All settlement mutations are lease/epoch fenced in Convex
-  (`convex/workgraphRuntime.ts`), so a duplicate or stale settle attempt is
-  rejected safely. This is what makes "nudge may duplicate" harmless.
-- Recaps ("after 8 quiet hours") are scheduled by a Convex cron every 15 min
-  (`convex/crons.ts:29` → `workgraphBackground.scheduleDueRecaps`) and executed
-  by the Worker reconcile. Recap latency is NOT a problem; recaps stay on the
-  sweep lane in this plan.
+
 
 ## Scope
 
-In scope: durable control effects (deletion finalize / interrupt / replace) and
-execution placement (attempt launches), plus completion polling for the nudged
-tenant. Out of scope: recaps, source planning, session intake (they stay on the
-sweep; moving them is a follow-up), wakes v2, and any change to the outbox
-schema or fencing.
+
 
 ## Implementation units
 
@@ -238,15 +211,7 @@ DoD:
 
 ### U5. Demote the cron to a backstop sweep
 
-- New Convex service query `workgraphRuntime.listStaleTenants`: tenants that
-  have any unclaimed/unsettled outbox row or due launch older than a threshold
-  (default 60s). Cheap: index scan, no per-tenant fan-out.
-- The Worker `scheduled` handler's WorkGraph branch changes from "run the full
-  global reconcile" to: call `listStaleTenants`, then `nudge` each result. Keep
-  one full global reconcile on the 15-minute lane for now (belt and braces —
-  it also still carries recaps/intake/source-plans, which are out of scope).
-- Staging keeps the every-minute lane UNTIL U6 proves the fast lane, then the
-  lane is removed from `wrangler.toml` and staging matches production cadence.
+
 
 DoD:
 - Convex test for `listStaleTenants` (fresh rows excluded, stale rows included,
@@ -340,11 +305,3 @@ gh run watch <RUN_ID> --repo kyashrathore/Claxedo --exit-status
   does, re-pin before trusting staging results.
 
 ## Follow-ups (recorded, not in this plan)
-
-1. **Wakes v2 convergence**: Convex `WakeStore` with in-transaction scheduling,
-   generic sinks, serial keys; adopt this plan's dispatcher as its driver; move
-   recap due-times ("fire at lastActivity + 8h") and this plan's nudge onto it.
-2. Move recaps / source planning / session intake off the 15-minute global pass
-   onto per-tenant nudges once the fast lane has production miles.
-3. Consider replacing full-history polling of running Sessions with cursored
-   reads to shrink pass cost further (separate measured problem).

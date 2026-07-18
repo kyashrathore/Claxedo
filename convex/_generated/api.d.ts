@@ -36,7 +36,6 @@ import type * as workgraphCommands from "../workgraphCommands.js";
 import type * as workgraphConnections from "../workgraphConnections.js";
 import type * as workgraphIntake from "../workgraphIntake.js";
 import type * as workgraphModel from "../workgraphModel.js";
-import type * as workgraphNotifications from "../workgraphNotifications.js";
 import type * as workgraphOwnerDeletion from "../workgraphOwnerDeletion.js";
 import type * as workgraphRuntime from "../workgraphRuntime.js";
 import type * as workspaceShares from "../workspaceShares.js";
@@ -77,7 +76,6 @@ declare const fullApi: ApiFromModules<{
   workgraphConnections: typeof workgraphConnections;
   workgraphIntake: typeof workgraphIntake;
   workgraphModel: typeof workgraphModel;
-  workgraphNotifications: typeof workgraphNotifications;
   workgraphOwnerDeletion: typeof workgraphOwnerDeletion;
   workgraphRuntime: typeof workgraphRuntime;
   workspaceShares: typeof workspaceShares;
