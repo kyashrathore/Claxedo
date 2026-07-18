@@ -30,6 +30,16 @@ explain a maintained package or cross-package delivery contract.
   - Retained as the authoritative reference for the `pending_approval` (Staged)
     Task state, the approve/reject command contracts, and the pause/resume
     launch gate that replaced supervised/autonomous execution modes.
+- [WorkGraph v2: durable work ledger](./2026-07-18-004-feat-workgraph-execution-shape-intake-trust-plan.md)
+  - Active plan (rewritten 2026-07-18 after 12-simulation + market-research
+    validation): three nouns (Stream/Task/Charter), per-stream master agents on
+    wakes, two stream shapes (project/flow), the evidence layer (receipts +
+    audit records + anti-reward-hacking gates), and the hard charter guardrails.
+- [WorkGraph v2 implementation](./2026-07-18-005-feat-workgraph-v2-implementation-plan.md)
+  - Companion technical plan to 2026-07-18-004: UX per surface with backend
+    needs, HLD attaching every addition to a named existing seam (gateway,
+    wakes sinks, command union, launchability oracle), and phased impl with
+    exact files, tests, and DoD. Evolves the existing WorkGraph; nothing rebuilt.
 
 ## Maintenance
 

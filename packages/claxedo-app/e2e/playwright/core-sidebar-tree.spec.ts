@@ -735,7 +735,13 @@ test.describe("core sidebar tree @core", () => {
     await expect(trigger).toHaveAttribute("aria-expanded", "true")
     await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible()
     await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
-    await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toBeVisible()
+    // "Diagnostics" is gated by `<Show when={usePlatform().platform === "desktop" ||
+    // config?.sandboxEnabled !== true}>` (rail-account-menu.tsx) — this dev harness
+    // bakes `VITE_SANDBOX_ENABLED=true` (.env.local) and runs the web platform (never
+    // "desktop"), so the item is permanently absent here, the same class of
+    // unreachable-by-baked-env-flag gating documented in core-settings-auth.spec.ts's
+    // HARNESS NOTES (e.g. the Sandbox-tab-absent-when-disabled scenario).
+    await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
     await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible()
     await expect(page.getByRole("menuitem", { name: "Help" })).toBeVisible()
 

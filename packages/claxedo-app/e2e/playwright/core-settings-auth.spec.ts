@@ -1367,6 +1367,11 @@ test.describe("core settings + auth @core", () => {
 
   test.describe("Sandbox: default provider, credential CRUD, read-only lock, network policy", () => {
     test("default provider Save only appears on a diff, PUTs default, and clears — behavior 21", async ({ page }) => {
+      const pageErrors: string[] = []
+      page.on("pageerror", (err) => pageErrors.push(err.stack || err.message))
+      page.on("console", (msg) => {
+        if (msg.type() === "error") pageErrors.push("[console.error] " + msg.text())
+      })
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const sandbox = mockSandboxProviders(page, {
@@ -1405,6 +1410,10 @@ test.describe("core settings + auth @core", () => {
 
       await expect.poll(() => sandbox.putDefaultCalls.length, { timeout: 10_000 }).toBe(1)
       expect(sandbox.putDefaultCalls[0]).toMatchObject({ provider: "e2b" })
+      // eslint-disable-next-line no-console
+      console.log("DEBUG pageErrors", JSON.stringify(pageErrors, null, 2))
+      // eslint-disable-next-line no-console
+      console.log("DEBUG error textarea", await page.locator("textarea, input[readonly]").evaluateAll((nodes) => nodes.map((n) => (n as HTMLInputElement).value)))
       await expect(page.getByText("Default sandbox provider updated")).toBeVisible()
       await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0)
     })

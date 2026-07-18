@@ -418,7 +418,22 @@ function nonBackgroundNoiseConsole(entries: string[]) {
 async function primeHarness(page: Page, harness: string): Promise<{ mock: MockRuntimeHandles; dir: string; sessionId: string; assistantId: string }> {
   const dir = `/tmp/e2e-core-harness-rendering-matrix-${harness}`
   const sessionId = `ses_harness_matrix_${harness}`
-  const mock = await installMockRuntime(page, { dir, sessionId, harness: harness as never })
+  const mock = await installMockRuntime(page, {
+    dir,
+    sessionId,
+    harness: harness as never,
+    // Pin opencode to a concrete model instead of the mock default `big-pickle`
+    // placeholder. The reworked composer (see `core-docks.spec.ts`'s identical
+    // `establishSession` note) defers/redirects the very first send while only the
+    // `big-pickle` placeholder model is resolved, which lets the legacy
+    // `/<b64dir>/session` -> `/w/<workspaceId>` redirect win the race so the create
+    // POST never targets the draft directory and the mocked session is never created
+    // (the URL then settles on the workspace-root `/w/<dir>` with no session pane).
+    // Every other harness already defaults to a concrete model, so this only affects
+    // opencode. Matches the canonical send-flow convention in
+    // `core-first-prompt-local.spec.ts`.
+    ...(harness === "opencode" ? { harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] } } : {}),
+  })
   await seedOneProject(page, dir)
 
   const bridgedEmit = await installWorkspaceRuntimeEventsBridge(page, mock)
@@ -449,6 +464,18 @@ async function replay(mock: MockRuntimeHandles, dir: string, trace: Envelope[]) 
 const assistantContent = () => SELECTORS.assistantContentVisible
 
 test.describe("core harness rendering matrix @core", () => {
+  for (const h of ["opencode", "cursor-sdk", "codex-app-server", "claude-acp", "codex-acp", "cursor-acp"] as const) {
+    test(`DUMP ${h}`, async ({ page }) => {
+      const { mock, dir, assistantId } = await primeHarness(page, h)
+      const trace = loadTrace(h, assistantId)
+      await replay(mock, dir, trace)
+      await page.waitForTimeout(3000)
+      const htmls = await page.locator(assistantContent()).evaluateAll((els) => els.map((el) => (el as HTMLElement).outerHTML))
+      const slim = htmls.map((html) => html.replace(/ class="[^"]*"/g, "").replace(/ style="[^"]*"/g, "").replace(/<svg[\s\S]*?<\/svg>/g, "<svg/>").replace(/ data-markdown-[a-z]+="[^"]*"/g, "").replace(/>\s+</g, "><")).join("\n---SLOT---\n")
+      // eslint-disable-next-line no-console
+      console.log(`\n[DUMP ${h}]\n${slim}\n[/DUMP ${h}]\n`)
+    })
+  }
   test("opencode native — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)

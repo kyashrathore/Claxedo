@@ -6,6 +6,7 @@ import { useNavigate } from "@solidjs/router"
 import { getFilename } from "@/lib/path"
 import { Select } from "@opencode-ai/ui/select"
 import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { useLayout } from "@/features/session/app-ports"
@@ -146,7 +147,16 @@ export function NewSessionDesignView(props: {
           <div>
             {props.main ?? props.children}
             <Show when={!runtimeMode()}>
-              <div class="mt-3 flex h-8 min-w-0 items-center gap-1.5 pl-2">
+              {/* Workspace-start scope row. Desktop: one h-8 line. Mobile: the
+                  segmented toggles go icon-only and the row wraps so the
+                  worktree picker gets a full-width second line instead of
+                  clipping off-screen. `data-claxedo-compact-touch` (container
+                  opt-out, app-shell.css) keeps the 40px touch floor from
+                  inflating the now-labelled h-6 segment buttons. */}
+              <div
+                data-claxedo-compact-touch
+                class="mt-3 flex h-8 min-w-0 items-center gap-1.5 pl-2 max-md:h-auto max-md:flex-wrap max-md:gap-y-2 max-md:pl-0"
+              >
                 <Select
                   size="normal"
                   variant="ghost"
@@ -154,7 +164,7 @@ export function NewSessionDesignView(props: {
                   current={projectRoot()}
                   label={projectLabel}
                   onSelect={openProject}
-                  class="max-w-[220px] justify-start text-text-base"
+                  class="max-w-[220px] justify-start text-text-base max-md:max-w-[45vw]"
                   valueClass="truncate text-13-regular text-text-weak"
                 />
                 <Show
@@ -162,11 +172,12 @@ export function NewSessionDesignView(props: {
                   fallback={
                     <div
                       data-self-hosted-pinned="true"
-                      class="flex h-7 min-w-0 items-center gap-2 rounded-md border border-border-weak-base bg-surface-base px-2.5"
+                      class="flex h-7 min-w-0 items-center gap-2 rounded-md border border-border-weak-base bg-surface-base px-2.5 max-md:flex-1"
                     >
                       <span class="size-1.5 shrink-0 rounded-full bg-surface-success-strong" aria-hidden="true" />
                       <span class="truncate text-13-regular text-text-base">{pinnedWorkspaceName()}</span>
-                      <span class="shrink-0 text-12-medium text-text-weak">· Self-hosted · Connected via relay</span>
+                      <span class="shrink-0 text-12-medium text-text-weak max-md:hidden">· Self-hosted · Connected via relay</span>
+                      <span class="hidden shrink-0 text-12-medium text-text-weak max-md:inline">· Self-hosted</span>
                     </div>
                   }
                 >
@@ -180,14 +191,21 @@ export function NewSessionDesignView(props: {
                       <button
                         type="button"
                         aria-pressed={props.workspaceKind === value}
-                        class="h-6 rounded-[4px] px-2 text-12-medium capitalize transition-colors"
+                        aria-label={value === "cloud" ? "Cloud workspace" : "Local workspace"}
+                        title={value === "cloud" ? "Cloud workspace" : "Local workspace"}
+                        class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium capitalize transition-colors"
                         classList={{
                           "bg-background-base text-text-base shadow-xs-border-base": props.workspaceKind === value,
                           "text-text-weak hover:text-text-base": props.workspaceKind !== value,
                         }}
                         onClick={() => props.onWorkspaceKindChange(value)}
                       >
-                        {value}
+                        <ClaxedoIcon
+                          name={value === "cloud" ? "cloud" : "laptop"}
+                          size="small"
+                          class="md:hidden"
+                        />
+                        <span class="max-md:hidden">{value}</span>
                       </button>
                     )}
                   </For>
@@ -200,7 +218,9 @@ export function NewSessionDesignView(props: {
                   <button
                     type="button"
                     aria-pressed={!creatingWorkspace()}
-                    class="h-6 rounded-[4px] px-2 text-12-medium transition-colors"
+                    aria-label="Select existing workspace"
+                    title="Select existing workspace"
+                    class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium transition-colors"
                     classList={{
                       "bg-background-base text-text-base shadow-xs-border-base": !creatingWorkspace(),
                       "text-text-weak hover:text-text-base": creatingWorkspace() && worktreeOptions().length > 0,
@@ -212,29 +232,33 @@ export function NewSessionDesignView(props: {
                       if (next) props.onWorktreeChange(next)
                     }}
                   >
-                    Select
+                    <ClaxedoIcon name="worktree" size="small" class="md:hidden" />
+                    <span class="max-md:hidden">Select</span>
                   </button>
                   <button
                     type="button"
                     aria-pressed={creatingWorkspace()}
-                    class="h-6 rounded-[4px] px-2 text-12-medium transition-colors"
+                    aria-label="Create new workspace"
+                    title="Create new workspace"
+                    class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium transition-colors"
                     classList={{
                       "bg-background-base text-text-base shadow-xs-border-base": creatingWorkspace(),
                       "text-text-weak hover:text-text-base": !creatingWorkspace(),
                     }}
                     onClick={() => props.onWorktreeChange(CREATE_WORKTREE)}
                   >
-                    Create new
+                    <ClaxedoIcon name="plus-small" size="small" class="md:hidden" />
+                    <span class="max-md:hidden">Create new</span>
                   </button>
                 </div>
                 <div
                   data-new-workspace={creatingWorkspace() ? "true" : "false"}
-                  class="flex h-7 min-w-0 items-center overflow-hidden rounded-md border border-border-weak-base bg-surface-base"
+                  class="flex h-7 min-w-0 items-center overflow-hidden rounded-md border border-border-weak-base bg-surface-base max-md:w-full max-md:flex-1"
                 >
                   <Show
                     when={!creatingWorkspace()}
                     fallback={
-                      <div class="flex h-7 min-w-[170px] items-center gap-2 px-2.5 text-13-regular text-text-weak">
+                      <div class="flex h-7 min-w-[170px] items-center gap-2 px-2.5 text-13-regular text-text-weak max-md:min-w-0 max-md:flex-1">
                         <Icon name={props.workspaceKind === "cloud" ? "cloud-upload" : "branch"} size="small" class="shrink-0" />
                         <span class="truncate">
                           New {props.workspaceKind === "cloud" ? "cloud sandbox" : "local worktree"}
@@ -255,7 +279,7 @@ export function NewSessionDesignView(props: {
                         if (!worktreePickerOpen()) return
                         if (value) props.onWorktreeChange(value)
                       }}
-                      class="max-w-[260px] min-w-[150px] justify-start rounded-none border-0 bg-transparent text-text-base shadow-none disabled:opacity-50"
+                      class="max-w-[260px] min-w-[150px] justify-start rounded-none border-0 bg-transparent text-text-base shadow-none disabled:opacity-50 max-md:w-full max-md:min-w-0 max-md:max-w-none"
                       valueClass="truncate text-13-regular text-text-weak"
                     />
                   </Show>

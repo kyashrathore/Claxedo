@@ -186,10 +186,12 @@ test.describe("mobile smoke @happy", () => {
     await expect(opener).toBeVisible({ timeout: 10_000 })
     await expect(scrim).toHaveCount(0)
 
-    // Opener opens the drawer (scrim appears; opener hides while open).
+    // Opener opens the drawer (scrim appears; opener stays mounted above the
+    // drawer as a close toggle, mirroring the desktop sidebar button).
     await opener.click()
     await expect(scrim).toBeVisible({ timeout: 5_000 })
-    await expect(opener).toBeHidden()
+    await expect(opener).toBeVisible()
+    await expect(opener).toHaveAttribute("aria-expanded", "true")
 
     const accountTrigger = page.getByTestId("rail-account-trigger")
     await expect(accountTrigger).toBeVisible()
@@ -203,10 +205,12 @@ test.describe("mobile smoke @happy", () => {
     await page.keyboard.press("Escape")
     await expect(accountMenu).toHaveCount(0)
 
-    // Tapping the scrim (right of the 280px drawer) closes it and restores the opener.
+    // Tapping the scrim (right of the 280px drawer) closes it; the opener stays
+    // visible and flips back to its collapsed state.
     await scrim.click({ position: { x: 340, y: 400 } })
     await expect(scrim).toHaveCount(0)
     await expect(opener).toBeVisible()
+    await expect(opener).toHaveAttribute("aria-expanded", "false")
   })
 
   test("workspace panel renders full-width with no resize handle below 640px — behavior 2", async ({ page }) => {

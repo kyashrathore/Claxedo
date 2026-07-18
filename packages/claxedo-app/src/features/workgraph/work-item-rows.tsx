@@ -82,7 +82,7 @@ function TaskStatusGlyph(props: { label: TaskStatusLabel }) {
         <Match when={props.label === "running"}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" class="workgraph-leaf-spin">
             <circle cx="10" cy="10" r="7.91667" stroke="currentColor" opacity="0.25" />
-            <circle cx="10" cy="10" r="7.91667" stroke="currentColor" stroke-linecap="round" stroke-dasharray="13 36.75" />
+            <circle cx="10" cy="10" r="7.91667" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-dasharray="13 36.75" />
           </svg>
         </Match>
         <Match when={props.label === "needs-you"}>

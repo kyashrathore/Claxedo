@@ -292,9 +292,25 @@ async function installDockMutationRoutes(page: Page, mock: MockRuntimeHandles): 
   return counters
 }
 
-/** Installs the mock, seeds one project, sends turn 1, and oracle-proves it settled. */
+/**
+ * Installs the mock, seeds one project, sends turn 1, and oracle-proves it settled.
+ *
+ * The opencode harness is pinned to a concrete model (`gpt-5`) rather than the mock
+ * default `BIG_PICKLE` placeholder. The reworked composer defers/redirects the
+ * first-send when only the `big-pickle` placeholder model is resolved, which lets the
+ * legacy `/…/session` → `/w/<workspaceId>` redirect win the race so the create POST
+ * targets the resolved-workspace id instead of the draft directory and the mocked
+ * session is never created. Pinning a real model matches the canonical send-flow
+ * convention in `core-first-prompt-local.spec.ts` and makes the establishing turn
+ * deterministic. Callers may still override via `options.harnessModels`.
+ */
 async function establishSession(page: Page, options: Parameters<typeof installMockRuntime>[1] = {}) {
-  const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, ...options })
+  const mock = await installMockRuntime(page, {
+    dir: DIR,
+    sessionId: SESSION_ID,
+    harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+    ...options,
+  })
   const counters = await installDockMutationRoutes(page, mock)
 
   await seedOneProject(page, DIR)

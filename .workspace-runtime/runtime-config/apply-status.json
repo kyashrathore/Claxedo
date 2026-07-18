@@ -1,8 +1,8 @@
 {
   "state": "applied",
-  "revision": 2,
-  "acceptedAt": "2026-07-18T15:51:07.693Z",
-  "updatedAt": "2026-07-18T15:51:07.699Z",
+  "revision": 1,
+  "acceptedAt": "2026-07-18T16:03:36.165Z",
+  "updatedAt": "2026-07-18T16:03:36.179Z",
   "harness": {
     "id": "codex",
     "access": "native"

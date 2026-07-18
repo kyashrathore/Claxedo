@@ -622,15 +622,43 @@ function annotate(testInfo: TestInfo, extra = "") {
 
 function unexpectedCanaryConsoleErrors(messages: string[]) {
   // The document `/documents/events` SSE is gone (plan 2026-07-17-004), so its
-  // reconnect noise no longer needs an exemption. The central events stream can
-  // still churn a reconnect diagnostic under the deterministic harness.
-  return messages.filter((message) => !message.startsWith("[global-sdk] event stream failed"))
+  // reconnect noise no longer needs an exemption. The central events stream
+  // (`GET /api/wr/events`) still churns under this deterministic harness: per
+  // core-sidebar-tree.spec.ts's documented shared-helper gap, `installMockRuntime`
+  // only mocks that route under the relay origin (`options.cloud`) — the default
+  // local-mode path here is never intercepted, so it genuinely fails to connect
+  // to a real backend and retries. That surfaces THREE distinct noise shapes
+  // under sustained failure: the browser's own "Failed to load resource" console
+  // noise, `console.error("[global-sdk] event stream failed", ...)`
+  // (src/app/providers/global-sdk/provider.tsx:682), and
+  // `console.error("[claxedo-events] stream failed", ...)`
+  // (src/app/integrations/claxedo-events.tsx) — two independently-escalating
+  // event-stream consumers, not one. Filtered the same way this identical
+  // unmocked-central-origin noise is filtered in
+  // core-boot-deep-links-home.spec.ts's `nonClerkConsole`.
+  return messages.filter(
+    (message) =>
+      !message.includes("Failed to load resource") &&
+      !message.startsWith("[claxedo-events] stream failed") &&
+      !message.startsWith("[global-sdk] event stream failed") &&
+      !message.startsWith("[global-sdk] runtime event stream failed"),
+  )
 }
 
 function unexpectedCanaryRequestFailures(urls: string[]) {
+  // Same unmocked-central-origin gap as `unexpectedCanaryConsoleErrors` above:
+  // beyond the events stream, background inventory polling this canary
+  // incidentally triggers (`/api/control/sessions`, `/project/current`,
+  // `/project/:id`, ...) is not covered by `installMockRuntime` either and
+  // genuinely hits (and fails against) the real 127.0.0.1:3001 backend this
+  // Tier-M harness never runs. Filtered by origin, the same broad-brush way
+  // core-boot-deep-links-home.spec.ts's `fromUnmockedCentralOrigin` filters
+  // this identical class of noise, rather than chasing an ever-growing
+  // pathname allow-list.
   return urls.filter((value) => {
     const pathname = new URL(value).pathname
-    return !["/api/wr/events", "/global/event", "/event"].includes(pathname)
+    if (["/api/wr/events", "/global/event", "/event"].includes(pathname)) return false
+    return !value.includes("127.0.0.1:3001")
   })
 }
 
@@ -643,9 +671,14 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await bootstrap(page, runtime)
     await openIndex(page)
     const readsBeforeCreate = runtime.requests.filter((request) => request.pathname.endsWith("/content")).length
+    // "New document" is a searchable project picker, not a direct-create button
+    // (see document-index.tsx's `NewDocumentButton`/`createInProject`: creating a
+    // document requires an EXPLICITLY chosen project) — open it, then pick the
+    // sole fixture project from its list before a document actually gets created.
     await page.getByRole("button", { name: "New document" }).click()
-    const created = [...runtime.documents.values()][0]!
+    await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
+    const created = [...runtime.documents.values()][0]!
     const exact = "---\ntitle: Exact bytes\n---\n\n# Managed\n\n- alpha\n- beta\n"
     await saveSource(page, exact)
     expect(runtime.managedFiles.get(created.summary.managed_relative_path!)).toBe(exact)
@@ -1086,14 +1119,25 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const picker = page.getByRole("listbox", { name: "Documents" })
     await expect(picker).toBeVisible()
     await picker.getByRole("option", { name: /Agent brief/ }).click()
-    await expect(composer).toContainText(
-      `document: Agent brief at ${DIR}/.claxedo/sessions/${SESSION_ID}/docs/${document.summary.id}/agent-brief.md`,
-    )
-    const agentOpen = runtime.requests.find((request) => request.pathname.endsWith("/agent-open"))
-    expect(agentOpen?.body).toEqual({ session_id: SESSION_ID })
-    const hydratedPath = `${DIR}/.claxedo/sessions/${SESSION_ID}/docs/${document.summary.id}/agent-brief.md`
+    // The composer inserts the mention as the raw, honest `claxedo://document/<id>`
+    // reference (`documentMentionText`, src/app/integrations/document-mentions.ts —
+    // pinned by that file's own unit test), not a pre-resolved path string. Resolving
+    // it to a canonical hydrated file path is an MCP TOOL's job
+    // (`packages/claxedo-mcp/src/documents-tools.ts`'s "Open a claxedo://document/..."
+    // tool, which calls `POST /documents/:id/agent-open`) that only runs when a real
+    // agent processes the reference during a session turn — Tier L, out of this Tier M
+    // mock's reach (see this test's own `annotate()` above). No frontend code path
+    // calls `documentsApi.agentOpen` synchronously on mention insertion.
+    await expect(composer).toContainText(`claxedo://document/${document.summary.id}`)
+    await proveGeometry(page, composer, testInfo, "docs-mention-honest-reference")
+
+    // Simulate what the MCP tool does when a real agent turn later processes this
+    // reference: hydrate the canonical file into a session path (mirrors
+    // `runtime.hydrateForAgent`'s existing use elsewhere in this file for the same
+    // Tier L/Tier M split).
+    const hydratedPath = runtime.hydrateForAgent(document.summary.id, SESSION_ID)
+    expect(hydratedPath).toBe(`${DIR}/.claxedo/sessions/${SESSION_ID}/docs/${document.summary.id}/agent-brief.md`)
     expect(runtime.hydratedAgentFiles.get(hydratedPath)?.bytes).toBe("Heading\n=======\n\nagent base\n")
-    await proveGeometry(page, composer, testInfo, "docs-mention-honest-hydrated-path")
 
     await runtime.runAgentFileTool(hydratedPath, "Heading\n=======\n\nordinary agent file edit\n")
     // The open editor no longer live-refreshes (plan 2026-07-17-004): it still

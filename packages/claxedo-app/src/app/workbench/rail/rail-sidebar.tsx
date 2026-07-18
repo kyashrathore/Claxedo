@@ -2463,6 +2463,7 @@ export function RailSidebar(props: RailSidebarProps) {
     <nav
       ref={railRef}
       data-sidebar
+      data-claxedo-compact-touch
       data-pinned={docked() ? "" : undefined}
       data-open={docked() || expanded() ? "true" : "false"}
       class={`h-full flex flex-col bg-background-base overflow-hidden z-[50] pointer-events-auto

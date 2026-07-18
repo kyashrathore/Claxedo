@@ -21,7 +21,7 @@ export function PromptModelControl(props: {
   onClose: VoidFunction
 }) {
   const buttonClass =
-    "min-w-0 max-w-[220px] max-md:max-w-[72px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-faint group"
+    "min-w-0 max-w-[220px] max-md:max-w-[128px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-faint group"
 
   const content = () => (
     <>

@@ -345,7 +345,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     size: "normal" as const,
     disabled: modelDisabled(),
     style: modelTriggerStyle(),
-    class: "min-w-0 max-w-[160px] max-md:max-w-[72px] text-13-regular group",
+    class: "min-w-0 max-w-[160px] max-md:max-w-[104px] text-13-regular group",
     "aria-label": "Select harness model",
     "data-action": "prompt-harness-model",
   }))
@@ -431,7 +431,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             setSwitchingHarness((current) => current === r ? undefined : current)
           })
         }}
-        class="min-w-0 max-w-[120px] max-md:max-w-[86px]"
+        class="min-w-0 max-w-[120px] max-md:max-w-[112px]"
         valueClass={harnessDisabled() ? "truncate text-13-regular text-text-weak" : "truncate text-13-regular"}
         triggerStyle={harnessTriggerStyle()}
         variant="ghost"

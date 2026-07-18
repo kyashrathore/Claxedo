@@ -1,5 +1,6 @@
 import { Show, onCleanup, type Accessor } from "solid-js"
 
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { RailSidebar } from "./rail-sidebar"
@@ -102,21 +103,24 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
           button is `md:flex hidden` (desktop-only), so a phone needs its own
           affordance to open the drawer — this is the missing entry point that
           makes `openMobileSidebar` reachable (WP-C3 collapse design §3.1). */}
-      <Show when={!props.mobileSidebarOpen()}>
-        <button
-          type="button"
-          data-testid="mobile-sidebar-opener"
-          aria-label="Open navigation sidebar"
-          class="md:hidden fixed left-2 top-2 z-[95] flex size-9 items-center justify-center rounded-md border border-border-weaker-base bg-background-base/90 text-icon-weak-base backdrop-blur-sm transition-colors hover:text-icon-base"
-          onClick={() => props.openMobileSidebar()}
-        >
-          <span class="flex flex-col gap-[3px]" aria-hidden="true">
-            <span class="block h-0.5 w-4 rounded bg-current" />
-            <span class="block h-0.5 w-4 rounded bg-current" />
-            <span class="block h-0.5 w-4 rounded bg-current" />
-          </span>
-        </button>
-      </Show>
+      {/* Mirrors the desktop header "Show Sidebar" button (workbench-shell-header)
+          — same glyph and ghost treatment, positioned over the empty left slot of
+          the h-9 workbench header row so it reads as part of that row. Stays
+          mounted while the drawer is open (above it, z-[110] > drawer z-[100])
+          as a close toggle, like the desktop icon. `data-claxedo-compact-touch`
+          opts out of the 40px touch floor so the 32px box fits inside the 36px
+          row instead of spilling past its hairline. */}
+      <button
+        type="button"
+        data-testid="mobile-sidebar-opener"
+        data-claxedo-compact-touch
+        aria-label={props.mobileSidebarOpen() ? "Close navigation sidebar" : "Open navigation sidebar"}
+        aria-expanded={props.mobileSidebarOpen()}
+        class="md:hidden fixed left-1 top-[3px] z-[110] flex h-8 w-8 items-center justify-center rounded bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+        onClick={() => (props.mobileSidebarOpen() ? props.closeMobileSidebar() : props.openMobileSidebar())}
+      >
+        <Icon name={props.mobileSidebarOpen() ? "layout-left-full" : "layout-left-partial"} size="small" />
+      </button>
 
       <Show when={props.mobileSidebarOpen()}>
         <div

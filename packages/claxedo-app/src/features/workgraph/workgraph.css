@@ -904,12 +904,31 @@
   text-decoration-color: color-mix(in srgb, var(--text-weaker) 60%, transparent);
 }
 
-/* Lifecycle glyphs: dashed = staged, half-filled = in progress, check = done,
+/* Lifecycle glyphs: dashed = staged, spinning arc = running, check = done,
    alert = needs you. The shape carries the state; color reinforces it. */
 .workgraph-leaf-status {
   display: inline-flex;
   flex-shrink: 0;
   color: var(--icon-weak-base);
+}
+
+/* Running spins: a quarter arc orbiting a faint track ring, so live execution
+   is legible as motion, not just fill. Under reduced motion the arc holds
+   still — the track + bright arc pair still reads as "in progress". */
+.workgraph-leaf-spin {
+  animation: workgraph-leaf-spin 0.9s linear infinite;
+}
+
+@keyframes workgraph-leaf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workgraph-leaf-spin {
+    animation: none;
+  }
 }
 
 .workgraph-leaf-status[data-status="running"],

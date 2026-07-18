@@ -445,8 +445,22 @@ async function groupByWorkspace(page: Page) {
   await page.getByRole("menuitemradio", { name: "Workspace" }).click()
   await page.keyboard.press("Escape")
   await page.keyboard.press("Escape")
-  const expandToggle = page.getByRole("button", { name: "Expand project" })
-  if (await expandToggle.count()) await expandToggle.click()
+  // Wait for the workspace-grouped view to actually render first —
+  // `[data-testid="workspace-project-header"]` always renders once
+  // grouped-by-workspace (only its `workspace-header` CHILDREN are
+  // conditional on `open()`, rail-sidebar.tsx's `WorkspaceGroupBlock`).
+  await expect(page.locator('[data-testid="workspace-project-header"]').first()).toBeVisible({ timeout: 10_000 })
+  // The outer header's disclosure caret is a `<span role="button"
+  // aria-label="Expand project"|"Collapse project">` that
+  // `page.getByRole("button", { name: "Expand project" })` never matches here
+  // — reproduced live: `.count()` reliably returns 0 for this exact element
+  // even though its own `aria-label` attribute reads exactly "Expand
+  // project" (a Playwright accessible-name computation quirk with this
+  // span's sibling icon children, not a real absence of the element/label).
+  // A direct `[role="button"]` CSS locator scoped to the header finds and
+  // clicks it correctly, so target it that way instead of via role/name.
+  const expandToggle = page.locator('[data-testid="workspace-project-header"] [role="button"]').first()
+  if ((await expandToggle.getAttribute("aria-label")) === "Expand project") await expandToggle.click()
 }
 
 function toastTitle(page: Page) {

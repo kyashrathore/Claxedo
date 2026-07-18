@@ -57,24 +57,29 @@
     transition-timing-function: ease-out;
   }
 
+  /* `data-claxedo-compact-touch` opts out of the 40px floor — on the element
+     itself, or on a container to exempt a whole dense region (e.g. the rail
+     sidebar, whose full-width rows are the real tap targets; flooring their
+     interior glyph spans blows up 16px icons whose svg is absolute inset-0
+     and crushes the row labels). */
   [data-claxedo] :is(
     button[aria-label],
     button:has(> [data-component="icon"]),
     [role="button"][aria-label],
     [data-component="icon-button"]
-  ):not([data-claxedo-compact-touch]),
+  ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *),
   .settings-dialog :is(
     button[aria-label],
     button:has(> [data-component="icon"]),
     [role="button"][aria-label],
     [data-component="icon-button"]
-  ):not([data-claxedo-compact-touch]),
+  ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *),
   .claxedo-diagnostics-dialog :is(
     button[aria-label],
     button:has(> [data-component="icon"]),
     [role="button"][aria-label],
     [data-component="icon-button"]
-  ):not([data-claxedo-compact-touch]) {
+  ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *) {
     min-width: 40px;
     min-height: 40px;
   }

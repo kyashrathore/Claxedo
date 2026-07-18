@@ -232,6 +232,16 @@ import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 const DIR = "/tmp/e2e-core-session-actions"
 const PROJECT_ID = "proj_core_session_actions"
 const PROJECT_NAME = "core-session-actions"
+// A concrete, serving model. The mock's DEFAULT harness model is the
+// `big-pickle` placeholder (`SIGNED_WORKSPACE_DEFAULT_MODEL`), which the composer
+// now deliberately treats as "no model configured" and refuses to submit with
+// (`src/features/session/composer/signed-workspace-model.ts` — "has no serving
+// path and must never make the composer submit-ready"; gate in
+// `submit-block-wiring.ts`'s `needsModelSelection`). Every scenario in this spec
+// acts on a session that only exists after a successful first send, so each
+// `installMockRuntime` that precedes `sendFirstPrompt` must advertise a real
+// model — exactly as the sibling `core-first-prompt-local` send test does.
+const SEND_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
@@ -461,7 +471,7 @@ function trackSessionMutations(page: Page) {
 
 test.describe("core session actions: rename @core", () => {
   test("double-click opens the inline editor prefilled with the current title — behavior 1", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "rename dblclick original title")
 
     const display = page.locator('h1[data-slot="session-title-child"]')
@@ -474,7 +484,7 @@ test.describe("core session actions: rename @core", () => {
   })
 
   test("kebab menu Rename opens the inline editor — behavior 2", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "rename via kebab menu original title")
 
     await page.getByRole("button", { name: "More options", exact: true }).click()
@@ -486,7 +496,7 @@ test.describe("core session actions: rename @core", () => {
   })
 
   test("Enter commits the rename via PATCH and updates the header live — behaviors 3", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
     await sendFirstPrompt(page, mock, "rename enter commit original title")
@@ -509,7 +519,7 @@ test.describe("core session actions: rename @core", () => {
   })
 
   test("Escape cancels the edit without sending a PATCH — behavior 4", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
     await sendFirstPrompt(page, mock, "rename escape cancel original title")
@@ -529,7 +539,7 @@ test.describe("core session actions: rename @core", () => {
   })
 
   test("a failed rename PATCH keeps the editor open and shows a toast — behavior 5", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
     await sendFirstPrompt(page, mock, "rename failed save original title")
@@ -559,7 +569,7 @@ test.describe("core session actions: fork @core", () => {
     // list instead of falling back to the empty state. Un-fixme'd; awaiting
     // leader gate run.
 
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const forkedText = "fork source message please branch me"
     await sendFirstPrompt(page, mock, forkedText)
 
@@ -662,7 +672,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
   }
 
   test("revert prefills the composer and renders the revert dock — behaviors 7,8", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "revert flow first message")
 
     // Second turn so there is a message to revert AWAY from (revert targets the
@@ -711,7 +721,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
   })
 
   test("restoring the rolled-back row fully unreverts the session — behavior 9", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     await sendFirstPrompt(page, mock, "unrevert flow first message")
 
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -763,7 +773,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
 
 test.describe("core session actions: archive / delete @core", () => {
   test("archive sends the archived timestamp and navigates away — behavior 10", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
     await sendFirstPrompt(page, mock, "archive flow original title")
@@ -785,7 +795,7 @@ test.describe("core session actions: archive / delete @core", () => {
   })
 
   test("delete requires confirming a dialog naming the session, then removes it — behavior 11", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
     await sendFirstPrompt(page, mock, "delete flow original title")
