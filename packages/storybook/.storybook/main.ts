@@ -2,18 +2,21 @@ import { defineMain } from "storybook-solidjs-vite"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import tailwindcss from "@tailwindcss/vite"
-import { playgroundCss } from "./playground-css-plugin"
+import { playgroundCss } from "./playground-css-plugin.ts"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const ui = path.resolve(here, "../../ui")
 const sessionUi = path.resolve(here, "../../session-ui")
-const app = path.resolve(here, "../../app/src")
+const app = path.resolve(here, "../../claxedo-app/src")
 const mocks = path.resolve(here, "./mocks")
 
 export default defineMain({
   framework: {
     name: "storybook-solidjs-vite",
-    options: {},
+    options: {
+      // The TS-language-service docgen indexes the whole monorepo and OOMs a 4GB heap.
+      docgen: false,
+    },
   },
   addons: [
     "@storybook/addon-onboarding",
@@ -25,7 +28,7 @@ export default defineMain({
   stories: [
     "../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
     "../../session-ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
-    "../../app/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
+    "../../claxedo-app/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
   ],
   async viteFinal(config) {
     const { mergeConfig, searchForWorkspaceRoot } = await import("vite")
