@@ -12,16 +12,26 @@ Docs with expected output per recipe: **[docs.claxedo.com](https://docs.claxedo.
 ## Run
 
 ```bash
-bun install         # links the @claxedo/* packages from this monorepo checkout
+bun install         # builds + links the @claxedo/* packages from this monorepo checkout
 bun run recipe:01-hello-agent
 ```
 
 `bun install` runs a postinstall step (`scripts/link-local.mjs`) that links the
-`@claxedo/*` packages from this monorepo's `packages/` directory. Outside the
-repo checkout, set `CLAXEDO_PACKAGES_ROOT=/path/to/opencode`.
+`@claxedo/*` packages from this monorepo's `packages/` directory. Those packages
+ship `dist/` when published but not in a source checkout, so the first `bun
+install` also builds any of the seven linked packages whose `dist/` is missing
+(in dependency order) before symlinking them in — that first run takes longer
+than a plain link; later runs are instant once `dist/` exists. Outside the repo
+checkout, set `CLAXEDO_PACKAGES_ROOT=/path/to/opencode`.
 
 Recipes 01–07 run under Node (`tsx`); recipe 08 runs under Bun because
 `@claxedo/workspace-relay` requires `Bun.serve`.
+
+This monorepo-checkout dance is only for running *this cookbook's* recipes
+against local source. The `@claxedo/*` packages themselves are ordinary
+published npm packages — to use one in your own project, `npm install
+@claxedo/agent-sdk-runtime` (or any of the others) against the published
+registry version works with no monorepo, no linking, and no local build.
 
 ## The ladder
 

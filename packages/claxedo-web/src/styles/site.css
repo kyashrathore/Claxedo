@@ -1081,5 +1081,7 @@
 
 @media (max-width: 40rem) {
   .nav { flex-wrap: wrap; }
-  .nav-links { display: none; }
+  /* Keep the nav lean on mobile, but never hide the GitHub link. */
+  .nav-links { gap: 12px; }
+  .nav-links a:not(.nav-gh) { display: none; }
 }

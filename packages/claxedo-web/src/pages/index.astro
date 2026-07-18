@@ -52,7 +52,7 @@ const packages = [
 ---
 
 <Layout
-  title="Claxedo — Deploy your entire agent stack. One click. Your servers."
+  title="Claxedo — Deploy your entire agent stack. One command. Your servers."
   description="Claxedo is the open-source agent stack: app, control plane, workspace runtime, relay, and the packages they're built from — all MIT. Run Claude Code, Codex, Gemini CLI, or any ACP agent. Deploy the whole stack to your own infrastructure, or use the hosted backend. Same code either way."
 >
   <div class="page-frame">
@@ -61,7 +61,7 @@ const packages = [
     <section class="home-hero">
       <div class="home-hero-inner">
         <span class="hero-kicker" data-reveal="1"><span class="dot"></span> 100% open source — every layer, MIT</span>
-        <h1 class="home-title" data-reveal="2">Deploy your entire<br />agent stack.<br />One click. Your servers.</h1>
+        <h1 class="home-title" data-reveal="2">Deploy your entire<br />agent stack.<br />One command. Your servers.</h1>
         <p class="home-sub" data-reveal="3">
           Any model. Any harness. Any kind of work. Claxedo deploys the open-source app,
           backend, workspaces, and agent runtime to infrastructure you control — or runs
@@ -78,8 +78,40 @@ const packages = [
           <span class="deploy-note">— the whole stack, on your own servers, in minutes</span>
         </p>
 
+        <p class="pricing-line" data-reveal="5">
+          <span class="dot"></span> Free and open source — managed hosting is the only paid tier.
+        </p>
+
         <div class="home-chips" data-reveal="6">
           {chips.map((c) => <span class="chip"><span class="dot"></span>{c}</span>)}
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--ruled" id="proof">
+      <div class="container">
+        <div class="proof-grid">
+          <figure class="proof-card">
+            <div class="proof-shot">
+              <img
+                src="/screenshots/all-coding-agent-dark.png"
+                width="3024"
+                height="1964"
+                loading="lazy"
+                decoding="async"
+                alt="The Claxedo desktop app running several coding agents side by side in dark mode — managed terminal sessions, tabs, and a review surface."
+              />
+            </div>
+            <figcaption class="proof-copy">
+              <span class="proof-tag">// the real app</span>
+              <h3>Every coding agent, one workspace.</h3>
+              <p>
+                Claude Code, Codex, and Gemini CLI running as themselves — split panes,
+                managed terminals, and a review surface, with your skills synced across all
+                of them. Local, cloud, or split, on your servers or ours.
+              </p>
+            </figcaption>
+          </figure>
         </div>
       </div>
     </section>
@@ -274,6 +306,27 @@ const packages = [
   }
 
   .deploy-note { font-size: 13px; }
+
+  .pricing-line {
+    margin-top: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 13px;
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    color: var(--text-strong);
+  }
+
+  .pricing-line .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--accent);
+    flex: none;
+  }
 
   .home-chips {
     display: flex;

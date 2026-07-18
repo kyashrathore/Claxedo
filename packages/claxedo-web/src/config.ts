@@ -9,7 +9,7 @@ export const previewSrc = `${appUrl}/demo/?embed=1`
 
 export const contact = "https://discord.gg/jSyhEQyT"
 export const github = "https://github.com/kyashrathore/Claxedo"
-export const docs = github
+export const docs = "https://docs.claxedo.com"
 
 export const version = "0.0.59"
 

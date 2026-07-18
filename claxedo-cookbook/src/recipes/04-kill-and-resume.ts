@@ -3,9 +3,10 @@
 //       and a second fresh process reopens the same sqlite root and recovers the
 //       session and its full transcript.
 // RUN:  bun run recipe:04-kill-and-resume   (invokes: npx tsx src/recipes/04-kill-and-resume.ts)
-// NEEDS: better-sqlite3 (a dependency of this cookbook; the store falls back to it
-//        under Node). A coding-agent harness on PATH for the live turn — with no
-//        harness, phase 1 still creates + persists the session and says so honestly.
+// NEEDS: better-sqlite3 (an optional dependency of @claxedo/agent-sdk-runtime; the
+//        store falls back to it under Node). A coding-agent harness on PATH for the
+//        live turn — with no harness, phase 1 still creates + persists the session
+//        and says so honestly.
 // WOW:  "killed pid X -> new process recovered session Y with N messages"
 
 import { spawn } from "node:child_process"
@@ -36,9 +37,17 @@ async function orchestrate() {
   })
   if (!process.versions.bun) {
     try {
-      createRequire(import.meta.url).resolve("better-sqlite3")
+      // The sqlite store resolves better-sqlite3 relative to
+      // @claxedo/agent-sdk-runtime's own install location, not this cookbook's
+      // node_modules — probe from there so a positive result actually reflects
+      // what the store will find at runtime.
+      const runtimeEntry = createRequire(import.meta.url).resolve("@claxedo/agent-sdk-runtime")
+      createRequire(runtimeEntry).resolve("better-sqlite3")
     } catch {
-      skip("better-sqlite3 is not installed (Node needs it for the sqlite store)", "npm i better-sqlite3")
+      skip(
+        "better-sqlite3 is not installed under @claxedo/agent-sdk-runtime (Node needs it for the sqlite store)",
+        "reinstall @claxedo/agent-sdk-runtime so its optional better-sqlite3 dependency builds",
+      )
     }
   }
 

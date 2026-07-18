@@ -24,7 +24,7 @@ const { active } = Astro.props
     <a href="/#stack">Stack</a>
     <a href="/app" class={active === "app" ? "is-active" : undefined}>App</a>
     <a href="/framework" class={active === "framework" ? "is-active" : undefined}>Packages</a>
-    <a href={github}>GitHub</a>
+    <a href={github} class="nav-gh">GitHub</a>
   </div>
   <div class="nav-actions">
     <a class="btn-primary" href="/#deploy">Deploy</a>
