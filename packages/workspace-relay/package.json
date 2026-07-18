@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-relay",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "description": "Relay/tunnel server that routes authenticated traffic to workspace runtimes: JWT workspace tokens, header-stripping trust boundary, Bun and Cloudflare adapters",
   "license": "MIT",
@@ -46,7 +46,7 @@
     "test": "bun test src"
   },
   "dependencies": {
-    "@claxedo/workspace-relay-protocol": "0.5.1",
+    "@claxedo/workspace-relay-protocol": "0.5.2",
     "@sentry/bun": "10.64.0",
     "hono": "4.10.7",
     "jose": "6.0.11"

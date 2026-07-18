@@ -11,7 +11,6 @@ const recordTypes = new Set([
   "work_item",
   "attempt",
   "decision",
-  "recap",
   "admission_proposal",
 ])
 

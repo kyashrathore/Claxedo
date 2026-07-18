@@ -1,8 +1,18 @@
 # @claxedo/workgraph
 
+A durable, event-sourced backend for organizing, executing, and remembering AI-assisted work.
+
 WorkGraph is Claxedo's personal operating system for AI-assisted work: a durable place to organize goals, understand what agents are doing, preserve decisions and evidence, and resume work without reconstructing old conversations.
 
 Each personal WorkGraph is physically scoped by a trusted `(organization, user)` tuple derived by the host. The organization supplies the security and Connection boundary; the WorkGraph remains the user's personal work structure inside that boundary.
+
+## Install
+
+```sh
+npm install @claxedo/workgraph
+```
+
+`better-sqlite3` ships as a direct dependency for the local adapter; a Convex-backed host supplies its own adapter instead.
 
 ```text
 Personal WorkGraph
@@ -12,7 +22,7 @@ Personal WorkGraph
       └─ Outcome (optional grouping for Tasks)
 ```
 
-Streams also contain Work Sources, Decisions, Recaps, artifacts, external issues, and agent discoveries. See [PRD.md](./PRD.md) for the current product contract.
+Streams also contain Work Sources, Decisions, artifacts, external issues, and agent discoveries. See [PRD.md](./PRD.md) for the current product contract.
 
 ## Typical flow
 
@@ -22,13 +32,12 @@ Streams also contain Work Sources, Decisions, Recaps, artifacts, external issues
 3. The Stream receives an isolated worktree or cloud VM; Tasks inherit its execution context and declare model, effort, tools, and completion contract.
 4. WorkGraph launches every ready item and records each Attempt.
 5. Agents update factual state, attach results, add necessary discovered work, and raise consequential Decisions for review.
-6. After eight quiet hours, WorkGraph generates a Stream Recap and surfaces only actionable attention.
 
 Work started outside WorkGraph appears as a tenant-scoped candidate in the aggregated Unorganized AI work entry in the Needs you view of the existing app-global WorkspacePanel. Candidates use this shared attention surface rather than a separate intake, capture, or onboarding screen.
 
 ## Current delivery
 
-The repository includes the WorkGraph application service embedded in `claxedo-server`, its backend-neutral HTTP and ordered-change contract, the SQLite local adapter, the Convex Cloud adapter, strict Session-backed source planning and Recaps, Connections-backed candidates, MCP tools, and the main WorkGraph Stream tree with inline Add task. Focused package, server, Convex, and MCP verification is green in the working delivery branch. The Docs v2 adapter seam accepts exact immutable document revisions, while the current legacy Pages surface still lacks the durable revision action needed to trigger that journey.
+The repository includes the WorkGraph application service embedded in `claxedo-server`, its backend-neutral HTTP and ordered-change contract, the SQLite local adapter, the Convex Cloud adapter, strict Session-backed source planning, Connections-backed candidates, MCP tools, and the main WorkGraph Stream tree with inline Add task. Focused package, server, Convex, and MCP verification is green in the working delivery branch. The Docs v2 adapter seam accepts exact immutable document revisions, while the current legacy Pages surface still lacks the durable revision action needed to trigger that journey.
 
 Approved WorkspacePanel browser acceptance and the final integrated repository regression pass. The canonical real-local suite is 11/11, and an independent headless inspection confirms the accessible single-surface interaction and Add-task focus path. Real Cloud deployment evidence remains in progress. Staging has not been deployed because the GitHub staging environment does not yet contain the required Convex, Cloudflare, Clerk, control-plane, sandbox, relay, and smoke configuration. Cloud becomes release-accepted after Convex schema/functions, Worker, and app deploy in that order and the signed cross-tenant, exact capability-catalog, and canonical deployed browser journeys pass.
 
@@ -59,7 +68,7 @@ Matching issues remain user-owned, tenant-scoped candidates and appear in Needs 
 
 Provider secrets and Connection metadata remain organization-owned in Connections. WorkGraph stores the user's Connection binding, provider identity mapping, filters, and sync receipts. Connectors obtain a live `CapabilityHandle` for each external operation and report authentication failure through it.
 
-The external tracker remains authoritative for team issue state. WorkGraph owns the user's execution overlay: Attempts, Decisions, Recaps, and evidence. Sync-back defaults to announcing meaningful results.
+The external tracker remains authoritative for team issue state. WorkGraph owns the user's execution overlay: Attempts, Decisions, and evidence. Sync-back defaults to announcing meaningful results.
 
 ## Execution
 
@@ -87,11 +96,9 @@ The embedded services are available through:
 - TypeScript APIs for embedded hosts;
 - the northbound HTTP/JSON and ordered-change API mounted by `claxedo-server`;
 - scoped MCP tools for agents;
-- webhook, scheduled candidate-admission, and background Recap workers.
+- webhook and scheduled candidate-admission workers.
 
 Every operation is bound to an authenticated organization and owner user. Future read-only sharing uses explicit grants and never changes ownership implicitly.
-
-Actionable Recaps create one durable tenant-scoped notification in the same atomic write as the Recap. The notification carries the exact Stream and Recap identifiers, and acknowledgement uses the rendered notification version so retries, newer Recaps, and stale tabs do not mark the wrong delivery as read. Needs you opens the exact Recap in its focused inspector before acknowledging that rendered notification version.
 
 ## Local composition
 
@@ -100,9 +107,28 @@ Local hosts own the SQLite connection and compose the SQLite adapter explicitly:
 ```ts
 import Database from "better-sqlite3"
 import { createSqliteWorkGraphService } from "@claxedo/workgraph"
+import { OperationIDSchema, StreamIDSchema, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 
 const database = new Database("./workgraph.db")
 const workgraph = createSqliteWorkGraphService({ database }).service
+
+const owner = {
+  organizationId: "organization_demo",
+  ownerUserId: "user_demo",
+  actor: { type: "user", id: "user_demo" },
+  requestId: "request_demo",
+  access: { mode: "owner" },
+} as WorkGraphContext
+
+const created = await workgraph.execute(owner, {
+  operationId: OperationIDSchema.parse("operation_demo"),
+  command: { version: 1, type: "create_stream", title: "Ship Cloud" },
+})
+if (!created.ok) throw new Error(created.error.message)
+
+const streamId = StreamIDSchema.parse((created.value as { streamId: string }).streamId)
+const stream = await workgraph.query(owner, "streams", "read", { streamId })
+console.log(stream?.title) // "Ship Cloud"
 ```
 
 `claxedo-server` constructs this service with the deployment's storage, Connections, and workspace-execution adapters, mounts the standard HTTP router for app and standalone MCP clients, and supplies the service directly to local embedded agent tools and workers. Claxedo Cloud uses the same composition with Convex and hosted execution adapters.
@@ -146,7 +172,7 @@ The maintained public package surfaces are `@claxedo/workgraph`, `/contracts`, `
 
 ## Boundaries
 
-- WorkGraph owns personal work structure, backend candidate admission state, Attempts, Decisions, Recaps, events, and sync receipts.
+- WorkGraph owns personal work structure, backend candidate admission state, Attempts, Decisions, events, and sync receipts.
 - WorkGraph owns exact Work Sources captured through agents, explicit source actions, and authoring adapters, together with their revision history. The Docs v2 adapter seam exists; a durable Docs v2 authoring surface must invoke it before the user journey is complete. The current legacy Pages surface does not provide that invocation.
 - Workspace runtimes own files, processes, terminals, worktrees, cloud VMs, and agent sessions.
 - Connections owns provider credentials, refresh, capability grants, and authentication health.

@@ -25,7 +25,7 @@ export * from "./owner-deletion"
 export * from "./replacement"
 export * from "./snapshot-restart"
 
-export const WORKGRAPH_ADAPTER_CONFORMANCE_VERSION = 6 as const
+export const WORKGRAPH_ADAPTER_CONFORMANCE_VERSION = 7 as const
 
 export const WORKGRAPH_ADAPTER_CONFORMANCE_SCOPE = {
   covered: [
@@ -62,7 +62,6 @@ export type ConformanceCommands = Pick<
   | "set_stream_lifecycle"
   | "create_outcome"
   | "create_work_item"
-  | "execute_work_item"
   | "record_evidence"
   | "delete_stream"
 >
@@ -144,6 +143,16 @@ export type StoreConformanceFactory = (input: Readonly<{
   executionProfile?: ResolvedExecutionProfile
   restart: () => Promise<Readonly<{ attemptRuntime: AttemptRuntimePort }>>
   faults: Readonly<{ failNextAppend: () => void }>
+  /**
+   * Ensure the given approved (`pending`) Work Item has an admitted Attempt and
+   * return it as a CommandResult whose value carries `{ attemptId, leaseEpoch }`.
+   * Execution-mode commands are gone: adapters admit through their own launch
+   * path (the SQLite drain auto-admits; the reference adapter admits on demand).
+   */
+  admit: (
+    owner: WorkGraphContext,
+    input: Readonly<{ workItemId: WorkItemID }>,
+  ) => Promise<CommandResult>
 }>>
 
 export type WorkGraphAdapterConformanceCase = Readonly<{
@@ -437,23 +446,11 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
         },
       })
       const workItemId = valueId(workItem, "workItemId") as WorkItemID
-      const attempts = await Promise.all([
-        fixture.service.execute(fixture.owners.first, {
-          operationId: operation("lease_attempt_first"),
-          command: { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" },
-        }),
-        fixture.service.execute(fixture.owners.first, {
-          operationId: operation("lease_attempt_second"),
-          command: { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" },
-        }),
-      ])
-      assert(
-        attempts.filter((attempt) => attempt.ok).length === 1,
-        `Competing admission did not produce exactly one live lease holder: ${canonicalJson(attempts)}`,
-      )
-      const admitted = attempts.find((attempt) => attempt.ok)!
-      const rejectedAttempt = attempts.find((attempt) => !attempt.ok)!
-      assertError(rejectedAttempt, "blocked")
+      // A user-created task is born approved; admission now flows through the
+      // adapter's own launch path (the concurrency fence — one live lease holder
+      // across competing admissions — is exercised by the adapter's own suite).
+      const admitted = await fixture.admit(fixture.owners.first, { workItemId })
+      assert(admitted.ok, `Approved Work Item was not admitted: ${canonicalJson(admitted)}`)
       const attemptId = valueId(admitted, "attemptId") as AttemptID
       const leaseEpoch = valueNumber(admitted, "leaseEpoch")
       assert(leaseEpoch === 1, "Initial admission did not start at lease epoch one")

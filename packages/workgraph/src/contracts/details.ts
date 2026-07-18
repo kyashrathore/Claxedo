@@ -3,7 +3,6 @@ import { AdmissionProposalIDSchema } from "./commands"
 import {
   AttemptIDSchema,
   DecisionIDSchema,
-  RecapIDSchema,
   StreamIDSchema,
   WorkItemIDSchema,
 } from "./ids"
@@ -13,7 +12,6 @@ import {
   AttemptDtoSchema,
   AttemptExecutionReferencesSchema,
   DecisionDtoSchema,
-  RecapDtoSchema,
   WorkItemDtoSchema,
 } from "./records"
 import { IntakeCandidateDtoSchema } from "./source-view"
@@ -30,8 +28,6 @@ export const AttemptReadInputSchema = z.strictObject({ attemptId: AttemptIDSchem
 export type AttemptReadInput = z.infer<typeof AttemptReadInputSchema>
 export const DecisionReadInputSchema = z.strictObject({ decisionId: DecisionIDSchema })
 export type DecisionReadInput = z.infer<typeof DecisionReadInputSchema>
-export const RecapReadInputSchema = z.strictObject({ recapId: RecapIDSchema })
-export type RecapReadInput = z.infer<typeof RecapReadInputSchema>
 export const IntakeCandidateReadInputSchema = z.strictObject({ candidateId: z.string().trim().min(1).max(512) })
 export type IntakeCandidateReadInput = z.infer<typeof IntakeCandidateReadInputSchema>
 
@@ -118,7 +114,6 @@ export const WorkGraphDetailSchemas = {
   workItem: WorkItemDtoSchema,
   attempt: AttemptDetailDtoSchema,
   decision: DecisionDtoSchema,
-  recap: RecapDtoSchema,
   candidate: IntakeCandidateDtoSchema,
   attempts: WorkItemAttemptPageSchema,
   replacementReview: ReplacementReviewSchema,

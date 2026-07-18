@@ -6,7 +6,7 @@ WorkGraph V2 is the production and published WorkGraph surface. Local Claxedo mo
 
 | Entry                            | Scope                                                                                                                                                                       |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@claxedo/workgraph`             | V2 application services, ports, SQLite composition, HTTP router, backend candidate admission, Recaps, portable archive operations, and explicit legacy migration operations |
+| `@claxedo/workgraph`             | V2 application services, ports, SQLite composition, HTTP router, backend candidate admission, portable archive operations, and explicit legacy migration operations |
 | `@claxedo/workgraph/contracts`   | Browser-safe V2 commands, records, events, IDs, and execution contracts                                                                                                     |
 | `@claxedo/workgraph/domain`      | Browser-safe lifecycle and completion rules                                                                                                                                 |
 | `@claxedo/workgraph/hosted`      | Worker-safe hosted service and HTTP composition                                                                                                                             |

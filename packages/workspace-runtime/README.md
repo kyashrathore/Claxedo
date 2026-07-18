@@ -11,6 +11,39 @@ UI never imports this package directly. The user's browser talks to
 `claxedo-server`, which proxies to a workspace-runtime instance via the
 gateway pattern in `claxedo-server/src/proxy.ts`.
 
+See [`docs/architecture.md`](docs/architecture.md) for the five deployment
+shapes, the two event systems, the harness adapter seam, and the
+journal-backed store, in one place.
+
+## Install
+
+```sh
+npm install @claxedo/workspace-runtime
+```
+
+Minimal loopback host, no `claxedo-server` or control plane involved:
+
+```ts
+import { startServer, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
+
+startServer(
+  3002,
+  {
+    exposure: loopbackWorkspaceRuntimeExposure(),
+    target: { workspaceId: "demo", directory: process.cwd() },
+  },
+  // Opt in to process-global SIGTERM/SIGINT/exit handling; omit this to let
+  // the host process own signals itself.
+  { signals: true },
+)
+```
+
+`startServer(port?, options?, lifecycle?)` requires an explicit `exposure`
+declaration (`loopbackWorkspaceRuntimeExposure()` here) and refuses to start
+without one. See [Supported runtime shapes](#supported-runtime-shapes) below
+for the other four exposure/deployment options, and
+[`docs/architecture.md`](docs/architecture.md) for the full picture.
+
 ## Package role: a kit, not a runnable artifact
 
 This package ships the runtime **primitives** (host wiring, adapters,
@@ -69,7 +102,15 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/testing` | Small test management-auth helpers. |
 
 Root runtime value exports:
-`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WorkspaceRuntimeRouteManifest`,
+`Pty`, `WORKGRAPH_ATTEMPT_BINDING_PATH`, `WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS`,
+`WORKGRAPH_ATTEMPT_TOOL_NAMES`, `WORKGRAPH_ATTEMPT_TOOL_PATH`,
+`WORKGRAPH_ATTEMPT_TOOL_SCHEMAS`, `WORKGRAPH_CONNECTION_BINDING_PATH`,
+`WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS`, `WORKGRAPH_CONNECTION_TOOL_NAMES`,
+`WORKGRAPH_CONNECTION_TOOL_PATH`, `WORKGRAPH_CONNECTION_TOOL_SCHEMAS`,
+`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WorkGraphAttemptToolRoutes`,
+`WorkGraphConnectionOperationRequestSchema`,
+`WorkGraphConnectionOperationResponseSchema`, `WorkGraphConnectionToolRoutes`,
+`WorkspaceRuntimeRouteManifest`,
 `WorkspaceRuntimeRoutes`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
@@ -77,6 +118,7 @@ Root runtime value exports:
 `loopbackWorkspaceRuntimeExposure`, `normalizeRuntimeSnapshot`,
 `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
+`flushRuntimeDocument`, `forgetRuntimeDocuments`,
 `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
 `waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`, and
 `workspaceRuntimeRoute`.
@@ -106,6 +148,8 @@ boundary.
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
+| `*    /api/workgraph/tools`, `* /api/workgraph/connection-binding` | [`routes/workgraph-connection-tools.ts`](src/routes/workgraph-connection-tools.ts) | exposure-dependent runtime auth |
+| `*    /api/workgraph/attempt-tools`, `* /api/workgraph/attempt-binding` | [`routes/workgraph-attempt-tools.ts`](src/routes/workgraph-attempt-tools.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/session-env/*` | session-env routes (mounted by the host) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |
@@ -457,13 +501,21 @@ neutral `WORKSPACE_RUNTIME_*` names.
 
 ## Runtime-only example
 
-The local example starts a loopback runtime over a directory without
-`claxedo-app`, `claxedo-server`, Clerk, Convex, or a control plane:
+The runnable example lives in the repo-root [`claxedo-cookbook`](../../claxedo-cookbook),
+not inside this package. Recipe 05 boots a loopback Workspace Host
+(`createWorkspaceRuntimeApp`) over a sandboxed temp directory and tours the
+file, git/diff, managed-process, and event-stream route families over plain
+`fetch` — no `claxedo-app`, `claxedo-server`, Clerk, Convex, agent CLI, or
+control plane involved:
 
 ```sh
-bun --cwd examples/runtime-only-host typecheck
-bun --cwd examples/runtime-only-host smoke
+cd claxedo-cookbook
+bun install
+bun run recipe:05-workspace-host
 ```
+
+See [`claxedo-cookbook/README.md`](../../claxedo-cookbook/README.md) for the
+full recipe ladder and what each recipe needs.
 
 ## Boundary rule
 

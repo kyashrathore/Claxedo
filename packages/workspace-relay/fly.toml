@@ -4,13 +4,6 @@
 #   fly launch --copy-config --no-deploy -c packages/workspace-relay/fly.toml
 #   fly deploy -c packages/workspace-relay/fly.toml
 #
-# PREREQUISITE (not yet in-tree): a relay Dockerfile at
-# packages/workspace-relay/Dockerfile. The relay is a Bun process
-# (`bun run src/main.ts`, see package.json "start"); the image needs the
-# monorepo build context (like claxedo-server's Dockerfile) or a bundled
-# dist/main.mjs (`bun run build`) on an oven/bun base. Until that Dockerfile
-# exists, `fly deploy` against this config will fail at the build step.
-#
 # Required secrets (`fly secrets set`) before first deploy — the relay
 # fail-closes in production without them (src/main.ts):
 #   CLAXEDO_RELAY_RESOLVER_TOKEN        (required when NODE_ENV=production)

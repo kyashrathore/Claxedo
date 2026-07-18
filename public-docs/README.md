@@ -58,9 +58,12 @@ materialization can use `@claxedo/agent-extensions` directly.
 | `@claxedo/workspace-relay` | Run the relay process that connects browsers/gateways to workspace-runtime hosts. |
 | `@claxedo/mcp` | Expose Claxedo runtime tools to any MCP client. |
 
-Agent Extensions are available as `@claxedo/agent-extensions`.
-`workspace-runtime` still re-exports the replay and materializer helpers for
-compatibility, but new consumers should import the package directly.
+Agent Extensions are available as `@claxedo/agent-extensions`. The replay and
+materializer helpers live only in `@claxedo/agent-extensions`;
+`workspace-runtime` re-exports only the extension-scope types
+(`AgentExtensionScope`, `HarnessTarget`, `MaterializedAgentExtensionScope`,
+`PackageSource`) from its `/config` subpath, and new consumers should import
+`@claxedo/agent-extensions` directly for the helpers.
 
 ## Start Here
 
@@ -79,5 +82,7 @@ compatibility, but new consumers should import the package directly.
   and materialize extension packages across harness targets.
 - [Relay And Deployment](./relay-and-deployment.md): local, private VM,
   config-token, and relay-attached runtime shapes.
+- [Self-Host on Fly.io](./self-host-fly.md): the `claxedo deploy` wizard —
+  a zero-Convex/Clerk unsigned single-user control plane on your own Fly account.
 - [MCP](./mcp.md): current MCP server tools and environment variables.
 - [Supported Surfaces](./supported-surfaces.md): source-grounded status table.

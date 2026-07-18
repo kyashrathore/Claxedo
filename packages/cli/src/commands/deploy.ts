@@ -199,7 +199,8 @@ primary_region = "${input.region}"
 
 [[vm]]
   size = "shared-cpu-2x"
-  memory = "2gb"
+  # 4GB: the embedded engine (node-embed) OOMs a 2GB machine on first load.
+  memory = "4gb"
 `
 }
 

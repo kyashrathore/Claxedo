@@ -5,15 +5,61 @@ traffic. This package intentionally has no Hono, Bun, or server dependency so
 workspace hosts and non-Node clients can validate tunnel frames without pulling
 in the relay implementation.
 
+## Install
+
+```sh
+npm install @claxedo/workspace-relay-protocol
+```
+
+## Quickstart
+
+```ts
+import { createStaticTokenVerifier, isTunnelMessage, validateTunnelMessage } from "@claxedo/workspace-relay-protocol"
+
+// Validate an inbound tunnel frame before acting on it.
+const result = validateTunnelMessage(JSON.parse(rawFrame))
+if (!result.ok) {
+  throw new Error(`invalid tunnel frame: ${result.reason}`)
+}
+// result.message is a narrowed TunnelMessage here.
+
+// Or use the boolean type guard when you just need a filter.
+const frames = incoming.filter(isTunnelMessage)
+
+// A fixed token table for tests and single-tenant self-hosted deployments.
+const verifier = createStaticTokenVerifier({
+  tokens: {
+    "test-token": {
+      subject: "workspace-abc",
+      scopes: ["relay:connect"],
+      claims: {
+        iss: "claxedo-test",
+        aud: "workspace-relay",
+        sub: "workspace-abc",
+        workspace_id: "workspace-abc",
+        host_id: "host-1",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        iat: Math.floor(Date.now() / 1000),
+        jti: "jti-1",
+      },
+    },
+  },
+})
+const claims = await verifier.verify("test-token")
+```
+
 ## Public Surface
 
 | Export | Stability | Purpose |
 | --- | --- | --- |
 | `TUNNEL_PROTOCOL_VERSION` | Stable | Current tunnel protocol version. |
-| `TunnelMessage` and message subtypes | Stable | Discriminated union for HTTP, WebSocket, heartbeat, flow-control, and error frames. |
+| `TunnelMessage` and message subtypes | Stable | Discriminated union for HTTP, WebSocket, heartbeat, host-registration, flow-control, and error frames. |
+| `TunnelHostRegistrationUpdate` / `"host.registration.update"` | Stable | Frame a host sends to update the set of workspace IDs it serves and its auth token. |
 | `validateTunnelMessage`, `isTunnelMessage` | Stable | Runtime validation for protocol, message type, and per-message payload shape. |
-| `makeTunnelPong` | Stable | Helper for heartbeat replies. |
+| `TunnelMessageValidation` | Stable | Result type returned by `validateTunnelMessage` — `{ ok: true, message }` or a typed failure (`protocol_mismatch` / `invalid`). |
+| `makeTunnelPing`, `makeTunnelPong` | Stable | Helpers for heartbeat requests and replies. |
 | `TokenVerifier` and claim types | Stable | Narrow verifier interface shared by relay/runtime boundaries. |
+| `RelayHostVerifierClaims` (incl. `role`) | Stable | Claims shape for host-side verification: org, `role` (`viewer` \| `editor` \| `admin` \| `owner`), and cloud/user-hosted backing discriminant. |
 | `createClerkTokenVerifier` | Public beta | Verifies Clerk session tokens with issuer, audience, JWKS, and algorithm constraints. |
 | `createHttpTokenVerifier` | Public beta | Calls an operator-controlled verifier endpoint over HTTP. |
 | `createStaticTokenVerifier` | Test/single-tenant only | Fixed token table for tests and isolated self-hosted deployments. |

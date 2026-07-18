@@ -3,7 +3,6 @@ import type {
   ExecutionProfileDefaults,
   OrganizationID,
   OwnerUserID,
-  RecapProfileDefaults,
   ResolvedExecutionProfile,
 } from "../contracts"
 import { isExecutionCapabilityCatalogFresh } from "../contracts"
@@ -62,25 +61,6 @@ export function validateResolvedExecutionProfileAgainstCapabilities(input: Reado
   profile: ResolvedExecutionProfile
 }>): ExecutionProfileCapabilityValidation {
   return validate(input, true)
-}
-
-export function validateRecapProfileDefaultsAgainstCapabilities(input: Readonly<{
-  organizationId: OrganizationID
-  ownerUserId: OwnerUserID
-  now: number
-  capabilities: ExecutionCapabilities
-  profile: RecapProfileDefaults
-}>): ExecutionProfileCapabilityValidation {
-  return validate({
-    organizationId: input.organizationId,
-    ownerUserId: input.ownerUserId,
-    now: input.now,
-    capabilities: input.capabilities,
-    profile: {
-      ...(input.profile.model ? { model: input.profile.model } : {}),
-      ...(input.profile.effort ? { effort: input.profile.effort } : {}),
-    },
-  }, false)
 }
 
 function validate(

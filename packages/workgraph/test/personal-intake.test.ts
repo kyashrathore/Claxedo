@@ -404,41 +404,20 @@ describe("Connections-backed personal intake", () => {
 })
 
 describe("bounded stream matching", () => {
-  it("does not load older memory when recent context has a high-confidence match", async () => {
-    let olderReads = 0
-    const matching = createMatchingService({
-      streams: {
-        recent: async () => [{ id: StreamIDSchema.parse("recent"), title: "Ship cloud", summary: "launch claxedo", pinned: false, lastActivityAt: fixedClock.now() }],
-        pinned: async () => [],
-        olderMemories: async () => (olderReads++, []),
-      },
-      clock: fixedClock,
-    })
-    const result = await matching.suggest(context("alice"), { title: "Ship cloud", body: "launch claxedo" })
-    expect(result.recommendation).toMatchObject({ streamId: "recent", confidence: "high" })
-    expect(result.expandedOlderMemories).toBe(false)
-    expect(olderReads).toBe(0)
-  })
-
-  it("loads bounded recent, pinned and memory-only sets and caps older confidence", async () => {
+  it("loads bounded recent and pinned Stream sets", async () => {
     const limits: number[] = []
     const matching = createMatchingService({
       streams: {
-        recent: async (_context, limit) => (limits.push(limit), [{ id: StreamIDSchema.parse("recent"), title: "Database migration", summary: "schema rollout", pinned: false, lastActivityAt: fixedClock.now() }]),
+        recent: async (_context, limit) => (limits.push(limit), [{ id: StreamIDSchema.parse("recent"), title: "Ship cloud", summary: "launch claxedo", pinned: false, lastActivityAt: fixedClock.now() }]),
         pinned: async (_context, limit) => (limits.push(limit), []),
-        olderMemories: async (_context, limit) => (limits.push(limit), [{ id: StreamIDSchema.parse("old"), title: "Ship cloud", summary: "launch claxedo", pinned: false, lastActivityAt: 0, memoryOnly: true }]),
       },
       recentLimit: 3,
       pinnedLimit: 2,
-      olderMemoryLimit: 1,
       clock: fixedClock,
     })
     const result = await matching.suggest(context("alice"), { title: "Ship cloud", body: "launch claxedo" })
-    expect(limits).toEqual([3, 2, 1])
-    expect(result.expandedOlderMemories).toBe(true)
-    expect(result.recommendation).toMatchObject({ streamId: "old", confidence: "low" })
-    expect(result.recommendation!.score).toBeLessThan(0.45)
-    expect(result.recommendation!.explanation).toContain("Older stream memory")
+    expect(limits).toEqual([3, 2])
+    expect(result.recommendation).toMatchObject({ streamId: "recent", confidence: "high" })
   })
 })
 

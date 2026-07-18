@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { CompletionContractSchema, EvidenceSubjectSchema } from "./completion"
 import { WorkGraphActorSchema } from "./context"
-import { ExecutionProfileDefaultsSchema, RecapProfileDefaultsSchema, WorkGraphDefaultsSchema } from "./execution"
+import { ExecutionProfileDefaultsSchema, WorkGraphDefaultsSchema } from "./execution"
 import {
   AttemptIDSchema,
   DecisionIDSchema,
@@ -71,7 +71,6 @@ export const CreateStreamCommandSchema = z.strictObject({
   description: z.string().optional(),
   source: WorkSourceRevisionRefSchema.optional(),
   execution: ExecutionProfileDefaultsSchema.optional(),
-  recap: RecapProfileDefaultsSchema.optional(),
   activityGranularity: StreamActivityGranularitySchema.optional(),
 })
 export type CreateStreamCommand = z.infer<typeof CreateStreamCommandSchema>
@@ -84,7 +83,6 @@ export const UpdateStreamCommandSchema = z.strictObject({
   title: text.optional(),
   description: z.string().optional(),
   execution: ExecutionProfileDefaultsSchema.optional(),
-  recap: RecapProfileDefaultsSchema.optional(),
   activityGranularity: StreamActivityGranularitySchema.optional(),
 })
 export type UpdateStreamCommand = z.infer<typeof UpdateStreamCommandSchema>
@@ -242,24 +240,37 @@ export const SetStreamVisibilityCommandSchema = z.strictObject({
 })
 export type SetStreamVisibilityCommand = z.infer<typeof SetStreamVisibilityCommandSchema>
 
-export const ExecutionModeSchema = z.enum(["autonomous", "supervised"])
-export type ExecutionMode = z.infer<typeof ExecutionModeSchema>
-
-export const ExecuteStreamCommandSchema = z.strictObject({
+export const ApproveWorkItemCommandSchema = z.strictObject({
   version,
-  type: z.literal("execute_stream"),
-  streamId: StreamIDSchema,
-  executionMode: ExecutionModeSchema,
-})
-export type ExecuteStreamCommand = z.infer<typeof ExecuteStreamCommandSchema>
-
-export const ExecuteWorkItemCommandSchema = z.strictObject({
-  version,
-  type: z.literal("execute_work_item"),
+  type: z.literal("approve_work_item"),
   workItemId: WorkItemIDSchema,
-  executionMode: ExecutionModeSchema,
+  expectedVersion,
 })
-export type ExecuteWorkItemCommand = z.infer<typeof ExecuteWorkItemCommandSchema>
+export type ApproveWorkItemCommand = z.infer<typeof ApproveWorkItemCommandSchema>
+
+export const RejectWorkItemCommandSchema = z.strictObject({
+  version,
+  type: z.literal("reject_work_item"),
+  workItemId: WorkItemIDSchema,
+  expectedVersion,
+  reason: text,
+})
+export type RejectWorkItemCommand = z.infer<typeof RejectWorkItemCommandSchema>
+
+export const ApproveWorkItemsCommandSchema = z.strictObject({
+  version,
+  type: z.literal("approve_work_items"),
+  approvals: z
+    .array(
+      z.strictObject({
+        workItemId: WorkItemIDSchema,
+        expectedVersion,
+      }),
+    )
+    .min(1)
+    .max(200),
+})
+export type ApproveWorkItemsCommand = z.infer<typeof ApproveWorkItemsCommandSchema>
 
 export const CancelAttemptCommandSchema = z.strictObject({
   version,
@@ -438,8 +449,9 @@ export const WorkGraphCommandSchema = z.discriminatedUnion("type", [
   ConfirmAdmissionCommandSchema,
   SetStreamLifecycleCommandSchema,
   SetStreamVisibilityCommandSchema,
-  ExecuteStreamCommandSchema,
-  ExecuteWorkItemCommandSchema,
+  ApproveWorkItemCommandSchema,
+  RejectWorkItemCommandSchema,
+  ApproveWorkItemsCommandSchema,
   CancelAttemptCommandSchema,
   RetryWorkItemCommandSchema,
   ProposeDecisionCommandSchema,

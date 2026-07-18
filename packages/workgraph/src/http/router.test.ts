@@ -15,11 +15,10 @@ import type {
   WorkGraphContext,
   WorkGraphEventID,
   WorkGraphSnapshotPage,
-  WorkGraphNotification,
   WorkGraphArchive,
 } from "../contracts"
-import { createAttentionCursor, createChangeCursor, createNotificationPageCursor, readChangeCursor, readNotificationPageCursor, WorkGraphArchiveRestoreError } from "../contracts"
-import { createAttentionAcknowledgementService, createNotificationService, createWorkGraphService, NotificationVersionConflictError } from "../application"
+import { createAttentionCursor, createChangeCursor, readChangeCursor, WorkGraphArchiveRestoreError } from "../contracts"
+import { createAttentionAcknowledgementService, createWorkGraphService } from "../application"
 import { createSqliteWorkGraphService } from "../adapters/sqlite/store"
 import { createSqliteWorkGraphArchivePort } from "../adapters/sqlite/archive"
 import { createSqliteWorkGraphOwnerDeletionPort } from "../adapters/sqlite/owner-deletion"
@@ -104,7 +103,7 @@ describe("WorkGraph northbound HTTP router", () => {
         id: "workgraph_default",
         ownerUserId: "owner_sqlite",
         version: 1,
-        defaults: { execution: {}, recap: {} },
+        defaults: { execution: {} },
       })
       expect((await app.request("/defaults?ownerUserId=other")).status).toBe(400)
       expect(await (await app.request("/attention?limit=5")).json()).toEqual({ items: [], total: 0, hasMore: false })
@@ -121,7 +120,6 @@ describe("WorkGraph northbound HTTP router", () => {
             expectedVersion: 1,
             defaults: {
               execution: { effort: "high" },
-              recap: { quietHours: 12 },
             },
           },
         }),
@@ -129,7 +127,7 @@ describe("WorkGraph northbound HTTP router", () => {
       expect(updatedDefaults.status).toBe(200)
       expect(await (await app.request("/defaults")).json()).toMatchObject({
         version: 2,
-        defaults: { execution: { effort: "high" }, recap: { quietHours: 12 } },
+        defaults: { execution: { effort: "high" } },
       })
       const created = await app.request("/commands", {
         method: "POST",
@@ -480,34 +478,6 @@ describe("WorkGraph northbound HTTP router", () => {
   // level by the conformance suite (`conformance/index.ts`), which asserts
   // ordering, exactly-once delivery after a snapshot cursor, and owner isolation.
 
-  it("lists and reads owner notifications and marks them read with exact-version CAS", async () => {
-    const fixture = createFixture()
-    const page = await fixture.app.request("/notifications?limit=1&state=unread", fixture.auth("owner_a"))
-    expect(page.status).toBe(200)
-    const pageBody = await page.json() as { notifications: WorkGraphNotification[]; hasMore: boolean; nextCursor: string }
-    expect(pageBody).toMatchObject({
-      notifications: [{ id: "notification_2", ownerUserId: "owner_a", state: "unread" }],
-      hasMore: true,
-      nextCursor: expect.stringMatching(/^wgn1:/),
-    })
-    expect((await fixture.app.request(`/notifications?limit=1&state=unread&after=${encodeURIComponent(pageBody.nextCursor)}`, fixture.auth("owner_b"))).status).toBe(409)
-    expect((await fixture.app.request(`/notifications?limit=1&state=read&after=${encodeURIComponent(pageBody.nextCursor)}`, fixture.auth("owner_a"))).status).toBe(409)
-    expect((await fixture.app.request("/notifications/notification_1", fixture.auth("owner_b"))).status).toBe(404)
-
-    const read = await fixture.app.request("/notifications/notification_1/read", {
-      method: "POST",
-      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
-      body: JSON.stringify({ expectedVersion: 1 }),
-    })
-    expect(read.status).toBe(200)
-    expect(await read.json()).toMatchObject({ id: "notification_1", state: "read", version: 2, readAt: 2_000 })
-    expect((await fixture.app.request("/notifications/notification_1/read", {
-      method: "POST",
-      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
-      body: JSON.stringify({ expectedVersion: 1 }),
-    })).status).toBe(409)
-    expect((await fixture.app.request("/notifications?limit=0", fixture.auth("owner_a"))).status).toBe(400)
-  })
 })
 
 function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttpErrorReport) => void }>) {
@@ -523,18 +493,6 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
   const executionReadInputs: Array<{ directory?: string }> = []
   let nextId = 0
   let now = 1_000
-  const notifications = new Map<string, WorkGraphNotification>([1, 2].map((id) => [`notification_${id}`, {
-    id: branded(`notification_${id}`),
-    ownerUserId: branded("owner_a"),
-    version: 1,
-    kind: "actionable_recap",
-    state: "unread",
-    streamId: branded("stream_1"),
-    recapId: branded(`recap_${id}`),
-    createdAt: id,
-    updatedAt: id,
-  }]))
-
   const execute: WorkGraphCommandHandler = async (context, request) => {
     const operationKey = `${context.ownerUserId}:${request.operationId}`
     const fingerprint = JSON.stringify(request.command)
@@ -570,9 +528,8 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
       visibility: "visible",
       pinned: false,
       executionDefaults: {},
-      recapDefaults: {},
       activityGranularity: request.command.activityGranularity ?? existing?.activityGranularity ?? "progress",
-      activity: { lastActivityAt: timestamp, recapDueAt: timestamp + 28_800_000 },
+      activity: { lastActivityAt: timestamp },
       durableEffectCount: 0,
       sourceRevisionRefs: [],
     } satisfies StreamDto
@@ -609,7 +566,7 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
     "create_work_source", "revise_work_source", "create_stream", "update_stream", "create_outcome", "update_outcome",
     "create_work_item", "update_work_item", "propose_admission", "retry_admission_planning", "dismiss_admission",
     "reopen_admission", "confirm_admission", "set_stream_lifecycle",
-    "set_stream_visibility", "execute_stream", "execute_work_item", "cancel_attempt", "retry_work_item",
+    "set_stream_visibility", "approve_work_item", "reject_work_item", "approve_work_items", "cancel_attempt", "retry_work_item",
     "propose_decision", "answer_decision", "dismiss_decision", "record_attempt_checkpoint", "complete_attempt",
     "record_evidence", "close_outcome", "reopen_outcome",
     "close_stream", "delete_stream",
@@ -628,7 +585,7 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
           createdAt: 0,
           updatedAt: 0,
           provenance: { actor: { type: "system" as const, id: "workgraph_defaults" as never } },
-          defaults: { execution: {}, recap: {} },
+          defaults: { execution: {} },
         }),
       },
       snapshot: {
@@ -663,7 +620,6 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
       proposals: { read: async () => undefined, replacementReview: async () => undefined },
       attempts: { read: async () => undefined },
       decisions: { read: async () => undefined },
-      recaps: { read: async () => undefined },
       workItems: {
         readDetail: async () => undefined,
         listAttempts: async () => ({ attempts: [], hasMore: false }),
@@ -761,11 +717,8 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
         if (replay) return replay
         const ownedStreams = [...streams.values()].filter((stream) => stream.ownerUserId === owner.ownerUserId)
         ownedStreams.forEach((stream) => streams.delete(stream.id))
-        const recordCount = ownedStreams.length + (changes.get(owner.ownerUserId)?.length ?? 0) +
-          [...notifications.values()].filter((notification) => notification.ownerUserId === owner.ownerUserId).length
+        const recordCount = ownedStreams.length + (changes.get(owner.ownerUserId)?.length ?? 0)
         changes.delete(owner.ownerUserId)
-        ;[...notifications.entries()].filter(([, notification]) => notification.ownerUserId === owner.ownerUserId)
-          .forEach(([id]) => notifications.delete(id))
         ;[...operations.keys()].filter((operation) => operation.startsWith(`${owner.ownerUserId}:`))
           .forEach((operation) => operations.delete(operation))
         const result = { deleted: true as const, recordCount, workspaceCount: 0, completedAt: now++ }
@@ -773,46 +726,6 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
         return result
       },
     },
-    notifications: createNotificationService({
-      async list(owner, input) {
-        const resume = input.after
-          ? readNotificationPageCursor(input.after, owner.organizationId, owner.ownerUserId, input.state)
-          : undefined
-        const rows = [...notifications.values()]
-          .filter((notification) => notification.ownerUserId === owner.ownerUserId && (!input.state || notification.state === input.state))
-          .filter((notification) => !resume || notification.createdAt < resume.createdAt ||
-            (notification.createdAt === resume.createdAt && notification.id < resume.notificationId))
-          .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
-        const page = rows.slice(0, input.limit)
-        const hasMore = rows.length > input.limit
-        return {
-          notifications: page,
-          hasMore,
-          ...(hasMore ? {
-            nextCursor: createNotificationPageCursor({
-              organizationId: owner.organizationId,
-              ownerUserId: owner.ownerUserId,
-              state: input.state,
-              createdAt: page.at(-1)!.createdAt,
-              notificationId: page.at(-1)!.id,
-            }),
-          } : {}),
-        }
-      },
-      async read(owner, id) {
-        const notification = notifications.get(id)
-        return notification?.ownerUserId === owner.ownerUserId ? notification : undefined
-      },
-      async markRead(owner, input) {
-        const notification = notifications.get(input.id)
-        if (!notification || notification.ownerUserId !== owner.ownerUserId || notification.state !== "unread" || notification.version !== input.expectedVersion) {
-          throw new NotificationVersionConflictError()
-        }
-        const saved = { ...notification, state: "read" as const, version: notification.version + 1, readAt: 2_000, updatedAt: 2_000 }
-        notifications.set(input.id, saved)
-        return saved
-      },
-    }),
     resolveContext: (request) => {
       const match = /^Bearer (shared_)?(owner_[ab])$/.exec(request.headers.get("authorization") ?? "")
       if (!match) return undefined
@@ -854,7 +767,7 @@ function archive(organizationId: WorkGraphContext["organizationId"], ownerUserId
         createdAt: 0,
         updatedAt: 0,
         provenance: { actor: { type: "system", id: "workgraph_defaults" } },
-        defaults: { execution: {}, recap: {} },
+        defaults: { execution: {} },
       },
     }],
   }

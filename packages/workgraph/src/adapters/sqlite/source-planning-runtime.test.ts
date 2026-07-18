@@ -487,7 +487,7 @@ async function createSource(workgraph: ReturnType<typeof service>, configure = t
         version: 1,
         type: "update_workgraph_defaults",
         expectedVersion: 1,
-        defaults: { execution: generationExecution, recap: {} },
+        defaults: { execution: generationExecution },
       },
     })
     if (!configured.ok) throw new Error("generation defaults failed")

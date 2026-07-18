@@ -150,18 +150,6 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
       const workItem = { id: workItemId, ownerUserId: context.ownerUserId, streamId: stream.id, contract: command.completionContract, evidence: [] } satisfies MutableWorkItem
       return pending("work_item_created", { workItemId }, () => workItems.set(workItemId, workItem), stream.id)
     }
-    if (command.type === "execute_work_item") {
-      const workItem = workItems.get(command.workItemId)
-      if (!workItem || workItem.ownerUserId !== context.ownerUserId) return rejected(request.operationId, "not_found", "Work item not found")
-      const active = leases.get(workItem.id)
-      if (active && active.expiresAt > input.clock.now()) return rejected(request.operationId, "blocked", "Work item already has an active Attempt")
-      const attemptId = branded<AttemptID>(input.ids.next("attempt"))
-      const leaseEpoch = (active?.epoch ?? 0) + 1
-      return pending("attempt_admitted", { attemptId, workItemId: workItem.id, leaseEpoch }, () => {
-        attempts.set(attemptId, { ownerUserId: context.ownerUserId, workItemId: workItem.id, leaseEpoch, state: "running" })
-        leases.set(workItem.id, { attemptId, epoch: leaseEpoch, expiresAt: input.clock.now() + 300_000 })
-      }, workItem.streamId)
-    }
     if (command.type === "record_evidence") {
       if (command.subject.type !== "work_item") return rejected(request.operationId, "not_found", "Outcome evidence unsupported by reference adapter")
       const workItem = workItems.get(command.subject.workItemId)
@@ -223,9 +211,8 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
             visibility: "visible" as const,
             pinned: false,
             executionDefaults: {},
-            recapDefaults: {},
             activityGranularity: "progress" as const,
-            activity: { lastActivityAt: 1_000, recapDueAt: 29_800_000 },
+            activity: { lastActivityAt: 1_000 },
             durableEffectCount: stream.durableEffectCount,
             sourceRevisionRefs: [],
           }))
@@ -301,7 +288,6 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
     create_work_item: execute,
     record_evidence: execute,
     delete_stream: execute,
-    execute_work_item: execute,
   } satisfies ConformanceCommands
   const store = defineAtomicWorkGraphStore({ commands, queries })
   const attemptRuntime: AttemptRuntimePort = {
@@ -341,9 +327,39 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
     },
   }
 
+  const admit = async (
+    owner: WorkGraphContext,
+    { workItemId }: Readonly<{ workItemId: WorkItemID }>,
+  ): Promise<CommandResult> => {
+    const operationId = branded<OperationID>(input.ids.next("admit"))
+    const workItem = workItems.get(workItemId)
+    if (!workItem || workItem.ownerUserId !== owner.ownerUserId)
+      return failure(operationId, "not_found", "Work item not found")
+    const active = leases.get(workItem.id)
+    if (active && active.expiresAt > input.clock.now())
+      return failure(operationId, "blocked", "Work item already has an active Attempt")
+    const attemptId = branded<AttemptID>(input.ids.next("attempt"))
+    const leaseEpoch = (active?.epoch ?? 0) + 1
+    attempts.set(attemptId, { ownerUserId: owner.ownerUserId, workItemId: workItem.id, leaseEpoch, state: "running" })
+    leases.set(workItem.id, { attemptId, epoch: leaseEpoch, expiresAt: input.clock.now() + 300_000 })
+    const ownerChanges = changes.get(owner.ownerUserId) ?? []
+    const cursor = createChangeCursor({
+      organizationId: owner.organizationId,
+      ownerUserId: owner.ownerUserId,
+      position: ownerChanges.length + 1,
+    })
+    ownerChanges.push({
+      cursor,
+      event: { streamId: workItem.streamId, type: "attempt_admitted", occurredAt: input.clock.now() },
+    })
+    changes.set(owner.ownerUserId, ownerChanges)
+    return success(operationId, cursor, { attemptId, workItemId: workItem.id, leaseEpoch })
+  }
+
   return {
     service: createWorkGraphService(store),
     attemptRuntime,
+    admit,
     restart: async () => ({ attemptRuntime }),
     faults: { failNextAppend: () => { failNextAppend = true } },
   }

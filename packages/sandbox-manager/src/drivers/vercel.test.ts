@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { createVercelSandboxDriver, type VercelSandboxFactoryLike, type VercelSandboxLike } from "./vercel"
+import { workspaceRuntimeVersion } from "../runtime-version"
 
 function sandbox(input: Partial<VercelSandboxLike> & { sandboxId?: string } = {}) {
   return {
@@ -195,7 +196,7 @@ describe("VercelSandboxDriver", () => {
         .mockResolvedValueOnce(builder)
         .mockResolvedValueOnce(runtime),
     })
-    const cache = new Map([["team_1:project_1:node22:0.5.1", "snap-seeded"]])
+    const cache = new Map([[`team_1:project_1:node22:${workspaceRuntimeVersion()}`, "snap-seeded"]])
     const driver = createVercelSandboxDriver({
       ...baseOptions,
       baseSnapshotId: undefined,

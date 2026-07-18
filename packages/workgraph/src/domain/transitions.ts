@@ -38,7 +38,8 @@ const outcomeTransitions = {
 } as const satisfies Record<OutcomeState, readonly OutcomeState[]>
 
 const workItemTransitions = {
-  pending: ["active", "blocked", "abandoned"],
+  pending_approval: ["pending", "abandoned"],
+  pending: ["pending_approval", "active", "blocked", "abandoned"],
   active: [
     "result_ready",
     "review_needed",

@@ -4,6 +4,12 @@
 behind one host-owned runtime API. Register harnesses, choose a store, create a
 session, start a turn, and subscribe to events.
 
+## Install
+
+```sh
+npm install @claxedo/agent-sdk-runtime
+```
+
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { claude, pi } from "@claxedo/agent-sdk-runtime/harnesses"

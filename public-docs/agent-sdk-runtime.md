@@ -38,6 +38,9 @@ The package separates three choices:
 | `harness.access` | How the host talks to that harness: `acp` for Agent Client Protocol, or `native` for the harness's native API/runtime. |
 | `model` | The prompt model to request. This is separate from harness access because model provider is not the same thing as harness. |
 
+Only `claude`, `codex`, and `cursor` support `access: "acp"`; `opencode` and
+`pi` are native-only.
+
 `provider` remains valid for model providers, credential providers, sandbox
 providers, and upstream protocol fields. It should not be used for the harness
 that owns a turn.
@@ -79,10 +82,10 @@ type SessionHarness = {
 
 ```ts
 type HarnessConnection =
-  | { kind: "process"; binary?: string }
+  | { kind: "process"; binary?: string; args?: string[] }
   | {
       kind: "remote"
-      transport?: "sse" | "streamable-http"
+      transport?: "stdio" | "streamable-http" | "websocket"
       url?: string
       headers?: Record<string, string>
     }
@@ -97,7 +100,10 @@ Put model choice in `SessionConfig.model`, not inside `harness.connection`.
 | `@claxedo/agent-sdk-runtime/harnesses` | `claude`, `codex`, `cursor`, `opencode`, `pi` |
 
 Factories register harnesses with `createAgentRuntime()`. Adapter classes are
-internal/advanced implementation details.
+an advanced, lower-level public API exported from
+`@claxedo/agent-sdk-runtime/adapters`, for hosts that need lower-level driver
+control such as a workspace host, compatibility proxy, or custom harness
+integration.
 
 ## Stores
 

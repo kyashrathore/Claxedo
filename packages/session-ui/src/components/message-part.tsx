@@ -205,6 +205,13 @@ export interface MessagePartProps {
   onContentRendered?: () => void
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
+  /**
+   * Turn-level abort signal supplied by the timeline. SDK-runtime harnesses
+   * (codex/claude/cursor/ACP) never stamp MessageAbortedError on abort — they leave the
+   * turn's last assistant message unsettled — so `message.error` alone under-detects
+   * interruptions; only the caller can see the whole turn plus session status.
+   */
+  turnInterrupted?: boolean
   useV2Actions?: boolean
 }
 
@@ -1702,6 +1709,7 @@ export function Part(props: MessagePartProps) {
         onContentRendered={props.onContentRendered}
         showAssistantCopyPartID={props.showAssistantCopyPartID}
         turnDurationMs={props.turnDurationMs}
+        turnInterrupted={props.turnInterrupted}
         useV2Actions={props.useV2Actions}
       />
     </Show>
@@ -1910,7 +1918,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const part = () => props.part as TextPart
   const interrupted = createMemo(
     () =>
-      props.message.role === "assistant" && (props.message as AssistantMessage).error?.name === "MessageAbortedError",
+      props.message.role === "assistant" &&
+      (props.turnInterrupted === true ||
+        (props.message as AssistantMessage).error?.name === "MessageAbortedError"),
   )
 
   const model = createMemo(() => {
@@ -1954,7 +1964,10 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
 
   const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
+    () =>
+      props.message.role === "assistant" &&
+      typeof (props.message as AssistantMessage).time.completed !== "number" &&
+      props.turnInterrupted !== true,
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   const isLastTextPart = createMemo(() => {
@@ -2014,7 +2027,10 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
   const part = () => props.part as ReasoningPart
   const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
+    () =>
+      props.message.role === "assistant" &&
+      typeof (props.message as AssistantMessage).time.completed !== "number" &&
+      props.turnInterrupted !== true,
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   const durationMs = createMemo(() => {

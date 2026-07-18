@@ -1,6 +1,13 @@
+---
+layout: ../layouts/Prose.astro
+title: "Claxedo — Agent Coding GUI Feature Comparison"
+description: "How Claxedo compares to other agent coding GUIs across platform, models, terminals, review, MCP, and more. Free and open source — managed hosting is the only paid tier."
+noindex: true
+---
+
 # Agent Coding GUI — Feature Comparison Index
 
-> Last updated: 2026-03-24
+> Last updated: 2026-07-18
 >
 > **Legend:** ✅ = Yes | ❌ = No | 🔶 = Partial / Limited | 🔜 = Planned | — = N/A
 
@@ -36,7 +43,7 @@
 | IDE extension | ❌ | ❌ | ✅ | — (is IDE) | ❌ | ❌ | ✅ (VSCode + JetBrains) | ❌ | ❌ | ✅ (JetBrains plugin) | ❌ | ✅ | — (is IDE) |
 | TUI / CLI mode | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (primary) | ❌ |
 | Desktop framework | Tauri | Electron | Proprietary | Electron | Native macOS | Electron | Proprietary | Native macOS | Proprietary | Electron | Native (libghostty) | Tauri | Fleet-based |
-| Open source | Source available | ✅ | ❌ | ❌ | ❌ | ✅ (Apache 2.0) | ❌ | ❌ | Source (ELv2) | ❌ | ✅ | ✅ | ❌ |
+| Open source | ✅ (MIT, every layer) | ✅ | ❌ | ❌ | ❌ | ✅ (Apache 2.0) | ❌ | ❌ | Source (ELv2) | ❌ | ✅ | ✅ | ❌ |
 | Self-hostable | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ |
 
 ---
@@ -45,8 +52,8 @@
 
 | Feature | CLX | T3 | CDX | CUR | PLY | JEN | TRA | CON | SUP | WND | SPC | OPC | AIR |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Free tier | ✅ (currently free) | ✅ | ❌ (needs ChatGPT plan) | ✅ | ✅ | ✅ (free forever) | ✅ | ✅ | ✅ | ✅ | ✅ (beta) | ✅ | Preview (free) |
-| Paid plans | $99 lifetime (paused) | ❌ | ChatGPT Plus/Pro/Ent | Per-seat plans | ❌ | ❌ | Pro tier | ❌ | TBD | Per-seat + Enterprise | ❌ | ❌ | TBD |
+| Free tier | ✅ (free + open source) | ✅ | ❌ (needs ChatGPT plan) | ✅ | ✅ | ✅ (free forever) | ✅ | ✅ | ✅ | ✅ | ✅ (beta) | ✅ | Preview (free) |
+| Paid plans | Managed hosting only | ❌ | ChatGPT Plus/Pro/Ent | Per-seat plans | ❌ | ❌ | Pro tier | ❌ | TBD | Per-seat + Enterprise | ❌ | ❌ | TBD |
 | BYO API keys | ✅ | ✅ | ❌ | ✅ (BYO model) | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
 | No API proxying | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Enterprise plan | ❌ | ❌ | ✅ (ChatGPT Enterprise) | ✅ (SOC 2) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | TBD |

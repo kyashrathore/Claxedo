@@ -41,6 +41,7 @@ const sdkMessageTypes = {
   task: true,
   thinking: true,
   tool_call: true,
+  usage: true,
   user: true,
 } satisfies Record<SDKMessage["type"], true>
 
@@ -494,6 +495,13 @@ function translateSdkMessage(input: {
 
         case "request":
           return []
+
+        case "usage":
+          return [{
+            type: "usage",
+            contextSize: message.usage.totalTokens,
+            contextUsed: message.usage.totalTokens,
+          }]
 
         case "user":
           return []

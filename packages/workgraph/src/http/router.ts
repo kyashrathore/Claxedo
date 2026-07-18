@@ -12,7 +12,6 @@ import {
   ReplacementReviewSchema,
   AttemptDetailDtoSchema,
   DecisionDtoSchema,
-  RecapDtoSchema,
   WorkItemAttemptPageCursorError,
   WorkItemAttemptPageSchema,
   TaskActivityPageSchema,
@@ -22,10 +21,6 @@ import {
   WorkSourceDtoSchema,
   WorkSourceRevisionDtoSchema,
   WorkGraphSnapshotPageSchema,
-  NotificationIDSchema,
-  NotificationPageCursorError,
-  WorkGraphNotificationPageSchema,
-  WorkGraphNotificationSchema,
   WorkGraphArchiveSchema,
   WorkGraphArchiveRestoreError,
   WorkGraphArchiveRestoreRequestSchema,
@@ -61,13 +56,10 @@ import {
   WorkGraphHttpWorkItemActivityQuerySchema,
   WorkGraphHttpAttemptReadSchema,
   WorkGraphHttpDecisionReadSchema,
-  WorkGraphHttpRecapReadSchema,
   type WorkGraphHttpQueries,
   type WorkGraphHttpService,
   type WorkGraphHttpErrorCode,
   type WorkGraphTrustedContextResolver,
-  WorkGraphHttpNotificationsQuerySchema,
-  WorkGraphHttpNotificationReadSchema,
   WorkGraphHttpArchiveErrorSchema,
   WorkGraphHttpArchiveRestoreResultSchema,
   WorkGraphHttpOwnerDeletionErrorSchema,
@@ -75,7 +67,6 @@ import {
   WorkGraphHttpOwnerDeletionResultSchema,
   workGraphEvidenceListInput,
 } from "./contracts"
-import { NotificationVersionConflictError, type NotificationService } from "../application/notification-service"
 import type { AttentionAcknowledgementService } from "../application/attention-acknowledgement-service"
 import {
   WorkGraphOwnerDeletionError,
@@ -91,7 +82,6 @@ type Variables = { workGraphContext: WorkGraphContext }
 export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(input: Readonly<{
   service: WorkGraphHttpService<Queries>
   resolveContext: WorkGraphTrustedContextResolver
-  notifications?: NotificationService
   attentionAcknowledgements?: AttentionAcknowledgementService
   archive: WorkGraphArchivePort
   deletion: WorkGraphOwnerDeletionPort
@@ -345,54 +335,6 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     return context.json(result)
   })
 
-  router.get("/notifications", async (context) => {
-    if (!input.notifications) return errorResponse(context, 404, "not_found", "Notifications are unavailable", false)
-    const query = WorkGraphHttpNotificationsQuerySchema.safeParse(context.req.query())
-    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid notification query", false)
-    try {
-      const page = WorkGraphNotificationPageSchema.parse(await input.notifications.list(context.get("workGraphContext"), query.data))
-      if (page.notifications.some((notification) => notification.ownerUserId !== context.get("workGraphContext").ownerUserId)) {
-        throw new Error("Notification query crossed its trusted owner boundary")
-      }
-      return context.json(page)
-    } catch (error) {
-      if (isCursorError(error, "NotificationPageCursorError")) {
-        return errorResponse(context, 409, "cursor_invalid", "Notification cursor is no longer valid", false)
-      }
-      throw error
-    }
-  })
-
-  router.get("/notifications/:notificationId", async (context) => {
-    if (!input.notifications) return errorResponse(context, 404, "not_found", "Notifications are unavailable", false)
-    const id = NotificationIDSchema.safeParse(context.req.param("notificationId"))
-    if (!id.success) return errorResponse(context, 400, "validation_error", "Invalid notification identifier", false)
-    const notification = await input.notifications.read(context.get("workGraphContext"), id.data)
-    if (!notification) return errorResponse(context, 404, "not_found", "Notification not found", false)
-    const parsed = WorkGraphNotificationSchema.parse(notification)
-    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId) {
-      throw new Error("Notification query crossed its trusted owner boundary")
-    }
-    return context.json(parsed)
-  })
-
-  router.post("/notifications/:notificationId/read", async (context) => {
-    if (!input.notifications) return errorResponse(context, 404, "not_found", "Notifications are unavailable", false)
-    const id = NotificationIDSchema.safeParse(context.req.param("notificationId"))
-    const body = WorkGraphHttpNotificationReadSchema.safeParse(await context.req.json().catch(() => undefined))
-    if (!id.success || !body.success) return errorResponse(context, 400, "validation_error", "Invalid notification update", false)
-    try {
-      const parsed = WorkGraphNotificationSchema.parse(await input.notifications.markRead(context.get("workGraphContext"), { id: id.data, expectedVersion: body.data.expectedVersion }))
-      if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId) {
-        throw new Error("Notification mutation crossed its trusted owner boundary")
-      }
-      return context.json(parsed)
-    } catch (error) {
-      if (error instanceof NotificationVersionConflictError) return errorResponse(context, 409, "version_conflict", "Notification version changed", false)
-      throw error
-    }
-  })
-
   router.get("/streams/:streamId", async (context) => {
     if (Object.keys(context.req.query()).length > 0) {
       return errorResponse(context, 400, "validation_error", "Stream reads do not accept query selectors", false)
@@ -534,21 +476,6 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     return context.json(parsed)
   })
 
-  router.get("/recaps/:recapId", async (context) => {
-    if (Object.keys(context.req.query()).length > 0) {
-      return errorResponse(context, 400, "validation_error", "Recap reads do not accept query selectors", false)
-    }
-    const query = WorkGraphHttpRecapReadSchema.safeParse({ recapId: context.req.param("recapId") })
-    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Recap identifier", false)
-    const recap = await input.service.queries.recaps.read(context.get("workGraphContext"), query.data)
-    if (!recap) return errorResponse(context, 404, "not_found", "Recap not found", false)
-    const parsed = RecapDtoSchema.parse(recap)
-    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.id !== query.data.recapId) {
-      throw new Error("Recap query crossed its trusted owner boundary")
-    }
-    return context.json(parsed)
-  })
-
   router.get("/evidence", async (context) => {
     const query = WorkGraphHttpEvidenceListQuerySchema.safeParse(context.req.query())
     if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Evidence query", false)
@@ -669,8 +596,8 @@ function reportErrorToConsole(report: WorkGraphHttpErrorReport) {
 
 function isCursorError(
   error: unknown,
-  name: "NotificationPageCursorError" | "SnapshotResumeCursorError" | "WorkSourcePageCursorError",
-): error is NotificationPageCursorError | SnapshotResumeCursorError | WorkSourcePageCursorError {
+  name: "SnapshotResumeCursorError" | "WorkSourcePageCursorError",
+): error is SnapshotResumeCursorError | WorkSourcePageCursorError {
   return error instanceof Error && error.name === name && "code" in error && error.code === "cursor_invalid"
 }
 

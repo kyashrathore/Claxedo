@@ -17,7 +17,7 @@ export declare function fetchGitHubPackageToCache(input: {
     execFile?: ExecFile;
     tempRoot?: string;
 }): Promise<{
-    resolvedSha: string;
     path: string;
     checksum: string;
+    resolvedSha: string;
 }>;

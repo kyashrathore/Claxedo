@@ -5,8 +5,6 @@ import type {
   AttemptReadInputSchema,
   DecisionDto,
   DecisionReadInputSchema,
-  RecapDto,
-  RecapReadInputSchema,
   WorkItemAttemptListInputSchema,
   WorkItemAttemptPage,
   WorkItemDto,
@@ -31,8 +29,5 @@ export type WorkGraphDetailQueries = Readonly<{
   }>
   decisions: Readonly<{
     read: OwnerQuery<z.infer<typeof DecisionReadInputSchema>, DecisionDto | undefined>
-  }>
-  recaps: Readonly<{
-    read: OwnerQuery<z.infer<typeof RecapReadInputSchema>, RecapDto | undefined>
   }>
 }>

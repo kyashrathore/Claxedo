@@ -42,6 +42,20 @@ import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
+/**
+ * Extract a human-safe headline from a turn/stream failure without discarding the cause.
+ * The outermost message catch and the two prompt-turn helpers previously flattened every
+ * failure to the literal "Stream error", throwing away the underlying message and any
+ * classification it carried. Preserve the real message so `sessionError` →
+ * `firstTurnErrorData` can classify it (unmatched → "unknown") and the client's raw-detail
+ * disclosure can surface it.
+ */
+export function streamTurnErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === "string" && error) return error
+  return "Stream error"
+}
+
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
   phase: "creating" | "created" | "failed"
@@ -747,7 +761,7 @@ export function createSessionRoutes(opts: Opts) {
                 publishGlobal: opts.publishGlobal,
                 publishStatus: (event) => opts.sessionBus.publish(event),
                 activeTurn,
-                streamErrorMessage: () => "Stream error",
+                streamErrorMessage: streamTurnErrorMessage,
               })
             : await runSessionPromptTurn({
                 adapter,
@@ -757,14 +771,18 @@ export function createSessionRoutes(opts: Opts) {
                 publishGlobal: opts.publishGlobal,
                 publishStatus: (event) => opts.sessionBus.publish(event),
                 publishUserMessage: false,
-                streamErrorMessage: () => "Stream error",
+                streamErrorMessage: streamTurnErrorMessage,
                 createActiveTurnScope: opts.createActiveTurnScope
                   ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
                   : undefined,
               })
           await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
-        } catch {
-          opts.publishGlobal(withDir(compatScope(directory, id), sessionError("Stream error", id)))
+        } catch (error) {
+          // Keep a human-safe headline but never discard the cause: route the real
+          // message through sessionError (→ firstTurnErrorData), so it classifies
+          // (unmatched → "unknown") and the original text reaches the raw-detail
+          // disclosure instead of being flattened to the literal "Stream error".
+          opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
         } finally {
           await flushDocumentsAfterTurn(opts, id)
           await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))

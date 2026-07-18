@@ -20,8 +20,6 @@ import {
   AttemptReadInputSchema,
   DecisionDtoSchema,
   DecisionReadInputSchema,
-  RecapDtoSchema,
-  RecapReadInputSchema,
   WorkItemAttemptListInputSchema,
   WorkItemAttemptPageCursorSchema,
   WorkItemAttemptPageSchema,
@@ -39,13 +37,10 @@ import {
   WorkSourceRevisionDtoSchema,
   WorkSourceRevisionIDSchema,
   WorkSourcePageCursorSchema,
-  NotificationPageCursorSchema,
   WorkGraphCommandRequestSchema,
   WorkGraphContextSchema,
   WorkGraphDefaultsDtoSchema,
   WorkGraphSnapshotPageSchema,
-  WorkGraphNotificationPageSchema,
-  WorkGraphNotificationSchema,
   WorkGraphArchiveRestoreErrorReasonSchema,
   WorkGraphArchiveRestoreResultSchema,
   OperationIDSchema,
@@ -95,7 +90,6 @@ export const WorkGraphHttpReplacementReviewResponseSchema = ReplacementReviewSch
 export const WorkGraphHttpWorkItemReadSchema = WorkItemReadInputSchema
 export const WorkGraphHttpAttemptReadSchema = AttemptReadInputSchema
 export const WorkGraphHttpDecisionReadSchema = DecisionReadInputSchema
-export const WorkGraphHttpRecapReadSchema = RecapReadInputSchema
 export const WorkGraphHttpWorkItemAttemptsQuerySchema = z.strictObject({
   after: WorkItemAttemptPageCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -179,15 +173,6 @@ export const WorkGraphHttpOwnerDeletionErrorSchema = z.strictObject({
   }),
 })
 
-export const WorkGraphHttpNotificationsQuerySchema = z.strictObject({
-  after: NotificationPageCursorSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  state: z.enum(["unread", "read"]).optional(),
-})
-export const WorkGraphHttpNotificationReadSchema = z.strictObject({ expectedVersion: z.number().int().positive() })
-export const WorkGraphHttpNotificationPageSchema = WorkGraphNotificationPageSchema
-export const WorkGraphHttpNotificationSchema = WorkGraphNotificationSchema
-
 export const WorkGraphHttpArchiveRestoreResultSchema = WorkGraphArchiveRestoreResultSchema
 export const WorkGraphHttpArchiveErrorSchema = z.strictObject({
   error: z.strictObject({
@@ -263,12 +248,6 @@ export type WorkGraphHttpQueries = Readonly<{
       context: z.infer<typeof WorkGraphContextSchema>,
       input: z.infer<typeof DecisionReadInputSchema>,
     ) => Promise<z.infer<typeof DecisionDtoSchema> | undefined>
-  }>
-  recaps: Readonly<{
-    read: (
-      context: z.infer<typeof WorkGraphContextSchema>,
-      input: z.infer<typeof RecapReadInputSchema>,
-    ) => Promise<z.infer<typeof RecapDtoSchema> | undefined>
   }>
   sources: Readonly<{
     list: (

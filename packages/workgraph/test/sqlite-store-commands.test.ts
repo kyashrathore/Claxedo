@@ -79,8 +79,9 @@ describe("SQLite WorkGraph public commands", () => {
     expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_leases WHERE id = 'lease_replace'").get()).toEqual({ count: 0 })
     expect(fixture.database.prepare("SELECT state FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get()).toEqual({ state: "claimed" })
     const replacementId = (fixture.database.prepare("SELECT id FROM wg_v2_work_items WHERE title = 'Replacement Task'").get() as { id: string }).id
-    await expect(execute(fixture, "execute_work_item", { workItemId: replacementId, executionMode: "autonomous" }))
-      .resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+    // The durable reset barrier blocks admission: the drain admits no Attempt for the replacement item yet.
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(replacementId))
+      .toEqual({ count: 0 })
 
     finishCleanup()
     await vi.waitFor(() => {
@@ -338,7 +339,7 @@ describe("SQLite WorkGraph public commands", () => {
       id: "workgraph_default",
       ownerUserId: "owner",
       version: 1,
-      defaults: { execution: {}, recap: {} },
+      defaults: { execution: {} },
     })
 
     const request = {
@@ -349,7 +350,6 @@ describe("SQLite WorkGraph public commands", () => {
         expectedVersion: 1,
         defaults: {
           execution: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
-          recap: { quietHours: 12, effort: "medium" },
         },
       },
     } as const
@@ -360,7 +360,7 @@ describe("SQLite WorkGraph public commands", () => {
     expect(await fixture.adapter.service.execute(owner(), request as never)).toEqual(updated)
     expect(await fixture.adapter.service.execute(owner(), {
       ...request,
-      command: { ...request.command, defaults: { execution: {}, recap: {} } },
+      command: { ...request.command, defaults: { execution: {} } },
     } as never)).toMatchObject({ ok: false, error: { code: "idempotency_conflict" } })
     expect(await execute(fixture, "update_workgraph_defaults", {
       expectedVersion: 1,
@@ -372,7 +372,7 @@ describe("SQLite WorkGraph public commands", () => {
     )).toMatchObject({ version: 2, defaults: request.command.defaults })
     expect(WorkGraphDefaultsDtoSchema.parse(
       await fixture.adapter.service.query(owner("other"), "defaults", "read", {}),
-    )).toMatchObject({ ownerUserId: "other", version: 1, defaults: { execution: {}, recap: {} } })
+    )).toMatchObject({ ownerUserId: "other", version: 1, defaults: { execution: {} } })
     const snapshot = WorkGraphSnapshotPageSchema.parse(
       await fixture.adapter.service.query(owner(), "snapshot", "page", { limit: 50 }),
     )
@@ -798,6 +798,35 @@ describe("SQLite WorkGraph public commands", () => {
     expect(proposal?.recordType === "admission_proposal" && proposal.state === "proposed" && proposal.duplicateMatches.every((match) => match.streamId !== otherStreamId)).toBe(true)
   })
 
+  it("expands bounded placement matching to older Streams when recent matches are weak", async () => {
+    const fixture = await setup()
+    const streamId = resultId(
+      await execute(fixture, "create_stream", { title: "Legacy billing migration" }),
+      "streamId",
+    )
+    await Promise.all(
+      Array.from({ length: 24 }, (_, index) =>
+        execute(fixture, "create_stream", { title: `Unrelated project ${index}` }),
+      ),
+    )
+    const content = "Complete the legacy billing migration"
+    const source = await execute(fixture, "create_work_source", { title: "Legacy billing migration", content })
+    const proposalId = resultId(
+      await execute(fixture, "propose_admission", {
+        source: {
+          workSourceId: resultId(source, "workSourceId"),
+          revisionId: resultId(source, "revisionId"),
+          contentHash: createHash("sha256").update(content).digest("hex"),
+        },
+      }),
+      "proposalId",
+    )
+
+    expect(admissionPlanningEvidence(fixture, proposalId).placementMatches).toContainEqual(
+      expect.objectContaining({ streamId, confidence: "high" }),
+    )
+  })
+
   it("rejects a longer admission dependency cycle without materializing work", async () => {
     const fixture = await setup()
     const content = "Plan cyclic work"
@@ -831,33 +860,15 @@ describe("SQLite WorkGraph public commands", () => {
   })
 
   it("truthfully exposes the remaining runtime-only command gap", () => {
-    expect(SQLITE_WORKGRAPH_UNSUPPORTED_COMMANDS).toEqual(["execute_stream", "execute_work_item", "cancel_attempt", "retry_work_item"])
+    expect(SQLITE_WORKGRAPH_UNSUPPORTED_COMMANDS).toEqual(["cancel_attempt"])
     expect(SQLITE_WORKGRAPH_SUPPORTED_COMMANDS).toEqual(expect.arrayContaining([
-      "dismiss_admission",
-      "reopen_admission",
+      "approve_work_item",
+      "reject_work_item",
+      "approve_work_items",
+      "retry_work_item",
       "confirm_admission",
       "close_stream",
-      "answer_decision",
     ]))
-  })
-
-  it("durably stops autonomous execution and propagates capability read failure", async () => {
-    let failCapabilityRead = false
-    const fixture = await setup(replacementExecution({}), undefined, async (context, now) => {
-      if (failCapabilityRead) throw new Error("capability runtime unavailable")
-      return capabilities(context, now)
-    })
-    const streamId = await createStream(fixture)
-    fixture.database.prepare(`
-      UPDATE wg_v2_streams SET execution_mode = 'autonomous', execution_state = 'active'
-      WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
-    `).run(streamId)
-    failCapabilityRead = true
-
-    await expect(execute(fixture, "create_work_source", { title: "Trigger drain", content: "text" }))
-      .rejects.toThrow("capability runtime unavailable")
-    expect(fixture.database.prepare("SELECT execution_state FROM wg_v2_streams WHERE id = ?").get(streamId))
-      .toEqual({ execution_state: "stopped" })
   })
 
   it("serves strict owner-scoped HTTP records and rejects unavailable execution without persistence", async () => {
@@ -885,7 +896,8 @@ describe("SQLite WorkGraph public commands", () => {
     ))).toEqual([1, 2])
 
     const rowsBefore = fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_operation_results").get()
-    expect(await execute(fixture, "execute_stream", { streamId, executionMode: "autonomous" })).toMatchObject({
+    // cancel_attempt is the only runtime-dependent command; without an execution port it rejects without persisting.
+    expect(await execute(fixture, "cancel_attempt", { attemptId: "attempt_missing", expectedVersion: 0, reason: "Stop" })).toMatchObject({
       ok: false,
       error: { code: "execution_unavailable" },
     })
@@ -1044,7 +1056,7 @@ async function createItem(fixture: Awaited<ReturnType<typeof setup>>, streamId: 
 async function publishAdmissionPlan(fixture: Awaited<ReturnType<typeof setup>>, plan: AdmissionAgentPlan) {
   await expect(execute(fixture, "update_workgraph_defaults", {
     expectedVersion: 1,
-    defaults: { execution: planningProfile, recap: {} },
+    defaults: { execution: planningProfile },
   })).resolves.toMatchObject({ ok: true })
   const runtime = createSqliteSourcePlanningRuntime({
     database: fixture.database,

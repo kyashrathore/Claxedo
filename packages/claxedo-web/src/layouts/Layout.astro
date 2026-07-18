@@ -2,12 +2,20 @@
 interface Props {
   title: string;
   description?: string;
+  image?: string;
+  noindex?: boolean;
 }
 
 const {
   title,
   description = "Claxedo is the open-source agent stack — app, backend, workspace runtime, relay, and packages, all MIT. Run Claude Code, Codex, Gemini CLI, or any ACP agent, and deploy the whole stack to your own servers with one command, or use the hosted backend.",
+  image = "/screenshots/all-coding-agent-dark.png",
+  noindex = false,
 } = Astro.props;
+
+const site = Astro.site ?? new URL("https://claxedo.com");
+const canonical = new URL(Astro.url.pathname, site);
+const ogImage = new URL(image, site);
 
 import "../styles/site.css";
 ---
@@ -18,6 +26,21 @@ import "../styles/site.css";
     <meta charset="UTF-8" />
     <meta name="description" content={description} />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="canonical" href={canonical} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Claxedo" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

@@ -14,7 +14,6 @@ const commandSamples = [
     expectedVersion: 1,
     defaults: {
       execution: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
-      recap: { quietHours: 12, effort: "medium" },
     },
   },
   { version: 1, type: "create_work_source", title: "Launch", content: "Ship the launch" },
@@ -48,7 +47,6 @@ const commandSamples = [
     streamId: "stream-1",
     expectedVersion: 2,
     title: "Launch safely",
-    recap: { quietHours: 16, effort: "high" },
   },
   {
     version: 1,
@@ -98,8 +96,9 @@ const commandSamples = [
     reason: "Review",
   },
   { version: 1, type: "set_stream_visibility", streamId: "stream-1", expectedVersion: 3, visibility: "archived" },
-  { version: 1, type: "execute_stream", streamId: "stream-1", executionMode: "autonomous" },
-  { version: 1, type: "execute_work_item", workItemId: "work-item-1", executionMode: "supervised" },
+  { version: 1, type: "approve_work_item", workItemId: "work-item-1", expectedVersion: 4 },
+  { version: 1, type: "reject_work_item", workItemId: "work-item-1", expectedVersion: 4, reason: "Not needed" },
+  { version: 1, type: "approve_work_items", approvals: [{ workItemId: "work-item-1", expectedVersion: 4 }] },
   { version: 1, type: "cancel_attempt", attemptId: "attempt-1", expectedVersion: 1, reason: "Owner cancelled" },
   { version: 1, type: "retry_work_item", workItemId: "work-item-1", expectedVersion: 5 },
   {
@@ -191,7 +190,7 @@ describe("WorkGraph command contracts", () => {
     }).success).toBe(true)
     expect(WorkGraphCommandSchema.safeParse({
       ...commandSamples[0],
-      defaults: { execution: target, recap: {} },
+      defaults: { execution: target },
     }).success).toBe(false)
     expect(WorkGraphCommandSchema.safeParse({
       ...commandSamples[6],

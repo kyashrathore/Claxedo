@@ -159,7 +159,7 @@ function codeTokens(text: string) {
 
 function routePrefixes(text: string) {
   return unique(
-    [...text.matchAll(/\/api\/wr(?:\/[A-Za-z0-9_:-]+)+(?:\/\*)?/g)]
+    [...text.matchAll(/\/api\/(?:wr|workgraph)(?:\/[A-Za-z0-9_:-]+)+(?:\/\*)?/g)]
       .map((match) => match[0]?.replace(/\/\*$/, ""))
       .filter((item): item is string => !!item),
   )

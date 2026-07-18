@@ -10,6 +10,7 @@ export const OutcomeStateSchema = z.enum(["pending", "active", "ready_to_close",
 export type OutcomeState = z.infer<typeof OutcomeStateSchema>
 
 export const WorkItemStateSchema = z.enum([
+  "pending_approval",
   "pending",
   "active",
   "result_ready",
@@ -28,7 +29,4 @@ export type AttemptState = z.infer<typeof AttemptStateSchema>
 
 export const DecisionStateSchema = z.enum(["proposed", "pending", "answered", "dismissed"])
 export type DecisionState = z.infer<typeof DecisionStateSchema>
-
-export const IntakeStateSchema = z.enum(["candidate", "staged", "linked", "merged", "dismissed"])
-export type IntakeState = z.infer<typeof IntakeStateSchema>
 

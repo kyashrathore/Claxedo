@@ -32,8 +32,10 @@ the Worker-safe app from `src/hosted-app.ts`.
 | POST | `/api/workspace/:id/user-hosted/register` | records the link, mints a Host Tunnel Token; does **not** start a tunnel |
 | POST | `/api/workspace/:id/user-hosted/heartbeat` | client-signed; re-mints the Host Tunnel Token |
 | POST | `/api/workspace/:id/user-hosted/pause` | pauses the link |
+| ALL | `/api/workgraph` · `/api/workgraph/*` | forwards to the embedded `@claxedo/workgraph` HTTP router; tenant is derived from auth, no selector in the request |
 | GET | `/internal/relay/target` · `/internal/relay/revocation` | resolver-token / loopback gated |
 | POST | `/internal/sandbox-manager/gc` · `/internal/sandbox-manager/release` | manual sandbox GC / lease release; admin-token gated |
+| POST | `/internal/workgraph/reconcile` | tenant-scoped WorkGraph reconciliation sweep; admin-token gated, rate-limited, accepts no owner/workspace/Stream/Task selector |
 
 <Note>
 The Worker also mounts an auth-gated shell-boot surface (`/api/claxedo/events`,
@@ -79,9 +81,9 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 | --- | --- |
 | `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | published at JWKS |
 | `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN` | unsigned relay-revocation queries to Convex |
-| `CLAXEDO_RUNTIME_ADMIN_TOKEN` | authorizes `/internal/sandbox-manager/*`; must differ from the resolver token |
+| `CLAXEDO_RUNTIME_ADMIN_TOKEN` | authorizes both `/internal/sandbox-manager/*` (GC / lease release) and `/internal/workgraph/reconcile`; must differ from the resolver token |
 | `CLAXEDO_SANDBOX_DRIVER` | sandbox driver selection — the Worker accepts `cloudflare`, `daytona`, or `fetch` (Node-only `modal`/`vercel`/`docker` are rejected); auto-detected from provider creds when unset |
-| Cloudflare driver | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_SANDBOX_WORKER_URL` |
+| Cloudflare driver | `CLOUDFLARE_SANDBOX_API_TOKEN` + `CLOUDFLARE_SANDBOX_WORKER_URL` (primary); `CLOUDFLARE_API_TOKEN` is accepted only as a compatibility fallback for the token when `CLOUDFLARE_SANDBOX_API_TOKEN` is unset |
 | Daytona driver | `DAYTONA_API_KEY` + `CLAXEDO_DAYTONA_SNAPSHOT` |
 | fetch-bridge driver | `CLAXEDO_SANDBOX_DRIVER_URL` |
 | `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker; until set, the device endpoints return `501 device_login_unconfigured` |

@@ -6,13 +6,11 @@ export type MatchableStream = Readonly<{
   summary: string
   pinned: boolean
   lastActivityAt: number
-  memoryOnly?: boolean
 }>
 
 export type MatchingStreamStore = Readonly<{
   recent(context: WorkGraphContext, limit: number): Promise<readonly MatchableStream[]>
   pinned(context: WorkGraphContext, limit: number): Promise<readonly MatchableStream[]>
-  olderMemories(context: WorkGraphContext, limit: number): Promise<readonly MatchableStream[]>
 }>
 
 export type StreamPlacementMatch = Readonly<{
@@ -35,7 +33,6 @@ export function createMatchingService(input: Readonly<{
   streams: MatchingStreamStore
   recentLimit?: number
   pinnedLimit?: number
-  olderMemoryLimit?: number
   clock?: Readonly<{ now: () => number }>
 }>) {
   const clock = input.clock ?? { now: Date.now }
@@ -45,13 +42,8 @@ export function createMatchingService(input: Readonly<{
         input.streams.recent(context, input.recentLimit ?? 24),
         input.streams.pinned(context, input.pinnedLimit ?? 12),
       ])
-      const primary = rankStreamMatches([...recent, ...pinned], candidate, clock.now())
-      if (primary[0]?.confidence === "high") {
-        return { recommendation: primary[0], alternatives: primary.slice(1, 4), expandedOlderMemories: false }
-      }
-      const older = await input.streams.olderMemories(context, input.olderMemoryLimit ?? 16)
-      const expanded = rankStreamMatches([...recent, ...pinned, ...older], candidate, clock.now())
-      return { recommendation: expanded[0], alternatives: expanded.slice(1, 4), expandedOlderMemories: true }
+      const ranked = rankStreamMatches([...recent, ...pinned], candidate, clock.now())
+      return { recommendation: ranked[0], alternatives: ranked.slice(1, 4) }
     },
   }
 }
@@ -70,14 +62,12 @@ export function rankStreamMatches(
     const overlap = titleOverlap * 0.8 + bodyOverlap * 0.2
     const recency = Math.max(0, 1 - (now - stream.lastActivityAt) / (1000 * 60 * 60 * 24 * 30))
     const raw = Math.min(1, overlap * 0.75 + recency * 0.15 + (stream.pinned ? 0.1 : 0))
-    const score = stream.memoryOnly ? Math.min(raw, 0.44) : raw
+    const score = raw
     return {
       streamId: stream.id,
       confidence: score >= 0.72 ? "high" as const : score >= 0.45 ? "medium" as const : "low" as const,
       score,
-      explanation: stream.memoryOnly
-        ? `Older stream memory matched ${Math.round(overlap * 100)}% of meaningful terms after recent and pinned streams were inconclusive; inspect before choosing.`
-        : `${stream.pinned ? "Pinned" : "Recent"} stream matched ${Math.round(overlap * 100)}% of meaningful terms.`,
+      explanation: `${stream.pinned ? "Pinned" : "Recent"} stream matched ${Math.round(overlap * 100)}% of meaningful terms.`,
     }
   }).filter((match) => match.score > 0).sort((a, b) => b.score - a.score)
 }

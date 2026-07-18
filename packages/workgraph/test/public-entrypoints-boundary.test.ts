@@ -16,7 +16,7 @@ const publishedEntries = [
 const retainedInternalRoots = [
   "src/db/schema.ts",
   "src/domain/attempt.ts",
-  "src/domain/decision-readiness.ts",
+  "src/domain/launch-readiness.ts",
   "src/domain/lifecycle.ts",
 ].map((file) => path.join(root, file))
 const retiredDirectories = ["captain", "mcp", "model", "routes", "sdk", "substrate", "triggers"]

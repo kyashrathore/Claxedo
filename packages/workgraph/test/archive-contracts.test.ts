@@ -70,7 +70,6 @@ describe("WorkGraph archive contract", () => {
       { kind: "stream", id: "stream_1", value: { state: "active" } },
       { kind: "stream", id: "stream_1", value: { lifecycle: "active", purpose: "Ship" } },
       { kind: "attempt", id: "attempt_1", value: { lifecycle: "running", resolvedExecutionProfile: {} } },
-      { kind: "recap", id: "recap_1", value: { activityStartSequence: 1, activityEndSequence: 2 } },
       { kind: "stream", id: "stream_1", value: { owner_user_id: "owner_1" } },
     ]) {
       await expect(validateWorkGraphArchive(value([record]))).rejects.toMatchObject({ reason: "malformed" })
@@ -224,14 +223,13 @@ describe("WorkGraph archive contract", () => {
       visibility: "visible",
       pinned: false,
       executionDefaults: {},
-      recapDefaults: {},
-      activity: { lastActivityAt: 1, recapDueAt: 2 },
+      activity: { lastActivityAt: 1 },
       durableEffectCount: 0,
       sourceRevisionRefs: [],
     }
     const first = WorkGraphArchiveSchema.parse(value([{ kind: "stream", id: "stream_1", value: fields }]))
     const second = WorkGraphArchiveSchema.parse(
-      value([{ kind: "stream", id: "stream_1", value: { ...fields, activity: { recapDueAt: 2, lastActivityAt: 1 } } }]),
+      value([{ kind: "stream", id: "stream_1", value: { ...fields, activity: { lastActivityAt: 1 } } }]),
     )
 
     await expect(hashWorkGraphArchive(first)).resolves.toBe(await hashWorkGraphArchive(second))
@@ -456,20 +454,6 @@ function canonicalRecords() {
       },
     },
     {
-      kind: "notification",
-      id: "notification_1",
-      value: {
-        schemaVersion: 1,
-        version: 1,
-        kind: "actionable_recap",
-        state: "unread",
-        streamId: "stream_1",
-        recapId: "recap_1",
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    },
-    {
       kind: "operation_result",
       id: "operation_1",
       value: {
@@ -492,26 +476,6 @@ function canonicalRecords() {
         state: "active",
         successCriteria: ["Deployed"],
         evidenceIds: [],
-        sourceRevisionRefs: [source],
-      },
-    },
-    {
-      kind: "recap",
-      id: "recap_1",
-      value: {
-        ...publicRecord,
-        streamId: "stream_1",
-        activityRange: { fromSequence: 1, toSequence: 1, quietSince: 1 },
-        summary: "Release is ready",
-        actionableReferences: [{ type: "work_item", id: "work_item_1" }],
-        generation: {
-          state: "succeeded",
-          model: { providerId: "openai", modelId: "gpt-5" },
-          effort: "medium",
-          generatedAt: 2,
-          method: "agent_session",
-          sessionId: "session_recap",
-        },
         sourceRevisionRefs: [source],
       },
     },
@@ -588,8 +552,7 @@ function canonicalRecords() {
         visibility: "visible",
         pinned: false,
         executionDefaults: {},
-        recapDefaults: {},
-        activity: { lastActivityAt: 1, recapDueAt: 2 },
+        activity: { lastActivityAt: 1 },
         durableEffectCount: 1,
         sourceRevisionRefs: [source],
       },
@@ -601,11 +564,11 @@ function canonicalRecords() {
         schemaVersion: 1,
         version: 1,
         streamId: "stream_1",
-        jobType: "recap",
-        subjectId: "stream_1:1",
+        jobType: "source_plan",
+        subjectId: "source_1:1",
         dueAt: 1,
         status: "completed",
-        payload: { sessionId: "session_recap" },
+        payload: { sessionId: "session_source_plan" },
         leaseEpoch: 1,
         createdAt: 1,
         updatedAt: 2,
@@ -672,7 +635,7 @@ function canonicalRecords() {
     {
       kind: "workgraph",
       id: "workgraph_default",
-      value: { ...publicRecord, defaults: { execution: {}, recap: {} } },
+      value: { ...publicRecord, defaults: { execution: {} } },
     },
   ].sort((left, right) => `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`))
 }

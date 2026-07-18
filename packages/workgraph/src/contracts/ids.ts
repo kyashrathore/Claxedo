@@ -41,9 +41,6 @@ export type SessionBindingID = z.infer<typeof SessionBindingIDSchema>
 export const DecisionIDSchema = id("DecisionID")
 export type DecisionID = z.infer<typeof DecisionIDSchema>
 
-export const RecapIDSchema = id("RecapID")
-export type RecapID = z.infer<typeof RecapIDSchema>
-
 export const WorkSourceIDSchema = id("WorkSourceID")
 export type WorkSourceID = z.infer<typeof WorkSourceIDSchema>
 

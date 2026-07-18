@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/connections",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Connections kit: integration registry, credential/connection store ports, OAuth attempt machine, and token service for linking external accounts (Notion, Atlassian, GitHub, Google) to a host application",
   "license": "MIT",

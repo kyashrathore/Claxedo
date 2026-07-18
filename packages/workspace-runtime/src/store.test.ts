@@ -1032,7 +1032,7 @@ describe("RuntimeStore", () => {
 
     const assistant = store.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }
     assert.equal(assistant.error?.data?.message, "The database connection is not open")
-    assert.equal(assistant.error?.data?.firstTurnErrorClass, "workspace")
+    assert.equal(assistant.error?.data?.firstTurnErrorClass, "unknown")
     assert.equal(
       ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
       "m1",
@@ -1045,7 +1045,7 @@ describe("RuntimeStore", () => {
     const replayed = new RuntimeStore(root)
     const replayedAssistant = replayed.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }
     assert.equal(replayedAssistant.error?.data?.message, "The database connection is not open")
-    assert.equal(replayedAssistant.error?.data?.firstTurnErrorClass, "workspace")
+    assert.equal(replayedAssistant.error?.data?.firstTurnErrorClass, "unknown")
   })
 
   it("recoverBusySessions is idempotent once a session is recovering", () => {

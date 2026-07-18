@@ -54,11 +54,9 @@ describe("WorkGraph SQLite v2 schema", () => {
       "wg_v2_intake_candidates",
       "wg_v2_leases",
       "wg_v2_migration_intake",
-      "wg_v2_notifications",
       "wg_v2_operation_results",
       "wg_v2_outbox",
       "wg_v2_outcomes",
-      "wg_v2_recaps",
       "wg_v2_record_source_revisions",
       "wg_v2_runtime_effects",
       "wg_v2_session_bindings",
@@ -93,21 +91,38 @@ describe("WorkGraph SQLite v2 schema", () => {
     }
   })
 
-  test("replaces a legacy global execution recovery index with an exact tenant-leading index", () => {
+  test("drops the retired execution-mode recovery index and columns and pauses non-running Streams on upgrade", () => {
     const db = database()
     initializeWorkGraphSqliteSchema(db)
+    // Simulate a pre-approval-gate database: re-add the retired mode columns/index and seed streams.
     db.exec(`
-      DROP INDEX wg_v2_streams_execution_idx;
-      CREATE INDEX wg_v2_streams_execution_idx ON wg_v2_streams(execution_state, updated_at);
+      ALTER TABLE wg_v2_streams ADD COLUMN execution_mode TEXT;
+      ALTER TABLE wg_v2_streams ADD COLUMN execution_state TEXT;
+      ALTER TABLE wg_v2_attempts ADD COLUMN execution_mode TEXT;
+      CREATE INDEX wg_v2_streams_execution_idx ON wg_v2_streams(organization_id, owner_user_id, execution_state, updated_at);
+      INSERT INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at) VALUES ('o','u','wg','1','1');
+      INSERT INTO wg_v2_streams (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_mode, execution_state, created_at, updated_at)
+      VALUES ('o','u','s_active','wg','T','P','active','autonomous','active','1','1'),
+             ('o','u','s_stopped','wg','T','P','active','autonomous','stopped','1','1'),
+             ('o','u','s_never','wg','T','P','active',NULL,NULL,'1','1'),
+             ('o','u','s_paused','wg','T','P','paused',NULL,NULL,'1','1');
     `)
 
     initializeWorkGraphSqliteSchema(db)
 
-    expect(indexes(db, "wg_v2_streams").find((index) => index.name === "wg_v2_streams_execution_idx"))
-      .toEqual({
-        name: "wg_v2_streams_execution_idx",
-        columns: ["organization_id", "owner_user_id", "execution_state", "updated_at"],
-      })
+    const streamColumns = columns(db, "wg_v2_streams").map((column) => column.name)
+    expect(streamColumns).not.toContain("execution_mode")
+    expect(streamColumns).not.toContain("execution_state")
+    expect(columns(db, "wg_v2_attempts").map((column) => column.name)).not.toContain("execution_mode")
+    expect(indexes(db, "wg_v2_streams").find((index) => index.name === "wg_v2_streams_execution_idx")).toBeUndefined()
+    // Only the previously-active autonomous Stream keeps running; stopped, never-executed
+    // (NULL), and already-paused Streams end paused so nothing auto-launches on upgrade.
+    expect(db.prepare("SELECT id, lifecycle FROM wg_v2_streams ORDER BY id").all()).toEqual([
+      { id: "s_active", lifecycle: "active" },
+      { id: "s_never", lifecycle: "paused" },
+      { id: "s_paused", lifecycle: "paused" },
+      { id: "s_stopped", lifecycle: "paused" },
+    ])
   })
 
   test("enforces owner-bound relationships and monotonic ordering constraints", () => {

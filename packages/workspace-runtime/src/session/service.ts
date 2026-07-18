@@ -1,4 +1,5 @@
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { firstTurnErrorData } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
 import type {
   AgentMessageRow,
@@ -355,7 +356,7 @@ export function sessionPromptReply(input: SessionPromptTurnResult): {
       ? {
           error: {
             name: "UnknownError" as const,
-            data: { message: input.error },
+            data: firstTurnErrorData(input.error),
           },
         }
       : {}),

@@ -372,13 +372,24 @@ describe("workspace runtime host route auth", () => {
         },
       })
       const health = await runtime.app.request("http://localhost/api/wr/health").then((res) => res.json() as Promise<Record<string, unknown>>)
+      // Liveness semantics are unchanged by degradation: a degraded harness on a
+      // live runtime still reports ok:true/status:"ready". Only the harness-health
+      // detail (forwarded for the composer health peek) reflects the degradation.
       expect(health).toMatchObject({
         ok: true,
         status: "ready",
         service: "workspace-runtime",
+        agentType: "claude",
+        harnessHealth: {
+          status: "degraded",
+          reason: "harness_process_lost",
+          sessions: [{ id: "s1", status: "recovering" }],
+        },
       })
+      expect(health).toHaveProperty("acpBinary")
+      expect(health).toHaveProperty("error")
+      // The heavy diagnostics fields stay on /global/health only.
       expect(health).not.toHaveProperty("healthStatus")
-      expect(health).not.toHaveProperty("harnessHealth")
       expect(health).not.toHaveProperty("capabilities")
       expect(health).not.toHaveProperty("directory")
       expect(health).not.toHaveProperty("workspaceId")

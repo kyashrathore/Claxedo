@@ -23,7 +23,6 @@ export {
   createWebhookIntakeService,
   matchesFilters,
 } from "./application/webhook-intake-service"
-export { createNotificationService, NotificationVersionConflictError } from "./application/notification-service"
 export { createAttentionAcknowledgementService } from "./application/attention-acknowledgement-service"
 export type { AttentionAcknowledgementStore } from "./application/attention-acknowledgement-service"
 export { buildAttemptPrompt } from "./application/attempt-prompt"
@@ -52,7 +51,6 @@ export type {
   IntakeReceiptStore,
   VerifiedWorkSourceSignal,
   WebhookIntakeStore,
-  NotificationStore,
   SourceView,
   SourceViewStore,
 } from "./application"
