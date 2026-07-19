@@ -521,7 +521,10 @@ describe("hosted WorkGraph composition", () => {
     expect(calls[0]).toMatchObject({
       service_token: "service-secret",
       owner_subject: "user_a",
-      actor_type: "agent",
+      // The signed user's actor type crosses the service seam unchanged —
+      // the former user→agent downgrade sent hosted user-created Tasks into
+      // the approval gate and starved the continuous execution drain.
+      actor_type: "user",
       actor_id: "user_a",
       request_id: "request-hosted",
     })

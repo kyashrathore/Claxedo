@@ -4,7 +4,7 @@ import { workGraphActivityConformance, workGraphAdapterConformance, workGraphArc
 import { workGraphReplacementConformance } from "../../../workgraph/src/conformance/replacement"
 import type { AttemptRuntimePort, WorkGraphArchivePort } from "@claxedo/workgraph/ports"
 import { createWorkGraphHttpRouter } from "@claxedo/workgraph"
-import { applyWorkGraphCommand, reconcileReadyStreams } from "../../../../convex/workgraphCommands"
+import { applyWorkGraphCommand, executeForService as executeWorkGraphCommandForService, reconcileReadyStreams } from "../../../../convex/workgraphCommands"
 import { readWorkGraphProjection as readTenantWorkGraphProjection } from "../../../../convex/workgraphChanges"
 import { applyWorkGraphActivityMutation, readSessionBinding, readSessionBindingForSession, readTaskActivityProjection } from "../../../../convex/workgraphActivity"
 import { claimControlEffects, claimLaunches, claimMasterTurn, completeControlEffect, failMasterTurn, markRunning, recordResult, renewWorkGraphAttemptLease, settleRejectedProvision } from "../../../../convex/workgraphRuntime"
@@ -1045,6 +1045,70 @@ describe("Convex WorkGraph store", () => {
       }),
     )).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } })
     expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === secondId)).toMatchObject({ state: "pending_approval" })
+  })
+
+  test("service-path user commands keep their user actor: Tasks are born approved and the drain admits them", async () => {
+    // Regression (staging smoke, 2026-07-19): the hosted Worker executes user
+    // commands through `executeForService`, whose args only accepted
+    // agent/system actors, so the store downgraded user→agent. The approval
+    // gate then birthed every hosted user-created Task as `pending_approval`,
+    // and the continuous execution drain (which only admits `pending`) never
+    // admitted an Attempt. This drives the REAL service seam end to end.
+    vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "service-secret")
+    const harness = new ConvexHarness(["owner_a"])
+    await harness.insert("orgs", { _id: testOrganizationId, name: "Test organization" })
+    const store = createConvexWorkGraphStore({
+      serviceToken: "service-secret",
+      executor: {
+        mutation: (_fn, args) => harness.transaction(() => handler(executeWorkGraphCommandForService)(harness, args)),
+        query: async () => null,
+      },
+    })
+    const context = owner("owner_a")
+    const created = await store.commands.create_stream(context, {
+      operationId: "svc_user_stream" as never,
+      command: {
+        version: 1,
+        type: "create_stream",
+        title: "Service-path Stream",
+        execution: {
+          environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/service-path.git" },
+          repository: { remoteUrl: "https://github.com/claxedo/service-path.git", baseRevision: "HEAD" },
+          harness: "opencode",
+          agent: "build",
+          model: { providerId: "openai", modelId: "gpt-5" },
+          effort: "high",
+          tools: [],
+          connectionIds: [],
+        },
+      } as never,
+    })
+    if (!created.ok) throw new Error(`Service-path create_stream failed: ${JSON.stringify(created)}`)
+    const streamId = (created.value as { streamId: string }).streamId
+
+    const task = await store.commands.create_work_item(context, {
+      operationId: "svc_user_task" as never,
+      command: {
+        version: 1,
+        type: "create_work_item",
+        streamId,
+        title: "Service-path Task",
+        completionContract: ownerConfirmationContract(),
+      } as never,
+    })
+    if (!task.ok) throw new Error(`Service-path create_work_item failed: ${JSON.stringify(task)}`)
+    const workItemId = (task.value as { workItemId: string }).workItemId
+
+    // Born approved with the authenticated owner as its creating actor.
+    expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)).toMatchObject({
+      state: "pending",
+      created_by_actor_type: "user",
+      created_by_actor_id: "owner_a",
+    })
+
+    // The continuous drain admits it without any execute/approve command.
+    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === workItemId)).toHaveLength(1)
   })
 
   test("attaches a Session only to an approved Task and never writes an execution mode", async () => {

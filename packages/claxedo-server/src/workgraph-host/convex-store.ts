@@ -153,7 +153,13 @@ export function createConvexWorkGraphStore(input: Input) {
           service_token: input.serviceToken ?? "",
           organization_id: organizationId,
           owner_subject: context.ownerUserId,
-          actor_type: context.actor.type === "user" ? "agent" : context.actor.type,
+          // The true actor type crosses the service seam unchanged. User actors
+          // are safe to attest here: this path only runs for signed owner-mode
+          // contexts, and Convex `executeForService` pins a user actor's id to
+          // the authenticated tenant owner. The former user→agent downgrade sent
+          // every hosted user-created Task into the approval gate
+          // (`pending_approval`), so the continuous drain never admitted it.
+          actor_type: context.actor.type,
           actor_id: context.actor.id,
           operation_id: request.operationId,
           request_id: context.requestId,

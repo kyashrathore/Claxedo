@@ -69,7 +69,7 @@ const interactiveArgs = {
 const serviceArgs = {
   ...interactiveArgs,
   owner_subject: v.string(),
-  actor_type: v.union(v.literal("agent"), v.literal("system")),
+  actor_type: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
   actor_id: v.string(),
 }
 
@@ -102,7 +102,16 @@ export const executeForService = serviceMutation({
       organizationId: String(tenant.organization_id),
       ownerUserId,
       ownerSubject: args.owner_subject,
-      actor: { type: args.actor_type, id: args.actor_id },
+      // A service-attested "user" actor is ALWAYS the authenticated tenant
+      // owner (the exact identity the interactive mutation would build): the
+      // trusted control plane already verified the subject's signed token, and
+      // forcing the id here removes any impersonation surface. Without this,
+      // the hosted Worker's command path had to downgrade users to "agent",
+      // which sent every user-created Task through the approval gate
+      // (`pending_approval`) and starved the continuous execution drain.
+      actor: args.actor_type === "user"
+        ? { type: "user", id: ownerUserId }
+        : { type: args.actor_type, id: args.actor_id },
       requestId: args.request_id,
       operationId: args.operation_id,
       command: args.command,
