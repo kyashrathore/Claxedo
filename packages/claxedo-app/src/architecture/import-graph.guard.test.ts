@@ -65,7 +65,9 @@ describe("import graph orphan guard", () => {
 
     expect(testSupport.filter((file) => reachable.has(file))).toEqual([])
     expect(testSupport.filter((file) => orphans.has(file))).toEqual([])
-  })
+    // 20s: two full import-graph walks; shared CI runners cleared bun's 5s
+    // default by only ~70ms of headroom before timing out.
+  }, 20_000)
 
   test("does not report live type contracts or config alias targets as orphans", () => {
     const orphans = new Set(orphanModules(appRoot))

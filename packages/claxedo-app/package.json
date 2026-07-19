@@ -66,6 +66,7 @@
     "@axe-core/playwright": "4.12.1",
     "@clerk/testing": "2.2.7",
     "@happy-dom/global-registrator": "20.0.11",
+    "@modelcontextprotocol/sdk": "1.25.2",
     "@playwright/test": "1.59.1",
     "@solidjs/testing-library": "0.8.10",
     "@tailwindcss/vite": "4.1.11",
