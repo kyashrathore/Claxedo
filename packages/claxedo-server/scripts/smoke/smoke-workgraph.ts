@@ -642,7 +642,7 @@ async function waitForAdmittedAttempt(
 ) {
   const deadline = startedAt + 10_000
   while (Date.now() < deadline) {
-    const snapshot = await jsonRequest(request, `${base}/api/workgraph/snapshot?limit=200`, {
+    const snapshot = await jsonRequest(request, `${base}/api/workgraph/snapshot?limit=100`, {
       headers: authorization(token),
       signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
     })

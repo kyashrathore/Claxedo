@@ -71,14 +71,17 @@ describe("opencode run (non-interactive subprocess)", () => {
     "exits nonzero promptly when the model is unknown (regression for #27371)",
     ({ opencode }) =>
       Effect.gen(function* () {
+        // 25s budget: shared CI runners spend 10s+ on engine boot alone, which
+        // pushed the legit error-exit past the old 15s line. A real hang still
+        // trips the internal timeout and fails the duration bound.
         const result = yield* opencode.run("say hi", {
           model: "test/nonexistent-model",
-          timeoutMs: 15_000,
+          timeoutMs: 25_000,
         })
         expect(result.exitCode).not.toBe(0)
-        expect(result.durationMs).toBeLessThan(15_000)
+        expect(result.durationMs).toBeLessThan(25_000)
       }),
-    30_000,
+    45_000,
   )
 
   // The test provider's SSE error item is interpreted by the SDK as an unknown
