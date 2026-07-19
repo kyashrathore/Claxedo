@@ -5,6 +5,7 @@ import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { setBrowserToolbarSlot, setReviewTabHeaderSlot, setReviewToolbarSlot } from "@/ui/controls/portal-slot"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
+import { isMarkdownPath, markdownSourceView, toggleMarkdownPreview } from "../content/tab-file"
 import { useClaxedoState } from "../state/index"
 import { WorkspaceScopeButtons } from "./workspace-toolbar"
 import { WorkspaceToolButtons } from "./workspace-tool-buttons"
@@ -221,6 +222,17 @@ function L2HeaderStrip(props: {
               <span class="truncate font-mono text-[11px] text-text-weak" title={tab().path}>
                 {tab().path}
               </span>
+              <Show when={isMarkdownPath(tab().path)}>
+                <button
+                  type="button"
+                  class="flex size-6 shrink-0 items-center justify-center rounded-md text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+                  aria-label={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
+                  title={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
+                  onClick={() => toggleMarkdownPreview(tab().path)}
+                >
+                  <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
+                </button>
+              </Show>
               <span class="flex-1" />
               <WorkspaceToolButtons
                 available={workspacePanelTargetAvailable()}

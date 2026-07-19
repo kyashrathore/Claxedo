@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import type { GenericMutationCtx } from "convex/server"
-import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, PublicEventPayloadSchema, UpdateStreamNotesCommandSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor } from "@claxedo/workgraph/contracts"
+import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, MASTER_DAILY_SCHEDULE, masterSessionId, PublicEventPayloadSchema, UpdateStreamNotesCommandSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, nextDailyMasterRun, workGraphMasterLaneKey, workGraphMasterLaneWorkspace, type ChangeCursor } from "@claxedo/workgraph/contracts"
 import { rankDuplicateMatches, rankStreamMatches } from "@claxedo/workgraph/matching"
 import {
   dependencyGraphHasCycle,
@@ -476,6 +476,24 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       created_at: now,
       updated_at: now,
     })
+    // An owner message to a halted ('attention') master is the explicit
+    // resume: it clears the escalation and the failure counter. Agent
+    // messages park in the mailbox and never un-halt an escalated master.
+    if (input.actor.type === "user" && stream.master_status?.state === "attention") {
+      // Explicit fields only: the halted turn is dead, so its turnId and
+      // admission fence must not leak into the resumed status.
+      const resumed = {
+        state: "hibernating",
+        ...(typeof stream.master_status.sessionId === "string" ? { sessionId: stream.master_status.sessionId } : {}),
+        failureCount: 0,
+        message: "Owner resumed the master",
+        receiptRefs: stream.master_status.receiptRefs ?? [],
+        ...(typeof stream.charter?.hash === "string" ? { charterHash: stream.charter.hash } : {}),
+        updatedAt: now,
+      }
+      await ctx.db.patch(stream._id, { master_status: resumed, updated_at: now })
+      await syncAttentionRecord(ctx, "workgraph_streams", { ...stream, master_status: resumed, updated_at: now })
+    }
     await enqueueMasterWake(ctx, input.organizationId, input.ownerUserId, stream.id, now, "mailbox", input.actor.id)
     return pending(
       "master_called",
@@ -491,7 +509,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== notes.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Stream version changed")
-    if (input.actor.type !== "agent" || input.actor.id !== `ses_master_${stream.id}`)
+    if (input.actor.type !== "agent" || input.actor.id !== masterSessionId(stream.id))
       return rejected(input.operationId, "forbidden", "Only the Stream master can update Stream notes")
     const references = await Promise.all(notes.externalReferences.map(async (reference) => {
       const revision = await owned(
@@ -583,14 +601,19 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion) return rejected(input.operationId, "version_conflict", "Stream version changed")
-    const sessionId = `ses_master_${stream.id}`
+    const sessionId = masterSessionId(stream.id)
     if (input.actor.type !== "agent" || input.actor.id !== sessionId)
       return rejected(input.operationId, "forbidden", "Only the Stream master can request public PR confirmation")
     if (stream.public_pr_confirmed_at !== undefined) {
       return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, alreadyConfirmed: true }, stream.id)
     }
+    // Idempotent: a confirmation already awaiting the owner is a success
+    // no-op — retries must not rewrite the escalation or conflict.
+    if (stream.master_status?.state === "attention" && stream.master_status?.escalation === "public_pr_confirmation") {
+      return pending("public_pr_confirmation_requested", "stream", stream.id, { streamId: stream.id, repository: command.repository, title: command.title, alreadyPending: true }, stream.id)
+    }
     const reason = `Confirm the first non-draft pull request to public repository ${command.repository}: ${command.title}`
-    const masterStatus = { state: "attention", sessionId, message: reason, receiptRefs: [], updatedAt: now }
+    const masterStatus = { state: "attention", escalation: "public_pr_confirmation", sessionId, message: reason, receiptRefs: [], updatedAt: now }
     await ctx.db.patch(stream._id, { master_status: masterStatus, updated_at: now })
     await syncAttentionRecord(ctx, "workgraph_streams", { ...stream, master_status: masterStatus, updated_at: now })
     return pending("public_pr_confirmation_requested", "stream", stream.id, { streamId: stream.id, repository: command.repository, title: command.title }, stream.id)
@@ -600,7 +623,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion) return rejected(input.operationId, "version_conflict", "Stream version changed")
     if (input.actor.type !== "user") return rejected(input.operationId, "forbidden", "Public PR confirmation requires the owner")
-    const masterStatus = { state: "hibernating", sessionId: `ses_master_${stream.id}`, message: "Public PR action confirmed", receiptRefs: [], updatedAt: now }
+    const masterStatus = { state: "hibernating", sessionId: masterSessionId(stream.id), message: "Public PR action confirmed", receiptRefs: [], updatedAt: now }
     const saved = { ...stream, public_pr_confirmed_at: now, master_status: masterStatus, row_version: stream.row_version + 1, updated_at: now }
     await ctx.db.patch(stream._id, saved)
     await syncAttentionRecord(ctx, "workgraph_streams", saved)
@@ -612,7 +635,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Stream version changed")
-    if (input.actor.type !== "agent" || input.actor.id !== command.sessionId || command.sessionId !== `ses_master_${stream.id}`)
+    if (input.actor.type !== "agent" || input.actor.id !== command.sessionId || command.sessionId !== masterSessionId(stream.id))
       return rejected(input.operationId, "forbidden", "Only the Stream master can record master audit events")
     return pending("master_audit_recorded", "stream", stream.id, {
       streamId: stream.id,
@@ -641,6 +664,20 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       updated_at: now,
       ...(command.state === "closed" ? { closed_at: now } : {}),
     })
+    // Closing retires the master lane (pending wakes + the daily schedule);
+    // reopening re-arms the schedule under a fresh idempotency key, since
+    // wake idempotency dedup is permanent.
+    if (command.state === "closed") {
+      const lane = workGraphMasterLaneKey({ organizationId: input.organizationId, ownerUserId: input.ownerUserId, streamId: stream.id })
+      const wakes = await ctx.db
+        .query("wakes")
+        .withIndex("by_lane_state", (query: any) => query.eq("serial_key", lane).eq("state", "pending"))
+        .take(100)
+      await Promise.all(wakes.map((wake: any) => ctx.db.patch(wake._id, { state: "cancelled", resolved_by: "stream_closed" })))
+    }
+    if (command.state === "reopened") {
+      await enqueueMasterSchedule(ctx, input.organizationId, input.ownerUserId, stream.id, now, input.actor.id, `master-schedule:${stream.id}:${now}`)
+    }
     return pending("stream_lifecycle_changed", "stream", stream.id, { streamId: stream.id }, stream.id)
   }
   if (command.type === "create_work_source") {
@@ -2258,6 +2295,11 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
   if (streamLease && streamLease.expires_at > now)
     return { ok: false as const, code: "blocked", message: "Stream already has an active Attempt" }
   if (streamLease) await ctx.db.delete(streamLease._id)
+  // The master turn owns the shared Stream workspace while pending/acting: no
+  // Attempt admits mid-turn (mirror of the master's live-attempt deferral).
+  const masterState = stream.master_status?.state
+  if ((masterState === "acting" || masterState === "pending") && stream.master_status?.turnId)
+    return { ok: false as const, code: "blocked", message: "Stream master turn is in progress" }
   const outcome = item.outcome_id
     ? await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, item.outcome_id)
     : undefined
@@ -2755,19 +2797,30 @@ export async function enqueueMasterWake(
   receiptRefs: readonly string[] = [],
 ) {
   const stream = await owned(ctx, "workgraph_streams", organizationId, ownerUserId, streamId)
-  if (stream) await ctx.db.patch(stream._id, {
-    master_status: {
-      state: "pending",
-      message: trigger === "mailbox" ? "Master message queued" : "Task settlement queued for master",
-      receiptRefs: [...receiptRefs].slice(0, 100),
-      ...(typeof stream.charter?.hash === "string" ? { charterHash: stream.charter.hash } : {}),
-      updatedAt: now,
-    },
-  })
-  const serialKey = `workgraph-master:${organizationId}:${ownerUserId}:${streamId}`
+  // A closed Stream's master never re-arms, and an escalated ('attention')
+  // master stays halted — its Needs-you entry and failure counter survive
+  // settlements and mailbox traffic until the owner resolves it. An in-flight
+  // turn ('pending'/'acting') keeps its turnId/admission fence untouched; the
+  // queued event rides the lane wake, never a status rewrite.
+  if (!stream || stream.lifecycle_state === "closed") return undefined
+  const existing = stream.master_status
+  if (existing?.state === "attention") return undefined
+  if (!existing || existing.state === "hibernating" || existing.state === "retrying") {
+    await ctx.db.patch(stream._id, {
+      master_status: {
+        ...existing,
+        state: existing?.state === "retrying" ? "retrying" : "pending",
+        message: trigger === "mailbox" ? "Master message queued" : "Task settlement queued for master",
+        receiptRefs: [...receiptRefs].slice(0, 100),
+        ...(typeof stream.charter?.hash === "string" ? { charterHash: stream.charter.hash } : {}),
+        updatedAt: now,
+      },
+    })
+  }
+  const serialKey = workGraphMasterLaneKey({ organizationId, ownerUserId, streamId })
   return createLaneWakeIfIdle(ctx, {
     id: `wake_master_${crypto.randomUUID()}`,
-    workspaceId: `wg-master:${organizationId}:${ownerUserId}:${streamId}`,
+    workspaceId: workGraphMasterLaneWorkspace({ organizationId, ownerUserId, streamId }),
     triggerType: "at",
     kind: "workgraph_master",
     serialKey,
@@ -2788,11 +2841,12 @@ async function enqueueMasterSchedule(
   streamId: string,
   now: number,
   actorId: string,
+  idempotencyKey = `master-schedule:${streamId}`,
 ) {
-  const serialKey = `workgraph-master:${organizationId}:${ownerUserId}:${streamId}`
+  const serialKey = workGraphMasterLaneKey({ organizationId, ownerUserId, streamId })
   return createWakeInTx(ctx, {
     id: `wake_master_schedule_${crypto.randomUUID()}`,
-    workspaceId: `wg-master:${organizationId}:${ownerUserId}:${streamId}`,
+    workspaceId: workGraphMasterLaneWorkspace({ organizationId, ownerUserId, streamId }),
     triggerType: "at",
     kind: "workgraph_master",
     serialKey,
@@ -2802,16 +2856,10 @@ async function enqueueMasterSchedule(
     createdBy: actorId,
     createdAt: now,
     fireAt: nextDailyMasterRun(now),
-    schedule: "daily@06:00Z",
-    idempotencyKey: `master-schedule:${streamId}`,
+    schedule: MASTER_DAILY_SCHEDULE,
+    idempotencyKey,
     attempts: 0,
   })
-}
-
-function nextDailyMasterRun(afterMs: number) {
-  const after = new Date(afterMs)
-  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
-  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
 }
 
 async function saveOperation(

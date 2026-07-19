@@ -1,4 +1,4 @@
-import { createMemo, createResource, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useSDK } from "@/features/session/app-ports"
@@ -52,12 +52,6 @@ export type SessionEnvironmentSource = {
 // The minus glyph (U+2212) reads as a real deletion marker rather than a hyphen.
 const MINUS = "−"
 
-const ISOLATION_LABELS: Record<EnvironmentIsolation, string> = {
-  worktree: "Worktree",
-  local: "Local",
-  cloud: "Cloud",
-}
-
 function dirName(path: string | undefined) {
   if (!path) return undefined
   const trimmed = path.replace(/[/\\]+$/, "")
@@ -77,8 +71,10 @@ function dirName(path: string | undefined) {
  * Content is two groups:
  *   1. Facts — INFORMATION ONLY, directly under the head. Muted field labels
  *      with the value as the stronger trailing meta; rows are not interactive.
- *      Rows for impossible state are omitted (no "Branch —"; the Worktree row
- *      exists only when isolation IS a worktree).
+ *      The Worktree row states where the session runs: "Main" for the main
+ *      checkout, the worktree's directory name for a dedicated worktree, or
+ *      "Cloud" for a remote sandbox. Rows for impossible state are omitted
+ *      (no "Branch —" for non-git directories).
  *   2. "On <project>" — NAVIGATION ONLY. Icon + label rows that open a specific
  *      shared-panel tab. Changes appears HERE (once), carrying the +N −M metric
  *      as its trailing meta. These rows are also the collapsed rail's buttons.
@@ -90,8 +86,18 @@ export function SessionEnvironmentCard(props: {
   onOpenTab: (tab: EnvironmentPanelTab) => void
 }) {
   const changes = () => props.source.changes()
-  const isolation = () => props.source.isolation()
-  const worktreeName = () => dirName(props.source.worktreeDir())
+  // Where the session runs, in worktree terms: the main checkout, a dedicated
+  // worktree (named by its directory), or a remote cloud sandbox.
+  const worktreeLabel = () => {
+    switch (props.source.isolation()) {
+      case "cloud":
+        return "Cloud"
+      case "worktree":
+        return dirName(props.source.worktreeDir()) ?? "Worktree"
+      default:
+        return "Main"
+    }
+  }
   const navLabel = () => {
     const name = props.source.projectName()
     return name ? `On ${name}` : "Navigate"
@@ -155,21 +161,13 @@ export function SessionEnvironmentCard(props: {
     >
       {/* ── Facts (information only, no section label — the head names the card) ── */}
       <ContextCardRow
-        label={<span class="session-envcard-field">Isolation</span>}
-        meta={<span class="session-envcard-value">{ISOLATION_LABELS[isolation()]}</span>}
+        label={<span class="session-envcard-field">Worktree</span>}
+        meta={
+          <span class="session-envcard-value" title={props.source.worktreeDir()}>
+            {worktreeLabel()}
+          </span>
+        }
       />
-      <Show when={isolation() === "worktree" ? worktreeName() : undefined}>
-        {(name) => (
-          <ContextCardRow
-            label={<span class="session-envcard-field">Worktree</span>}
-            meta={
-              <span class="session-envcard-value" title={props.source.worktreeDir()}>
-                {name()}
-              </span>
-            }
-          />
-        )}
-      </Show>
       <Show when={props.source.branch()}>
         {(branch) => (
           <ContextCardRow
@@ -256,13 +254,16 @@ export function SessionEnvironmentCardMount() {
   })
 
   // Change totals reuse the SAME file-status query the panel's changes/files
-  // navigator uses; each File carries added/removed line counts.
-  const [status] = createResource(
-    () => (visible() ? directory() : undefined),
-    () => sdk.client.file.status().then((res) => res.data ?? []).catch(() => []),
-  )
+  // navigator uses; each File carries added/removed line counts. useQuery
+  // (not a one-shot createResource): a request that fails while the backend
+  // is still booting retries instead of caching the failure until remount.
+  const statusQuery = useQuery(() => ({
+    queryKey: ["session-environment", "file-status", directory()],
+    enabled: visible(),
+    queryFn: () => sdk.client.file.status().then((res) => res.data ?? []),
+  }))
   const changes = createMemo<EnvironmentChanges | undefined>(() => {
-    const files = status()
+    const files = statusQuery.data
     // Defensive: the file-status query's `.then(...) ?? []` fallback only
     // covers a nullish `res.data` — a 200 response whose body isn't
     // array-shaped (e.g. `{}`) resolves truthy-but-non-iterable, which used
@@ -278,10 +279,14 @@ export function SessionEnvironmentCardMount() {
     return { files: files.length, added, removed }
   })
 
-  const [vcs] = createResource(
-    () => (visible() ? directory() : undefined),
-    () => sdk.client.vcs.get().then((res) => res.data?.branch).catch(() => undefined),
-  )
+  // Branch, with retry + refetch-on-focus: the old one-shot resource cached a
+  // single boot-time failure as "no branch" until the card remounted, and a
+  // branch switch in the terminal never showed up.
+  const vcsQuery = useQuery(() => ({
+    queryKey: ["session-environment", "vcs", directory()],
+    enabled: visible(),
+    queryFn: () => sdk.client.vcs.get().then((res) => res.data?.branch ?? null),
+  }))
 
   // Prefer the owning Project's name over the directory basename. A session can run out
   // of a generated runtime directory (e.g. `claxedo-live-mcp-process-8FQQ9L`) or a git
@@ -301,7 +306,7 @@ export function SessionEnvironmentCardMount() {
 
   const source: SessionEnvironmentSource = {
     changes,
-    branch: () => vcs(),
+    branch: () => vcsQuery.data ?? undefined,
     isolation,
     worktreeDir: directory,
     projectName,

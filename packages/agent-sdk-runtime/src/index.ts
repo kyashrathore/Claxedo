@@ -47,11 +47,14 @@ export {
 export {
   SDK_MODEL_CATALOG,
   isSdkModelId,
+  modelConfigOption,
   requireSdkModelId,
   sdkModelConfigOption,
   sdkModelOptions,
 } from "./sdk-model-catalog"
-export type { SdkModelCatalog, SdkModelId } from "./sdk-model-catalog"
+export type { SdkModelCatalog, SdkModelEntry, SdkModelId } from "./sdk-model-catalog"
+export { createLiveModelSource } from "./live-model-source"
+export type { LiveModelSource } from "./live-model-source"
 export type {
   AcpHarnessId,
   AgentHarnessAccess,

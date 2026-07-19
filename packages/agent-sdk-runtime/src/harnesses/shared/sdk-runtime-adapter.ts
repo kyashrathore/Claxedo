@@ -103,7 +103,8 @@ export type SdkRuntimeDriver = {
   deleteAgentSession?(sessionId: string, agentSessionId: string): void
   dispose?(): void
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
-  configOptions(currentModel: string): AgentConfigOptionRow[]
+  configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]>
+  peekConfigOptions(currentModel: string): AgentConfigOptionRow[]
 }
 export type SdkRuntimeDriverFactory = (host: SdkRuntimeDriverHost) => SdkRuntimeDriver
 
@@ -529,12 +530,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.driver.applyConfig(config)
   }
 
-  async probeConfigOptions(_directory: string): Promise<AgentConfigOptionRow[]> {
-    return this.configOptions()
+  async probeConfigOptions(directory: string): Promise<AgentConfigOptionRow[]> {
+    return this.driver.configOptions(this.currentModel, directory)
   }
 
   peekConfigOptions(_directory: string): AgentConfigOptionRow[] {
-    return this.configOptions()
+    return this.driver.peekConfigOptions(this.currentModel)
   }
 
   readRuntimeHealth(_directory: string): AgentHarnessAdapterHealth {
@@ -570,10 +571,6 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
       item.resolve?.(decision)
     }
-  }
-
-  private configOptions() {
-    return this.driver.configOptions(this.currentModel)
   }
 
   private maybeAutoTitle(id: string, agentSessionId: string, directory: string, parts: unknown[]) {

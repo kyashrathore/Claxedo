@@ -295,7 +295,9 @@ describe("FilePathLinkProvider", () => {
 
 			expect(links[0].range.start.x).toBe(1);
 			expect(links[0].range.start.y).toBe(1);
-			expect(links[0].range.end.x).toBe(11);
+			// xterm range ends are inclusive: "le/name.ts" occupies columns 1-10
+			// of row 2, so the end cell is column 10 (not one past it).
+			expect(links[0].range.end.x).toBe(10);
 			expect(links[0].range.end.y).toBe(2);
 		});
 	});
@@ -346,6 +348,98 @@ describe("FilePathLinkProvider", () => {
 
 			expect(links.length).toBe(1);
 			expect(links[0].text).toBe("/path/to/very/long/dir/file.ts");
+		});
+
+		it("should produce the same full link no matter which wrapped row is scanned", async () => {
+			// Regression: stitching only prev+current+next meant scanning row 1
+			// yielded a truncated path and row 3 a garbage relative path.
+			const terminal = createMockTerminal([
+				{ text: "/path/to/ve" },
+				{ text: "ry/long/dir", isWrapped: true },
+				{ text: "/file.ts", isWrapped: true },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			for (const row of [1, 2, 3]) {
+				const links = await getLinks(provider, row);
+				expect(links.length).toBe(1);
+				expect(links[0].text).toBe("/path/to/very/long/dir/file.ts");
+				expect(links[0].range.start).toEqual({ x: 1, y: 1 });
+				expect(links[0].range.end).toEqual({ x: 8, y: 3 });
+			}
+		});
+	});
+
+	describe("fallback priority over primary detection", () => {
+		it("uses the fallback parse for python paths with spaces instead of two bogus primary links", async () => {
+			const terminal = createMockTerminal([
+				{ text: '  File "/tmp/my dir/x.py", line 3' },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(1);
+			expect(links[0].text).toBe('"/tmp/my dir/x.py", line 3');
+
+			links[0].activate(mouseEvent({ metaKey: true }), links[0].text);
+			expect(onOpen.mock.calls[0][1]).toBe("/tmp/my dir/x.py");
+			expect(onOpen.mock.calls[0][2]).toBe(3);
+		});
+	});
+
+	describe("URL interiors", () => {
+		it("should not linkify the path portion of an ftp URL", async () => {
+			const terminal = createMockTerminal([
+				{ text: "get it from ftp://files.example.com/pub/data.tar.gz" },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(0);
+		});
+
+		it("should not linkify the path portion of an https URL", async () => {
+			const terminal = createMockTerminal([
+				{ text: "Visit https://example.com/deep/file.ts today" },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(0);
+		});
+	});
+
+	describe("npm package references", () => {
+		it("still links a path that merely sits near a version string", async () => {
+			const terminal = createMockTerminal([
+				{ text: "lodash@4.17.21 needs ./src/patch.ts fixed" },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(1);
+			expect(links[0].text).toBe("./src/patch.ts");
+		});
+
+		it("skips scoped package references with attached versions", async () => {
+			const terminal = createMockTerminal([
+				{ text: "installed @scope/package@1.2.3 just now" },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(0);
 		});
 	});
 

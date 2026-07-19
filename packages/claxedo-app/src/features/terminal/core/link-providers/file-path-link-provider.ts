@@ -25,7 +25,8 @@ import {
  * - Verbose formats: "file.ts", line 42, col 10
  * - Git diff paths: --- a/path/file.ts, +++ b/path/file.ts
  *
- * Also handles multi-line wrapped paths spanning up to 3 terminal lines.
+ * Also handles multi-line wrapped paths across all wrapped rows of the
+ * logical line (bounded by the base class's stitching cap).
  *
  * Extends {@link WrappedLineLinkProvider} to reuse the shared line-stitching
  * (`computeLineContext`) and wrapped-line range math (`calculateLinkRange`).
@@ -62,20 +63,50 @@ export class FilePathLinkProvider extends WrappedLineLinkProvider {
 			return;
 		}
 
-		const {
-			lineLength,
-			isCurrentLineWrapped,
-			prevLineLength,
-			nextLineIsWrapped,
-			combinedText,
-			currentLineOffset,
-		} = ctx;
+		const { combinedText, currentLineOffset, currentLineLength } = ctx;
+		const currentLineStart = currentLineOffset;
+		const currentLineEnd = currentLineOffset + currentLineLength;
+
+		const links: ILink[] = [];
+
+		// Fallback matchers first: they parse whole-line tool formats (Python
+		// tracebacks, compiler output) that the token-based primary detector
+		// mangles — e.g. a quoted path with spaces becomes two bogus primary
+		// links. Where a fallback matched, it wins and overlapping primary
+		// detections are dropped. (Previously fallbacks only ran when primary
+		// detection found NOTHING on the line, which made them unreachable for
+		// exactly the lines they were written for.)
+		const fallbackRanges: Array<{ start: number; end: number }> = [];
+		for (const fallback of detectFallbackLinks(combinedText)) {
+			if (this.shouldSkipPath(fallback.path)) {
+				continue;
+			}
+			if (!this.isExplicitPath(fallback.path) && !this.hasDotBasename(fallback.path)) {
+				continue;
+			}
+
+			const linkStart = fallback.index;
+			const linkEnd = fallback.index + fallback.link.length;
+			fallbackRanges.push({ start: linkStart, end: linkEnd });
+
+			// Only report links that touch the hovered row
+			if (linkEnd <= currentLineStart || linkStart >= currentLineEnd) {
+				continue;
+			}
+
+			links.push({
+				range: this.calculateLinkRange(ctx, linkStart, linkEnd),
+				text: fallback.link,
+				decorations: this.linkDecorations(),
+				activate: (event: MouseEvent) => {
+					this.handleFallbackActivation(event, fallback);
+				},
+			});
+		}
 
 		// Use VSCode's link detection
 		const os = getCurrentOS();
 		const detectedLinks = detectLinks(combinedText, os);
-
-		const links: ILink[] = [];
 
 		for (let parsedLink of detectedLinks) {
 			// Strip trailing punctuation from paths without suffixes
@@ -90,10 +121,12 @@ export class FilePathLinkProvider extends WrappedLineLinkProvider {
 				? parsedLink.suffix.suffix.index + parsedLink.suffix.suffix.text.length
 				: parsedLink.path.index + parsedLink.path.text.length;
 
-			// Check if this link overlaps with the current line
-			const currentLineStart = currentLineOffset;
-			const currentLineEnd = currentLineOffset + lineLength;
+			// A fallback link already covers this span with a better parse
+			if (fallbackRanges.some((fb) => linkStart < fb.end && linkEnd > fb.start)) {
+				continue;
+			}
 
+			// Check if this link overlaps with the current line
 			if (linkEnd <= currentLineStart || linkStart >= currentLineEnd) {
 				continue;
 			}
@@ -138,70 +171,17 @@ export class FilePathLinkProvider extends WrappedLineLinkProvider {
 				continue;
 			}
 
-			// Calculate the range for highlighting
-			const range = this.calculateLinkRange(
-				linkStart,
-				linkEnd,
-				prevLineLength,
-				lineLength,
-				bufferLineNumber,
-				isCurrentLineWrapped,
-				nextLineIsWrapped,
-			);
-
 			// Build the full link text for display
 			const fullLinkText = combinedText.substring(linkStart, linkEnd);
 
 			links.push({
-				range,
+				range: this.calculateLinkRange(ctx, linkStart, linkEnd),
 				text: fullLinkText,
+				decorations: this.linkDecorations(),
 				activate: (event: MouseEvent) => {
 					this.handleActivation(event, parsedLink);
 				},
 			});
-		}
-
-		// If no links found via primary detection, try fallback matchers
-		// These catch special formats like Python errors, Rust errors, etc.
-		if (links.length === 0) {
-			const fallbackLinks = detectFallbackLinks(combinedText);
-			for (const fallback of fallbackLinks) {
-				if (this.shouldSkipPath(fallback.path)) {
-					continue;
-				}
-				if (!this.isExplicitPath(fallback.path) && !this.hasDotBasename(fallback.path)) {
-					continue;
-				}
-
-				const linkStart = fallback.index;
-				const linkEnd = fallback.index + fallback.link.length;
-
-				// Check if this link overlaps with the current line
-				const fbCurrentLineStart = currentLineOffset;
-				const fbCurrentLineEnd = currentLineOffset + lineLength;
-				if (linkEnd <= fbCurrentLineStart || linkStart >= fbCurrentLineEnd) {
-					continue;
-				}
-
-				// Calculate the range for highlighting
-				const range = this.calculateLinkRange(
-					linkStart,
-					linkEnd,
-					prevLineLength,
-					lineLength,
-					bufferLineNumber,
-					isCurrentLineWrapped,
-					nextLineIsWrapped,
-				);
-
-				links.push({
-					range,
-					text: fallback.link,
-					activate: (event: MouseEvent) => {
-						this.handleFallbackActivation(event, fallback);
-					},
-				});
-			}
 		}
 
 		callback(links.length > 0 ? links : undefined);
@@ -312,13 +292,14 @@ export class FilePathLinkProvider extends WrappedLineLinkProvider {
 			return true;
 		}
 
-		// Check if this is part of a URL (e.g., the path portion after ://)
-		// detectLinks() with Windows OS mode may only capture "/host/path" from "http://host/path"
-		// because the Windows regex consumes the leading slashes differently. We look at the
-		// context around linkStart to detect the "://" scheme separator.
+		// Check if this is part of a URL (e.g., the path portion after ://).
+		// Unix-mode detectLinks captures "//host/path" from "http://host/path"
+		// starting at the FIRST slash, so the context window must reach one char
+		// past linkStart to contain both slashes of "://" — substring's exclusive
+		// end at linkStart + 1 only reached "https:/" and never matched.
 		if (linkStart >= 1) {
 			const contextStart = Math.max(0, linkStart - 10);
-			const context = combinedText.substring(contextStart, linkStart + 1);
+			const context = combinedText.substring(contextStart, linkStart + 2);
 			if (/https?:\/\//.test(context) || /ftp:\/\//.test(context)) {
 				return true;
 			}
@@ -337,11 +318,14 @@ export class FilePathLinkProvider extends WrappedLineLinkProvider {
 		linkStart: number,
 		combinedText: string,
 	): boolean {
-		// Check context for npm package patterns like @scope/package@1.2.3
-		const contextStart = Math.max(0, linkStart - 30);
-		const contextEnd = linkStart + pathText.length;
-		const context = combinedText.substring(contextStart, contextEnd);
-		return /@\d+\.\d+/.test(context);
+		// Skip npm package references like @scope/package@1.2.3: the @version
+		// must be part of the detected text or attached directly to its end. A
+		// wide lookbehind window suppressed legitimate paths that merely sat
+		// near a version string (e.g. `lodash@4.17.21 needs ./src/patch.ts`).
+		if (/@\d+\.\d+/.test(pathText)) {
+			return true;
+		}
+		return /^@\d+\.\d+/.test(combinedText.slice(linkStart + pathText.length));
 	}
 
 	private handleActivation(event: MouseEvent, parsedLink: IParsedLink): void {

@@ -9,7 +9,7 @@ describe("Claude SDK driver", () => {
     })).toEqual({ PATH: "/bin" })
   })
 
-  test("exposes static Claude model config options", () => {
+  test("serves the static Claude model catalog before any live probe", () => {
     const driver = createClaudeSdkDriver({
       lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
       pendingPermissions: new Map(),
@@ -17,7 +17,7 @@ describe("Claude SDK driver", () => {
       bindSession() {},
     } as never)
 
-    expect(driver.configOptions("claude-opus-4-6")).toEqual([
+    expect(driver.peekConfigOptions("claude-opus-4-6")).toEqual([
       expect.objectContaining({
         id: "model",
         currentValue: "claude-opus-4-6",

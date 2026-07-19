@@ -284,11 +284,14 @@ describe("durable local execution", () => {
       status: "pending",
       payload_json: JSON.stringify({ streamId, trigger: "task_settled" }),
     })
+    // Settlement only marks the wake; receipt refs are re-derived from the
+    // settled attempts when the master turn claims, not aggregated inside the
+    // settlement transaction.
     expect(JSON.parse((fixture.database.prepare(
       "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
     ).get(streamId) as { master_status_json: string }).master_status_json)).toMatchObject({
       state: "pending",
-      receiptRefs: ["commit:abc"],
+      receiptRefs: [],
     })
     expect(await fixture.service.queries.changes.list(owner(), {}))
       .toEqual(expect.arrayContaining([expect.objectContaining({ event: expect.objectContaining({ type: "attempt_completed" }) })]))

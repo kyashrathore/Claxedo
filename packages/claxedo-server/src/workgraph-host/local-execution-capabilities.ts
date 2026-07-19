@@ -35,6 +35,13 @@ export function createLocalExecutionCapabilities(input: Readonly<{
    * capability error. Omit to keep every read scoped to the boot repository.
    */
   resolveRepositoryDirectory?: (directory: string) => Promise<string | undefined> | string | undefined
+  /**
+   * Live harness config options (the same payload `/api/wr/harness-config-options`
+   * serves the composer picker), used to populate SDK-harness model catalogs from
+   * the running harness instead of the static fallback catalog. Optional: absent
+   * or failing, the static catalog is served exactly as before.
+   */
+  harnessConfigOptions?: (harness: string) => Promise<unknown>
   now?: () => number
 }>) {
   return createExecutionCapabilitiesPort({
@@ -52,13 +59,13 @@ export function createLocalExecutionCapabilities(input: Readonly<{
         runtimeJson(input, "/experimental/tool/ids"),
       ])
       const harnesses = [
-        ...SESSION_COMPOSER_HARNESSES.map((harness) => ({
+        ...(await Promise.all(SESSION_COMPOSER_HARNESSES.map(async (harness) => ({
           harness: { harness },
           agents: defaultAgent(harness),
-          providers: sdkProviders(harness),
+          providers: await sdkProviders(harness, input.harnessConfigOptions),
           tools: [],
           connectionTools: false,
-        })),
+        })))),
         {
           harness: { harness: "pi" },
           agents: defaultAgent("pi"),
@@ -157,22 +164,47 @@ function defaultAgent(harness: string) {
   return [{ name: "build", description: `Use the ${harness} harness default agent`, mode: "primary" }]
 }
 
-function sdkProviders(harness: string) {
+async function sdkProviders(harness: string, harnessConfigOptions?: (harness: string) => Promise<unknown>) {
   const identity = normalizeHarnessIdentity(harness)
   if (!identity || identity.id === "opencode" || identity.id === "pi") {
     throw new Error(`Unsupported SDK Session harness ${harness}`)
   }
+  // Native SDK harnesses live-list; ACP composer entries keep the static
+  // catalog (their live options come from per-session ACP probes, which are
+  // too heavy to spawn on every capabilities read).
+  const live = identity.access === "native" ? await liveHarnessModels(harness, harnessConfigOptions) : undefined
+  const models = live ?? sdkModelOptions(identity.id)
   return {
     connected: [harness],
     all: [{
       id: harness,
-      models: Object.fromEntries(sdkModelOptions(identity.id).map((model) => [model.id, {
+      models: Object.fromEntries(models.map((model) => [model.id, {
         ...model,
         status: "active",
         variants: { low: {}, medium: {}, high: {} },
       }])),
     }],
   }
+}
+
+async function liveHarnessModels(harness: string, harnessConfigOptions?: (harness: string) => Promise<unknown>) {
+  if (!harnessConfigOptions) return
+  const options = await harnessConfigOptions(harness).catch(() => undefined)
+  if (!Array.isArray(options)) return
+  const modelOption = options.find((option): option is Record<string, unknown> =>
+    !!option && typeof option === "object" && (option as Record<string, unknown>).id === "model")
+  const selectOptions = modelOption && Array.isArray(modelOption.selectOptions) ? modelOption.selectOptions : undefined
+  const models = (selectOptions ?? []).flatMap((option) => {
+    const row = option && typeof option === "object" ? option as Record<string, unknown> : undefined
+    const id = typeof row?.id === "string" && row.id ? row.id : undefined
+    if (!id) return []
+    return [{
+      id,
+      name: typeof row?.name === "string" && row.name ? row.name : id,
+      ...(typeof row?.description === "string" && row.description ? { description: row.description } : {}),
+    }]
+  })
+  return models.length > 0 ? models : undefined
 }
 
 function composerHarness(input: string) {

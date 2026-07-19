@@ -11,6 +11,7 @@ import {
 } from "@claxedo/workgraph/contracts"
 import { Hono } from "hono"
 import z from "zod/v3"
+import { zodToJsonSchema } from "zod-to-json-schema"
 import { bearerToken, boundedJsonBody, errorBody } from "./http"
 
 export const WORKGRAPH_ATTEMPT_TOOL_NAMES = WorkGraphAttemptToolNames
@@ -268,35 +269,14 @@ export function WorkGraphAttemptToolRoutes(input: {
   return app
 }
 
+/** The advertised definition derives from the exact schema the callback
+ *  validates with — one source of truth per tool. A hand-written mirror here
+ *  is how a model gets shown one contract and rejected by another. */
 function toolDefinition(name: WorkGraphRuntimeToolName) {
-  if (name === "workgraph_report_progress") return {
-    name,
-    description: WORKGRAPH_ATTEMPT_TOOL_SCHEMAS[name].description,
-    inputSchema: {
-      type: "object",
-      properties: {
-        level: { type: "string", enum: ["milestone", "progress", "detail"] },
-        summary: { type: "string" },
-        evidenceIds: { type: "array", items: { type: "string" } },
-      },
-      required: ["level", "summary"],
-      additionalProperties: false,
-    },
-    outputSchema: { type: "object" },
-  }
   return {
     name,
     description: WORKGRAPH_ATTEMPT_TOOL_SCHEMAS[name].description,
-    inputSchema: {
-      type: "object",
-      properties: {
-        summary: { type: "string" },
-        artifacts: { type: "array", items: { type: "string" } },
-        evidence: { type: "array", minItems: 1, items: { type: "object" } },
-      },
-      required: ["summary", "evidence"],
-      additionalProperties: false,
-    },
+    inputSchema: zodToJsonSchema(WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS[name], { target: "jsonSchema7", $refStrategy: "none" }) as Record<string, unknown>,
     outputSchema: { type: "object" },
   }
 }

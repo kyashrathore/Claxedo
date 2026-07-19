@@ -1,5 +1,6 @@
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSessionIntakeService, type SessionIntakePort } from "@claxedo/workgraph"
+import { isMasterSessionId } from "@claxedo/workgraph/contracts"
 import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { OPENCODE_INTERNAL_BASE } from "../opencode-engine"
 
@@ -35,7 +36,7 @@ export function subscribeSessionIntake(input: Readonly<{
   return input.events.subscribe((event) => {
     if (!isIdle(event)) return
     const sessionId = String(event.payload.properties?.sessionID ?? "")
-    if (!sessionId || sessionId.startsWith("ses_workgraph_") || sessionId.startsWith("ses_master_")) return
+    if (!sessionId || sessionId.startsWith("ses_workgraph_") || isMasterSessionId(sessionId)) return
     const context = input.resolveContext(event)
     if (!context) return
     const directory = event.directory?.trim()

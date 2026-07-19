@@ -41,15 +41,14 @@ describe("SessionEnvironmentCard", () => {
     // Bounded card surface, not the chromeless rail column.
     expect(card()).toHaveClass("is-floating")
 
-    // Isolation + worktree + branch facts, values as trailing meta. "Worktree"
-    // appears as both the Isolation value and the Worktree row's field label.
-    expect(within(card()).getByText("Isolation")).toBeInTheDocument()
-    expect(within(card()).getByText("Worktree", { selector: ".session-envcard-value" })).toBeInTheDocument()
+    // Worktree + branch facts, values as trailing meta. A dedicated worktree
+    // is named by its directory basename.
+    expect(within(card()).getByText("Worktree")).toBeInTheDocument()
     expect(within(card()).getByText("opencode-fix")).toBeInTheDocument()
     expect(within(card()).getByText("codex/feat-documents-core")).toBeInTheDocument()
 
     // Facts are not buttons — navigation lives only in the nav section.
-    expect(within(card()).getByText("Isolation").closest("button")).toBeNull()
+    expect(within(card()).getByText("Worktree").closest("button")).toBeNull()
     expect(within(card()).getByText("codex/feat-documents-core").closest("button")).toBeNull()
   })
 
@@ -88,15 +87,15 @@ describe("SessionEnvironmentCard", () => {
     expect(within(card()).queryByText("—")).toBeNull()
   })
 
-  test("shows the Worktree row only when isolation is actually a worktree", () => {
+  test("names the worktree: Main for the main checkout, Cloud for remote sandboxes", () => {
     const local = render(() =>
       createComponent(SessionEnvironmentCard, {
         source: source({ isolation: () => "local", worktreeDir: () => "/Users/me/opencode" }),
         onOpenTab: () => {},
       }),
     )
-    expect(within(card()).getByText("Local")).toBeInTheDocument()
-    expect(within(card()).queryByText("Worktree")).toBeNull()
+    expect(within(card()).getByText("Worktree")).toBeInTheDocument()
+    expect(within(card()).getByText("Main")).toBeInTheDocument()
     local.unmount()
 
     render(() =>
@@ -106,7 +105,7 @@ describe("SessionEnvironmentCard", () => {
       }),
     )
     expect(within(card()).getByText("Cloud")).toBeInTheDocument()
-    expect(within(card()).queryByText("Worktree")).toBeNull()
+    expect(within(card()).queryByText("Main")).toBeNull()
   })
 
   test("navigation rows open their respective panel tabs", async () => {

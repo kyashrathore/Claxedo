@@ -78,6 +78,8 @@ export type StreamReplacementReset = z.infer<typeof StreamReplacementResetSchema
 
 export const StreamMasterStatusSchema = z.strictObject({
   state: z.enum(["hibernating", "pending", "acting", "retrying", "attention"]),
+  /** Typed escalation discriminant — surfaces dispatch on this, never prose. */
+  escalation: z.enum(["public_pr_confirmation", "failure_halt"]).optional(),
   sessionId: z.string().trim().min(1).max(512).optional(),
   turnId: z.string().trim().min(1).max(512).optional(),
   historyAfter: z.number().int().nonnegative().optional(),
@@ -85,7 +87,7 @@ export const StreamMasterStatusSchema = z.strictObject({
   failureCount: z.number().int().nonnegative().optional(),
   message: z.string().trim().min(1).max(1_000),
   receiptRefs: z.array(z.string().trim().min(1).max(2_048)).max(100).default([]),
-  charterHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  charterHash: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
   updatedAt: timestamp,
 })
 export type StreamMasterStatus = z.infer<typeof StreamMasterStatusSchema>

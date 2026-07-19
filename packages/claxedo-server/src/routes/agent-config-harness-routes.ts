@@ -1,7 +1,6 @@
 import { Hono, type Context } from "hono"
 import {
   harnessKey,
-  isSdkModelId,
   normalizeHarnessIdentity,
   sdkModelConfigOption,
 } from "@claxedo/agent-sdk-runtime"
@@ -326,25 +325,28 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   if (harness.id === "opencode" || harness.id === "pi") {
     return c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 404)
   }
-  if (harness.access === "native" && isNativeSdkHarnessId(harness.id)) {
-    if (harness.id === "cursor") {
-      const snapshot = await getRuntimeConfigSnapshot(harness).catch(() => undefined)
-      if (!snapshot?.auth["cursor-sdk"]) {
-        return c.json(
-          errorBody(
-            "harness_config_options_unavailable",
-            "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
-          ),
-          502,
-        )
-      }
+  const nativeSdkId = harness.access === "native" && isNativeSdkHarnessId(harness.id) ? harness.id : undefined
+  if (nativeSdkId === "cursor") {
+    const snapshot = await getRuntimeConfigSnapshot(harness).catch(() => undefined)
+    if (!snapshot?.auth["cursor-sdk"]) {
+      return c.json(
+        errorBody(
+          "harness_config_options_unavailable",
+          "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+        ),
+        502,
+      )
     }
-    return c.json({
-      options: [sdkModelConfigOption(harness.id, getSessionConfig(ws.id, sessionId ?? "")?.model?.modelID) as HarnessConfigOption],
-      source: "catalog",
-      stale: false,
-    } satisfies OptionsResponse)
   }
+  // Native SDK harnesses live-list from the runtime like everyone else; the
+  // static catalog only backstops a runtime that can't answer at all.
+  const catalogFallback = () => nativeSdkId
+    ? c.json({
+        options: [sdkModelConfigOption(nativeSdkId, getSessionConfig(ws.id, sessionId ?? "")?.model?.modelID) as HarnessConfigOption],
+        source: "catalog",
+        stale: true,
+      } satisfies OptionsResponse)
+    : undefined
   const url = new URL("/api/wr/harness-config-options", "http://sandbox-manager.local")
   url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
   url.searchParams.set("harness", harnessKey(harness) ?? harness.id)
@@ -358,7 +360,9 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
     const message = cause instanceof Error ? cause.message : String(cause)
     return errorBody("harness_config_options_unavailable", harnessOptionsErrorMessage(harness, message))
   })
-  if (live && typeof live === "object" && !Array.isArray(live) && (("ok" in live && live.ok === false) || "error" in live)) return c.json(live, 502)
+  if (live && typeof live === "object" && !Array.isArray(live) && (("ok" in live && live.ok === false) || "error" in live)) {
+    return catalogFallback() ?? c.json(live, 502)
+  }
   if (Array.isArray(live) && live.length > 0) {
     return c.json({
       options: live as HarnessConfigOption[],
@@ -366,7 +370,7 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
       stale: false,
     } satisfies OptionsResponse)
   }
-  return c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 502)
+  return catalogFallback() ?? c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 502)
 }
 
 function harnessOptionsErrorMessage(harness: ReturnType<typeof normalize>, message: string) {
@@ -405,11 +409,11 @@ function latestAssistantModel(options: AgentConfigRouteOptions, sessionId: strin
   }
 }
 
-function validateHarnessModel(harness: ReturnType<typeof defaultHarness>, model: string) {
+// Model ids are no longer validated against the static SDK catalog: SDK
+// harnesses live-list their models, so the harness itself is the authority on
+// what ids exist and rejects unknown ones at send time.
+function validateHarnessModel(harness: ReturnType<typeof defaultHarness>, _model: string) {
   if (!harnessModelConfigurable(harness)) {
     return errorBody("agent_config_harness_model_unsupported", `${harness.id} does not support harness model configuration`)
-  }
-  if (harness.access === "native" && isNativeSdkHarnessId(harness.id) && !isSdkModelId(harness.id, model)) {
-    return errorBody("agent_config_harness_model_invalid", `${model} is not a known model for ${harness.id}`)
   }
 }

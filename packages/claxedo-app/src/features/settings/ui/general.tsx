@@ -344,6 +344,32 @@ export const SettingsGeneral: Component = () => {
             </SettingsRow>
 
             <SettingsRow
+              title="Files navigator side"
+              description="Dock the file tree on the left or right side of the workspace panel."
+            >
+              <Select
+                data-action="settings-navigator-side"
+                placeholder="Files navigator side"
+                options={[
+                  { value: "left" as const, label: "Left" },
+                  { value: "right" as const, label: "Right" },
+                ]}
+                current={
+                  settings.appearance.navigatorSide() === "left"
+                    ? { value: "left" as const, label: "Left" }
+                    : { value: "right" as const, label: "Right" }
+                }
+                value={(o) => o.value}
+                label={(o) => o.label}
+                onSelect={(option) => option && settings.appearance.setNavigatorSide(option.value)}
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+                triggerStyle={{ "min-width": "220px" }}
+              />
+            </SettingsRow>
+
+            <SettingsRow
               title={language.t("settings.general.row.uiFont.title")}
               description={language.t("settings.general.row.uiFont.description")}
             >

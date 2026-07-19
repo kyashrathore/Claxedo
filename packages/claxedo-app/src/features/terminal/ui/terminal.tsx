@@ -45,7 +45,7 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onAgentInterrupt?: () => void
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
-  onFileLinkOpen?: (path: string, line?: number, col?: number) => void
+  onFileLinkOpen?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
 }
 
 type TerminalColors = {
@@ -286,9 +286,9 @@ export const Terminal = (props: TerminalProps) => {
         onUrlClick: (_event: MouseEvent, url: string) => {
           platform.openLink(url)
         },
-        onFileLinkClick: (path: string, line?: number, col?: number) => {
+        onFileLinkClick: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => {
           if (props.onFileLinkOpen) {
-            props.onFileLinkOpen(path, line, col)
+            props.onFileLinkOpen(path, line, col, lineEnd, colEnd)
           } else if (platform.openPath) {
             void platform.openPath(path)
           }

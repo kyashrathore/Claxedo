@@ -560,6 +560,12 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         getById: async () => ({ id: "connection-1", integrationId: "github", owner: "org:acme", grantedCapabilities: ["code-host"] }),
         getToken: async () => ({ ok: true, response: { token: "live-secret", tokenType: "bearer" } }),
         reportAuthFailure: async () => undefined,
+        resolveCapabilities: async () => [{
+          id: "connection-1",
+          capability: "code-host",
+          withAuthorization: async (use: (authorization: { token: string; tokenType: "bearer" }) => unknown) =>
+            use({ token: "live-secret", tokenType: "bearer" }),
+        }],
       } as unknown as ConnectionsService,
       resolveTeamOwner: (context) => `org:${context.organizationId}`,
       codeHostConnectors: {
@@ -570,6 +576,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
             url: "https://github.com/acme/repo/pull/42",
             draft: input.draft,
           }),
+          repositoryVisibility: async () => "private" as const,
         },
       },
       recordPullRequest,

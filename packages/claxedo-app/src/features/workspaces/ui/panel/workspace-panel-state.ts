@@ -30,11 +30,11 @@ export function isGlobalPanelMode(mode: WorkspacePanelMode | undefined): mode is
 // to the file's diff in the review tab.
 export type FileFocusIntent = "tab" | "review"
 export type WorkspacePanelFocus =
-  | { kind: "file"; path: string; version: number; intent: FileFocusIntent }
+  | { kind: "file"; path: string; version: number; intent: FileFocusIntent; line?: number; col?: number }
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
 export type WorkspacePanelFocusTarget =
-  | { kind: "file"; path: string; intent: FileFocusIntent }
+  | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number }
   | { kind: "process"; processId: string }
   | { kind: "context"; sessionId: string }
 export type WorkspacePanelActivityTarget = {
@@ -111,10 +111,17 @@ export function openWorkspacePanel(
   state: WorkspacePanelState,
   input: WorkspacePanelTarget,
 ): WorkspacePanelState {
+  // A workspace-scoped focus (file/process/context) is consumed by the
+  // workspace panel body, which never mounts under a global mode. Without this
+  // fallback, opening a file link while a global surface is showing silently
+  // swallowed the click (and then popped a surprise tab when the user later
+  // left global mode).
+  const keptMode =
+    isGlobalPanelMode(state.mode) && input.focus ? undefined : state.mode
   return {
     ...state,
     open: true,
-    mode: input.mode ?? state.mode ?? "review",
+    mode: input.mode ?? keptMode ?? "review",
     workspaceDir: input.workspaceDir,
     targetPaneId: input.targetPaneId,
     navigator: nextNavigator(state, input),

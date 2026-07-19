@@ -157,6 +157,7 @@ describe("WorkGraph connection operation broker", () => {
             calls.push({ authorization, input })
             return { pullRequestId: "42", url: "https://github.com/acme/repo/pull/42", draft: input.draft }
           },
+          repositoryVisibility: async () => "public" as const,
         },
       },
     })

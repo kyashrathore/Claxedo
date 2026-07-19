@@ -90,25 +90,32 @@ describe("embedded WorkGraph agent tools", () => {
     } as never, {
       organizationId: "organization-a",
       ownerUserId: "owner-a",
+      // Owner-direction is a positive fact: only a top-level interactive
+      // Session confers user authority.
+      sessionOwnerDirected: async (sessionId) => sessionId === "session-1",
     })
-    const invoke = (action: "create_task" | "file_discovered") => tools.workgraph_ledger!.execute({
+    const invoke = (action: "create_task" | "file_discovered", sessionID = "session-1") => tools.workgraph_ledger!.execute({
       action,
-      operation_id: `ledger-${action}`,
+      operation_id: `ledger-${action}-${sessionID}`,
       stream_id: "stream-1",
       title: action === "create_task" ? "Requested directly" : "Follow-up discovered",
       completion_contract: completion("proof"),
     }, {
-      sessionID: "session-1",
+      sessionID,
       agent: "build",
       assistantMessageID: "message-1",
-      toolCallID: `call-${action}`,
+      toolCallID: `call-${action}-${sessionID}`,
     })
 
     await invoke("create_task")
     await invoke("file_discovered")
+    // A subagent child session (no binding, but not owner-directed) never
+    // fabricates user authority — its Task stays agent-staged.
+    await invoke("create_task", "child-session-2")
     expect(execute.mock.calls.map(([context]) => context.actor)).toEqual([
       { type: "user", id: "owner-a" },
       { type: "agent", id: "session-1" },
+      { type: "agent", id: "child-session-2" },
     ])
   })
 
@@ -405,6 +412,7 @@ describe("embedded WorkGraph agent tools", () => {
         ownerUserId: "local",
         sessionExecution: async () => session.resolvedExecution,
         sessionContext: async () => session,
+        sessionOwnerDirected: async () => true,
       })
       const invoke = (name: keyof typeof tools, input: Record<string, unknown>) =>
         tools[name]!.execute(input, {

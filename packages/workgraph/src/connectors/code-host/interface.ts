@@ -22,6 +22,13 @@ export type CodeHostConnector = Readonly<{
     authorization: LiveConnectionAuthorization,
     input: OpenPullRequestInput,
   ): Promise<OpenPullRequestResult>
+  /** Provider-verified repository visibility. The public-PR confirmation gate
+   *  must never trust an agent-supplied visibility flag; callers treat any
+   *  failure here as public (fail closed into requiring confirmation). */
+  repositoryVisibility(
+    authorization: LiveConnectionAuthorization,
+    repository: string,
+  ): Promise<"public" | "private">
 }>
 
 export class CodeHostUnauthorizedError extends Error {

@@ -19,30 +19,68 @@ export interface LinkMatch {
 }
 
 /**
- * Stitched view of a buffer line together with its wrapped neighbours, used by
- * every link provider so the "combine prev+current+next wrapped line and locate
- * the current line's slice" math has a single implementation.
+ * Upper bound on how many wrapped buffer rows get stitched into one search
+ * window. At 80 columns this is ~1600 chars — far beyond any real link — and
+ * bounds the per-hover stitching cost.
  */
-export interface WrappedLineContext {
-	lineText: string;
-	lineLength: number;
-	isCurrentLineWrapped: boolean;
-	prevLineText: string;
-	prevLineLength: number;
-	nextLineText: string;
-	nextLineIsWrapped: boolean;
-	/** prevLineText + lineText + nextLineText (the search window). */
-	combinedText: string;
-	/** Offset of the current line's first char within combinedText (= prevLineLength). */
-	currentLineOffset: number;
+const MAX_STITCHED_ROWS = 20;
+
+/** One buffer row inside the stitched window. */
+export interface StitchedRow {
+	/** 1-based xterm buffer line number (the `y` used in link ranges). */
+	y: number;
+	/** Offset of this row's first char within combinedText. */
+	start: number;
+	/** Length of this row's text (translateToString(true)). */
+	length: number;
 }
 
 /**
- * Shared geometry base for terminal link providers whose links can span up to 3
- * wrapped lines (previous + current + next). Owns the line-stitching
- * (`computeLineContext`) and the wrapped-line range math (`calculateLinkRange`)
- * so subclasses never re-implement them. Links spanning 4+ wrapped lines are
- * truncated.
+ * Stitched view of a buffer line together with ALL of its wrapped neighbours,
+ * used by every link provider so the "combine the wrapped rows and locate the
+ * current row's slice" math has a single implementation.
+ */
+export interface WrappedLineContext {
+	/** Every stitched row, in buffer order. Always contains the current row. */
+	rows: StitchedRow[];
+	/** Concatenated text of all stitched rows (the search window). */
+	combinedText: string;
+	/** Offset of the current line's first char within combinedText. */
+	currentLineOffset: number;
+	/** Length of the current line's text. */
+	currentLineLength: number;
+}
+
+// Track whether the link-activation modifier (cmd/ctrl) is held so links only
+// advertise clickability (underline + pointer cursor) when a click would
+// actually activate them. Without this, xterm's default decorations (all
+// enabled) promise a click that the modifier-gated activate() silently ignores.
+let activationModifierHeld = false;
+if (typeof window !== "undefined") {
+	const onKey = (event: KeyboardEvent) => {
+		if (event.key === "Meta" || event.key === "Control") {
+			activationModifierHeld = event.type === "keydown";
+		}
+	};
+	window.addEventListener("keydown", onKey, { capture: true });
+	window.addEventListener("keyup", onKey, { capture: true });
+	// Modifier keyups are lost when focus leaves the window (cmd+tab).
+	window.addEventListener("blur", () => {
+		activationModifierHeld = false;
+	});
+}
+
+export function isActivationModifierHeld(): boolean {
+	return activationModifierHeld;
+}
+
+/**
+ * Shared geometry base for terminal link providers whose links can span
+ * wrapped lines. Owns the line-stitching (`computeLineContext`) and the
+ * wrapped-line range math (`calculateLinkRange`) so subclasses never
+ * re-implement them. The stitched window covers every wrapped row of the
+ * logical line (bounded by {@link MAX_STITCHED_ROWS}), so hovering any row of
+ * a wrapped link sees the same complete text.
  *
  * Two flavours extend this:
  *  - {@link MultiLineLinkProvider} — regex-driven (UrlLinkProvider), matching a
@@ -60,90 +98,91 @@ export abstract class WrappedLineLinkProvider implements ILinkProvider {
 	): void;
 
 	/**
-	 * Stitch the current buffer line with its wrapped previous/next neighbours.
-	 * Returns null when the current line is absent (caller should report no links).
+	 * Stitch the current buffer line with every wrapped neighbour: walk back
+	 * while rows are wrap-continuations, then forward while the following rows
+	 * are wrap-continuations. Returns null when the current line is absent
+	 * (caller should report no links).
 	 */
 	protected computeLineContext(bufferLineNumber: number): WrappedLineContext | null {
+		const buffer = this.terminal.buffer.active;
 		const lineIndex = bufferLineNumber - 1;
-		const line = this.terminal.buffer.active.getLine(lineIndex);
+		const line = buffer.getLine(lineIndex);
 		if (!line) {
 			return null;
 		}
 
-		const lineText = line.translateToString(true);
-		const lineLength = lineText.length;
-		const isCurrentLineWrapped = line.isWrapped;
+		let firstIndex = lineIndex;
+		while (
+			lineIndex - firstIndex < MAX_STITCHED_ROWS &&
+			firstIndex > 0 &&
+			buffer.getLine(firstIndex)?.isWrapped
+		) {
+			firstIndex--;
+		}
+		let lastIndex = lineIndex;
+		while (
+			lastIndex - firstIndex + 1 < MAX_STITCHED_ROWS &&
+			buffer.getLine(lastIndex + 1)?.isWrapped
+		) {
+			lastIndex++;
+		}
 
-		const prevLine = isCurrentLineWrapped
-			? this.terminal.buffer.active.getLine(lineIndex - 1)
-			: null;
-		const prevLineText = prevLine ? prevLine.translateToString(true) : "";
-		const prevLineLength = prevLineText.length;
+		const rows: StitchedRow[] = [];
+		let combinedText = "";
+		let currentLineOffset = 0;
+		let currentLineLength = 0;
+		for (let index = firstIndex; index <= lastIndex; index++) {
+			const rowLine = buffer.getLine(index);
+			const text = rowLine ? rowLine.translateToString(true) : "";
+			if (index === lineIndex) {
+				currentLineOffset = combinedText.length;
+				currentLineLength = text.length;
+			}
+			rows.push({ y: index + 1, start: combinedText.length, length: text.length });
+			combinedText += text;
+		}
 
-		const nextLine = this.terminal.buffer.active.getLine(lineIndex + 1);
-		const nextLineIsWrapped = nextLine?.isWrapped ?? false;
-		const nextLineText =
-			nextLineIsWrapped && nextLine ? nextLine.translateToString(true) : "";
+		return { rows, combinedText, currentLineOffset, currentLineLength };
+	}
 
-		const combinedText = prevLineText + lineText + nextLineText;
+	/**
+	 * Map a [matchIndex, matchEnd) span of the combined text to an xterm link
+	 * range. xterm treats both ends as 1-based and INCLUSIVE (Linkifier hits on
+	 * `x <= end.x`), so the end coordinate is the last character's cell — not
+	 * one past it.
+	 */
+	protected calculateLinkRange(
+		ctx: WrappedLineContext,
+		matchIndex: number,
+		matchEnd: number,
+	): ILink["range"] {
+		const locate = (offset: number) => {
+			let row = ctx.rows[0]!;
+			for (const candidate of ctx.rows) {
+				if (offset >= candidate.start) {
+					row = candidate;
+				} else {
+					break;
+				}
+			}
+			return { y: row.y, x: offset - row.start + 1 };
+		};
 
+		const start = locate(matchIndex);
+		const end = locate(Math.max(matchIndex, matchEnd - 1));
 		return {
-			lineText,
-			lineLength,
-			isCurrentLineWrapped,
-			prevLineText,
-			prevLineLength,
-			nextLineText,
-			nextLineIsWrapped,
-			combinedText,
-			currentLineOffset: prevLineLength,
+			start: { x: start.x, y: start.y },
+			end: { x: end.x, y: end.y },
 		};
 	}
 
-	protected calculateLinkRange(
-		matchIndex: number,
-		matchEnd: number,
-		prevLineLength: number,
-		lineLength: number,
-		bufferLineNumber: number,
-		isCurrentLineWrapped: boolean,
-		nextLineIsWrapped: boolean,
-	): ILink["range"] {
-		const currentLineStart = prevLineLength;
-		const currentLineEnd = prevLineLength + lineLength;
-
-		const startsInPrevLine =
-			isCurrentLineWrapped && matchIndex < currentLineStart;
-		const endsInNextLine = nextLineIsWrapped && matchEnd > currentLineEnd;
-
-		let startY: number;
-		let startX: number;
-		let endY: number;
-		let endX: number;
-
-		if (startsInPrevLine) {
-			startY = bufferLineNumber - 1;
-			startX = matchIndex + 1;
-		} else {
-			startY = bufferLineNumber;
-			startX = matchIndex - currentLineStart + 1;
-		}
-
-		if (endsInNextLine) {
-			endY = bufferLineNumber + 1;
-			endX = matchEnd - currentLineEnd + 1;
-		} else if (matchEnd <= currentLineStart) {
-			endY = bufferLineNumber - 1;
-			endX = matchEnd + 1;
-		} else {
-			endY = bufferLineNumber;
-			endX = matchEnd - currentLineStart + 1;
-		}
-
-		return {
-			start: { x: startX, y: startY },
-			end: { x: endX, y: endY },
-		};
+	/**
+	 * Decorations for a new link, reflecting whether a click would actually
+	 * activate it right now (activation is cmd/ctrl-gated in both providers).
+	 */
+	protected linkDecorations(): ILink["decorations"] {
+		const held = isActivationModifierHeld();
+		return { pointerCursor: held, underline: held };
 	}
 }
 
@@ -179,14 +218,7 @@ export abstract class MultiLineLinkProvider extends WrappedLineLinkProvider {
 			return;
 		}
 
-		const {
-			lineLength,
-			isCurrentLineWrapped,
-			prevLineLength,
-			nextLineIsWrapped,
-			combinedText,
-			currentLineOffset,
-		} = ctx;
+		const { combinedText, currentLineOffset, currentLineLength } = ctx;
 
 		const links: ILink[] = [];
 		const regex = this.getPattern();
@@ -195,13 +227,6 @@ export abstract class MultiLineLinkProvider extends WrappedLineLinkProvider {
 			const matchText = match[0];
 			const matchIndex = match.index ?? 0;
 			const matchEnd = matchIndex + matchText.length;
-
-			const currentLineStart = currentLineOffset;
-			const currentLineEnd = currentLineOffset + lineLength;
-
-			if (matchEnd <= currentLineStart || matchIndex >= currentLineEnd) {
-				continue;
-			}
 
 			let linkMatch: LinkMatch | null = {
 				text: matchText,
@@ -220,19 +245,20 @@ export abstract class MultiLineLinkProvider extends WrappedLineLinkProvider {
 				continue;
 			}
 
-			const range = this.calculateLinkRange(
-				linkMatch.index,
-				linkMatch.end,
-				prevLineLength,
-				lineLength,
-				bufferLineNumber,
-				isCurrentLineWrapped,
-				nextLineIsWrapped,
-			);
+			// Only report links that touch the hovered row (post-transform, so a
+			// trimmed match no longer claims rows it does not reach).
+			const currentLineStart = currentLineOffset;
+			const currentLineEnd = currentLineOffset + currentLineLength;
+			if (linkMatch.end <= currentLineStart || linkMatch.index >= currentLineEnd) {
+				continue;
+			}
+
+			const range = this.calculateLinkRange(ctx, linkMatch.index, linkMatch.end);
 
 			links.push({
 				range,
 				text: linkMatch.text,
+				decorations: this.linkDecorations(),
 				activate: (event: MouseEvent, text: string) => {
 					this.handleActivation(event, text, match);
 				},

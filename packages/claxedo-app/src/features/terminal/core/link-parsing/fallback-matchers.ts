@@ -23,68 +23,87 @@ export interface IFallbackLink {
  * Fallback matchers for special formats that the main parser doesn't catch.
  * These are mainly designed to catch paths with spaces or special tool output formats.
  */
+// Ordered specific → generic. `detectFallbackLinks` stops at the first matcher
+// that hits, so the generic C++ formats MUST come last: their unanchored greedy
+// paths used to bind Rust/Go/Node/Ruby/Swift/ESLint lines first and swallow the
+// surrounding text (arrows, "at ...", "from ...") into the path.
+// All matchers carry the `d` flag so link positions come from match indices
+// rather than a textual `indexOf` (which finds the wrong occurrence when the
+// link text also appears earlier in the match).
 const fallbackMatchers: RegExp[] = [
 	// Python style error: File "<path>", line <line>
 	// Example: File "/path/to/file.py", line 42
-	/^ *File (?<link>"(?<path>.+)"(?:, line (?<line>\d+))?)/,
+	// Lazy path so a later quoted string on the same line can't extend it.
+	/^ *File (?<link>"(?<path>.+?)"(?:, line (?<line>\d+))?)/d,
 
 	// Unknown tool format: FILE  <path>:<line>:<col>
 	// Example:  FILE  /path/to/file.ts:10:5
-	/^ +FILE +(?<link>(?<path>.+?)(?::(?<line>\d+)(?::(?<col>\d+))?)?)\s*$/,
+	/^ +FILE +(?<link>(?<path>.+?)(?::(?<line>\d+)(?::(?<col>\d+))?)?)\s*$/d,
+
+	// Rust/Cargo error format:
+	// Example: --> src/main.rs:10:5
+	/^ *--> (?<link>(?<path>[^:]+):(?<line>\d+)(?::(?<col>\d+))?)/d,
+
+	// Go error format:
+	// Example: path/file.go:10:5: undefined: foo
+	/^(?<link>(?<path>[^\s:]+\.go):(?<line>\d+)(?::(?<col>\d+))?):/d,
+
+	// Java/Kotlin stack trace:
+	// Example: at com.example.Class.method(File.java:10)
+	/\bat \S+\((?<link>(?<path>[^:)]+):(?<line>\d+))\)/d,
+
+	// Node.js/JavaScript stack trace:
+	// Example: at Object.<anonymous> (/path/to/file.js:10:5)
+	// Example: at Module._compile (node:internal/modules/cjs/loader:1105:14)
+	/\bat .+\((?<link>(?<path>\/[^:)]+):(?<line>\d+)(?::(?<col>\d+))?)\)/d,
+
+	// ESLint/Prettier/TypeScript style (with dash separator):
+	// Example: /path/to/file.js:10:5 - error: Something went wrong
+	/^(?<link>(?<path>\/[^\s:]+):(?<line>\d+)(?::(?<col>\d+))?) [-–]/d,
+
+	// Webpack/Vite error format:
+	// Example: @ ./src/file.ts 10:5-20
+	/^@ (?<link>(?<path>\.[^\s]+) (?<line>\d+):(?<col>\d+))/d,
+
+	// Ruby error format:
+	// Example: from /path/to/file.rb:10:in `method'
+	/from (?<link>(?<path>[^:]+):(?<line>\d+)):in/d,
+
+	// PHP error format:
+	// Example: in /path/to/file.php on line 10
+	/in (?<link>(?<path>[^\s]+) on line (?<line>\d+))/d,
+
+	// Swift error format:
+	// Example: /path/to/file.swift:10:5: error: ...
+	/^(?<link>(?<path>[^\s:]+\.swift):(?<line>\d+)(?::(?<col>\d+))?):/d,
 
 	// C++ compile error formats (Visual Studio CL/NVIDIA CUDA compiler):
 	// Example: C:\foo\bar baz(339) : error C2065
 	// Example: C:\foo\bar baz(339,12) : error C2065
 	// Example: /path/to/file.cpp(339): error
-	/^(?<link>(?<path>.+)\((?<line>\d+)(?:, ?(?<col>\d+))?\)) ?:/,
+	// Lazy path: greedy `.+` bound the LAST "(digits)" pair and pulled leading
+	// junk into the path. The terminating colon must be followed by a space or
+	// line end (real compiler output always has ": error ..."), so the matcher
+	// can't satisfy itself by consuming part of a location it mis-parsed.
+	/^(?<link>(?<path>.+?)\((?<line>\d+)(?:, ?(?<col>\d+))?\)) ?:(?= |$)/d,
 
 	// C++ compile error formats (Clang/GCC):
 	// Example: /path/to/file.cpp:339:12: error: ...
 	// Example: C:\foo/bar baz:339: error ...
-	/^(?<link>(?<path>.+):(?<line>\d+)(?::(?<col>\d+))?) ?:/,
-
-	// Rust/Cargo error format:
-	// Example: --> src/main.rs:10:5
-	/^ *--> (?<link>(?<path>[^:]+):(?<line>\d+)(?::(?<col>\d+))?)/,
-
-	// Go error format:
-	// Example: path/file.go:10:5: undefined: foo
-	/^(?<link>(?<path>[^\s:]+\.go):(?<line>\d+)(?::(?<col>\d+))?):/,
-
-	// Java/Kotlin stack trace:
-	// Example: at com.example.Class.method(File.java:10)
-	/\bat \S+\((?<link>(?<path>[^:)]+):(?<line>\d+))\)/,
-
-	// Node.js/JavaScript stack trace:
-	// Example: at Object.<anonymous> (/path/to/file.js:10:5)
-	// Example: at Module._compile (node:internal/modules/cjs/loader:1105:14)
-	/\bat .+\((?<link>(?<path>\/[^:)]+):(?<line>\d+)(?::(?<col>\d+))?)\)/,
-
-	// ESLint/Prettier/TypeScript style (with dash separator):
-	// Example: /path/to/file.js:10:5 - error: Something went wrong
-	/^(?<link>(?<path>\/[^\s:]+):(?<line>\d+)(?::(?<col>\d+))?) [-–]/,
-
-	// Webpack/Vite error format:
-	// Example: @ ./src/file.ts 10:5-20
-	/^@ (?<link>(?<path>\.[^\s]+) (?<line>\d+):(?<col>\d+))/,
-
-	// Ruby error format:
-	// Example: from /path/to/file.rb:10:in `method'
-	/from (?<link>(?<path>[^:]+):(?<line>\d+)):in/,
-
-	// PHP error format:
-	// Example: in /path/to/file.php on line 10
-	/in (?<link>(?<path>[^\s]+) on line (?<line>\d+))/,
-
-	// Swift error format:
-	// Example: /path/to/file.swift:10:5: error: ...
-	/^(?<link>(?<path>[^\s:]+\.swift):(?<line>\d+)(?::(?<col>\d+))?):/,
+	// Lazy path (greedy `.+` turned "/a.cpp:42:9:" into path "/a.cpp:42" line 9)
+	// and no ": " inside the path, so message prefixes like "warning: /a.c:1:2:"
+	// fail cleanly instead of matching with the prefix baked into the path. The
+	// terminating colon must be followed by a space or line end (real compiler
+	// output is "file:339:12: error: ..."), otherwise the matcher terminates
+	// itself with the colon of a column suffix and hijacks plain
+	// "path:line:col" text that the primary detector parses correctly.
+	/^(?<link>(?<path>(?:[^:]|:(?! ))+?):(?<line>\d+)(?::(?<col>\d+))?) ?:(?= |$)/d,
 
 	// PowerShell and cmd prompt (extracts CWD from prompt):
 	// Example: PS C:\Users\foo>
 	// Example: C:\Users\foo>
 	// Require a drive letter (X:\) or UNC path (\\) to avoid false positives on lines containing =>
-	/^(?:PS\s+)?(?<link>(?<path>(?:[a-zA-Z]:[\\/]|\\\\)[^>]*))>/,
+	/^(?:PS\s+)?(?<link>(?<path>(?:[a-zA-Z]:[\\/]|\\\\)[^>]*))>/d,
 ];
 
 /**
@@ -104,11 +123,22 @@ export function detectFallbackLinks(line: string): IFallbackLink[] {
 			continue;
 		}
 
-		const linkOffset = match[0].indexOf(groups.link);
-		if (linkOffset === -1) {
-			continue;
+		// Prefer the capture group's real position (`d` flag). A textual indexOf
+		// lands on the wrong cells when the link text also occurs earlier in the
+		// match, e.g. "at A.java:12.run(A.java:12)".
+		const groupIndices = (
+			match as RegExpExecArray & {
+				indices?: { groups?: Record<string, [number, number] | undefined> };
+			}
+		).indices?.groups;
+		let linkIndex = groupIndices?.link?.[0];
+		if (linkIndex === undefined) {
+			const linkOffset = match[0].indexOf(groups.link);
+			if (linkOffset === -1) {
+				continue;
+			}
+			linkIndex = (match.index ?? 0) + linkOffset;
 		}
-		const linkIndex = (match.index ?? 0) + linkOffset;
 
 		results.push({
 			link: groups.link,

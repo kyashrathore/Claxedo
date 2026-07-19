@@ -1,6 +1,7 @@
 import type { GenericMutationCtx } from "convex/server"
 import { v } from "convex/values"
 import { buildAttemptPrompt } from "@claxedo/workgraph/hosted"
+import { masterSessionId, workGraphMasterLaneKey } from "@claxedo/workgraph/contracts"
 import { serviceMutation, serviceQuery } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
@@ -97,7 +98,29 @@ export const claimMasterTurn = serviceMutation({
     const owner = await ctx.db.get(args.owner_user_id)
     if (!owner?.clerk_subject) throw new Error("Hosted master owner is unavailable")
     const existing = stream.master_status
+    // An escalated master is halted: it never claims a new turn until the
+    // owner resolves the Needs-you item. Claiming here would silently rebuild
+    // the status and erase both the escalation and the failure counter.
+    if (existing?.state === "attention") return { state: "settled" as const }
     const reserved = existing?.turnId && (existing.state === "pending" || existing.state === "acting")
+    // Master and task Attempts share the Stream workspace. A NEW master turn
+    // never starts while an Attempt is live — the wake defers and re-fires.
+    if (!reserved) {
+      const liveAttempt = await ctx.db
+        .query("workgraph_attempts")
+        .withIndex("by_tenant_stream", (query: any) =>
+          query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id).eq("stream_id", args.stream_id),
+        )
+        .filter((query: any) =>
+          query.or(
+            query.eq(query.field("state"), "admitted"),
+            query.eq(query.field("state"), "placing"),
+            query.eq(query.field("state"), "running"),
+          ),
+        )
+        .first()
+      if (liveAttempt) return { state: "deferred" as const, retryAfterMs: 30_000 }
+    }
     const mailbox = await ctx.db
       .query("workgraph_master_mailbox")
       .withIndex("by_tenant_stream_status", (query: any) =>
@@ -123,10 +146,13 @@ export const claimMasterTurn = serviceMutation({
       ? existing
       : {
           state: "pending",
-          sessionId: `ses_master_${stream.id}`,
+          sessionId: masterSessionId(stream.id),
           turnId,
           admissionConfirmed: false,
-          failureCount: 0,
+          // The failure counter persists across retry re-claims — it is the
+          // escalate-and-halt loop-breaker, and only a successful turn
+          // completion or owner resolution resets it.
+          failureCount: existing?.failureCount ?? 0,
           message: "Master turn reserved",
           receiptRefs: masterArtifactRefs(attempts),
           ...(stream.charter?.hash ? { charterHash: stream.charter.hash } : {}),
@@ -150,7 +176,7 @@ export const claimMasterTurn = serviceMutation({
         executionDefaults: stream.execution_defaults,
         rowVersion: stream.row_version,
       },
-      sessionId: status.sessionId ?? `ses_master_${stream.id}`,
+      sessionId: status.sessionId ?? masterSessionId(stream.id),
       turnId,
       historyAfter: status.historyAfter,
       admissionConfirmed: status.admissionConfirmed ?? false,
@@ -217,7 +243,7 @@ export const completeMasterTurn = serviceMutation({
     const stream = await masterStream(ctx, args)
     if (!stream || stream.master_status?.turnId !== args.turn_id) return { settled: false }
     if (stream.master_status.state === "attention") return { settled: true, state: "attention" as const }
-    const sessionId = `ses_master_${stream.id}`
+    const sessionId = masterSessionId(stream.id)
     const result = await applyWorkGraphCommand(ctx, {
       organizationId: String(args.organization_id),
       ownerUserId: String(args.owner_user_id),
@@ -286,6 +312,7 @@ export const failMasterTurn = serviceMutation({
     const masterStatus = {
         ...stream.master_status,
         state: attention ? "attention" : "retrying",
+        ...(attention ? { escalation: "failure_halt" } : {}),
         failureCount,
         message: attention ? `Master halted after repeated failure: ${args.reason}` : "Master turn will retry",
         updatedAt: args.now,
@@ -824,6 +851,15 @@ export const completeControlEffect = serviceMutation({
           row_version: stream.row_version + 1,
           updated_at: args.now,
         })
+        // A closed Stream's master lane is retired: pending wakes (including
+        // the daily schedule row, which the engine would otherwise re-arm
+        // forever) are cancelled with the closure.
+        const lane = workGraphMasterLaneKey({ organizationId: args.organization_id, ownerUserId: args.owner_user_id, streamId: row.stream_id })
+        const wakes = await ctx.db
+          .query("wakes")
+          .withIndex("by_lane_state", (query: any) => query.eq("serial_key", lane).eq("state", "pending"))
+          .take(100)
+        await Promise.all(wakes.map((wake) => ctx.db.patch(wake._id, { state: "cancelled", resolved_by: "stream_closed" })))
       }
     }
     if (payload.finalize === "replace" && row.stream_id) {

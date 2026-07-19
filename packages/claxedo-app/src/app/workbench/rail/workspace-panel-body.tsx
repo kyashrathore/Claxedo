@@ -25,8 +25,9 @@ import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { useSettings } from "@/platform/settings/provider"
 
-const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1)"
+const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
 const ReviewWorkspace = lazy(() =>
   import("@/app/workbench/review/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
 )
@@ -83,6 +84,10 @@ export function WorkspacePanelBody(props: {
   const focusFileIntent = () => {
     const value = focus()
     return value?.kind === "file" ? value.intent : undefined
+  }
+  const focusLine = () => {
+    const value = focus()
+    return value?.kind === "file" ? value.line : undefined
   }
   const focusProcessId = () => {
     const value = focus()
@@ -154,6 +159,8 @@ export function WorkspacePanelBody(props: {
   const sessionRef = () => targetContent()?.content?.sessionRef ?? activeSurface()?.content?.sessionRef
   const panelNavigator = () => panelState().navigator
   const filesNavigatorActive = () => panelNavigator() === "files" || panelNavigator() === "changes"
+  const settings = useSettings()
+  const navigatorSide = () => settings.appearance.navigatorSide()
   const processesNavigatorActive = () => panelNavigator() === "processes"
   const [filesNavigatorVisited, setFilesNavigatorVisited] = createSignal(filesNavigatorActive())
   const [processesNavigatorVisited, setProcessesNavigatorVisited] = createSignal(processesNavigatorActive())
@@ -227,41 +234,50 @@ export function WorkspacePanelBody(props: {
                   <Show when={targetSessionId() ?? "new"}>
                     {(sessionId) => (
                       <div
-                        class="relative size-full min-w-0 overflow-hidden"
+                        class="relative flex size-full min-w-0 overflow-hidden"
                         data-review-workspace-id={reviewWorkspaceId() ?? ""}
                         data-review-workspace-ready={workspaceReady() ? "true" : "false"}
                       >
+                        {/* Inline navigator column (not an overlay): the tree
+                            sits beside the tab content instead of sliding over
+                            the file the user just opened. Collapse animates
+                            width; the column docks per the appearance setting. */}
                         <Show when={filesNavigatorVisited()}>
                           <div
                             data-testid="workspace-navigator-overlay"
                             data-navigator="files"
                             data-open={filesNavigatorActive() ? "true" : "false"}
                             aria-hidden={filesNavigatorActive() ? undefined : "true"}
-                            class="claxedo-workspace-navigator-overlay absolute bottom-0 right-0 top-0 z-20 w-[min(320px,calc(100%-24px))] border-l border-border-weak-base bg-background-base will-change-transform motion-reduce:transition-none"
+                            class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
                             classList={{
                               "pointer-events-none": !filesNavigatorActive(),
+                              "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                              "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                              "border-transparent": !filesNavigatorActive(),
                             }}
                             style={{
-                              transform: filesNavigatorActive() ? "translate3d(0, 0, 0)" : "translate3d(100%, 0, 0)",
+                              width: filesNavigatorActive() ? "min(280px, 45%)" : "0px",
                               transition: PANEL_NAVIGATOR_TRANSITION,
                               "content-visibility": filesNavigatorActive() ? "visible" : "hidden",
                             }}
                           >
-                            <WorkspaceFilesNavigator
-                              mode={filesNavigatorMode()}
-                              active={filesNavigatorActive()}
-                              activePath={focusPath()}
-                              onFileClick={(path, intent) =>
-                                claxedoState.workspacePanel.retarget({
-                                  workspaceDir: dir,
-                                  targetPaneId: targetPaneId(),
-                                  focus: { kind: "file", path, intent },
-                                })}
-                            />
+                            <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
+                              <WorkspaceFilesNavigator
+                                mode={filesNavigatorMode()}
+                                active={filesNavigatorActive()}
+                                activePath={focusPath()}
+                                onFileClick={(path, intent) =>
+                                  claxedoState.workspacePanel.retarget({
+                                    workspaceDir: dir,
+                                    targetPaneId: targetPaneId(),
+                                    focus: { kind: "file", path, intent },
+                                  })}
+                              />
+                            </div>
                           </div>
                         </Show>
                         {reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().armed ? (
-                          <div class="size-full min-w-0" style={{ visibility: workspaceReady() ? "visible" : "hidden" }}>
+                          <div class="h-full min-w-0 flex-1" style={{ visibility: workspaceReady() ? "visible" : "hidden" }}>
                             <ProcessPaneProvider>
                               <Suspense fallback={<div class="size-full bg-background-base" />}>
                                 <ReviewWorkspace
@@ -272,6 +288,7 @@ export function WorkspacePanelBody(props: {
                                   focusPath={focusPath()}
                                   focusVersion={focusVersion()}
                                   focusFileIntent={focusFileIntent()}
+                                  focusLine={focusLine()}
                                   focusProcessId={focusProcessId()}
                                   focusProcessVersion={focusProcessVersion()}
                                   focusContextSessionId={focusContextSessionId()}

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createCursorSdkDriver } from "./driver"
 
 describe("Cursor SDK driver", () => {
-  test("exposes static Cursor model config options", () => {
+  test("serves the static Cursor model catalog before any live listing", () => {
     const driver = createCursorSdkDriver({
       lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
       pendingPermissions: new Map(),
@@ -10,7 +10,7 @@ describe("Cursor SDK driver", () => {
       bindSession() {},
     } as never)
 
-    expect(driver.configOptions("gpt-5.5")).toEqual([
+    expect(driver.peekConfigOptions("gpt-5.5")).toEqual([
       expect.objectContaining({
         id: "model",
         currentValue: "gpt-5.5",

@@ -27,7 +27,15 @@ export const SDK_MODEL_CATALOG = {
 export type SdkModelCatalog = typeof SDK_MODEL_CATALOG
 export type SdkModelId<T extends NativeSdkHarnessId> = SdkModelCatalog[T][number]["id"]
 
-export function sdkModelOptions(harness: NativeSdkHarnessId) {
+/** A model entry servable to the picker — live-listed from the harness or from the static fallback catalog. */
+export type SdkModelEntry = {
+  id: string
+  name: string
+  description?: string
+  isDefault?: boolean
+}
+
+export function sdkModelOptions(harness: NativeSdkHarnessId): readonly SdkModelEntry[] {
   return SDK_MODEL_CATALOG[harness]
 }
 
@@ -40,14 +48,18 @@ export function requireSdkModelId<T extends NativeSdkHarnessId>(harness: T, mode
   throw new Error(`${model} is not a known model for ${harness}`)
 }
 
-export function sdkModelConfigOption(harness: NativeSdkHarnessId, currentModel?: string): AgentConfigOptionRow {
-  const options = sdkModelOptions(harness)
+export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOptionRow {
+  const fallback = models.find((item) => item.isDefault)?.id ?? models[0]?.id
   return {
     id: "model",
     name: "Model",
     category: "model",
     type: "select",
-    currentValue: currentModel && isSdkModelId(harness, currentModel) ? currentModel : options[0]?.id,
-    selectOptions: options.map((item) => ({ ...item })),
+    currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : fallback,
+    selectOptions: models.map(({ isDefault: _isDefault, ...item }) => ({ ...item })),
   }
+}
+
+export function sdkModelConfigOption(harness: NativeSdkHarnessId, currentModel?: string): AgentConfigOptionRow {
+  return modelConfigOption(sdkModelOptions(harness), currentModel)
 }

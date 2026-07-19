@@ -13,7 +13,12 @@ export function MasterEscalationContent(props: {
   onClose: () => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
-  const confirmation = () => props.item.reason.startsWith("Confirm the first non-draft pull request")
+  // The resolution affordance dispatches on the typed category — never on the
+  // prose of `reason`, which either backend may reword. The prefix check is
+  // only a fallback for escalation rows written before the category existed.
+  const confirmation = () =>
+    props.item.category === "public_pr_confirmation" ||
+    (props.item.category === undefined && props.item.reason.startsWith("Confirm the first non-draft pull request"))
   const action = createAction(() => {
     props.onResolved()
     props.onClose()
@@ -25,7 +30,11 @@ export function MasterEscalationContent(props: {
 
   return (
     <div class="workgraph-detail">
-      <p class="workgraph-detail-lede text-text-strong">The Stream master stopped after repeated failure.</p>
+      <p class="workgraph-detail-lede text-text-strong">
+        {confirmation()
+          ? "The Stream master is holding an externally visible action for your confirmation."
+          : "The Stream master stopped after repeated failure."}
+      </p>
       <DialogField label="Reason">{props.item.reason}</DialogField>
       <DialogField label="Stream" mono>{props.item.streamId}</DialogField>
       <Show when={confirmation()}>

@@ -20,6 +20,8 @@ import {
   EvidenceDtoSchema,
   EvidencePageSchema,
   ExecutionProfileDefaultsSchema,
+  masterSessionId,
+  nextDailyMasterRun,
   OutcomeDtoSchema,
   readAttentionCursor,
   readChangeCursor,
@@ -1328,6 +1330,10 @@ function applyCommand(
       occurredAt,
       occurredAt,
     )
+    // An owner message to a halted ('attention') master is the explicit
+    // resume: it clears the escalation and the failure counter. Agent
+    // messages park in the mailbox and never un-halt an escalated master.
+    if (context.actor.type === "user") resumeSqliteMaster(database, context, stream.id, occurredAt)
     enqueueSqliteMasterWake(database, context, stream.id, occurredAt, "mailbox")
     return pending(
       "master_called",
@@ -1342,7 +1348,7 @@ function applyCommand(
     if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(request.operationId, "version_conflict", "Stream version changed")
-    if (context.actor.type !== "agent" || context.actor.id !== `ses_master_${stream.id}`)
+    if (context.actor.type !== "agent" || context.actor.id !== masterSessionId(stream.id))
       return rejected(request.operationId, "forbidden", "Only the Stream master can update Stream notes")
     const invalidReference = command.externalReferences.find((reference) => {
       const revision = database.prepare(`
@@ -1452,22 +1458,49 @@ function applyCommand(
     if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(request.operationId, "version_conflict", "Stream version changed")
-    if (context.actor.type !== "agent" || context.actor.id !== `ses_master_${stream.id}`)
+    if (context.actor.type !== "agent" || context.actor.id !== masterSessionId(stream.id))
       return rejected(request.operationId, "forbidden", "Only the Stream master can request public PR confirmation")
     if (stream.public_pr_confirmed_at !== null) {
       return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, alreadyConfirmed: true }, stream.id)
     }
+    // Idempotent: a confirmation already awaiting the owner is a success
+    // no-op — retries must not rewrite the escalation or conflict.
+    const currentStatus = database.prepare(`
+      SELECT master_status_json FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).get(context.organizationId, context.ownerUserId, stream.id) as { master_status_json: string | null }
+    const parsedStatus = currentStatus.master_status_json
+      ? JSON.parse(currentStatus.master_status_json) as { state?: unknown; escalation?: unknown }
+      : undefined
+    if (parsedStatus?.state === "attention" && parsedStatus.escalation === "public_pr_confirmation") {
+      return pending("public_pr_confirmation_requested", "stream", stream.id, { streamId: stream.id, repository: command.repository, title: command.title, alreadyPending: true }, stream.id)
+    }
     const reason = `Confirm the first non-draft pull request to public repository ${command.repository}: ${command.title}`
-    enqueueSqliteMasterWake(database, context, stream.id, occurredAt, "mailbox")
     database.prepare(`
       UPDATE wg_v2_streams SET master_status_json = ?, updated_at = ?
       WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-    `).run(JSON.stringify({ state: "attention", sessionId: `ses_master_${stream.id}`, message: reason, receiptRefs: [], updatedAt: occurredAt }),
+    `).run(JSON.stringify({ state: "attention", escalation: "public_pr_confirmation", sessionId: masterSessionId(stream.id), message: reason, receiptRefs: [], updatedAt: occurredAt }),
       occurredAt, context.organizationId, context.ownerUserId, stream.id)
+    // Upsert: the escalation must exist even when no wake job has ever been
+    // armed for the Stream — the attention projector reads this row.
     database.prepare(`
-      UPDATE wg_v2_due_jobs SET status = 'attention', last_error = ?, claimed_by = NULL, claim_expires_at = NULL, updated_at = ?
-      WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND job_type = 'master_wake' AND subject_id = ?
-    `).run(reason, occurredAt, context.organizationId, context.ownerUserId, stream.id, stream.id)
+      INSERT INTO wg_v2_due_jobs
+        (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, last_error, payload_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'master_wake', ?, ?, 'attention', ?, ?, ?, ?)
+      ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO UPDATE SET
+        status = 'attention', last_error = excluded.last_error, claimed_by = NULL, claim_expires_at = NULL,
+        row_version = wg_v2_due_jobs.row_version + 1, updated_at = excluded.updated_at
+    `).run(
+      context.organizationId,
+      context.ownerUserId,
+      `master_wake_${stream.id}`,
+      stream.id,
+      stream.id,
+      occurredAt,
+      reason,
+      JSON.stringify({ streamId: stream.id, trigger: "mailbox" }),
+      occurredAt,
+      occurredAt,
+    )
     return pending("public_pr_confirmation_requested", "stream", stream.id, { streamId: stream.id, repository: command.repository, title: command.title }, stream.id)
   }
   if (command.type === "confirm_public_pr") {
@@ -1479,8 +1512,9 @@ function applyCommand(
     database.prepare(`
       UPDATE wg_v2_streams SET public_pr_confirmed_at = ?, master_status_json = ?, row_version = row_version + 1, updated_at = ?
       WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
-    `).run(occurredAt, JSON.stringify({ state: "hibernating", sessionId: `ses_master_${stream.id}`, message: "Public PR action confirmed", receiptRefs: [], updatedAt: occurredAt }),
+    `).run(occurredAt, JSON.stringify({ state: "hibernating", sessionId: masterSessionId(stream.id), message: "Public PR action confirmed", receiptRefs: [], updatedAt: occurredAt }),
       occurredAt, context.organizationId, context.ownerUserId, stream.id, command.expectedVersion)
+    resumeSqliteMaster(database, context, stream.id, occurredAt)
     enqueueSqliteMasterWake(database, context, stream.id, occurredAt, "mailbox")
     return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, confirmedAt: occurredAt }, stream.id)
   }
@@ -1489,7 +1523,7 @@ function applyCommand(
     if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(request.operationId, "version_conflict", "Stream version changed")
-    if (context.actor.type !== "agent" || context.actor.id !== command.sessionId || command.sessionId !== `ses_master_${stream.id}`)
+    if (context.actor.type !== "agent" || context.actor.id !== command.sessionId || command.sessionId !== masterSessionId(stream.id))
       return rejected(request.operationId, "forbidden", "Only the Stream master can record master audit events")
     return pending(
       "master_audit_recorded",
@@ -1528,7 +1562,10 @@ function applyCommand(
       `,
         )
         .run(command.reason, occurredAt, occurredAt, context.organizationId, context.ownerUserId, command.streamId)
+      cancelSqliteMasterJobs(database, context, command.streamId, occurredAt)
     }
+    // Reopening revives the master's retired daily schedule.
+    if (transition.state === "reopened") enqueueSqliteMasterSchedule(database, context, command.streamId, occurredAt)
     database
       .prepare(
         `
@@ -3096,6 +3133,7 @@ function applyCommand(
         command.streamId,
         command.expectedVersion,
       )
+    cancelSqliteMasterJobs(database, context, command.streamId, occurredAt)
     return pending(
       "stream_closed",
       "stream",
@@ -3476,6 +3514,7 @@ function applyCommand(
         "DELETE FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?",
       )
       .run(context.organizationId, context.ownerUserId, command.streamId, command.expectedVersion)
+    cancelSqliteMasterJobs(database, context, command.streamId, occurredAt)
     return pending("stream_deleted", "stream", command.streamId, { streamId: command.streamId }, command.streamId)
   }
   return rejected(request.operationId, "internal_error", "Unsupported SQLite command")
@@ -4688,6 +4727,7 @@ function sqliteAttentionItem(database: Database, context: WorkGraphContext, row:
     const status = stream?.master_status_json ? JSON.parse(stream.master_status_json) as {
       sessionId?: unknown
       receiptRefs?: unknown
+      escalation?: unknown
     } : undefined
     return AttentionItemSchema.parse({
       kind: row.kind,
@@ -4697,6 +4737,9 @@ function sqliteAttentionItem(database: Database, context: WorkGraphContext, row:
       ...read,
       streamId: row.stream_id,
       ...(typeof status?.sessionId === "string" ? { sessionId: status.sessionId } : {}),
+      ...(status?.escalation === "public_pr_confirmation" || status?.escalation === "failure_halt"
+        ? { category: status.escalation }
+        : {}),
       reason: row.last_error,
       evidenceIds: [],
       receiptRefs: Array.isArray(status?.receiptRefs)
@@ -5326,6 +5369,19 @@ function admitAttempt(
     )
     .get(context.organizationId, context.ownerUserId, row.stream_id, occurredAt)
   if (streamRunning) return { ok: false, code: "blocked", message: "Stream already has an active Attempt" }
+  // The master turn owns the shared Stream workspace while running: no
+  // Attempt admits into the envelope mid-turn (the mirror of the master's
+  // own live-attempt deferral).
+  const masterRunning = database
+    .prepare(
+      `
+    SELECT 1 FROM wg_v2_due_jobs
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND job_type = 'master_wake'
+      AND status = 'running' LIMIT 1
+  `,
+    )
+    .get(context.organizationId, context.ownerUserId, row.stream_id)
+  if (masterRunning) return { ok: false, code: "blocked", message: "Stream master turn is in progress" }
   const resolved = resolveExecutionProfile({
     workgraph: JSON.parse(row.workgraph_defaults),
     stream: JSON.parse(row.stream_defaults),
@@ -6461,6 +6517,52 @@ function charterMatchesHash(charter: Readonly<{ text: string; hash: string }>) {
   return hash(charter.text) === charter.hash.toLowerCase()
 }
 
+/** A closed or deleted Stream retires its master lane: the wake and the
+ *  persistent daily schedule jobs are cancelled so nothing re-launches a
+ *  master on a Stream that no longer runs. */
+function cancelSqliteMasterJobs(
+  database: Database,
+  context: WorkGraphContext,
+  streamId: string,
+  occurredAt: number,
+) {
+  database.prepare(`
+    UPDATE wg_v2_due_jobs SET status = 'cancelled', claimed_by = NULL, claim_expires_at = NULL,
+      row_version = row_version + 1, updated_at = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND job_type = 'master_wake'
+      AND status NOT IN ('completed', 'cancelled')
+  `).run(occurredAt, context.organizationId, context.ownerUserId, streamId)
+}
+
+/** Owner resolution of a halted master: clears the job's 'attention' state,
+ *  the stored escalation reason, and the failure counter so the next enqueue
+ *  can re-arm the lane. Only owner-driven paths (resume, public-PR confirm)
+ *  call this — agent traffic never un-halts an escalated master. */
+function resumeSqliteMaster(
+  database: Database,
+  context: WorkGraphContext,
+  streamId: string,
+  occurredAt: number,
+) {
+  database.prepare(`
+    UPDATE wg_v2_due_jobs
+    SET status = 'pending', last_error = NULL, lease_epoch = 0, claimed_by = NULL, claim_expires_at = NULL,
+      row_version = row_version + 1, updated_at = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND job_type = 'master_wake' AND subject_id = ? AND status = 'attention'
+  `).run(occurredAt, context.organizationId, context.ownerUserId, streamId)
+  database.prepare(`
+    UPDATE wg_v2_streams SET master_status_json = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      AND json_extract(master_status_json, '$.state') = 'attention'
+  `).run(JSON.stringify({
+    state: "hibernating",
+    sessionId: masterSessionId(streamId),
+    message: "Owner resumed the master",
+    receiptRefs: [],
+    updatedAt: occurredAt,
+  }), context.organizationId, context.ownerUserId, streamId)
+}
+
 function enqueueSqliteMasterWake(
   database: Database,
   context: WorkGraphContext,
@@ -6469,29 +6571,33 @@ function enqueueSqliteMasterWake(
   trigger: "mailbox" | "task_settled" | "schedule",
 ) {
   const stream = database.prepare(`
-    SELECT charter_json FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-  `).get(context.organizationId, context.ownerUserId, streamId) as { charter_json: string | null } | undefined
-  const receipts = trigger === "task_settled"
-    ? (database.prepare(`
-        SELECT terminal_result_json FROM wg_v2_attempts
-        WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND terminal_result_json IS NOT NULL
-        ORDER BY CAST(updated_at AS INTEGER) DESC LIMIT 20
-      `).all(context.organizationId, context.ownerUserId, streamId) as Array<{ terminal_result_json: string }>)
-        .flatMap((row) => {
-          const result = JSON.parse(row.terminal_result_json) as { artifactRefs?: unknown }
-          return Array.isArray(result.artifactRefs)
-            ? result.artifactRefs.filter((value): value is string => typeof value === "string" && !!value.trim())
-            : []
-        }).slice(0, 100)
-    : []
-  const charter = stream?.charter_json ? JSON.parse(stream.charter_json) as { hash?: unknown } : undefined
+    SELECT charter_json, master_status_json, lifecycle
+    FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+  `).get(context.organizationId, context.ownerUserId, streamId) as
+    | { charter_json: string | null; master_status_json: string | null; lifecycle: string }
+    | undefined
+  // A closed Stream's master never re-arms, and an escalated ('attention')
+  // master stays halted with its escalation and failure counter intact until
+  // the owner resolves it — settlements and mailbox traffic must not silently
+  // dismiss a Needs-you item or reset the loop-breaker.
+  if (!stream || stream.lifecycle === "closed") return
+  const currentStatus = stream.master_status_json
+    ? JSON.parse(stream.master_status_json) as { state?: unknown }
+    : undefined
+  if (currentStatus?.state === "attention") return
+  const charter = stream.charter_json ? JSON.parse(stream.charter_json) as { hash?: unknown } : undefined
+  // Receipt refs are re-derived from settled attempts when the turn claims;
+  // the settlement transaction only marks the wake, it does not aggregate.
+  // Overwriting an 'acting' status is safe here: the local turn fence is the
+  // job row_version (the older turn's completion supersedes on CAS), so the
+  // pending line is the correct face for the newly queued event.
   database.prepare(`
     UPDATE wg_v2_streams SET master_status_json = ?
     WHERE organization_id = ? AND owner_user_id = ? AND id = ?
   `).run(JSON.stringify({
     state: "pending",
     message: trigger === "mailbox" ? "Master message queued" : "Task settlement queued for master",
-    receiptRefs: receipts,
+    receiptRefs: [],
     ...(typeof charter?.hash === "string" ? { charterHash: charter.hash } : {}),
     updatedAt: occurredAt,
   }), context.organizationId, context.ownerUserId, streamId)
@@ -6502,8 +6608,9 @@ function enqueueSqliteMasterWake(
     ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO UPDATE SET
       due_at = MIN(wg_v2_due_jobs.due_at, excluded.due_at), status = 'pending', payload_json = excluded.payload_json,
       claimed_by = NULL, claim_expires_at = NULL, last_error = NULL,
-      lease_epoch = CASE WHEN wg_v2_due_jobs.status IN ('completed', 'cancelled', 'attention', 'failed_terminal') THEN 0 ELSE wg_v2_due_jobs.lease_epoch END,
+      lease_epoch = CASE WHEN wg_v2_due_jobs.status IN ('completed', 'cancelled', 'failed_terminal') THEN 0 ELSE wg_v2_due_jobs.lease_epoch END,
       row_version = wg_v2_due_jobs.row_version + 1, updated_at = excluded.updated_at
+    WHERE wg_v2_due_jobs.status <> 'attention'
   `).run(
     context.organizationId,
     context.ownerUserId,
@@ -6527,7 +6634,10 @@ function enqueueSqliteMasterSchedule(
     INSERT INTO wg_v2_due_jobs
       (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'master_wake', ?, ?, 'pending', ?, ?, ?)
-    ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO NOTHING
+    ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO UPDATE SET
+      status = 'pending', due_at = excluded.due_at, claimed_by = NULL, claim_expires_at = NULL,
+      last_error = NULL, lease_epoch = 0, row_version = wg_v2_due_jobs.row_version + 1, updated_at = excluded.updated_at
+    WHERE wg_v2_due_jobs.status = 'cancelled'
   `).run(
     context.organizationId,
     context.ownerUserId,
@@ -6541,11 +6651,6 @@ function enqueueSqliteMasterSchedule(
   )
 }
 
-function nextDailyMasterRun(afterMs: number) {
-  const after = new Date(afterMs)
-  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
-  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
-}
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`

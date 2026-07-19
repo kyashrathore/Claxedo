@@ -1324,10 +1324,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 404)
         }
-        if (
-          (targetRunner.access === "native" && isStaticSdkHarness(targetRunner.id))
-          || (targetRunner.id === "codex" && targetRunner.access === "acp")
-        ) {
+        // codex-acp's ACP adapter emits no config options, so it keeps the
+        // static catalog. Native SDK harnesses fall through to the adapter,
+        // which live-lists models (with the static catalog as its fallback).
+        if (targetRunner.id === "codex" && targetRunner.access === "acp") {
           return c.json([sdkModelConfigOption(targetRunner.id)])
         }
         const adapter = await ensureSessionAdapter(targetRunner)
@@ -1678,8 +1678,4 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       sessionConfigStore = undefined
     },
   }
-}
-
-function isStaticSdkHarness(id: AgentHarnessId): id is "claude" | "codex" | "cursor" {
-  return id === "claude" || id === "codex" || id === "cursor"
 }

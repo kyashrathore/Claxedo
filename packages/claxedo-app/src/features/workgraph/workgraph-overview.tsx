@@ -338,6 +338,10 @@ function StreamCard(props: {
         {/* Fixed controls stay in normal layout flow so every hit target remains
             available and the title wraps around their reserved width. */}
         <span class="workgraph-streamcard-actions">
+        {/* Pause/Resume only exists for streams the lifecycle can actually
+            transition — a closed stream must not offer a control the server
+            will reject. */}
+        <Show when={props.stream.lifecycleState === "active" || props.stream.lifecycleState === "paused"}>
         <Show when={streamPaused()} fallback={
           <Popover
             placement="bottom-end"
@@ -390,6 +394,7 @@ function StreamCard(props: {
           >
             <Icon name="console" size="small" />
           </button>
+        </Show>
         </Show>
         <Show when={retryableItems().length}>
           <button

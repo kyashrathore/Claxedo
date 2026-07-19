@@ -517,13 +517,33 @@ export function createSessionV2WorkGraphGateway(
           workspaceId,
           broker: async (operation) => {
             const pullRequest = operation.operation.type === "open_pull_request" ? operation.operation : undefined
-            if (operation.operation.type === "open_pull_request" && input.streamId && options.authorizePullRequest) {
+            let verifiedPublicRepository = false
+            if (pullRequest) {
+              // Fail closed: a PR may only be opened when the full receipt
+              // pipeline is present. Missing streamId or deps must never
+              // silently skip the confirmation gate or the effect ledger.
+              if (!input.streamId || !options.authorizePullRequest || !options.pullRequestEffects || !options.recordPullRequest) {
+                throw new ConnectionOperationDeniedError("Pull request delivery requires a Stream-bound receipt pipeline")
+              }
+              // The confirmation gate keys on provider-verified visibility,
+              // never the agent-supplied flag. Drafts skip the lookup (the
+              // gate only guards non-draft PRs); lookup failure reads as
+              // public, which forces confirmation.
+              verifiedPublicRepository = pullRequest.draft
+                ? false
+                : await operationBroker
+                    .repositoryVisibility(operation.identity as never, pullRequest.repository, {
+                      ownerUserId: context.ownerUserId,
+                      ownerPartition,
+                    })
+                    .then((visibility) => visibility === "public")
+                    .catch(() => true)
               const authorized = await options.authorizePullRequest(context, {
                 streamId: input.streamId,
-                repository: operation.operation.repository,
-                title: operation.operation.title,
-                draft: operation.operation.draft,
-                publicRepository: operation.operation.publicRepository,
+                repository: pullRequest.repository,
+                title: pullRequest.title,
+                draft: pullRequest.draft,
+                publicRepository: verifiedPublicRepository,
               })
               if (!authorized) throw new ConnectionOperationDeniedError("The first non-draft public pull request requires owner confirmation")
             }
@@ -538,7 +558,7 @@ export function createSessionV2WorkGraphGateway(
                   title: pullRequest.title,
                   ...(pullRequest.body === undefined ? {} : { body: pullRequest.body }),
                   draft: pullRequest.draft,
-                  publicRepository: pullRequest.publicRepository,
+                  publicRepository: verifiedPublicRepository,
                 })
               : undefined
             if (effect?.state === "completed") return effect.result

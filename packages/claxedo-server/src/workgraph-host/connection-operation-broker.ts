@@ -60,7 +60,41 @@ export function createConnectionOperationBroker(input: Readonly<{
     jira: createJiraSourceIssueConnector(),
   }
   const codeHostConnectors = input.codeHostConnectors ?? { github: createGitHubCodeHostConnector() }
+  const resolveCodeHost = async (
+    identity: ConnectionOperationIdentity,
+    principal: Readonly<{ ownerUserId: string; ownerPartition: string }>,
+    tool: string,
+  ) => {
+    const binding = await input.bindings.resolve(identity)
+    if (!binding || binding.context.ownerUserId !== principal.ownerUserId || binding.ownerPartition !== principal.ownerPartition ||
+      binding.attemptId !== identity.attemptId || binding.sessionId !== identity.sessionId ||
+      binding.workspaceId !== identity.workspaceId || !binding.connectionIds.includes(identity.connectionId) ||
+      !binding.tools.includes(tool)) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Attempt")
+    const handles = await input.connections.resolveCapabilities(binding.context, {
+      connectionIds: [identity.connectionId],
+      capability: "code-host",
+    })
+    const handle = handles.length === 1 && handles[0]?.id === identity.connectionId && handles[0].capability === "code-host"
+      ? handles[0]
+      : undefined
+    const provider = handle?.integrationId === "atlassian" ? "jira" : handle?.integrationId
+    const connector = provider ? codeHostConnectors[provider] : undefined
+    if (!handle || !connector || connector.provider !== provider) {
+      throw new ConnectionOperationDeniedError("Connection capability is unavailable")
+    }
+    return { handle, connector }
+  }
   return {
+    /** Provider-verified repository visibility for the public-PR confirmation
+     *  gate. Callers must treat any thrown error as public (fail closed). */
+    async repositoryVisibility(
+      identity: ConnectionOperationIdentity,
+      repository: string,
+      principal: Readonly<{ ownerUserId: string; ownerPartition: string }>,
+    ): Promise<"public" | "private"> {
+      const { handle, connector } = await resolveCodeHost(identity, principal, CONNECTION_OPERATION_TOOLS.open_pull_request)
+      return handle.withAuthorization((authorization) => connector.repositoryVisibility(authorization, repository))
+    },
     async execute(
       identity: ConnectionOperationIdentity,
       operation: ConnectionOperation,

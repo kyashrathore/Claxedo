@@ -284,7 +284,7 @@ export const RecordMasterAuditCommandSchema = z.strictObject({
   expectedVersion,
   sessionId: text.max(512),
   wakeTrigger: z.enum(["mailbox", "task_settled", "schedule"]),
-  charterHash: z.string().regex(/^[a-f0-9]{64}$/),
+  charterHash: z.string().regex(/^[a-f0-9]{64}$/i).transform((hash) => hash.toLowerCase()),
   citedCharterClause: text.max(1_000),
   modelVersion: text.max(512),
   reasoningSummary: text.max(1_000),

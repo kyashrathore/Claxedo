@@ -1,5 +1,4 @@
 import {
-  isSdkModelId,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
   type AgentHarnessId,

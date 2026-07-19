@@ -12,6 +12,12 @@
 // - `workgraph_master`: one serialized turn for a Stream's durable master.
 
 import { createWakes, type WakeDriver, type Wakes, type WakeStore } from "@claxedo/wakes"
+import {
+  MASTER_DAILY_SCHEDULE,
+  nextDailyMasterRun as nextDailyMasterRunAt,
+  workGraphMasterLaneKey,
+  workGraphMasterLaneWorkspace,
+} from "@claxedo/workgraph/contracts"
 import { clean } from "../control-plane/adapters/worker/hosted-compose"
 import {
   composeHostedControlPlane,
@@ -34,14 +40,14 @@ export type WorkGraphMasterIntent = SettlementTenant & Readonly<{
 }>
 
 export function workGraphMasterKey(intent: Pick<WorkGraphMasterIntent, "organizationId" | "ownerUserId" | "streamId">) {
-  return `workgraph-master:${intent.organizationId}:${intent.ownerUserId}:${intent.streamId}`
+  return workGraphMasterLaneKey(intent)
 }
 
 export function workGraphMasterWake(intent: WorkGraphMasterIntent, now: number) {
   return {
     kind: WORKGRAPH_MASTER_KIND,
-    serialKey: workGraphMasterKey(intent),
-    workspaceId: `wg-master:${intent.organizationId}:${intent.ownerUserId}:${intent.streamId}`,
+    serialKey: workGraphMasterLaneKey(intent),
+    workspaceId: workGraphMasterLaneWorkspace(intent),
     at: now,
     intent,
   }
@@ -199,10 +205,8 @@ export function composeHostedWakes(
 }
 
 export function nextDailyMasterRun(schedule: string, afterMs: number) {
-  if (schedule !== "daily@06:00Z") throw new Error(`Unsupported hosted wake schedule: ${schedule}`)
-  const after = new Date(afterMs)
-  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
-  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
+  if (schedule !== MASTER_DAILY_SCHEDULE) throw new Error(`Unsupported hosted wake schedule: ${schedule}`)
+  return nextDailyMasterRunAt(afterMs)
 }
 
 /**

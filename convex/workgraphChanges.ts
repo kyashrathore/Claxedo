@@ -295,7 +295,8 @@ async function attentionPage(ctx: any, organization: string, owner: string, inpu
     const root = await owned(ctx, "workgraphs", organization, owner, "workgraph_default")
     if (root) throw new Error("Attention projection is not initialized for this owner")
   }
-  const built = await Promise.all(rows.slice(0, limit).map((row: any) => attentionProjectionItem(ctx, organization, owner, row, summary)))
+  const built = (await Promise.all(rows.slice(0, limit).map((row: any) => attentionProjectionItem(ctx, organization, owner, row, summary))))
+    .filter((item: any) => item !== undefined)
   // Items scoped to a deletion-pending Stream no longer need the owner — the
   // deletion request already resolved them from the owner's point of view.
   const deleting = await deletionPendingStreamIds(ctx, organization, owner)
@@ -308,7 +309,7 @@ async function attentionPage(ctx: any, organization: string, owner: string, inpu
     items: page,
     total: summary ? summary.visible_total ?? summary.total : 0,
     hasMore,
-    ...(hasMore ? { nextCursor: createAttentionCursor(organization, owner, page.at(-1)!) } : {}),
+    ...(hasMore && page.length ? { nextCursor: createAttentionCursor(organization, owner, page.at(-1)!) } : {}),
   })
 }
 
@@ -341,7 +342,9 @@ async function attentionProjectionItem(ctx: any, organization: string, owner: st
     const row = await owned(ctx, "workgraph_streams", organization, owner, entry.id)
     const status = row?.master_status
     if (!row || status?.state !== "attention") {
-      throw new Error(`Attention source ${entry.kind}:${entry.id} is not an active master escalation`)
+      // A resolved-in-flight escalation is a stale entry, not a projection
+      // fault: skip it rather than failing the whole attention page.
+      return undefined
     }
     return AttentionItemSchema.parse({
       kind: entry.kind,
@@ -351,6 +354,9 @@ async function attentionProjectionItem(ctx: any, organization: string, owner: st
       ...read,
       streamId: row.id,
       ...(typeof status.sessionId === "string" ? { sessionId: status.sessionId } : {}),
+      ...(status.escalation === "public_pr_confirmation" || status.escalation === "failure_halt"
+        ? { category: status.escalation }
+        : {}),
       reason: status.message,
       evidenceIds: [],
       receiptRefs: status.receiptRefs ?? [],

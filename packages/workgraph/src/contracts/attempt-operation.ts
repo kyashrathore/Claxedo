@@ -7,8 +7,51 @@ export const WorkGraphAttemptToolNames = ["workgraph_report_progress", "workgrap
 export type WorkGraphAttemptToolName = (typeof WorkGraphAttemptToolNames)[number]
 export const WorkGraphMasterToolNames = ["workgraph_update_stream_notes", "workgraph_notify_owner"] as const
 export type WorkGraphMasterToolName = (typeof WorkGraphMasterToolNames)[number]
+/** Landing is a separate grant from the core master tools: it exists only where a
+ *  local envelope worktree and the landing-integrity gate are present. Hosted
+ *  masters do not receive it and their prompt must not assign landing duties. */
+export const WorkGraphMasterLandingToolName = "workgraph_land_candidate" as const
 export const WorkGraphRuntimeToolNames = [...WorkGraphAttemptToolNames, ...WorkGraphMasterToolNames] as const
 export type WorkGraphRuntimeToolName = (typeof WorkGraphRuntimeToolNames)[number]
+
+/** The single source of the master session/attempt identity convention. Every
+ *  producer and checker derives from these; hand-built `ses_master_${id}` style
+ *  strings are a defect. */
+export const MASTER_SESSION_PREFIX = "ses_master_"
+export const MASTER_ATTEMPT_PREFIX = "master_"
+export function masterSessionId(streamId: string): string {
+  return `${MASTER_SESSION_PREFIX}${streamId}`
+}
+export function masterAttemptId(streamId: string): string {
+  return `${MASTER_ATTEMPT_PREFIX}${streamId}`
+}
+export function isMasterSessionId(sessionId: string): boolean {
+  return sessionId.startsWith(MASTER_SESSION_PREFIX)
+}
+
+/** The master lane identity. The serial key IS the one-turn-per-stream
+ *  guarantee: every producer (Convex enqueue, hosted retry scheduling, sqlite
+ *  jobs) must derive it here — two constructors would split the lane and run
+ *  concurrent master turns against one envelope. */
+export type WorkGraphMasterLaneScope = Readonly<{
+  organizationId: string
+  ownerUserId: string
+  streamId: string
+}>
+export function workGraphMasterLaneKey(scope: WorkGraphMasterLaneScope): string {
+  return `workgraph-master:${scope.organizationId}:${scope.ownerUserId}:${scope.streamId}`
+}
+export function workGraphMasterLaneWorkspace(scope: WorkGraphMasterLaneScope): string {
+  return `wg-master:${scope.organizationId}:${scope.ownerUserId}:${scope.streamId}`
+}
+
+/** The master's daily cadence, shared by every scheduler. */
+export const MASTER_DAILY_SCHEDULE = "daily@06:00Z"
+export function nextDailyMasterRun(afterMs: number): number {
+  const after = new Date(afterMs)
+  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
+  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
+}
 
 export const WorkGraphAttemptIdentitySchema = z.strictObject({
   attemptId: AttemptIDSchema,

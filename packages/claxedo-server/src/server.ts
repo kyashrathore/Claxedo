@@ -86,6 +86,7 @@ import { BootstrapRoutes } from "./routes/bootstrap"
 import { LivingAppsRoutes } from "./routes/living-apps"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "./relay-provider"
+import { sandboxFetch } from "./sandbox-target-fetch"
 import {
   ensureWorkspace,
   getWorkspaceByDirectory,
@@ -113,8 +114,9 @@ import { LocalInstallationDocumentBroker } from "./documents/local-installation-
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
 import { createSqlitePullRequestEffects } from "./workgraph-host/sqlite-pull-request-effects"
-import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution } from "./workgraph-agent-tools"
+import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "./workgraph-agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree-service"
+import { StreamIDSchema, masterAttemptId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphAttemptOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "./session-meta"
 import { RemoteAccessRoutes } from "./routes/remote-access"
@@ -1068,6 +1070,17 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         if (!workspace || workspace.kind === "cloud") return undefined
         return workspace.directory
       },
+      // Live SDK-harness model lists for the workgraph catalog, served by the
+      // embedded workspace runtime (in-process for local workspaces). Failure
+      // falls back to the static catalog inside sdkProviders.
+      harnessConfigOptions: async (harness) => {
+        const workspace = await getWorkspaceByDirectory(workgraphRepositoryDirectory).catch(() => undefined)
+        if (!workspace || workspace.kind === "cloud") return undefined
+        const search = new URLSearchParams({ directory: workspace.directory, harness })
+        const response = await sandboxFetch(workspace, `/api/wr/harness-config-options?${search}`)
+        if (!response.ok) return undefined
+        return response.json()
+      },
     }),
     sourcePlanning: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
     master: {
@@ -1085,12 +1098,27 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     telemetry: services.telemetry,
   })
   void workgraph.then((embedded) => {
+    // Master identity must resolve to the server-authored master session
+    // binding — self-consistent strings alone are forgeable by any local
+    // caller of the attempt-tools route.
+    const requireLocalMasterIdentity = async (
+      context: Parameters<NonNullable<typeof executeWorkGraphAttempt>>[0],
+      identity: Readonly<{ streamId?: string; sessionId: string; attemptId: string }>,
+      label: string,
+    ) => {
+      const streamId = identity.streamId
+      if (!streamId || identity.sessionId !== masterSessionId(streamId) || identity.attemptId !== masterAttemptId(streamId)) {
+        throw new Error(`${label} requires an exact master identity`)
+      }
+      const binding = await embedded.sessionBindings.readForSession(context, identity.sessionId)
+      if (binding?.streamId !== streamId) {
+        throw new Error(`${label} is not bound to the Stream master session`)
+      }
+      return StreamIDSchema.parse(streamId)
+    }
     executeWorkGraphAttempt = async (context, request) => {
       if (request.operation.type === "update_stream_notes") {
-        const streamId = request.identity.streamId
-        if (!streamId || request.identity.sessionId !== `ses_master_${streamId}` || request.identity.attemptId !== `master_${streamId}`) {
-          throw new Error("Stream notes require an exact master identity")
-        }
+        const streamId = await requireLocalMasterIdentity(context, request.identity, "Stream notes")
         const masterContext = { ...context, actor: { type: "agent" as const, id: request.identity.sessionId as never } }
         const stream = await embedded.service.queries.streams.read(masterContext, { streamId })
         if (!stream) throw new Error("Stream notes master could not resolve its Stream")
@@ -1108,10 +1136,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         })
       }
       if (request.operation.type === "notify_owner") {
-        const streamId = request.identity.streamId
-        if (!streamId || request.identity.sessionId !== `ses_master_${streamId}` || request.identity.attemptId !== `master_${streamId}`) {
-          throw new Error("Owner notification requires an exact master identity")
-        }
+        const streamId = await requireLocalMasterIdentity(context, request.identity, "Owner notification")
         const delivery = await built.channels.notifyOwner({
           ownerUserId: context.ownerUserId,
           idempotencyKey: request.operation.operationId,
@@ -1191,8 +1216,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       const stream = await embedded.service.queries.streams.read(context, { streamId: input.streamId as never })
       if (!stream) throw new Error("Pull request Stream is unavailable")
       if (stream.publicPrConfirmedAt !== undefined) return true
+      // The request command is idempotent-by-design (an already-pending
+      // confirmation is a success no-op), so every call gets a fresh
+      // operation id — a fixed id plus a version-varying payload would turn
+      // retries into idempotency conflicts. Any command failure denies:
+      // an unconfirmed public PR never proceeds on an error path.
       const result = await embedded.service.execute(context, {
-        operationId: `public_pr_confirmation_${input.streamId}` as never,
+        operationId: `public_pr_confirmation_${input.streamId}_${crypto.randomUUID()}` as never,
         command: {
           version: 1,
           type: "request_public_pr_confirmation",
@@ -1202,7 +1232,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
           title: input.title,
         },
       })
-      if (!result.ok) throw new Error(result.error.message)
+      if (!result.ok) {
+        console.error("[claxedo-server] WARN  public PR confirmation request failed:", result.error.message)
+      }
       return false
     }
   })
@@ -1214,6 +1246,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
           ownerUserId: "local",
           sessionExecution: (sessionId) => localSessionExecution(opencodeRequest, sessionId),
           sessionContext: (sessionId) => localSessionContext(opencodeRequest, sessionId),
+          sessionOwnerDirected: (sessionId) => localSessionOwnerDirected(opencodeRequest, sessionId),
           notifyOwner: (input) => built.channels.notifyOwner({ ownerUserId: "local", ...input }),
         }),
       ),

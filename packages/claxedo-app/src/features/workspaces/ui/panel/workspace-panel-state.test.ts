@@ -177,4 +177,42 @@ describe("workspace panel state", () => {
     expect(state.open).toBe(true)
     expect(state.mode).toBe("review")
   })
+
+  test("a file focus escapes a global mode instead of being silently swallowed", () => {
+    const globalState = openWorkspacePanel(createWorkspacePanel(), { mode: "workgraph-attention" })
+
+    const state = openWorkspacePanel(globalState, {
+      workspaceDir: "/workspace",
+      targetPaneId: "pane-session",
+      navigator: "files",
+      focus: { kind: "file", path: "src/foo.ts", intent: "tab" },
+    })
+
+    // The workspace panel body (which consumes file focus) never mounts under
+    // a global mode — keeping workgraph-attention here dropped the click.
+    expect(state.mode).toBe("review")
+    expect(state.focus).toMatchObject({ kind: "file", path: "src/foo.ts" })
+  })
+
+  test("opening without a focus keeps a global mode", () => {
+    const globalState = openWorkspacePanel(createWorkspacePanel(), { mode: "workgraph-attention" })
+    const state = openWorkspacePanel(globalState, {})
+    expect(state.mode).toBe("workgraph-attention")
+  })
+
+  test("carries line/col through file focus and bumps version per open", () => {
+    const first = openWorkspacePanel(createWorkspacePanel(), {
+      workspaceDir: "/workspace",
+      targetPaneId: "pane-session",
+      focus: { kind: "file", path: "src/foo.ts", intent: "tab", line: 42, col: 7 },
+    })
+    expect(first.focus).toMatchObject({ kind: "file", path: "src/foo.ts", line: 42, col: 7, version: 1 })
+
+    const second = openWorkspacePanel(first, {
+      workspaceDir: "/workspace",
+      targetPaneId: "pane-session",
+      focus: { kind: "file", path: "src/foo.ts", intent: "tab", line: 42, col: 7 },
+    })
+    expect(second.focus?.version).toBe(2)
+  })
 })

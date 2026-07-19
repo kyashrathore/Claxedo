@@ -15,7 +15,8 @@ import {
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
-import { requireSdkModelId, sdkModelConfigOption } from "../../sdk-model-catalog"
+import { createLiveModelSource } from "../../live-model-source"
+import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
   extractTextFromParts,
   record,
@@ -29,6 +30,7 @@ import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
+const MODEL_LIST_TIMEOUT_MS = 30_000
 
 export function createClaudeSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {
   return new ClaudeSdkDriver(host)
@@ -38,6 +40,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   readonly type = "claude" as const
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private readonly modelSource = createLiveModelSource({
+    harness: "claude",
+    fetchModels: (directory) => this.fetchModels(directory),
+  })
 
   constructor(private readonly host: SdkRuntimeDriverHost) {}
 
@@ -150,8 +156,51 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     return { status: "ok" }
   }
 
-  configOptions(_currentModel: string): AgentConfigOptionRow[] {
-    return [sdkModelConfigOption("claude", _currentModel)]
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
+    return [modelConfigOption(await this.modelSource.models(directory), currentModel)]
+  }
+
+  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
+    return [modelConfigOption(this.modelSource.peek(), currentModel)]
+  }
+
+  /**
+   * The SDK only answers `supportedModels()` over an initialized session, so
+   * list models through a short-lived probe query that never sends a prompt.
+   * The never-yielding prompt stream keeps the CLI idle until `close()`.
+   */
+  private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
+    const abort = new AbortController()
+    const q: Query = query({
+      prompt: (async function* () {
+        await new Promise<never>(() => {})
+      })() as AsyncIterable<never>,
+      options: {
+        cwd: directory ?? process.cwd(),
+        abortController: abort,
+        env: claudeSpawnEnv({
+          ...process.env,
+          ...claudeAuthEnv(this.auth.anthropic),
+          CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
+        }),
+      },
+    })
+    try {
+      const models = await Promise.race([
+        q.supportedModels(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`claude supportedModels timed out after ${MODEL_LIST_TIMEOUT_MS}ms`)), MODEL_LIST_TIMEOUT_MS).unref?.()
+        }),
+      ])
+      return models.map((model) => ({
+        id: model.value,
+        name: model.displayName,
+        ...(model.description ? { description: model.description } : {}),
+      }))
+    } finally {
+      q.close()
+      abort.abort()
+    }
   }
 }
 
@@ -180,7 +229,7 @@ function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
 function turnModel(input: string | undefined, fallback: string) {
   const value = text(input) ?? text(fallback)
   if (!value || value === "default") return
-  return requireSdkModelId("claude", value)
+  return value
 }
 
 function sessionPermissionSuggestions(suggestions?: PermissionUpdate[]) {

@@ -52,7 +52,14 @@ function panelPatch(current: WorkspacePanelState, next: WorkspacePanelState) {
 function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelFocus | undefined) {
   if (!left || !right) return left === right
   if (left.kind !== right.kind || left.version !== right.version) return false
-  if (left.kind === "file" && right.kind === "file") return left.path === right.path && left.intent === right.intent
+  if (left.kind === "file" && right.kind === "file") {
+    return (
+      left.path === right.path &&
+      left.intent === right.intent &&
+      left.line === right.line &&
+      left.col === right.col
+    )
+  }
   if (left.kind === "process" && right.kind === "process") return left.processId === right.processId
   return left.kind === "context" && right.kind === "context" && left.sessionId === right.sessionId
 }

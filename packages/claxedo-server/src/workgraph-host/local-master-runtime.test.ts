@@ -225,10 +225,10 @@ describe("local WorkGraph master runtime", () => {
       expect.objectContaining({ status: "admitted", sessionId: `ses_master_${streamId}` }),
     ])
     const monitoring = runtime.runDue(context)
-    await workgraph.service.execute(context, {
+    await expect(workgraph.service.execute(context, {
       operationId: "wake-newer" as never,
       command: { version: 1, type: "call_master", streamId: streamId as never, expectedVersion: 1, message: "Process settlement two." },
-    })
+    })).resolves.toMatchObject({ ok: true })
     settle({ state: "succeeded", summary: "Processed settlement one.", artifacts: ["diff:first"] })
     await expect(monitoring).resolves.toEqual([
       expect.objectContaining({ status: "completed", superseded: true, sessionId: `ses_master_${streamId}` }),

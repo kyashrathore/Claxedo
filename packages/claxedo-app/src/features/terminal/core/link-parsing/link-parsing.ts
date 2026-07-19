@@ -236,11 +236,13 @@ export function decodeUrlEncodedPath(path: string): string {
 export function getCurrentOS(): OperatingSystem {
 	if (typeof navigator !== "undefined" && navigator.platform) {
 		const platform = navigator.platform.toLowerCase();
+		// Check mac/darwin before win: "darwin" contains "win", so the reverse
+		// order classified every Darwin platform string as Windows.
+		if (platform.includes("mac") || platform.includes("darwin")) {
+			return OperatingSystem.Macintosh;
+		}
 		if (platform.includes("win")) {
 			return OperatingSystem.Windows;
-		}
-		if (platform.includes("mac")) {
-			return OperatingSystem.Macintosh;
 		}
 	}
 	// Default to Linux for server environments
@@ -415,7 +417,7 @@ function detectLinksViaSuffix(line: string): IParsedLink[] {
 
 			// If the path contains an opening bracket, provide the path starting immediately after
 			// the opening bracket as an additional result
-			const openingBracketMatch = path.matchAll(/(?<bracket>[[({])(?![\])])/g);
+			const openingBracketMatch = path.matchAll(/(?<bracket>[[({])(?![\])}])/g);
 			for (const match of openingBracketMatch) {
 				const bracket = match.groups?.bracket;
 				if (bracket) {

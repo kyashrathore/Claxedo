@@ -43,6 +43,8 @@ export interface Settings {
     mono: string
     sans: string
     terminal: string
+    /** Which side of the workspace panel the files navigator docks on. */
+    navigatorSide: "left" | "right"
   }
   keybinds: Record<string, string>
   permissions: {
@@ -130,6 +132,7 @@ const defaultSettings: Settings = {
     mono: "",
     sans: "",
     terminal: "",
+    navigatorSide: "right",
   },
   keybinds: {},
   permissions: {
@@ -277,6 +280,10 @@ const settingsContextInput = {
         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
         setTerminalFont(value: string) {
           setStore("appearance", "terminal", value.trim() ? value : "")
+        },
+        navigatorSide: withFallback(() => store.appearance?.navigatorSide, defaultSettings.appearance.navigatorSide),
+        setNavigatorSide(value: "left" | "right") {
+          setStore("appearance", "navigatorSide", value)
         },
       },
       keybinds: {

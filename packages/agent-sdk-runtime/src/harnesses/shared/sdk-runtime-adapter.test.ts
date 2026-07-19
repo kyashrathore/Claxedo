@@ -18,7 +18,8 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     },
     runTurn: async () => {},
     readRuntimeHealth: () => ({ status: "ok" }),
-    configOptions: () => [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "default", selectOptions: [{ id: "default", name: "Default" }] }],
+    configOptions: async () => [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "default", selectOptions: [{ id: "default", name: "Default" }] }],
+    peekConfigOptions: () => [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "default", selectOptions: [{ id: "default", name: "Default" }] }],
   }
 }
 

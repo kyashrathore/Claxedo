@@ -1375,6 +1375,7 @@ describe("Convex WorkGraph store", () => {
       "create_stream",
       "update_stream",
       "set_stream_charter",
+      "update_stream_notes",
       "call_master",
       "request_public_pr_confirmation",
       "confirm_public_pr",

@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { EmbeddedWorkGraphTransport, WorkGraphCreationContext } from "@claxedo/mcp/workgraph-tools"
+import { masterSessionId } from "@claxedo/workgraph/contracts"
 import type { ExecutionProfileDefaults, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import type { LocalEmbeddedWorkGraph } from "./server-workgraph"
 import { OPENCODE_INTERNAL_BASE, type OpenCodeApplicationToolRegistration, type OpenCodeRequestFn } from "./opencode-engine"
@@ -89,6 +90,10 @@ export async function createLocalWorkGraphAgentTools(
     ownerUserId: string
     sessionExecution?: (sessionId: string) => Promise<ExecutionProfileDefaults | undefined>
     sessionContext?: (sessionId: string) => Promise<WorkGraphCreationContext["session"] | undefined>
+    /** Positive owner-direction fact: true only for a top-level (parentless) interactive
+     *  Session. Absence of a binding alone must never confer owner authority — subagent
+     *  child sessions are unbound too, and a missing callback fails closed to agent. */
+    sessionOwnerDirected?: (sessionId: string) => Promise<boolean>
     notifyOwner?: (input: { idempotencyKey: string; text: string }) => Promise<{
       channel: string
       threadKey: string
@@ -125,7 +130,8 @@ export async function createLocalWorkGraphAgentTools(
               ? await owner.sessionContext?.(invocation.sessionID)
               : undefined
             const ownerDirected = name === "workgraph_create_task" &&
-              !await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID)
+              !await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID) &&
+              (await owner.sessionOwnerDirected?.(invocation.sessionID)) === true
             return callWorkGraph(
               createLocalEmbeddedWorkGraphTransport(embedded, () =>
                 ownerDirected
@@ -171,6 +177,17 @@ export async function createLocalWorkGraphAgentTools(
       })).min(1).max(100),
     }),
   ])
+  const requireMasterBinding = async (
+    toolContext: WorkGraphContext,
+    invocation: Readonly<{ sessionID: string }>,
+    toolName: string,
+  ) => {
+    const binding = await embedded.sessionBindings.readForSession(toolContext, invocation.sessionID)
+    if (!binding?.streamId || invocation.sessionID !== masterSessionId(binding.streamId)) {
+      throw new Error(`${toolName} is restricted to the bound Stream master`)
+    }
+    return binding
+  }
   const notes = z.strictObject({
     status: z.array(z.string().trim().min(1).max(2_000)).max(100),
     learnings: z.array(z.string().trim().min(1).max(2_000)).max(100),
@@ -199,10 +216,7 @@ export async function createLocalWorkGraphAgentTools(
           forbidden_patterns: z.array(z.string().min(1)).max(100).optional(),
         }).parse(value)
         const invokingContext = context(invocation.sessionID, invocation.toolCallID)
-        const binding = await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID)
-        if (!binding?.streamId || invocation.sessionID !== `ses_master_${binding.streamId}`) {
-          throw new Error("workgraph_land_candidate is restricted to the bound Stream master")
-        }
+        const binding = await requireMasterBinding(invokingContext, invocation, "workgraph_land_candidate")
         if (!embedded.execution.land) throw new Error("WorkGraph landing is unavailable")
         return embedded.execution.land(invokingContext, {
           streamId: binding.streamId,
@@ -229,7 +243,9 @@ export async function createLocalWorkGraphAgentTools(
           )
         }
         const binding = await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID)
-        const actor = parsed.action === "create_task" && !binding
+        const ownerDirected = parsed.action === "create_task" && !binding &&
+          (await owner.sessionOwnerDirected?.(invocation.sessionID)) === true
+        const actor = ownerDirected
           ? { type: "user" as const, id: owner.ownerUserId as never }
           : invokingContext.actor
         return callWorkGraph(
@@ -245,10 +261,7 @@ export async function createLocalWorkGraphAgentTools(
       execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
         const parsed = notes.parse(value)
         const toolContext = context(invocation.sessionID, invocation.toolCallID)
-        const binding = await embedded.sessionBindings.readForSession(toolContext, invocation.sessionID)
-        if (!binding?.streamId || invocation.sessionID !== `ses_master_${binding.streamId}`) {
-          throw new Error("workgraph_update_stream_notes is restricted to the bound Stream master")
-        }
+        const binding = await requireMasterBinding(toolContext, invocation, "workgraph_update_stream_notes")
         const stream = await embedded.service.queries.streams.read(toolContext, { streamId: binding.streamId })
         if (!stream) throw new Error("workgraph_update_stream_notes could not resolve the bound Stream")
         const result = await embedded.service.execute(toolContext, {
@@ -274,10 +287,7 @@ export async function createLocalWorkGraphAgentTools(
         if (!owner.notifyOwner) throw new Error("Owner channel notification is unavailable")
         const parsed = z.strictObject({ message: z.string().trim().min(1).max(4_000) }).parse(value)
         const toolContext = context(invocation.sessionID, invocation.toolCallID)
-        const binding = await embedded.sessionBindings.readForSession(toolContext, invocation.sessionID)
-        if (!binding?.streamId || invocation.sessionID !== `ses_master_${binding.streamId}`) {
-          throw new Error("workgraph_notify_owner is restricted to the bound Stream master")
-        }
+        const binding = await requireMasterBinding(toolContext, invocation, "workgraph_notify_owner")
         const operationId = `notify_owner_${invocation.toolCallID}`
         const delivery = await owner.notifyOwner({ idempotencyKey: operationId, text: parsed.message })
         const result = await embedded.service.execute(toolContext, {
@@ -355,6 +365,26 @@ export async function localSessionExecution(
   return {
     environment: { kind: "local_worktree", directory },
     repository: { baseRevision: "HEAD" },
+  }
+}
+
+/** Owner-direction is a positive fact: only a top-level (parentless) interactive
+ *  Session speaks for the owner. Subagent children carry `parentID`, and any
+ *  lookup failure fails closed to agent authority. */
+export async function localSessionOwnerDirected(
+  request: OpenCodeRequestFn,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    }))
+    if (!response.ok) return false
+    const session = await response.json() as Record<string, unknown>
+    return session.id === sessionId && !session.parentID
+  } catch {
+    return false
   }
 }
 

@@ -2545,7 +2545,7 @@ ToolRegistry.register({
           defer={props.deferContent !== false}
           trigger={
             <div data-component="edit-trigger">
-              <div data-slot="message-part-title-area">
+              <div data-slot="message-part-title-area" data-path={props.input.filePath}>
                 <div data-slot="message-part-title">
                   <span data-slot="message-part-title-text">
                     <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
@@ -2612,7 +2612,7 @@ ToolRegistry.register({
           defer={props.deferContent !== false}
           trigger={
             <div data-component="write-trigger">
-              <div data-slot="message-part-title-area">
+              <div data-slot="message-part-title-area" data-path={props.input.filePath}>
                 <div data-slot="message-part-title">
                   <span data-slot="message-part-title-text">
                     <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
@@ -2794,7 +2794,7 @@ ToolRegistry.register({
             defer={props.deferContent !== false}
             trigger={
               <div data-component="edit-trigger">
-                <div data-slot="message-part-title-area">
+                <div data-slot="message-part-title-area" data-path={single()?.relativePath}>
                   <div data-slot="message-part-title">
                     <span data-slot="message-part-title-text">
                       <TextShimmer text={i18n.t("ui.tool.patch")} active={pending()} />

@@ -5,7 +5,7 @@ import {
   createHostedAttemptOperationExecutor,
   createHostedAttemptOperationHandler,
 } from "./hosted-attempt-operation"
-import { HostedTranscriptRetentionError } from "./hosted-runtime"
+import { HostedTranscriptRetentionError, workGraphWorkspaceId } from "./hosted-runtime"
 
 describe("hosted Attempt operation endpoint", () => {
   it("maps verified runtime identity into one service-authenticated WorkGraph command", async () => {
@@ -54,7 +54,7 @@ describe("hosted Attempt operation endpoint", () => {
         },
       },
     })!
-    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, notesOperation())).resolves.toMatchObject({ ok: true })
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, await notesOperation())).resolves.toMatchObject({ ok: true })
     expect(mutations).toEqual([
       expect.objectContaining({ stream_id: "stream-1", owner_subject: "alice" }),
       expect.objectContaining({
@@ -90,7 +90,7 @@ describe("hosted Attempt operation endpoint", () => {
       },
     })!
 
-    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, notificationOperation()))
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, await notificationOperation()))
       .resolves.toMatchObject({ ok: true })
     expect(notifyOwner).toHaveBeenCalledWith({
       ownerUserId: "alice",
@@ -326,15 +326,21 @@ function completion() {
   }
 }
 
-function notesOperation() {
+/** Master identity is bound to the deterministic per-stream workspace — the
+ *  fixtures must claim exactly the workspace the runtime token would prove. */
+async function masterIdentity() {
+  return {
+    attemptId: "master_stream-1" as never,
+    streamId: "stream-1" as never,
+    sessionId: "ses_master_stream-1",
+    workspaceId: await workGraphWorkspaceId("org-acme", "alice", "stream-1"),
+  }
+}
+
+async function notesOperation() {
   return {
     version: 1 as const,
-    identity: {
-      attemptId: "master_stream-1" as never,
-      streamId: "stream-1" as never,
-      sessionId: "ses_master_stream-1",
-      workspaceId: "workspace-1",
-    },
+    identity: await masterIdentity(),
     operation: {
       type: "update_stream_notes" as const,
       operationId: "notes-1" as never,
@@ -345,15 +351,10 @@ function notesOperation() {
   }
 }
 
-function notificationOperation() {
+async function notificationOperation() {
   return {
     version: 1 as const,
-    identity: {
-      attemptId: "master_stream-1" as never,
-      streamId: "stream-1" as never,
-      sessionId: "ses_master_stream-1",
-      workspaceId: "workspace-1",
-    },
+    identity: await masterIdentity(),
     operation: {
       type: "notify_owner" as const,
       operationId: "notify-1" as never,

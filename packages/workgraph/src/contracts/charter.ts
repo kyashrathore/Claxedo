@@ -1,10 +1,12 @@
 import { z } from "zod"
 import { ContentHashSchema } from "./work-source"
 
-/** Versioned standing instructions for every agent acting on a Stream. */
+/** Versioned standing instructions for every agent acting on a Stream. The
+ *  hash is normalized to lowercase at the contract boundary so acceptance,
+ *  storage, and the master's audit echo all agree on one canonical form. */
 export const StreamCharterSchema = z.strictObject({
   text: z.string(),
-  hash: ContentHashSchema,
+  hash: ContentHashSchema.transform((hash) => hash.toLowerCase() as typeof hash),
 })
 export type StreamCharter = z.infer<typeof StreamCharterSchema>
 

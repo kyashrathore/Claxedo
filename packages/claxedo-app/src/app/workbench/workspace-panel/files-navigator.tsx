@@ -136,6 +136,27 @@ export function WorkspaceFilesNavigator(props: {
     timer = setTimeout(() => setRefresh((value) => (value ?? 0) + 1), 250)
   })
 
+  // Reveal the active file (opened from a link / focus): expand its ancestor
+  // directories and scroll its row into view once rendered.
+  let treeScrollRef: HTMLDivElement | undefined
+  createEffect(() => {
+    const path = props.activePath
+    if (!path || !props.active || props.mode !== "files") return
+    if (!file.ready()) return
+    const segments = path.split("/").slice(0, -1)
+    let dir = ""
+    for (const segment of segments) {
+      dir = dir ? `${dir}/${segment}` : segment
+      file.tree.expand(dir)
+    }
+    const stopReveal = afterVisibleWork(() => {
+      treeScrollRef
+        ?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"], [aria-selected="true"]`)
+        ?.scrollIntoView({ block: "nearest" })
+    }, 120)
+    onCleanup(stopReveal)
+  })
+
   onCleanup(() => {
     if (timer) clearTimeout(timer)
     stop()
@@ -217,7 +238,7 @@ export function WorkspaceFilesNavigator(props: {
         </Show>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto">
+      <div class="min-h-0 flex-1 overflow-auto" ref={treeScrollRef}>
         {pendingFilesShell() ? (
           <div data-component="filetree" class="flex flex-col gap-0.5 p-1">
             <div data-file-tree-loading class="flex flex-col gap-0.5" aria-label="Loading files">

@@ -11,7 +11,7 @@ import {
   WorkGraphBrokerTokenHeader,
 } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
-import { buildTrustedConnectionContext } from "@claxedo/workgraph"
+import { buildMasterPrompt, charterClause } from "@claxedo/workgraph"
 import {
   createWorkGraphOperationalReporter,
   type WorkGraphOperationalReporter,
@@ -640,7 +640,8 @@ export function createHostedWorkGraphRuntime(
 }
 
 type HostedMasterClaim = Readonly<{
-  state: "settled" | "launch" | "monitor"
+  state: "settled" | "launch" | "monitor" | "deferred"
+  retryAfterMs?: number
   ownerSubject?: string
   stream?: {
     id: string
@@ -687,6 +688,11 @@ async function reconcileHostedMaster(input: Readonly<{
     now: input.now(),
   }) as HostedMasterClaim
   if (claim.state === "settled") return { settled: true, state: "hibernating" }
+  // A live task Attempt owns the shared Stream workspace — the master turn
+  // defers and the durable retry wake re-fires it after settlement.
+  if (claim.state === "deferred") {
+    return { settled: false, state: "deferred", retryAfterMs: claim.retryAfterMs ?? 30_000 }
+  }
   if (!claim.stream || !claim.ownerSubject || !claim.sessionId || !claim.turnId || !claim.trigger) {
     throw new Error("Hosted master claim is incomplete")
   }
@@ -812,7 +818,7 @@ async function reconcileHostedMaster(input: Readonly<{
         method: "POST",
         body: JSON.stringify({
           id: `msg_${claim.turnId}`,
-          prompt: { text: hostedMasterPrompt(claim, profile.connectionIds) },
+          prompt: { text: await hostedMasterPrompt(claim, profile.connectionIds) },
           delivery: "steer",
           resume: true,
         }),
@@ -877,28 +883,31 @@ function resolveHostedMasterProfile(claim: HostedMasterClaim) {
   throw new Error("Hosted master requires a fully resolved hosted execution profile")
 }
 
-function hostedMasterPrompt(claim: HostedMasterClaim, connectionIds: readonly string[]) {
-  const charter = claim.stream?.charter?.text || DEFAULT_STREAM_CHARTER_HINTS.join("\n")
+async function hostedMasterPrompt(claim: HostedMasterClaim, connectionIds: readonly string[]) {
   const mailbox = (claim.mailbox ?? []).filter((message) => {
     const value = message.provenance && typeof message.provenance === "object" ? message.provenance as Record<string, unknown> : undefined
     const actor = value?.actor && typeof value.actor === "object" ? value.actor as Record<string, unknown> : undefined
     return actor?.id !== claim.sessionId
   })
-  return [
-    `You are the long-lived master for Stream ${claim.stream?.id}: ${claim.stream?.title}.`,
-    "Charter:",
-    charter,
-    "Hard authority envelope: never approve agent-proposed work; never push, merge, or force-push a protected ref; externally visible changes require charter authority and durable receipts.",
-    "Duties: maintain the envelope merge queue, revalidate against its moving head, keep structured notes, create draft PRs by default, notify the owner within charter cadence, and escalate unresolved conflicts once.",
-    `Mailbox:\n${mailbox.length ? mailbox.map((message) => `- ${message.message}`).join("\n") : "- (empty)"}`,
-    `Recent terminal attempts:\n${claim.attempts?.length ? claim.attempts.map((attempt) => `- ${attempt.id} (${attempt.state}) task=${attempt.workItemId} result=${JSON.stringify(attempt.result ?? null)}`).join("\n") : "- (none)"}`,
-    buildTrustedConnectionContext(connectionIds),
-    "For each action, cite the charter clause and include working file/diff/PR receipt references in your status.",
-  ].filter((section): section is string => !!section).join("\n\n")
+  return buildMasterPrompt({
+    stream: { id: claim.stream?.id ?? "", title: claim.stream?.title ?? "" },
+    charter: await hostedMasterCharter(claim.stream?.charter),
+    mailbox,
+    attempts: (claim.attempts ?? []).map((attempt) => ({
+      id: attempt.id,
+      workItemId: attempt.workItemId,
+      state: attempt.state,
+      result: JSON.stringify(attempt.result ?? null),
+    })),
+    connectionIds,
+    // Hosted masters have no landing tool: the prompt must not assign a
+    // merge-queue duty they can only satisfy with ungated raw git.
+    capabilities: { landing: false },
+  })
 }
 
 async function hostedMasterCharter(charter: { text: string; hash: string } | undefined) {
-  if (charter) return { ...charter, clause: charter.text.split("\n").find((line) => line.trim())?.trim() || "Act within the Stream charter." }
+  if (charter) return { ...charter, clause: charterClause(charter.text) }
   const text = DEFAULT_STREAM_CHARTER_HINTS.join("\n")
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
   return {

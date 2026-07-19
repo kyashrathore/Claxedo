@@ -27,7 +27,11 @@ export { initializeWorkGraphSqliteSchema } from "./adapters/sqlite/schema";
 export { createSqliteWorkGraphArchivePort } from "./adapters/sqlite/archive";
 export { createSqliteWorkGraphActivityPorts } from "./adapters/sqlite/activity-store";
 export { createSqliteWorkGraphOwnerDeletionPort } from "./adapters/sqlite/owner-deletion";
-export { createSqliteIntakeStores } from "./adapters/sqlite/intake-store";
+export { createSqliteIntakeStores } from "./adapters/sqlite/intake-store"
+export {
+  assertNoSqliteWorkGraphOwnerDeletion,
+  SqliteWorkGraphOwnerDeletionInProgressError,
+} from "./adapters/sqlite/deletion-barrier";
 export { createSqliteWebhookIntakeStore } from "./adapters/sqlite/webhook-intake-store";
 export { createSqliteAttentionAcknowledgementStore } from "./adapters/sqlite/attention-acknowledgement-store";
 export { createSqliteSessionIntakePort } from "./adapters/sqlite/session-intake";

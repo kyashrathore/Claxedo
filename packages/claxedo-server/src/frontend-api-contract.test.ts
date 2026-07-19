@@ -341,7 +341,7 @@ describe("frontend API contract", () => {
     })
   })
 
-  test("serves Cursor SDK catalog when explicit SDK auth exists", async () => {
+  test("serves the stale Cursor SDK catalog fallback when the runtime cannot live-list", async () => {
     await agentConfigMod.saveUserConfig({ mcp: {}, auth: { "cursor-sdk": "cursor-sdk-test-key" } })
 
     const res = await createContractApp().request(
@@ -351,7 +351,7 @@ describe("frontend API contract", () => {
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
       source: "catalog",
-      stale: false,
+      stale: true,
       options: [{
         id: "model",
         currentValue: "auto",

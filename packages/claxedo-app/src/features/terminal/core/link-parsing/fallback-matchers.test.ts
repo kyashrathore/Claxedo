@@ -35,8 +35,13 @@ describe("detectFallbackLinks", () => {
 		it("detects --> src/main.rs:10:5", () => {
 			const result = detectFallbackLinks("   --> src/main.rs:10:5");
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("src/main.rs");
-			expect(result[0]?.line).toBeDefined();
+			expect(result[0]).toEqual({
+				link: "src/main.rs:10:5",
+				path: "src/main.rs",
+				line: 10,
+				col: 5,
+				index: 7,
+			});
 		});
 	});
 
@@ -80,15 +85,43 @@ describe("detectFallbackLinks", () => {
 		it("detects clang/gcc style paths", () => {
 			const result = detectFallbackLinks("/tmp/main.cpp:42:9: error: bad");
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("/tmp/main.cpp");
-			expect(result[0]?.line).toBeGreaterThan(0);
+			expect(result[0]).toEqual({
+				link: "/tmp/main.cpp:42:9",
+				path: "/tmp/main.cpp",
+				line: 42,
+				col: 9,
+				index: 0,
+			});
+		});
+
+		it("detects clang/gcc windows-drive paths with spaces", () => {
+			const result = detectFallbackLinks("C:\\foo/bar baz:339: error ...");
+			expect(result).toHaveLength(1);
+			expect(result[0]).toEqual({
+				link: "C:\\foo/bar baz:339",
+				path: "C:\\foo/bar baz",
+				line: 339,
+				col: undefined,
+				index: 0,
+			});
+		});
+
+		it("does not swallow message prefixes into clang/gcc paths", () => {
+			// Anchored matcher: a "warning: " prefix means no fallback link at all,
+			// never a link whose path starts with "warning: ".
+			expect(detectFallbackLinks("warning: /path/file.c:10:2: note")).toEqual([]);
 		});
 
 		it("detects go compiler format", () => {
 			const result = detectFallbackLinks("pkg/main.go:22:7: undefined: x");
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("main.go");
-			expect(result[0]?.line).toBeGreaterThan(0);
+			expect(result[0]).toEqual({
+				link: "pkg/main.go:22:7",
+				path: "pkg/main.go",
+				line: 22,
+				col: 7,
+				index: 0,
+			});
 		});
 
 		it("detects Java/Kotlin stack trace format", () => {
@@ -106,17 +139,35 @@ describe("detectFallbackLinks", () => {
 		});
 
 		it("detects Node.js stack trace format", () => {
-			const result = detectFallbackLinks("at Object.<anonymous> (/tmp/app.js:99:13)");
+			const line = "at Object.<anonymous> (/tmp/app.js:99:13)";
+			const result = detectFallbackLinks(line);
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("/tmp/app.js");
-			expect(result[0]?.line).toBeGreaterThan(0);
+			expect(result[0]).toEqual({
+				link: "/tmp/app.js:99:13",
+				path: "/tmp/app.js",
+				line: 99,
+				col: 13,
+				index: line.indexOf("/tmp/app.js"),
+			});
+		});
+
+		it("reports the capture-group index when the link text repeats inside the match", () => {
+			const line = "at A.java:12.run(A.java:12)";
+			const result = detectFallbackLinks(line);
+			expect(result).toHaveLength(1);
+			expect(result[0]?.index).toBe(line.lastIndexOf("A.java:12"));
 		});
 
 		it("detects eslint/ts style with dash separator", () => {
 			const result = detectFallbackLinks("/tmp/app.ts:3:4 - error TS1005: ';' expected");
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("/tmp/app.ts");
-			expect(result[0]?.line).toBeGreaterThan(0);
+			expect(result[0]).toEqual({
+				link: "/tmp/app.ts:3:4",
+				path: "/tmp/app.ts",
+				line: 3,
+				col: 4,
+				index: 0,
+			});
 		});
 
 		it("detects webpack/vite style", () => {
@@ -130,8 +181,33 @@ describe("detectFallbackLinks", () => {
 		it("detects ruby format", () => {
 			const result = detectFallbackLinks("from /tmp/main.rb:14:in `run'");
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("/tmp/main.rb");
-			expect(result[0]?.line).toBe(14);
+			expect(result[0]).toEqual({
+				link: "/tmp/main.rb:14",
+				path: "/tmp/main.rb",
+				line: 14,
+				col: undefined,
+				index: 5,
+			});
+		});
+
+		it("detects python paths with spaces", () => {
+			const line = '  File "/tmp/my dir/x.py", line 3';
+			const result = detectFallbackLinks(line);
+			expect(result).toHaveLength(1);
+			expect(result[0]).toEqual({
+				link: '"/tmp/my dir/x.py", line 3',
+				path: "/tmp/my dir/x.py",
+				line: 3,
+				col: undefined,
+				index: 7,
+			});
+		});
+
+		it("does not extend a python path across a later quoted string", () => {
+			const result = detectFallbackLinks('  File "/a.py", line 1, in "b"');
+			expect(result).toHaveLength(1);
+			expect(result[0]?.path).toBe("/a.py");
+			expect(result[0]?.line).toBe(1);
 		});
 
 		it("detects php format", () => {
@@ -144,8 +220,13 @@ describe("detectFallbackLinks", () => {
 		it("detects swift format", () => {
 			const result = detectFallbackLinks("/tmp/App.swift:11:2: error: oops");
 			expect(result).toHaveLength(1);
-			expect(result[0]?.path).toContain("/tmp/App.swift");
-			expect(result[0]?.line).toBeGreaterThan(0);
+			expect(result[0]).toEqual({
+				link: "/tmp/App.swift:11:2",
+				path: "/tmp/App.swift",
+				line: 11,
+				col: 2,
+				index: 0,
+			});
 		});
 
 		it("detects PowerShell prompt paths", () => {

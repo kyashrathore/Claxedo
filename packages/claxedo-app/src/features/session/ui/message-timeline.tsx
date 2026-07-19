@@ -111,6 +111,7 @@ import {
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
+import { timelineAnchorFileHref, timelineFileFocus, timelineFileTarget, resolveTimelinePath as resolveTimelineFilePath } from "./timeline-file-paths"
 
 installTimelineMermaid()
 
@@ -312,7 +313,7 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => Pr
                     <Accordion.Trigger>
                       <DiffHoverCard diff={diff}>
                       <div data-slot="session-turn-diff-trigger">
-                        <span data-slot="session-turn-diff-path">
+                        <span data-slot="session-turn-diff-path" data-path={diff.file}>
                           <Show when={diff.file.includes("/")}>
                             <span data-slot="session-turn-diff-directory">{`\u202A${getDirectory(diff.file)}\u202C`}</span>
                           </Show>
@@ -424,56 +425,56 @@ export function MessageTimeline(props: {
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
 
-  // Workspace-relative form (what the in-app file panel keys on) vs absolute (what the
-  // OS-level desktop actions need).
-  const relativeTimelinePath = (raw: string) => raw.trim().replace(/^@/, "").replace(/^\.\//, "")
-  const resolveTimelinePath = (raw: string) => {
-    const clean = relativeTimelinePath(raw)
-    return clean.startsWith("/") ? clean : `${sdk.directory.replace(/\/$/, "")}/${clean}`
-  }
+  // Path resolution shared with the terminal's file links (see
+  // timeline-file-paths.ts): normalizes/relativizes, parses `:line[:col]`,
+  // refuses `~`/traversal/out-of-workspace paths (which used to open blank tabs).
+  const fileFocus = (raw: string) => timelineFileFocus(raw, sdk.directory)
 
   // Open a file in the workspace side panel. This reuses the exact path the terminal's
   // file-path links already take (terminal-content.tsx `onFileLinkOpen`) rather than
   // hand-rolling tab/review-panel calls — and notably NOT `platform.openPath`, which is
   // desktop-only (undefined on web, so clicks silently did nothing) and hands the file to
-  // the OS instead of the panel. Same containment guard: refuse absolute paths that fall
-  // outside the workspace.
+  // the OS instead of the panel.
   const openFileInPanel = (raw: string) => {
-    const path = relativeTimelinePath(raw)
-    if (!path) return
-    const workspaceDir = sdk.directory.replace(/\/$/, "")
-    if (path.startsWith("/") && !path.startsWith(`${workspaceDir}/`) && path !== workspaceDir) return
+    const target = fileFocus(raw)
+    if (!target) return
+    // No `navigator: "files"` here: forcing the tree drawer open slid it OVER
+    // the file tab this click just opened.
     claxedoState.workspacePanel.open({
-      workspaceDir,
+      workspaceDir: sdk.directory.replace(/\/$/, ""),
       targetPaneId: paneId,
-      navigator: "files",
-      focus: { kind: "file", path, intent: "tab" },
+      focus: { kind: "file", path: target.path, intent: "tab", line: target.line, col: target.col },
     })
   }
 
   // Open `@path` / path-kind inline-code chips in assistant markdown (T16). Delegated so
   // it covers every rendered part without per-chip handlers.
   const handleTimelinePathClick = (event: MouseEvent) => {
+    if (event.defaultPrevented) return
     const target = event.target instanceof Element ? event.target : null
-    const code = target?.closest('[data-inline-code-kind="path"]')
-    if (!code) return
-    const raw = code.textContent?.trim()
+    // Don't hijack the click that ends a text selection.
+    const selection = typeof window !== "undefined" ? window.getSelection() : null
+    if (selection && !selection.isCollapsed) return
+    const anchor = target?.closest("a[href]")
+    if (anchor) {
+      // Workspace-file hrefs open in the side panel; web links keep their
+      // browser behavior (see timelineAnchorFileHref).
+      const raw = timelineAnchorFileHref(anchor)
+      if (!raw || !fileFocus(raw)) return
+      event.preventDefault()
+      openFileInPanel(raw)
+      return
+    }
+    const raw = target?.closest('[data-inline-code-kind="path"]')?.textContent?.trim()
     if (!raw) return
+    // Only claim the click when the chip resolves to an openable workspace path.
+    if (!fileFocus(raw)) return
     event.preventDefault()
     openFileInPanel(raw)
   }
 
   // File context menu (T11): right-click a file link/path → Open / Copy path / Reveal.
   const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; path: string } | undefined>()
-  const timelineFileTarget = (target: EventTarget | null): string | undefined => {
-    const el = target instanceof Element ? target : null
-    const node =
-      el?.closest('[data-inline-code-kind="path"]') ??
-      el?.closest('[data-slot="message-part-title-filename"]') ??
-      el?.closest('[data-slot="session-turn-diff-filename"]')
-    const text = node?.textContent?.trim()
-    return text || undefined
-  }
   const handleTimelineContextMenu = (event: MouseEvent) => {
     const raw = timelineFileTarget(event.target)
     if (!raw) return
@@ -1686,7 +1687,7 @@ export function MessageTimeline(props: {
                 type="button"
                 class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(resolveTimelinePath(menu().path))
+                  void navigator.clipboard?.writeText(resolveTimelineFilePath(menu().path, sdk.directory))
                   setContextMenu(undefined)
                 }}
               >
@@ -1697,7 +1698,7 @@ export function MessageTimeline(props: {
                   type="button"
                   class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
                   onClick={() => {
-                    void platform.showItemInFolder?.(resolveTimelinePath(menu().path))
+                    void platform.showItemInFolder?.(resolveTimelineFilePath(menu().path, sdk.directory))
                     setContextMenu(undefined)
                   }}
                 >

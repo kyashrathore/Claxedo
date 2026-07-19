@@ -11,7 +11,8 @@ import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/co
 import type { AgentConfigOptionRow, PromptInput } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { Log } from "../../log"
-import { requireSdkModelId } from "../../sdk-model-catalog"
+import { createLiveModelSource } from "../../live-model-source"
+import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
   errorMessage,
   extractTextFromParts,
@@ -119,6 +120,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private processError: string | null = null
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly codexHome: string
+  private readonly modelSource = createLiveModelSource({
+    harness: "codex",
+    fetchModels: (directory) => this.fetchModels(directory),
+  })
 
   constructor(
     private readonly host: SdkRuntimeDriverHost,
@@ -285,8 +290,42 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.process = null
   }
 
-  configOptions(_currentModel: string): AgentConfigOptionRow[] {
-    throw new Error("codex-app-server does not expose live model options")
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
+    return [modelConfigOption(await this.modelSource.models(directory), currentModel)]
+  }
+
+  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
+    return [modelConfigOption(this.modelSource.peek(), currentModel)]
+  }
+
+  /**
+   * `model/list` entries carry both a picker `id` and the wire `model` slug;
+   * `thread/start`/`turn/start` take the slug, so that's what the option id
+   * must be. Hidden models stay out of the picker, and duplicate slugs (several
+   * picker rows can share one) collapse to the first row.
+   */
+  private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
+    const proc = await this.ensureProcess(directory ?? process.cwd())
+    const models = new Map<string, SdkModelEntry>()
+    let cursor: string | undefined
+    do {
+      const result = record(await proc.request("model/list", cursor ? { cursor } : {})) ?? {}
+      const data = Array.isArray(result.data) ? result.data : []
+      for (const item of data) {
+        const row = record(item)
+        if (!row || row.hidden === true) continue
+        const id = text(row.model) ?? text(row.id)
+        if (!id || models.has(id)) continue
+        models.set(id, {
+          id,
+          name: text(row.displayName) ?? id,
+          ...(text(row.description) ? { description: text(row.description)! } : {}),
+          ...(row.isDefault === true ? { isDefault: true } : {}),
+        })
+      }
+      cursor = text(result.nextCursor)
+    } while (cursor)
+    return [...models.values()]
   }
 
   failInteractiveState(err: Error) {
@@ -712,7 +751,7 @@ function codexUserInput(parts: unknown[]) {
 function codexAppServerModel(model: string | undefined) {
   const value = text(model)
   if (!value || value === "default") return
-  return requireSdkModelId("codex", value)
+  return value
 }
 
 function codexTurnModel(input: PromptInput, fallback: string) {

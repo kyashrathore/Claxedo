@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import type Database from "better-sqlite3"
+import { assertNoSqliteWorkGraphOwnerDeletion } from "@claxedo/workgraph"
 import type { WorkGraphConnectionOperationResponse, WorkGraphContext } from "@claxedo/workgraph/contracts"
 
 type PullRequestResult = Extract<WorkGraphConnectionOperationResponse, { type: "open_pull_request" }>
@@ -19,6 +20,10 @@ export function createSqlitePullRequestEffects(database: Database.Database) {
       publicRepository: boolean
     }>) {
       return database.transaction(() => {
+        // An external effect must never be claimed while the owner-deletion
+        // barrier is active — the package-internal effect paths all assert
+        // this and the PR path is no exception.
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const now = Date.now()
         const row = database.prepare(`
           SELECT id, status, payload_json, attempt_count, claim_expires_at

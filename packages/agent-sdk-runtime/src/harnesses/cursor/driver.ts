@@ -10,7 +10,8 @@ import type {
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
-import { requireSdkModelId, sdkModelConfigOption } from "../../sdk-model-catalog"
+import { createLiveModelSource } from "../../live-model-source"
+import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
   extractTextFromParts,
   record,
@@ -37,6 +38,10 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private agents = new Map<string, CursorEntry>()
   private processError: string | null = null
+  private readonly modelSource = createLiveModelSource({
+    harness: "cursor",
+    fetchModels: () => this.fetchModels(),
+  })
 
   constructor(private readonly host: SdkRuntimeDriverHost) {}
 
@@ -152,8 +157,31 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     this.agents.clear()
   }
 
-  configOptions(_currentModel: string): AgentConfigOptionRow[] {
-    return [sdkModelConfigOption("cursor", _currentModel)]
+  async configOptions(currentModel: string, _directory?: string): Promise<AgentConfigOptionRow[]> {
+    return [modelConfigOption(await this.modelSource.models(), currentModel)]
+  }
+
+  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
+    return [modelConfigOption(this.modelSource.peek(), currentModel)]
+  }
+
+  /**
+   * `Cursor.models.list` is a cloud catalog call (needs the cursor-sdk API key,
+   * or CURSOR_API_KEY). "auto" is a selection mode rather than a catalog entry,
+   * so it's pinned ahead of the listed models to keep the default selectable.
+   */
+  private async fetchModels(): Promise<SdkModelEntry[]> {
+    const { Cursor } = await import("@cursor/sdk")
+    const listed = await Cursor.models.list(this.auth.cursor ? { apiKey: this.auth.cursor } : undefined)
+    const models: SdkModelEntry[] = listed.map((model) => ({
+      id: model.id,
+      name: model.displayName,
+      ...(model.description ? { description: model.description } : {}),
+    }))
+    if (models.length > 0 && !models.some((model) => model.id === "auto")) {
+      models.unshift({ id: "auto", name: "Auto", isDefault: true })
+    }
+    return models
   }
 
   private async ensureAgent(sessionId: string, agentSessionId: string, directory: string) {
@@ -204,5 +232,5 @@ function cursorMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
 function cursorSdkModel(model: string | undefined) {
   const value = text(model)
   if (!value || value === "default") return { id: "auto" }
-  return { id: requireSdkModelId("cursor", value) }
+  return { id: value }
 }

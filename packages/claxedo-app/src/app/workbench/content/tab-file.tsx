@@ -10,7 +10,7 @@
  * Rendered inside SDKProvider only; no legacy sync or FileProvider needed.
  */
 
-import { Match, Show, Switch, createEffect, createMemo, createSignal, on } from "solid-js"
+import { Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { useComments } from "@/platform/comments/provider"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/app/providers/file"
@@ -31,14 +31,20 @@ import type { LineComment } from "@/platform/comments/provider"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
-const [previewPaths, setPreviewPaths] = createSignal(new Set())
+// Markdown renders by default; this set holds files toggled to SOURCE view.
+const [sourcePaths, setSourcePaths] = createSignal(new Set())
 
 export function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown)$/i.test(path)
 }
 
+/** Whether a markdown file is toggled to SOURCE view (default is rendered). */
+export function markdownSourceView(path: string) {
+  return sourcePaths().has(path)
+}
+
 export function toggleMarkdownPreview(path: string) {
-  setPreviewPaths((prev) => {
+  setSourcePaths((prev) => {
     const next = new Set(prev)
     if (next.has(path)) next.delete(path)
     else next.add(path)
@@ -51,6 +57,10 @@ export type TabFileProps = {
   class?: string
   hideHeader?: boolean
   onCollaborate?: () => void
+  /** Line to select + reveal once content renders (from `file.ts:42` links). */
+  focusLine?: number
+  /** Bumped by the opener so re-clicking the same link re-reveals the line. */
+  focusNonce?: number
 }
 
 export function TabFile(props: TabFileProps) {
@@ -64,14 +74,35 @@ export function TabFile(props: TabFileProps) {
   const [loading, setLoading] = createSignal(true)
   const [openedComment, setOpenedComment] = createSignal<string | null>(null)
   const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
-  const [selected, setSelected] = createSignal<SelectedLineRange | null>(null)
+  // Selection = the user's manual line selection, or (until the user selects
+  // manually under the current focus nonce) the line a `file.ts:42` link
+  // focused. Derived rather than effect-written so link focus needs no
+  // state-writing effect.
+  const [manualSelected, setManualSelected] = createSignal<
+    { atNonce: number | undefined; range: SelectedLineRange | null } | undefined
+  >()
+  const focusSelection = (): SelectedLineRange | null =>
+    props.focusLine !== undefined && props.focusLine > 0
+      ? { start: props.focusLine, end: props.focusLine }
+      : null
+  const selected = createMemo<SelectedLineRange | null>(() => {
+    const manual = manualSelected()
+    if (manual && manual.atNonce === props.focusNonce) return manual.range
+    return focusSelection()
+  })
+  const setSelected = (range: SelectedLineRange | null) =>
+    setManualSelected({ atNonce: props.focusNonce, range })
   let loadSeq = 0
 
-  const loadFile = (path: string) => {
+  const loadFile = (path: string, opts?: { silent?: boolean }) => {
     if (!path) return
     const seq = ++loadSeq
-    setLoading(true)
-    setError(undefined)
+    // silent = watcher-driven refresh: swap content in place without flashing
+    // the loading state.
+    if (!opts?.silent) {
+      setLoading(true)
+      setError(undefined)
+    }
     sdk.client.file
       .read({ path })
       .then((res) => {
@@ -81,10 +112,33 @@ export function TabFile(props: TabFileProps) {
       })
       .catch((e: unknown) => {
         if (seq !== loadSeq) return
-        setError(e instanceof Error ? e.message : String(e))
+        if (!opts?.silent) setError(e instanceof Error ? e.message : String(e))
         setLoading(false)
       })
   }
+
+  // Keep the tab fresh while the file changes on disk (agent edits, git
+  // operations): reload on this file's watcher events only — a string compare
+  // per event plus a 150ms debounce, so a burst of writes costs one request
+  // and unrelated files cost nothing.
+  let watchTimer: ReturnType<typeof setTimeout> | undefined
+  const stopWatch = sdk.event.listen((event) => {
+    if (event.details.type !== "file.watcher.updated") return
+    const detail = event.details.properties as { file?: string } | undefined
+    const raw = detail?.file
+    if (!raw) return
+    const workspaceDir = sdk.directory.replace(/\/+$/, "")
+    let relative = raw.replaceAll("\\", "/")
+    if (workspaceDir && relative.startsWith(`${workspaceDir}/`)) relative = relative.slice(workspaceDir.length + 1)
+    relative = relative.replace(/^\/+/, "")
+    if (relative !== props.path.replace(/^\/+/, "")) return
+    if (watchTimer) clearTimeout(watchTimer)
+    watchTimer = setTimeout(() => loadFile(props.path, { silent: true }), 150)
+  })
+  onCleanup(() => {
+    if (watchTimer) clearTimeout(watchTimer)
+    stopWatch()
+  })
 
   const scheduleLoadFile = (path: string) => {
     const load = () => loadFile(path)
@@ -102,6 +156,44 @@ export function TabFile(props: TabFileProps) {
     ),
   )
 
+  // Reveal the focused line: the Code component marks rendered lines with
+  // [data-line="N"]. Two triggers, both DOM-only (selection is derived in
+  // `selected`): the File component's onRendered covers the mount path (the
+  // tab body mounts lazily, so a timed retry from the open click used to
+  // expire before any rows existed), and the effect covers re-clicking a link
+  // for an already-rendered tab.
+  let scrollRoot: HTMLDivElement | undefined
+  // The viewer periodically rebuilds its shadow content (annotations,
+  // highlight passes); mid-rebuild the content height collapses and the
+  // browser clamps the scroller back to 0. onRendered re-applies the reveal
+  // after each rebuild — but only within a short window of the focus change,
+  // so a link click reliably lands on its line without later rebuilds yanking
+  // the user back after they scroll away.
+  let focusFreshUntil = 0
+  const revealFocusLine = () => {
+    const line = props.focusLine
+    if (line === undefined || line <= 0 || !scrollRoot) return
+    if (typeof performance !== "undefined" && performance.now() > focusFreshUntil) return
+    // The viewer renders the code into a shadow root, so the line rows are
+    // invisible to a plain querySelector — find the shadow host first.
+    for (const host of scrollRoot.querySelectorAll("*")) {
+      const row = host.shadowRoot?.querySelector(`[data-line="${line}"]`)
+      if (row) {
+        row.scrollIntoView({ block: "center" })
+        return
+      }
+    }
+  }
+  createEffect(
+    on(
+      () => [props.focusLine, props.focusNonce] as const,
+      () => {
+        if (typeof performance !== "undefined") focusFreshUntil = performance.now() + 5000
+        revealFocusLine()
+      },
+    ),
+  )
+
   // Build FileContents for the Code component (name for syntax detection, contents, cacheKey)
   const file = createMemo(() => {
     const text = content()
@@ -114,7 +206,7 @@ export function TabFile(props: TabFileProps) {
   })
 
   const isMd = createMemo(() => isMarkdownPath(props.path))
-  const previewing = createMemo(() => isMd() && previewPaths().has(props.path))
+  const previewing = createMemo(() => isMd() && !sourcePaths().has(props.path))
   const fileComments = createMemo(() => comments.list(props.path))
   const commentedLines = createMemo(() => fileComments().map((comment) => comment.selection))
 
@@ -218,7 +310,22 @@ export function TabFile(props: TabFileProps) {
         </div>
       </Show>
 
-      <div class="flex-1 min-h-0 overflow-auto">
+      {/* With the header hidden the source/preview toggle lives in the shell
+          header next to the file name; only the Documents action floats here. */}
+      <Show when={props.hideHeader && isMd() && props.onCollaborate}>
+        <div class="absolute right-2 top-2 z-10 rounded-md border border-border-weak-base bg-background-stronger/90 p-0.5 backdrop-blur-sm">
+          <Tooltip value="Add to Documents">
+            <IconButton
+              icon="file-text"
+              variant="ghost"
+              size="small"
+              onClick={() => props.onCollaborate?.()}
+              aria-label="Add to Documents"
+            />
+          </Tooltip>
+        </div>
+      </Show>
+      <div class="flex-1 min-h-0 overflow-auto" ref={scrollRoot}>
         <Switch>
           <Match when={loading()}>
             <div class="flex items-center gap-2 px-4 py-6 text-text-weak">
@@ -236,25 +343,28 @@ export function TabFile(props: TabFileProps) {
               <>
                 {/* Code stays mounted (hidden via CSS) to avoid re-highlighting */}
                 <div class={previewing() ? "hidden" : undefined}>
-                  {(() => {
-                    const fileProps = {
-                      mode: "text",
-                      file: f(),
-                      overflow: "wrap",
-                      class: "select-text",
-                      enableLineSelection: true,
-                      enableGutterUtility: true,
-                      selectedLines: selected(),
-                      commentedLines: commentedLines(),
-                      annotations: commentAnnotations(),
-                      renderAnnotation,
-                      renderGutterUtility,
-                      onLineSelected: commentsUi.onLineSelected,
-                      onLineNumberSelectionEnd: commentsUi.onLineSelectionEnd,
-                      onLineSelectionEnd: commentsUi.onLineSelectionEnd,
-                    } satisfies TextFileProps<unknown>
-                    return <File {...fileProps} />
-                  })()}
+                  {/* Reactive JSX attributes, NOT a pre-built object: a static
+                      `fileProps` snapshot froze selectedLines/commentedLines at
+                      first render, so a line focus arriving after mount (link
+                      re-click) never reached the viewer. */}
+                  <File
+                    mode="text"
+                    file={f()}
+                    overflow="wrap"
+                    class="select-text"
+                    onRendered={revealFocusLine}
+                    enableLineSelection={true}
+                    enableGutterUtility={true}
+                    selectedLines={selected()}
+                    commentedLines={commentedLines()}
+                    annotations={commentAnnotations()}
+                    renderAnnotation={renderAnnotation}
+                    renderGutterUtility={renderGutterUtility}
+                    onLineSelected={commentsUi.onLineSelected}
+                    onLineNumberSelectionEnd={commentsUi.onLineSelectionEnd}
+                    onLineSelectionEnd={commentsUi.onLineSelectionEnd}
+                  />
+
                 </div>
                 {/* Markdown preview — lightweight, mounted on demand */}
                 <Show when={previewing()}>

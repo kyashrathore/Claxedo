@@ -13,6 +13,7 @@ import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runt
 import { SessionPaneScope, useClaxedoState, type ContentMeta, type PaneCtx } from "@/features/terminal/app-ports"
 import { shouldMountTerminalPane } from "./terminal-content-policy"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
+import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 
 const recoveryAlias = new Map<string, { id: string; at: number }>()
 const TERMINAL_ACTIVATION_DELAY_MS = 120
@@ -318,16 +319,23 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
             }}
             onSplitVertical={() => requestTerminalFitOnPaneChange()}
             onSplitHorizontal={() => requestTerminalFitOnPaneChange()}
-            onFileLinkOpen={(filePath) => {
+            onFileLinkOpen={(filePath, line, col) => {
               const workspaceDir = directory()
-              if (!filePath.startsWith("/") || filePath.startsWith(workspaceDir + "/") || filePath === workspaceDir) {
-                state.workspacePanel.open({
-                  workspaceDir,
-                  targetPaneId: props.ctx.paneId,
-                  navigator: "files",
-                  focus: { kind: "file", path: filePath, intent: "tab" },
-                })
-              }
+              const target = resolveWorkspaceFileFocus(filePath, workspaceDir)
+              if (!target) return
+              // No `navigator: "files"`: the tree drawer would slide over the
+              // file tab this click opens.
+              state.workspacePanel.open({
+                workspaceDir,
+                targetPaneId: props.ctx.paneId,
+                focus: {
+                  kind: "file",
+                  path: target.path,
+                  intent: "tab",
+                  line: line ?? target.line,
+                  col: col ?? target.col,
+                },
+              })
             }}
           />
         </div>

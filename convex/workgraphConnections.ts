@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { isMasterSessionId, MASTER_ATTEMPT_PREFIX, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { GenericMutationCtx } from "convex/server"
 import type { DataModel, Id } from "./_generated/dataModel"
 import { serviceMutation, serviceQuery } from "./model"
@@ -249,7 +250,7 @@ export const recordPullRequestReceipt = serviceMutation({
       args.orgId,
       args.ownerUserId,
       args.attemptId,
-      `ses_master_${args.streamId}`,
+      masterSessionId(args.streamId),
     )
     if ((!attempt || attempt.state !== "running" || attempt.stream_id !== args.streamId) && !master) {
       throw new Error("Pull request receipt requires an active WorkGraph execution")
@@ -299,7 +300,7 @@ export const claimPullRequestEffect = serviceMutation({
       args.orgId,
       args.ownerUserId,
       args.attemptId,
-      `ses_master_${args.streamId}`,
+      masterSessionId(args.streamId),
     )
     if ((!attempt || attempt.state !== "running" || attempt.stream_id !== args.streamId) && !master) {
       throw new Error("Pull request effect requires an active WorkGraph execution")
@@ -519,17 +520,22 @@ export const authorizePullRequest = serviceMutation({
       .unique()
     if (!stream) throw new Error("Pull request Stream is unavailable")
     if (stream.public_pr_confirmed_at !== undefined) return { allowed: true as const }
-    const sessionId = `ses_master_${stream.id}`
+    const sessionId = masterSessionId(stream.id)
     if (args.attemptId !== `master_${stream.id}` || stream.master_status?.sessionId !== sessionId) {
       throw new Error("Only the Stream master can request public PR confirmation")
     }
+    // Idempotent-by-design: an already-pending confirmation is a success
+    // no-op inside the command, so every call gets a fresh operation id.
+    // Any command failure denies — an unconfirmed public PR never proceeds
+    // on an error path.
+    const operationId = `public_pr_confirmation_${stream.id}_${crypto.randomUUID()}`
     const result = await applyWorkGraphCommand(ctx, {
       organizationId: String(args.orgId),
       ownerUserId: String(args.ownerUserId),
       ownerSubject: String(args.ownerUserId),
       actor: { type: "agent", id: sessionId },
-      requestId: `public_pr_confirmation_${stream.id}`,
-      operationId: `public_pr_confirmation_${stream.id}`,
+      requestId: operationId,
+      operationId,
       command: {
         version: 1,
         type: "request_public_pr_confirmation",
@@ -539,7 +545,9 @@ export const authorizePullRequest = serviceMutation({
         title: args.title,
       },
     })
-    if (!result.ok) throw new Error(result.error.message)
+    if (!result.ok) {
+      console.error("[convex] WARN public PR confirmation request failed:", result.error.message)
+    }
     return { allowed: false as const }
   },
 })
@@ -591,9 +599,9 @@ function ownedAttempt(ctx: any, orgId: string, ownerUserId: string, attemptId: s
 }
 
 async function ownedMasterStream(ctx: any, orgId: string, ownerUserId: string, attemptId: string, sessionId: string) {
-  if (!attemptId.startsWith("master_") || !sessionId.startsWith("ses_master_")) return
+  if (!attemptId.startsWith(MASTER_ATTEMPT_PREFIX) || !isMasterSessionId(sessionId)) return
   const streamId = attemptId.slice("master_".length)
-  if (sessionId !== `ses_master_${streamId}`) return
+  if (sessionId !== masterSessionId(streamId)) return
   const stream = await ctx.db.query("workgraph_streams")
     .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", streamId))
     .unique()

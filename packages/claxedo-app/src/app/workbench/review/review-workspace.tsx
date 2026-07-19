@@ -127,6 +127,7 @@ export type ReviewWorkspaceProps = {
   focusPath?: string
   focusVersion?: number
   focusFileIntent?: "tab" | "review"
+  focusLine?: number
   focusProcessId?: string
   focusProcessVersion?: number
   focusContextSessionId?: string
@@ -190,7 +191,18 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     setStore("activeTabId", CONTEXT_TAB_ID)
   }
 
-  const openFileTab = (path: string) => {
+  // Line focus for file tabs opened from links (`file.ts:42`) derives straight
+  // from the panel focus props below — an intermediate per-tab signal went
+  // stale for tabs restored from a panel snapshot (the signal was only set by
+  // openFileTab, which a restored tab never went through).
+  const fileTabFocusLine = (tabId: string) => {
+    const path = props.focusPath
+    if (!path || props.focusFileIntent === "review") return undefined
+    if (file.tab(path) !== tabId) return undefined
+    return props.focusLine
+  }
+
+  const openFileTab = (path: string, _line?: number) => {
     const id = file.tab(path)
     const next = openFileWorkspaceTab({ tabs: store.tabs, tabId: id })
     if (next.added) {
@@ -329,7 +341,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         setStore("activeTabId", REVIEW_TAB_ID)
         return
       }
-      openFileTab(path)
+      openFileTab(path, props.focusLine)
     },
   ))
 
@@ -526,6 +538,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           <TabFile
             path={file.pathFromTab(tab.tabId) ?? tab.tabId}
             class="h-full"
+            hideHeader
+            focusLine={fileTabFocusLine(tab.tabId)}
+            focusNonce={props.focusVersion}
             onCollaborate={() => void collaborateWithMarkdown(file.pathFromTab(tab.tabId) ?? tab.tabId)}
           />
         )

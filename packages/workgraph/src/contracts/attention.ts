@@ -159,6 +159,9 @@ const MasterEscalationAttentionItemSchema = z.strictObject({
   kind: z.literal("master_escalation"),
   streamId: StreamIDSchema,
   sessionId: text.optional(),
+  /** Typed discriminant for the escalation's resolution affordance. Surfaces
+   *  dispatch on this — never on the prose of `reason`. */
+  category: z.enum(["public_pr_confirmation", "failure_halt"]).optional(),
   reason: text,
   evidenceIds: z.array(text).max(100).default([]),
   receiptRefs: z.array(text).max(100).default([]),

@@ -456,6 +456,9 @@ export default defineSchema({
     charter: v.optional(v.object({ text: v.string(), hash: v.string() })),
     master_status: v.optional(v.object({
       state: v.string(),
+      /** Typed escalation discriminant ('public_pr_confirmation' | 'failure_halt') —
+       *  surfaces and resolvers dispatch on this, never on message prose. */
+      escalation: v.optional(v.string()),
       sessionId: v.optional(v.string()),
       turnId: v.optional(v.string()),
       historyAfter: v.optional(v.number()),

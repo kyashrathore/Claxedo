@@ -267,7 +267,9 @@ describe("UrlLinkProvider", () => {
 
 			expect(links[0].range.start.x).toBe(1);
 			expect(links[0].range.start.y).toBe(1);
-			expect(links[0].range.end.x).toBe(17);
+			// xterm range ends are inclusive: "y/long/path/here" occupies columns
+			// 1-16 of row 2, so the end cell is column 16 (not one past it).
+			expect(links[0].range.end.x).toBe(16);
 			expect(links[0].range.end.y).toBe(2);
 		});
 	});
@@ -320,6 +322,52 @@ describe("UrlLinkProvider", () => {
 
 			expect(links.length).toBe(1);
 			expect(links[0].text).toBe("https://example.com/very/long/url");
+		});
+
+		it("should produce the same full URL no matter which wrapped row is scanned", async () => {
+			// Regression: stitching only prev+current+next meant scanning row 1
+			// yielded a truncated URL and row 3 no link at all.
+			const terminal = createMockTerminal([
+				{ text: "https://exa" },
+				{ text: "mple.com/ve", isWrapped: true },
+				{ text: "ry/long/url", isWrapped: true },
+			]);
+			const onOpen = mock();
+			const provider = new UrlLinkProvider(terminal, onOpen);
+
+			for (const row of [1, 2, 3]) {
+				const links = await getLinks(provider, row);
+				expect(links.length).toBe(1);
+				expect(links[0].text).toBe("https://example.com/very/long/url");
+				expect(links[0].range.start).toEqual({ x: 1, y: 1 });
+				expect(links[0].range.end).toEqual({ x: 11, y: 3 });
+			}
+		});
+	});
+
+	describe("IPv6 URLs", () => {
+		it("should detect bracketed IPv6 hosts with port and path", async () => {
+			const terminal = createMockTerminal([
+				{ text: "listening on http://[::1]:8080/health now" },
+			]);
+			const onOpen = mock();
+			const provider = new UrlLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(1);
+			expect(links[0].text).toBe("http://[::1]:8080/health");
+		});
+
+		it("should detect a bare bracketed IPv6 host", async () => {
+			const terminal = createMockTerminal([{ text: "try http://[::1]" }]);
+			const onOpen = mock();
+			const provider = new UrlLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(1);
+			expect(links[0].text).toBe("http://[::1]");
 		});
 	});
 

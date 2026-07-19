@@ -11,23 +11,46 @@ const response = z.object({
   draft: z.boolean().optional(),
 }).passthrough()
 
+const repository = z.object({ private: z.boolean() }).passthrough()
+
 export function createGitHubCodeHostConnector(input: Readonly<{
   baseUrl?: string
   fetch?: typeof globalThis.fetch
 }> = {}): CodeHostConnector {
   const baseUrl = (input.baseUrl ?? "https://api.github.com").replace(/\/$/, "")
   const request = input.fetch ?? globalThis.fetch
+  const headers = (authorization: { tokenType?: string; token: string }, extra: Record<string, string> = {}) => ({
+    accept: "application/vnd.github+json",
+    authorization: `${authorization.tokenType === "basic" ? "Basic" : "Bearer"} ${authorization.token}`,
+    ...extra,
+  })
+  // Transport and parse failures surface as the typed provider errors every
+  // caller maps (503 = retryable transport, 502 = malformed body) — a raw
+  // TypeError/ZodError would be misclassified as a hard failure and burn the
+  // effect ledger's retry budget.
+  const send = async (url: string, init?: Parameters<typeof request>[1]) => {
+    try {
+      return await request(url, init)
+    } catch {
+      throw new CodeHostProviderError("github", 503)
+    }
+  }
+  const parse = async <Value>(result: Response, schema: z.ZodType<Value>): Promise<Value> => {
+    try {
+      return schema.parse(await result.json())
+    } catch {
+      throw new CodeHostProviderError("github", 502)
+    }
+  }
   return {
     provider: "github",
     async openPullRequest(authorization, operation) {
-      const result = await request(`${baseUrl}/repos/${operation.repository}/pulls`, {
+      const result = await send(`${baseUrl}/repos/${operation.repository}/pulls`, {
         method: "POST",
-        headers: {
-          accept: "application/vnd.github+json",
+        headers: headers(authorization, {
           "content-type": "application/json",
-          authorization: `${authorization.tokenType === "basic" ? "Basic" : "Bearer"} ${authorization.token}`,
           "idempotency-key": operation.idempotencyKey,
-        },
+        }),
         body: JSON.stringify({
           head: operation.head,
           base: operation.base,
@@ -38,8 +61,14 @@ export function createGitHubCodeHostConnector(input: Readonly<{
       })
       if (result.status === 401 || result.status === 403) throw new CodeHostUnauthorizedError("github authorization failed")
       if (!result.ok) throw new CodeHostProviderError("github", result.status)
-      const parsed = response.parse(await result.json())
+      const parsed = await parse(result, response)
       return { pullRequestId: String(parsed.id), url: parsed.html_url, draft: parsed.draft ?? operation.draft }
+    },
+    async repositoryVisibility(authorization, name) {
+      const result = await send(`${baseUrl}/repos/${name}`, { headers: headers(authorization) })
+      if (result.status === 401 || result.status === 403) throw new CodeHostUnauthorizedError("github authorization failed")
+      if (!result.ok) throw new CodeHostProviderError("github", result.status)
+      return (await parse(result, repository)).private ? "private" : "public"
     },
   }
 }

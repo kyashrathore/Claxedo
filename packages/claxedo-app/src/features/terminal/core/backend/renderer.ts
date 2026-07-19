@@ -254,7 +254,13 @@ export function createTerminalInstance(
   options: {
     initialTheme?: ITheme | null
     fontFamily?: string
-    onFileLinkClick?: (path: string, line?: number, col?: number) => void
+    onFileLinkClick?: (
+      path: string,
+      line?: number,
+      col?: number,
+      lineEnd?: number,
+      colEnd?: number,
+    ) => void
     onUrlClick?: (event: MouseEvent, url: string) => void
   } = {},
 ): CreateTerminalResult {
@@ -297,8 +303,8 @@ export function createTerminalInstance(
   xterm.registerLinkProvider(urlProvider)
 
   if (options.onFileLinkClick) {
-    const fileProvider = new FilePathLinkProvider(xterm, (_event, path, line, col) => {
-      options.onFileLinkClick!(path, line, col)
+    const fileProvider = new FilePathLinkProvider(xterm, (_event, path, line, col, lineEnd, colEnd) => {
+      options.onFileLinkClick!(path, line, col, lineEnd, colEnd)
     })
     xterm.registerLinkProvider(fileProvider)
   }

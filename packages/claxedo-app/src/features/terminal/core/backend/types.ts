@@ -8,7 +8,13 @@ export interface TerminalBackendOptions {
   image?: "path" | "paste"
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
-  onFileLinkClick?: (path: string, line?: number, col?: number) => void
+  onFileLinkClick?: (
+    path: string,
+    line?: number,
+    col?: number,
+    lineEnd?: number,
+    colEnd?: number,
+  ) => void
   onUrlClick?: (event: MouseEvent, url: string) => void
 }
 

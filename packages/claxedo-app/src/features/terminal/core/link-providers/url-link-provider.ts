@@ -33,7 +33,11 @@ function trimUnbalancedParens(url: string): string {
 }
 
 export class UrlLinkProvider extends MultiLineLinkProvider {
-	private readonly URL_PATTERN = /\bhttps?:\/\/[^\s<>[\]'"]+/g;
+	// The optional leading [...] group accepts bracketed IPv6 hosts
+	// (http://[::1]:8080/health) — the general char class must keep excluding
+	// []/'"<> as link terminators, which otherwise rejected IPv6 URLs entirely.
+	private readonly URL_PATTERN =
+		/\bhttps?:\/\/(?:\[[0-9a-fA-F:.%]+\][^\s<>[\]'"]*|[^\s<>[\]'"]+)/g;
 
 	constructor(
 		terminal: LinkProviderTerminal,

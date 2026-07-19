@@ -101,9 +101,26 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
     }
     const pullRequest = request.operation.type === "open_pull_request" ? request.operation : undefined
     const workerId = pullRequest ? `connection-pr-${crypto.randomUUID()}` : undefined
+    const broker = createConnectionOperationBroker({
+      bindings: { resolve: async () => binding },
+      connections: createHostedWorkGraphConnectionsPort({
+        resolveMetadata: async () => [{ ...resolved.connection, ownerUserId: resolved.context.ownerUserId }],
+        credentials: (orgId) => hostedOrgCredentials(orgId, input.env),
+      }),
+    })
+    const brokerPrincipal = { ownerUserId: principal.ownerUserId, ownerPartition: `org:${principal.orgId}` }
     let pullRequestClaim: { state: "claimed"; outboxId: string } | { state: "completed"; result: unknown } | { state: "busy" } | undefined
     if (pullRequest) {
       if (!executor.mutation) throw new Error("Pull request authorization is unavailable")
+      // The confirmation gate keys on provider-verified visibility, never the
+      // agent-supplied flag. Drafts skip the lookup; lookup failure reads as
+      // public, which forces confirmation.
+      const verifiedPublicRepository = pullRequest.draft
+        ? false
+        : await broker
+            .repositoryVisibility(request.identity as never, pullRequest.repository, brokerPrincipal)
+            .then((visibility) => visibility === "public")
+            .catch(() => true)
       const authorization = await executor.mutation(api.workgraphConnections.authorizePullRequest, {
         service_token: serviceToken,
         ownerUserId: principal.ownerUserId,
@@ -113,7 +130,7 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
         repository: pullRequest.repository,
         title: pullRequest.title,
         draft: pullRequest.draft,
-        publicRepository: pullRequest.publicRepository,
+        publicRepository: verifiedPublicRepository,
       }) as { allowed?: boolean }
       if (!authorization.allowed) {
         throw new ConnectionOperationDeniedError("The first non-draft public pull request requires owner confirmation")
@@ -132,7 +149,7 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
         title: pullRequest.title,
         ...(pullRequest.body === undefined ? {} : { body: pullRequest.body }),
         draft: pullRequest.draft,
-        publicRepository: pullRequest.publicRepository,
+        publicRepository: verifiedPublicRepository,
         now: Date.now(),
       }) as typeof pullRequestClaim
       if (pullRequestClaim?.state === "completed") {
@@ -140,16 +157,7 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
       }
       if (pullRequestClaim?.state !== "claimed") throw new PullRequestEffectBusyError()
     }
-    const result = await createConnectionOperationBroker({
-      bindings: { resolve: async () => binding },
-      connections: createHostedWorkGraphConnectionsPort({
-        resolveMetadata: async () => [{ ...resolved.connection, ownerUserId: resolved.context.ownerUserId }],
-        credentials: (orgId) => hostedOrgCredentials(orgId, input.env),
-      }),
-    }).execute(request.identity as never, request.operation, {
-      ownerUserId: principal.ownerUserId,
-      ownerPartition: `org:${principal.orgId}`,
-    }).catch(async (error) => {
+    const result = await broker.execute(request.identity as never, request.operation, brokerPrincipal).catch(async (error) => {
       if (pullRequestClaim?.state === "claimed" && executor.mutation && workerId) {
         await executor.mutation(api.workgraphConnections.failPullRequestEffect, {
           service_token: serviceToken,

@@ -876,7 +876,7 @@ describe("multi-agent integration", () => {
     expect(body.error?.message).not.toContain("codex-app-server")
   })
 
-  test("GET /runner/options uses catalog for SDK runners and no static placeholder ACP options", async () => {
+  test("GET /runner/options live-lists SDK runners through the runtime and serves no static placeholder ACP options", async () => {
     const ws = await workspace("options-placeholder-models")
     const byRunner = await Promise.all(["codex-acp", "cursor-acp"].map(async (type) => {
       const res = await fetch(
@@ -898,10 +898,12 @@ describe("multi-agent integration", () => {
       `${base()}/api/claxedo/agent-config/harness/options?directory=${encodeURIComponent(ws.directory)}&type=codex-app-server`,
     )
     expect(sdk.status).toBe(200)
-    expect(await sdk.json()).toMatchObject({
-      source: "catalog",
-      stale: false,
-    })
+    // The runtime live-lists SDK runner models ("harness"); if it cannot answer
+    // at all, the server serves its static catalog fallback marked stale.
+    const sdkBody = await sdk.json()
+    expect(["harness", "catalog"]).toContain(sdkBody.source)
+    if (sdkBody.source === "catalog") expect(sdkBody.stale).toBe(true)
+    expect(sdkBody.options.length).toBeGreaterThan(0)
   })
 
   test("GET /runner/options only returns live ACP options or an unavailable error", async () => {

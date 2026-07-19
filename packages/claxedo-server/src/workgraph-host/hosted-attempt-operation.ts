@@ -5,12 +5,14 @@ import { z } from "zod"
 import { verifyRuntimeAccessToken, WorkspaceRelayAuthError, type RelayKey } from "@claxedo/workspace-relay"
 import {
   CommandResultSchema,
+  masterAttemptId,
+  masterSessionId,
   WorkGraphAttemptOperationRequestSchema,
   type CommandResult,
   type WorkGraphAttemptOperationRequest,
 } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
-import { HostedTranscriptRetentionError } from "./hosted-runtime"
+import { HostedTranscriptRetentionError, workGraphWorkspaceId } from "./hosted-runtime"
 
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as { workgraphCommands: { executeForService: Mutation; readStreamVersionForService: Mutation } }
@@ -61,6 +63,11 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
     if (request.operation.type === "notify_owner" && !input.notifyOwner) {
       throw new Error("Hosted owner channel notification is unavailable")
     }
+    // Master identity is validated BEFORE any externally-visible side effect:
+    // a rejected request must never have already delivered a notification.
+    const masterStreamId = request.operation.type === "update_stream_notes" || request.operation.type === "notify_owner"
+      ? await requireMasterIdentity(principal, request)
+      : undefined
     const notification = request.operation.type === "notify_owner"
       ? await input.notifyOwner!({
           ...principal,
@@ -108,8 +115,8 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
               ? {
                 version: 1,
                 type: "update_stream_notes",
-                streamId: requireMasterStream(request),
-                expectedVersion: await readStreamVersion(executor, serviceToken, principal, request),
+                streamId: masterStreamId!,
+                expectedVersion: await readStreamVersion(executor, serviceToken, principal, masterStreamId!),
                 status: request.operation.status,
                 learnings: request.operation.learnings,
                 externalReferences: request.operation.externalReferences,
@@ -117,7 +124,7 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
               : {
                   version: 1,
                   type: "record_evidence",
-                  subject: { type: "stream", streamId: requireMasterStream(request) },
+                  subject: { type: "stream", streamId: masterStreamId! },
                   evidence: {
                     kind: "integration",
                     summary: `Notified the Stream owner through ${notification!.channel}`,
@@ -136,10 +143,25 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
   }
 }
 
-function requireMasterStream(request: WorkGraphAttemptOperationRequest) {
+/** Master identity must be bound to an authenticated fact, not merely
+ *  self-consistent strings. The runtime access token proves the caller's
+ *  workspaceId; the hosted master for a Stream lives in the deterministic
+ *  per-stream workspace, so the claimed identity must resolve to exactly that
+ *  workspace. Residual risk until per-principal runtime tokens land (plan
+ *  2026-07-18-005 "Decisions required": master git identity): worker Attempts
+ *  of the SAME Stream share this workspace and could still claim its master
+ *  identity — org-wide forgery is closed, same-stream is not. */
+async function requireMasterIdentity(
+  principal: Readonly<{ ownerUserId: string; orgId: string }>,
+  request: WorkGraphAttemptOperationRequest,
+) {
   const streamId = request.identity.streamId
-  if (!streamId || request.identity.sessionId !== `ses_master_${streamId}` || request.identity.attemptId !== `master_${streamId}`) {
+  if (!streamId || request.identity.sessionId !== masterSessionId(streamId) || request.identity.attemptId !== masterAttemptId(streamId)) {
     throw new Error("Master operation requires an exact hosted master identity")
+  }
+  const masterWorkspaceId = await workGraphWorkspaceId(principal.orgId, principal.ownerUserId, streamId)
+  if (request.identity.workspaceId !== masterWorkspaceId) {
+    throw new Error("Master operation is not bound to the Stream master workspace")
   }
   return streamId
 }
@@ -148,9 +170,8 @@ async function readStreamVersion(
   executor: Executor,
   serviceToken: string,
   principal: Readonly<{ ownerUserId: string; orgId: string }>,
-  request: WorkGraphAttemptOperationRequest,
+  streamId: string,
 ) {
-  const streamId = requireMasterStream(request)
   const value = await executor.mutation(api.workgraphCommands.readStreamVersionForService, {
     service_token: serviceToken,
     organization_id: principal.orgId,
