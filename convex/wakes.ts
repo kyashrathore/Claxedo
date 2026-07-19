@@ -183,7 +183,23 @@ export async function createLaneWakeIfIdle(
   // scheduled wake can silently swallow a Task settlement that is due now.
   const existing = pending.find((doc) =>
     doc.kind === wake.kind && (wake.schedule == null ? doc.schedule == null : doc.schedule === wake.schedule))
-  if (existing) return { wakeId: existing.id, created: false }
+  if (existing) {
+    // Coalescing must never DELAY the incoming trigger. A sink-scheduled retry
+    // wake (e.g. a launch backoff 1-30s out) holds the lane as pending; a new
+    // command's immediate settle nudge used to be swallowed here, so its
+    // control effect waited for the retry timer or the sweep instead of
+    // settling sub-second (staging smoke: bare-Stream delete blew its <20s
+    // SLA the moment launches started sharing the tenant lane). Pull the
+    // pending wake's timer earlier so the lane fires at the more urgent time.
+    if (
+      typeof wake.fireAt === "number" &&
+      typeof existing.fire_at === "number" &&
+      wake.fireAt < existing.fire_at
+    ) {
+      await ctx.db.patch(existing._id, { fire_at: wake.fireAt })
+    }
+    return { wakeId: existing.id, created: false }
+  }
   const result = await createWakeInTx(ctx, wake)
   return { wakeId: result.wakeId, created: true }
 }

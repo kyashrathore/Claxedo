@@ -11,6 +11,8 @@ import { claimControlEffects, claimLaunches, claimMasterTurn, completeControlEff
 import { exportWorkGraphArchive as exportTenantWorkGraphArchive, restoreWorkGraphArchive as restoreTenantWorkGraphArchive } from "../../../../convex/workgraphArchive"
 import { initializeAttentionProjection as initializeTenantAttentionProjection, syncAttentionRecord, syncCandidateTransition, syncConnectionAttention } from "../../../../convex/workgraphAttention"
 import { backfillCandidateAttention } from "../../../../convex/migrations"
+import { nudgeLaneWake } from "../../../../convex/wakes"
+import { workGraphSettleWake } from "../wakes-host/hosted-wakes"
 import { authorizePullRequest, claimPullRequestEffect, completePullRequestEffect } from "../../../../convex/workgraphConnections"
 import {
   CONVEX_WORKGRAPH_SUPPORTED_COMMANDS,
@@ -106,6 +108,77 @@ describe("Convex WorkGraph store", () => {
         expect.objectContaining({ schedule: "daily@06:00Z" }),
         expect.objectContaining({ schedule: undefined, intent_json: expect.stringContaining('"trigger":"mailbox"') }),
       ]))
+  })
+
+  test("an immediate settle nudge pulls a pending future lane retry wake earlier instead of being swallowed", async () => {
+    // Regression (staging smoke, 2026-07-19 19:32 run): once the actor fix let
+    // launches actually admit, the settle sink parked a RETRY wake (launch
+    // backoff, fireAt up to 30s out) on the tenant lane. The settlement
+    // dispatcher's immediate nudge for the next command (bare-Stream
+    // delete_stream) was then coalesced away by createLaneWakeIfIdle, so the
+    // delete's control effect waited for the retry timer and blew the smoke's
+    // <20000ms no-manual-reconciliation SLA (settled only by +98s cleanup).
+    vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "service-secret")
+    const harness = new ConvexHarness(["owner_a"])
+    const now = Date.now()
+    const shape = workGraphSettleWake({ organizationId: testOrganizationId, ownerUserId: "owner_a" }, now)
+    await harness.insert("wakes", {
+      id: "wake_launch_retry",
+      workspace_id: shape.workspaceId,
+      trigger_type: "at",
+      kind: shape.kind,
+      serial_key: shape.serialKey,
+      intent_json: JSON.stringify(shape.intent),
+      state: "pending",
+      depth: 0,
+      created_by: "wake-settlement-dispatcher",
+      created_at: now - 5_000,
+      fire_at: now + 30_000,
+      idempotency_key: `settle:${shape.serialKey}:${now + 30_000}`,
+      attempts: 0,
+    })
+
+    const dispatcherArgs = (id: string, fireAt: number) => ({
+      service_token: "service-secret",
+      id,
+      sessionId: null,
+      workspaceId: shape.workspaceId,
+      triggerType: "at",
+      kind: shape.kind,
+      serialKey: shape.serialKey,
+      intentJson: JSON.stringify(shape.intent),
+      resultJson: null,
+      state: "pending",
+      expiresAt: null,
+      depth: 0,
+      createdBy: "wake-settlement-dispatcher",
+      createdAt: fireAt,
+      firedAt: null,
+      fireAt,
+      schedule: null,
+      eventKey: null,
+      token: null,
+      prompt: null,
+      resolvedBy: null,
+      idempotencyKey: null,
+      leaseUntil: null,
+      attempts: 0,
+    })
+
+    // The next command's immediate nudge coalesces into the pending wake but
+    // MUST make the lane due now — never wait out the retry backoff.
+    await expect(handler(nudgeLaneWake)(harness, dispatcherArgs("wake_command_nudge", now)))
+      .resolves.toMatchObject({ wakeId: "wake_launch_retry", created: false })
+    expect(harness.rowsFor("wakes").map((row) => ({ id: row.id, fire_at: row.fire_at }))).toEqual([
+      { id: "wake_launch_retry", fire_at: now },
+    ])
+
+    // A LATER nudge never pushes an already-due wake back out.
+    await expect(handler(nudgeLaneWake)(harness, dispatcherArgs("wake_late_nudge", now + 60_000)))
+      .resolves.toMatchObject({ wakeId: "wake_launch_retry", created: false })
+    expect(harness.rowsFor("wakes").map((row) => ({ id: row.id, fire_at: row.fire_at }))).toEqual([
+      { id: "wake_launch_retry", fire_at: now },
+    ])
   })
 
   test("persists structured master notes and preserves external-source trust through a second revision", async () => {
