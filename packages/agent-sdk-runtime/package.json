@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-sdk-runtime",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "type": "module",
   "description": "AgentRuntime facade over coding-agent harnesses (Claude, Codex, Cursor, OpenCode, Pi): sessions, turns, SSE session routes, and pluggable stores",
   "license": "MIT",
