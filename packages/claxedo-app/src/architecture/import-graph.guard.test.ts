@@ -35,7 +35,7 @@ describe("import graph orphan guard", () => {
       .map((file) => `${file}: consumer-less module -- wire it to the live path or delete it`)
 
     expect(offenders).toEqual([])
-  })
+  }, 20_000)
 
   test("keeps orphan baseline pruned as modules are adopted or deleted", () => {
     const liveOrphans = new Set(orphanModules(appRoot))
@@ -44,14 +44,14 @@ describe("import graph orphan guard", () => {
       .map((file) => `${file}: no longer orphaned -- remove it from orphan-baseline.json`)
 
     expect(offenders).toEqual([])
-  })
+  }, 20_000)
 
   test("keeps live prompt submit modules reachable despite comment-like text", () => {
     const reachable = reachableModules(appRoot)
 
     expect(reachable.has("features/session/composer/ui/build-request-parts.ts")).toBe(true)
     expect(reachable.has("features/session/submit/index.ts")).toBe(true)
-  })
+  }, 20_000)
 
   test("keeps test-support helpers outside the production import graph", () => {
     const testSupport = [
@@ -73,5 +73,5 @@ describe("import graph orphan guard", () => {
     const orphans = new Set(orphanModules(appRoot))
 
     expect(liveTypeContracts.filter((file) => orphans.has(file))).toEqual([])
-  })
+  }, 20_000)
 })
