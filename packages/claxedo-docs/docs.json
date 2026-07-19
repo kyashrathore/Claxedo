@@ -3,9 +3,27 @@
   "theme": "mint",
   "name": "Claxedo",
   "colors": {
-    "primary": "#d97706",
-    "light": "#facc15",
-    "dark": "#b45309"
+    "primary": "#201d1d",
+    "light": "#fdffcc",
+    "dark": "#201d1d"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "background": {
+    "color": {
+      "light": "#fdfcfc",
+      "dark": "#131010"
+    }
+  },
+  "fonts": {
+    "heading": {
+      "family": "Fraunces",
+      "weight": 600
+    },
+    "body": {
+      "family": "IBM Plex Sans"
+    }
   },
   "favicon": "/favicon.svg",
   "logo": {
@@ -13,45 +31,40 @@
     "dark": "/logo/dark.svg"
   },
   "navigation": {
-    "tabs": [
+    "groups": [
       {
-        "tab": "Guides",
-        "groups": [
-          {
-            "group": "Start here",
-            "pages": [
-              "index",
-              "guides/introduction",
-              "guides/install",
-              "guides/see-it-in-action"
-            ]
-          },
-          {
-            "group": "Concepts",
-            "pages": [
-              "concepts/layer-stack",
-              "concepts/sessions-hosts",
-              "concepts/connections-capabilities",
-              "concepts/credentials-sandbox",
-              "concepts/extensions"
-            ]
-          },
-          {
-            "group": "Deploy",
-            "pages": [
-              "deploy/local",
-              "deploy/private-vm",
-              "deploy/relay-attached",
-              "deploy/hosted-control-plane",
-              "deploy/self-host-fly",
-              "deploy/sandbox-drivers-secrets"
-            ]
-          }
+        "group": "Start here",
+        "pages": [
+          "index",
+          "guides/introduction",
+          "guides/install",
+          "guides/see-it-in-action"
         ]
       },
       {
-        "tab": "Packages",
-        "groups": [
+        "group": "Concepts",
+        "pages": [
+          "concepts/layer-stack",
+          "concepts/sessions-hosts",
+          "concepts/connections-capabilities",
+          "concepts/credentials-sandbox",
+          "concepts/extensions"
+        ]
+      },
+      {
+        "group": "Deploy",
+        "pages": [
+          "deploy/local",
+          "deploy/private-vm",
+          "deploy/relay-attached",
+          "deploy/hosted-control-plane",
+          "deploy/self-host-fly",
+          "deploy/sandbox-drivers-secrets"
+        ]
+      },
+      {
+        "group": "Packages",
+        "pages": [
           {
             "group": "Agent runtime",
             "pages": [
@@ -98,42 +111,31 @@
         ]
       },
       {
-        "tab": "API Reference",
-        "groups": [
-          {
-            "group": "Reference",
-            "pages": [
-              "api/overview",
-              "api/workspace-runtime",
-              "api/relay",
-              "api/mcp",
-              "api/connections",
-              "api/channels"
-            ]
-          }
+        "group": "API Reference",
+        "pages": [
+          "api/overview",
+          "api/workspace-runtime",
+          "api/relay",
+          "api/mcp",
+          "api/connections",
+          "api/channels"
         ]
       },
       {
-        "tab": "Cookbook",
-        "groups": [
-          {
-            "group": "Cookbook",
-            "pages": [
-              "cookbook/overview",
-              "cookbook/01-hello-agent",
-              "cookbook/02-harness-swap",
-              "cookbook/03-one-event-shape",
-              "cookbook/04-kill-and-resume",
-              "cookbook/05-workspace-host",
-              "cookbook/06-extensions-once",
-              "cookbook/07-sandbox-secrets",
-              "cookbook/08-place-anywhere"
-            ]
-          }
+        "group": "Cookbook",
+        "pages": [
+          "cookbook/overview",
+          "cookbook/01-hello-agent",
+          "cookbook/02-harness-swap",
+          "cookbook/03-one-event-shape",
+          "cookbook/04-kill-and-resume",
+          "cookbook/05-workspace-host",
+          "cookbook/06-extensions-once",
+          "cookbook/07-sandbox-secrets",
+          "cookbook/08-place-anywhere"
         ]
       }
-    ],
-    "global": {}
+    ]
   },
   "navbar": {
     "links": [
