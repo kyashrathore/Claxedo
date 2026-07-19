@@ -114,3 +114,23 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
 
   return null
 }
+
+// Clickability must never become submittability, but the opencode-mode model
+// gate (`no-model` / `no-credential`) is surfaced by the submit pipeline's OWN
+// guard (`submit.ts` → `modelAgentRequired` toast), which both refuses to send
+// AND explains why. Hard-blocking it before the handler silently swallows the
+// keypress and the user never learns they must pick a model (regression from
+// the guard added in 71091f031a, which over-corrected past viewer-role). Let
+// the handler reach that guard for those two reasons; harness/inert reasons
+// stay hard-blocked (a harness-mode send could otherwise dispatch to a
+// not-ready harness).
+export function submitHardBlocked(input: {
+  stoppable: boolean
+  block: SubmitBlock | null
+  harnessMode: boolean
+}): boolean {
+  if (input.stoppable) return false
+  if (!input.block) return false
+  if (!input.harnessMode && (input.block.reason === "no-model" || input.block.reason === "no-credential")) return false
+  return true
+}

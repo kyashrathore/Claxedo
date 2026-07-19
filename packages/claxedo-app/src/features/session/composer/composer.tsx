@@ -27,6 +27,7 @@ import {
   setCursorPosition,
 } from "@/features/session/composer/ui/editor-dom"
 import { createPromptEditorActions } from "@/features/session/composer/ui/editor-actions"
+import { submitHardBlocked } from "@/features/session/composer/submit-block-reason"
 import { createPromptInputKeyDown } from "@/features/session/composer/ui/editor-keymap"
 import { createPromptAttachments } from "@/features/session/composer/ui/attachments"
 import { ACCEPTED_FILE_TYPES } from "@/features/session/composer/ui/files"
@@ -637,22 +638,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Clickability must never become submittability. Viewer-role hard-blocks
     // unconditionally (via roleSubmitBlocked); every other block reason also
     // guards the handler — except while a turn is running, so Stop stays live.
-    //
-    // EXCEPTION: the opencode-mode model gate (`no-model` / `no-credential`) is
-    // surfaced by the submit pipeline's OWN guard (`submit.ts` →
-    // `modelAgentRequired` toast), which both refuses to send AND explains why.
-    // Hard-blocking it here silently swallows the keypress and the user never
-    // learns they must pick a model (regression from the guard added in
-    // 71091f031a, which over-corrected past viewer-role). Let the handler reach
-    // that guard for those two reasons; harness/inert reasons stay hard-blocked
-    // (a harness-mode send could otherwise dispatch to a not-ready harness).
-    submitBlocked: () => {
-      if (stoppable()) return false
-      const block = submitBlock()
-      if (!block) return false
-      if (!toolbarHarnessMode(scope()) && (block.reason === "no-model" || block.reason === "no-credential")) return false
-      return true
-    },
+    // See submitHardBlocked for the opencode-mode no-model/no-credential
+    // exception that lets the handler's own toast guard fire.
+    submitBlocked: () =>
+      submitHardBlocked({ stoppable: stoppable(), block: submitBlock(), harnessMode: toolbarHarnessMode(scope()) }),
     prompt,
     imageCount: () => imageAttachments().length,
     commentCount,
