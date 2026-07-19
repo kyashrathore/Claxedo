@@ -332,6 +332,11 @@ async function attentionProjectionItem(ctx: any, organization: string, owner: st
     }
     const row = await owned(ctx, "workgraph_due_jobs", organization, owner, entry.id)
     const marker = row?.payload?.configurationRequirement
+    // Retired recap-era generation requirements survive in deployed due-job
+    // rows (the contract narrowed `purpose` to "source_planning"). Like a
+    // resolved-in-flight escalation, a retired purpose is a stale entry, not
+    // a projection fault: skip it rather than failing the whole page.
+    if (marker?.type === "generation" && marker.purpose !== "source_planning") return undefined
     if (!row || marker?.type !== "generation" || typeof row.last_error !== "string" || !row.last_error.trim()) throw new Error(`Attention source ${entry.kind}:${entry.id} is not a generation requirement`)
     return AttentionItemSchema.parse({
       kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read,

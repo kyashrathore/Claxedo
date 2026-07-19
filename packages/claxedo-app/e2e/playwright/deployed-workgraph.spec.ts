@@ -60,8 +60,20 @@ test.describe.serial("deployed WorkGraph", () => {
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill(streamTitle)
-    await create.getByRole("button", { name: "Local worktree" }).click()
-    await page.getByText("Cloud workspace", { exact: true }).click()
+    // The New-stream dialog fetches the execution capability catalog lazily when
+    // it opens, so the environment Select is fail-closed — it renders no options
+    // until that catalog resolves, which on deployed staging is a ~13s round-trip.
+    // Staging advertises only the hosted "Cloud workspace" environment (there is
+    // no local runtime), so keep selecting it, but open the Select only once that
+    // option is actually in the collection: a single early click lands on an empty
+    // listbox that never reopens once the catalog arrives.
+    const environmentTrigger = create.getByRole("button", { name: "Local worktree" })
+    const cloudWorkspaceOption = page.getByText("Cloud workspace", { exact: true })
+    await expect(async () => {
+      await environmentTrigger.click()
+      await expect(cloudWorkspaceOption).toBeVisible({ timeout: 1_000 })
+    }).toPass({ timeout: 90_000, intervals: [250, 500, 1_000] })
+    await cloudWorkspaceOption.click()
     await create.getByRole("textbox", { name: "GitHub repository URL" }).fill(smokeRepositoryURL)
     // Base revision is a chip popover that portals out of the modal dialog; open it,
     // then commit the raw ref through its free-text field.

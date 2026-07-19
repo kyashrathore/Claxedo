@@ -3660,6 +3660,32 @@ describe("Convex WorkGraph store", () => {
       .rejects.toBeInstanceOf(AttentionCursorError)
   })
 
+  test("skips retired recap-era generation requirements instead of failing the Attention page", async () => {
+    // Regression (staging, 2026-07-20): GET /api/workgraph/attention returned
+    // 500 because a legacy `workgraph_due_jobs` row still carried
+    // `configurationRequirement.purpose: "recap"` — the contract narrowed the
+    // purpose to "source_planning" at launch prep, and the projection's
+    // AttentionItemSchema.parse threw on the surviving row, killing the page.
+    const harness = new ConvexHarness(["owner_a"])
+    await harness.db.insert("workgraph_due_jobs", {
+      owner_user_id: "owner_a", id: "legacy_recap_job", job_type: "recap",
+      subject_id: "stream_legacy:1", due_at: 5, status: "failed", lease_epoch: 0,
+      payload: { configurationRequirement: { type: "generation", purpose: "recap", scope: { type: "workgraph" } } },
+      last_error: "Recap generation requires model configuration", row_version: 1, schema_version: 1, created_at: 5, updated_at: 6,
+    })
+    await harness.db.insert("workgraph_due_jobs", {
+      owner_user_id: "owner_a", id: "current_source_plan_job", job_type: "source_plan",
+      subject_id: "source_1:1", due_at: 7, status: "pending", lease_epoch: 0,
+      payload: { configurationRequirement: { type: "generation", purpose: "source_planning", scope: { type: "workgraph" } } },
+      last_error: "Source planning requires explicit valid model configuration", row_version: 1, schema_version: 1, created_at: 7, updated_at: 8,
+    })
+    await materializeAttention(harness, "owner_a")
+
+    const page = AttentionPageSchema.parse(await readWorkGraphProjection(harness, "owner_a", "attention", { limit: 50 }))
+    expect(page.items.map((item) => item.id)).toEqual(["current_source_plan_job"])
+    expect(page.hasMore).toBe(false)
+  })
+
   test("backfills candidate Attention exactly once across migration reruns", async () => {
     const harness = new ConvexHarness(["owner_a"])
     await harness.insert("workgraph_attention_summaries", {
