@@ -463,19 +463,57 @@ async function replay(mock: MockRuntimeHandles, dir: string, trace: Envelope[]) 
 
 const assistantContent = () => SELECTORS.assistantContentVisible
 
-test.describe("core harness rendering matrix @core", () => {
-  for (const h of ["opencode", "cursor-sdk", "codex-app-server", "claude-acp", "codex-acp", "cursor-acp"] as const) {
-    test(`DUMP ${h}`, async ({ page }) => {
-      const { mock, dir, assistantId } = await primeHarness(page, h)
-      const trace = loadTrace(h, assistantId)
-      await replay(mock, dir, trace)
-      await page.waitForTimeout(3000)
-      const htmls = await page.locator(assistantContent()).evaluateAll((els) => els.map((el) => (el as HTMLElement).outerHTML))
-      const slim = htmls.map((html) => html.replace(/ class="[^"]*"/g, "").replace(/ style="[^"]*"/g, "").replace(/<svg[\s\S]*?<\/svg>/g, "<svg/>").replace(/ data-markdown-[a-z]+="[^"]*"/g, "").replace(/>\s+</g, "><")).join("\n---SLOT---\n")
-      // eslint-disable-next-line no-console
-      console.log(`\n[DUMP ${h}]\n${slim}\n[/DUMP ${h}]\n`)
-    })
+/**
+ * SESSION-TIMELINE REDESIGN (2026-07-18, plan `2026-07-17-004`/session-timeline
+ * work) — three behaviors this file's assertions now account for, verified against
+ * the live DOM (`message-timeline.tsx`/`message-timeline.data.ts`):
+ *  (a) TURN FOLD — an assistant turn with more than a couple of part groups collapses
+ *      its middle groups behind a `[data-component="turn-fold"]` toggle ("Worked for …").
+ *      Every tool group beyond the fold threshold is absent from the DOM until the fold
+ *      is expanded (this is why a many-tool trace like opencode's renders only its
+ *      leading/trailing text until unfolded). `revealTurn()` clicks it open.
+ *  (b) WORK GROUPS — consecutive "work" tools (bash/command/shell/local_shell,
+ *      edit/edit_file/write/write_file/apply_patch, webfetch, websearch/web_search)
+ *      with ≥2 members fold into ONE closed-by-default `[data-component=
+ *      "work-group-trigger"]` collapsible (summary e.g. "Edited 1 file · ran 1 command");
+ *      a LONE work tool stays a standalone `[data-component="tool-part-wrapper"]` row
+ *      whose subtitle is already visible. `revealTurn()` also opens every work- and
+ *      context-group trigger so each member's own detail slot is reachable.
+ *  (c) SHELL VOCABULARY — the harness-native shell tool names `shell` (Cursor SDK) and
+ *      `command` (Codex app-server) are now normalized into the bash renderer
+ *      (`shell-submessage-value` = the literal command, title shimmer "Ran"), NOT the
+ *      generic MCP fallback they hit before this redesign — so behavior 4 asserts the
+ *      command text, not a `basic-tool-tool-title` carrying the raw name.
+ */
+async function revealTurn(page: Page) {
+  const fold = page.locator('[data-component="turn-fold"] button')
+  if ((await fold.count()) > 0 && (await fold.first().getAttribute("aria-expanded")) !== "true") {
+    await fold.first().click()
+    await expect(fold.first()).toHaveAttribute("aria-expanded", "true")
   }
+  // The folded groups mount a tick after the unfold — wait for the turn's tool DOM to
+  // appear (any tool wrapper or group trigger) before trying to expand groups.
+  await expect(
+    page.locator(
+      '[data-component="tool-part-wrapper"], [data-component="work-group-trigger"], [data-component="context-tool-group-trigger"], [data-component="task-tool-card"]',
+    ).first(),
+  ).toBeVisible({ timeout: 15_000 })
+  // Expand every work/context group so each grouped tool's own detail slot is reachable;
+  // a group whose trigger toggles closed is re-opened by asserting aria-expanded. A lone
+  // work tool has no trigger (its subtitle is already visible).
+  for (const sel of ['[data-component="work-group-trigger"]', '[data-component="context-tool-group-trigger"]']) {
+    const triggers = page.locator(sel)
+    for (let i = 0; i < (await triggers.count()); i++) {
+      const trigger = triggers.nth(i)
+      if ((await trigger.getAttribute("aria-expanded").catch(() => null)) !== "true") {
+        await trigger.click().catch(() => {})
+        await expect(trigger).toHaveAttribute("aria-expanded", "true").catch(() => {})
+      }
+    }
+  }
+}
+
+test.describe("core harness rendering matrix @core", () => {
   test("opencode native — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
@@ -483,44 +521,42 @@ test.describe("core harness rendering matrix @core", () => {
 
     const content = page.locator(assistantContent())
 
-    // behavior 1: the injected extra text part renders verbatim.
+    // behavior 1: the injected extra text part renders verbatim (a leading part, shown
+    // even while the rest of this many-tool turn is folded — also the delivery anchor
+    // that proves the fixture trace reached the store before we unfold).
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
 
-    // behavior 3: read/list/glob — consecutive "context" tools (read/list/search-family)
-    // render grouped under ONE `ContextToolGroup` collapsible
-    // (`packages/session-ui/src/components/message-part.tsx` `ContextToolGroup`,
-    // `[data-component="context-tool-group-trigger"]`/`[data-component=
-    // "context-tool-group-list"]`), closed by default — this is real, current
-    // grouping behavior (an "Explored N read, N search, N list" summary line), not
-    // the plan's originally-assumed per-tool-always-visible layout. Expand it once
-    // to reach each tool's subtitle/arg.
-    const contextGroupTrigger = content.locator('[data-component="context-tool-group-trigger"]').first()
-    await expect(contextGroupTrigger).toBeVisible({ timeout: 45_000 })
-    await contextGroupTrigger.click()
-    await expect(content.locator('[data-component="context-tool-group-list"]')).toBeVisible({ timeout: 10_000 })
+    // SESSION-TIMELINE REDESIGN: this turn has enough part groups to fold; unfold it and
+    // open every work/context group so each tool's detail slot is reachable (see
+    // `revealTurn`).
+    await revealTurn(page)
+
+    // behavior 3: read/list/glob — consecutive "context" tools render grouped under ONE
+    // closed-by-default `ContextToolGroup` collapsible (`[data-component=
+    // "context-tool-group-trigger"]`/`[data-component="context-tool-group-list"]`),
+    // opened above.
+    await expect(content.locator('[data-component="context-tool-group-list"]').first()).toBeVisible({ timeout: 10_000 })
 
     // behavior 3: read.
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "config.json" }).first()).toBeVisible({ timeout: 45_000 })
-    // list: grouped context-tool items don't carry an individual
-    // `data-timeline-part-id` (only the group's `Collapsible` wrapper carries a
-    // PLURAL, comma-joined `data-timeline-part-ids` — `ContextToolGroup`,
-    // message-part.tsx ~line 1084) — assert via that instead, now that the group
-    // is expanded above; the literal "List" trigger text is also visible.
+    // list: grouped context-tool items don't carry an individual `data-timeline-part-id`
+    // (only the group's `Collapsible` wrapper carries a PLURAL, comma-joined
+    // `data-timeline-part-ids`) — assert via that instead, now that the group is
+    // expanded above.
     await expect(content.locator('[data-timeline-part-ids*="msg_assistant_1-list"]')).toBeVisible({ timeout: 45_000 })
     // glob (arg shows the literal pattern).
     await expect(content.locator('[data-slot="basic-tool-tool-arg"]', { hasText: "pattern=**/*.json" })).toBeVisible()
-    // webfetch (literal url).
+    // webfetch (literal url) — webfetch/websearch/write are consecutive "work" tools now
+    // folded into ONE work group, opened by `revealTurn`.
     await expect(content.getByRole("link", { name: "https://example.com/docs" })).toBeVisible()
     // websearch (literal query).
     await expect(content.getByText("opencode config schema")).toBeVisible()
     // write (filename).
     await expect(content.locator('[data-slot="message-part-title-filename"]', { hasText: "config.json" })).toBeVisible()
     // skill (title = literal input.name, untranslated — rendered via
-    // `[data-slot="basic-tool-tool-title"] class="capitalize agent-title"`,
-    // message-part.tsx ~line 2578, so the ACCESSIBLE/rendered text is "Pdf"
-    // even though the underlying string is the verbatim lowercase "pdf" — match
-    // case-insensitively, scoped to the tool title slot, to assert the
-    // untranslated content rather than CSS styling).
+    // `[data-slot="basic-tool-tool-title"] class="capitalize agent-title"`, so the
+    // rendered text is "Pdf" even though the underlying string is the verbatim lowercase
+    // "pdf" — match case-insensitively, scoped to the tool title slot).
     await expect(content.locator('[data-slot="basic-tool-tool-title"]').filter({ hasText: /pdf/i })).toBeVisible()
   })
 
@@ -531,13 +567,20 @@ test.describe("core harness rendering matrix @core", () => {
 
     const content = page.locator(assistantContent())
 
+    // Delivery anchor (leading text shown even while folded), then unfold + open groups.
+    await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
+    await revealTurn(page)
+
     // behavior 3/16: opencode's own native "apply_patch" tool reaches the dedicated
-    // apply_patch renderer (single-file layout — filename visible).
+    // apply_patch renderer (single-file layout — filename visible). It is a LONE work
+    // tool here (preceded by the `skill` part, followed by the `compaction` part) so it
+    // stays a standalone tool row rather than folding into a work group.
     await expect(content.locator('[data-slot="apply-patch-filename"], [data-slot="message-part-title-filename"]', { hasText: "app.ts" }).first()).toBeVisible({ timeout: 45_000 })
 
-    // behavior 4: a deliberately-unregistered tool name falls back to GenericTool —
-    // the raw tool string appears verbatim in the title, and the subtitle is the
-    // first matching literal input field.
+    // behavior 4: a deliberately-unregistered tool name (`custom_mcp_tool`, in none of
+    // the context/work/hidden vocabularies) still falls back to GenericTool — the raw
+    // tool string appears verbatim in the title, and the subtitle is the first matching
+    // literal input field.
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "custom_mcp_tool" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "vector search" })).toBeVisible()
   })
@@ -573,7 +616,14 @@ test.describe("core harness rendering matrix @core", () => {
     const content = page.locator(assistantContent())
     const questionText = "Which environment should I target?"
 
-    // Pending: the whole tool-part-wrapper is absent, not merely visually hidden.
+    // Delivery anchor, then fully unfold/expand the turn so the pending-question absence
+    // below is proven by `renderable`'s pending-hide (message-timeline.data.ts) — NOT
+    // merely by the turn fold hiding every tool.
+    await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
+    await revealTurn(page)
+
+    // Pending: the whole tool-part-wrapper is absent, not merely visually hidden, even
+    // with the turn revealed.
     await expect(content.getByText(questionText)).toHaveCount(0)
     await expect(content.locator('[data-component="question-answers"]')).toHaveCount(0)
 
@@ -581,6 +631,9 @@ test.describe("core harness rendering matrix @core", () => {
     const fixture = loadFixtureFile("opencode", assistantId) as { questionAnswered: Envelope }
     mock.emit(fixture.questionAnswered.payload as never, fixture.questionAnswered.directory || dir)
 
+    // The answered question mounts as a new standalone part in the (already unfolded)
+    // turn; revealTurn again in case the added part re-crossed the fold threshold.
+    await revealTurn(page)
     await expect(content.getByText(questionText)).toBeVisible({ timeout: 45_000 })
     await expect(content.locator('[data-component="question-answers"]')).toBeVisible()
     await expect(content.locator('[data-slot="answer-text"]', { hasText: "staging" })).toBeVisible()
@@ -680,19 +733,20 @@ test.describe("core harness rendering matrix @core", () => {
     const content = page.locator(assistantContent())
 
     // behavior 1: cumulative-snapshot dedup — final text renders once, not doubled.
+    // (Leading text part, shown even while the rest of the turn is folded — the
+    // delivery anchor before we unfold.)
     await expect(content.getByText("Building the feature now.", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("Building the Building the", { exact: false })).toHaveCount(0)
 
-    // behavior 16: "Terminal" -> bash.
+    // SESSION-TIMELINE REDESIGN: unfold the turn and open its groups.
+    await revealTurn(page)
+
+    // behavior 16: "Terminal" -> bash. A LONE work tool (between the text and the read),
+    // so it stays a standalone row whose command subtitle is already visible.
     await expect(content.getByText("printf hi")).toBeVisible()
 
-    // behavior 3: "Read File" -> read. Even a SINGLE context-group tool (read/
-    // glob/grep/list) renders inside the closed-by-default `ContextToolGroup`
-    // collapsible (see the opencode ToolRegistry test's identical note above) —
-    // expand it to reach the subtitle.
-    const claudeAcpContextGroupTrigger = content.locator('[data-component="context-tool-group-trigger"]').first()
-    await expect(claudeAcpContextGroupTrigger).toBeVisible({ timeout: 45_000 })
-    await claudeAcpContextGroupTrigger.click()
+    // behavior 3: "Read File" -> read. Even a SINGLE context-group tool renders inside
+    // the closed-by-default `ContextToolGroup` collapsible (opened by `revealTurn`).
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "index.ts" })).toBeVisible()
 
     // behavior 15: "Task" -> task, clickable child-session trigger.
@@ -713,6 +767,12 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(page.locator('[data-slot="permission-header-title"]')).toBeVisible({ timeout: 45_000 })
     const content = page.locator(assistantContent())
 
+    // SESSION-TIMELINE REDESIGN: the apply_patch->edit and the bash are two consecutive
+    // "work" tools, so they fold into ONE closed-by-default work group (summary "Edited 1
+    // file · ran 1 command"); open it so each member's own row is reachable.
+    await expect(content.locator('[data-component="work-group-trigger"]')).toBeVisible({ timeout: 45_000 })
+    await revealTurn(page)
+
     // behavior 16 (finding, pinned as real): apply_patch resolves to the generic
     // "edit" renderer (filename visible), not a dedicated apply-patch-tool component.
     await expect(content.locator('[data-slot="message-part-title-filename"]', { hasText: "app.ts" })).toBeVisible()
@@ -722,8 +782,8 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("git status")).toBeVisible()
 
     // behavior 12 (exact proof, not vacuous): exactly the 2 REAL tool parts (the
-    // apply_patch->edit and the bash) ever became tool-part-wrapper rows — the
-    // Permission tool_call never added a 3rd.
+    // apply_patch->edit and the bash, now the two members of the opened work group) ever
+    // became tool-part-wrapper rows — the Permission tool_call never added a 3rd.
     await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(2)
   })
 
@@ -735,13 +795,17 @@ test.describe("core harness rendering matrix @core", () => {
     const content = page.locator(assistantContent())
 
     // behavior 13: cumulative snapshot ("A" then "A1") renders once, no duplication.
+    // (Leading text — the delivery anchor before we unfold.)
     await expect(content.getByText("A1", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("AA1")).toHaveCount(0)
 
     // behavior 14: the sentinel tail never shows up anywhere.
     await expect(page.getByText("WritableIterable is closed")).toHaveCount(0)
 
-    // behavior 16: Terminal -> bash.
+    // SESSION-TIMELINE REDESIGN: unfold the turn and open its groups.
+    await revealTurn(page)
+
+    // behavior 16: Terminal -> bash. A LONE work tool -> standalone row, command visible.
     await expect(content.getByText("ls", { exact: true })).toBeVisible()
 
     // behavior 15: "Task: Subagent task" -> task, child-linked.
@@ -785,7 +849,7 @@ test.describe("core harness rendering matrix @core", () => {
     async () => {},
   )
 
-  test("codex-app-server (native) — proposed plan renders as plain text, \"command\" falls back to GenericTool — behaviors 4,11,17", async ({ page }) => {
+  test("codex-app-server (native) — proposed plan renders as plain text, \"command\" normalizes to the bash renderer — behaviors 4,11,17", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "codex-app-server")
     const trace = loadTrace("codex-app-server", assistantId)
     await replay(mock, dir, trace)
@@ -797,11 +861,16 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("inspect tests")).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("run suite")).toBeVisible()
 
-    // behavior 4: native "command" tool name falls back to GenericTool.
-    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "command" })).toBeVisible()
+    // behavior 4 (SESSION-TIMELINE REDESIGN): the harness-native `command` tool name is
+    // now normalized INTO the bash/shell renderer (the literal command shows in
+    // `shell-submessage-value`; the title shimmer reads "Ran"), NOT the generic MCP
+    // fallback it hit before this redesign — so no `basic-tool-tool-title` carries the
+    // raw "command" string. A lone work tool, so it stays a standalone visible row.
+    await expect(content.locator('[data-slot="shell-submessage-value"]', { hasText: "git status" })).toBeVisible()
+    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "command" })).toHaveCount(0)
   })
 
-  test("cursor-sdk (native) — assistant snapshot dedup, \"shell\" falls back to GenericTool, updateTodos hidden — behaviors 1,4,9", async ({ page }) => {
+  test("cursor-sdk (native) — assistant snapshot dedup, \"shell\" normalizes to the bash renderer, updateTodos hidden — behaviors 1,4,9", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "cursor-sdk")
     const trace = loadTrace("cursor-sdk", assistantId)
     await replay(mock, dir, trace)
@@ -812,8 +881,13 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Hello there", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("HelHello")).toHaveCount(0)
 
-    // behavior 4: native "shell" tool name falls back to GenericTool.
-    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "shell" })).toBeVisible()
+    // behavior 4 (SESSION-TIMELINE REDESIGN): the harness-native `shell` tool name is now
+    // normalized INTO the bash/shell renderer (literal command in `shell-submessage-value`,
+    // title shimmer "Ran"), NOT the generic MCP fallback it hit before — so no
+    // `basic-tool-tool-title` carries the raw "shell" string. A lone work tool -> a
+    // standalone visible row.
+    await expect(content.locator('[data-slot="shell-submessage-value"]', { hasText: "bun test" })).toBeVisible()
+    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "shell" })).toHaveCount(0)
 
     // behavior 9: updateTodos intercepted, never a tool row.
     await expect(content.getByText("Ship adapter")).toHaveCount(0)

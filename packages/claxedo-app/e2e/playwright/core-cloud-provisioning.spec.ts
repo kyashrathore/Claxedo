@@ -578,6 +578,15 @@ test.describe("core cloud provisioning @core", () => {
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
     await expect(input).toHaveAttribute("contenteditable", "true")
+    // The gate unlocking only proves the WORKSPACE connection is ready — the
+    // draft's own provider/model catalog (a separate relay request, fired once
+    // the gate renders children) can still be in flight for a moment after.
+    // Sending before it resolves hits the composer's own (correct) "no-model"
+    // submit block, which no-ops the click — wait for a real model to land in
+    // the model control first, matching the pattern every other cloud spec
+    // that sends a first turn already uses (e.g. core-harness-ownership-
+    // cloud.spec.ts's `expectOnlyOpenCodeModelControl`).
+    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
 
     // Behavior 3/4: a send dispatches through the workspace-scoped relay lane
     // and the oracle proves the reply renders; exactly one user + one
@@ -663,13 +672,22 @@ test.describe("core cloud provisioning @core", () => {
 
       const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
       await expect(input).toBeVisible({ timeout: 20_000 })
+      // Switching the draft's environment to "cloud" re-resolves the provider/
+      // model catalog for the (virtual, not-yet-created) cloud scope — sending
+      // before that resolves hits the composer's own "no-model" submit block,
+      // which no-ops the click before `resolveCloudSessionDirectory` (and thus
+      // `createCloudWorkspace`) is ever reached, so the create-failure path
+      // under test never fires at all. Wait for a real model first, matching
+      // core-cloud-provisioning's other send scenarios.
+      await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
       const promptText = "should not create a cloud vm"
       await input.click()
       await input.fill(promptText)
       await expect(input).toContainText(promptText, { timeout: 10_000 })
       await page.locator(SELECTORS.submitControl).last().click()
 
-      // Exactly one toast — currently fails 2-for-1 on the bug above.
+      // Exactly one toast — this used to also fail 2-for-1 on the double-toast
+      // bug (see submit-directory.ts's `creationRejected` comment); now fixed.
       await expect(page.locator('[data-slot="toast-title"]')).toHaveCount(1, { timeout: 10_000 })
       await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to create cloud workspace", { timeout: 10_000 })
       await expect(page.locator('[data-slot="toast-description"]')).toContainText("workspace creation blew up", { timeout: 10_000 })
@@ -717,6 +735,11 @@ test.describe("core cloud provisioning @core", () => {
 
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
+    // See the "request rejected" scenario above: the cloud-scope provider/model
+    // catalog can still be resolving right after the environment switch, and
+    // sending before it settles hits the composer's own "no-model" submit
+    // block instead of ever reaching `createCloudWorkspace`.
+    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
     const promptText = "should not create a cloud vm either"
     await input.click()
     await input.fill(promptText)

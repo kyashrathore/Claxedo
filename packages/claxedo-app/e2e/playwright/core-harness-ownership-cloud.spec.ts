@@ -214,14 +214,23 @@ async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: n
   await page.getByRole("option", { name: optionName }).nth(optionIndex).click()
 }
 
+// `:visible` (not a bare count): a same-pane cross-workspace navigation (behavior
+// 5) keeps the PRIOR pane's composer mounted-but-hidden behind the new one rather
+// than unmounting it (confirmed via a live DOM probe — the stale node has a real,
+// non-zero layout rect and is still `isConnected`, scoped to the old local
+// directory) — a bare `toHaveCount` sees that stale node too and false-fails even
+// though only one model control is ever user-visible at a time. `:visible` is
+// Playwright's own CSS extension (real visibility, not DOM-order guesswork like
+// `.last()`), so this stays exactly as strict for every other (single-pane) call
+// site in this file.
 async function expectOnlyHarnessModelControl(page: Page, modelName: string | RegExp) {
-  await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(modelName, { timeout: 20_000 })
-  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-harness-model"]:visible').last()).toContainText(modelName, { timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(0)
 }
 
 async function expectOnlyOpenCodeModelControl(page: Page) {
-  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(1, { timeout: 20_000 })
-  await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(1, { timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-harness-model"]:visible')).toHaveCount(0)
 }
 
 test.describe("core harness ownership (cloud) @core", () => {
@@ -397,7 +406,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     })
     await seedProjects(page)
 
-    await page.addInitScript(() => { (window as unknown as { __NOSYNC__?: boolean }).__NOSYNC__ = true })
     await page.goto(`/${slug(DIR)}/session`)
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -416,17 +424,6 @@ test.describe("core harness ownership (cloud) @core", () => {
     await projectPicker.click()
     await page.getByRole("option", { name: WORKSPACE_PROJECT_NAME }).click()
 
-    await page.waitForTimeout(2500)
-    // eslint-disable-next-line
-    console.log("DEBUG_DUMP", JSON.stringify(await page.evaluate(() => {
-      const dump = (sel: string) => Array.from(document.querySelectorAll(sel)).map((el) => {
-        let pane = el.closest("[data-session-directory]") as HTMLElement | null
-        const hidden = (el as HTMLElement).offsetParent === null
-        return { dir: pane?.getAttribute("data-session-directory"), hidden, sessionId: pane?.getAttribute("data-session-id") }
-      })
-      const sd = Array.from(document.querySelectorAll("[data-session-directory]")).map((e) => ({ dir: (e as HTMLElement).getAttribute("data-session-directory"), sid: (e as HTMLElement).getAttribute("data-session-id"), hidden: (e as HTMLElement).offsetParent === null }))
-      return { model: dump('[data-action="prompt-model"]'), harnessModel: dump('[data-action="prompt-harness-model"]'), panes: document.querySelectorAll('[data-pane-id]').length, sessionDirs: sd }
-    })))
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     // The draft harness reset to OpenCode BEFORE any cloud request — proven by the DOM
     // (exactly one plain model control) and by zero relay options requests having ever
@@ -436,6 +433,13 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(cloudInput).toBeVisible({ timeout: 20_000 })
+    // `expectOnlyOpenCodeModelControl` above only proves a plain (non-harness)
+    // model control is showing, not that it has RESOLVED a real model yet — the
+    // cloud workspace's own provider/model catalog is a fresh relay request fired
+    // on this first-ever visit to it, and sending before it resolves hits the
+    // composer's own "no-model" submit block (see core-cloud-provisioning.spec.ts
+    // and core-user-hosted-workspace.spec.ts for the same race).
+    await expect(page.locator('[data-action="prompt-model"]:visible')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
     const text = "core harness cloud no-leak turn"
     await cloudInput.click()
     await cloudInput.fill(text)

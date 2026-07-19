@@ -263,7 +263,12 @@ export function SessionEnvironmentCardMount() {
   )
   const changes = createMemo<EnvironmentChanges | undefined>(() => {
     const files = status()
-    if (!files) return undefined
+    // Defensive: the file-status query's `.then(...) ?? []` fallback only
+    // covers a nullish `res.data` — a 200 response whose body isn't
+    // array-shaped (e.g. `{}`) resolves truthy-but-non-iterable, which used
+    // to crash the whole app (`files is not iterable`) from what is meant to
+    // be a decorative stat card. `Array.isArray` closes that gap.
+    if (!Array.isArray(files)) return undefined
     let added = 0
     let removed = 0
     for (const file of files) {

@@ -1145,11 +1145,23 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
   await page.route("**/provider/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
 
-  await page.route("**/config", (r) => {
+  // Bare-path glob only (no query-string wildcard): Playwright's glob-to-regex
+  // anchors the pattern's end, so `**/config` alone does NOT match the app's real
+  // `GET /config?directory=...` calls (same class of gap already documented for
+  // `/provider` above) — those fell through unmocked to a real backend that
+  // doesn't exist in this harness, producing ERR_CONNECTION_REFUSED on every
+  // config-scoped fetch. This alone does not explain every "Select model" stuck
+  // state (see the workspace-connection-gating finding in this task's report),
+  // but it is a real, unconditional gap in its own right — any assertion that
+  // depends on `GET /config?directory=...` succeeding was silently starved.
+  // Mirror the `/provider` fix above: an explicit `?**` variant.
+  const configHandler = (r: import("@playwright/test").Route) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/config") return r.fallback()
     return json(r, { provider: { id: providerIdFor(harness), model: harnessModel().id }, agent: { id: "build" } })
-  })
+  }
+  await page.route("**/config", configHandler)
+  await page.route("**/config?**", configHandler)
 
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()

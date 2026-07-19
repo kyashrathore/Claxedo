@@ -197,6 +197,17 @@ import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 const DIR = "/tmp/e2e-core-busy-abort-errors"
 const SESSION_ID = "ses_core_busy_abort_errors"
 
+// The mock's default opencode model is the `big-pickle` placeholder
+// (mock-runtime.ts `BIG_PICKLE`), which the reworked composer deliberately
+// treats as "no model configured" and refuses to submit
+// (`isSignedWorkspaceDefaultModel`, src/features/session/composer/signed-workspace-model.ts) —
+// the first send is dropped, the session is never created, and the URL never
+// leaves the workspace root, killing every downstream busy/abort assertion.
+// Pinning a concrete harness model makes the composer submit-ready, matching
+// the pattern used by sibling specs (core-docks `establishSession`,
+// core-session-actions `SEND_MODELS`).
+const PIN_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
+
 /** CONFIRMED SHARED-MOCK GAP (this task's investigation, verified via a full
  * request-log capture): every session created through this spec's flow lands
  * on the `/w/<dir>/session/<id>` route shape, and for THAT shape the app's
@@ -552,6 +563,7 @@ test.describe("core busy / abort / errors @core", () => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
       // delta bumped from 1200ms: on this pooled box, the Thinking-visible assertion
       // below can itself take many seconds to resolve under sibling-suite contention,
       // and driveTurn's own timers run on real (Node-side) wall-clock time regardless
@@ -602,6 +614,7 @@ test.describe("core busy / abort / errors @core", () => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
       staleBusy: true,
       timingsMs: { busy: 40, pending: 80, delta: 300, completed: 80, idle: 30 },
     })
@@ -623,7 +636,7 @@ test.describe("core busy / abort / errors @core", () => {
     page,
   }) => {
     const abortState = await registerAbortRoute(page)
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     // Registered AFTER installMockRuntime: Playwright resolves the most-recently-added
     // matching route first, so this must come after the shared mock's own
     // prompt_async handler to actually take precedence over it.
@@ -657,8 +670,7 @@ test.describe("core busy / abort / errors @core", () => {
 
   test("an aborted assistant message renders an Interrupted divider at its position — behavior 5", async ({ page }) => {
     const abortState = await registerAbortRoute(page)
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     // Registered AFTER installMockRuntime — see the note in the previous test.
     const promptState = await silencePromptAsync(page)
     // See neutralizeStatusPoll's doc comment.
@@ -680,10 +692,13 @@ test.describe("core busy / abort / errors @core", () => {
     expect(userID, "mock never recorded the user messageID").toBeTruthy()
     const assistantID = "msg_assistant_manual_abort"
     const now = Date.now()
-    // See installWorkspaceRuntimeEventsBridge's doc comment: `mock.emit()` is
-    // a no-op for this session's route shape — this manual event MUST go
-    // through the bridge to ever reach the app.
-    bridge.emit({
+    // `mock.emit()` now reaches this local session directly: mock-runtime.ts mounts
+    // the `/api/wr/events` SSE channel on the primary origin (the endpoint the app's
+    // live-event consumer reads for the `/w/<dir>/session/<id>` route shape via the
+    // `/global/event`→`/api/wr/events` rewrite), and the shared FanoutBus fans this
+    // event out to it — the same proven path core-docks uses for its
+    // permission/todo/status events. The prior bespoke SSE bridge is obsolete.
+    mock.emit({
       type: "message.updated",
       properties: {
         sessionID: SESSION_ID,
@@ -695,14 +710,25 @@ test.describe("core busy / abort / errors @core", () => {
           parentID: userID!,
           agent: "build",
           providerID: "opencode",
-          modelID: "big-pickle",
+          modelID: "gpt-5",
           error: { name: "MessageAbortedError", data: { message: "Aborted by user" } },
         },
       },
     })
-    bridge.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
+    mock.emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
 
-    const dividerLabel = page.locator('[data-slot="compaction-part-label"]').filter({ hasText: "Interrupted" })
+    // The redesigned timeline (dev-docs/CODEX_TIMELINE_DESIGN.md §3.6,
+    // CLAXEDO_ERROR_PROPOSAL.md) renders the interrupted-turn divider — a
+    // `TimelineRow.TurnDivider` with `label: "interrupted"`
+    // (message-timeline.data.ts:355-359) — using the duration-aware copy
+    // "You stopped after {duration}" (`ui.message.interruptedDuration`,
+    // ui/src/i18n/en.ts:183 → message-timeline.tsx:1476-1478) whenever a
+    // duration is derivable. The aborted assistant message carries a
+    // `time.completed`, so `durationMs` resolves (to 0s here) and this variant
+    // is used; the bare "Interrupted" (`ui.message.interrupted`) only appears
+    // when no duration can be computed. Either way it is the interrupted
+    // divider this behavior asserts, at the aborted message's position.
+    const dividerLabel = page.locator('[data-slot="compaction-part-label"]').filter({ hasText: /You stopped after/ })
     await expect(dividerLabel, "Interrupted divider never rendered").toBeVisible({ timeout: 20_000 })
     await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
 
@@ -720,6 +746,7 @@ test.describe("core busy / abort / errors @core", () => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
       // delta kept short: with `keepSessionStatusAlive` (via the bridge)
       // holding the busy/"stop" icon deterministically for as long as this
       // test needs it, driveTurn's own (Node-side, mock-runtime-internal)
@@ -785,6 +812,7 @@ test.describe("core busy / abort / errors @core", () => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
       // delta bumped from 1500ms — see behavior 1's test for why: the manually
       // emitted retry event below must land on the turn while it is still active
       // (not yet naturally settled), which needs a busy window that survives
@@ -849,6 +877,7 @@ test.describe("core busy / abort / errors @core", () => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
       errorMidTurn: errorEnvelope,
       timingsMs: { busy: 40, pending: 80, delta: 200, completed: 80, idle: 30 },
     })
@@ -857,8 +886,18 @@ test.describe("core busy / abort / errors @core", () => {
 
     await sendPrompt(page, input, "trigger a mid-turn error")
 
-    const errorCard = page.locator(".error-card")
-    await expect(errorCard, "error card never rendered").toBeVisible({ timeout: 20_000 })
+    // The redesigned session-error surface (dev-docs/CLAXEDO_ERROR_PROPOSAL.md T1:
+    // "Un-gate the recovery card from turn 0") renders EVERY non-abort turn error as
+    // the FirstTurnRecoveryCard, not the legacy bare `.error-card` (which is now only
+    // a dead fallback at message-timeline.tsx:1577, unreachable because
+    // `sessionRecoveryClass` — first-turn-recovery.ts:32 — always returns a class,
+    // "unknown" at worst). The JSON envelope still unwraps to "<type>: <message>" and
+    // is shown in the card's collapsed raw-detail (first-turn-recovery-card.tsx
+    // RawDetail); this error classifies as "unknown" (matches none of the credential/
+    // session/harness/model/workspace regexes).
+    const errorCard = page.getByTestId("first-turn-recovery-card")
+    await expect(errorCard, "recovery/error card never rendered").toBeVisible({ timeout: 20_000 })
+    await expect(errorCard).toHaveAttribute("data-recovery-class", "unknown")
     await expect(errorCard).toContainText("overloaded_error: The server is overloaded, please retry later.")
 
     // Submit control returns to ready even though no assistant text ever rendered —
@@ -897,7 +936,7 @@ test.describe("core busy / abort / errors @core", () => {
       //    subscription).
       test.setTimeout(300_000)
       const abortState = await registerAbortRoute(page)
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
       // Registered AFTER installMockRuntime — see the note in behavior 3's test:
       // Playwright resolves the most-recently-added matching route first.
       await silencePromptAsync(page)

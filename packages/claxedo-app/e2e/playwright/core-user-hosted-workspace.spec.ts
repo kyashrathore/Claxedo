@@ -659,6 +659,14 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(input).toBeVisible({ timeout: 20_000 })
     await expect(input).toHaveAttribute("contenteditable", "true")
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
+    // The gate unlocking only proves the CONNECTION is ready — the draft's own
+    // provider/model catalog (a separate relay request, fired once the gate
+    // renders children) can still be in flight for a moment after. Sending
+    // before it resolves hits the composer's own (correct) "no-model" submit
+    // block, which no-ops the click — wait for a real model to land in the
+    // model control first, matching core-cloud-provisioning.spec.ts and
+    // core-harness-ownership-cloud.spec.ts's established pattern.
+    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
 
     const promptText = "core user-hosted workspace first turn"
     await input.click()

@@ -156,6 +156,17 @@ import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 const DIR = "/tmp/e2e-core-composer-modes"
 const SESSION_ID = "ses_core_composer_modes"
 
+// The mock's default opencode model is the `big-pickle` placeholder
+// (mock-runtime.ts `BIG_PICKLE`), which the reworked composer deliberately
+// treats as "no model configured" and refuses to submit
+// (`isSignedWorkspaceDefaultModel`, src/features/session/composer/signed-workspace-model.ts).
+// Any behavior that actually DISPATCHES (a shell command or a prompt) must pin
+// a concrete harness model so the composer is submit-ready — matching sibling
+// specs (core-docks `establishSession`, core-session-actions `SEND_MODELS`).
+// Behaviors that never dispatch (mode toggles, popovers, draft persistence,
+// attachment add/remove) leave the default untouched.
+const PIN_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
+
 // A minimal valid 1x1 transparent PNG, inlined so this spec needs no fixture files.
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -306,7 +317,7 @@ test.describe("core composer modes @core", () => {
     // never has to create-and-navigate a session first — that create/navigate handoff
     // is a separate confound (core-first-prompt-local's territory), not this
     // behavior's shell-mode mechanics.
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     await seedProjects(page, [DIR])
     const editor = await openExistingSessionPrompt(page, DIR, SESSION_ID)
     const submit = page.locator(SELECTORS.submitControl).last()
@@ -333,7 +344,7 @@ test.describe("core composer modes @core", () => {
     // between session-creation navigation and shell-mode restore — see this file's
     // findings, not a mechanic of THIS behavior, which is about shell-mode restore in
     // isolation.
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     await seedProjects(page, [DIR])
     const editor = await openExistingSessionPrompt(page, DIR, SESSION_ID)
     const submit = page.locator(SELECTORS.submitControl).last()
@@ -464,7 +475,7 @@ test.describe("core composer modes @core", () => {
     page,
   }) => {
     test.setTimeout(120_000)
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     await overrideMentionAgents(page)
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
@@ -646,7 +657,7 @@ test.describe("core composer modes @core", () => {
 
   test("an image-only prompt with no text is a valid, submittable turn — behavior 18", async ({ page }) => {
     test.setTimeout(120_000)
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     await seedProjects(page, [DIR])
     await openDraftPrompt(page, DIR)
     const submit = page.locator(SELECTORS.submitControl).last()

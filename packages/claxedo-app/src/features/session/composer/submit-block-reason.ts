@@ -67,9 +67,11 @@ const COPY = {
 
 // Actionable reasons have a real fix the user can reach; inert ones resolve on their
 // own (loading/booting) or by typing. Actionable → dim + clickable + explain-on-intent;
-// inert → hard-disabled.
+// inert → hard-disabled. "viewer-role" is deliberately NOT actionable: unlike the other
+// entries here, a read-only role has no in-composer remedy the user can reach (no
+// "request access" action exists), so it hard-disables the Send control exactly like
+// "empty"/"booting" rather than staying dimmed-but-clickable.
 const ACTIONABLE: ReadonlySet<SubmitBlockReason> = new Set<SubmitBlockReason>([
-  "viewer-role",
   "harness-degraded",
   "harness-error",
   "no-model",

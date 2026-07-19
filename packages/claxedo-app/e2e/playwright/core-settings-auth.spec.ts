@@ -744,6 +744,28 @@ function mockSandboxProviders(page: Page, initial: { default_provider: string; p
         return route.fulfill({ status: 404, contentType: "application/json", headers: corsHeaders(), body: "{}" })
         }),
       )
+      // The Sandbox tab's Network Policy section (`network-policy.tsx`) fires its
+      // own unconditional `createResource` fetches (policy rows + groups) the
+      // instant it mounts — independent of anything above, and NOT covered by the
+      // `**/api/workspace/providers**` route. Left unmocked, those hit the real
+      // (unreachable in this harness) backend, reject with "Failed to fetch", and
+      // — reproduced live — crash the top-level `ErrorBoundary` (src/app/entry/
+      // app.tsx:169 wraps `DialogProvider`, so the Settings dialog's own subtree
+      // is inside it) partway through an otherwise-passing scenario, which is
+      // exactly the class of failure this default exists to prevent for every
+      // caller of `.install()`. A test that needs specific policy rows/groups can
+      // still register its own more-specific `**/api/claxedo/network-policy**`
+      // route AFTER calling `.install()` — Playwright's last-registered-first
+      // matching lets it win (see the "Network Policy..." test below, the
+      // pattern this default is modeled on).
+      await page.route(
+        "**/api/claxedo/network-policy**",
+        withCors((route) => {
+          const url = new URL(route.request().url())
+          if (url.pathname === "/api/claxedo/network-policy/groups") return json(route, { groups: {} })
+          return json(route, { policies: [] })
+        }),
+      )
     },
   }
 }
@@ -1367,11 +1389,6 @@ test.describe("core settings + auth @core", () => {
 
   test.describe("Sandbox: default provider, credential CRUD, read-only lock, network policy", () => {
     test("default provider Save only appears on a diff, PUTs default, and clears — behavior 21", async ({ page }) => {
-      const pageErrors: string[] = []
-      page.on("pageerror", (err) => pageErrors.push(err.stack || err.message))
-      page.on("console", (msg) => {
-        if (msg.type() === "error") pageErrors.push("[console.error] " + msg.text())
-      })
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       const sandbox = mockSandboxProviders(page, {
@@ -1410,10 +1427,6 @@ test.describe("core settings + auth @core", () => {
 
       await expect.poll(() => sandbox.putDefaultCalls.length, { timeout: 10_000 }).toBe(1)
       expect(sandbox.putDefaultCalls[0]).toMatchObject({ provider: "e2b" })
-      // eslint-disable-next-line no-console
-      console.log("DEBUG pageErrors", JSON.stringify(pageErrors, null, 2))
-      // eslint-disable-next-line no-console
-      console.log("DEBUG error textarea", await page.locator("textarea, input[readonly]").evaluateAll((nodes) => nodes.map((n) => (n as HTMLInputElement).value)))
       await expect(page.getByText("Default sandbox provider updated")).toBeVisible()
       await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0)
     })

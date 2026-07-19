@@ -135,9 +135,17 @@ export function PromptSubmitControl(props: {
                 ? props.stopLabel
                 : props.booting()
                   ? props.bootText()
-                  : props.block()
-                    ? props.block()!.copy
-                    : props.readOnlyBlocked() ? props.readOnlyLabel : props.sendLabel
+                  // readOnlyBlocked is checked before the generic block copy: viewer-role
+                  // always wins submitBlockReason's priority ordering (see
+                  // submit-block-reason.ts), so without this the dedicated shorter
+                  // `readOnlyLabel` ("Read-only workspace") would never be reachable —
+                  // block()!.copy's "Read-only workspace (viewer)" (the composer
+                  // placeholder's wording) would always shadow it.
+                  : props.readOnlyBlocked()
+                    ? props.readOnlyLabel
+                    : props.block()
+                      ? props.block()!.copy
+                      : props.sendLabel
             }
           />
         </div>

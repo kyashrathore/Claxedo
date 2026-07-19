@@ -225,6 +225,17 @@ const DIR = "/tmp/e2e-core-timeline-rendering-scroll"
 const SESSION_ID = "ses_core_timeline_rendering_scroll"
 const PROJECT_ID = "proj_mock_runtime"
 
+// The mock's DEFAULT opencode model is the `big-pickle` placeholder
+// (`signed-workspace-model.ts` `SIGNED_WORKSPACE_DEFAULT_MODEL`), which the app
+// deliberately filters out of `firstConnectedModelInfo`/`selectRuntimeModel`
+// (`src/features/session/composer/model-strategy.ts`) so it can never be picked as a
+// real default — composer submit stays blocked with "Choose a model to continue"
+// (`no-model`, `submit-block-reason.ts`) until a real model is connected. The one
+// scenario in this spec that drives a real composer send (behavior 8) needs a real,
+// non-placeholder model available, matching the pattern `core-first-prompt-local.spec.ts`
+// already uses for its own send test.
+const HARNESS_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
+
 type AnyPart = Record<string, unknown>
 type AnyInfo = Record<string, unknown>
 
@@ -422,6 +433,40 @@ function assistantRow(input: {
 
 function collapsibleContent(page: Page, partId: string) {
   return page.locator(`[data-timeline-part-id="${partId}"] [data-slot="collapsible-content"]`)
+}
+
+// Session timeline redesign (docs/plans/2026-07-16-003-...-session-timeline-redesign*,
+// ~complete as of 2026-07-18): a settled turn whose tool activity produces >=2
+// "foldable" rows (work groups, context groups, or standalone tool parts) now folds
+// behind one "Worked for Xs" `TurnFold` divider by default (`message-timeline.data.ts`
+// `canFoldSettled`/`shouldFold`) — its `Collapsible.Content` (and therefore every row
+// underneath, including nested group/tool wrappers that otherwise stay mounted
+// regardless of THEIR OWN open state) is presence-unmounted until unfolded. Every
+// scenario below that seeds >=2 foldable rows for one turn must unfold it before
+// asserting on anything nested inside.
+async function unfoldTurnIfNeeded(page: Page, userMessageID: string) {
+  const trigger = page.locator(`[data-message-id="${userMessageID}"][data-timeline-row="TurnFold"] button`)
+  if ((await trigger.count()) === 0) return
+  if ((await trigger.getAttribute("aria-expanded")) === "true") return
+  await trigger.click()
+  await expect(trigger).toHaveAttribute("aria-expanded", "true")
+}
+
+// Consecutive work-type tool parts (bash/edit/write/apply_patch/web — see `workGroupTool`
+// in `message-timeline.data.ts`) fold into ONE `WorkGroup` when the run has >=2 members
+// (a lone work tool stays a standalone row). Like `TurnFold`, `WorkGroup`'s own
+// `Collapsible.Content` presence-unmounts its member rows (each still carrying its own
+// independent `data-timeline-part-id`/settings-driven open state) until expanded.
+async function expandWorkGroupIfPresent(page: Page, partIds: string) {
+  const trigger = page.locator(`[data-timeline-part-ids="${partIds}"] [data-component="work-group-trigger"]`)
+  if ((await trigger.count()) === 0) return
+  // Kobalte presence-unmounts `Collapsible.Content` (here `[data-component="work-group-
+  // list"]`) while closed — the same reliable open/closed signal `collapsibleContent`'s
+  // own doc comment relies on — so its mere presence means the group is already open.
+  const content = page.locator(`[data-timeline-part-ids="${partIds}"] [data-component="work-group-list"]`)
+  if ((await content.count()) > 0) return
+  await trigger.click()
+  await expect(content).toHaveCount(1)
 }
 
 async function openSettings(page: Page) {
@@ -687,6 +732,16 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "turn done")
 
+    // Session timeline redesign: 3 consecutive work-type tool parts (bash, edit,
+    // webfetch) fold into ONE `WorkGroup` (`groupParts` in message-timeline.data.ts —
+    // a work run merges once it has >=2 members). The turn itself has only that single
+    // foldable row, so it stays un-turn-folded (`canFoldSettled` needs >=2 foldable
+    // rows) — but the WorkGroup's own collapsible must be expanded before any member's
+    // nested collapsible-content can be asserted on, same presence-unmount mechanism.
+    await unfoldTurnIfNeeded(page, userID)
+    const workGroupPartIds = "tools_bash,tools_edit,tools_web"
+    await expandWorkGroupIfPresent(page, workGroupPartIds)
+
     // Settings at their default (both false) — bash/edit/webfetch all collapsed.
     await expect(collapsibleContent(page, "tools_bash")).toHaveCount(0)
     await expect(collapsibleContent(page, "tools_edit")).toHaveCount(0)
@@ -825,6 +880,13 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "split done")
 
+    // Session timeline redesign: this turn has 3 foldable rows (the 2-read context
+    // group, the standalone bash part, the standalone trailing read) — >=2, so it
+    // auto-folds behind a "Worked for Xs" `TurnFold` divider that presence-unmounts
+    // everything below it until unfolded (unlike behavior 3's single-group turn, which
+    // stays under the foldable-row threshold and needs no unfold).
+    await unfoldTurnIfNeeded(page, userID)
+
     await expect(page.locator('[data-timeline-part-ids="split1_read,split2_read"]')).toHaveCount(1)
     await expect(page.locator('[data-timeline-part-ids="split4_read"]')).toHaveCount(1)
     await expect(page.locator('[data-timeline-part-id="split3_bash"]')).toHaveCount(1)
@@ -876,7 +938,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(diffRow.locator('[data-slot="session-turn-diff-view"]')).toHaveCount(1)
   })
 
-  test("diff-summary caps the preview at 10 files with a more/less toggle — behavior 6", async ({ page }) => {
+  test("diff-summary caps the preview at 3 files with a show all/less toggle — behavior 6", async ({ page }) => {
     const userID = "msg_user_diffs_overflow"
     const assistantID = "msg_assistant_diffs_overflow"
     const diffs = Array.from({ length: 12 }, (_, i) => ({
@@ -893,19 +955,24 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "many files changed")
 
+    // Session timeline redesign: the diff-summary preview cap dropped from 10 to 3
+    // (`maxFiles` in `TimelineDiffSummaryRow`, src/features/session/ui/message-
+    // timeline.tsx) and the separate "+N more files" affordance was removed —
+    // overflow is surfaced only via the single `session-turn-diffs-toggle`
+    // ("Show all"/"Show less", no count), which now does double duty as both the
+    // expand and collapse control.
     const diffRow = page.locator(`[data-message-id="${userID}"][data-timeline-row="DiffSummary"]`)
     const triggers = diffRow.locator('[data-slot="session-turn-diff-trigger"]')
-    await expect(triggers).toHaveCount(10, { timeout: 30_000 })
-    const more = diffRow.locator('[data-slot="session-turn-diffs-more"]')
-    await expect(more).toContainText("+2 more files")
-
-    await more.click()
-    await expect(triggers).toHaveCount(12)
+    await expect(triggers).toHaveCount(3, { timeout: 30_000 })
     const toggle = diffRow.locator('[data-slot="session-turn-diffs-toggle"]')
+    await expect(toggle).toContainText("Show all")
+
+    await toggle.click()
+    await expect(triggers).toHaveCount(12)
     await expect(toggle).toContainText("Show less")
 
     await toggle.click()
-    await expect(triggers).toHaveCount(10)
+    await expect(triggers).toHaveCount(3)
   })
 
   test("jump-to-bottom appears once scrolled away from the bottom and returns there on click, clearing any hash — behaviors 7,9", async ({ page }) => {
@@ -983,7 +1050,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await page.setViewportSize({ width: 1280, height: 600 })
     const longReply = (turn: number, text: string) =>
       `ack ${turn}: ${text}\n\n${"The quick brown fox jumps over the lazy dog. ".repeat(8)}`
-    await openSessionWithFirstSend(page, { replyText: longReply })
+    await openSessionWithFirstSend(page, { replyText: longReply, harnessModels: HARNESS_MODELS })
     // Build up enough height that the timeline genuinely overflows before the
     // final, observed turn streams in.
     await sendAndProve(page, "second timeline message", "ack 2: second timeline message")

@@ -156,6 +156,17 @@ import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, S
 const DIR = "/tmp/e2e-core-turns-reload-recovery"
 const SESSION_ID = "ses_core_turns_reload_recovery"
 
+// The mock's DEFAULT opencode model is the `big-pickle` placeholder
+// (`signed-workspace-model.ts` `SIGNED_WORKSPACE_DEFAULT_MODEL`), which the app
+// deliberately filters out of `firstConnectedModelInfo`/`selectRuntimeModel`
+// (`src/features/session/composer/model-strategy.ts`) so it can never be picked
+// as a real default — composer submit stays blocked with "Choose a model to
+// continue" (`no-model`, `submit-block-reason.ts`) until a real model is
+// connected. Every send in this spec needs a real, non-placeholder model
+// available, matching the pattern `core-first-prompt-local.spec.ts` already
+// uses for its own send test.
+const HARNESS_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
+
 // A 1x1 transparent PNG, inlined so this spec makes zero filesystem/network calls for
 // its attachment fixture.
 const PNG_1X1_BASE64 =
@@ -271,7 +282,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
   test("2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3", async ({
     page,
   }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
@@ -331,7 +342,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
   test("ArrowUp/ArrowDown recall sent prompts in LIFO order and the recalled text can be edited and resent — behaviors 4,5", async ({
     page,
   }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
@@ -373,7 +384,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
   })
 
   test("prompt history is persisted and survives a reload — behavior 6", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
@@ -393,7 +404,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
   })
 
   test("shell-mode and normal-mode prompt history are independent stacks — behavior 7", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
@@ -445,7 +456,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
   test("a forced dispatch failure restores composer text + attachment, toasts, and a resend succeeds — behavior 8", async ({
     page,
   }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
@@ -553,7 +564,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     // oracle's geometric hit-test correctly flags as a covering overlay when it happens.
     await page.setViewportSize({ width: 1280, height: 460 })
 
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 

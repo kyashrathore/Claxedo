@@ -517,18 +517,30 @@ test.describe("core harness ownership (local) @core", () => {
       // The error message surfaces in the model-issue tooltip glyph.
       await expect(page.locator(`[aria-label="${errorMessage}"]`)).toBeVisible()
 
-      // Submit stays disabled (gated on the harness model control, not the
-      // plain-OpenCode one) even after the user types and attempts to submit.
+      // SPEC UPDATED (T5, dev-docs/CLAXEDO_ERROR_PROPOSAL.md §B3/§T5, submit-block-
+      // reason.ts): "Blocked ≠ disabled" — actionable reasons (including
+      // `harness-error`) are never hard-`disabled` anymore; they stay clickable but
+      // dimmed (`opacity-50`) and explain their refusal on intent/hover instead of
+      // going silently dead. `harness-error` is in submit-block-reason.ts's
+      // `ACTIONABLE` set, so the real gate here is `submitBlocked` inside the submit
+      // handler (still hard-blocks the actual send), not the button's `disabled`
+      // attribute.
       await composePrompt(page, input, "core harness unavailable attempt")
-      await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
-      await page.locator(SELECTORS.submitControl).last().click({ force: true }).catch(() => {})
+      const submit = page.locator(SELECTORS.submitControl).last()
+      await expect(submit).toBeEnabled()
+      await expect(submit).toHaveClass(/opacity-50/)
+      await expect(submit).toHaveAttribute("aria-label", "The agent isn't running")
+      await submit.click()
 
       // Never silently falls back to plain OpenCode.
       await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
       await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveCount(1)
       await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
 
-      // Zero session/prompt requests were ever sent.
+      // Zero session/prompt requests were ever sent — the click flashed the
+      // explain-on-intent tooltip but never actually submitted, since
+      // `submitBlocked` (composer.tsx) still hard-gates the handler regardless of
+      // the button's dim-but-clickable visual state.
       expect(mock.requests.promptCount).toBe(0)
       expect(mock.requests.createSessionCount).toBe(0)
     },
@@ -556,17 +568,18 @@ test.describe("core harness ownership (local) @core", () => {
       })
 
       await seedOneProject(page, DIR)
-      // While the harness is polling, the composer is intentionally FADED and
-      // non-editable — `harnessPending()` (true exactly when
-      // `harnessReadiness(scope) === "polling"`,
-      // src/session-client/composer/composer.tsx:204-208) drives
-      // `contenteditable="false"` / `aria-disabled="true"` on the editor
-      // (src/components/prompt-input/frame.tsx:222-223) and a 0.45 opacity fade.
-      // That non-editable fade IS the contract this behavior asserts, so it must
-      // NOT be opened via the shared `openDraftPrompt` helper — that helper
-      // encodes the READY-harness contract (`contenteditable="true"`) and would
-      // (correctly) reject the faded composer. Navigate inline and assert the
-      // faded/disabled state directly instead.
+      // SPEC UPDATED (T5 §4, dev-docs/CLAXEDO_ERROR_PROPOSAL.md; frame.tsx:239-241):
+      // "keep the editor editable while the harness polls — gate the submit, not
+      // the typing." The editor is UNCONDITIONALLY `contenteditable="true"` now (no
+      // `aria-disabled` is ever set on it) — a dead-looking box teaches nothing, so
+      // the composer stays a live, typeable peek even while connecting. What DOES
+      // stay gated is the harness Select trigger (dimmed + `disabled` — see
+      // `harnessDisabled`/`harnessTriggerStyle`, agent-harness-selector.tsx:308-313)
+      // and the submit control (`harness-polling` is NOT in submit-block-reason.ts's
+      // `ACTIONABLE` set, so it stays hard-disabled, unlike behavior 5's
+      // `harness-error`). This no longer needs the old FADED-editor caveat, but the
+      // inline navigation is kept anyway to assert the polling contract directly
+      // without any intermediate ready-harness assumption.
       await page.goto(`/${slug(DIR)}/session`)
       await page.waitForLoadState("domcontentloaded")
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -581,11 +594,11 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
 
-      // Composer fade: the editor is dimmed and non-editable while connecting, so
-      // the user cannot compose at all — a strictly stronger guarantee than
-      // "typed text is rejected". Submit stays disabled on top of that.
-      await expect(input).toHaveAttribute("contenteditable", "false")
-      await expect(input).toHaveAttribute("aria-disabled", "true")
+      // The editor stays live and typeable; the harness Select trigger (still
+      // showing the polling harness's label) and submit are what's gated.
+      await expect(input).toHaveAttribute("contenteditable", "true")
+      await expect(input).not.toHaveAttribute("aria-disabled")
+      await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeDisabled()
       await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
 
       // Never silently falls back to plain OpenCode, and no requests are sent.
@@ -627,9 +640,10 @@ test.describe("core harness ownership (local) @core", () => {
 
       await seedOneProject(page, DIR)
 
-      // Same faded/non-editable draft entry as behavior 6 — the READY-harness
-      // `openDraftPrompt` helper would (correctly) reject the faded composer, so
-      // navigate inline and assert the polling contract directly first.
+      // SPEC UPDATED (T5 §4 — see behavior 6's comment): the editor is always
+      // `contenteditable="true"`, polling or not, so it can no longer serve as the
+      // phase-1/phase-2 signal. Navigate inline anyway to assert the polling
+      // contract directly without any intermediate ready-harness assumption.
       await page.goto(`/${slug(DIR)}/session`)
       await page.waitForLoadState("domcontentloaded")
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -637,19 +651,21 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(input).toBeVisible({ timeout: 20_000 })
 
       await expectHarnessAutoHydrated(page, /^Claude$/)
+      const harnessTrigger = page.getByRole("button", { name: /^Claude$/ }).last()
 
-      // Phase 1 — still connecting: pill shown, composer faded/non-editable,
-      // never the red "Unavailable" dot.
+      // Phase 1 — still connecting: pill shown, harness Select trigger disabled
+      // (dimmed), editor stays live/typeable, never the red "Unavailable" dot.
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
-      await expect(input).toHaveAttribute("contenteditable", "false")
+      await expect(input).toHaveAttribute("contenteditable", "true")
+      await expect(harnessTrigger).toBeDisabled()
 
       // Phase 2 — the bounded re-probe loop drives the harness to settle: the
       // "Connecting" pill clears on its own (no user action, no reload), the
-      // composer becomes editable, and it never degrades to "Unavailable".
+      // harness Select trigger re-enables, and it never degrades to "Unavailable".
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0, { timeout: 30_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
-      await expect(input).toHaveAttribute("contenteditable", "true", { timeout: 10_000 })
+      await expect(harnessTrigger).toBeEnabled({ timeout: 10_000 })
 
       // The harness model resolves and submit unlocks once the user types.
       await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
