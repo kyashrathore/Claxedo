@@ -32,6 +32,12 @@ jobs:
           - name: windows
             host: windows-latest
     runs-on: ${{ matrix.settings.host }}
+    # Windows legs are visible-but-nonblocking: Bun on Windows hits a known
+    # patched-dependency install bug (effect@4.0.0-beta.83 patch -> ENOTEMPTY,
+    # https://github.com/oven-sh/bun/issues/28147) that fails `bun install`
+    # before any test runs. Linux stays blocking. Drop this once the Bun bug
+    # is fixed.
+    continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}
     defaults:
       run:
         shell: bash
@@ -100,6 +106,9 @@ jobs:
           - name: windows
             host: windows-latest
     runs-on: ${{ matrix.settings.host }}
+    # Same known Bun-on-Windows patched-dependency install bug as the unit
+    # job (effect@4.0.0-beta.83 patch -> ENOTEMPTY); nonblocking on Windows only.
+    continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:
@@ -135,6 +144,27 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # packages/*/dist is gitignored; the app (and the workgraph-real e2e
+      # suite) resolve @claxedo/* workspace packages through their dist
+      # exports (vite fails on @claxedo/workgraph/contracts otherwise), so
+      # build them before starting the Playwright web server. Same scoped
+      # list as typecheck.yml — keeps heavy app/binary builds out.
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
 
       - name: Install Playwright Chromium
         working-directory: packages/claxedo-app

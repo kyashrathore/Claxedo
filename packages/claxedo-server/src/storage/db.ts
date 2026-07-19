@@ -50,14 +50,14 @@ function openDatabase(file: string) {
     const sqlite = new bun.Database(file)
     return {
       sqlite: sqlite as CompatibleSqlite,
-      db: drizzle(sqlite, { schema }) as unknown as BetterSQLite3Database<typeof schema>,
+      db: drizzle({ client: sqlite, schema }) as unknown as BetterSQLite3Database<typeof schema>,
     }
   }
 
   const sqlite = new Database(file)
   return {
     sqlite: sqlite as CompatibleSqlite,
-    db: drizzleBetter(sqlite, { schema }),
+    db: drizzleBetter({ client: sqlite, schema }),
   }
 }
 
@@ -205,6 +205,10 @@ export namespace ClaxedoDB {
 
   export function transaction<T>(callback: (db: Client) => T): T {
     const db = Drizzle()
-    return db.transaction((tx) => callback(tx as unknown as Client))
+    // drizzle >=1.0 types sync-driver transaction callbacks as `T extends
+    // Promise<any> ? DrizzleTypeError : T`; the casts keep the generic
+    // signature callers rely on (callers here are synchronous).
+    const run = (tx: unknown) => callback(tx as Client)
+    return db.transaction(run as never) as T
   }
 }
