@@ -2309,6 +2309,45 @@ describe("Convex WorkGraph store", () => {
       .rejects.toMatchObject({ name: "ConvexError", data: { code: "cursor_invalid", reason: "invalidated" } })
   })
 
+  test("serves contract-clean snapshots, Stream reads, and archive exports over legacy recap-era activity rows", async () => {
+    // Regression (staging smoke 500, 2026-07-19): the recap removal dropped
+    // `recapDueAt`/`lastRecapId` from the contract's strict StreamActivitySchema,
+    // but `activity` is stored as v.any() so deployed rows still carry the
+    // legacy keys. Passing the stored object through made the strict
+    // WorkGraphSnapshotPageSchema parse in the HTTP router throw, masking as
+    // {"code":"internal_error"} 500 on GET /api/workgraph/snapshot.
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "legacy_activity_stream", {
+      type: "create_stream",
+      title: "Legacy activity Stream",
+    }), "streamId")
+    const row = harness.rowsFor("workgraph_streams").find((stored) => stored.id === streamId)!
+    row.activity = {
+      lastActivityAt: row.updated_at,
+      recapDueAt: row.updated_at + 60_000,
+      lastRecapId: "recap_legacy_1",
+    }
+
+    const page = WorkGraphSnapshotPageSchema.parse(
+      await readWorkGraphProjection(harness, "owner_a", "snapshot", { limit: 100 }),
+    )
+    const record = page.records.find((candidate) => candidate.id === streamId)
+    expect(record).toMatchObject({ recordType: "stream" })
+    expect((record as { activity: unknown }).activity).toEqual({ lastActivityAt: row.updated_at })
+
+    const stream = await readWorkGraphProjection(harness, "owner_a", "stream", { streamId }) as { activity: unknown }
+    expect(stream.activity).toEqual({ lastActivityAt: row.updated_at })
+
+    const exported = await exportWorkGraphArchive(harness, "owner_a", "owner_a", row.updated_at + 1) as {
+      ok: boolean
+      archive?: unknown
+    }
+    expect(exported.ok).toBe(true)
+    const archive = WorkGraphArchiveSchema.parse(exported.archive)
+    const archived = archive.records.find((candidate) => candidate.kind === "stream" && candidate.id === streamId)
+    expect((archived?.value as { activity: unknown }).activity).toEqual({ lastActivityAt: row.updated_at })
+  })
+
   test("resumes hosted snapshots beyond the first hundred records without truncation", async () => {
     const harness = new ConvexHarness(["owner_a"])
     let now = 1_000

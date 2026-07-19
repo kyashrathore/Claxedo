@@ -13,6 +13,7 @@ import { dependencyGraphHasCycle } from "@claxedo/workgraph/domain"
 import { serviceMutation, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
+import { streamActivity } from "./workgraphChanges"
 
 const ROOT_ID = "workgraph_default"
 const activeAttemptStates = new Set(["admitted", "placing", "running"])
@@ -110,7 +111,9 @@ export async function exportWorkGraphArchive(ctx: any, organization: string, own
       ...(row.public_pr_confirmed_at === undefined ? {} : { publicPrConfirmedAt: row.public_pr_confirmed_at }),
       visibility: row.visibility, pinned: row.pinned, executionDefaults: row.execution_defaults,
       activityGranularity: row.activity_granularity ?? "progress",
-      activity: row.activity,
+      // Legacy rows can still carry recap-era keys inside `activity`; project
+      // the contract shape or the strict archive parse below fails the export.
+      activity: streamActivity(row),
       ...(row.envelope === undefined ? {} : { envelope: row.envelope }),
       ...(row.replacement_reset === undefined ? {} : { replacementReset: row.replacement_reset }),
       durableEffectCount: rows.workgraph_durable_effect_receipts.filter((receipt) => receipt.stream_id === row.id).length,

@@ -618,12 +618,21 @@ function streamDto(row: any, owner: string) {
     ...(row.public_pr_confirmed_at === undefined ? {} : { publicPrConfirmedAt: row.public_pr_confirmed_at }),
     lifecycleState: row.lifecycle_state, visibility: row.visibility, pinned: row.pinned, executionDefaults: row.execution_defaults ?? {},
     activityGranularity: row.activity_granularity ?? "progress",
-    activity: Object.keys(row.activity ?? {}).length ? row.activity : { lastActivityAt: row.updated_at },
+    activity: streamActivity(row),
     ...(row.envelope === undefined ? {} : { envelope: row.envelope }),
     ...(row.replacement_reset === undefined ? {} : { replacementReset: row.replacement_reset }),
     durableEffectCount: row.durable_effect_count,
     sourceRevisionRefs: refs(row.source_revision_refs),
   }
+}
+
+/** Project the exact contract shape. Deployed rows can still carry recap-era
+ *  keys inside `activity` (`recapDueAt`, `lastRecapId`): the contract dropped
+ *  them, but `activity` is stored as v.any() so no schema push rewrote the
+ *  rows. Passing the stored object through fails the strict snapshot parse in
+ *  the HTTP router and turns the whole page into a 500. */
+export function streamActivity(row: any) {
+  return { lastActivityAt: row.activity?.lastActivityAt ?? row.updated_at }
 }
 
 function sourceDto(row: any, owner: string) {
