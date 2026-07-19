@@ -54,6 +54,7 @@ describe("public WorkGraph record contracts", () => {
       version: 3,
       title: "Ship WorkGraph",
       description: "Personal AI work organization",
+      charter: { text: "Open draft pull requests.", hash: "c".repeat(64) },
       lifecycleState: "active",
       visibility: "visible",
       pinned: true,
@@ -103,6 +104,7 @@ describe("public WorkGraph record contracts", () => {
     })
 
     expect(item.outcomeId).toBe(outcome.id)
+    expect(stream.charter?.hash).toBe("c".repeat(64))
     expect(() => StreamDtoSchema.parse({ ...stream, credential: "secret" })).toThrow()
     expect(() => OutcomeDtoSchema.parse({ ...outcome, ownerUserId: "" })).toThrow()
     expect(() => WorkItemDtoSchema.parse({ ...item, version: 0 })).toThrow()

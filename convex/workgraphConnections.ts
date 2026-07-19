@@ -1,7 +1,10 @@
 import { v } from "convex/values"
+import type { GenericMutationCtx } from "convex/server"
+import type { DataModel, Id } from "./_generated/dataModel"
 import { serviceMutation, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable } from "./workgraphModel"
 import { syncConnectionAttention } from "./workgraphAttention"
+import { appendSystemWorkGraphChange, applyWorkGraphCommand } from "./workgraphCommands"
 
 const integrationId = v.union(v.literal("github"), v.literal("linear"), v.literal("jira"))
 const status = v.union(v.literal("connected"), v.literal("degraded"), v.literal("broken"))
@@ -11,6 +14,7 @@ const connectionTools = new Set([
   "connection_work_source_list",
   "connection_work_source_comment",
   "connection_work_source_update",
+  "connection_code_host_open_pr",
 ])
 const metadataFields = {
   github: new Set(["installation_id"]),
@@ -140,15 +144,18 @@ export const bindAttemptConnections = serviceMutation({
     if (!connectionIds.length || !tools.length) throw new Error("Connection binding requires connections and tools")
     if (tools.some((tool) => !connectionTools.has(tool))) throw new Error("Unsupported Connection operation tool")
     const attempt = await ownedAttempt(ctx, args.orgId, args.ownerUserId, attemptId)
-    if (!attempt || attempt.session_id !== sessionId || attempt.envelope_id !== workspaceId || attempt.state !== "running") {
+    const master = attempt ? undefined : await ownedMasterStream(ctx, args.orgId, args.ownerUserId, attemptId, sessionId)
+    if ((!attempt || attempt.session_id !== sessionId || attempt.envelope_id !== workspaceId || attempt.state !== "running") && !master) {
       throw new Error("Attempt placement does not match the Connection binding")
     }
-    const profile = attempt.resolved_execution as { connectionIds?: unknown; tools?: unknown }
+    const profile = (attempt?.resolved_execution ?? master?.execution_defaults) as { connectionIds?: unknown; tools?: unknown }
     if (!sameSet(connectionIds, strings(profile.connectionIds)) || !tools.every((tool) => strings(profile.tools).includes(tool))) {
       throw new Error("Connection binding exceeds the immutable Attempt profile")
     }
     const metadata = await Promise.all(connectionIds.map((id) => connectionMetadata(ctx, args.orgId, id)))
-    if (metadata.some((connection) => !connection || connection.status !== "connected" || !connection.capabilities.includes("work-source"))) {
+    const requiredCapabilities = new Set(tools.map((tool) => tool === "connection_code_host_open_pr" ? "code-host" : "work-source"))
+    if (metadata.some((connection) => !connection || connection.status !== "connected" ||
+      [...requiredCapabilities].some((capability) => !connection.capabilities.includes(capability)))) {
       throw new Error("Connection metadata is unavailable")
     }
     const existing = await attemptBinding(ctx, args.orgId, args.ownerUserId, attemptId)
@@ -196,9 +203,11 @@ export const resolveOperationBinding = serviceQuery({
       binding.workspace_id !== args.workspaceId || !binding.connection_ids.includes(args.connectionId) ||
       !binding.tools.includes(args.tool)) return null
     const attempt = await ownedAttempt(ctx, args.orgId, args.ownerUserId, args.attemptId)
-    if (!attempt || attempt.state !== "running" || attempt.session_id !== args.sessionId || attempt.envelope_id !== args.workspaceId) return null
+    const master = attempt ? undefined : await ownedMasterStream(ctx, args.orgId, args.ownerUserId, args.attemptId, args.sessionId)
+    if ((!attempt || attempt.state !== "running" || attempt.session_id !== args.sessionId || attempt.envelope_id !== args.workspaceId) && !master) return null
     const connection = await connectionMetadata(ctx, args.orgId, args.connectionId)
-    if (!connection || connection.status !== "connected" || !connection.capabilities.includes("work-source")) return null
+    const capability = args.tool === "connection_code_host_open_pr" ? "code-host" : "work-source"
+    if (!connection || connection.status !== "connected" || !connection.capabilities.includes(capability)) return null
     return {
       context: { ownerUserId: String(args.ownerUserId), ownerPartition: `org:${String(args.orgId)}` },
       attemptId: binding.attempt_id,
@@ -206,8 +215,332 @@ export const resolveOperationBinding = serviceQuery({
       workspaceId: binding.workspace_id,
       connectionIds: binding.connection_ids,
       tools: binding.tools,
+      ...(master ? { streamId: master.id } : { streamId: attempt!.stream_id }),
       connection: metadataResult(connection),
     }
+  },
+})
+
+export const recordPullRequestReceipt = serviceMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    orgId: v.id("orgs"),
+    streamId: v.string(),
+    attemptId: v.string(),
+    idempotencyKey: v.string(),
+    pullRequestId: v.string(),
+    url: v.string(),
+    draft: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requireOrgMember(ctx, args.ownerUserId, args.orgId)
+    await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
+    const existing = await ctx.db.query("workgraph_durable_effect_receipts")
+      .withIndex("by_tenant_idempotency", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("idempotency_key", args.idempotencyKey))
+      .unique()
+    if (existing) return { durableEffectReceiptId: existing.id, recorded: false as const }
+    const attempt = await ctx.db.query("workgraph_attempts")
+      .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.attemptId))
+      .unique()
+    const master = attempt ? undefined : await ownedMasterStream(
+      ctx,
+      args.orgId,
+      args.ownerUserId,
+      args.attemptId,
+      `ses_master_${args.streamId}`,
+    )
+    if ((!attempt || attempt.state !== "running" || attempt.stream_id !== args.streamId) && !master) {
+      throw new Error("Pull request receipt requires an active WorkGraph execution")
+    }
+    return persistPullRequestReceipt(ctx, { ...args, now: Date.now() })
+  },
+})
+
+export const claimPullRequestEffect = serviceMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    orgId: v.id("orgs"),
+    streamId: v.string(),
+    attemptId: v.string(),
+    workerId: v.string(),
+    idempotencyKey: v.string(),
+    repository: v.string(),
+    head: v.string(),
+    base: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    draft: v.boolean(),
+    publicRepository: v.boolean(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireOrgMember(ctx, args.ownerUserId, args.orgId)
+    await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
+    const existing = await ctx.db.query("workgraph_outbox")
+      .withIndex("by_tenant_idempotency", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("idempotency_key", args.idempotencyKey))
+      .unique()
+    if (existing?.status === "completed") {
+      const result = (existing.payload as { result?: unknown }).result
+      if (!result) throw new Error("Completed pull request effect is missing its result")
+      return { state: "completed" as const, result }
+    }
+    if (existing?.status === "claimed" && Number(existing.claim_expires_at) > args.now) {
+      return { state: "busy" as const }
+    }
+    const attempt = await ctx.db.query("workgraph_attempts")
+      .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.attemptId))
+      .unique()
+    const master = attempt ? undefined : await ownedMasterStream(
+      ctx,
+      args.orgId,
+      args.ownerUserId,
+      args.attemptId,
+      `ses_master_${args.streamId}`,
+    )
+    if ((!attempt || attempt.state !== "running" || attempt.stream_id !== args.streamId) && !master) {
+      throw new Error("Pull request effect requires an active WorkGraph execution")
+    }
+    const payload = {
+      streamId: args.streamId,
+      attemptId: args.attemptId,
+      repository: args.repository,
+      head: args.head,
+      base: args.base,
+      title: args.title,
+      ...(args.body === undefined ? {} : { body: args.body }),
+      draft: args.draft,
+      publicRepository: args.publicRepository,
+    }
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        payload,
+        status: "claimed",
+        claimed_by: args.workerId,
+        claim_expires_at: args.now + 60_000,
+        attempt_count: existing.attempt_count + 1,
+        last_error: undefined,
+        updated_at: args.now,
+      })
+      return { state: "claimed" as const, outboxId: existing.id }
+    }
+    const outboxId = `outbox_pr_${crypto.randomUUID()}`
+    await ctx.db.insert("workgraph_outbox", {
+      organization_id: args.orgId,
+      owner_user_id: args.ownerUserId,
+      id: outboxId,
+      operation_id: `pull_request_${args.idempotencyKey}`,
+      stream_id: args.streamId,
+      effect_type: "open_pull_request",
+      idempotency_key: args.idempotencyKey,
+      payload,
+      status: "claimed",
+      available_at: args.now,
+      attempt_count: 1,
+      claimed_by: args.workerId,
+      claim_expires_at: args.now + 60_000,
+      schema_version: 1,
+      created_at: args.now,
+      updated_at: args.now,
+    })
+    return { state: "claimed" as const, outboxId }
+  },
+})
+
+export const completePullRequestEffect = serviceMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    orgId: v.id("orgs"),
+    outboxId: v.string(),
+    workerId: v.string(),
+    pullRequestId: v.string(),
+    url: v.string(),
+    draft: v.boolean(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireOrgMember(ctx, args.ownerUserId, args.orgId)
+    await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
+    const outbox = await ctx.db.query("workgraph_outbox")
+      .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.outboxId))
+      .unique()
+    if (!outbox || outbox.effect_type !== "open_pull_request") throw new Error("Pull request effect is unavailable")
+    if (outbox.status === "completed") return (outbox.payload as { result: unknown }).result
+    if (outbox.status !== "claimed" || outbox.claimed_by !== args.workerId) {
+      throw new Error("Pull request effect lease is no longer owned by this worker")
+    }
+    const payload = outbox.payload as { streamId: string; attemptId: string; draft: boolean }
+    const receipt = await persistPullRequestReceipt(ctx, {
+      ownerUserId: args.ownerUserId,
+      orgId: args.orgId,
+      streamId: payload.streamId,
+      attemptId: payload.attemptId,
+      idempotencyKey: outbox.idempotency_key,
+      pullRequestId: args.pullRequestId,
+      url: args.url,
+      draft: args.draft,
+      now: args.now,
+    })
+    const result = {
+      type: "open_pull_request" as const,
+      pullRequestId: args.pullRequestId,
+      url: args.url,
+      draft: args.draft,
+      durableEffectReceiptId: receipt.durableEffectReceiptId,
+      evidenceId: receipt.evidenceId,
+    }
+    await ctx.db.patch(outbox._id, {
+      payload: { ...payload, result },
+      status: "completed",
+      claimed_by: undefined,
+      claim_expires_at: undefined,
+      last_error: undefined,
+      updated_at: args.now,
+    })
+    return result
+  },
+})
+
+export const failPullRequestEffect = serviceMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    orgId: v.id("orgs"),
+    outboxId: v.string(),
+    workerId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireOrgMember(ctx, args.ownerUserId, args.orgId)
+    const outbox = await ctx.db.query("workgraph_outbox")
+      .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.outboxId))
+      .unique()
+    if (!outbox || outbox.status !== "claimed" || outbox.claimed_by !== args.workerId) return { settled: false as const }
+    await ctx.db.patch(outbox._id, {
+      status: outbox.attempt_count >= 3 ? "failed" : "pending",
+      available_at: args.now + Math.min(60_000, 1_000 * 2 ** Math.max(0, outbox.attempt_count - 1)),
+      claimed_by: undefined,
+      claim_expires_at: undefined,
+      last_error: "Pull request provider operation failed",
+      updated_at: args.now,
+    })
+    return { settled: true as const }
+  },
+})
+
+async function persistPullRequestReceipt(ctx: GenericMutationCtx<DataModel>, args: {
+  ownerUserId: Id<"users">
+  orgId: Id<"orgs">
+  streamId: string
+  attemptId: string
+  idempotencyKey: string
+  pullRequestId: string
+  url: string
+  draft: boolean
+  now: number
+}) {
+  const stream = await ctx.db.query("workgraph_streams")
+    .withIndex("by_tenant_id", (query) => query.eq("organization_id", args.orgId)
+      .eq("owner_user_id", args.ownerUserId).eq("id", args.streamId))
+    .unique()
+  if (!stream) throw new Error("Pull request Stream is unavailable")
+  const receiptId = `receipt_pr_${crypto.randomUUID()}`
+  const evidenceId = `evidence_pr_${crypto.randomUUID()}`
+  const provenance = { actor: { type: "agent", id: args.attemptId } } as const
+  await ctx.db.insert("workgraph_durable_effect_receipts", {
+    organization_id: args.orgId,
+    owner_user_id: args.ownerUserId,
+    id: receiptId,
+    stream_id: args.streamId,
+    effect_kind: "published",
+    idempotency_key: args.idempotencyKey,
+    external_reference: { url: args.url, pullRequestId: args.pullRequestId, draft: args.draft },
+    provenance,
+    schema_version: 1,
+    created_at: args.now,
+  })
+  await ctx.db.insert("workgraph_evidence", {
+    organization_id: args.orgId,
+    owner_user_id: args.ownerUserId,
+    id: evidenceId,
+    stream_id: args.streamId,
+    subject_type: "stream",
+    subject_id: args.streamId,
+    evidence_kind: "integration",
+    summary: `Opened ${args.draft ? "draft " : ""}pull request`,
+    reference: { kind: "integration", effect: "published", reference: args.url, durableEffectReceiptId: receiptId },
+    provenance,
+    schema_version: 1,
+    created_at: args.now,
+  })
+  await ctx.db.patch(stream._id, {
+    durable_effect_count: stream.durable_effect_count + 1,
+    row_version: stream.row_version + 1,
+    updated_at: args.now,
+  })
+  await appendSystemWorkGraphChange(ctx, {
+    organizationId: String(args.orgId),
+    ownerUserId: String(args.ownerUserId),
+    operationId: `pull_request_${receiptId}`,
+    eventId: `event_pull_request_${receiptId}`,
+    changeId: `change_pull_request_${receiptId}`,
+    resourceType: "stream",
+    resourceId: args.streamId,
+    changeType: "master_audit_recorded",
+    payload: { streamId: args.streamId, evidenceId, durableEffectReceiptId: receiptId, url: args.url, draft: args.draft },
+    actorId: args.attemptId,
+    now: args.now,
+  })
+  return { durableEffectReceiptId: receiptId, evidenceId, recorded: true as const }
+}
+
+export const authorizePullRequest = serviceMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    orgId: v.id("orgs"),
+    streamId: v.string(),
+    attemptId: v.string(),
+    repository: v.string(),
+    title: v.string(),
+    draft: v.boolean(),
+    publicRepository: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requireOrgMember(ctx, args.ownerUserId, args.orgId)
+    await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
+    if (args.draft || !args.publicRepository) return { allowed: true as const }
+    const stream = await ctx.db.query("workgraph_streams")
+      .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.streamId))
+      .unique()
+    if (!stream) throw new Error("Pull request Stream is unavailable")
+    if (stream.public_pr_confirmed_at !== undefined) return { allowed: true as const }
+    const sessionId = `ses_master_${stream.id}`
+    if (args.attemptId !== `master_${stream.id}` || stream.master_status?.sessionId !== sessionId) {
+      throw new Error("Only the Stream master can request public PR confirmation")
+    }
+    const result = await applyWorkGraphCommand(ctx, {
+      organizationId: String(args.orgId),
+      ownerUserId: String(args.ownerUserId),
+      ownerSubject: String(args.ownerUserId),
+      actor: { type: "agent", id: sessionId },
+      requestId: `public_pr_confirmation_${stream.id}`,
+      operationId: `public_pr_confirmation_${stream.id}`,
+      command: {
+        version: 1,
+        type: "request_public_pr_confirmation",
+        streamId: stream.id,
+        expectedVersion: stream.row_version,
+        repository: args.repository,
+        title: args.title,
+      },
+    })
+    if (!result.ok) throw new Error(result.error.message)
+    return { allowed: false as const }
   },
 })
 
@@ -255,6 +588,18 @@ function ownedAttempt(ctx: any, orgId: string, ownerUserId: string, attemptId: s
   return ctx.db.query("workgraph_attempts")
     .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", attemptId))
     .unique()
+}
+
+async function ownedMasterStream(ctx: any, orgId: string, ownerUserId: string, attemptId: string, sessionId: string) {
+  if (!attemptId.startsWith("master_") || !sessionId.startsWith("ses_master_")) return
+  const streamId = attemptId.slice("master_".length)
+  if (sessionId !== `ses_master_${streamId}`) return
+  const stream = await ctx.db.query("workgraph_streams")
+    .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", streamId))
+    .unique()
+  return stream && stream.master_status?.sessionId === sessionId && ["pending", "acting"].includes(stream.master_status.state)
+    ? stream
+    : undefined
 }
 
 async function requireOrgMember(ctx: any, ownerUserId: string, orgId: string) {

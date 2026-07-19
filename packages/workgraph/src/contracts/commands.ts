@@ -18,6 +18,7 @@ import { StreamLifecycleStateSchema, StreamVisibilitySchema } from "./lifecycle"
 import { AuthoringSourceRevisionSchema, WorkSourceRevisionRefSchema } from "./work-source"
 import { ChangeCursorSchema } from "./change-cursor"
 import { AgentCheckpointLevelSchema, StreamActivityGranularitySchema } from "./activity"
+import { StreamCharterSchema } from "./charter"
 
 export { ChangeCursorSchema, type ChangeCursor } from "./change-cursor"
 
@@ -69,6 +70,7 @@ export const CreateStreamCommandSchema = z.strictObject({
   type: z.literal("create_stream"),
   title: text,
   description: z.string().optional(),
+  charter: StreamCharterSchema.optional(),
   source: WorkSourceRevisionRefSchema.optional(),
   execution: ExecutionProfileDefaultsSchema.optional(),
   activityGranularity: StreamActivityGranularitySchema.optional(),
@@ -218,8 +220,80 @@ export const ConfirmAdmissionCommandSchema = z.strictObject({
   selection: AdmissionSelectionSchema,
   outcomes: z.array(AdmissionOutcomeInputSchema).optional(),
   workItems: z.array(AdmissionWorkItemInputSchema).optional(),
+  charter: StreamCharterSchema.optional(),
 })
 export type ConfirmAdmissionCommand = z.infer<typeof ConfirmAdmissionCommandSchema>
+
+export const SetStreamCharterCommandSchema = z.strictObject({
+  version,
+  type: z.literal("set_stream_charter"),
+  streamId: StreamIDSchema,
+  expectedVersion,
+  charter: StreamCharterSchema,
+})
+export type SetStreamCharterCommand = z.infer<typeof SetStreamCharterCommandSchema>
+
+export const CallMasterCommandSchema = z.strictObject({
+  version,
+  type: z.literal("call_master"),
+  streamId: StreamIDSchema,
+  expectedVersion,
+  message: text.max(10_000),
+})
+export type CallMasterCommand = z.infer<typeof CallMasterCommandSchema>
+
+export const StreamNotesExternalReferenceSchema = z.strictObject({
+  source: WorkSourceRevisionRefSchema,
+  quote: z.string().trim().min(1).max(20_000),
+})
+export type StreamNotesExternalReference = z.infer<typeof StreamNotesExternalReferenceSchema>
+
+export const UpdateStreamNotesCommandSchema = z.strictObject({
+  version,
+  type: z.literal("update_stream_notes"),
+  streamId: StreamIDSchema,
+  expectedVersion,
+  status: z.array(text.max(2_000)).max(100),
+  learnings: z.array(text.max(2_000)).max(100),
+  externalReferences: z.array(StreamNotesExternalReferenceSchema).max(100).default([]),
+})
+export type UpdateStreamNotesCommand = z.infer<typeof UpdateStreamNotesCommandSchema>
+
+export const RequestPublicPullRequestConfirmationCommandSchema = z.strictObject({
+  version,
+  type: z.literal("request_public_pr_confirmation"),
+  streamId: StreamIDSchema,
+  expectedVersion,
+  repository: text.max(512),
+  title: text.max(1_000),
+})
+export type RequestPublicPullRequestConfirmationCommand = z.infer<typeof RequestPublicPullRequestConfirmationCommandSchema>
+
+export const ConfirmPublicPullRequestCommandSchema = z.strictObject({
+  version,
+  type: z.literal("confirm_public_pr"),
+  streamId: StreamIDSchema,
+  expectedVersion,
+})
+export type ConfirmPublicPullRequestCommand = z.infer<typeof ConfirmPublicPullRequestCommandSchema>
+
+export const RecordMasterAuditCommandSchema = z.strictObject({
+  version,
+  type: z.literal("record_master_audit"),
+  streamId: StreamIDSchema,
+  expectedVersion,
+  sessionId: text.max(512),
+  wakeTrigger: z.enum(["mailbox", "task_settled", "schedule"]),
+  charterHash: z.string().regex(/^[a-f0-9]{64}$/),
+  citedCharterClause: text.max(1_000),
+  modelVersion: text.max(512),
+  reasoningSummary: text.max(1_000),
+  toolCalls: z.array(text.max(512)).max(100).default([]),
+  resultingDiffs: z.array(text.max(2_048)).max(100).default([]),
+  evidenceIds: z.array(EvidenceIDSchema).max(100).default([]),
+  outcome: z.enum(["admitted", "succeeded", "failed", "escalated"]),
+})
+export type RecordMasterAuditCommand = z.infer<typeof RecordMasterAuditCommandSchema>
 
 export const SetStreamLifecycleCommandSchema = z.strictObject({
   version,
@@ -447,6 +521,12 @@ export const WorkGraphCommandSchema = z.discriminatedUnion("type", [
   DismissAdmissionCommandSchema,
   ReopenAdmissionCommandSchema,
   ConfirmAdmissionCommandSchema,
+  SetStreamCharterCommandSchema,
+  CallMasterCommandSchema,
+  UpdateStreamNotesCommandSchema,
+  RequestPublicPullRequestConfirmationCommandSchema,
+  ConfirmPublicPullRequestCommandSchema,
+  RecordMasterAuditCommandSchema,
   SetStreamLifecycleCommandSchema,
   SetStreamVisibilityCommandSchema,
   ApproveWorkItemCommandSchema,
@@ -485,6 +565,7 @@ export const CommandErrorCodeSchema = z.enum([
   "close_required",
   "credential_reference_invalid",
   "execution_unavailable",
+  "landing_integrity_violation",
   "internal_error",
 ])
 export type CommandErrorCode = z.infer<typeof CommandErrorCodeSchema>

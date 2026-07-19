@@ -9,7 +9,7 @@
 import { serve } from "@hono/node-server"
 import { createHostedApp } from "./hosted-app"
 import { createCentralControlApp } from "./central-runtime"
-import { mountControlPlaneChannels } from "./channels-control-plane"
+import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels-control-plane"
 import { composeHostedControlPlane, type HostedControlPlane, type HostedWorkerEnv } from "./control-plane/hosted-services"
 import { createControlPlaneServices, defaultControlPlaneCredentials, type ControlPlaneServices } from "./control-plane/services"
 import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
@@ -101,13 +101,6 @@ export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
         settle: (tenant) => workGraphRuntime.reconcile({ tenants: [tenant], trigger: "nudge" }),
       })
     : undefined
-  const app = createHostedApp(plane, {
-    centralSessionRuntime: true,
-    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
-    ...(workGraphSettlementDispatcher
-      ? { workGraphSettlementDispatcher }
-      : {}),
-  })
   const centralControl = createCentralControlApp(plane.services, {
     authConfig: plane.services.auth.config,
     ...(plane.services.auth.verifier ? { verifier: plane.services.auth.verifier } : {}),
@@ -116,6 +109,21 @@ export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
     createEnv: hostedSessionEnvFactory(plane.services, turnCredentials),
     turnCredentials,
   })
+  const channels = createControlPlaneChannels({
+    services: plane.services,
+    runtime: centralControl.runtime,
+    env,
+    includeFake: false,
+  })
+  const app = createHostedApp(plane, {
+    centralSessionRuntime: true,
+    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
+    ...(workGraphSettlementDispatcher
+      ? { workGraphSettlementDispatcher }
+      : {}),
+    workGraphNotifyOwner: ({ ownerUserId, idempotencyKey, text }) =>
+      channels.notifyOwner({ ownerUserId, idempotencyKey, text }),
+  })
   app.route("/", centralControl.app)
   mountControlPlaneChannels(app, {
     services: plane.services,
@@ -123,6 +131,7 @@ export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
     env,
     includeFake: false,
     requireLoopbackForFake: false,
+    channels,
   })
   return app
 }

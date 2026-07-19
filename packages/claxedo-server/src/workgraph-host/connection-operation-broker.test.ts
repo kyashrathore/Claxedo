@@ -138,6 +138,48 @@ describe("WorkGraph connection operation broker", () => {
     }, principal())).resolves.toEqual({ type: "comment", ok: true })
     expect(comments).toBe(1)
   })
+
+  it("opens draft pull requests only through a code-host capability and returns no credential material", async () => {
+    const calls: unknown[] = []
+    const broker = createConnectionOperationBroker({
+      bindings: { resolve: async () => binding({ tools: [CONNECTION_OPERATION_TOOLS.open_pull_request] }) },
+      connections: {
+        resolveCapabilities: async (_context, input) => [{
+          ...handle(),
+          capability: input.capability,
+          withAuthorization: async (use) => use({ token: "github-secret", tokenType: "bearer" }),
+        }],
+      },
+      codeHostConnectors: {
+        github: {
+          provider: "github",
+          openPullRequest: async (authorization, input) => {
+            calls.push({ authorization, input })
+            return { pullRequestId: "42", url: "https://github.com/acme/repo/pull/42", draft: input.draft }
+          },
+        },
+      },
+    })
+
+    const result = await broker.execute(identity(), {
+      type: "open_pull_request",
+      repository: "acme/repo",
+      head: "workgraph/stream-1",
+      base: "dev",
+      title: "feat: ship",
+      draft: true,
+      publicRepository: true,
+      idempotencyKey: "stream-1:pr",
+    }, principal())
+    expect(result).toEqual({
+      type: "open_pull_request",
+      pullRequestId: "42",
+      url: "https://github.com/acme/repo/pull/42",
+      draft: true,
+    })
+    expect(calls).toEqual([expect.objectContaining({ input: expect.objectContaining({ draft: true }) })])
+    expect(JSON.stringify(result)).not.toContain("github-secret")
+  })
 })
 
 function context(): WorkGraphContext {

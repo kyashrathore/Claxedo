@@ -4,6 +4,7 @@ export const WorkGraphConnectionToolNames = [
   "connection_work_source_list",
   "connection_work_source_comment",
   "connection_work_source_update",
+  "connection_code_host_open_pr",
 ] as const
 export type WorkGraphConnectionToolName = typeof WorkGraphConnectionToolNames[number]
 
@@ -22,6 +23,17 @@ export const WorkGraphConnectionOperationRequestSchema = z.object({
     z.object({ type: z.literal("comment"), externalId: z.string().min(1), body: z.string().min(1), idempotencyKey: z.string().min(1) }).strict(),
     z.object({ type: z.literal("update"), externalId: z.string().min(1), status: z.string().min(1).optional(), body: z.string().min(1).optional(), idempotencyKey: z.string().min(1) }).strict()
       .refine((value) => value.status !== undefined || value.body !== undefined),
+    z.object({
+      type: z.literal("open_pull_request"),
+      repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/),
+      head: z.string().min(1),
+      base: z.string().min(1),
+      title: z.string().min(1),
+      body: z.string().optional(),
+      draft: z.boolean().default(true),
+      publicRepository: z.boolean().default(true),
+      idempotencyKey: z.string().min(1),
+    }).strict(),
   ]),
 }).strict()
 
@@ -40,6 +52,14 @@ export const WorkGraphConnectionOperationResponseSchema = z.discriminatedUnion("
   z.object({ type: z.literal("list"), issues: z.array(issue), cursor: z.string().optional() }).strict(),
   z.object({ type: z.literal("comment"), ok: z.literal(true) }).strict(),
   z.object({ type: z.literal("update"), ok: z.literal(true) }).strict(),
+  z.object({
+    type: z.literal("open_pull_request"),
+    pullRequestId: z.string().min(1),
+    url: z.string().url(),
+    draft: z.boolean(),
+    durableEffectReceiptId: z.string().min(1).optional(),
+    evidenceId: z.string().min(1).optional(),
+  }).strict(),
 ])
 
 export type WorkGraphConnectionOperationRequest = z.infer<typeof WorkGraphConnectionOperationRequestSchema>

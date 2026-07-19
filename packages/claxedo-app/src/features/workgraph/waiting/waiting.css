@@ -447,7 +447,7 @@
   padding: 0 0.625rem;
   border-radius: var(--radius-md);
   background: var(--surface-raised-base);
-  color: var(--text-weak);
+  color: var(--text-base);
   font-size: var(--font-size-base);
   line-height: 1;
   white-space: nowrap;
@@ -694,6 +694,34 @@
   color: var(--text-weaker);
 }
 
+.workgraph-settings-charter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-settings-charter .richtext-frame {
+  min-height: 7.5rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+}
+
+.workgraph-settings-charter-defaults {
+  color: var(--text-weaker);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.workgraph-settings-charter-defaults ul {
+  margin-top: 0.2rem;
+  padding-left: 1rem;
+  list-style: disc;
+}
+
 .workgraph-setting-row {
   display: flex;
   align-items: flex-start;
@@ -817,6 +845,7 @@
 /* Inside the stream dialog the dialog body already provides horizontal padding,
    so the settings run flush to it. */
 .workgraph-settings-form.is-dialog .workgraph-settings-section-title,
+.workgraph-settings-form.is-dialog .workgraph-settings-charter,
 .workgraph-settings-form.is-dialog .workgraph-setting-row,
 .workgraph-settings-form.is-dialog .workgraph-settings-footer {
   padding-left: 0;

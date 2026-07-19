@@ -89,6 +89,12 @@ export async function createLocalWorkGraphAgentTools(
     ownerUserId: string
     sessionExecution?: (sessionId: string) => Promise<ExecutionProfileDefaults | undefined>
     sessionContext?: (sessionId: string) => Promise<WorkGraphCreationContext["session"] | undefined>
+    notifyOwner?: (input: { idempotencyKey: string; text: string }) => Promise<{
+      channel: string
+      threadKey: string
+      reference: string
+      duplicate: boolean
+    }>
   }>,
 ): Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>> {
   const { callWorkGraph, registerWorkGraphTools } = await import("@claxedo/mcp/workgraph-tools")
@@ -102,7 +108,7 @@ export async function createLocalWorkGraphAgentTools(
   })
   const probe = createLocalEmbeddedWorkGraphTransport(embedded, () => context("catalog", "catalog"))
   registerWorkGraphTools((name, config) => tools.set(name, config as never), probe, false)
-  return Object.fromEntries(
+  const registered = Object.fromEntries(
     Array.from(tools, ([name, config]) => {
       const input = z.strictObject(config.inputSchema)
       return [
@@ -111,15 +117,20 @@ export async function createLocalWorkGraphAgentTools(
           description: config.description,
           inputSchema: z.toJSONSchema(input) as Record<string, unknown>,
           execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
+            const invokingContext = context(invocation.sessionID, invocation.toolCallID)
             const execution = name === "workgraph_create_stream"
               ? await owner.sessionExecution?.(invocation.sessionID)
               : undefined
             const session = sessionToolNames.has(name)
               ? await owner.sessionContext?.(invocation.sessionID)
               : undefined
+            const ownerDirected = name === "workgraph_create_task" &&
+              !await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID)
             return callWorkGraph(
               createLocalEmbeddedWorkGraphTransport(embedded, () =>
-                context(invocation.sessionID, invocation.toolCallID),
+                ownerDirected
+                  ? { ...invokingContext, actor: { type: "user", id: owner.ownerUserId as never } }
+                  : invokingContext,
               ),
               name as never,
               input.parse(value),
@@ -130,6 +141,188 @@ export async function createLocalWorkGraphAgentTools(
       ]
     }),
   )
+  const ledger = z.discriminatedUnion("action", [
+    z.strictObject({
+      action: z.enum(["create_task", "file_discovered"]),
+      operation_id: z.string().trim().min(1),
+      stream_id: z.string().trim().min(1),
+      title: z.string().trim().min(1),
+      description: z.string().optional(),
+      priority: z.number().int().nonnegative().optional(),
+      dependency_ids: z.array(z.string().trim().min(1)).optional(),
+      completion_contract: z.object({
+        version: z.literal(1),
+        mode: z.enum(["all", "any"]),
+        requirements: z.array(z.object({
+          id: z.string().trim().min(1),
+          kind: z.enum(["test", "artifact", "review", "integration", "verification", "owner_confirmation"]),
+          description: z.string().trim().min(1),
+        }).passthrough()).min(1),
+      }),
+    }),
+    z.strictObject({
+      action: z.literal("mark_done"),
+      operation_id: z.string().trim().min(1),
+      summary: z.string().trim().min(1).max(10_000),
+      artifacts: z.array(z.string().trim().min(1)).max(100).optional(),
+      evidence: z.array(z.strictObject({
+        requirement_id: z.string().trim().min(1).optional(),
+        evidence: z.record(z.string(), z.unknown()),
+      })).min(1).max(100),
+    }),
+  ])
+  const notes = z.strictObject({
+    status: z.array(z.string().trim().min(1).max(2_000)).max(100),
+    learnings: z.array(z.string().trim().min(1).max(2_000)).max(100),
+    external_references: z.array(z.strictObject({
+      source: z.strictObject({
+        workSourceId: z.string().trim().min(1),
+        revisionId: z.string().trim().min(1),
+        contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+      }),
+      quote: z.string().trim().min(1).max(20_000),
+    })).max(100).default([]),
+  })
+  return {
+    ...registered,
+    workgraph_land_candidate: {
+      description: "Revalidate and serially land a candidate git revision into the bound Stream envelope.",
+      inputSchema: z.toJSONSchema(z.strictObject({
+        candidate_revision: z.string().trim().min(1),
+        expected_head: z.string().trim().min(1),
+        forbidden_patterns: z.array(z.string().min(1)).max(100).optional(),
+      })) as Record<string, unknown>,
+      execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
+        const parsed = z.strictObject({
+          candidate_revision: z.string().trim().min(1),
+          expected_head: z.string().trim().min(1),
+          forbidden_patterns: z.array(z.string().min(1)).max(100).optional(),
+        }).parse(value)
+        const invokingContext = context(invocation.sessionID, invocation.toolCallID)
+        const binding = await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID)
+        if (!binding?.streamId || invocation.sessionID !== `ses_master_${binding.streamId}`) {
+          throw new Error("workgraph_land_candidate is restricted to the bound Stream master")
+        }
+        if (!embedded.execution.land) throw new Error("WorkGraph landing is unavailable")
+        return embedded.execution.land(invokingContext, {
+          streamId: binding.streamId,
+          candidateRevision: parsed.candidate_revision,
+          expectedHead: parsed.expected_head,
+          ...(parsed.forbidden_patterns ? { forbiddenPatterns: parsed.forbidden_patterns } : {}),
+        })
+      },
+    },
+    workgraph_ledger: {
+      description: "Create human-directed Tasks, file discovered work for approval, or complete the current Task with evidence.",
+      inputSchema: z.toJSONSchema(ledger) as Record<string, unknown>,
+      execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
+        const parsed = ledger.parse(value)
+        const invokingContext = context(invocation.sessionID, invocation.toolCallID)
+        if (parsed.action === "mark_done") {
+          const session = await owner.sessionContext?.(invocation.sessionID)
+          if (!session) throw new Error("workgraph_ledger mark_done requires Session project context")
+          return callWorkGraph(
+            createLocalEmbeddedWorkGraphTransport(embedded, () => invokingContext),
+            "workgraph_complete_current_work",
+            parsed,
+            { session },
+          )
+        }
+        const binding = await embedded.sessionBindings?.readForSession(invokingContext, invocation.sessionID)
+        const actor = parsed.action === "create_task" && !binding
+          ? { type: "user" as const, id: owner.ownerUserId as never }
+          : invokingContext.actor
+        return callWorkGraph(
+          createLocalEmbeddedWorkGraphTransport(embedded, () => ({ ...invokingContext, actor })),
+          "workgraph_create_task",
+          parsed,
+        )
+      },
+    },
+    workgraph_update_stream_notes: {
+      description: "Replace the bound Stream master's structured status, learnings, and fenced external references.",
+      inputSchema: z.toJSONSchema(notes) as Record<string, unknown>,
+      execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
+        const parsed = notes.parse(value)
+        const toolContext = context(invocation.sessionID, invocation.toolCallID)
+        const binding = await embedded.sessionBindings.readForSession(toolContext, invocation.sessionID)
+        if (!binding?.streamId || invocation.sessionID !== `ses_master_${binding.streamId}`) {
+          throw new Error("workgraph_update_stream_notes is restricted to the bound Stream master")
+        }
+        const stream = await embedded.service.queries.streams.read(toolContext, { streamId: binding.streamId })
+        if (!stream) throw new Error("workgraph_update_stream_notes could not resolve the bound Stream")
+        const result = await embedded.service.execute(toolContext, {
+          operationId: `update_stream_notes_${invocation.toolCallID}_${crypto.randomUUID()}` as never,
+          command: {
+            version: 1,
+            type: "update_stream_notes",
+            streamId: binding.streamId,
+            expectedVersion: stream.version,
+            status: parsed.status,
+            learnings: parsed.learnings,
+            externalReferences: parsed.external_references as never,
+          },
+        })
+        if (!result.ok) throw new Error(result.error.message)
+        return result.value
+      },
+    },
+    workgraph_notify_owner: {
+      description: "Send an owner-scoped, rate-limited Stream notification and record its durable WorkGraph receipt.",
+      inputSchema: z.toJSONSchema(z.strictObject({ message: z.string().trim().min(1).max(4_000) })) as Record<string, unknown>,
+      execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
+        if (!owner.notifyOwner) throw new Error("Owner channel notification is unavailable")
+        const parsed = z.strictObject({ message: z.string().trim().min(1).max(4_000) }).parse(value)
+        const toolContext = context(invocation.sessionID, invocation.toolCallID)
+        const binding = await embedded.sessionBindings.readForSession(toolContext, invocation.sessionID)
+        if (!binding?.streamId || invocation.sessionID !== `ses_master_${binding.streamId}`) {
+          throw new Error("workgraph_notify_owner is restricted to the bound Stream master")
+        }
+        const operationId = `notify_owner_${invocation.toolCallID}`
+        const delivery = await owner.notifyOwner({ idempotencyKey: operationId, text: parsed.message })
+        const result = await embedded.service.execute(toolContext, {
+          operationId: operationId as never,
+          command: {
+            version: 1,
+            type: "record_evidence",
+            subject: { type: "stream", streamId: binding.streamId },
+            evidence: {
+              kind: "integration",
+              summary: `Notified the Stream owner through ${delivery.channel}`,
+              effect: "published",
+              reference: delivery.reference,
+            },
+          },
+        })
+        if (!result.ok) throw new Error(result.error.message)
+        return { delivery, receipt: result.value }
+      },
+    },
+    call_master: {
+      description: "Send a durable message to the master of the Stream bound to this Session and wake it.",
+      inputSchema: z.toJSONSchema(z.strictObject({ message: z.string().trim().min(1).max(10_000) })) as Record<string, unknown>,
+      execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
+        const parsed = z.strictObject({ message: z.string().trim().min(1).max(10_000) }).parse(value)
+        const toolContext = context(invocation.sessionID, invocation.toolCallID)
+        const binding = await embedded.sessionBindings.readForSession(toolContext, invocation.sessionID)
+        if (!binding || binding.state !== "active") throw new Error("call_master requires an active WorkGraph Session binding")
+        const stream = await embedded.service.queries.streams.read(toolContext, { streamId: binding.streamId })
+        if (!stream) throw new Error("call_master could not resolve the bound Stream")
+        const result = await embedded.service.execute(toolContext, {
+          operationId: `call_master_${invocation.toolCallID}_${crypto.randomUUID()}` as never,
+          command: {
+            version: 1,
+            type: "call_master",
+            streamId: binding.streamId,
+            expectedVersion: stream.version,
+            message: parsed.message,
+          },
+        })
+        if (!result.ok) throw new Error(result.error.message)
+        return result.value
+      },
+    },
+  }
 }
 
 const sessionToolNames = new Set([
@@ -140,6 +333,7 @@ const sessionToolNames = new Set([
   "workgraph_refresh_context",
   "workgraph_complete_current_work",
   "workgraph_release_session",
+  "call_master",
 ])
 
 export async function localSessionExecution(

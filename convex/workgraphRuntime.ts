@@ -4,10 +4,28 @@ import { buildAttemptPrompt } from "@claxedo/workgraph/hosted"
 import { serviceMutation, serviceQuery } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
-import { appendSystemWorkGraphChange, reconcileReadyStreams } from "./workgraphCommands"
+import { applyWorkGraphCommand, appendSystemWorkGraphChange, enqueueMasterWake, reconcileReadyStreams } from "./workgraphCommands"
 import { assertWorkGraphOwnerWritable } from "./workgraphModel"
 
 type RuntimeMutationCtx = GenericMutationCtx<DataModel>
+
+function masterStream(ctx: RuntimeMutationCtx, input: { organization_id: Id<"orgs">; owner_user_id: Id<"users">; stream_id: string }) {
+  return ctx.db
+    .query("workgraph_streams")
+    .withIndex("by_tenant_id", (query: any) =>
+      query.eq("organization_id", input.organization_id).eq("owner_user_id", input.owner_user_id).eq("id", input.stream_id),
+    )
+    .unique()
+}
+
+function masterArtifactRefs(attempts: readonly Doc<"workgraph_attempts">[]) {
+  return attempts.flatMap((attempt) => {
+    const result = attempt.result && typeof attempt.result === "object" ? attempt.result as Record<string, unknown> : undefined
+    return Array.isArray(result?.artifactRefs)
+      ? result.artifactRefs.filter((value): value is string => typeof value === "string" && !!value.trim())
+      : []
+  }).slice(0, 100)
+}
 
 /** Trusted non-WorkGraph registry used only to dispatch tenant-scoped workers. */
 export const listWorkerTenants = serviceMutation({
@@ -56,6 +74,238 @@ export const listStaleTenants = serviceQuery({
         ]),
       ).values(),
     ).slice(0, limit)
+  },
+})
+
+/** Reserve or resume one durable hosted master turn for a Stream. */
+export const claimMasterTurn = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_user_id: v.id("users"),
+    stream_id: v.string(),
+    trigger: v.union(v.literal("mailbox"), v.literal("task_settled"), v.literal("schedule")),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const stream = await ctx.db
+      .query("workgraph_streams")
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id).eq("id", args.stream_id),
+      )
+      .unique()
+    if (!stream || stream.lifecycle_state === "closed") return { state: "settled" as const }
+    const owner = await ctx.db.get(args.owner_user_id)
+    if (!owner?.clerk_subject) throw new Error("Hosted master owner is unavailable")
+    const existing = stream.master_status
+    const reserved = existing?.turnId && (existing.state === "pending" || existing.state === "acting")
+    const mailbox = await ctx.db
+      .query("workgraph_master_mailbox")
+      .withIndex("by_tenant_stream_status", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id)
+          .eq("stream_id", args.stream_id).eq("status", reserved ? "claimed" : "pending"),
+      )
+      .take(100)
+    if (!reserved) {
+      await Promise.all(mailbox.map((message) => ctx.db.patch(message._id, { status: "claimed", updated_at: args.now })))
+    }
+    const attempts = await ctx.db
+      .query("workgraph_attempts")
+      .withIndex("by_tenant_stream", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id).eq("stream_id", args.stream_id),
+      )
+      .order("desc")
+      .filter((query: any) =>
+        query.or(query.eq(query.field("state"), "result"), query.eq(query.field("state"), "failed"), query.eq(query.field("state"), "cancelled")),
+      )
+      .take(20)
+    const turnId = existing?.turnId ?? `master_turn_${crypto.randomUUID()}`
+    const status = reserved
+      ? existing
+      : {
+          state: "pending",
+          sessionId: `ses_master_${stream.id}`,
+          turnId,
+          admissionConfirmed: false,
+          failureCount: 0,
+          message: "Master turn reserved",
+          receiptRefs: masterArtifactRefs(attempts),
+          ...(stream.charter?.hash ? { charterHash: stream.charter.hash } : {}),
+          updatedAt: args.now,
+        }
+    if (!reserved) await ctx.db.patch(stream._id, { master_status: status, updated_at: args.now })
+    const evidence = await ctx.db
+      .query("workgraph_evidence")
+      .withIndex("by_tenant_stream", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id).eq("stream_id", args.stream_id),
+      )
+      .order("desc")
+      .take(100)
+    return {
+      state: status.state === "acting" && status.admissionConfirmed ? "monitor" as const : "launch" as const,
+      ownerSubject: owner.clerk_subject,
+      stream: {
+        id: stream.id,
+        title: stream.title,
+        charter: stream.charter,
+        executionDefaults: stream.execution_defaults,
+        rowVersion: stream.row_version,
+      },
+      sessionId: status.sessionId ?? `ses_master_${stream.id}`,
+      turnId,
+      historyAfter: status.historyAfter,
+      admissionConfirmed: status.admissionConfirmed ?? false,
+      failureCount: status.failureCount ?? 0,
+      trigger: args.trigger,
+      mailbox: mailbox.map((message) => ({ id: message.id, message: message.message, provenance: message.provenance })),
+      attempts: attempts.map((attempt) => ({
+        id: attempt.id,
+        workItemId: attempt.work_item_id,
+        state: attempt.state,
+        result: attempt.result,
+        resolvedExecution: attempt.resolved_execution,
+        updatedAt: attempt.updated_at,
+      })),
+      evidenceIds: evidence.map((item) => item.id),
+      artifactRefs: masterArtifactRefs(attempts),
+    }
+  },
+})
+
+/** Persist the history fence before admitting the exact, replayable prompt. */
+export const reserveMasterAdmission = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"), owner_user_id: v.id("users"), stream_id: v.string(),
+    turn_id: v.string(), history_after: v.number(), now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const stream = await masterStream(ctx, args)
+    if (!stream || stream.master_status?.turnId !== args.turn_id) return { accepted: false }
+    await ctx.db.patch(stream._id, {
+      master_status: { ...stream.master_status, state: "pending", historyAfter: args.history_after, admissionConfirmed: false, message: "Master prompt reserved", updatedAt: args.now },
+      updated_at: args.now,
+    })
+    return { accepted: true }
+  },
+})
+
+export const confirmMasterAdmission = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"), owner_user_id: v.id("users"), stream_id: v.string(),
+    turn_id: v.string(), now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const stream = await masterStream(ctx, args)
+    if (!stream || stream.master_status?.turnId !== args.turn_id) return { accepted: false }
+    await ctx.db.patch(stream._id, {
+      master_status: { ...stream.master_status, state: "acting", admissionConfirmed: true, message: "Master turn in progress", updatedAt: args.now },
+      updated_at: args.now,
+    })
+    return { accepted: true }
+  },
+})
+
+/** Atomically records the audit event, consumes this turn's mailbox, and hibernates. */
+export const completeMasterTurn = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"), owner_user_id: v.id("users"), stream_id: v.string(),
+    turn_id: v.string(), trigger: v.union(v.literal("mailbox"), v.literal("task_settled"), v.literal("schedule")),
+    charter_hash: v.string(), cited_charter_clause: v.string(), model_version: v.string(),
+    reasoning_summary: v.string(), tool_calls: v.array(v.string()), resulting_diffs: v.array(v.string()),
+    evidence_ids: v.array(v.string()), outcome: v.string(), now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const stream = await masterStream(ctx, args)
+    if (!stream || stream.master_status?.turnId !== args.turn_id) return { settled: false }
+    if (stream.master_status.state === "attention") return { settled: true, state: "attention" as const }
+    const sessionId = `ses_master_${stream.id}`
+    const result = await applyWorkGraphCommand(ctx, {
+      organizationId: String(args.organization_id),
+      ownerUserId: String(args.owner_user_id),
+      ownerSubject: String(args.owner_user_id),
+      actor: { type: "agent", id: sessionId },
+      requestId: args.turn_id,
+      operationId: `audit_${args.turn_id}`,
+      command: {
+        version: 1,
+        type: "record_master_audit",
+        streamId: stream.id,
+        expectedVersion: stream.row_version,
+        sessionId,
+        wakeTrigger: args.trigger,
+        charterHash: args.charter_hash,
+        citedCharterClause: args.cited_charter_clause,
+        modelVersion: args.model_version,
+        reasoningSummary: args.reasoning_summary,
+        toolCalls: args.tool_calls,
+        resultingDiffs: args.resulting_diffs,
+        evidenceIds: args.evidence_ids,
+        outcome: args.outcome,
+      },
+    })
+    if (!result.ok) throw new Error(result.error.message)
+    const claimed = await ctx.db
+      .query("workgraph_master_mailbox")
+      .withIndex("by_tenant_stream_status", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id)
+          .eq("stream_id", args.stream_id).eq("status", "claimed"),
+      )
+      .take(100)
+    await Promise.all(claimed.map((message) => ctx.db.patch(message._id, { status: "consumed", updated_at: args.now })))
+    const masterStatus = {
+        state: "hibernating", sessionId, message: "Master is up to date", receiptRefs: args.resulting_diffs,
+        ...(stream.charter?.hash ? { charterHash: stream.charter.hash } : {}), updatedAt: args.now,
+      }
+    await ctx.db.patch(stream._id, {
+      master_status: masterStatus,
+      updated_at: args.now,
+    })
+    await syncAttentionRecord(ctx, "workgraph_streams", { ...stream, master_status: masterStatus, updated_at: args.now })
+    const pending = await ctx.db
+      .query("workgraph_master_mailbox")
+      .withIndex("by_tenant_stream_status", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id)
+          .eq("stream_id", args.stream_id).eq("status", "pending"),
+      )
+      .first()
+    if (pending) await enqueueMasterWake(ctx, String(args.organization_id), String(args.owner_user_id), stream.id, args.now, "mailbox")
+    return { settled: true }
+  },
+})
+
+export const failMasterTurn = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"), owner_user_id: v.id("users"), stream_id: v.string(),
+    turn_id: v.string(), reason: v.string(), now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const stream = await masterStream(ctx, args)
+    if (!stream || stream.master_status?.turnId !== args.turn_id) return { settled: false }
+    if (stream.master_status.state === "attention") return { settled: true, state: "attention" as const }
+    const failureCount = (stream.master_status.failureCount ?? 0) + 1
+    const attention = failureCount >= 3
+    const masterStatus = {
+        ...stream.master_status,
+        state: attention ? "attention" : "retrying",
+        failureCount,
+        message: attention ? `Master halted after repeated failure: ${args.reason}` : "Master turn will retry",
+        updatedAt: args.now,
+      }
+    await ctx.db.patch(stream._id, {
+      master_status: masterStatus,
+      updated_at: args.now,
+    })
+    await syncAttentionRecord(ctx, "workgraph_streams", { ...stream, master_status: masterStatus, updated_at: args.now })
+    if (attention) {
+      const claimed = await ctx.db
+        .query("workgraph_master_mailbox")
+        .withIndex("by_tenant_stream_status", (query: any) =>
+          query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id)
+            .eq("stream_id", args.stream_id).eq("status", "claimed"),
+        )
+        .take(100)
+      await Promise.all(claimed.map((message) => ctx.db.patch(message._id, { status: "consumed", updated_at: args.now })))
+    }
+    return attention ? { settled: true, state: "attention" as const } : { settled: false, state: "retrying" as const, retryAfterMs: 5_000 }
   },
 })
 
@@ -191,6 +441,15 @@ export const claimLaunches = serviceMutation({
           attempt_count: row.attempt_count + 1,
           updated_at: args.now,
         })
+        const sourceRevisions = await Promise.all((item.source_revision_refs ?? []).map((reference: any) =>
+          ctx.db
+            .query("work_source_revisions")
+            .withIndex("by_tenant_id", (query: any) =>
+              query.eq("organization_id", row.organization_id).eq("owner_user_id", row.owner_user_id)
+                .eq("id", reference.revision_id),
+            )
+            .unique()
+        ))
         return {
           ownerUserId: String(row.owner_user_id),
           ownerSubject: owner.clerk_subject,
@@ -212,6 +471,8 @@ export const claimLaunches = serviceMutation({
             connectionIds: Array.isArray(attempt.resolved_execution.connectionIds)
               ? attempt.resolved_execution.connectionIds.filter((id: unknown): id is string => typeof id === "string")
               : [],
+            untrustedSource: sourceRevisions.some((revision) =>
+              revision?.origin?.kind === "external" || revision?.origin?.derivedFromExternal === true),
           }),
           profile: attempt.resolved_execution,
         }
@@ -759,8 +1020,35 @@ async function finalizeAttemptCancellation(
     )
     .filter((query) => query.eq(query.field("organization_id"), organization))
     .unique()
-  if (lease?.holder_id === attempt.id) await ctx.db.delete(lease._id)
+  if (lease?.holder_id === attempt.id) await releaseAttemptLeases(ctx, organization, owner, attempt)
   return true
+}
+
+async function releaseAttemptLeases(
+  ctx: RuntimeMutationCtx,
+  organization: Id<"orgs">,
+  owner: Id<"users">,
+  attempt: { id: string; stream_id: string; work_item_id: string },
+) {
+  const leases = await Promise.all(
+    [
+      ["work_item", attempt.work_item_id],
+      ["stream", attempt.stream_id],
+    ].map(([resourceType, resourceId]) =>
+      ctx.db
+        .query("workgraph_leases")
+        .withIndex("by_tenant_resource", (query: any) =>
+          query.eq("organization_id", organization).eq("owner_user_id", owner).eq("resource_type", resourceType).eq("resource_id", resourceId),
+        )
+        .filter((query) => query.eq(query.field("organization_id"), organization))
+        .unique(),
+    ),
+  )
+  await Promise.all(
+    leases
+      .filter((lease) => lease?.holder_id === attempt.id)
+      .map((lease) => ctx.db.delete(lease!._id)),
+  )
 }
 
 async function deleteStreamGraph(
@@ -986,7 +1274,17 @@ export const recordResult = serviceMutation({
       })
       await syncAttentionRecord(ctx, "workgraph_work_items", resultReady)
     }
-    await ctx.db.delete(lease._id)
+    await releaseAttemptLeases(ctx, args.organization_id, args.owner_user_id, attempt)
+    await enqueueMasterWake(
+      ctx,
+      String(args.organization_id),
+      String(args.owner_user_id),
+      attempt.stream_id,
+      args.now,
+      "task_settled",
+      "workgraph_runtime",
+      args.artifacts,
+    )
     return { settled: true }
   },
 })
@@ -1192,7 +1490,15 @@ export const recordFailure = serviceMutation({
     // The Stream halt is now DERIVED, not persisted: the drain re-evaluates a hold
     // from live rows (a `failed` Work Item / `attention` Attempt holds new launches)
     // every pass, so no `execution_state='stopped'` write is needed here.
-    await ctx.db.delete(lease._id)
+    await releaseAttemptLeases(ctx, args.organization_id, args.owner_user_id, attempt)
+    await enqueueMasterWake(
+      ctx,
+      String(args.organization_id),
+      String(args.owner_user_id),
+      attempt.stream_id,
+      args.now,
+      "task_settled",
+    )
     return { settled: true }
   },
 })
@@ -1237,7 +1543,7 @@ export const markAttention = serviceMutation({
       await ctx.db.patch(item._id, { state: "pending", row_version: item.row_version + 1, updated_at: args.now })
     // The Stream halt is derived from the Attempt's `attention` state on the next
     // drain pass — no persisted `execution_state='stopped'` write.
-    await ctx.db.delete(lease._id)
+    await releaseAttemptLeases(ctx, args.organization_id, args.owner_user_id, attempt)
     await ctx.db.patch(outbox._id, {
       status: "failed",
       last_error: args.reason,
@@ -1360,8 +1666,23 @@ export async function renewWorkGraphAttemptLease(
       ),
     )
     .unique()
-  if (!lease || lease.holder_id !== attempt.id || lease.epoch !== input.expectedLeaseEpoch) return undefined
-  const recovered = lease.expires_at <= input.now
+  const streamLease = await ctx.db
+    .query("workgraph_leases")
+    .withIndex("by_tenant_resource", (query: any) =>
+      query.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("resource_type", "stream").eq("resource_id", attempt.stream_id),
+    )
+    .filter((query) => query.eq(query.field("organization_id"), input.organizationId))
+    .unique()
+  if (
+    !lease ||
+    lease.holder_id !== attempt.id ||
+    lease.epoch !== input.expectedLeaseEpoch ||
+    (streamLease && (
+      streamLease.holder_id !== attempt.id ||
+      streamLease.epoch !== input.expectedLeaseEpoch
+    ))
+  ) return undefined
+  const recovered = lease.expires_at <= input.now || (streamLease?.expires_at ?? Number.POSITIVE_INFINITY) <= input.now
   const leaseEpoch = recovered ? lease.epoch + 1 : lease.epoch
   const expiresAt = input.now + input.durationMs
   await ctx.db.patch(lease._id, {
@@ -1370,6 +1691,32 @@ export async function renewWorkGraphAttemptLease(
     row_version: lease.row_version + 1,
     updated_at: input.now,
   })
+  if (streamLease) {
+    await ctx.db.patch(streamLease._id, {
+      epoch: leaseEpoch,
+      expires_at: expiresAt,
+      row_version: streamLease.row_version + 1,
+      updated_at: input.now,
+    })
+  } else {
+    // Expand compatibility for Attempts admitted before Stream serialization:
+    // the first successful renewal installs the sibling fence durably.
+    await ctx.db.insert("workgraph_leases", {
+      organization_id: input.organizationId,
+      owner_user_id: input.ownerUserId,
+      id: `lease_stream_${attempt.id}`,
+      resource_type: "stream",
+      resource_id: attempt.stream_id,
+      stream_id: attempt.stream_id,
+      holder_id: attempt.id,
+      epoch: leaseEpoch,
+      expires_at: expiresAt,
+      row_version: 1,
+      schema_version: 1,
+      created_at: input.now,
+      updated_at: input.now,
+    })
+  }
   if (recovered) {
     await ctx.db.patch(attempt._id, { row_version: attempt.row_version + 1, updated_at: input.now })
   }

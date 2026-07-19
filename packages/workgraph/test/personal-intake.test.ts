@@ -142,6 +142,41 @@ describe("Connections-backed personal intake", () => {
     })
   })
 
+  it("includes the pull request tool when the bound source Connection grants code-host", async () => {
+    const provider = await fakeProvider((_request, response) => {
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ items: [{ id: 1003, number: 3, title: "Code-host issue", body: "Ship it", state: "open", updated_at: "2026-07-13T00:00:00Z" }] }))
+    })
+    const state = memoryState()
+    const connections = teamConnections("shared-team-token", [], ["work-source", "code-host"])
+    const sourceViews = createSourceViewService({ store: state.views, connections, ids: ids("view"), clock: fixedClock })
+    const view = await sourceViews.create(context("alice"), {
+      teamConnectionId,
+      provider: "github",
+      providerUserId: "alice-gh",
+      filters: { repo: "acme/cloud" },
+    })
+    const requests: WorkGraphCommandRequest[] = []
+    const intake = intakeService(state, connections, provider, {
+      commands: {
+        execute: async (_context, request) => {
+          requests.push(request)
+          return commandResult(request)
+        },
+      },
+    })
+
+    await intake.stage(context("alice"), (await intake.refresh(context("alice"), view.id)).candidates[0]!.id)
+
+    expect(requests.find((request) => request.command.type === "propose_admission")?.command)
+      .toMatchObject({ execution: { tools: [
+        "connection_work_source_list",
+        "connection_work_source_comment",
+        "connection_work_source_update",
+        "connection_code_host_open_pr",
+      ] } })
+  })
+
   it("refuses external admission until its Source View has a Stream target", async () => {
     const provider = await fakeProvider((_request, response) => {
       response.setHeader("content-type", "application/json")
@@ -434,12 +469,16 @@ function context(owner: string): WorkGraphContext {
   }
 }
 
-function teamConnections(token: string, reported: string[] = []): ConnectionsPort {
+function teamConnections(
+  token: string,
+  reported: string[] = [],
+  capabilities: readonly ("work-source" | "code-host")[] = ["work-source"],
+): ConnectionsPort {
   return {
-    resolveCapabilities: async (_context, request) => request.connectionIds.includes(teamConnectionId) ? [{
+    resolveCapabilities: async (_context, request) => request.connectionIds.includes(teamConnectionId) && capabilities.includes(request.capability as "work-source" | "code-host") ? [{
       id: teamConnectionId,
       integrationId: "github",
-      capability: "work-source",
+      capability: request.capability,
       scope: "team",
       withAuthorization: async (use) => use({ token, tokenType: "bearer" }),
       reportAuthFailure: async (reason) => { reported.push(reason) },

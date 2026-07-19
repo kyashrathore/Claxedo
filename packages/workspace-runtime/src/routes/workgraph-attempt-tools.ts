@@ -4,9 +4,10 @@ import {
   WorkGraphBrokerTokenHeader,
   WorkGraphAttemptOperationRequestSchema,
   WorkGraphAttemptToolNames,
+  WorkGraphRuntimeToolNames,
   type CommandResult,
   type WorkGraphAttemptOperationRequest,
-  type WorkGraphAttemptToolName,
+  type WorkGraphRuntimeToolName,
 } from "@claxedo/workgraph/contracts"
 import { Hono } from "hono"
 import z from "zod/v3"
@@ -19,6 +20,7 @@ const CENTRAL_BROKER_PATH = "/internal/workgraph/attempt-operation"
 
 const identity = z.strictObject({
   attemptId: z.string().trim().min(1),
+  streamId: z.string().trim().min(1).optional(),
   sessionId: z.string().trim().min(1),
   workspaceId: z.string().trim().min(1),
   leaseEpoch: z.number().int().positive().optional(),
@@ -29,6 +31,7 @@ const binding = z.strictObject({
   runtimeSessionId: z.string().trim().min(1).optional(),
   harness: z.string().trim().min(1).optional(),
   brokerUrl: z.string().trim().min(1),
+  tools: z.array(z.enum(WorkGraphRuntimeToolNames)).min(1).optional(),
 })
 const evidence = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("test_result"), summary: z.string().trim().min(1), passed: z.boolean(), command: z.string().trim().min(1).optional(), outputRef: z.string().trim().min(1).optional() }),
@@ -54,7 +57,22 @@ export const WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS = {
     artifacts: z.array(z.string().trim().min(1)).max(100).default([]),
     evidence: z.array(completionEvidence).min(1).max(100),
   }),
-} satisfies Record<WorkGraphAttemptToolName, z.ZodType>
+  workgraph_update_stream_notes: z.strictObject({
+    status: z.array(z.string().trim().min(1).max(2_000)).max(100),
+    learnings: z.array(z.string().trim().min(1).max(2_000)).max(100),
+    externalReferences: z.array(z.strictObject({
+      source: z.strictObject({
+        workSourceId: z.string().trim().min(1),
+        revisionId: z.string().trim().min(1),
+        contentHash: z.string().regex(/^[a-f0-9]{64}$/i),
+      }),
+      quote: z.string().trim().min(1).max(20_000),
+    })).max(100).default([]),
+  }),
+  workgraph_notify_owner: z.strictObject({
+    message: z.string().trim().min(1).max(4_000),
+  }),
+} satisfies Record<WorkGraphRuntimeToolName, z.ZodType>
 
 export const WORKGRAPH_ATTEMPT_TOOL_SCHEMAS = {
   workgraph_report_progress: {
@@ -62,6 +80,12 @@ export const WORKGRAPH_ATTEMPT_TOOL_SCHEMAS = {
   },
   workgraph_complete_task: {
     description: "Explicitly finish the current WorkGraph Attempt with a concise result and evidence for its completion requirements.",
+  },
+  workgraph_update_stream_notes: {
+    description: "Replace the Stream master's structured status, learnings, and fenced external references.",
+  },
+  workgraph_notify_owner: {
+    description: "Send an owner-scoped, rate-limited Stream notification with a durable WorkGraph receipt.",
   },
 } as const
 
@@ -107,8 +131,9 @@ export function WorkGraphAttemptToolRoutes(input: {
     const bound = bindings.get(sessionId)
     if (!bound) return context.json(errorBody("attempt_binding_missing", "Session has no Attempt binding"), 403)
     const body = await boundedJsonBody<Record<string, unknown>>(context, {})
-    const name = typeof body.name === "string" && WORKGRAPH_ATTEMPT_TOOL_NAMES.includes(body.name as WorkGraphAttemptToolName)
-      ? body.name as WorkGraphAttemptToolName
+    const names = bound.tools ?? WorkGraphAttemptToolNames
+    const name = typeof body.name === "string" && names.includes(body.name as never)
+      ? body.name as WorkGraphRuntimeToolName
       : undefined
     const toolCallId = typeof body.toolCallID === "string" && body.toolCallID.trim() ? body.toolCallID.trim() : undefined
     if (body.sessionID !== (bound.runtimeSessionId ?? sessionId) || !name || !toolCallId) {
@@ -119,7 +144,11 @@ export function WorkGraphAttemptToolRoutes(input: {
     const operationId = `attempt_tool_${bound.identity.attemptId}_${toolCallId}`
     const operation = name === "workgraph_report_progress"
       ? { type: "record_checkpoint" as const, operationId, ...parsed.data }
-      : { type: "complete" as const, operationId, ...parsed.data }
+      : name === "workgraph_complete_task"
+        ? { type: "complete" as const, operationId, ...parsed.data }
+        : name === "workgraph_update_stream_notes"
+          ? { type: "update_stream_notes" as const, operationId, ...parsed.data }
+          : { type: "notify_owner" as const, operationId, ...parsed.data }
     const brokerRequest = WorkGraphAttemptOperationRequestSchema.parse({
       version: 1,
       identity: bound.identity,
@@ -179,7 +208,7 @@ export function WorkGraphAttemptToolRoutes(input: {
         sessionId: parsed.data.runtimeSessionId ?? parsed.data.identity.sessionId,
         ...(parsed.data.harness ? { harness: parsed.data.harness } : {}),
         callbackUrl: `${await localCallbackOrigin()}/callback/${callbackNonce}`,
-        tools: WORKGRAPH_ATTEMPT_TOOL_NAMES.map(toolDefinition),
+        tools: (parsed.data.tools ?? WorkGraphAttemptToolNames).map(toolDefinition),
       })
     } catch {
       callbackSessions.delete(callbackNonce)
@@ -239,7 +268,7 @@ export function WorkGraphAttemptToolRoutes(input: {
   return app
 }
 
-function toolDefinition(name: WorkGraphAttemptToolName) {
+function toolDefinition(name: WorkGraphRuntimeToolName) {
   if (name === "workgraph_report_progress") return {
     name,
     description: WORKGRAPH_ATTEMPT_TOOL_SCHEMAS[name].description,

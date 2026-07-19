@@ -1,10 +1,10 @@
 import type {
-  AttemptDetailDto,
+  AttemptDto,
   AttentionItem,
   IntakeCandidateDto,
   IntakeCandidatePageCursor,
-  ResolvedExecutionProfile,
   StreamActivityGranularity,
+  StreamMasterStatus,
   TaskActivityEntry,
   TaskActivityPageCursor,
   WorkItemDto,
@@ -18,6 +18,8 @@ import type { WorkGraphWaitingSource } from "./waiting-source"
 import { DetailState, DialogField, DialogSection, WorkGraphDialog } from "./workgraph-dialog"
 import type { WorkGraphSessionOpener, WorkGraphSessionReference } from "../api"
 import { createDependencyResolver, STATUS_DISPLAY, taskStatusLabel, type TaskStatusLabel } from "../work-item-rows"
+import { MasterEscalationContent } from "./master-escalation-content"
+import { AttemptDetailView } from "./attempt-detail-view"
 
 /** Read-only status line for an approved `pending` task: Ready (will run /
  *  paused) when launchable, else Waiting on the named incomplete blockers. */
@@ -49,8 +51,10 @@ export function TaskDialog(props: {
   /** Every non-abandoned task in the item's Stream — used to split Waiting vs
    *  Ready and to name the incomplete blockers a Waiting task is held on. */
   streamItems?: WorkItemDto[]
+  streamAttempts?: AttemptDto[]
   /** Whether the owning Stream is paused (an approved task reads "Ready — paused"). */
   streamPaused?: boolean
+  masterStatus?: StreamMasterStatus
 }) {
   const openSession = async (reference: WorkGraphSessionReference) => {
     await props.onOpenSession?.(reference)
@@ -145,6 +149,8 @@ export function TaskDialog(props: {
             streamPaused={props.streamPaused}
             depsComplete={depsComplete()}
             incompleteDependencies={incompleteDependencies()}
+            masterStatus={props.masterStatus}
+            streamAttempts={props.streamAttempts}
             onOpenSession={openSession}
           />
         )}
@@ -152,11 +158,6 @@ export function TaskDialog(props: {
     </WorkGraphDialog>
   )
 }
-/**
- * Opens a focused dialog over the WorkGraph screen for the selected Waiting
- * item. Opening never resolves the item; it only leaves Waiting after its real
- * domain transition succeeds.
- */
 type ItemContentProps = {
   item: AttentionItem
   source: WorkGraphWaitingSource
@@ -220,6 +221,7 @@ export function WaitingItemDialog(props: {
     if (kind === "attempt") return "Attempt"
     if (kind === "unorganized_ai_work") return "Unorganized AI work"
     if (kind === "configuration_required") return "Configuration required"
+    if (kind === "master_escalation") return "Master needs your help"
     return "Waiting"
   })
 
@@ -262,13 +264,19 @@ function AfterWorkItem(props: ItemContentProps) {
 
 function AfterAttempt(props: ItemContentProps) {
   return (
-    <Show when={props.item.kind === "unorganized_ai_work"} fallback={<ConfigRequiredContent item={props.item} onOpenSettings={props.onOpenSettings} onClose={props.onClose} />}>
+    <Show when={props.item.kind === "unorganized_ai_work"} fallback={<AfterCandidates {...props} />}>
       <CandidatesContent source={props.source} onResolved={props.onResolved} />
     </Show>
   )
 }
 
-// ── Decision ──────────────────────────────────────────────────────────────
+function AfterCandidates(props: ItemContentProps) {
+  return (
+    <Show when={props.item.kind === "master_escalation" && props.item} keyed fallback={<ConfigRequiredContent item={props.item} onOpenSettings={props.onOpenSettings} onClose={props.onClose} />}>
+      {(item) => <MasterEscalationContent item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} onOpenSession={props.onOpenSession} />}
+    </Show>
+  )
+}
 
 function DecisionContent(props: {
   item: Extract<AttentionItem, { kind: "decision" }>
@@ -354,6 +362,8 @@ function TaskContent(props: {
   streamPaused?: boolean
   depsComplete?: boolean
   incompleteDependencies?: { id: string; title: string }[]
+  masterStatus?: StreamMasterStatus
+  streamAttempts?: AttemptDto[]
   onOpenSession?: WorkGraphSessionOpener
 }) {
   const [workItem, { refetch }] = createResource(
@@ -412,7 +422,7 @@ function TaskContent(props: {
               </div>
             </Show>
             <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-[12px] text-text-weaker">No attempt has run yet.</span></Show>}>
-              {(detail) => <AttemptDetailView detail={detail()} onOpenSession={props.onOpenSession} />}
+              {(detail) => <AttemptDetailView detail={detail()} masterStatus={props.masterStatus} streamAttempts={props.streamAttempts} onOpenSession={props.onOpenSession} />}
             </Show>
           </DialogSection>
           <Show when={activityKey()} keyed fallback={
@@ -475,7 +485,7 @@ function TaskChips(props: { item: WorkItemDto; source: WorkGraphWaitingSource })
               <span classList={{
                 "text-icon-success-base": recorded().has(requirement.id),
                 "text-icon-critical-base": !recorded().has(requirement.id) && evidenceNeeded(),
-                "text-text-weak": !recorded().has(requirement.id) && !evidenceNeeded(),
+                "text-text-base": !recorded().has(requirement.id) && !evidenceNeeded(),
               }}>
                 {/* Non-breaking space: ordinary whitespace between flex items is
                     dropped, which glued the kind and status together. */}
@@ -584,85 +594,6 @@ function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSour
   )
 }
 
-/**
- * Renders an attempt's resolved execution + results. Deliberately omits any
- * credential-bearing field: no repository remote URL, no lease/control-plane
- * tokens, no secrets. Only safe Session/workspace references are shown.
- */
-function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: WorkGraphSessionOpener }) {
-  const attempt = () => props.detail.attempt
-  const exec = (): ResolvedExecutionProfile => attempt().resolvedExecution
-  const references = () => props.detail.executionReferences
-  return (
-    <div class="workgraph-detail-grid">
-      <DialogField label="Attempt">#{attempt().attemptNumber} · {attempt().state}</DialogField>
-      <Show when={attempt().attentionReason}>
-        {(reason) => (
-          <div class="workgraph-attempt-error" role="alert">
-            <span class="text-[11px] font-semibold text-text-strong">{attempt().state === "failed" ? "Attempt failed" : "Attempt needs attention"}</span>
-            <span class="text-[12px] leading-5 text-text-base">{reason()}</span>
-          </div>
-        )}
-      </Show>
-      <DialogField label="Environment">
-        {exec().environment.kind.replaceAll("_", " ")}
-        <Show when={exec().environment.presetId}> · {exec().environment.presetId}</Show>
-      </DialogField>
-      <DialogField label="Model">{exec().model.providerId}/{exec().model.modelId}</DialogField>
-      <DialogField label="Effort">{exec().effort}</DialogField>
-      <DialogField label="Agent">{exec().agent}</DialogField>
-      <DialogField label="Harness">{exec().harness}</DialogField>
-      <Show when={exec().repository?.baseRevision}>
-        <DialogField label="Base revision" mono>{exec().repository!.baseRevision}</DialogField>
-      </Show>
-      <DialogField label="Tools">{exec().tools.length ? exec().tools.join(", ") : "none"}</DialogField>
-      <DialogField label="Connections">{exec().connectionIds.length ? exec().connectionIds.join(", ") : "none"}</DialogField>
-      <Show when={references()?.sessionId}>
-        {(sessionId) => (
-          <DialogField label="Session" mono>
-            <Show when={props.onOpenSession} fallback={sessionId()}>
-              {(openSession) => (
-                <button
-                  type="button"
-                  class="workgraph-session-link"
-                  aria-label={`Open session ${sessionId()}`}
-                  onClick={() => void openSession()({
-                    sessionId: sessionId(),
-                    ...(references()?.workspaceId ? { workspaceId: references()!.workspaceId } : {}),
-                    harness: exec().harness,
-                    environment: exec().environment,
-                  })}
-                >
-                  {sessionId()}
-                </button>
-              )}
-            </Show>
-          </DialogField>
-        )}
-      </Show>
-      <Show when={references()?.workspaceId}>
-        <DialogField label="Workspace" mono>{references()!.workspaceId}</DialogField>
-      </Show>
-      <Show when={references()?.childWorkspaceId}>
-        <DialogField label="Child workspace" mono>{references()!.childWorkspaceId}</DialogField>
-      </Show>
-      <Show when={attempt().result}>
-        {(result) => (
-          <div class="workgraph-detail-result">
-            <span class="workgraph-dfield-label text-text-weaker">Result</span>
-            <p class="text-[12px] leading-5 text-text-base">{result().summary}</p>
-            <Show when={result().artifactRefs.length}>
-              <ul class="workgraph-detail-artifacts">
-                <For each={result().artifactRefs}>{(ref) => <li class="font-mono text-[11px] text-text-weaker">{ref}</li>}</For>
-              </ul>
-            </Show>
-          </div>
-        )}
-      </Show>
-    </div>
-  )
-}
-
 // ── Unorganized AI work (candidates) ──────────────────────────────────────
 
 function CandidatesContent(props: { source: WorkGraphWaitingSource; onResolved: () => void }) {
@@ -739,8 +670,6 @@ function CandidatesContent(props: { source: WorkGraphWaitingSource; onResolved: 
     </div>
   )
 }
-
-// ── Configuration required ────────────────────────────────────────────────
 
 function ConfigRequiredContent(props: { item: AttentionItem; onOpenSettings?: () => void; onClose?: () => void }) {
   return (

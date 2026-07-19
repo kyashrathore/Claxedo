@@ -112,6 +112,11 @@ export function createSqliteChannelIdentityBindingStore(): ChannelIdentityBindin
         `SELECT * FROM claxedo_channel_identity WHERE channel = ? AND external_user_id = ?`,
       ).get(channel, externalUserId))
     },
+    async listBoundForAccount(accountId) {
+      return ClaxedoDB.raw().prepare(
+        `SELECT * FROM claxedo_channel_identity WHERE account_id = ? AND status = 'bound' ORDER BY bound_at DESC`,
+      ).all(accountId).flatMap((row) => identityRow(row) ?? [])
+    },
     async put(binding) {
       ClaxedoDB.raw().prepare(`
         INSERT INTO claxedo_channel_identity (channel, external_user_id, account_id, status, bound_at, bound_by)

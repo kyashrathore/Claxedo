@@ -60,6 +60,7 @@ export type WorkGraphWaitingSource = {
   answerDecision: (decisionId: string, expectedVersion: number, answer: { optionId?: string; answer?: string }) => Promise<CommandResult>
   dismissDecision: (decisionId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
   confirmAdmission: (proposal: Parameters<WorkGraphClient["confirmAdmission"]>[0]) => Promise<CommandResult>
+  confirmPublicPr: WorkGraphClient["confirmPublicPr"]
   dismissAdmission: (proposalId: string, expectedVersion: number) => Promise<CommandResult>
   stageIntakeCandidate: (candidateId: string) => Promise<unknown>
   dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => Promise<unknown>
@@ -99,6 +100,7 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     answerDecision: (id, version, answer) => client.answerDecision(id, version, answer),
     dismissDecision: (id, version, reason) => client.dismissDecision(id, version, reason),
     confirmAdmission: (proposal) => client.confirmAdmission(proposal),
+    confirmPublicPr: (id, version) => client.confirmPublicPr(id, version),
     dismissAdmission: (id, version) => client.dismissAdmission(id, version),
     stageIntakeCandidate: (id) => client.stageIntakeCandidate(id),
     dismissIntakeCandidate: (id, version) => client.dismissIntakeCandidate(id, version),
@@ -234,6 +236,18 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
       title: "Unorganized AI work",
       meta: `${item.counts.total} candidate${item.counts.total === 1 ? "" : "s"} · ${item.counts.externalIssues} issue${item.counts.externalIssues === 1 ? "" : "s"} · ${item.counts.sessions} session${item.counts.sessions === 1 ? "" : "s"}`,
       critical: false,
+      staged: false,
+      item,
+    }
+  }
+  if (item.kind === "master_escalation") {
+    return {
+      key: `master_escalation:${item.id}`,
+      kind: item.kind,
+      tag: "master",
+      title: "Master needs your help",
+      meta: item.reason,
+      critical: true,
       staged: false,
       item,
     }

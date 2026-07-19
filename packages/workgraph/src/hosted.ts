@@ -41,6 +41,7 @@ export {
 } from "./application/matching-service"
 export {
   createGitHubSourceIssueConnector,
+  createGitHubCodeHostConnector,
   createLinearSourceIssueConnector,
   createJiraSourceIssueConnector,
 } from "./connectors"

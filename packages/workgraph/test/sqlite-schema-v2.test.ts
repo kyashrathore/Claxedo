@@ -53,6 +53,7 @@ describe("WorkGraph SQLite v2 schema", () => {
       "wg_v2_external_identities",
       "wg_v2_intake_candidates",
       "wg_v2_leases",
+      "wg_v2_master_mailbox",
       "wg_v2_migration_intake",
       "wg_v2_operation_results",
       "wg_v2_outbox",

@@ -90,6 +90,52 @@ describe("WorkGraph Attempt tools", () => {
     expect(JSON.stringify(operations)).not.toContain("workItemId")
   })
 
+  it("registers only the structured notes tool for an exact master binding", async () => {
+    let registration: { callbackUrl: string; tools: Array<{ name: string }> } | undefined
+    let operation: unknown
+    const app = WorkGraphAttemptToolRoutes({
+      workspaceId: "workspace-1",
+      broker: async (request) => {
+        operation = request
+        return {
+          ok: true,
+          operationId: request.operation.operationId,
+          cursor: createChangeCursor({ organizationId: "org", ownerUserId: "owner", position: 1 }),
+          value: { recorded: true },
+        }
+      },
+      registerSessionTools: async (input) => { registration = input },
+    })
+    handles.push(app)
+    const streamId = "stream-1"
+    await app.request("/api/workgraph/attempt-binding", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        identity: { attemptId: `master_${streamId}`, streamId, sessionId: `ses_master_${streamId}`, workspaceId: "workspace-1" },
+        tools: ["workgraph_update_stream_notes"],
+        brokerUrl: "http://127.0.0.1",
+      }),
+    })
+    expect(registration?.tools.map((tool) => tool.name)).toEqual(["workgraph_update_stream_notes"])
+    const response = await fetch(registration!.callbackUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID: `ses_master_${streamId}`,
+        name: "workgraph_update_stream_notes",
+        toolCallID: "notes-1",
+        input: { status: ["Ready"], learnings: [], externalReferences: [] },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(operation).toMatchObject({
+      identity: { attemptId: `master_${streamId}`, streamId, sessionId: `ses_master_${streamId}` },
+      operation: { type: "update_stream_notes", status: ["Ready"] },
+    })
+  })
+
   it("rejects a callback that claims another Session", async () => {
     let callbackUrl = ""
     const app = WorkGraphAttemptToolRoutes({

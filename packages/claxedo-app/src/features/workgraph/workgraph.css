@@ -271,6 +271,16 @@
   white-space: normal;
 }
 
+.workgraph-streamcard-placement {
+  overflow: hidden;
+  color: var(--text-weaker);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Fixed header controls reserve their own width. They never overlay the title
    or each other's hit targets, and their quiet icon treatment keeps the title
    visually dominant without hiding available actions. */
@@ -323,12 +333,20 @@
   margin-top: 0.12rem;
 }
 
-/* Inside a card a task row is just dot + title; the mono state, dependency
-   count, and Session jump live in the full task list, never here. */
-.workgraph-streamcard-tasks .workgraph-leaf-state,
+/* Inside a card a task row stays compact; only live Stop and stopped Retry
+   recovery controls remain visible beside the title. */
+.workgraph-streamcard-tasks .workgraph-leaf-state:not(.workgraph-leaf-stopped):not(.workgraph-leaf-paused),
 .workgraph-streamcard-tasks .workgraph-leaf-waits,
-.workgraph-streamcard-tasks .workgraph-leaf-session {
+.workgraph-streamcard-tasks .workgraph-leaf-session:not(.workgraph-leaf-stop):not(.workgraph-leaf-retry) {
   display: none;
+}
+
+.workgraph-pause-running {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-base);
+  font-size: 0.75rem;
 }
 
 /* The overflow tail: a demoted row that continues the list, indented to the
@@ -414,6 +432,38 @@
   letter-spacing: 0.04em;
 }
 
+.workgraph-streamcard-master {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.6875rem;
+}
+
+.workgraph-streamcard-master-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workgraph-master-receipt-link {
+  flex-shrink: 0;
+  color: var(--text-base);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.workgraph-master-receipt-link:hover {
+  color: var(--text-strong);
+}
+
+.workgraph-master-receipt-link:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--border-selected);
+  outline-offset: 2px;
+}
+
 /* The Pause/Resume toggle reads as pressed while the stream is paused. */
 .workgraph-streamcard-actions .workgraph-row-settings.is-active {
   color: var(--text-base);
@@ -466,6 +516,31 @@
 
 .workgraph-streamcard-gap {
   flex: 1;
+}
+
+.workgraph-streamcard-notes {
+  color: var(--text-weak);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.workgraph-streamcard-notes:hover,
+.workgraph-streamcard-notes:focus-visible {
+  color: var(--text-strong);
+  text-decoration: underline;
+}
+
+.workgraph-stream-notes {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-base);
+  font: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 /* The lifecycle control: at rest a stack glyph plus the total, holding the

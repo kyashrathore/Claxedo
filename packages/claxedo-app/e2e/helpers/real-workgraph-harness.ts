@@ -14,7 +14,7 @@ import {
   createMemoryCredentialStore,
 } from "../../../claxedo-connections/src/index"
 import { createSessionIntakeService } from "@claxedo/workgraph"
-import type { SourceIssueConnector } from "@claxedo/workgraph/connectors"
+import type { CodeHostConnector, SourceIssueConnector } from "@claxedo/workgraph/connectors"
 import {
   WorkGraphConnectionToolNames,
   type CommandResult,
@@ -31,6 +31,7 @@ import {
 import { createExecutionCapabilitiesPort } from "../../../claxedo-server/src/workgraph-host/execution-capabilities"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../../claxedo-server/src/workgraph-host/local-execution"
 import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/workgraph-session-gateway"
+import { createSqlitePullRequestEffects } from "../../../claxedo-server/src/workgraph-host/sqlite-pull-request-effects"
 import { buildSessionListResponse, parseSessionListQuery } from "../../../claxedo-server/src/session-list"
 import {
   createLocalWorkGraphAgentTools,
@@ -61,6 +62,7 @@ export type RealWorkGraphHarness = Readonly<{
   connectionEvidence: () => Readonly<{
     requests: readonly ControlledSourceIssueRequest[]
     effects: readonly ControlledSourceIssueEffect[]
+    pullRequests: readonly ControlledPullRequestRequest[]
     connectionId: string
     connectionIds: Readonly<Record<"github" | "linear" | "jira", string>>
   }>
@@ -69,6 +71,8 @@ export type RealWorkGraphHarness = Readonly<{
     attempts: readonly (readonly [string, "running" | ControlledExecutionResult])[]
     durableAttempts: readonly unknown[]
     leases: readonly unknown[]
+    pendingWork: readonly unknown[]
+    capabilityReads: readonly unknown[]
     lastReconcile: unknown
   }>
   realSessionEvidence: () => readonly RealSessionRecord[]
@@ -84,6 +88,7 @@ export type RealWorkGraphHarness = Readonly<{
 }>
 
 type ControlledExecutionResult =
+  | "running"
   | Readonly<{ state: "succeeded"; summary: string; artifacts: readonly string[] }>
   | Readonly<{ state: "failed"; message: string }>
 
@@ -104,6 +109,16 @@ type ControlledSourceIssueEffect = Readonly<{
   authorized: boolean
 }>
 
+type ControlledPullRequestRequest = Readonly<{
+  repository: string
+  head: string
+  base: string
+  title: string
+  draft: boolean
+  idempotencyKey: string
+  authorized: boolean
+}>
+
 type RealSessionRecord = Readonly<{
   sessionId: string
   directory: string
@@ -120,14 +135,18 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   ownerUserId?: string
   trustedAuthContexts?: Readonly<Record<string, Readonly<{ organizationId: string; ownerUserId: string }>>>
   realSessions?: boolean
+  realMasters?: boolean
 }>): Promise<RealWorkGraphHarness> {
   fs.mkdirSync(input.temporaryRoot ?? os.tmpdir(), { recursive: true })
   const directory = fs.mkdtempSync(path.join(input.temporaryRoot ?? os.tmpdir(), "claxedo-workgraph-browser-"))
   const database = new Database(path.join(directory, "workgraph.sqlite"))
+  const pullRequestEffects = createSqlitePullRequestEffects(database)
   const queuedExecutionResults: ControlledExecutionResult[] = []
   const attempts = new Map<string, "running" | ControlledExecutionResult>()
   const sourceIssueRequests: ControlledSourceIssueRequest[] = []
   const sourceIssueEffects: ControlledSourceIssueEffect[] = []
+  const pullRequestRequests: ControlledPullRequestRequest[] = []
+  const capabilityReads: unknown[] = []
   let now = Date.now()
   const organizationId = input.organizationId ?? "local"
   const ownerUserId = input.ownerUserId ?? "local"
@@ -183,7 +202,32 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     requests: sourceIssueRequests,
     effects: sourceIssueEffects,
   }))
+  const codeHostConnectors = {
+    github: controlledCodeHostConnector({
+      token: "browser-e2e-github-secret",
+      requests: pullRequestRequests,
+    }),
+  }
   let executeAttempt: ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>) | undefined
+  let recordPullRequest:
+    | ((context: WorkGraphContext, input: Readonly<{
+        streamId: string
+        attemptId: string
+        idempotencyKey: string
+        pullRequestId: string
+        url: string
+        draft: boolean
+      }>) => Promise<Readonly<{ durableEffectReceiptId: string; evidenceId?: string }>>)
+    | undefined
+  let authorizePullRequest:
+    | ((context: WorkGraphContext, input: Readonly<{
+        streamId: string
+        repository: string
+        title: string
+        draft: boolean
+        publicRepository: boolean
+      }>) => Promise<boolean>)
+    | undefined
   const realSessions = input.realSessions
     ? await createRealSessionRuntime(directory, `http://127.0.0.1:${input.port}`, (forward) => createSessionV2WorkGraphGateway(forward, {
         executeAttempt: (context, request, signal) => {
@@ -193,7 +237,17 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         },
         connections,
         connectors: Object.fromEntries(sourceIssueConnectors.map((connector) => [connector.provider, connector])),
+        codeHostConnectors,
         resolveTeamOwner: (context) => `org:${context.organizationId}`,
+        recordPullRequest: (context, input) => {
+          if (!recordPullRequest) throw new Error("WorkGraph pull request receipt broker is not ready")
+          return recordPullRequest(context, input)
+        },
+        authorizePullRequest: (context, input) => {
+          if (!authorizePullRequest) throw new Error("WorkGraph pull request authorization broker is not ready")
+          return authorizePullRequest(context, input)
+        },
+        pullRequestEffects,
       }))
     : undefined
   const execution = createLocalWorkspaceExecution({
@@ -220,6 +274,21 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     database,
     ...(input.trustedAuthContexts ? { auth: trustedAuth(input.trustedAuthContexts) } : {}),
     execution,
+    ...(input.realMasters && realSessions
+      ? {
+          master: {
+            sessions: realSessions.gateway,
+            directory: (context, streamId) => path.join(
+              directory,
+              "worktrees",
+              encode(context.organizationId),
+              encode(context.ownerUserId),
+              encode(streamId),
+              "envelope",
+            ),
+          },
+        }
+      : {}),
     connections,
     resolveTeamOwner: (context) => `org:${context.organizationId}`,
     sourceIssueConnectors,
@@ -245,16 +314,20 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         tools: ["read", "edit"],
       }),
       readRepository: async () => ({ baseRevisions: ["HEAD", "dev"] }),
-      readConnections: async (context) => (await connections.list({
-        owner: context.ownerUserId,
-        teamOwner: `org:${context.organizationId}`,
-      })).flatMap((connection) => connection.status === "connected" ? [{
+      readConnections: async (context) => {
+        const available = (await connections.list({
+          owner: context.ownerUserId,
+          teamOwner: `org:${context.organizationId}`,
+        })).flatMap((connection) => connection.status === "connected" ? [{
           id: connection.id as never,
           integrationId: connection.integrationId,
           scope: connection.scope,
           grantedCapabilities: connection.grantedCapabilities,
           ...(connection.accountLabel ? { accountLabel: connection.accountLabel } : {}),
-        }] : []),
+        }] : [])
+        capabilityReads.push({ context, available })
+        return available
+      },
       connectionToolIds: WorkGraphConnectionToolNames,
       now: () => now,
     }),
@@ -284,8 +357,50 @@ export async function createRealWorkGraphHarness(input: Readonly<{
           summary: request.operation.summary,
           artifacts: request.operation.artifacts,
           evidence: request.operation.evidence,
-        },
+      },
   })
+  recordPullRequest = async (context, request) => {
+    const result = await embedded.service.execute(context, {
+      operationId: `pull_request_${request.idempotencyKey}` as never,
+      command: {
+        version: 1,
+        type: "record_evidence",
+        subject: { type: "stream", streamId: request.streamId as never },
+        evidence: {
+          kind: "integration",
+          summary: `Opened ${request.draft ? "draft " : ""}pull request ${request.pullRequestId}`,
+          effect: "published",
+          reference: request.url,
+        },
+      },
+    })
+    if (!result.ok) throw new Error(result.error.message)
+    const value = result.value as { durableEffectReceiptId?: string; evidenceId?: string }
+    if (!value.durableEffectReceiptId) throw new Error("Pull request durable effect receipt is missing")
+    return {
+      durableEffectReceiptId: value.durableEffectReceiptId,
+      ...(value.evidenceId ? { evidenceId: value.evidenceId } : {}),
+    }
+  }
+  authorizePullRequest = async (context, request) => {
+    if (request.draft || !request.publicRepository) return true
+    const stream = await embedded.service.queries.streams.read(context, { streamId: request.streamId as never })
+    if (!stream) throw new Error("Pull request Stream is unavailable")
+    if (stream.publicPrConfirmedAt !== undefined) return true
+    const result = await embedded.service.execute(context, {
+      operationId: `public_pr_confirmation_${request.streamId}` as never,
+      command: {
+        version: 1,
+        type: "request_public_pr_confirmation",
+        streamId: request.streamId as never,
+        expectedVersion: stream.version,
+        repository: request.repository,
+        title: request.title,
+      },
+    })
+    if (!result.ok) throw new Error(result.error.message)
+    return false
+  }
   if (realSessions) {
     await realSessions.configureApplicationTools(await createLocalWorkGraphAgentTools(embedded, {
       organizationId,
@@ -414,6 +529,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     connectionEvidence: () => ({
       requests: [...sourceIssueRequests],
       effects: [...sourceIssueEffects],
+      pullRequests: [...pullRequestRequests],
       connectionId: connectionIds.github,
       connectionIds: { ...connectionIds },
     }),
@@ -426,6 +542,16 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       leases: database.prepare(
         "SELECT resource_id, holder_id, epoch, expires_at FROM wg_v2_leases ORDER BY resource_id",
       ).all(),
+      pendingWork: database.prepare(
+        `SELECT items.id, items.title, items.lifecycle, items.execution_overrides_json,
+          streams.title AS stream_title, streams.lifecycle AS stream_lifecycle,
+          streams.execution_defaults_json AS stream_defaults_json
+         FROM wg_v2_work_items items
+         JOIN wg_v2_streams streams ON streams.organization_id = items.organization_id
+          AND streams.owner_user_id = items.owner_user_id AND streams.id = items.stream_id
+         WHERE items.lifecycle = 'pending' ORDER BY items.created_at, items.id`,
+      ).all(),
+      capabilityReads: capabilityReads.slice(-20),
       lastReconcile,
     }),
     realSessionEvidence: () => [...(realSessions?.records.values() ?? [])],
@@ -462,6 +588,33 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         if (backgroundFailure) throw backgroundFailure
       })()
       return closing
+    },
+  }
+}
+
+function controlledCodeHostConnector(input: Readonly<{
+  token: string
+  requests: ControlledPullRequestRequest[]
+}>): CodeHostConnector {
+  return {
+    provider: "github",
+    async openPullRequest(authorization, request) {
+      const authorized = authorization.token === input.token && authorization.tokenType === "bearer"
+      input.requests.push({
+        repository: request.repository,
+        head: request.head,
+        base: request.base,
+        title: request.title,
+        draft: request.draft,
+        idempotencyKey: request.idempotencyKey,
+        authorized,
+      })
+      if (!authorized) throw new Error("Controlled GitHub connector received invalid authorization")
+      return {
+        pullRequestId: "482",
+        url: "https://github.example/claxedo/app/pull/482",
+        draft: request.draft,
+      }
     },
   }
 }
@@ -682,13 +835,19 @@ function externalPlanningSource(prompt: string) {
 }
 
 function connectionInvocation(serializedRequest: string) {
-  const connectionId = serializedRequest.match(/Trusted Connection handles:\\n- ([^\\"]+)/)?.[1]
-    ?? serializedRequest.match(/Trusted Connection handles:\n- ([^\n]+)/)?.[1]
+  const connectionId = connectionHandle(serializedRequest)
   const externalId = serializedRequest.match(/\\?"externalId\\?":\s*\\?"([^"\\]+)\\?"/)?.[1]
-  if (!connectionId || !externalId) {
+  if (!externalId) {
     throw new Error("Connection-bound real Session prompt omitted its trusted Connection or external issue identity")
   }
   return { connectionId, externalId }
+}
+
+function connectionHandle(serializedRequest: string) {
+  const connectionId = serializedRequest.match(/Trusted Connection handles:\\n- ([^\\"]+)/)?.[1]
+    ?? serializedRequest.match(/Trusted Connection handles:\n- ([^\n]+)/)?.[1]
+  if (!connectionId) throw new Error("Connection-bound real Session prompt omitted its trusted Connection")
+  return connectionId
 }
 
 type RealSessionRuntime = Readonly<{
@@ -725,8 +884,82 @@ async function createRealSessionRuntime(
       sendProviderText(outgoing, "WorkGraph execution")
       return
     }
+    if (
+      serialized.includes("You are the long-lived master for Stream") &&
+      serialized.includes("Open the first public non-draft PR for the browser release")
+    ) {
+      const messages = Array.isArray(body.messages) ? body.messages : []
+      const toolResults = messages.filter((message) => object(message)?.role === "tool").length
+      const masterTurns = messages.filter((message) =>
+        object(message)?.role === "user" && JSON.stringify(message).includes("You are the long-lived master for Stream")).length
+      if ((masterTurns === 1 && toolResults === 0) || (masterTurns >= 2 && toolResults === 1)) {
+        sendProviderTool(
+          outgoing,
+          masterTurns === 1 ? "call_master_open_pr_initial" : "call_master_open_pr_confirmed",
+          "connection_code_host_open_pr",
+          {
+            connectionId: connectionHandle(serialized),
+            repository: "claxedo/app",
+            head: "workgraph/v2",
+            base: "dev",
+            title: "Release WorkGraph V2",
+            body: "Release the verified WorkGraph V2 implementation.",
+            draft: false,
+            publicRepository: true,
+            idempotencyKey: "workgraph-e2e:public-release",
+          },
+        )
+        return
+      }
+      if (masterTurns >= 2 && toolResults >= 2) {
+        sendProviderText(outgoing, JSON.stringify(messages.findLast((message) => object(message)?.role === "tool"))
+          .includes("https://github.example/claxedo/app/pull/482")
+          ? "Opened the confirmed public pull request with its durable receipt."
+          : "The confirmed public pull request could not be opened.")
+        return
+      }
+      sendProviderText(outgoing, "Held the first public pull request for owner confirmation.")
+      return
+    }
+    if (serialized.includes("You are the long-lived master for Stream")) {
+      sendProviderText(outgoing, "Processed the serialized master duty and preserved its durable receipts.")
+      return
+    }
     const messages = Array.isArray(body.messages) ? body.messages : []
     const toolResults = messages.filter((message) => object(message)?.role === "tool").length
+    const directLedger = serialized.includes("Use one WorkGraph ledger call to add the owner-directed Task")
+    const discoveredLedger = serialized.includes("Use one WorkGraph ledger call to file the discovered Task")
+    if (directLedger || discoveredLedger) {
+      const streamId = serialized.match(/(?:to|into) Stream ([A-Za-z0-9_:-]+)\./)?.[1]
+      if (!streamId) throw new Error("Plain Session ledger prompt omitted its target Stream")
+      const priorResults = discoveredLedger ? 1 : 0
+      if (toolResults === priorResults) {
+        sendProviderTool(outgoing, discoveredLedger ? "call_ledger_discovered" : "call_ledger_direct", "workgraph_ledger", {
+          action: discoveredLedger ? "file_discovered" : "create_task",
+          operation_id: discoveredLedger ? "e2e-ledger-file-discovered" : "e2e-ledger-create-direct",
+          stream_id: streamId,
+          title: discoveredLedger ? "Document rollout caveat" : "Capture launch checklist",
+          completion_contract: {
+            version: 1,
+            mode: "all",
+            requirements: [{
+              id: discoveredLedger ? "ledger-discovered-proof" : "ledger-direct-proof",
+              kind: "owner_confirmation",
+              description: "The ledger entry is reviewed",
+            }],
+          },
+        })
+        return
+      }
+      if (!latestToolSucceeded(messages)) {
+        sendProviderText(outgoing, "The WorkGraph ledger rejected the requested Task.")
+        return
+      }
+      sendProviderText(outgoing, discoveredLedger
+        ? "Filed the discovered Task as Staged with one WorkGraph ledger call."
+        : "Filed the owner-directed Task with one WorkGraph ledger call.")
+      return
+    }
     const continueLedger = serialized.includes("Refresh the WorkGraph ledger, complete the first Task with evidence, and select the next ready Task.")
     if (continueLedger) {
       const results = successfulCommandResults(messages)
@@ -735,11 +968,11 @@ async function createRealSessionRuntime(
         sendProviderText(outgoing, "The trusted WorkGraph ledger tool failed, so the current Session did not advance.")
         return
       }
-      if (toolResults === 6) {
+      if (toolResults === 7) {
         sendProviderTool(outgoing, "call_ledger_refresh", "workgraph_refresh_context", {})
         return
       }
-      if (toolResults === 7) {
+      if (toolResults === 8) {
         sendProviderTool(outgoing, "call_ledger_complete_first", "workgraph_complete_current_work", {
           operation_id: "e2e-ledger-complete-first",
           summary: "Completed the first bounded ledger Task",
@@ -754,14 +987,14 @@ async function createRealSessionRuntime(
         })
         return
       }
-      if (toolResults === 8) {
+      if (toolResults === 9) {
         sendProviderTool(outgoing, "call_ledger_select_second", "workgraph_select_work", {
           operation_id: "e2e-ledger-select-second",
-          work_item_id: commandResultId(results[2], "workItemId"),
+          work_item_id: commandResultId(results[3], "workItemId"),
         })
         return
       }
-      if (toolResults === 9) {
+      if (toolResults === 10) {
         sendProviderTool(outgoing, "call_ledger_current", "workgraph_current_work", {})
         return
       }
@@ -795,6 +1028,15 @@ async function createRealSessionRuntime(
         }],
       })
       if (toolResults === 1) {
+        sendProviderTool(outgoing, "call_ledger_pause", "workgraph_pause", {
+          operation_id: "e2e-ledger-pause-stream",
+          stream_id: streamId,
+          expected_version: 1,
+          reason: "Reserve this Stream for the bound project Session",
+        })
+        return
+      }
+      if (toolResults === 2) {
         sendProviderTool(outgoing, "call_ledger_create_first", "workgraph_create_task", {
           operation_id: "e2e-ledger-create-first",
           stream_id: streamId,
@@ -803,8 +1045,8 @@ async function createRealSessionRuntime(
         })
         return
       }
-      const firstTaskId = commandResultId(results[1], "workItemId")
-      if (toolResults === 2) {
+      const firstTaskId = commandResultId(results[2], "workItemId")
+      if (toolResults === 3) {
         sendProviderTool(outgoing, "call_ledger_create_second", "workgraph_create_task", {
           operation_id: "e2e-ledger-create-second",
           stream_id: streamId,
@@ -814,21 +1056,21 @@ async function createRealSessionRuntime(
         })
         return
       }
-      if (toolResults === 3) {
+      if (toolResults === 4) {
         sendProviderTool(outgoing, "call_ledger_bind", "workgraph_bind_session", {
           operation_id: "e2e-ledger-bind",
           stream_id: streamId,
         })
         return
       }
-      if (toolResults === 4) {
+      if (toolResults === 5) {
         sendProviderTool(outgoing, "call_ledger_select_first", "workgraph_select_work", {
           operation_id: "e2e-ledger-select-first",
           work_item_id: firstTaskId,
         })
         return
       }
-      if (toolResults === 5) {
+      if (toolResults === 6) {
         sendProviderTool(outgoing, "call_ledger_checkpoint", "workgraph_record_progress", {
           operation_id: "e2e-ledger-checkpoint-first",
           level: "progress",
@@ -922,9 +1164,14 @@ async function createRealSessionRuntime(
     }
     if (toolResults === (connectionBound ? 2 : 1)) {
       const invocation = connectionBound ? connectionInvocation(serialized) : undefined
+      const artifacts = serialized.includes("Prepare the master candidate")
+        ? ["diff:master-candidate"]
+        : serialized.includes("Verify the master landing")
+          ? ["diff:master-landing"]
+          : ["file:WORKGRAPH_REAL_SESSION_E2E.md"]
       sendProviderTool(outgoing, "call_workgraph_complete", "workgraph_complete_task", {
         summary: "Completed the WorkGraph Task through its real project Session",
-        artifacts: ["file:WORKGRAPH_REAL_SESSION_E2E.md"],
+        artifacts,
         evidence: [
           {
             requirementId: "real-session-proof",

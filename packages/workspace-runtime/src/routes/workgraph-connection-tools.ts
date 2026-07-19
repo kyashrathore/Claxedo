@@ -112,6 +112,16 @@ export const WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS = {
   }).strict().refine((value) => value.status !== undefined || value.body !== undefined, {
     message: "An update requires status or body",
   }),
+  connection_code_host_open_pr: callBase.extend({
+    repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/),
+    head: z.string().min(1),
+    base: z.string().min(1),
+    title: z.string().min(1),
+    body: z.string().optional(),
+    draft: z.boolean().default(true),
+    publicRepository: z.boolean().default(true),
+    idempotencyKey: z.string().min(1),
+  }).strict(),
 } satisfies Record<WorkGraphConnectionToolName, z.ZodType>
 
 export type WorkGraphConnectionToolInput = {
@@ -130,6 +140,10 @@ export const WORKGRAPH_CONNECTION_TOOL_SCHEMAS = {
   connection_work_source_update: {
     description: "Idempotently update status or body on a work-source issue through an explicitly bound Connection.",
     input: { connectionId: "string", externalId: "string", status: "string?", body: "string?", idempotencyKey: "string" },
+  },
+  connection_code_host_open_pr: {
+    description: "Open an idempotent pull request through an explicitly bound code-host Connection. Pull requests are draft by default.",
+    input: { connectionId: "string", repository: "owner/repository", head: "string", base: "string", title: "string", body: "string?", draft: "boolean?", publicRepository: "boolean?", idempotencyKey: "string" },
   },
 } as const
 
@@ -254,7 +268,8 @@ export function WorkGraphConnectionToolRoutes(input: {
         callbackUrl: `${await localCallbackOrigin()}/callback/${callbackNonce}`,
         tools: binding.tools.map(toolDefinition),
       })
-    } catch {
+    } catch (error) {
+      console.error("[workspace-runtime] WorkGraph Connection tool registration failed:", error)
       callbackSessions.delete(callbackNonce)
       if (existing && !disposed) bindings.set(parsed.data.identity.sessionId, existing)
       else bindings.delete(parsed.data.identity.sessionId)
@@ -372,6 +387,19 @@ function toolDefinition(name: WorkGraphConnectionToolName) {
     })
     required.push("externalId", "idempotencyKey")
   }
+  if (name === "connection_code_host_open_pr") {
+    Object.assign(properties, {
+      repository: { type: "string", pattern: "^[^/\\s]+/[^/\\s]+$" },
+      head: { type: "string" },
+      base: { type: "string" },
+      title: { type: "string" },
+      body: { type: "string" },
+      draft: { type: "boolean" },
+      publicRepository: { type: "boolean" },
+      idempotencyKey: { type: "string" },
+    })
+    required.push("repository", "head", "base", "title", "idempotencyKey")
+  }
   return {
     name,
     description: WORKGRAPH_CONNECTION_TOOL_SCHEMAS[name].description,
@@ -395,6 +423,21 @@ function requestFor(
     version: 1,
     identity,
     operation: { type: "comment", externalId: value.externalId, body: value.body, idempotencyKey: value.idempotencyKey },
+  })
+  if (tool === "connection_code_host_open_pr") return WorkGraphConnectionOperationRequestSchema.parse({
+    version: 1,
+    identity,
+    operation: {
+      type: "open_pull_request",
+      repository: value.repository,
+      head: value.head,
+      base: value.base,
+      title: value.title,
+      ...(value.body === undefined ? {} : { body: value.body }),
+      draft: value.draft ?? true,
+      publicRepository: value.publicRepository ?? true,
+      idempotencyKey: value.idempotencyKey,
+    },
   })
   return WorkGraphConnectionOperationRequestSchema.parse({
     version: 1,

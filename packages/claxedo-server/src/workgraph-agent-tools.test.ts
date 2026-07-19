@@ -76,6 +76,160 @@ describe("embedded WorkGraph agent tools", () => {
     ).rejects.toThrow()
   })
 
+  test("ledger creation is owner-directed from a plain Session and discovered work stays agent-staged", async () => {
+    const execute = vi.fn(async (_context, request) => ({
+      ok: true as const,
+      operationId: request.operationId,
+      cursor: "cursor-1",
+      value: { workItemId: request.command.type === "create_work_item" ? request.operationId : "unused" },
+    }))
+    const base = embedded(execute)
+    const tools = await createLocalWorkGraphAgentTools({
+      ...base,
+      sessionBindings: { readForSession: async () => undefined },
+    } as never, {
+      organizationId: "organization-a",
+      ownerUserId: "owner-a",
+    })
+    const invoke = (action: "create_task" | "file_discovered") => tools.workgraph_ledger!.execute({
+      action,
+      operation_id: `ledger-${action}`,
+      stream_id: "stream-1",
+      title: action === "create_task" ? "Requested directly" : "Follow-up discovered",
+      completion_contract: completion("proof"),
+    }, {
+      sessionID: "session-1",
+      agent: "build",
+      assistantMessageID: "message-1",
+      toolCallID: `call-${action}`,
+    })
+
+    await invoke("create_task")
+    await invoke("file_discovered")
+    expect(execute.mock.calls.map(([context]) => context.actor)).toEqual([
+      { type: "user", id: "owner-a" },
+      { type: "agent", id: "session-1" },
+    ])
+  })
+
+  test("call_master resolves the invoking Session binding and appends to that Stream", async () => {
+    const execute = vi.fn(async (_context, request) => ({
+      ok: true as const,
+      operationId: request.operationId,
+      cursor: "cursor-1",
+      value: { streamId: "stream-1", mailboxMessageId: "message-1" },
+    }))
+    const base = embedded(execute)
+    const tools = await createLocalWorkGraphAgentTools({
+      ...base,
+      service: {
+        ...base.service,
+        queries: {
+          ...base.service.queries,
+          streams: { read: async () => ({ id: "stream-1", version: 3 }) },
+        },
+      },
+      sessionBindings: { readForSession: async () => binding("session-1", "project-1") },
+    } as never, { organizationId: "organization-a", ownerUserId: "owner-a" })
+
+    await expect(tools.call_master!.execute(
+      { message: "Rebase and land the completed task." },
+      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-master" },
+    )).resolves.toEqual({ streamId: "stream-1", mailboxMessageId: "message-1" })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actor: { type: "agent", id: "session-1" } }), {
+      operationId: expect.stringMatching(/^call_master_call-master_/),
+      command: {
+        version: 1,
+        type: "call_master",
+        streamId: "stream-1",
+        expectedVersion: 3,
+        message: "Rebase and land the completed task.",
+      },
+    })
+  })
+
+  test("restricts structured notes updates to the exact bound Stream master", async () => {
+    const execute = vi.fn(async (_context, request) => ({
+      ok: true as const,
+      operationId: request.operationId,
+      cursor: "cursor-1",
+      value: { streamId: "stream-1" },
+    }))
+    const base = embedded(execute)
+    const tools = await createLocalWorkGraphAgentTools({
+      ...base,
+      service: {
+        ...base.service,
+        queries: { ...base.service.queries, streams: { read: async () => ({ id: "stream-1", version: 4 }) } },
+      },
+      sessionBindings: { readForSession: async () => binding("ses_master_stream-1", "project-1") },
+    } as never, { organizationId: "organization-a", ownerUserId: "owner-a" })
+    await expect(tools.workgraph_update_stream_notes!.execute(
+      { status: ["Ready"], learnings: [], external_references: [] },
+      { sessionID: "ses_master_stream-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notes-1" },
+    )).resolves.toEqual({ streamId: "stream-1" })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actor: { type: "agent", id: "ses_master_stream-1" } }), {
+      operationId: expect.stringMatching(/^update_stream_notes_notes-1_/),
+      command: {
+        version: 1,
+        type: "update_stream_notes",
+        streamId: "stream-1",
+        expectedVersion: 4,
+        status: ["Ready"],
+        learnings: [],
+        externalReferences: [],
+      },
+    })
+    await expect(tools.workgraph_update_stream_notes!.execute(
+      { status: [], learnings: [], external_references: [] },
+      { sessionID: "worker-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notes-2" },
+    )).rejects.toThrow("restricted to the bound Stream master")
+  })
+
+  test("notifies only from the exact Stream master and records an integration receipt", async () => {
+    const execute = vi.fn(async (_context, request) => ({
+      ok: true as const,
+      operationId: request.operationId,
+      cursor: "cursor-1",
+      value: { evidenceId: "evidence-notify", durableEffectReceiptId: "receipt-notify" },
+    }))
+    const notifyOwner = vi.fn(async () => ({
+      channel: "slack",
+      threadKey: "slack:team:channel:thread",
+      reference: "channel:slack:slack:team:channel:thread",
+      duplicate: false,
+    }))
+    const base = embedded(execute)
+    const tools = await createLocalWorkGraphAgentTools({
+      ...base,
+      sessionBindings: { readForSession: async () => binding("ses_master_stream-1", "project-1") },
+    } as never, { organizationId: "organization-a", ownerUserId: "owner-a", notifyOwner })
+
+    await expect(tools.workgraph_notify_owner!.execute(
+      { message: "Stream is ready" },
+      { sessionID: "ses_master_stream-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notify-1" },
+    )).resolves.toMatchObject({ receipt: { evidenceId: "evidence-notify" } })
+    expect(notifyOwner).toHaveBeenCalledWith({ idempotencyKey: "notify_owner_notify-1", text: "Stream is ready" })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actor: { type: "agent", id: "ses_master_stream-1" } }), {
+      operationId: "notify_owner_notify-1",
+      command: {
+        version: 1,
+        type: "record_evidence",
+        subject: { type: "stream", streamId: "stream-1" },
+        evidence: {
+          kind: "integration",
+          summary: "Notified the Stream owner through slack",
+          effect: "published",
+          reference: "channel:slack:slack:team:channel:thread",
+        },
+      },
+    })
+    await expect(tools.workgraph_notify_owner!.execute(
+      { message: "No" },
+      { sessionID: "worker-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notify-2" },
+    )).rejects.toThrow("restricted to the bound Stream master")
+  })
+
   test("infers a new Stream's local execution target from the invoking Session", async () => {
     const execute = vi.fn(async (_context, request) => ({
       ok: true as const,
@@ -269,6 +423,12 @@ describe("embedded WorkGraph agent tools", () => {
         title: "Journey verified",
         success_criteria: ["Both Tasks completed"],
       }), "outcomeId")
+      await invoke("workgraph_pause", {
+        operation_id: "ledger-pause",
+        stream_id: streamId,
+        expected_version: 1,
+        reason: "Attach the current Session before execution",
+      })
       const firstTaskId = resultId(await invoke("workgraph_create_task", {
         operation_id: "ledger-task-first",
         stream_id: streamId,

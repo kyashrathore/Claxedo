@@ -12,6 +12,7 @@ export type WorkItemLaunchabilityReason =
   | "stream_not_active"
   | "replacement_barrier"
   | "stream_held"
+  | "workspace_busy"
   | "deps_incomplete"
   | "blocking_decision"
   | "attempt_in_flight"
@@ -35,6 +36,8 @@ export interface WorkItemLaunchabilityInput {
      * autonomous mode halted before. Resolve/retry clears the hold.
      */
     held?: boolean
+    /** A live Attempt already owns the Stream's shared workspace. */
+    hasRunningAttempt?: boolean
   }>
   /** Lifecycle of every direct blocker; `completed` and `abandoned` both satisfy. */
   readonly blockerStates: readonly WorkItemState[]
@@ -55,6 +58,7 @@ export function evaluateWorkItemLaunchability(input: WorkItemLaunchabilityInput)
     return unlaunchable("stream_not_active")
   if (input.stream.replacementBarrier) return unlaunchable("replacement_barrier")
   if (input.stream.held) return unlaunchable("stream_held")
+  if (input.stream.hasRunningAttempt) return unlaunchable("workspace_busy")
   if (input.blockerStates.some((state) => !DEPENDENCY_SATISFIED.has(state))) return unlaunchable("deps_incomplete")
   if (input.blockingDecision) return unlaunchable("blocking_decision")
   if (input.attemptInFlight) return unlaunchable("attempt_in_flight")

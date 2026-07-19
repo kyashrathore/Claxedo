@@ -12,6 +12,7 @@ type AttentionKind =
   | "attempt"
   | "unorganized_ai_work"
   | "configuration_required"
+  | "master_escalation"
 type CandidateAttentionProjection = "none" | "external_issue" | "session"
 
 const maximumTimestamp = Number.MAX_SAFE_INTEGER
@@ -96,6 +97,18 @@ export async function syncAttentionRecord(ctx: Ctx, table: string, row: any) {
   if (table === "workgraph_attempts") {
     return setAttentionEntry(ctx, organization, row.owner_user_id, "attempt", row.id, table, row.updated_at, row.state === "attention")
   }
+  if (table === "workgraph_streams") {
+    return setAttentionEntry(
+      ctx,
+      organization,
+      row.owner_user_id,
+      "master_escalation",
+      row.id,
+      table,
+      row.updated_at,
+      row.master_status?.state === "attention",
+    )
+  }
   if (table === "workgraph_due_jobs") {
     const marker = row.payload?.configurationRequirement
     const active = attentionJobStates.has(row.status) && typeof row.last_error === "string" && Boolean(row.last_error.trim()) && marker?.type === "generation"
@@ -114,6 +127,8 @@ export async function removeAttentionRecord(ctx: Ctx, organization: string, owne
             ? { kind: "work_item" as const, id }
             : table === "workgraph_attempts"
               ? { kind: "attempt" as const, id }
+              : table === "workgraph_streams"
+                ? { kind: "master_escalation" as const, id }
               : undefined
   if (!identity) return
   await setAttentionEntry(ctx, organization, owner, identity.kind, identity.id, table, 0, false)

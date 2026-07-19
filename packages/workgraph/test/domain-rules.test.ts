@@ -17,6 +17,7 @@ import {
   evaluateCompletionContract,
   reopenOutcome,
 } from "../src/domain/completion"
+import { evaluateLandingIntegrity } from "../src/domain/landing-integrity"
 import { createAttemptAdmissionSnapshot } from "../src/domain/attempt"
 import { evaluateWorkItemLaunchability } from "../src/domain/launch-readiness"
 import { resolveExecutionProfile } from "../src/domain/execution-profile"
@@ -31,6 +32,47 @@ import {
 } from "../src/domain/transitions"
 
 describe("WorkGraph domain rules", () => {
+  it("blocks TypeScript escape hatches while accepting an honest typed fix", () => {
+    expect(evaluateLandingIntegrity({
+      changes: [{
+        path: "src/fix.ts",
+        before: "export const parse = (value: unknown) => value\n",
+        after: "export const parse = (value: unknown): string => String(value)\n",
+      }],
+    })).toEqual({ ok: true })
+
+    expect(evaluateLandingIntegrity({
+      changes: [{
+        path: "src/fix.ts",
+        before: "export const parse = (value: unknown) => value\n",
+        after: "// @ts-expect-error temporary\nexport const parse = (value: any) => value\n",
+      }],
+    })).toMatchObject({
+      ok: false,
+      error: {
+        code: "landing_integrity_violation",
+        findings: [
+          { rule: "typescript_any" },
+          { rule: "typescript_suppression" },
+        ],
+      },
+    })
+  })
+
+  it("blocks tsconfig strictness regressions and charter-defined patterns", () => {
+    expect(evaluateLandingIntegrity({
+      changes: [{
+        path: "tsconfig.json",
+        before: '{"compilerOptions":{"strict":true,"noImplicitAny":true}}',
+        after: '{"compilerOptions":{"strict":true,"noImplicitAny":false}}',
+      }],
+    })).toMatchObject({ ok: false, error: { findings: [{ rule: "tsconfig_strictness" }] } })
+    expect(evaluateLandingIntegrity({
+      changes: [{ path: "src/network.ts", before: "", after: "const endpoint = 'unsafe.internal'" }],
+      forbiddenPatterns: ["unsafe.internal"],
+    })).toMatchObject({ ok: false, error: { findings: [{ rule: "charter_pattern" }] } })
+  })
+
   it("accepts Stream lifecycle transitions and returns a typed error for an invalid transition", () => {
     expect(transitionStream("active", "paused")).toEqual({ ok: true, state: "paused" })
     expect(transitionStream("closed", "active")).toEqual({
@@ -239,6 +281,8 @@ describe("WorkGraph domain rules", () => {
     // Derived needs-you hold, blocking decision, in-flight attempt, capability.
     expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, held: true }, blockerStates: [] }))
       .toEqual({ launchable: false, reason: "stream_held" })
+    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, hasRunningAttempt: true }, blockerStates: [] }))
+      .toEqual({ launchable: false, reason: "workspace_busy" })
     expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, replacementBarrier: true }, blockerStates: [] }))
       .toEqual({ launchable: false, reason: "replacement_barrier" })
     expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], blockingDecision: true }))

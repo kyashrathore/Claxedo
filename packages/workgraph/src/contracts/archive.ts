@@ -8,6 +8,7 @@ import {
   CommandResultSchema,
 } from "./commands"
 import { WorkGraphActorSchema } from "./context"
+import { StreamCharterSchema } from "./charter"
 import {
   ExecutionProfileDefaultsSchema,
   ResolvedExecutionProfileSchema,
@@ -57,6 +58,7 @@ import {
   RecordProvenanceSchema,
   StreamActivitySchema,
   StreamEnvelopeSchema,
+  StreamMasterStatusSchema,
   StreamReplacementResetSchema,
   WorkGraphRecordReferenceSchema,
 } from "./records"
@@ -96,6 +98,7 @@ export const WorkGraphArchiveRecordKindSchema = z.enum([
   "runtime_effect",
   "migration_intake",
   "completed_external_effect",
+  "scheduled_job",
   "terminal_scheduled_job",
 ])
 export type WorkGraphArchiveRecordKind = z.infer<typeof WorkGraphArchiveRecordKindSchema>
@@ -212,6 +215,10 @@ const StreamArchiveValueSchema = z.strictObject({
   workgraphId: WorkGraphIDSchema,
   title: text,
   description: z.string().optional(),
+  charter: StreamCharterSchema.optional(),
+  masterStatus: StreamMasterStatusSchema.optional(),
+  notesSource: WorkSourceRevisionRefSchema.optional(),
+  publicPrConfirmedAt: timestamp.optional(),
   lifecycleState: StreamLifecycleStateSchema,
   visibility: StreamVisibilitySchema,
   pinned: z.boolean(),
@@ -270,6 +277,9 @@ const WorkItemArchiveValueSchema = z.strictObject({
   completionContract: CompletionContractSchema,
   evidenceIds: z.array(EvidenceIDSchema),
   executionDefaults: ExecutionProfileDefaultsSchema.optional(),
+  createdByActorType: z.enum(["user", "agent", "system"]).optional(),
+  createdByActorId: text.optional(),
+  originAttemptId: AttemptIDSchema.optional(),
   completedAt: timestamp.optional(),
   abandonedAt: timestamp.optional(),
   abandonReason: text.optional(),
@@ -547,6 +557,20 @@ const TerminalScheduledJobArchiveValueSchema = z.strictObject({
   updatedAt: timestamp,
 })
 
+const ScheduledJobArchiveValueSchema = z.strictObject({
+  schemaVersion,
+  version,
+  streamId: StreamIDSchema,
+  jobType: z.literal("master_wake"),
+  subjectId: text,
+  dueAt: timestamp,
+  status: z.literal("pending"),
+  payload: PublicEventPayloadSchema,
+  leaseEpoch: z.number().int().nonnegative(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+})
+
 const ChangeArchiveValueSchema = z.strictObject({
   schemaVersion,
   cursor: ChangeCursorSchema,
@@ -586,6 +610,7 @@ export const WorkGraphArchiveRecordSchema = z.discriminatedUnion("kind", [
   archiveRecord("runtime_effect", RuntimeEffectArchiveValueSchema),
   archiveRecord("migration_intake", MigrationIntakeArchiveValueSchema),
   archiveRecord("completed_external_effect", CompletedExternalEffectArchiveValueSchema),
+  archiveRecord("scheduled_job", ScheduledJobArchiveValueSchema),
   archiveRecord("terminal_scheduled_job", TerminalScheduledJobArchiveValueSchema),
 ])
 export type CanonicalWorkGraphArchiveRecord = z.infer<typeof WorkGraphArchiveRecordSchema>

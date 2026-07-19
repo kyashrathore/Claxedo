@@ -281,6 +281,9 @@ export function WaitingRowGlyph(props: { view: WaitingRowView }) {
         <Match when={props.view.kind === "configuration_required"}>
           <Icon name="warning" size="small" class="text-icon-weak-base" />
         </Match>
+        <Match when={props.view.kind === "master_escalation"}>
+          <Icon name="circle-alert" size="small" class="text-icon-weak-base" />
+        </Match>
       </Switch>
     </span>
   )

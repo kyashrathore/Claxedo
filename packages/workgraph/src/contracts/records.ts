@@ -25,6 +25,7 @@ import {
 } from "./lifecycle"
 import { WorkSourceRevisionRefSchema } from "./work-source"
 import { DEFAULT_STREAM_ACTIVITY_GRANULARITY, StreamActivityGranularitySchema } from "./activity"
+import { StreamCharterSchema } from "./charter"
 
 const text = z.string().trim().min(1)
 const timestamp = z.number().int().nonnegative()
@@ -75,12 +76,27 @@ export const StreamReplacementResetSchema = z.strictObject({
 })
 export type StreamReplacementReset = z.infer<typeof StreamReplacementResetSchema>
 
+export const StreamMasterStatusSchema = z.strictObject({
+  state: z.enum(["hibernating", "pending", "acting", "retrying", "attention"]),
+  sessionId: z.string().trim().min(1).max(512).optional(),
+  turnId: z.string().trim().min(1).max(512).optional(),
+  historyAfter: z.number().int().nonnegative().optional(),
+  admissionConfirmed: z.boolean().optional(),
+  failureCount: z.number().int().nonnegative().optional(),
+  message: z.string().trim().min(1).max(1_000),
+  receiptRefs: z.array(z.string().trim().min(1).max(2_048)).max(100).default([]),
+  charterHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  updatedAt: timestamp,
+})
+export type StreamMasterStatus = z.infer<typeof StreamMasterStatusSchema>
+
 export const StreamDtoSchema = z.strictObject({
   recordType: z.literal("stream"),
   ...ownerRecordShape,
   id: StreamIDSchema,
   title: text,
   description: z.string().optional(),
+  charter: StreamCharterSchema.optional(),
   lifecycleState: StreamLifecycleStateSchema,
   visibility: StreamVisibilitySchema,
   pinned: z.boolean(),
@@ -89,6 +105,9 @@ export const StreamDtoSchema = z.strictObject({
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
   replacementReset: StreamReplacementResetSchema.optional(),
+  masterStatus: StreamMasterStatusSchema.optional(),
+  notesSource: WorkSourceRevisionRefSchema.optional(),
+  publicPrConfirmedAt: timestamp.optional(),
   durableEffectCount: z.number().int().nonnegative(),
   sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
 })

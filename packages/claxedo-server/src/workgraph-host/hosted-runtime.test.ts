@@ -34,6 +34,115 @@ afterEach(() => {
 })
 
 describe("hosted WorkGraph runtime outbox", () => {
+  test("replays a stable hosted master admission behind a history fence and audits only after terminal", async () => {
+    const mutations: Record<string, unknown>[] = []
+    let claimed = false
+    let prompted = false
+    const runtime = createHostedWorkGraphRuntime(
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_PUBLIC_URL: "https://central.test",
+      },
+      {
+        sandbox: {
+          sandboxManager: {
+            ensure: async () => ({
+              status: "ready", sandboxId: "sandbox", url: "https://runtime.test", hostId: "host-a", epoch: 1, homeRegion: "us-east",
+            }),
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
+      } as unknown as ControlPlaneServices,
+      {
+        now: () => 10_000,
+        executor: {
+          mutation: async (_fn, args) => {
+            mutations.push(args)
+            if ("trigger" in args && !("turn_id" in args)) {
+              const state = claimed ? "monitor" : "launch"
+              claimed = true
+              return {
+                state,
+                ownerSubject: "owner-subject",
+                stream: {
+                  id: "stream-a", title: "Release train", rowVersion: 1,
+                  charter: { text: "Open draft pull requests.", hash: "a".repeat(64) },
+                  executionDefaults: {
+                    environment: { kind: "hosted_workspace", repositoryUrl: "https://github.test/acme/repo.git" },
+                    repository: { baseRevision: "dev" },
+                    harness: "opencode", agent: "build", model: { providerId: "openai", modelId: "gpt-5" },
+                    effort: "high", tools: ["bash"], connectionIds: [],
+                  },
+                },
+                sessionId: "ses_master_stream-a",
+                turnId: "master_turn_1",
+                historyAfter: state === "monitor" ? 4 : undefined,
+                admissionConfirmed: state === "monitor",
+                trigger: "task_settled",
+                mailbox: [], attempts: [], evidenceIds: ["evidence-1"], artifactRefs: ["diff://task-1"],
+              }
+            }
+            if ("history_after" in args) return { accepted: true }
+            if ("charter_hash" in args) return { settled: true, state: "hibernating" }
+            if ("turn_id" in args && !("reason" in args)) return { accepted: true }
+            throw new Error(`Unexpected master mutation: ${JSON.stringify(args)}`)
+          },
+        },
+        fetch: async (input, init) => {
+          const url = new URL(String(input))
+          if (url.pathname.endsWith("/api/session")) {
+            expect(JSON.parse(String(init?.body))).toMatchObject({
+              tools: ["bash", "workgraph_update_stream_notes", "workgraph_notify_owner"],
+            })
+            return Response.json({ id: "ses_master_stream-a" })
+          }
+          if (url.pathname.endsWith("/api/workgraph/attempt-binding")) {
+            expect(JSON.parse(String(init?.body))).toMatchObject({
+              identity: { attemptId: "master_stream-a", streamId: "stream-a", sessionId: "ses_master_stream-a" },
+              tools: ["workgraph_update_stream_notes", "workgraph_notify_owner"],
+            })
+            return Response.json({ bound: true })
+          }
+          if (url.pathname.includes("/api/workgraph/attempt-binding/")) return Response.json({ unbound: true })
+          if (url.pathname.endsWith("/prompt")) {
+            expect(JSON.parse(String(init?.body))).toMatchObject({ id: "msg_master_turn_1", delivery: "steer", resume: true })
+            prompted = true
+            return Response.json({ admitted: true })
+          }
+          if (url.pathname.endsWith("/history")) {
+            if (!prompted) return Response.json({ data: [{ type: "session.next.step.ended", durable: { seq: 4 }, data: {} }], hasMore: false })
+            return Response.json({
+              data: [
+                { type: "session.next.text.ended", durable: { seq: 5 }, data: { text: "Rebased and validated the landing." } },
+                { type: "session.next.step.ended", durable: { seq: 6 }, data: {} },
+              ],
+              hasMore: false,
+            })
+          }
+          throw new Error(`Unexpected master runtime request ${url.pathname}`)
+        },
+      },
+    )
+    const intent = { organizationId: "org-a", ownerUserId: "user-a", streamId: "stream-a", trigger: "task_settled" as const }
+
+    await expect(runtime!.master(intent)).resolves.toMatchObject({ settled: false, state: "running" })
+    await expect(runtime!.master(intent)).resolves.toMatchObject({ settled: true })
+    expect(mutations).toContainEqual(expect.objectContaining({ turn_id: "master_turn_1", history_after: 4 }))
+    expect(mutations).toContainEqual(expect.objectContaining({
+      charter_hash: "a".repeat(64),
+      cited_charter_clause: "Open draft pull requests.",
+      reasoning_summary: "Rebased and validated the landing.",
+      resulting_diffs: ["diff://task-1"],
+      evidence_ids: ["evidence-1"],
+    }))
+  })
+
   test("reads stale settlement tenants through the service-authenticated query", async () => {
     const queries: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(

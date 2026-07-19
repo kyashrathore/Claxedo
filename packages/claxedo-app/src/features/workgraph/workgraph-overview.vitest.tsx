@@ -39,6 +39,7 @@ describe("WorkGraph overview actions", () => {
       createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
     )
 
+    expect(await screen.findByText("Approve & run")).toBeInTheDocument()
     await fireEvent.click(await screen.findByRole("button", { name: `Approve task ${stagedItem.title}` }))
     await waitFor(() =>
       expect(commands).toContainEqual({ version: 1, type: "approve_work_item", workItemId: stagedItem.id, expectedVersion: 1 }),
@@ -92,6 +93,7 @@ describe("WorkGraph overview actions", () => {
     // the target is present.
     expect(await screen.findByRole("region", { name: "Project claxedo" })).toBeInTheDocument()
     expect(screen.getByText("/Users/me/claxedo")).toBeInTheDocument()
+    expect(screen.getByText("worktree · from dev")).toBeInTheDocument()
     expect(screen.queryByText(/inherit/i)).toBeNull()
     expect(screen.queryByText("Execution target required")).toBeNull()
   })
@@ -104,6 +106,55 @@ describe("WorkGraph overview actions", () => {
 
     expect(await screen.findByText("Execution target required")).toBeInTheDocument()
     expect(screen.queryByText(/inherit/i)).toBeNull()
+  })
+
+  test("shows the master's durable status and receipt count on the Stream card", async () => {
+    const mastered = {
+      ...stream,
+      masterStatus: {
+        state: "hibernating" as const,
+        sessionId: "ses_master_stream_1",
+        message: "Master is up to date",
+        receiptRefs: ["file:diff.patch", "https://github.test/pull/1"],
+        updatedAt: 2,
+      },
+    }
+    const request = workGraphRequest({ records: () => [mastered], command: () => success() })
+    render(() => createComponent(WorkGraphContent, {
+      client: createWorkGraphClient({ baseUrl: "http://test.local", request }),
+    }))
+
+    expect((await screen.findByText("Master · up to date · 2 receipts")).closest(".workgraph-streamcard-master"))
+      .toHaveAttribute("title", "Master is up to date")
+    expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/1" }))
+      .toHaveAttribute("href", "https://github.test/pull/1")
+  })
+
+  test("shows a Notes link only for a Stream with a durable notes source", async () => {
+    const open = vi.fn()
+    const noted = {
+      ...stream,
+      notesSource: { workSourceId: "source_notes", revisionId: "revision_notes", contentHash: "a".repeat(64) },
+    }
+    render(() => (
+      <WorkGraphProjectGroups
+        streams={[noted]}
+        outcomes={[]}
+        items={[]}
+        attempts={[]}
+        empty={<div>No streams</div>}
+        relativeTime={() => "now"}
+        client={createWorkGraphClient({ baseUrl: "http://test.local", request: workGraphRequest({ records: () => [noted], command: () => success() }) })}
+        mutate={async () => true}
+        onOpenStreamSettings={() => undefined}
+        onOpenStreamNotes={open}
+        onOpenStreamTasks={() => undefined}
+        onOpenTask={() => undefined}
+        onNewStream={() => undefined}
+      />
+    ))
+    await fireEvent.click(screen.getByRole("button", { name: "Open notes for Ship Claxedo cloud" }))
+    expect(open).toHaveBeenCalledWith(noted)
   })
 
   test("deletes a disposable Stream with delete_stream only and never closes it", async () => {
@@ -380,6 +431,38 @@ describe("WorkGraph overview actions", () => {
     expect(attemptReads).toEqual([])
   })
 
+  test("stops a running Task from the shared row and renders Stopped · Retry after cancellation", async () => {
+    const commands: Array<Record<string, unknown>> = []
+    let records: unknown[] = [stream, outcome, activeItem, runningAttempt]
+    const request = workGraphRequest({
+      records: () => records,
+      command: (command) => {
+        commands.push(command)
+        records = [
+          stream,
+          outcome,
+          activeItem,
+          { ...runningAttempt, state: "cancelled", version: 2, finishedAt: 2 },
+        ]
+        return success()
+      },
+    })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Stop task Deploy production" }))
+    await waitFor(() => expect(commands).toEqual([{
+      version: 1,
+      type: "cancel_attempt",
+      attemptId: "attempt_1",
+      expectedVersion: 1,
+      reason: "Stopped from task row",
+    }]))
+    expect(await screen.findByText("Stopped · Retry")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Retry task Deploy production" })).toBeInTheDocument()
+  })
+
 
 
 
@@ -413,6 +496,7 @@ describe("WorkGraph overview actions", () => {
         client={client}
         mutate={async () => true}
         onOpenStreamSettings={() => undefined}
+        onOpenStreamNotes={() => undefined}
         onOpenStreamTasks={() => undefined}
         onOpenTask={() => undefined}
         onNewStream={() => undefined}
@@ -469,11 +553,34 @@ describe("WorkGraph overview actions", () => {
     // Pause is THE launch control now — no execute popover exists.
     expect(screen.queryByRole("button", { name: "Execute stream Ship Claxedo cloud" })).toBeNull()
     await fireEvent.click(await screen.findByRole("button", { name: "Pause stream Ship Claxedo cloud" }))
+    await fireEvent.click(screen.getByRole("button", { name: "Pause stream", exact: true }))
     await waitFor(() =>
       expect(commands).toEqual([
         { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "paused", reason: "Paused from overview" },
       ]),
     )
+  })
+
+  test("can pause a Stream and stop its running work from the Pause popover", async () => {
+    const commands: Array<Record<string, unknown>> = []
+    const request = workGraphRequest({
+      records: () => [stream, outcome, activeItem, runningAttempt],
+      command: (command) => {
+        commands.push(command)
+        return success()
+      },
+    })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Pause stream Ship Claxedo cloud" }))
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Also stop running work" }))
+    await fireEvent.click(screen.getByRole("button", { name: "Pause stream", exact: true }))
+    await waitFor(() => expect(commands).toEqual([
+      { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "paused", reason: "Paused from overview" },
+      { version: 1, type: "cancel_attempt", attemptId: "attempt_1", expectedVersion: 1, reason: "Stopped while pausing Stream" },
+    ]))
   })
 
   test("resumes a paused Stream with the exact set_stream_lifecycle command and marks it paused", async () => {
@@ -493,7 +600,7 @@ describe("WorkGraph overview actions", () => {
     // A paused Stream is load-bearing: the card names it and its approved ready
     // tasks read "Ready · paused" rather than "Queued".
     expect(await screen.findByText("Paused")).toBeInTheDocument()
-    expect(screen.getByText("Ready · paused")).toBeInTheDocument()
+    expect(screen.getByText("Ready · paused")).toHaveClass("workgraph-leaf-paused")
     await fireEvent.click(screen.getByRole("button", { name: "Resume stream Ship Claxedo cloud" }))
     await waitFor(() =>
       expect(commands).toEqual([
@@ -739,7 +846,7 @@ const pendingItem = {
   evidenceIds: [],
 }
 const activeItem = { ...pendingItem, id: "item_active", title: "Deploy production", state: "active" as const }
-const stagedItem = { ...pendingItem, id: "item_pa", title: "Draft the migration", state: "pending_approval" as const }
+const stagedItem = { ...pendingItem, id: "item_pa", title: "Draft the migration", state: "pending_approval" as const, createdByActorType: "agent" as const, createdByActorId: "agent_planner" }
 const runningAttempt = {
   recordType: "attempt" as const,
   schemaVersion: 1 as const,

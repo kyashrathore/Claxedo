@@ -20,6 +20,7 @@ export const AttentionKindSchema = z.enum([
   "attempt",
   "unorganized_ai_work",
   "configuration_required",
+  "master_escalation",
 ])
 export type AttentionKind = z.infer<typeof AttentionKindSchema>
 
@@ -153,6 +154,16 @@ const ConfigurationRequiredAttentionItemSchema = z
     })
   })
 
+const MasterEscalationAttentionItemSchema = z.strictObject({
+  ...itemShape,
+  kind: z.literal("master_escalation"),
+  streamId: StreamIDSchema,
+  sessionId: text.optional(),
+  reason: text,
+  evidenceIds: z.array(text).max(100).default([]),
+  receiptRefs: z.array(text).max(100).default([]),
+})
+
 export const AttentionItemSchema = z.union([
   AdmissionAttentionItemSchema,
   DecisionAttentionItemSchema,
@@ -160,6 +171,7 @@ export const AttentionItemSchema = z.union([
   AttemptAttentionItemSchema,
   UnorganizedAIWorkAttentionItemSchema,
   ConfigurationRequiredAttentionItemSchema,
+  MasterEscalationAttentionItemSchema,
 ]).superRefine((item, context) => {
   if (item.readAt === undefined || item.readAt >= item.updatedAt) return
   context.addIssue({ code: "custom", path: ["readAt"], message: "Attention cannot be read before its current update" })

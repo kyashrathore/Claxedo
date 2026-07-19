@@ -83,6 +83,24 @@ describe("Attention contracts", () => {
     ).toThrow()
   })
 
+  it("carries a master escalation's exact Stream, Session, and receipts", () => {
+    expect(AttentionItemSchema.parse({
+      id: "stream_1",
+      ownerUserId: "owner_1",
+      kind: "master_escalation",
+      updatedAt: 8,
+      streamId: "stream_1",
+      sessionId: "ses_master_stream_1",
+      reason: "Merge conflict remained after three attempts",
+      evidenceIds: ["evidence_1"],
+      receiptRefs: ["diff://ours", "diff://theirs"],
+    })).toMatchObject({
+      kind: "master_escalation",
+      streamId: "stream_1",
+      receiptRefs: ["diff://ours", "diff://theirs"],
+    })
+  })
+
   it("accepts only a read watermark at or after the current Attention update", () => {
     const item = {
       id: "unorganized_ai_work",

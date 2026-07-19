@@ -98,6 +98,10 @@ describe("WorkGraph contracts", () => {
 
     expect(source.latestRevisionId).toBe(revision.id)
     expect(revision.content).toBe("Ship the personal WorkGraph.")
+    expect(WorkSourceRevisionDtoSchema.parse({
+      ...revision,
+      origin: { kind: "manual", derivedFromExternal: true },
+    }).origin).toEqual({ kind: "manual", derivedFromExternal: true })
     expect(() => WorkSourceRevisionDtoSchema.parse({ ...revision, contentHash: "not-a-hash" })).toThrow()
     expect(() => WorkSourceRevisionDtoSchema.parse({ ...revision, content: " \n\t " })).toThrow()
     expect(WorkSourceRevisionDtoSchema.parse({ ...revision, content: "  preserve me  " }).content).toBe("  preserve me  ")

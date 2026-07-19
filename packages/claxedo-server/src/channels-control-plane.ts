@@ -14,8 +14,11 @@ import {
   createWhatsAppBaileysTransport,
   parseDmPolicy,
   parseGroupPolicy,
+  rateLimitKey,
+  sanitizeChannelText,
   type ChannelDenialReason,
   type ChannelId,
+  type ChatSdkBot,
   type SessionResolver,
   type ChannelTextMinimizationOptions,
   type WhatsAppBaileysSocket,
@@ -207,6 +210,7 @@ export function createControlPlaneChannels(input: {
   runtime: CentralRuntime
   env?: Record<string, string | undefined>
   includeFake?: boolean
+  chatBot?: ChatSdkBot | Promise<ChatSdkBot>
   whatsappBaileysSocket?: WhatsAppBaileysSocket | Promise<WhatsAppBaileysSocket | undefined>
   whatsappBaileysQrHandler?: (qr: string) => void
 }) {
@@ -363,6 +367,10 @@ export function createControlPlaneChannels(input: {
     limit: Number.isFinite(rateLimit) && rateLimit > 0 ? rateLimit : 20,
     windowMs: 60_000,
   })
+  const notificationRateLimiter = createSlidingWindowRateLimiter({
+    limit: Number.isFinite(rateLimit) && rateLimit > 0 ? rateLimit : 20,
+    windowMs: 60_000,
+  })
   const onDenial = (envelope: InboundEnvelope, reason: ChannelDenialReason | "rate_limited") => {
     // Owner-visible audit only; never an amplifying reply to the sender.
     try {
@@ -458,15 +466,17 @@ export function createControlPlaneChannels(input: {
   })
   const registry = createChannelRegistry(env, { includeFake: input.includeFake === true })
   const dataMinimization = channelDataMinimization(env)
-  const bot = registry.enabled.some((item) => item.channel !== "fake" && item.transport === "chat-sdk")
-    ? createChatSdkChannelBot({
+  const bot = input.chatBot
+    ? Promise.resolve(input.chatBot)
+    : registry.enabled.some((item) => item.channel !== "fake" && item.transport === "chat-sdk")
+      ? createChatSdkChannelBot({
         registrations: registry.registrations,
         userName: env.CLAXEDO_CHANNEL_BOT_NAME ?? "claxedo",
         core,
         editInPlace: true,
         dataMinimization,
       })
-    : undefined
+      : undefined
   const whatsappBaileys = registry.enabled.some((item) => item.channel === "whatsapp" && item.transport === "baileys")
     ? Promise.resolve(input.whatsappBaileysSocket).then((socket) =>
         createWhatsAppBaileysTransport({
@@ -484,6 +494,70 @@ export function createControlPlaneChannels(input: {
         }))
     : undefined
 
+  const notifyOwner = async (request: {
+    ownerUserId: string
+    idempotencyKey: string
+    text: string
+    now?: number
+  }) => {
+    if (!bot) throw new Error("No outbound Chat SDK channel is configured")
+    const recipients = (await bindings.listBoundForAccount(request.ownerUserId))
+      .filter((recipient, index, all) => all.findIndex((candidate) =>
+        candidate.channel === recipient.channel && candidate.externalUserId === recipient.externalUserId) === index)
+    const enabled = new Set(registry.enabled
+      .filter((item) => item.transport === "chat-sdk")
+      .map((item) => item.channel))
+    const audits = (await Promise.all(recipients.map((recipient) =>
+      input.services.projectionStore.channel_run_audits?.({
+        channel: recipient.channel,
+        externalUserId: recipient.externalUserId,
+      }) ?? Promise.resolve([]))))
+      .flat()
+      .filter((audit) => enabled.has(audit.channel as ChannelId))
+      .sort((left, right) => right.createdAt - left.createdAt)
+    const at = request.now ?? Date.now()
+    let failure: unknown
+    for (const audit of audits) {
+      const channel = channelFromThreadKey(audit.threadKey)
+      if (!channel) continue
+      const admission = await access.gate({ channel, externalUserId: audit.externalUserId, chatType: "dm" })
+      if (admission.admission !== "allow") continue
+      const deliveryKey = `workgraph:${request.idempotencyKey}`
+      const claim = await input.services.projectionStore.claim_channel_delivery?.({
+        channel,
+        idempotencyKey: deliveryKey,
+        externalUserId: audit.externalUserId,
+        receivedAt: at,
+        now: at,
+        replayWindowMs: 24 * 60 * 60 * 1000,
+        dailyCeiling: 1,
+      })
+      if (!claim?.ok) throw new Error(claim?.message ?? "Channel notification delivery log is unavailable")
+      const receipt = {
+        channel,
+        threadKey: audit.threadKey,
+        reference: `channel:${channel}:${audit.threadKey}`,
+        duplicate: claim.duplicate,
+      }
+      if (claim.duplicate) return receipt
+      if (!notificationRateLimiter.check(rateLimitKey(channel, audit.externalUserId), at).allowed) {
+        await input.services.projectionStore.release_channel_delivery?.({ channel, idempotencyKey: deliveryKey })
+        continue
+      }
+      try {
+        const thread = (await bot).thread?.(audit.threadKey)
+        if (!thread) throw new Error(`Outbound ${channel} thread delivery is unavailable`)
+        await thread.post(sanitizeChannelText(request.text, dataMinimization))
+        return receipt
+      } catch (error) {
+        failure = error
+        await input.services.projectionStore.release_channel_delivery?.({ channel, idempotencyKey: deliveryKey })
+      }
+    }
+    if (failure instanceof Error) throw failure
+    throw new Error("The WorkGraph owner has no eligible outbound channel thread")
+  }
+
   return {
     core,
     access,
@@ -491,6 +565,7 @@ export function createControlPlaneChannels(input: {
     registry,
     ...(bot ? { bot } : {}),
     ...(whatsappBaileys ? { whatsappBaileys } : {}),
+    notifyOwner,
     ingress: createChannelsIngress(core, {
       registrations: registry.registrations,
       ...(bot ? { bot } : {}),
@@ -507,6 +582,7 @@ export function mountControlPlaneChannels(app: HonoType, input: {
   requireLoopbackForFake?: boolean
   whatsappBaileysSocket?: WhatsAppBaileysSocket | Promise<WhatsAppBaileysSocket | undefined>
   whatsappBaileysQrHandler?: (qr: string) => void
+  channels?: ReturnType<typeof createControlPlaneChannels>
 }) {
   if (input.requireLoopbackForFake !== false) {
     app.use("/api/channels/fake", async (c, next) => {
@@ -524,7 +600,7 @@ export function mountControlPlaneChannels(app: HonoType, input: {
       return next()
     })
   }
-  const channels = createControlPlaneChannels(input)
+  const channels = input.channels ?? createControlPlaneChannels(input)
   app.route("/api/channels", channels.ingress)
 
   // Bearer-gated pairing admin — the COLD-START approval path (no in-chat

@@ -34,6 +34,7 @@ import {
   instrumentWorkGraphChangeDoorbell,
 } from "./workgraph-host/change-doorbell"
 import { claxedoBus, type WorkgraphChangedEvent } from "./bus"
+import { createLocalWorkGraphMasterRuntime } from "./workgraph-host/local-master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{
   authConfig: ControlPlaneAuthConfig
@@ -74,6 +75,10 @@ export async function createLocalEmbeddedWorkGraph(
       sessions: WorkGraphSessionGateway
       directory: string
     }>
+    master?: Readonly<{
+      sessions: WorkGraphSessionGateway
+      directory(context: WorkGraphContext, streamId: string): string
+    }>
     connections?: ConnectionsService
     sourceIssueConnectors?: readonly SourceIssueConnector[]
     resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
@@ -111,6 +116,16 @@ export async function createLocalEmbeddedWorkGraph(
     changeTips,
   )
   const activityPorts = workgraph.createSqliteWorkGraphActivityPorts({ database: input.database })
+  const master = input.master
+    ? createLocalWorkGraphMasterRuntime({
+        database: input.database,
+        sessions: input.master.sessions,
+        workspace: input.execution,
+        sessionBindings: activityPorts.sessionBindings,
+        execute: service.execute,
+        directory: input.master.directory,
+      })
+    : undefined
   const sourcePlanning = workgraph.createSqliteSourcePlanningRuntime({
     database: input.database,
     ...(input.sourcePlanning
@@ -231,6 +246,7 @@ export async function createLocalEmbeddedWorkGraph(
           )
         }),
       )
+      await master?.runDue(context)
       operationalTelemetry?.queue({
         kind: "attempt",
         backlog: attempts.length,
@@ -265,12 +281,14 @@ export async function createLocalEmbeddedWorkGraph(
   }
   return {
     database: input.database,
+    execution: input.execution,
     service,
     activity: activityPorts.activity,
     sessionBindings: activityPorts.sessionBindings,
     router,
     resolveContext,
     reconcile,
+    master,
     sourcePlanning,
     sessionIntake,
     attentionAcknowledgements,

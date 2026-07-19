@@ -6,6 +6,7 @@ import { ConnectionTokenError, ConnectionsUnavailableError } from "@claxedo/conn
 import { verifyRuntimeAccessToken, WorkspaceRelayAuthError, type RelayKey } from "@claxedo/workspace-relay"
 import {
   WorkGraphConnectionOperationRequestSchema,
+  WorkGraphConnectionOperationResponseSchema,
   type WorkGraphConnectionOperationRequest,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
@@ -15,6 +16,8 @@ import {
   SourceIssueResponseError,
   SourceIssueTransportError,
   SourceIssueUnauthorizedError,
+  CodeHostProviderError,
+  CodeHostUnauthorizedError,
 } from "@claxedo/workgraph/connectors"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
 import { hostedOrgCredentials } from "../control-plane/worker-credentials"
@@ -31,9 +34,19 @@ import {
 } from "./hosted-connections"
 
 type Query = FunctionReference<"query">
-const api = anyApi as unknown as { workgraphConnections: { resolveOperationBinding: Query } }
+type Mutation = FunctionReference<"mutation">
+const api = anyApi as unknown as { workgraphConnections: {
+  resolveOperationBinding: Query
+  authorizePullRequest: Mutation
+  claimPullRequestEffect: Mutation
+  completePullRequestEffect: Mutation
+  failPullRequestEffect: Mutation
+} }
 
-type Executor = { query(fn: Query, args: Record<string, unknown>): Promise<unknown> }
+type Executor = {
+  query(fn: Query, args: Record<string, unknown>): Promise<unknown>
+  mutation?(fn: Mutation, args: Record<string, unknown>): Promise<unknown>
+}
 type BindingResult = Readonly<{
   context: { ownerUserId: string; ownerPartition: string }
   attemptId: string
@@ -41,6 +54,7 @@ type BindingResult = Readonly<{
   workspaceId: string
   connectionIds: string[]
   tools: string[]
+  streamId: string
   connection: HostedConnectionMetadata
 }>
 export function createHostedConnectionOperationExecutor(input: Readonly<{
@@ -55,7 +69,9 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
     principal: Readonly<{ ownerUserId: string; orgId: string }>,
     request: WorkGraphConnectionOperationRequest,
   ) => {
-    const tool = `connection_work_source_${request.operation.type}`
+    const tool = request.operation.type === "open_pull_request"
+      ? "connection_code_host_open_pr"
+      : `connection_work_source_${request.operation.type}`
     const resolved = await executor.query(api.workgraphConnections.resolveOperationBinding, {
       service_token: serviceToken,
       ownerUserId: principal.ownerUserId,
@@ -83,7 +99,48 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
       connectionIds: resolved.connectionIds as never,
       tools: resolved.tools,
     }
-    return createConnectionOperationBroker({
+    const pullRequest = request.operation.type === "open_pull_request" ? request.operation : undefined
+    const workerId = pullRequest ? `connection-pr-${crypto.randomUUID()}` : undefined
+    let pullRequestClaim: { state: "claimed"; outboxId: string } | { state: "completed"; result: unknown } | { state: "busy" } | undefined
+    if (pullRequest) {
+      if (!executor.mutation) throw new Error("Pull request authorization is unavailable")
+      const authorization = await executor.mutation(api.workgraphConnections.authorizePullRequest, {
+        service_token: serviceToken,
+        ownerUserId: principal.ownerUserId,
+        orgId: principal.orgId,
+        streamId: resolved.streamId,
+        attemptId: resolved.attemptId,
+        repository: pullRequest.repository,
+        title: pullRequest.title,
+        draft: pullRequest.draft,
+        publicRepository: pullRequest.publicRepository,
+      }) as { allowed?: boolean }
+      if (!authorization.allowed) {
+        throw new ConnectionOperationDeniedError("The first non-draft public pull request requires owner confirmation")
+      }
+      pullRequestClaim = await executor.mutation(api.workgraphConnections.claimPullRequestEffect, {
+        service_token: serviceToken,
+        ownerUserId: principal.ownerUserId,
+        orgId: principal.orgId,
+        streamId: resolved.streamId,
+        attemptId: resolved.attemptId,
+        workerId,
+        idempotencyKey: pullRequest.idempotencyKey,
+        repository: pullRequest.repository,
+        head: pullRequest.head,
+        base: pullRequest.base,
+        title: pullRequest.title,
+        ...(pullRequest.body === undefined ? {} : { body: pullRequest.body }),
+        draft: pullRequest.draft,
+        publicRepository: pullRequest.publicRepository,
+        now: Date.now(),
+      }) as typeof pullRequestClaim
+      if (pullRequestClaim?.state === "completed") {
+        return WorkGraphConnectionOperationResponseSchema.parse(pullRequestClaim.result)
+      }
+      if (pullRequestClaim?.state !== "claimed") throw new PullRequestEffectBusyError()
+    }
+    const result = await createConnectionOperationBroker({
       bindings: { resolve: async () => binding },
       connections: createHostedWorkGraphConnectionsPort({
         resolveMetadata: async () => [{ ...resolved.connection, ownerUserId: resolved.context.ownerUserId }],
@@ -92,7 +149,33 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
     }).execute(request.identity as never, request.operation, {
       ownerUserId: principal.ownerUserId,
       ownerPartition: `org:${principal.orgId}`,
+    }).catch(async (error) => {
+      if (pullRequestClaim?.state === "claimed" && executor.mutation && workerId) {
+        await executor.mutation(api.workgraphConnections.failPullRequestEffect, {
+          service_token: serviceToken,
+          ownerUserId: principal.ownerUserId,
+          orgId: principal.orgId,
+          outboxId: pullRequestClaim.outboxId,
+          workerId,
+          now: Date.now(),
+        })
+      }
+      throw error
     })
+    if (result.type !== "open_pull_request" || !pullRequest) return result
+    if (!executor.mutation) throw new Error("Pull request receipt persistence is unavailable")
+    if (pullRequestClaim?.state !== "claimed" || !workerId) throw new Error("Pull request effect lease is unavailable")
+    return WorkGraphConnectionOperationResponseSchema.parse(await executor.mutation(api.workgraphConnections.completePullRequestEffect, {
+      service_token: serviceToken,
+      ownerUserId: principal.ownerUserId,
+      orgId: principal.orgId,
+      outboxId: pullRequestClaim.outboxId,
+      workerId,
+      pullRequestId: result.pullRequestId,
+      url: result.url,
+      draft: result.draft,
+      now: Date.now(),
+    }))
   }
 }
 
@@ -158,6 +241,9 @@ function operationFailure(error: unknown) {
   if (error instanceof ConnectionsUnavailableError) {
     return failure(503, "connections_unavailable", "Connections service is unavailable", true)
   }
+  if (error instanceof PullRequestEffectBusyError) {
+    return failure(503, error.code, "Pull request delivery is already in progress", true)
+  }
   if (error instanceof ConnectionTokenError) {
     return failure(error.status, error.code, "Connection token is unavailable", error.status === 503)
   }
@@ -176,11 +262,21 @@ function operationFailure(error: unknown) {
   if (error instanceof SourceIssueProviderError) {
     return failure(error.status, providerErrorCode(error.status), providerErrorMessage(error.status), error.retryable)
   }
+  if (error instanceof CodeHostUnauthorizedError) {
+    return failure(401, error.code, "Connection provider authorization failed", false)
+  }
+  if (error instanceof CodeHostProviderError) {
+    return failure(error.status, providerErrorCode(error.status), providerErrorMessage(error.status), error.status >= 500 || error.status === 429)
+  }
   return failure(500, "connection_operation_failed", "Connection operation failed", false)
 }
 
 class RuntimeAccessTokenVerificationUnavailableError extends Error {
   readonly code = "runtime_access_token_verification_unavailable"
+}
+
+class PullRequestEffectBusyError extends Error {
+  readonly code = "pull_request_effect_busy"
 }
 
 async function verifyRuntimeToken(token: string, key: Promise<RelayKey>, workspaceId: string) {
@@ -218,7 +314,10 @@ function providerErrorMessage(status: number) {
 
 function convexExecutor(url: string): Executor {
   const client = new ConvexHttpClient(url)
-  return { query: (fn, args) => client.query(fn as never, args as never) }
+  return {
+    query: (fn, args) => client.query(fn as never, args as never),
+    mutation: (fn, args) => client.mutation(fn as never, args as never),
+  }
 }
 
 function bearer(header: string | null) {

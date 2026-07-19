@@ -59,15 +59,13 @@ export function createExecutionCapabilitiesPort(
         catalogs.flatMap((catalog) => runtimeTools(catalog.tools, catalog.harnessId)),
         (tool) => `${tool.harnessId}\n${tool.id}`,
       )
-      const connectionTools = connections.some((connection) => connection.grantedCapabilities.includes("work-source"))
-        ? catalogs
-            .filter((catalog) => catalog.connectionTools !== false)
-            .flatMap((catalog) => (input.connectionToolIds ?? []).map((id) => ({
-              harnessId: catalog.harnessId,
-              id,
-              requiresConnectionCapability: "work-source",
-            })))
-        : []
+      const granted = new Set(connections.flatMap((connection) => connection.grantedCapabilities))
+      const connectionTools = catalogs
+        .filter((catalog) => catalog.connectionTools !== false)
+        .flatMap((catalog) => (input.connectionToolIds ?? []).flatMap((id) => {
+          const capability = id === "connection_code_host_open_pr" ? "code-host" as const : "work-source" as const
+          return granted.has(capability) ? [{ harnessId: catalog.harnessId, id, requiresConnectionCapability: capability }] : []
+        }))
       const baseRevisions = unique(repository.baseRevisions)
       if (input.environment.repositoryRequired && baseRevisions.length === 0) {
         throw new ExecutionCapabilitiesUnavailableError(

@@ -2,11 +2,15 @@ import { describe, it, expect } from "vitest"
 import type { SettlementTenant } from "../workgraph-host/settlement-dispatcher"
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import {
+  WORKGRAPH_MASTER_KIND,
   WORKGRAPH_SETTLE_KIND,
   composeHostedWakes,
   parseSettleTenant,
+  parseMasterIntent,
   settleRetryDelayMs,
+  nextDailyMasterRun,
   workGraphSettleWake,
+  workGraphMasterWake,
 } from "./hosted-wakes"
 import type { HostedWorkerEnv } from "../control-plane/hosted-services"
 
@@ -27,6 +31,38 @@ describe("workGraphSettleWake", () => {
     expect(parseSettleTenant(JSON.stringify(TENANT))).toEqual(TENANT)
     expect(() => parseSettleTenant("null")).toThrow(/tenant/)
     expect(() => parseSettleTenant('{"organizationId":"x"}')).toThrow(/tenant/)
+  })
+})
+
+describe("workGraphMasterWake", () => {
+  const intent = { ...TENANT, streamId: "stream_1", trigger: "task_settled" as const }
+
+  it("uses one serial lane per Stream and round-trips its trigger", () => {
+    const wake = workGraphMasterWake(intent, 1_000)
+    expect(wake).toMatchObject({ kind: WORKGRAPH_MASTER_KIND, at: 1_000, intent })
+    expect(wake.serialKey).toContain("stream_1")
+    expect(parseMasterIntent(JSON.stringify(intent))).toEqual(intent)
+    expect(() => parseMasterIntent("{}")).toThrow(/Stream identity/)
+  })
+
+  it("fires through the registered master sink", async () => {
+    const store = new SqliteWakeStore()
+    const turns: unknown[] = []
+    const wakes = composeHostedWakes({} as HostedWorkerEnv, { nudge: () => {} }, {
+      now: () => 1_000,
+      store,
+      settle: async () => ({}),
+      master: async (value) => void turns.push(value),
+    })
+    const wake = workGraphMasterWake(intent, 1_000)
+    await wakes.schedule(wake)
+    expect((await wakes.runDue(wake.serialKey)).fired).toBe(1)
+    expect(turns).toEqual([intent])
+  })
+
+  it("computes the next 06:00 UTC scheduled rebase strictly after the prior turn", () => {
+    expect(nextDailyMasterRun("daily@06:00Z", Date.UTC(2026, 6, 19, 5, 59))).toBe(Date.UTC(2026, 6, 19, 6))
+    expect(nextDailyMasterRun("daily@06:00Z", Date.UTC(2026, 6, 19, 6))).toBe(Date.UTC(2026, 6, 20, 6))
   })
 })
 

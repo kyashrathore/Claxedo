@@ -3,6 +3,7 @@ export * from "./application";
 export * from "./ports";
 export {
   createGitHubSourceIssueConnector,
+  createGitHubCodeHostConnector,
   createLinearSourceIssueConnector,
   createJiraSourceIssueConnector,
 } from "./connectors/index";

@@ -337,6 +337,25 @@ async function attentionProjectionItem(ctx: any, organization: string, owner: st
       requirement: { type: "generation", jobId: row.id, purpose: marker.purpose, scope: marker.scope, reason: row.last_error },
     })
   }
+  if (entry.kind === "master_escalation") {
+    const row = await owned(ctx, "workgraph_streams", organization, owner, entry.id)
+    const status = row?.master_status
+    if (!row || status?.state !== "attention") {
+      throw new Error(`Attention source ${entry.kind}:${entry.id} is not an active master escalation`)
+    }
+    return AttentionItemSchema.parse({
+      kind: entry.kind,
+      ownerUserId: owner,
+      id: entry.id,
+      updatedAt: entry.updated_at,
+      ...read,
+      streamId: row.id,
+      ...(typeof status.sessionId === "string" ? { sessionId: status.sessionId } : {}),
+      reason: status.message,
+      evidenceIds: [],
+      receiptRefs: status.receiptRefs ?? [],
+    })
+  }
   const table = entry.source_type
   const row = await owned(ctx, table, organization, owner, entry.id)
   if (!row) throw new Error(`Attention source ${entry.kind}:${entry.id} disappeared during its owner-scoped read`)
@@ -587,6 +606,10 @@ function streamDto(row: any, owner: string) {
   return {
     recordType: "stream", schemaVersion: 1, ownerUserId: owner, version: row.row_version, createdAt: row.created_at, updatedAt: row.updated_at,
     provenance: recordProvenance(row), id: row.id, title: row.title, ...(row.description === undefined ? {} : { description: row.description }),
+    ...(row.charter === undefined ? {} : { charter: row.charter }),
+    ...(row.master_status === undefined ? {} : { masterStatus: row.master_status }),
+    ...(row.notes_source === undefined ? {} : { notesSource: ref(row.notes_source) }),
+    ...(row.public_pr_confirmed_at === undefined ? {} : { publicPrConfirmedAt: row.public_pr_confirmed_at }),
     lifecycleState: row.lifecycle_state, visibility: row.visibility, pinned: row.pinned, executionDefaults: row.execution_defaults ?? {},
     activityGranularity: row.activity_granularity ?? "progress",
     activity: Object.keys(row.activity ?? {}).length ? row.activity : { lastActivityAt: row.updated_at },

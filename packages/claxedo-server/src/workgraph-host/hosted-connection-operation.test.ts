@@ -44,6 +44,133 @@ describe("hosted Connection operation endpoint", () => {
     })])
   })
 
+  it("stops a first public non-draft PR at durable owner authorization before credentials are opened", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const execute = createHostedConnectionOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        query: async () => ({
+          context: { ownerUserId: "alice", ownerPartition: "org:org-acme" },
+          attemptId: "master_stream_1",
+          sessionId: "ses_master_stream_1",
+          workspaceId: "workspace",
+          connectionIds: ["connection"],
+          tools: ["connection_code_host_open_pr"],
+          streamId: "stream_1",
+          connection: {
+            id: "connection",
+            integrationId: "github",
+            capabilities: ["code-host"],
+            status: "connected",
+            accountLabel: "Claxedo GitHub",
+            fields: { installation_id: "123" },
+            tokenType: "bearer",
+            orgId: "org-acme",
+          },
+        }),
+        mutation: async (_fn, args) => {
+          mutations.push(args)
+          return { allowed: false }
+        },
+      },
+    })!
+
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, {
+      version: 1,
+      identity: {
+        attemptId: "master_stream_1",
+        sessionId: "ses_master_stream_1",
+        workspaceId: "workspace",
+        connectionId: "connection" as never,
+      },
+      operation: {
+        type: "open_pull_request",
+        repository: "claxedo/app",
+        head: "workgraph/v2",
+        base: "dev",
+        title: "Release WorkGraph V2",
+        draft: false,
+        publicRepository: true,
+        idempotencyKey: "stream_1:pr",
+      },
+    })).rejects.toBeInstanceOf(ConnectionOperationDeniedError)
+    expect(mutations).toEqual([expect.objectContaining({
+      ownerUserId: "alice",
+      orgId: "org-acme",
+      streamId: "stream_1",
+      attemptId: "master_stream_1",
+      repository: "claxedo/app",
+      draft: false,
+      publicRepository: true,
+    })])
+  })
+
+  it("returns a completed PR outbox result without reopening credentials", async () => {
+    let mutations = 0
+    const execute = createHostedConnectionOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        query: async () => ({
+          context: { ownerUserId: "alice", ownerPartition: "org:org-acme" },
+          attemptId: "master_stream_1",
+          sessionId: "ses_master_stream_1",
+          workspaceId: "workspace",
+          connectionIds: ["connection"],
+          tools: ["connection_code_host_open_pr"],
+          streamId: "stream_1",
+          connection: {
+            id: "connection",
+            integrationId: "github",
+            capabilities: ["code-host"],
+            status: "connected",
+            fields: { installation_id: "123" },
+            orgId: "org-acme",
+          },
+        }),
+        mutation: async () => {
+          mutations++
+          if (mutations === 1) return { allowed: true }
+          return {
+            state: "completed",
+            result: {
+              type: "open_pull_request",
+              pullRequestId: "42",
+              url: "https://github.com/claxedo/app/pull/42",
+              draft: true,
+              durableEffectReceiptId: "receipt_pr_42",
+              evidenceId: "evidence_pr_42",
+            },
+          }
+        },
+      },
+    })!
+
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, {
+      version: 1,
+      identity: {
+        attemptId: "master_stream_1",
+        sessionId: "ses_master_stream_1",
+        workspaceId: "workspace",
+        connectionId: "connection" as never,
+      },
+      operation: {
+        type: "open_pull_request",
+        repository: "claxedo/app",
+        head: "workgraph/v2",
+        base: "dev",
+        title: "Release WorkGraph V2",
+        draft: true,
+        publicRepository: true,
+        idempotencyKey: "stream_1:pr",
+      },
+    })).resolves.toMatchObject({
+      type: "open_pull_request",
+      pullRequestId: "42",
+      durableEffectReceiptId: "receipt_pr_42",
+    })
+    expect(mutations).toBe(2)
+  })
+
   it("derives owner and org only from a verified exact-workspace RAT", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({

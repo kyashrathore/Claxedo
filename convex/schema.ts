@@ -453,6 +453,21 @@ export default defineSchema({
     workgraph_id: v.string(),
     title: v.string(),
     description: v.optional(v.string()),
+    charter: v.optional(v.object({ text: v.string(), hash: v.string() })),
+    master_status: v.optional(v.object({
+      state: v.string(),
+      sessionId: v.optional(v.string()),
+      turnId: v.optional(v.string()),
+      historyAfter: v.optional(v.number()),
+      admissionConfirmed: v.optional(v.boolean()),
+      failureCount: v.optional(v.number()),
+      message: v.string(),
+      receiptRefs: v.array(v.string()),
+      charterHash: v.optional(v.string()),
+      updatedAt: v.number(),
+    })),
+    notes_source: v.optional(workSourceRevisionRef),
+    public_pr_confirmed_at: v.optional(v.number()),
     lifecycle_state: v.string(),
     visibility: v.string(),
     pinned: v.boolean(),
@@ -1021,6 +1036,20 @@ export default defineSchema({
     .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
     .index("by_tenant_subject", ["organization_id", "owner_user_id", "job_type", "subject_id"])
     .index("by_tenant_status_due", ["organization_id", "owner_user_id", "status", "due_at"]),
+
+  workgraph_master_mailbox: defineTable({
+    ...workGraphOwner,
+    stream_id: v.string(),
+    id: v.string(),
+    message: v.string(),
+    provenance: v.any(),
+    status: v.string(),
+    ...workGraphCreated,
+    updated_at: v.number(),
+  })
+    .index("by_tenant", ["organization_id", "owner_user_id"])
+    .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
+    .index("by_tenant_stream_status", ["organization_id", "owner_user_id", "stream_id", "status", "created_at"]),
 
   workgraph_cleanup_receipts: defineTable({
     ...workGraphOwner,

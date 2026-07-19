@@ -13,7 +13,7 @@ import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/ho
 import { HostedTranscriptRetentionError } from "./hosted-runtime"
 
 type Mutation = FunctionReference<"mutation">
-const api = anyApi as unknown as { workgraphCommands: { executeForService: Mutation } }
+const api = anyApi as unknown as { workgraphCommands: { executeForService: Mutation; readStreamVersionForService: Mutation } }
 
 type Executor = { mutation(fn: Mutation, args: Record<string, unknown>): Promise<unknown> }
 
@@ -35,6 +35,12 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
    */
   retainTranscript?: TranscriptRetention
   notifyChanged?: (principal: Readonly<{ ownerUserId: string; orgId: string }>) => Promise<void>
+  notifyOwner?: (input: Readonly<{
+    ownerUserId: string
+    orgId: string
+    idempotencyKey: string
+    text: string
+  }>) => Promise<{ channel: string; reference: string; duplicate: boolean }>
 }>) {
   const serviceToken = clean(input.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
   const url = clean(input.env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(input.env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
@@ -52,6 +58,16 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
         sessionId: request.identity.sessionId,
       })
     }
+    if (request.operation.type === "notify_owner" && !input.notifyOwner) {
+      throw new Error("Hosted owner channel notification is unavailable")
+    }
+    const notification = request.operation.type === "notify_owner"
+      ? await input.notifyOwner!({
+          ...principal,
+          idempotencyKey: request.operation.operationId,
+          text: request.operation.message,
+        })
+      : undefined
     const result = CommandResultSchema.parse(await executor.mutation(
       api.workgraphCommands.executeForService,
       {
@@ -59,7 +75,9 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
         organization_id: principal.orgId,
         owner_subject: principal.ownerUserId,
         actor_type: "agent",
-        actor_id: request.identity.attemptId,
+        actor_id: request.operation.type === "update_stream_notes" || request.operation.type === "notify_owner"
+          ? request.identity.sessionId
+          : request.identity.attemptId,
         operation_id: request.operation.operationId,
         request_id: `attempt_tool_${crypto.randomUUID()}`,
         command: request.operation.type === "record_checkpoint"
@@ -74,7 +92,8 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
               summary: request.operation.summary,
               evidenceIds: request.operation.evidenceIds,
             }
-          : {
+          : request.operation.type === "complete"
+            ? {
               version: 1,
               type: "complete_attempt",
               attemptId: request.identity.attemptId,
@@ -84,7 +103,28 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
               summary: request.operation.summary,
               artifacts: request.operation.artifacts,
               evidence: request.operation.evidence,
-            },
+            }
+            : request.operation.type === "update_stream_notes"
+              ? {
+                version: 1,
+                type: "update_stream_notes",
+                streamId: requireMasterStream(request),
+                expectedVersion: await readStreamVersion(executor, serviceToken, principal, request),
+                status: request.operation.status,
+                learnings: request.operation.learnings,
+                externalReferences: request.operation.externalReferences,
+              }
+              : {
+                  version: 1,
+                  type: "record_evidence",
+                  subject: { type: "stream", streamId: requireMasterStream(request) },
+                  evidence: {
+                    kind: "integration",
+                    summary: `Notified the Stream owner through ${notification!.channel}`,
+                    effect: "published",
+                    reference: notification!.reference,
+                  },
+                },
       },
     ))
     if (result.ok) {
@@ -94,6 +134,31 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
     }
     return result
   }
+}
+
+function requireMasterStream(request: WorkGraphAttemptOperationRequest) {
+  const streamId = request.identity.streamId
+  if (!streamId || request.identity.sessionId !== `ses_master_${streamId}` || request.identity.attemptId !== `master_${streamId}`) {
+    throw new Error("Master operation requires an exact hosted master identity")
+  }
+  return streamId
+}
+
+async function readStreamVersion(
+  executor: Executor,
+  serviceToken: string,
+  principal: Readonly<{ ownerUserId: string; orgId: string }>,
+  request: WorkGraphAttemptOperationRequest,
+) {
+  const streamId = requireMasterStream(request)
+  const value = await executor.mutation(api.workgraphCommands.readStreamVersionForService, {
+    service_token: serviceToken,
+    organization_id: principal.orgId,
+    owner_subject: principal.ownerUserId,
+    stream_id: streamId,
+  }) as { version?: unknown }
+  if (!Number.isInteger(value.version)) throw new Error("Hosted master Stream version is unavailable")
+  return value.version as number
 }
 
 export function createHostedAttemptOperationHandler(input: Readonly<{

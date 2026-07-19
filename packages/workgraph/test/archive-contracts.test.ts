@@ -558,6 +558,23 @@ function canonicalRecords() {
       },
     },
     {
+      kind: "scheduled_job",
+      id: "scheduled_job_daily_1",
+      value: {
+        schemaVersion: 1,
+        version: 1,
+        streamId: "stream_1",
+        jobType: "master_wake",
+        subjectId: "stream_1:schedule",
+        dueAt: 10,
+        status: "pending",
+        payload: { streamId: "stream_1", trigger: "schedule" },
+        leaseEpoch: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    {
       kind: "terminal_scheduled_job",
       id: "scheduled_job_1",
       value: {

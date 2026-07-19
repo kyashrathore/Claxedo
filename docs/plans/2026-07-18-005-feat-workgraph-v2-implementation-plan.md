@@ -1,6 +1,6 @@
 # 2026-07-18-005 — WorkGraph v2 implementation: charters, masters, evidence
 
-**Status:** PLANNED
+**Status:** COMPLETED AT PHASE 3 — PHASE 4 NO-GO RECORDED
 **Companion product plan:** 2026-07-18-004
 **Principle:** Evolve the existing WorkGraph. Every addition names the existing seam it attaches to — a field on a record, a command in the union, an event in the enum, a launchability reason in the oracle, a sink in the wakes engine, or a memo on a component. No subsystem is replaced.
 
@@ -192,7 +192,7 @@ The master's duties are capabilities layered on existing machinery; the charter 
 
 **PR creation.** PR creation is a new capability — the connection tools today are read/comment/update on issue source-views only (`connection_work_source_*`, gateway `:447-448`), and no connector exposes a PR verb. The master opens PRs through a host-local delivery tool in its own toolset, registered at admit via `input.profile.tools` and the `WorkGraphConnectionToolRoutes` per-session registration path (gateway `:464-489`). The tool obtains a GitHub token only inside `ConnectionsPort.withAuthorization` (`connections.ts:29-34`), never raw. PRs are **draft by default**; the first non-draft PR to a public repo in a Stream is **held for human confirmation** and auto-proceeds thereafter within that Stream.
 
-**Notify.** Notifications go through the connections framework: `createControlPlaneChannels`' `sendMessage` (`channels-control-plane.ts:205,273`), behind its per-sender allow-list and rate-limit gates (`:338-381`). Dispatch is owner-scoped, so the master resolves the Stream owner as the recipient, never an arbitrary address, and the charter's notification cadence rides the existing rate caps.
+**Notify.** Proactive notifications go through the Chat SDK bridge with `bot.thread(threadKey).post(...)`. Delivery is owner-bound and protected by channel access, rate-limit, idempotency, and durable-receipt checks, so the master resolves the Stream owner as the recipient and never selects an arbitrary address. The charter's notification cadence rides the existing rate caps.
 
 ### Evidence — audit records, receipts, provenance
 
@@ -235,6 +235,25 @@ Every new field reaches the UI through the existing snapshot/doorbell sync, unch
 The launch drain stays: `drainReadyStreams`/`continueSqliteStream` (`store.ts:334,913`) and Convex `continueStream`/`reconcileReadyStreams` (`workgraphCommands.ts:2137,2113`) remain the mechanical launcher; the master enqueues work but does not replace the drain. The approval gate stays: `pending_approval` and `approve_work_item` (`workgraphCommands.ts:219`) are unchanged, now gating only agent-proposed work. The snapshot/doorbell sync stays: the `workgraph.changed` doorbell, snapshot pager, and `snapshot_relevant` invalidation are the sole data path to the UI. The session gateway stays: `WorkGraphSessionGateway` (`local-execution.ts:14-33`) admits both workers and the master through one contract; the master adds a stable-id, lease-less admission, not a new transport. The outbox, due-jobs, lease, and wake tables all stay — masters, receipts, and side effects extend existing tables and effect-type switches (`claimControlEffects` at `workgraphRuntime.ts:223`) rather than adding new subsystems.
 
 ---
+
+## Implementation status
+
+Implementation began on 2026-07-19. The code-complete phases are validated against SQLite and Convex persistence, local and hosted runtimes, real Session V2 execution, Connections, UI projections, and durable archive/deletion boundaries.
+
+| Phase | State | Evidence |
+| --- | --- | --- |
+| Phase 0 — Safety and honesty | Complete | Stop/retry/pause behavior, one-running-Task serialization, placement and approval copy, scheduler coalescing, browser coverage, and two-theme visual review pass. |
+| Phase 1 — Charter + master v1 | Complete | Charter admission/editor, master mailbox/runtime/wakes, `call_master`, structured notes, escalation, protected-ref credential fixture, status, and receipts pass locally and hosted. |
+| Phase 2 — Landing and evidence | Complete | Scheduled rebase, landing-integrity gate, PR delivery/confirmation, durable outboxes and receipts, and proactive owner notification pass. |
+| Phase 3 — Ledger + provenance | Complete; no-go recorded | Owner-directed ledger creation, staged discovered work, exact external-reference fencing, and real MCP-to-Session journeys pass. On 2026-07-19 the owner reported that the team did not check WorkGraph instead of Session history. |
+| Phase 4 — Flow streams | Closed by gate | The recorded team-use verdict is no-go, so flow-stream implementation did not open. |
+| Phase 5 — Parallel isolation | Not opened | This phase depends on a positive Phase 4 decision and remains outside this completed implementation slice. |
+
+Validation recorded on 2026-07-19: the complete 15-journey real WorkGraph Playwright suite passed in one serial run; all 344 WorkGraph tests and both source/test typechecks passed; Claxedo app typecheck, architecture, performance, and the 70 focused WorkGraph UI tests passed; Claxedo Channels passed 123 tests plus typecheck; Workspace Runtime passed its package test and typecheck; Claxedo Server WorkGraph, local landing, Convex archive/runtime, channel ingress, and package typecheck boundaries passed. The broader server suite has one unrelated architecture-inventory drift for `event-visibility.ts` that predates this plan scope.
+
+The final hardening pass keeps proactive notifications strictly account-bound, preserves Work Item creation ancestry through SQLite, Convex, export, and restore, renders safe master receipts as actionable card and inspector links, coalesces a six-message master burst to one wake, and exercises the scheduled landing path in a real fixture repository where a mid-flight trunk commit is rebased before the queued candidate is revalidated and landed.
+
+Visual review completed on 2026-07-19 against a real file-backed SQLite harness in OC-2 light and dark themes. The reviewed states include a running spinner and Stop control, the Pause popover with `Also stop running work`, `Stopped · Retry`, the inline `Ready · paused` row message, placement lines, and a master receipt link. The dogfood verdict is no-go: the owner reported that the team did not use WorkGraph as its launch-backlog surface, closing Phase 4 and its dependent Phase 5.
 
 ## Technical Implementation Plan
 
@@ -292,7 +311,7 @@ One focused agent with adversarial-verify before merge. Authority-envelope items
 
 **PR creation (new capability).** No connector exposes a PR verb today; the master opens PRs through a host-local delivery tool registered at admit via `input.profile.tools` and the `WorkGraphConnectionToolRoutes` path `workgraph-session-gateway.ts:464-489`. The token is obtained only inside `ConnectionsPort.withAuthorization` `connections.ts:29-34`. PRs are draft by default; the first non-draft PR to a public repo in a Stream is held for human confirmation and auto-proceeds thereafter. The hold is a first-instance record on the Stream and a master-escalation attention item. The merged/published effect lands as `integration` evidence `completion.ts:81`, whose `superRefine` `completion.ts:91` requires a `durableEffectReceiptId`, backed by `wg_v2_durable_effect_receipts` `schema.ts:427` storing the PR URL in `external_reference_json`, keyed to `DurableEffectReceiptID` `ids.ts:59`. The PR effect itself is a new `effect_type` on `wg_v2_outbox` `schema.ts:577`, claimed by the sibling switch `claimControlEffects` `workgraphRuntime.ts:223,239-243` via `enqueueControlEffect` `workgraphCommands.ts:1433`.
 
-**Notify.** Notifications go through `createControlPlaneChannels`' `sendMessage` `channels-control-plane.ts:205,273`, behind the per-sender allow-list and rate-limit gates `:338-381`; dispatch is owner-scoped, so the master resolves the Stream owner as recipient. Charter cadence rides the existing caps.
+**Notify.** Proactive notifications use the Chat SDK bridge's `bot.thread(threadKey).post(...)` path. Owner-bound access, rate limiting, idempotency, and durable receipts are enforced before delivery; charter cadence rides the existing caps.
 
 **Contract/schema:** new outbox `effect_type` values (free-text, no DDL); the completion gate error code; a first-instance-hold flag on the Stream record (EXPAND-only optional column on `wg_v2_streams` and `workgraph_streams`).
 
@@ -358,12 +377,12 @@ Genuinely new infrastructure across all phases, kept as small as the seams allow
 
 ---
 
-## Decisions required before Phase 1
+## Resolved implementation decisions
 
-Three decisions gate the critical path and are resolved before Phase 1 opens.
+These decisions define the implemented authority and provenance boundaries.
 
-**Master git identity.** The master acts under a dedicated git-host identity whose credentials structurally cannot push, merge, or force-push to `main` or any protected ref — the credential, not the prompt, is the boundary (HLD Authority envelope; Phase 1 Protected refs). The decision is the concrete provisioning: one shared bot identity per git host with branch-protection rules that deny it protected refs, versus a per-owner identity minted at Stream creation. This choice sets the gateway admit profile (`input.profile.tools`, `workgraph-session-gateway.ts:464-489`) and the `ConnectionsPort.withAuthorization` scope (`connections.ts:29-34`), and it must be settled before the master opens its first PR.
+**Master git identity.** One shared bot identity is provisioned per git host. Its credentials and host-side branch rules deny pushes, merges, and force-pushes to protected refs. The gateway admit profile and `ConnectionsPort.withAuthorization` scope bind the master to that identity.
 
-**Charter surfacing at creation.** The planner drafts the charter and presents it diff-style, with `is-side-effect` highlighting on externally-visible clauses, before the Stream commits (UX §3; charter accepted on `ConfirmAdmissionCommand`, `commands.ts:212`). The decision is whether charter confirmation is a blocking step in the admission flow — the Stream does not commit until the human accepts the highlighted charter — or a non-blocking draft the human may edit later in Settings. The blocking choice makes the highlight a hard gate against a rubber-stamped side effect; the non-blocking choice keeps scoping fast and leans on the conservative defaults for un-reviewed charters.
+**Charter surfacing at creation.** Charter confirmation is a blocking admission step. The planner presents the draft diff-style with externally visible clauses highlighted, and the Stream commits only after the owner accepts it.
 
-**Notes-doc structure.** The master's notes doc is a WorkSource authored through `createDocumentWorkGraphHandoff` (`app/integrations/doc-workgraph.ts:54`), with external content stored as structurally fenced quotation carrying its source (UX §4; HLD Evidence). The decision is the document schema: a single free-form notes document per Stream that the master revises in place, versus a structured document with fixed sections (status, learnings, fenced external references) that the fenced-quotation renderer and the provenance execution-check read by section. The structured choice makes provenance boundaries mechanically checkable at the write path (Phase 3 provenance tags); the free-form choice is simpler to author but pushes provenance enforcement onto content scanning.
+**Notes-doc structure.** Each Stream owns one structured notes WorkSource with fixed status, learnings, and fenced external-reference sections. External quotations carry exact source revisions and are encoded as untrusted data at the write boundary, allowing provenance checks to remain structural.

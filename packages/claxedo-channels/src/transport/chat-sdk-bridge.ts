@@ -2,6 +2,7 @@ import type { ChannelCore } from "../core/command-emit"
 import { parseChannelCommand } from "../core/approval-token"
 import type { ApprovalDecision, ChannelId, InboundEnvelope } from "../envelope"
 import type { ChannelTextMinimizationOptions } from "../core/data-minimization"
+import type { ChannelWebhookHandler } from "../ingress"
 import { chatSdkApprovalDecision } from "./chat-sdk-actions"
 import { createChatSdkRenderer, type ChatSdkThread } from "./chat-sdk-render"
 import { repoTargetFromText } from "./repo-target"
@@ -39,6 +40,8 @@ export type ChatSdkBot = {
   onNewMention?: (handler: (thread: ChatSdkBridgeThread, message: ChatSdkMessage) => Promise<void>) => unknown
   onSubscribedMessage?: (handler: (thread: ChatSdkBridgeThread, message: ChatSdkMessage) => Promise<void>) => unknown
   onAction?: (handler: (action: unknown) => Promise<void>) => unknown
+  thread?: (threadId: string) => ChatSdkThread
+  webhooks?: Partial<Record<ChannelId, ChannelWebhookHandler>>
 }
 
 function channel(input: unknown): ChannelId {

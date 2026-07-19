@@ -37,6 +37,12 @@ export type ExecutionResult =
   | Readonly<{ state: "failed"; message: string }>
   | Readonly<{ state: "cancelled" }>
 
+export type LandingReceipt = Readonly<{
+  beforeHead: string
+  afterHead: string
+  diffRef: string
+}>
+
 export type WorkspaceExecutionPort = Readonly<{
   provisionOrAdopt(
     context: WorkGraphContext,
@@ -81,6 +87,17 @@ export type WorkspaceExecutionPort = Readonly<{
       sessionId: ExecutionSessionID
     }>,
   ): Promise<ExecutionResult>
+
+  /** Revalidates and serially lands a candidate revision into the Stream envelope. */
+  land?(
+    context: WorkGraphContext,
+    input: Readonly<{
+      streamId: StreamID
+      candidateRevision: string
+      expectedHead: string
+      forbiddenPatterns?: readonly string[]
+    }>,
+  ): Promise<LandingReceipt>
 
   /**
    * Cleanup is idempotent. Reconciliation targets only the supplied legacy

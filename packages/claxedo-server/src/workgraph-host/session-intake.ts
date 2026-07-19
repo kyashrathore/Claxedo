@@ -35,7 +35,7 @@ export function subscribeSessionIntake(input: Readonly<{
   return input.events.subscribe((event) => {
     if (!isIdle(event)) return
     const sessionId = String(event.payload.properties?.sessionID ?? "")
-    if (!sessionId || sessionId.startsWith("ses_workgraph_")) return
+    if (!sessionId || sessionId.startsWith("ses_workgraph_") || sessionId.startsWith("ses_master_")) return
     const context = input.resolveContext(event)
     if (!context) return
     const directory = event.directory?.trim()

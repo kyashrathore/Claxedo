@@ -22,9 +22,9 @@ import { WorkGraphSettingsPanel } from "./settings-panel"
 import { toWaitingRow, waitingSourceFromClient } from "./waiting/waiting-source"
 import { StreamTasksPanelBody } from "./stream-tasks-panel"
 import { WorkGraphProjectGroups, type WorkGraphProject } from "./workgraph-overview"
+import { StreamNotesDialog } from "./stream-notes-dialog"
 import "./workgraph.css"
 import "./waiting/waiting.css"
-
 /**
  * Bridge from the app shell to the one shared WorkspacePanel. WorkGraph is a
  * global-navigation surface bound to no workspace, so it drives that single
@@ -78,10 +78,10 @@ export function WorkGraphContent(props: {
   )
   const [baseRevision, setBaseRevision] = createSignal("HEAD")
   const [mutationError, setMutationError] = createSignal<WorkGraphApiError>()
-
   const [selectedWaiting, setSelectedWaiting] = createSignal<{ item: AttentionItem; invoker: HTMLElement }>()
   const [selectedTask, setSelectedTask] = createSignal<{ item: WorkItemDto; invoker: HTMLElement }>()
   const [streamSettings, setStreamSettings] = createSignal<StreamDto>()
+  const [notesStream, setNotesStream] = createSignal<StreamDto>()
   // The Stream whose full task list the panel's Tasks tab shows. Only the id is
   // remembered; the rendered Stream is always resolved against the live snapshot,
   // so a deleted Stream never leaves a stale body behind.
@@ -97,7 +97,6 @@ export function WorkGraphContent(props: {
   let waitingResolved = false
   let waitingPrevOrder: string[] = []
   let waitingRefetch: Promise<void> | undefined
-
   const closeCreating = () => {
     setCreating(false)
     setExpanded(false)
@@ -118,7 +117,6 @@ export function WorkGraphContent(props: {
     window.addEventListener("keydown", dismissCreating, true)
     onCleanup(() => window.removeEventListener("keydown", dismissCreating, true))
   }
-
   const [snapshot, { refetch }] = createResource(() => client.snapshot())
   const [defaults] = createResource(() => client.defaults())
 
@@ -353,7 +351,6 @@ export function WorkGraphContent(props: {
     await refetch()
     setReconnecting(false)
   }
-
   const openPanelTab = (view: "attention" | "settings" | "tasks") => {
     card.closeFloating()
     props.panel?.open(view)
@@ -376,6 +373,7 @@ export function WorkGraphContent(props: {
     setStreamSettings(stream)
     openPanelTab("settings")
   }
+  const openStreamNotes = (stream: StreamDto) => setNotesStream(stream)
   // A selection records the exact invoking element so an ordinary close returns
   // focus to the row that opened the dialog.
   const selectWaiting = (item: AttentionItem, element: HTMLElement) => {
@@ -472,13 +470,19 @@ export function WorkGraphContent(props: {
     defaults: () => client.defaults(),
     saveDefaults: (expectedVersion: number, next: Parameters<typeof client.updateWorkGraphDefaults>[1]) => client.updateWorkGraphDefaults(expectedVersion, next),
   }
-  // Atomic stream update at one expected version. Empty override objects clear overrides.
   const streamSettingsSource = {
     workgraphDefaults: () => client.defaults(),
-    save: (streamId: string, expectedVersion: number, settings: Parameters<typeof client.updateStreamSettings>[2]) => client.updateStreamSettings(streamId, expectedVersion, settings),
+    save: async (
+      streamId: string,
+      expectedVersion: number,
+      settings: Parameters<typeof client.updateStreamSettings>[2] & { charterText: string; charterChanged: boolean },
+    ) => {
+      const result = await client.updateStreamSettings(streamId, expectedVersion, settings)
+      if (!result.ok || !settings.charterChanged) return result
+      return client.updateStreamCharter(streamId, expectedVersion + 1, settings.charterText)
+    },
   }
-  // Card rows open the item's dialog right where the user is; the card head's
-  // expand action is the "see it in full context" path into the shared panel.
+  // Card rows open the item's dialog in place; expansion opens the shared panel.
   const waitingCard = (mode: "inline" | "floating") => <WaitingCard mode={mode} items={card.items()} collapsed={card.collapsed()} onToggleCollapse={card.toggleCollapsed} onClose={card.closeFloating} onSelect={selectWaiting} onOpenPanel={() => openPanelTab("attention")} />
 
   return (
@@ -683,6 +687,7 @@ export function WorkGraphContent(props: {
                   client={client}
                   mutate={mutate}
                   onOpenStreamSettings={openStreamSettings}
+                  onOpenStreamNotes={openStreamNotes}
                   onOpenStreamTasks={openStreamTasks}
                   onOpenTask={selectTask}
                   onNewStream={openCreatingForProject}
@@ -787,7 +792,8 @@ export function WorkGraphContent(props: {
         )}
       </Show>
       <WaitingItemDialog selection={selectedWaiting()?.item} source={source} onClose={closeWaiting} onResolved={resolvedWaiting} onOpenSettings={openWorkGraphSettings} onOpenSession={props.onOpenSession} />
-      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} streamItems={selectedTaskStreamItems()} streamPaused={selectedTaskStream()?.lifecycleState === "paused"} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
+      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} streamItems={selectedTaskStreamItems()} streamAttempts={attempts().filter((attempt) => attempt.streamId === selectedTaskItem()?.streamId)} streamPaused={selectedTaskStream()?.lifecycleState === "paused"} masterStatus={selectedTaskStream()?.masterStatus} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
+      <StreamNotesDialog stream={notesStream()} client={client} onClose={() => setNotesStream()} />
     </main>
   )
 }

@@ -2,26 +2,29 @@ import path from "node:path"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
-import type { SourceIssueConnector } from "@claxedo/workgraph/connectors"
+import type { CodeHostConnector, SourceIssueConnector } from "@claxedo/workgraph/connectors"
 import { WorkGraphAttemptToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
 import {
   WorkGraphAttemptIdentitySchema,
   WorkGraphAttemptToolNames,
   type CommandResult,
+  type WorkGraphConnectionOperationResponse,
   type WorkGraphAttemptOperationRequest,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import { OPENCODE_INTERNAL_BASE } from "./opencode-engine"
-import { createConnectionOperationBroker } from "./workgraph-host/connection-operation-broker"
+import { ConnectionOperationDeniedError, createConnectionOperationBroker } from "./workgraph-host/connection-operation-broker"
 import { createWorkGraphConnectionsPort } from "./workgraph-host/connections"
 import type { WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 
 type SessionV2WorkGraphGatewayOptions = (Readonly<{
   connections?: undefined
   connectors?: Readonly<Record<string, SourceIssueConnector>>
+  codeHostConnectors?: Readonly<Record<string, CodeHostConnector>>
 }> | Readonly<{
   connections: ConnectionsService
   connectors?: Readonly<Record<string, SourceIssueConnector>>
+  codeHostConnectors?: Readonly<Record<string, CodeHostConnector>>
   resolveTeamOwner(context: WorkGraphContext): string | undefined
 }>) & Readonly<{
   executeAttempt?: (
@@ -35,6 +38,51 @@ type SessionV2WorkGraphGatewayOptions = (Readonly<{
       context: WorkGraphContext
     }>): Promise<void>
     release(sessionId: string): Promise<void>
+  }>
+  recordPullRequest?: (
+    context: WorkGraphContext,
+    input: Readonly<{
+      streamId: string
+      attemptId: string
+      idempotencyKey: string
+      pullRequestId: string
+      url: string
+      draft: boolean
+    }>,
+  ) => Promise<Readonly<{ durableEffectReceiptId: string; evidenceId?: string }>>
+  authorizePullRequest?: (
+    context: WorkGraphContext,
+    input: Readonly<{ streamId: string; repository: string; title: string; draft: boolean; publicRepository: boolean }>,
+  ) => Promise<boolean>
+  pullRequestEffects?: Readonly<{
+    claim(
+      context: WorkGraphContext,
+      input: Readonly<{
+        streamId: string
+        attemptId: string
+        idempotencyKey: string
+        repository: string
+        head: string
+        base: string
+        title: string
+        body?: string
+        draft: boolean
+        publicRepository: boolean
+      }>,
+    ): Promise<
+      | Readonly<{ state: "claimed"; outboxId: string; leaseId: string }>
+      | Readonly<{ state: "completed"; result: Extract<WorkGraphConnectionOperationResponse, { type: "open_pull_request" }> }>
+      | Readonly<{ state: "busy" | "failed" }>
+    >
+    complete(
+      context: WorkGraphContext,
+      input: Readonly<{
+        outboxId: string
+        leaseId: string
+        result: Extract<WorkGraphConnectionOperationResponse, { type: "open_pull_request" }>
+      }>,
+    ): Promise<Extract<WorkGraphConnectionOperationResponse, { type: "open_pull_request" }>>
+    fail(context: WorkGraphContext, input: Readonly<{ outboxId: string; leaseId: string }>): Promise<void>
   }>
 }>
 
@@ -382,7 +430,7 @@ export function createSessionV2WorkGraphGateway(
       return "indeterminate"
     },
     admit: async (input) => {
-      const messageId = `msg_workgraph_${input.attemptId}`
+      const messageId = input.messageId ?? `msg_workgraph_${input.attemptId}`
       const workspaceId = input.workspaceId ?? input.directory
       const created = await request(
         "/api/session",
@@ -409,6 +457,8 @@ export function createSessionV2WorkGraphGateway(
       const body = (await created.json()) as { id?: string; data?: { id?: string } }
       const adoptedId = body.id ?? body.data?.id
       if (!adoptedId) throw new Error("Session V2 create response did not include a Session ID")
+      await cleanupBridge(attemptBridges, adoptedId, "/api/workgraph/attempt-binding", "Attempt")
+      await cleanupBridge(bridges, adoptedId, "/api/workgraph/connection-binding", "Connection")
       if (input.leaseEpoch !== undefined && options.executeAttempt) {
         const context = input.context
         if (!context) throw new Error("WorkGraph Attempt tools require the owner context")
@@ -445,7 +495,8 @@ export function createSessionV2WorkGraphGateway(
         const ownerPartition = options.resolveTeamOwner(context)
         if (!ownerPartition) throw new Error("Connection-bound Attempts require an organization-owned Connection scope")
         const connectionTools = input.profile.tools.filter((tool) =>
-          tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update")
+          tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update" ||
+          tool === "connection_code_host_open_pr")
         if (!connectionTools.length) throw new Error("Connection-bound Attempts require explicit Connection tools")
         const binding = {
           context,
@@ -456,17 +507,70 @@ export function createSessionV2WorkGraphGateway(
           connectionIds: input.profile.connectionIds,
           tools: connectionTools,
         }
-        const broker = createConnectionOperationBroker({
+        const operationBroker = createConnectionOperationBroker({
           bindings: { resolve: async () => binding },
           connections: createWorkGraphConnectionsPort({ service: options.connections, resolveTeamOwner: options.resolveTeamOwner }),
           ...(options.connectors ? { connectors: options.connectors } : {}),
+          ...(options.codeHostConnectors ? { codeHostConnectors: options.codeHostConnectors } : {}),
         })
         const bridge = WorkGraphConnectionToolRoutes({
           workspaceId,
-          broker: (operation) => broker.execute(operation.identity as never, operation.operation, {
-            ownerUserId: context.ownerUserId,
-            ownerPartition,
-          }),
+          broker: async (operation) => {
+            const pullRequest = operation.operation.type === "open_pull_request" ? operation.operation : undefined
+            if (operation.operation.type === "open_pull_request" && input.streamId && options.authorizePullRequest) {
+              const authorized = await options.authorizePullRequest(context, {
+                streamId: input.streamId,
+                repository: operation.operation.repository,
+                title: operation.operation.title,
+                draft: operation.operation.draft,
+                publicRepository: operation.operation.publicRepository,
+              })
+              if (!authorized) throw new ConnectionOperationDeniedError("The first non-draft public pull request requires owner confirmation")
+            }
+            const effect = pullRequest && input.streamId && options.pullRequestEffects
+              ? await options.pullRequestEffects.claim(context, {
+                  streamId: input.streamId,
+                  attemptId: input.attemptId,
+                  idempotencyKey: pullRequest.idempotencyKey,
+                  repository: pullRequest.repository,
+                  head: pullRequest.head,
+                  base: pullRequest.base,
+                  title: pullRequest.title,
+                  ...(pullRequest.body === undefined ? {} : { body: pullRequest.body }),
+                  draft: pullRequest.draft,
+                  publicRepository: pullRequest.publicRepository,
+                })
+              : undefined
+            if (effect?.state === "completed") return effect.result
+            if (effect?.state === "busy") throw new Error("Pull request delivery is already in progress")
+            if (effect?.state === "failed") throw new Error("Pull request delivery halted after repeated provider failure")
+            const result = await operationBroker.execute(operation.identity as never, operation.operation, {
+              ownerUserId: context.ownerUserId,
+              ownerPartition,
+            }).catch(async (error) => {
+              if (effect?.state === "claimed" && options.pullRequestEffects) {
+                await options.pullRequestEffects.fail(context, effect)
+              }
+              throw error
+            })
+            if (result.type !== "open_pull_request") return result
+            if (!input.streamId || !options.recordPullRequest || !pullRequest) {
+              throw new Error("Pull request receipt persistence is unavailable")
+            }
+            const recorded = {
+              ...result,
+              ...await options.recordPullRequest(context, {
+                streamId: input.streamId,
+                attemptId: input.attemptId,
+                idempotencyKey: pullRequest.idempotencyKey,
+                pullRequestId: result.pullRequestId,
+                url: result.url,
+                draft: result.draft,
+              }),
+            }
+            if (effect?.state !== "claimed" || !options.pullRequestEffects) return recorded
+            return options.pullRequestEffects.complete(context, { ...effect, result: recorded })
+          },
           registerSessionTools: registerToolGroup("connections", input.directory),
           unregisterSessionTools: unregisterToolGroup("connections", input.directory),
         })

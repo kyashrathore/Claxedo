@@ -82,6 +82,11 @@ export const CONVEX_WORKGRAPH_SUPPORTED_COMMANDS = [
   "revise_work_source",
   "create_stream",
   "update_stream",
+  "set_stream_charter",
+  "call_master",
+  "request_public_pr_confirmation",
+  "confirm_public_pr",
+  "record_master_audit",
   "set_stream_lifecycle",
   "create_outcome",
   "update_outcome",
@@ -565,7 +570,7 @@ function publicChanges(context: WorkGraphContext, changes: readonly ChangeEnvelo
 }
 
 function publicAttentionItem(context: WorkGraphContext, item: AttentionItem): AttentionItem {
-  if (item.kind === "unorganized_ai_work" || item.kind === "configuration_required") {
+  if (item.kind === "unorganized_ai_work" || item.kind === "configuration_required" || item.kind === "master_escalation") {
     return AttentionItemSchema.parse(publicOwner(context, item))
   }
   return AttentionItemSchema.parse({

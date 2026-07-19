@@ -51,6 +51,7 @@ const supportedTables = new Set([
   "wg_v2_migration_intake",
   "wg_v2_outbox",
   "wg_v2_due_jobs",
+  "wg_v2_master_mailbox",
 ])
 
 const ownerTables = [
@@ -83,6 +84,7 @@ const ownerTables = [
   "wg_v2_changes",
   "wg_v2_outbox",
   "wg_v2_due_jobs",
+  "wg_v2_master_mailbox",
   "wg_v2_migration_intake",
 ] as const
 
@@ -283,9 +285,9 @@ export function createSqliteWorkGraphArchivePort(
         records.filter(kind("stream")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_streams
             (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, visibility, pinned,
-             execution_defaults_json, last_activity_at,
+             execution_defaults_json, charter_json, master_status_json, notes_source_json, public_pr_confirmed_at, last_activity_at,
              activity_granularity, replacement_reset_json, row_version, schema_version, created_at, updated_at, closed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
@@ -296,6 +298,10 @@ export function createSqliteWorkGraphArchivePort(
           record.value.visibility,
           record.value.pinned ? 1 : 0,
           JSON.stringify(record.value.executionDefaults),
+          record.value.charter === undefined ? null : JSON.stringify(record.value.charter),
+          record.value.masterStatus === undefined ? null : JSON.stringify(record.value.masterStatus),
+          record.value.notesSource === undefined ? null : JSON.stringify(record.value.notesSource),
+          record.value.publicPrConfirmedAt ?? null,
           record.value.activity.lastActivityAt,
           record.value.activityGranularity,
           record.value.replacementReset === undefined ? null : JSON.stringify(record.value.replacementReset),
@@ -334,9 +340,10 @@ export function createSqliteWorkGraphArchivePort(
         records.filter(kind("work_item")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_work_items
             (organization_id, owner_user_id, id, stream_id, outcome_id, title, description, lifecycle, priority,
-             execution_overrides_json, completion_contract_json, abandoned_reason, abandoned_at,
-             row_version, schema_version, created_at, updated_at, completed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             execution_overrides_json, completion_contract_json, created_by_actor_type, created_by_actor_id,
+             origin_attempt_id, abandoned_reason, abandoned_at, row_version, schema_version, created_at,
+             updated_at, completed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
@@ -348,6 +355,9 @@ export function createSqliteWorkGraphArchivePort(
           record.value.priority,
           JSON.stringify(record.value.executionDefaults ?? {}),
           JSON.stringify(record.value.completionContract),
+          record.value.createdByActorType ?? null,
+          record.value.createdByActorId ?? null,
+          record.value.originAttemptId ?? null,
           record.value.abandonReason ?? null,
           record.value.abandonedAt ?? null,
           record.value.version,
@@ -627,6 +637,25 @@ export function createSqliteWorkGraphArchivePort(
           record.value.createdAt,
           record.value.updatedAt,
         ))
+        records.filter(kind("scheduled_job")).forEach((record) => database.prepare(`
+          INSERT INTO wg_v2_due_jobs
+            (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json,
+             lease_epoch, row_version, schema_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+        `).run(
+          context.organizationId, context.ownerUserId,
+          record.id,
+          record.value.streamId,
+          record.value.jobType,
+          record.value.subjectId,
+          record.value.dueAt,
+          JSON.stringify(record.value.payload),
+          record.value.leaseEpoch,
+          record.value.version,
+          record.value.schemaVersion,
+          record.value.createdAt,
+          record.value.updatedAt,
+        ))
         records.filter(kind("terminal_scheduled_job")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_due_jobs
             (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json,
@@ -765,7 +794,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       content: string(row.content),
       contentHash: string(row.content_hash),
       origin: string(row.origin_kind) === "manual"
-        ? { kind: "manual" as const }
+        ? { kind: "manual" as const, ...(row.origin_reference_json ? json(row.origin_reference_json) : {}) }
         : string(row.origin_kind) === "authoring"
           ? { kind: "authoring" as const, ...json(row.origin_reference_json) }
           : { kind: "external" as const, ...json(row.origin_reference_json) },
@@ -1088,7 +1117,25 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       },
     }
   })
-  const terminalScheduledJobs = rows(database, "wg_v2_due_jobs", context).map((row) => {
+  const dueJobs = rows(database, "wg_v2_due_jobs", context)
+  const scheduledJobs = dueJobs.filter(isPortableMasterSchedule).map((row) => ({
+    kind: "scheduled_job" as const,
+    id: id(row),
+    value: {
+      schemaVersion: integer(row.schema_version),
+      version: integer(row.row_version),
+      streamId: string(row.stream_id),
+      jobType: "master_wake" as const,
+      subjectId: string(row.subject_id),
+      dueAt: timestamp(row.due_at),
+      status: "pending" as const,
+      payload: jsonValue(row.payload_json),
+      leaseEpoch: integer(row.lease_epoch),
+      createdAt: timestamp(row.created_at),
+      updatedAt: timestamp(row.updated_at),
+    },
+  }))
+  const terminalScheduledJobs = dueJobs.filter((row) => !isPortableMasterSchedule(row)).map((row) => {
     if (!["completed", "cancelled", "attention", "failed_terminal"].includes(String(row.status)) ||
       row.claimed_by !== null || row.claim_expires_at !== null) {
       throw new WorkGraphArchiveRestoreError("not_quiescent")
@@ -1161,7 +1208,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
     ...decisions, ...decisionWorkItems,
     ...evidence, ...receipts, ...sourceReferences, ...proposals,
     ...operations, ...events, ...changes, ...runtimeEffects, ...migrationIntake,
-    ...completedExternalEffects, ...terminalScheduledJobs,
+    ...completedExternalEffects, ...scheduledJobs, ...terminalScheduledJobs,
   ]
     .sort((left, right) => `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`))
 }
@@ -1173,7 +1220,7 @@ function narrowSupportedArchive(archive: WorkGraphArchive) {
     "decision", "decision_work_item",
     "evidence", "durable_effect_receipt", "record_source_revision",
     "admission_proposal", "operation_result", "event", "change", "runtime_effect", "migration_intake",
-    "completed_external_effect", "terminal_scheduled_job",
+    "completed_external_effect", "scheduled_job", "terminal_scheduled_job",
   ].includes(record.kind))
   if (unsupported) throw new WorkGraphArchiveRestoreError("target_incompatible")
   return WorkGraphArchiveSchema.parse(archive).records as CanonicalWorkGraphArchiveRecord[]
@@ -1413,7 +1460,12 @@ function assertQuiescent(database: Database, context: WorkGraphContext) {
     "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE organization_id = ? AND owner_user_id = ? AND state = 'reserved' LIMIT 1",
     "SELECT 1 FROM wg_v2_admission_proposals WHERE organization_id = ? AND owner_user_id = ? AND lifecycle = 'planning' LIMIT 1",
     "SELECT 1 FROM wg_v2_outbox WHERE organization_id = ? AND owner_user_id = ? AND status != 'completed' LIMIT 1",
-    "SELECT 1 FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND status NOT IN ('completed', 'cancelled', 'attention', 'failed_terminal') LIMIT 1",
+    `SELECT 1 FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ?
+      AND status NOT IN ('completed', 'cancelled', 'attention', 'failed_terminal')
+      AND NOT (status = 'pending' AND job_type = 'master_wake' AND stream_id IS NOT NULL
+        AND subject_id = stream_id || ':schedule' AND claimed_by IS NULL AND claim_expires_at IS NULL)
+      LIMIT 1`,
+    "SELECT 1 FROM wg_v2_master_mailbox WHERE organization_id = ? AND owner_user_id = ? AND status != 'consumed' LIMIT 1",
     "SELECT 1 FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND envelope_identity_json IS NOT NULL LIMIT 1",
     "SELECT 1 FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND replacement_reset_json IS NOT NULL AND json_extract(replacement_reset_json, '$.state') != 'completed' LIMIT 1",
   ]
@@ -1593,6 +1645,7 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
       require("operation_result", record.value.operationId)
     }
     if (record.kind === "completed_external_effect") require("operation_result", record.value.operationId)
+    if (record.kind === "scheduled_job") require("stream", record.value.streamId)
     if (record.kind === "terminal_scheduled_job" && record.value.streamId) require("stream", record.value.streamId)
   })
   const workItems = records.filter(kind("work_item"))
@@ -1707,6 +1760,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+function isPortableMasterSchedule(row: Record<string, unknown>) {
+  return row.status === "pending" &&
+    row.job_type === "master_wake" &&
+    typeof row.stream_id === "string" &&
+    row.subject_id === `${row.stream_id}:schedule` &&
+    row.claimed_by === null &&
+    row.claim_expires_at === null
+}
+
 function publicValue(record: { recordType: string; ownerUserId: string; id: string } & Record<string, unknown>) {
   return Object.fromEntries(Object.entries(record).filter(([key]) => !["recordType", "ownerUserId", "id"].includes(key)))
 }
@@ -1764,7 +1826,7 @@ function kind<Kind extends CanonicalWorkGraphArchiveRecord["kind"]>(value: Kind)
 }
 
 function workSourceOriginReference(origin: WorkSourceOrigin) {
-  if (origin.kind === "manual") return null
+  if (origin.kind === "manual") return origin.derivedFromExternal ? JSON.stringify({ derivedFromExternal: true }) : null
   if (origin.kind === "authoring") return JSON.stringify({
     adapterId: origin.adapterId,
     projectId: origin.projectId,

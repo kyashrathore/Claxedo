@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createFileWorkGraphSessionBindingStore, createHarnessWorkGraphGateway, createSessionV2WorkGraphGateway } from "./workgraph-session-gateway"
 import type { ConnectionsService } from "@claxedo/connections"
 import { ActorIDSchema, OwnerUserIDSchema, RequestIDSchema } from "@claxedo/workgraph/contracts"
@@ -461,6 +461,179 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       "POST /api/session/ses_connected/interrupt",
       "DELETE /api/session/ses_connected/tool",
     ])
+  })
+
+  it("replaces a stable Session Connection callback without leaving the prior callback live", async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const gateway = createSessionV2WorkGraphGateway(async (request) => {
+      calls.push({
+        path: new URL(request.url).pathname,
+        method: request.method,
+        ...(request.body ? { body: await request.clone().json() } : {}),
+      })
+      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_master_stream_1" })
+      return request.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ data: { admittedSeq: 1 } })
+    }, {
+      connections: {
+        getById: async () => ({ id: "connection-1", integrationId: "github", owner: "org:acme", grantedCapabilities: ["work-source"] }),
+        getToken: async () => ({ ok: true, response: { token: "live-secret", tokenType: "bearer" } }),
+        reportAuthFailure: async () => undefined,
+      } as unknown as ConnectionsService,
+      resolveTeamOwner: (context) => `org:${context.organizationId}`,
+      connectors: {
+        github: {
+          provider: "github",
+          list: async () => ({ issues: [] }),
+          comment: async () => undefined,
+          update: async () => undefined,
+        },
+      },
+    })
+    const admission = {
+      attemptId: "master_stream_1",
+      streamId: "stream_1",
+      sessionId: "ses_master_stream_1",
+      directory: "/repo",
+      title: "Master",
+      prompt: "Continue the master turn",
+      profile: { ...profile, tools: ["connection_work_source_comment"], connectionIds: ["connection-1" as never] },
+      context: {
+        organizationId: "acme" as never,
+        ownerUserId: OwnerUserIDSchema.parse("local"),
+        actor: { type: "agent" as const, id: ActorIDSchema.parse("ses_master_stream_1") },
+        requestId: RequestIDSchema.parse("request-rebind"),
+        access: { mode: "owner" as const },
+      },
+    }
+
+    await gateway.admit(admission)
+    const firstCallback = (calls.find((call) => call.path === "/api/session/ses_master_stream_1/tool")?.body as { callbackUrl: string }).callbackUrl
+    await gateway.admit(admission)
+    const callbacks = calls
+      .filter((call) => call.path === "/api/session/ses_master_stream_1/tool" && call.method === "POST")
+      .map((call) => (call.body as { callbackUrl: string }).callbackUrl)
+
+    expect(callbacks).toHaveLength(2)
+    expect(callbacks[1]).not.toBe(firstCallback)
+    const invoke = (callbackUrl: string) => fetch(callbackUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID: "ses_master_stream_1",
+        name: "connection_work_source_comment",
+        input: {
+          connectionId: "connection-1",
+          externalId: "42",
+          body: "Done",
+          idempotencyKey: "comment-once",
+        },
+      }),
+    }).then((response) => response.status, () => 0)
+    await expect(invoke(firstCallback)).resolves.toBe(0)
+    await expect(invoke(callbacks[1]!)).resolves.toBe(200)
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /api/session",
+      "POST /api/session/ses_master_stream_1/tool",
+      "POST /api/session/ses_master_stream_1/prompt",
+      "POST /api/session",
+      "DELETE /api/session/ses_master_stream_1/tool",
+      "POST /api/session/ses_master_stream_1/tool",
+      "POST /api/session/ses_master_stream_1/prompt",
+    ])
+    await gateway.cancel("ses_master_stream_1", "test cleanup")
+  })
+
+  it("opens a draft PR through the bound code-host capability and persists its durable receipt", async () => {
+    const calls: Array<{ path: string; body?: unknown }> = []
+    const recordPullRequest = vi.fn(async () => ({ durableEffectReceiptId: "receipt_pr_1", evidenceId: "evidence_pr_1" }))
+    const claim = vi.fn(async () => ({ state: "claimed" as const, outboxId: "outbox_pr_1", leaseId: "lease_pr_1" }))
+    const complete = vi.fn(async (_context, input) => input.result)
+    const gateway = createSessionV2WorkGraphGateway(async (request) => {
+      calls.push({
+        path: new URL(request.url).pathname,
+        ...(request.body ? { body: await request.clone().json() } : {}),
+      })
+      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_master_stream_1" })
+      return Response.json({ data: { admittedSeq: 1 } })
+    }, {
+      connections: {
+        getById: async () => ({ id: "connection-1", integrationId: "github", owner: "org:acme", grantedCapabilities: ["code-host"] }),
+        getToken: async () => ({ ok: true, response: { token: "live-secret", tokenType: "bearer" } }),
+        reportAuthFailure: async () => undefined,
+      } as unknown as ConnectionsService,
+      resolveTeamOwner: (context) => `org:${context.organizationId}`,
+      codeHostConnectors: {
+        github: {
+          provider: "github",
+          openPullRequest: async (_authorization, input) => ({
+            pullRequestId: "42",
+            url: "https://github.com/acme/repo/pull/42",
+            draft: input.draft,
+          }),
+        },
+      },
+      recordPullRequest,
+      pullRequestEffects: { claim, complete, fail: vi.fn(async () => undefined) },
+    })
+    const context = {
+      organizationId: "acme" as never,
+      ownerUserId: OwnerUserIDSchema.parse("local"),
+      actor: { type: "agent" as const, id: ActorIDSchema.parse("ses_master_stream_1") },
+      requestId: RequestIDSchema.parse("request-pr"),
+      access: { mode: "owner" as const },
+    }
+
+    await gateway.admit({
+      attemptId: "master_stream_1",
+      streamId: "stream_1",
+      sessionId: "ses_master_stream_1",
+      directory: "/repo",
+      title: "Master",
+      prompt: "Open the draft PR",
+      profile: { ...profile, tools: ["connection_code_host_open_pr"], connectionIds: ["connection-1" as never] },
+      context,
+    })
+    const callbackUrl = (calls.find((call) => call.path === "/api/session/ses_master_stream_1/tool")?.body as { callbackUrl: string }).callbackUrl
+    const response = await fetch(callbackUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID: "ses_master_stream_1",
+        name: "connection_code_host_open_pr",
+        input: {
+          connectionId: "connection-1",
+          repository: "acme/repo",
+          head: "workgraph/stream-1",
+          base: "dev",
+          title: "feat: ship",
+          idempotencyKey: "stream-1:pr",
+        },
+      }),
+    })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      type: "open_pull_request",
+      draft: true,
+      durableEffectReceiptId: "receipt_pr_1",
+      evidenceId: "evidence_pr_1",
+    })
+    expect(recordPullRequest).toHaveBeenCalledWith(context, expect.objectContaining({
+      streamId: "stream_1",
+      attemptId: "master_stream_1",
+      idempotencyKey: "stream-1:pr",
+      draft: true,
+    }))
+    expect(claim).toHaveBeenCalledWith(context, expect.objectContaining({
+      streamId: "stream_1",
+      attemptId: "master_stream_1",
+      idempotencyKey: "stream-1:pr",
+      draft: true,
+    }))
+    expect(complete).toHaveBeenCalledWith(context, expect.objectContaining({
+      outboxId: "outbox_pr_1",
+      leaseId: "lease_pr_1",
+      result: expect.objectContaining({ durableEffectReceiptId: "receipt_pr_1" }),
+    }))
   })
 
   it("binds Attempt tools to trusted execution identity and removes them on cancel", async () => {

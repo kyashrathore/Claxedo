@@ -332,6 +332,19 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       type: "set_stream_lifecycle",
       ...stream,
     }),
+    updateStreamCharter: async (streamId: string, expectedVersion: number, text: string) => execute({
+      version: 1,
+      type: "set_stream_charter",
+      streamId,
+      expectedVersion,
+      charter: { text, hash: await sha256(text) },
+    }),
+    confirmPublicPr: (streamId: string, expectedVersion: number) => execute({
+      version: 1,
+      type: "confirm_public_pr",
+      streamId,
+      expectedVersion,
+    }),
     updateStreamSettings: (
       streamId: string,
       expectedVersion: number,
@@ -573,5 +586,10 @@ export function parseApproveWorkItemsResult(result: CommandResult): ApproveWorkI
 }
 
 export type WorkGraphClient = ReturnType<typeof createWorkGraphClient>
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
 export type SourceView = z.infer<typeof SourceViewDtoSchema>
 export type IntakeCandidate = z.infer<typeof IntakeCandidateDtoSchema>

@@ -25,6 +25,7 @@ const ownerTablesInDeletionOrder = [
   "wg_v2_events",
   "wg_v2_outbox",
   "wg_v2_due_jobs",
+  "wg_v2_master_mailbox",
   "wg_v2_stream_cleanup_reservations",
   "wg_v2_runtime_effects",
   "wg_v2_leases",
@@ -287,7 +288,11 @@ function isQuiescent(database: RawDatabase, context: WorkGraphContext) {
     "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE organization_id = ? AND owner_user_id = ? AND state = 'reserved' LIMIT 1",
     "SELECT 1 FROM wg_v2_admission_proposals WHERE organization_id = ? AND owner_user_id = ? AND lifecycle = 'planning' LIMIT 1",
     "SELECT 1 FROM wg_v2_outbox WHERE organization_id = ? AND owner_user_id = ? AND status != 'completed' LIMIT 1",
-    "SELECT 1 FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND status IN ('pending', 'running', 'claimed') LIMIT 1",
+    `SELECT 1 FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ?
+      AND status IN ('pending', 'running', 'claimed')
+      AND NOT (status = 'pending' AND job_type = 'master_wake' AND stream_id IS NOT NULL
+        AND subject_id = stream_id || ':schedule' AND claimed_by IS NULL AND claim_expires_at IS NULL)
+      LIMIT 1`,
   ]
   return checks.every((query) => !database.prepare(query).get(context.organizationId, context.ownerUserId))
 }

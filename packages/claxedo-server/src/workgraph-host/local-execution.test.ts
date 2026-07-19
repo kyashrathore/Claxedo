@@ -106,6 +106,95 @@ describe("local WorkGraph workspace execution", () => {
     })])
   })
 
+  it("revalidates the moving envelope head and mechanically rejects a gamed landing", async () => {
+    const root = await repositoryFixture("workgraph-local-landing")
+    const repository = `${root}/repository`
+    const execution = adapter(root, `${root}/worktrees`)
+    const streamId = "stream-landing" as StreamID
+    const envelope = await execution.provisionOrAdopt(owner(), {
+      streamId,
+      environment: { kind: "local_worktree" },
+      repository: { baseRevision: "HEAD" },
+    })
+    const before = (await run("git", ["-C", envelope.workspaceId, "rev-parse", "HEAD"])).stdout.trim()
+    await fs.writeFile(path.join(repository, "honest.ts"), "export const answer = 42\n")
+    await run("git", ["-C", repository, "add", "honest.ts"])
+    await run("git", ["-C", repository, "commit", "-m", "honest candidate"])
+    const honest = (await run("git", ["-C", repository, "rev-parse", "HEAD"])).stdout.trim()
+
+    const receipt = await execution.land!(owner(), {
+      streamId,
+      candidateRevision: honest,
+      expectedHead: before,
+    })
+    expect(receipt).toMatchObject({ beforeHead: before, diffRef: `${before}..${receipt.afterHead}` })
+
+    await fs.writeFile(path.join(repository, "honest.ts"), "export const answer: any = 42\n")
+    await run("git", ["-C", repository, "add", "honest.ts"])
+    await run("git", ["-C", repository, "commit", "-m", "gamed candidate"])
+    const gamed = (await run("git", ["-C", repository, "rev-parse", "HEAD"])).stdout.trim()
+    await expect(execution.land!(owner(), {
+      streamId,
+      candidateRevision: gamed,
+      expectedHead: receipt.afterHead,
+    })).rejects.toMatchObject({
+      code: "landing_integrity_violation",
+      findings: [expect.objectContaining({ path: "honest.ts", rule: "typescript_any" })],
+    })
+    await expect(execution.land!(owner(), {
+      streamId,
+      candidateRevision: gamed,
+      expectedHead: before,
+    })).rejects.toThrow("landing_head_changed")
+  })
+
+  it("rebases the envelope onto a mid-flight trunk commit before revalidating and landing queued work", async () => {
+    const root = await repositoryFixture("workgraph-local-scheduled-rebase")
+    const repository = `${root}/repository`
+    const candidateDirectory = `${root}/candidate`
+    await run("git", ["-C", repository, "branch", "trunk"])
+    await run("git", ["-C", repository, "worktree", "add", "-b", "task-candidate", candidateDirectory, "trunk"])
+    await fs.writeFile(path.join(candidateDirectory, "feature.ts"), "export const feature = 'ready'\n")
+    await run("git", ["-C", candidateDirectory, "add", "feature.ts"])
+    await run("git", ["-C", candidateDirectory, "commit", "-m", "task candidate"])
+    const candidateRevision = (await run("git", ["-C", candidateDirectory, "rev-parse", "HEAD"])).stdout.trim()
+
+    const execution = adapter(root, `${root}/worktrees`)
+    const streamId = "stream-scheduled-rebase" as StreamID
+    const envelope = await execution.provisionOrAdopt(owner(), {
+      streamId,
+      environment: { kind: "local_worktree" },
+      repository: { baseRevision: "trunk" },
+    })
+    const originalHead = (await run("git", ["-C", envelope.workspaceId, "rev-parse", "HEAD"])).stdout.trim()
+
+    await run("git", ["-C", repository, "checkout", "trunk"])
+    await fs.writeFile(path.join(repository, "teammate.ts"), "export const teammate = 'landed mid-flight'\n")
+    await run("git", ["-C", repository, "add", "teammate.ts"])
+    await run("git", ["-C", repository, "commit", "-m", "teammate trunk change"])
+    const movingTrunkHead = (await run("git", ["-C", repository, "rev-parse", "trunk"])).stdout.trim()
+
+    // This is the scheduled master's normal git-tool duty: move its serialized
+    // envelope to current trunk before it asks the landing port to validate.
+    await run("git", ["-C", envelope.workspaceId, "rebase", "trunk"])
+    await expect(execution.land!(owner(), {
+      streamId,
+      candidateRevision,
+      expectedHead: originalHead,
+    })).rejects.toThrow("landing_head_changed")
+
+    const receipt = await execution.land!(owner(), {
+      streamId,
+      candidateRevision,
+      expectedHead: movingTrunkHead,
+    })
+    expect(receipt).toMatchObject({ beforeHead: movingTrunkHead, diffRef: `${movingTrunkHead}..${receipt.afterHead}` })
+    await expect(fs.readFile(path.join(envelope.workspaceId, "teammate.ts"), "utf8"))
+      .resolves.toBe("export const teammate = 'landed mid-flight'\n")
+    await expect(fs.readFile(path.join(envelope.workspaceId, "feature.ts"), "utf8"))
+      .resolves.toBe("export const feature = 'ready'\n")
+  })
+
   it("uses the registered worktree service and exposes its routable workspace identity", async () => {
     const root = await repositoryFixture("workgraph-registered")
     const repository = `${root}/repository`

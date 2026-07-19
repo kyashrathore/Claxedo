@@ -2,22 +2,26 @@ import type { ConnectionsPort } from "@claxedo/workgraph"
 import type { ConnectionID, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import {
   createGitHubSourceIssueConnector,
+  createGitHubCodeHostConnector,
   createJiraSourceIssueConnector,
   createLinearSourceIssueConnector,
   type SourceIssue,
   type SourceIssueConnector,
+  type CodeHostConnector,
 } from "@claxedo/workgraph/connectors"
 
 export const CONNECTION_OPERATION_TOOLS = {
   list: "connection_work_source_list",
   comment: "connection_work_source_comment",
   update: "connection_work_source_update",
+  open_pull_request: "connection_code_host_open_pr",
 } as const
 
 export type ConnectionOperation =
   | Readonly<{ type: "list"; providerUserId: string; filters: Readonly<Record<string, string>>; cursor?: string }>
   | Readonly<{ type: "comment"; externalId: string; body: string; idempotencyKey: string }>
   | Readonly<{ type: "update"; externalId: string; status?: string; body?: string; idempotencyKey: string }>
+  | Readonly<{ type: "open_pull_request"; repository: string; head: string; base: string; title: string; body?: string; draft: boolean; publicRepository: boolean; idempotencyKey: string }>
 
 export type ConnectionOperationIdentity = Readonly<{
   attemptId: string
@@ -48,12 +52,14 @@ export function createConnectionOperationBroker(input: Readonly<{
   bindings: ConnectionOperationBindingPort
   connections: ConnectionsPort
   connectors?: Readonly<Record<string, SourceIssueConnector>>
+  codeHostConnectors?: Readonly<Record<string, CodeHostConnector>>
 }>) {
   const connectors = input.connectors ?? {
     github: createGitHubSourceIssueConnector(),
     linear: createLinearSourceIssueConnector(),
     jira: createJiraSourceIssueConnector(),
   }
+  const codeHostConnectors = input.codeHostConnectors ?? { github: createGitHubCodeHostConnector() }
   return {
     async execute(
       identity: ConnectionOperationIdentity,
@@ -66,26 +72,34 @@ export function createConnectionOperationBroker(input: Readonly<{
         binding.attemptId !== identity.attemptId || binding.sessionId !== identity.sessionId ||
         binding.workspaceId !== identity.workspaceId || !binding.connectionIds.includes(identity.connectionId) ||
         !binding.tools.includes(tool)) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Attempt")
+      const capability = operation.type === "open_pull_request" ? "code-host" : "work-source"
       const handles = await input.connections.resolveCapabilities(binding.context, {
         connectionIds: [identity.connectionId],
-        capability: "work-source",
+        capability,
       })
-      const handle = handles.length === 1 && handles[0]?.id === identity.connectionId ? handles[0] : undefined
+      const handle = handles.length === 1 && handles[0]?.id === identity.connectionId && handles[0].capability === capability
+        ? handles[0]
+        : undefined
       const provider = handle?.integrationId === "atlassian" ? "jira" : handle?.integrationId
-      const connector = provider ? connectors[provider] : undefined
-      if (!handle || !connector || connector.provider !== provider) {
+      const sourceConnector = provider && operation.type !== "open_pull_request" ? connectors[provider] : undefined
+      const codeHostConnector = provider && operation.type === "open_pull_request" ? codeHostConnectors[provider] : undefined
+      if (!handle || (!sourceConnector && !codeHostConnector) || (sourceConnector ?? codeHostConnector)?.provider !== provider) {
         throw new ConnectionOperationDeniedError("Connection capability is unavailable")
       }
       return handle.withAuthorization(async (authorization) => {
+        if (operation.type === "open_pull_request") {
+          const result = await codeHostConnector!.openPullRequest(authorization, operation)
+          return { type: "open_pull_request" as const, ...result }
+        }
         if (operation.type === "list") {
-          const result = await connector.list(authorization, operation)
+          const result = await sourceConnector!.list(authorization, operation)
           return { type: "list" as const, issues: result.issues.map(sanitizeIssue), ...(result.cursor ? { cursor: result.cursor } : {}) }
         }
         if (operation.type === "comment") {
-          await connector.comment(authorization, operation)
+          await sourceConnector!.comment(authorization, operation)
           return { type: "comment" as const, ok: true as const }
         }
-        await connector.update(authorization, operation)
+        await sourceConnector!.update(authorization, operation)
         return { type: "update" as const, ok: true as const }
       }).catch(async (error) => {
         if (error && typeof error === "object" && "status" in error && error.status === 401) {

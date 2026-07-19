@@ -519,6 +519,8 @@ describe("WorkGraph API", () => {
       execution: { effort: "high" },
       activityGranularity: "detailed",
     })
+    await client.updateStreamCharter("stream_1", 6, "Draft PRs only")
+    await client.confirmPublicPr("stream_1", 7)
     await client.updateWorkItemExecution("item_1", 3, {})
     await client.approveWorkItem("item_1", 3)
     await client.rejectWorkItem("item_2", 4, "Not needed")
@@ -537,6 +539,8 @@ describe("WorkGraph API", () => {
       { operationId: "operation_fixed", command: { version: 1, type: "create_work_item", streamId: "stream_1", outcomeId: "outcome_1", title: "Run deployment", dependencyIds: ["item_0"], completionContract: { version: 1, mode: "all", requirements: [{ id: "requirement_1", kind: "verification", description: "Smoke test passes", instructions: "Run smoke test" }] } } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_outcome", outcomeId: "outcome_1", expectedVersion: 2, execution: { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } } } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_stream", streamId: "stream_1", expectedVersion: 5, execution: { effort: "high" }, activityGranularity: "detailed" } },
+      { operationId: "operation_fixed", command: { version: 1, type: "set_stream_charter", streamId: "stream_1", expectedVersion: 6, charter: { text: "Draft PRs only", hash: "9a565e9c458cbd092f7f9d9d700736031a9734c08f09b07d2f3bf47e3480cb74" } } },
+      { operationId: "operation_fixed", command: { version: 1, type: "confirm_public_pr", streamId: "stream_1", expectedVersion: 7 } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_work_item", workItemId: "item_1", expectedVersion: 3, execution: {} } },
       { operationId: "operation_fixed", command: { version: 1, type: "approve_work_item", workItemId: "item_1", expectedVersion: 3 } },
       { operationId: "operation_fixed", command: { version: 1, type: "reject_work_item", workItemId: "item_2", expectedVersion: 4, reason: "Not needed" } },

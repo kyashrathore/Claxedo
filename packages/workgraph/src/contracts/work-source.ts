@@ -18,7 +18,7 @@ export const AuthoringSourceRevisionSchema = z.strictObject({
 export type AuthoringSourceRevision = z.infer<typeof AuthoringSourceRevisionSchema>
 
 export const WorkSourceOriginSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("manual") }),
+  z.strictObject({ kind: z.literal("manual"), derivedFromExternal: z.boolean().optional() }),
   z.strictObject({
     kind: z.literal("external"),
     provider: z.string().trim().min(1),

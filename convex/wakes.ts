@@ -178,7 +178,11 @@ export async function createLaneWakeIfIdle(
     .query("wakes")
     .withIndex("by_lane_state", (q: any) => q.eq("serial_key", wake.serialKey).eq("state", "pending"))
     .collect()
-  const existing = pending.find((doc) => doc.kind === wake.kind)
+  // A recurring schedule and an immediate dirty-flag wake share a serialized
+  // lane but represent different work. Keep one of each: otherwise tomorrow's
+  // scheduled wake can silently swallow a Task settlement that is due now.
+  const existing = pending.find((doc) =>
+    doc.kind === wake.kind && (wake.schedule == null ? doc.schedule == null : doc.schedule === wake.schedule))
   if (existing) return { wakeId: existing.id, created: false }
   const result = await createWakeInTx(ctx, wake)
   return { wakeId: result.wakeId, created: true }

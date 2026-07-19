@@ -453,4 +453,119 @@ describe("channels ingress", () => {
       secret: JSON.stringify({ version: 2 }),
     })
   })
+
+  test("delivers one idempotent proactive notification to the owner's latest bound channel thread", async () => {
+    const svc = services({ signed: true })
+    const claims = new Set<string>()
+    Object.assign(svc.projectionStore, {
+      channel_run_audits: vi.fn(async () => [{
+        sessionId: "session-owner",
+        channel: "slack",
+        externalUserId: "U-OWNER-NOTIFY",
+        threadKey: "slack:team:channel:thread",
+        workspaceId: null,
+        cost: null,
+        createdAt: 10,
+      }]),
+      claim_channel_delivery: vi.fn(async (input: { channel: string; idempotencyKey: string }) => {
+        const key = `${input.channel}:${input.idempotencyKey}`
+        if (claims.has(key)) return { ok: true, duplicate: true }
+        claims.add(key)
+        return { ok: true, duplicate: false }
+      }),
+      release_channel_delivery: vi.fn(async (input: { channel: string; idempotencyKey: string }) => {
+        claims.delete(`${input.channel}:${input.idempotencyKey}`)
+      }),
+    })
+    const posts: string[] = []
+    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const channels = createControlPlaneChannels({
+      services: svc,
+      runtime: centralControl.runtime,
+      env: { CLAXEDO_CHANNEL_SLACK_ENABLED: "true" },
+      chatBot: {
+        webhooks: {},
+        thread: () => ({ post: async (text) => posts.push(String(text)) }),
+      },
+    })
+    await channels.bindings.put({
+      channel: "slack",
+      externalUserId: "U-OWNER-NOTIFY",
+      accountId: "owner-notify",
+      status: "bound",
+      boundAt: 1,
+    })
+
+    await expect(channels.notifyOwner({
+      ownerUserId: "owner-notify",
+      idempotencyKey: "master-tool-1",
+      text: "Stream is ready",
+      now: 20,
+    })).resolves.toMatchObject({ channel: "slack", duplicate: false })
+    await expect(channels.notifyOwner({
+      ownerUserId: "owner-notify",
+      idempotencyKey: "master-tool-1",
+      text: "Stream is ready",
+      now: 20,
+    })).resolves.toMatchObject({ channel: "slack", duplicate: true })
+    expect(posts).toEqual(["Stream is ready"])
+  })
+
+  test("never treats global allow-list seeds as notification recipients for another owner", async () => {
+    const svc = services({ signed: true })
+    Object.assign(svc.projectionStore, {
+      channel_run_audits: vi.fn(async (input: { externalUserId?: string }) => [{
+        sessionId: `session-${input.externalUserId}`,
+        channel: "slack",
+        externalUserId: input.externalUserId ?? "",
+        threadKey: `slack:team:channel:${input.externalUserId}`,
+        workspaceId: null,
+        cost: null,
+        createdAt: input.externalUserId === "U-OWNER-NOTIFY" ? 10 : 20,
+      }]),
+      claim_channel_delivery: vi.fn(async () => ({ ok: true, duplicate: false })),
+      release_channel_delivery: vi.fn(async () => {}),
+    })
+    const posts: Array<{ threadKey: string; text: string }> = []
+    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const channels = createControlPlaneChannels({
+      services: svc,
+      runtime: centralControl.runtime,
+      env: {
+        CLAXEDO_CHANNEL_SLACK_ENABLED: "true",
+        CLAXEDO_CHANNEL_ALLOW_FROM: "slack:U-OWNER-NOTIFY,slack:U-OTHER-ALLOWLISTED",
+      },
+      chatBot: {
+        webhooks: {},
+        thread: (threadKey) => ({ post: async (text) => posts.push({ threadKey, text: String(text) }) }),
+      },
+    })
+    await channels.bindings.put({
+      channel: "slack",
+      externalUserId: "U-OWNER-NOTIFY",
+      accountId: "owner-notify",
+      status: "bound",
+      boundAt: 1,
+    })
+    await channels.bindings.put({
+      channel: "slack",
+      externalUserId: "U-OTHER-ALLOWLISTED",
+      accountId: "other-owner",
+      status: "bound",
+      boundAt: 1,
+    })
+
+    await expect(channels.notifyOwner({
+      ownerUserId: "owner-notify",
+      idempotencyKey: "owner-only",
+      text: "Private owner update",
+      now: 20,
+    })).resolves.toMatchObject({ threadKey: "slack:team:channel:U-OWNER-NOTIFY" })
+    expect(posts).toEqual([{ threadKey: "slack:team:channel:U-OWNER-NOTIFY", text: "Private owner update" }])
+    expect(svc.projectionStore.channel_run_audits).toHaveBeenCalledTimes(1)
+    expect(svc.projectionStore.channel_run_audits).toHaveBeenCalledWith({
+      channel: "slack",
+      externalUserId: "U-OWNER-NOTIFY",
+    })
+  })
 })

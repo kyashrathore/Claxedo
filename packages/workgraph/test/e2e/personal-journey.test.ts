@@ -80,10 +80,10 @@ describe("canonical personal WorkGraph journey", () => {
       expectedVersion: 1,
       execution: profile,
     })).toMatchObject({ ok: true })
-    // Setting the execution profile lets the drain auto-admit the two ready approved
-    // items (backend, frontend); announce waits on backend.
-    expect((fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count).toBe(2)
-    expect(fixture.runtime.provisioned).toEqual([streamId, streamId])
+    // Setting the execution profile admits one ready item. The other independent
+    // item waits for the Stream's running Attempt to settle.
+    expect((fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count).toBe(1)
+    expect(fixture.runtime.provisioned).toEqual([streamId])
     expect(new Set(fixture.runtime.envelopes)).toEqual(new Set([`envelope:${streamId}`]))
 
     const decision = await fixture.execute("propose_decision", {
@@ -94,9 +94,9 @@ describe("canonical personal WorkGraph journey", () => {
       affectedWorkItemIds: [backend.id],
     })
     const running = await fixture.snapshot()
-    expect(running.records.filter((candidate) => candidate.recordType === "attempt").map((attempt) => attempt.state)).toEqual(["running", "running"])
+    expect(running.records.filter((candidate) => candidate.recordType === "attempt").map((attempt) => attempt.state)).toEqual(["running"])
     expect(record(running, "decision", (candidate) => candidate.id === resultId(decision, "decisionId"))).toMatchObject({ state: "pending", affectedWorkItemIds: [backend.id] })
-    expect(record(running, "work_item", (candidate) => candidate.id === frontend.id).state).toBe("active")
+    expect(record(running, "work_item", (candidate) => candidate.id === frontend.id).state).toBe("pending")
 
     expect(await fixture.execute("answer_decision", {
       decisionId: resultId(decision, "decisionId"),
@@ -106,11 +106,10 @@ describe("canonical personal WorkGraph journey", () => {
     fixture.runtime.succeedAll()
     await fixture.reconcile()
     expect((await fixture.snapshot()).records.filter((candidate) => candidate.recordType === "attempt").map((attempt) => attempt.state))
-      .toEqual(["running", "running"])
-    await Promise.all([
-      fixture.completeAttempt(backend.id, "backend-proof"),
-      fixture.completeAttempt(frontend.id, "frontend-proof"),
-    ])
+      .toEqual(["running"])
+    await fixture.completeAttempt(backend.id, "backend-proof")
+    expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === frontend.id).state).toBe("active")
+    await fixture.completeAttempt(frontend.id, "frontend-proof")
     const settled = await fixture.snapshot()
     expect(settled.records.filter((candidate) => candidate.recordType === "attempt")).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "result", result: expect.objectContaining({ artifactRefs: expect.arrayContaining(["commit:e2e"]) }) }),

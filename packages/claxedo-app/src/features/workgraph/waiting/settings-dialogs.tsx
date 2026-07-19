@@ -6,8 +6,10 @@ import {
   type StreamDto,
   type StreamActivityGranularity,
   type WorkGraphDefaultsDto,
+  DEFAULT_STREAM_CHARTER_HINTS,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
+import { RichTextEditor } from "@/ui/rich-text"
 import type { WorkGraphApiError } from "../api"
 import { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
 import { createResource, createSignal, For, type JSX, Show } from "solid-js"
@@ -79,7 +81,7 @@ export function WorkGraphSettingsView(props: {
 
 export type StreamSettingsSource = {
   workgraphDefaults: () => Promise<WorkGraphDefaultsDto>
-  save: (streamId: string, expectedVersion: number, settings: { execution: ExecutionProfileDefaults; activityGranularity: StreamActivityGranularity }) => Promise<CommandResult>
+  save: (streamId: string, expectedVersion: number, settings: { execution: ExecutionProfileDefaults; activityGranularity: StreamActivityGranularity; charterText: string; charterChanged: boolean }) => Promise<CommandResult>
 }
 
 type StreamSettingsProps = {
@@ -122,36 +124,45 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
   // The surface may stay mounted while closed, so a single-arg fetcher would run
   // once while inactive and never refetch when it becomes visible.
   const [inherited, { refetch }] = createResource(
-    () => (props.active && props.stream ? props.stream : undefined),
+    () => (props.active ? props.stream?.id : undefined),
     () => props.source.workgraphDefaults(),
   )
   return (
-    <Show when={props.stream} keyed>
-      {(stream) => (
-        <DetailState resource={inherited} retry={refetch}>
-          {(workgraph) => (
-            <SettingsForm
-              variant="dialog"
-              flush={props.flush}
-              showActivity
-              execution={stream.executionDefaults}
-              activityGranularity={stream.activityGranularity}
-              inheritedExecution={workgraph.defaults.execution}
-              capabilities={props.capabilities}
-              capabilitiesError={props.capabilitiesError}
-              capabilitiesLoading={props.capabilitiesLoading}
-              localProjects={props.localProjects}
-              onChooseLocalProject={props.onChooseLocalProject}
-              onCancel={props.onClose}
-              save={async (execution, activityGranularity) => {
-                const result = await props.source.save(stream.id, stream.version, { execution, activityGranularity: activityGranularity ?? "progress" })
-                if (result.ok) props.onClose()
-                return result
-              }}
-            />
-          )}
-        </DetailState>
-      )}
+    <Show when={props.stream?.id} keyed>
+      {(_streamId) => {
+        const stream = props.stream!
+        return (
+          <DetailState resource={inherited} retry={refetch}>
+            {(workgraph) => (
+              <SettingsForm
+                variant="dialog"
+                flush={props.flush}
+                showActivity
+                execution={stream.executionDefaults}
+                charterText={stream.charter?.text ?? ""}
+                activityGranularity={stream.activityGranularity}
+                inheritedExecution={workgraph.defaults.execution}
+                capabilities={props.capabilities}
+                capabilitiesError={props.capabilitiesError}
+                capabilitiesLoading={props.capabilitiesLoading}
+                localProjects={props.localProjects}
+                onChooseLocalProject={props.onChooseLocalProject}
+                onCancel={props.onClose}
+                save={async (execution, activityGranularity, charterText) => {
+                  const result = await props.source.save(stream.id, stream.version, {
+                    execution,
+                    activityGranularity: activityGranularity ?? "progress",
+                    charterText: charterText ?? "",
+                    charterChanged: (charterText ?? "") !== (stream.charter?.text ?? ""),
+                  })
+                  if (result.ok) props.onClose()
+                  return result
+                }}
+              />
+            )}
+          </DetailState>
+        )
+      }}
     </Show>
   )
 }
@@ -170,6 +181,7 @@ type SettingsFormProps = {
   showActivity: boolean
   execution: ExecutionProfileDefaults
   activityGranularity?: StreamActivityGranularity
+  charterText?: string
   inheritedExecution?: ExecutionProfileDefaults
   capabilities?: ExecutionCapabilities
   capabilitiesError?: WorkGraphApiError
@@ -177,7 +189,7 @@ type SettingsFormProps = {
   localProjects?: readonly LocalProjectOption[]
   onChooseLocalProject?: () => Promise<string | undefined>
   onCancel: () => void
-  save: (execution: ExecutionProfileDefaults, activityGranularity?: StreamActivityGranularity) => Promise<CommandResult>
+  save: (execution: ExecutionProfileDefaults, activityGranularity?: StreamActivityGranularity, charterText?: string) => Promise<CommandResult>
 }
 
 /** Remount once a capability catalog arrives so catalog-derived defaults are
@@ -231,6 +243,7 @@ function SettingsFormBody(props: SettingsFormProps) {
   const [connectionIds, setConnectionIds] = createSignal<ConnectionId[]>([...(props.execution.connectionIds ?? [])])
   const [connectionsOverride, setConnectionsOverride] = createSignal(props.execution.connectionIds !== undefined)
   const [activityGranularity, setActivityGranularity] = createSignal<StreamActivityGranularity>(props.activityGranularity ?? "progress")
+  const [charter, setCharter] = createSignal(props.charterText ?? "")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
 
@@ -418,7 +431,11 @@ function SettingsFormBody(props: SettingsFormProps) {
     setBusy(true)
     setError()
     try {
-      const result = await props.save(buildExecution(), props.showActivity ? activityGranularity() : undefined)
+      const result = await props.save(
+        buildExecution(),
+        props.showActivity ? activityGranularity() : undefined,
+        props.showActivity ? charter() : undefined,
+      )
       if (!result.ok) setError(result.error.code === "version_conflict" ? "These settings changed elsewhere. Reload before saving." : result.error.message)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -431,6 +448,23 @@ function SettingsFormBody(props: SettingsFormProps) {
     <div class="workgraph-settings-form" classList={{ "is-dialog": !!props.flush }}>
       <div class="workgraph-settings-scroll">
         <div class="workgraph-settings">
+          <Show when={props.showActivity}>
+            <div class="workgraph-settings-section-title">Charter</div>
+            <div class="workgraph-settings-charter">
+              <RichTextEditor
+                value={charter()}
+                onChange={setCharter}
+                ariaLabel="Stream charter"
+                placeholder="Describe how this Stream should operate…"
+              />
+              <Show when={!charter().trim()}>
+                <div class="workgraph-settings-charter-defaults" role="note">
+                  <div>Blank charter defaults</div>
+                  <ul>{DEFAULT_STREAM_CHARTER_HINTS.map((hint) => <li>{hint}</li>)}</ul>
+                </div>
+              </Show>
+            </div>
+          </Show>
           <Show when={props.showActivity}>
             <div class="workgraph-settings-section-title">Execution</div>
           </Show>

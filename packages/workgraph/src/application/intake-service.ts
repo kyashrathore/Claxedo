@@ -154,7 +154,7 @@ export function createIntakeService(input: Readonly<{
         ...(candidate.candidateKind === "session" && candidate.execution
           ? { execution: candidate.execution }
           : candidate.candidateKind === "external_issue"
-            ? await sourceViewExecution(input.sourceViews, context, candidate.sourceViewId)
+            ? await sourceViewExecution(input.sourceViews, input.connections, context, candidate.sourceViewId)
             : {}),
       })
       if (!proposalResult.ok) throw new IntakeStateError(proposalResult.error.message)
@@ -210,14 +210,24 @@ export function createIntakeService(input: Readonly<{
   }
 }
 
-async function sourceViewExecution(store: SourceViewStore, context: WorkGraphContext, sourceViewId: string) {
+async function sourceViewExecution(
+  store: SourceViewStore,
+  connections: ConnectionsPort,
+  context: WorkGraphContext,
+  sourceViewId: string,
+) {
   const sourceView = await requireSourceView(store, context, sourceViewId)
   if (!sourceView.target) throw new IntakeStateError("Source view requires a Stream target before admission")
+  const codeHost = await connections.resolveCapabilities(context, {
+    connectionIds: [sourceView.teamConnectionId],
+    capability: "code-host",
+  })
   return {
     execution: {
       ...sourceView.target,
       connectionIds: [sourceView.teamConnectionId],
-      tools: [...WorkGraphConnectionToolNames],
+      tools: WorkGraphConnectionToolNames.filter((tool) =>
+        tool !== "connection_code_host_open_pr" || codeHost.some((handle) => handle.id === sourceView.teamConnectionId)),
     },
   }
 }

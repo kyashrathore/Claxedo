@@ -32,6 +32,7 @@ import {
   WorkGraphDefaultsDtoSchema,
   WorkItemDtoSchema,
   WorkSourceDtoSchema,
+  WorkSourceOriginSchema,
   WorkSourceRevisionDtoSchema,
   type ExecutionCapabilities,
   type ExecutionProfileDefaults,
@@ -78,7 +79,7 @@ import type {
   WorkGraphEventType,
   ChangeResource,
 } from "../../contracts"
-import { dependencyGraphHasCycle } from "../../domain"
+import { dependencyGraphHasCycle, renderStreamNotes } from "../../domain"
 import {
   AttemptDetailDtoSchema,
   WorkItemAttemptPageSchema,
@@ -145,6 +146,11 @@ const sqliteAttentionRows = `
     AND status IN ('pending', 'failed', 'failed_terminal', 'attention')
     AND last_error IS NOT NULL
     AND json_extract(payload_json, '$.configurationRequirement.type') = 'generation'
+  UNION ALL
+  SELECT 'master_escalation', id, CAST(updated_at AS INTEGER), job_type, subject_id, stream_id, last_error, payload_json
+  FROM wg_v2_due_jobs
+  WHERE organization_id = @organization AND owner_user_id = @owner AND job_type = 'master_wake'
+    AND status = 'attention' AND last_error IS NOT NULL
 `
 
 export const SQLITE_WORKGRAPH_SUPPORTED_COMMANDS = [
@@ -153,6 +159,12 @@ export const SQLITE_WORKGRAPH_SUPPORTED_COMMANDS = [
   "revise_work_source",
   "create_stream",
   "update_stream",
+  "set_stream_charter",
+  "call_master",
+  "update_stream_notes",
+  "request_public_pr_confirmation",
+  "confirm_public_pr",
+  "record_master_audit",
   "set_stream_lifecycle",
   "create_outcome",
   "update_outcome",
@@ -288,6 +300,7 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
   let replacementRetryTimer: ReturnType<typeof setTimeout> | undefined
   let placementCompensationRetryTimer: ReturnType<typeof setTimeout> | undefined
   let readyStreamsDrain: Promise<void> | undefined
+  let readyStreamsDrainRequested = false
   const scheduleReplacementDrain = () => {
     if (!input.execution || replacementRetryTimer || !database.open) return
     replacementRetryTimer = setTimeout(
@@ -333,15 +346,21 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
   }
   const drainReadyStreams = () => {
     if (!input.execution || !input.executionCapabilities || !database.open) return Promise.resolve()
+    readyStreamsDrainRequested = true
     if (readyStreamsDrain) return readyStreamsDrain
-    readyStreamsDrain = drainSqliteReadyStreams(
-      database,
-      input.execution,
-      input.executionCapabilities,
-      ids,
-      clock.now,
-      schedulePlacementCompensationDrain,
-    ).finally(() => {
+    readyStreamsDrain = (async () => {
+      while (readyStreamsDrainRequested) {
+        readyStreamsDrainRequested = false
+        await drainSqliteReadyStreams(
+          database,
+          input.execution!,
+          input.executionCapabilities!,
+          ids,
+          clock.now,
+          schedulePlacementCompensationDrain,
+        )
+      }
+    })().finally(() => {
       readyStreamsDrain = undefined
     })
     return readyStreamsDrain
@@ -612,6 +631,12 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
     revise_work_source: executeWithAutonomousContinuation,
     create_stream: executeWithAutonomousContinuation,
     update_stream: executeWithAutonomousContinuation,
+    set_stream_charter: executeWithAutonomousContinuation,
+    call_master: executeWithAutonomousContinuation,
+    update_stream_notes: executeWithAutonomousContinuation,
+    request_public_pr_confirmation: executeWithAutonomousContinuation,
+    confirm_public_pr: executeWithAutonomousContinuation,
+    record_master_audit: execute,
     set_stream_lifecycle: executeWithAutonomousContinuation,
     create_outcome: executeWithAutonomousContinuation,
     update_outcome: executeWithAutonomousContinuation,
@@ -793,6 +818,7 @@ export function createSqliteAttemptRuntime(
           },
           occurredAt,
         )
+        enqueueSqliteMasterWake(database, context, attempt.stream_id, occurredAt, "task_settled")
         return true
       })()
     },
@@ -1187,6 +1213,8 @@ function applyCommand(
     return pending("workgraph_defaults_updated", "workgraph", rootId, { workGraphId: rootId })
   }
   if (command.type === "create_stream") {
+    if (command.charter && !charterMatchesHash(command.charter))
+      return rejected(request.operationId, "validation_error", "Stream charter text does not match its declared hash")
     if (command.source) {
       const source = exactSourceHead(database, context, command.source)
       if (!source.exists) return rejected(request.operationId, "not_found", "Work Source revision not found")
@@ -1198,8 +1226,8 @@ function applyCommand(
       .prepare(
         `
       INSERT INTO wg_v2_streams
-        (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json, activity_granularity, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+        (organization_id, owner_user_id, id, workgraph_id, title, purpose, charter_json, lifecycle, execution_defaults_json, activity_granularity, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
     `,
       )
       .run(
@@ -1209,11 +1237,13 @@ function applyCommand(
         rootId,
         command.title,
         command.description ?? command.title,
+        command.charter ? JSON.stringify(command.charter) : null,
         JSON.stringify(command.execution ?? {}),
         command.activityGranularity ?? "progress",
         occurredAt,
         occurredAt,
       )
+    enqueueSqliteMasterSchedule(database, context, streamId, occurredAt)
     if (command.source) addSourceReference(database, context, ids, "stream", streamId, command.source, occurredAt)
     return pending("stream_created", "stream", streamId, { streamId }, streamId)
   }
@@ -1245,6 +1275,241 @@ function applyCommand(
         command.expectedVersion,
       )
     return pending("stream_updated", "stream", command.streamId, { streamId: command.streamId }, command.streamId)
+  }
+  if (command.type === "set_stream_charter") {
+    const stream = ownedStream(database, context, command.streamId)
+    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Stream version changed")
+    if (!charterMatchesHash(command.charter))
+      return rejected(request.operationId, "validation_error", "Stream charter text does not match its declared hash")
+    database
+      .prepare(
+        `
+      UPDATE wg_v2_streams SET charter_json = ?, row_version = row_version + 1, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
+    `,
+      )
+      .run(
+        JSON.stringify(command.charter),
+        occurredAt,
+        context.organizationId,
+        context.ownerUserId,
+        command.streamId,
+        command.expectedVersion,
+      )
+    return pending(
+      "stream_charter_updated",
+      "stream",
+      command.streamId,
+      { streamId: command.streamId, charterHash: command.charter.hash },
+      command.streamId,
+    )
+  }
+  if (command.type === "call_master") {
+    const stream = ownedStream(database, context, command.streamId)
+    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Stream version changed")
+    if (stream.lifecycle === "closed")
+      return rejected(request.operationId, "invalid_transition", "Closed Streams cannot receive master messages")
+    const messageId = ids.next("master_message")
+    database.prepare(`
+      INSERT INTO wg_v2_master_mailbox
+        (organization_id, owner_user_id, stream_id, id, message, provenance_json, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).run(
+      context.organizationId,
+      context.ownerUserId,
+      stream.id,
+      messageId,
+      command.message,
+      JSON.stringify({ actor: context.actor, operationId: request.operationId }),
+      occurredAt,
+      occurredAt,
+    )
+    enqueueSqliteMasterWake(database, context, stream.id, occurredAt, "mailbox")
+    return pending(
+      "master_called",
+      "stream",
+      stream.id,
+      { streamId: stream.id, mailboxMessageId: messageId },
+      stream.id,
+    )
+  }
+  if (command.type === "update_stream_notes") {
+    const stream = ownedStream(database, context, command.streamId)
+    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Stream version changed")
+    if (context.actor.type !== "agent" || context.actor.id !== `ses_master_${stream.id}`)
+      return rejected(request.operationId, "forbidden", "Only the Stream master can update Stream notes")
+    const invalidReference = command.externalReferences.find((reference) => {
+      const revision = database.prepare(`
+        SELECT content_hash, origin_kind FROM wg_v2_work_source_revisions
+        WHERE organization_id = ? AND owner_user_id = ? AND work_source_id = ? AND id = ?
+      `).get(
+        context.organizationId,
+        context.ownerUserId,
+        reference.source.workSourceId,
+        reference.source.revisionId,
+      ) as { content_hash: string; origin_kind: string } | undefined
+      return !revision || revision.content_hash !== reference.source.contentHash || revision.origin_kind !== "external"
+    })
+    if (invalidReference) {
+      return rejected(
+        request.operationId,
+        "validation_error",
+        "Stream notes external references require exact externally-originated Work Source revisions",
+      )
+    }
+    const content = renderStreamNotes(command)
+    const contentHash = hash(content)
+    const existing = stream.notes_source_json
+      ? JSON.parse(stream.notes_source_json) as WorkSourceRevisionRef
+      : undefined
+    const sourceId = existing?.workSourceId ?? ids.next("source") as WorkSourceID
+    const revisionId = ids.next("revision") as WorkSourceRevisionID
+    if (existing) {
+      const source = database.prepare(`
+        SELECT latest_revision_number FROM wg_v2_work_sources
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      `).get(context.organizationId, context.ownerUserId, sourceId) as { latest_revision_number: number } | undefined
+      if (!source) return rejected(request.operationId, "not_found", "Stream notes Work Source not found")
+      database.prepare(`
+        INSERT INTO wg_v2_work_source_revisions
+          (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, origin_kind, origin_reference_json, created_by_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)
+      `).run(
+        context.organizationId,
+        context.ownerUserId,
+        revisionId,
+        sourceId,
+        source.latest_revision_number + 1,
+        content,
+        contentHash,
+        command.externalReferences.length ? JSON.stringify({ derivedFromExternal: true }) : null,
+        JSON.stringify(context.actor),
+        occurredAt,
+      )
+      database.prepare(`
+        UPDATE wg_v2_work_sources SET latest_revision_number = latest_revision_number + 1, updated_at = ?
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      `).run(occurredAt, context.organizationId, context.ownerUserId, sourceId)
+    } else {
+      database.prepare(`
+        INSERT INTO wg_v2_work_sources
+          (organization_id, owner_user_id, id, workgraph_id, title, source_kind, metadata_json, latest_revision_number, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'manual', ?, 1, ?, ?)
+      `).run(
+        context.organizationId,
+        context.ownerUserId,
+        sourceId,
+        rootId,
+        `Notes · ${stream.title}`,
+        JSON.stringify({ kind: "stream_notes", streamId: stream.id }),
+        occurredAt,
+        occurredAt,
+      )
+      database.prepare(`
+        INSERT INTO wg_v2_work_source_revisions
+          (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, origin_kind, origin_reference_json, created_by_json, created_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?, 'manual', ?, ?, ?)
+      `).run(
+        context.organizationId,
+        context.ownerUserId,
+        revisionId,
+        sourceId,
+        content,
+        contentHash,
+        command.externalReferences.length ? JSON.stringify({ derivedFromExternal: true }) : null,
+        JSON.stringify(context.actor),
+        occurredAt,
+      )
+    }
+    const notesSource = { workSourceId: sourceId, revisionId, contentHash }
+    database.prepare(`
+      UPDATE wg_v2_streams SET notes_source_json = ?, row_version = row_version + 1, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
+    `).run(
+      JSON.stringify(notesSource),
+      occurredAt,
+      context.organizationId,
+      context.ownerUserId,
+      stream.id,
+      command.expectedVersion,
+    )
+    return pending(
+      "stream_notes_updated",
+      "stream",
+      stream.id,
+      { streamId: stream.id, notesSource },
+      stream.id,
+    )
+  }
+  if (command.type === "request_public_pr_confirmation") {
+    const stream = ownedStream(database, context, command.streamId)
+    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Stream version changed")
+    if (context.actor.type !== "agent" || context.actor.id !== `ses_master_${stream.id}`)
+      return rejected(request.operationId, "forbidden", "Only the Stream master can request public PR confirmation")
+    if (stream.public_pr_confirmed_at !== null) {
+      return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, alreadyConfirmed: true }, stream.id)
+    }
+    const reason = `Confirm the first non-draft pull request to public repository ${command.repository}: ${command.title}`
+    enqueueSqliteMasterWake(database, context, stream.id, occurredAt, "mailbox")
+    database.prepare(`
+      UPDATE wg_v2_streams SET master_status_json = ?, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).run(JSON.stringify({ state: "attention", sessionId: `ses_master_${stream.id}`, message: reason, receiptRefs: [], updatedAt: occurredAt }),
+      occurredAt, context.organizationId, context.ownerUserId, stream.id)
+    database.prepare(`
+      UPDATE wg_v2_due_jobs SET status = 'attention', last_error = ?, claimed_by = NULL, claim_expires_at = NULL, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND job_type = 'master_wake' AND subject_id = ?
+    `).run(reason, occurredAt, context.organizationId, context.ownerUserId, stream.id, stream.id)
+    return pending("public_pr_confirmation_requested", "stream", stream.id, { streamId: stream.id, repository: command.repository, title: command.title }, stream.id)
+  }
+  if (command.type === "confirm_public_pr") {
+    const stream = ownedStream(database, context, command.streamId)
+    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Stream version changed")
+    if (context.actor.type !== "user") return rejected(request.operationId, "forbidden", "Public PR confirmation requires the owner")
+    database.prepare(`
+      UPDATE wg_v2_streams SET public_pr_confirmed_at = ?, master_status_json = ?, row_version = row_version + 1, updated_at = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
+    `).run(occurredAt, JSON.stringify({ state: "hibernating", sessionId: `ses_master_${stream.id}`, message: "Public PR action confirmed", receiptRefs: [], updatedAt: occurredAt }),
+      occurredAt, context.organizationId, context.ownerUserId, stream.id, command.expectedVersion)
+    enqueueSqliteMasterWake(database, context, stream.id, occurredAt, "mailbox")
+    return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, confirmedAt: occurredAt }, stream.id)
+  }
+  if (command.type === "record_master_audit") {
+    const stream = ownedStream(database, context, command.streamId)
+    if (!stream) return rejected(request.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(request.operationId, "version_conflict", "Stream version changed")
+    if (context.actor.type !== "agent" || context.actor.id !== command.sessionId || command.sessionId !== `ses_master_${stream.id}`)
+      return rejected(request.operationId, "forbidden", "Only the Stream master can record master audit events")
+    return pending(
+      "master_audit_recorded",
+      "stream",
+      stream.id,
+      {
+        streamId: stream.id,
+        sessionId: command.sessionId,
+        wakeTrigger: command.wakeTrigger,
+        charterHash: command.charterHash,
+        citedCharterClause: command.citedCharterClause,
+        modelVersion: command.modelVersion,
+        reasoningSummary: command.reasoningSummary,
+        toolCalls: command.toolCalls,
+        resultingDiffs: command.resultingDiffs,
+        evidenceIds: command.evidenceIds,
+        outcome: command.outcome,
+      },
+      stream.id,
+    )
   }
   if (command.type === "set_stream_lifecycle") {
     const stream = ownedStream(database, context, command.streamId)
@@ -1379,12 +1644,13 @@ function applyCommand(
     const latest = database
       .prepare(
         `
-      SELECT id, origin_reference_json FROM wg_v2_work_source_revisions
+      SELECT id, origin_kind, origin_reference_json FROM wg_v2_work_source_revisions
       WHERE organization_id = ? AND owner_user_id = ? AND work_source_id = ? AND revision_number = ?
     `,
       )
       .get(context.organizationId, context.ownerUserId, command.workSourceId, source.latest_revision_number) as {
       id: string
+      origin_kind: string
       origin_reference_json: string | null
     }
     if (latest.id !== command.expectedRevisionId)
@@ -1401,6 +1667,14 @@ function applyCommand(
         "Authoring snapshot is already the Work Source head",
       )
     }
+    const previousManualOrigin = latest.origin_kind === "manual"
+      ? WorkSourceOriginSchema.parse({
+        kind: "manual",
+        ...(latest.origin_reference_json ? JSON.parse(latest.origin_reference_json) : {}),
+      })
+      : undefined
+    const derivedFromExternal = latest.origin_kind === "external" ||
+      previousManualOrigin?.kind === "manual" && previousManualOrigin.derivedFromExternal === true
     const revisionId = ids.next("revision")
     const revisionNumber = source.latest_revision_number + 1
     database
@@ -1420,7 +1694,11 @@ function applyCommand(
         command.content,
         contentHash,
         command.authoring ? "authoring" : "manual",
-        command.authoring ? JSON.stringify(command.authoring) : null,
+        command.authoring
+          ? JSON.stringify(command.authoring)
+          : derivedFromExternal
+            ? JSON.stringify({ derivedFromExternal: true })
+            : null,
         JSON.stringify(context.actor),
         occurredAt,
       )
@@ -1530,6 +1808,18 @@ function applyCommand(
     // born approved (`pending`); agent/system-created tasks enter the approval
     // gate (`pending_approval`) and never run until the owner approves them.
     const bornState = context.actor.type === "user" ? "pending" : "pending_approval"
+    const originAttemptId = context.actor.type === "agent"
+      ? (database
+          .prepare(
+            `
+          SELECT current_attempt_id FROM wg_v2_session_bindings
+          WHERE organization_id = ? AND owner_user_id = ? AND session_id = ? AND stream_id = ? AND state = 'active'
+            AND current_attempt_id IS NOT NULL
+          LIMIT 1
+        `,
+          )
+          .get(context.organizationId, context.ownerUserId, context.actor.id, command.streamId) as { current_attempt_id: string } | undefined)?.current_attempt_id ?? null
+      : null
     database
       .prepare(
         `
@@ -1553,7 +1843,7 @@ function applyCommand(
         JSON.stringify(command.completionContract),
         context.actor.type,
         context.actor.id,
-        null,
+        originAttemptId,
         occurredAt,
         occurredAt,
       )
@@ -2117,6 +2407,8 @@ function applyCommand(
     )
   }
   if (command.type === "confirm_admission") {
+    if (command.charter && !charterMatchesHash(command.charter))
+      return rejected(request.operationId, "validation_error", "Stream charter text does not match its declared hash")
     const proposal = database
       .prepare(
         `
@@ -2237,8 +2529,8 @@ function applyCommand(
         .prepare(
           `
         INSERT INTO wg_v2_streams
-          (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+          (organization_id, owner_user_id, id, workgraph_id, title, purpose, charter_json, lifecycle, execution_defaults_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
       `,
         )
         .run(
@@ -2248,6 +2540,7 @@ function applyCommand(
           rootId,
           command.selection.streamTitle,
           command.selection.streamTitle,
+          command.charter ? JSON.stringify(command.charter) : null,
           JSON.stringify(proposed.execution ?? {}),
           occurredAt,
           occurredAt,
@@ -2325,11 +2618,18 @@ function applyCommand(
       database
         .prepare(
           `
-        UPDATE wg_v2_streams SET replacement_reset_json = ?, row_version = row_version + 1, updated_at = ?
+        UPDATE wg_v2_streams SET replacement_reset_json = ?, charter_json = COALESCE(?, charter_json), row_version = row_version + 1, updated_at = ?
         WHERE organization_id = ? AND owner_user_id = ? AND id = ?
       `,
         )
-        .run(JSON.stringify(reset), occurredAt, context.organizationId, context.ownerUserId, streamId)
+        .run(
+          JSON.stringify(reset),
+          command.charter ? JSON.stringify(command.charter) : null,
+          occurredAt,
+          context.organizationId,
+          context.ownerUserId,
+          streamId,
+        )
       reserveRuntimeEffect(
         database,
         context,
@@ -2352,6 +2652,20 @@ function applyCommand(
         },
         occurredAt,
       )
+    }
+    if (command.charter && existingStream && command.selection.mode !== "replace") {
+      database
+        .prepare(
+          `UPDATE wg_v2_streams SET charter_json = ?, row_version = row_version + 1, updated_at = ?
+           WHERE organization_id = ? AND owner_user_id = ? AND id = ?`,
+        )
+        .run(
+          JSON.stringify(command.charter),
+          occurredAt,
+          context.organizationId,
+          context.ownerUserId,
+          streamId,
+        )
     }
     addSourceReference(database, context, ids, "stream", streamId, command.source, occurredAt)
     const outcomes = new Map(
@@ -3021,6 +3335,7 @@ function applyCommand(
         .run(occurredAt, occurredAt, context.organizationId, context.ownerUserId, bindingId)
     }
     const completion = promoteSatisfiedResultReadyWork(database, context, attempt.work_item_id, occurredAt)
+    enqueueSqliteMasterWake(database, context, attempt.stream_id, occurredAt, "task_settled")
     return pending(
       completion.outcomeId ? "outcome_ready_to_close" : "attempt_completed",
       "attempt",
@@ -3040,6 +3355,7 @@ function applyCommand(
     if (!subject) return rejected(request.operationId, "not_found", "Evidence subject not found")
     const evidenceId = ids.next("evidence")
     const durable = command.evidence.kind === "integration" && command.evidence.effect !== "other"
+    const durableEffectReceiptId = durable ? ids.next("receipt") : undefined
     if (
       durable &&
       database
@@ -3071,7 +3387,7 @@ function applyCommand(
         command.sourceAttemptId ?? null,
         command.evidence.kind,
         command.evidence.summary,
-        JSON.stringify(command.evidence),
+        JSON.stringify({ ...command.evidence, ...(durableEffectReceiptId ? { durableEffectReceiptId } : {}) }),
         JSON.stringify({ actor: context.actor, operationId: request.operationId, requestId: context.requestId }),
         occurredAt,
       )
@@ -3087,7 +3403,7 @@ function applyCommand(
         .run(
           context.organizationId,
           context.ownerUserId,
-          ids.next("receipt"),
+          durableEffectReceiptId,
           subject.streamId,
           command.evidence.effect,
           `${request.operationId}:integration`,
@@ -3118,6 +3434,7 @@ function applyCommand(
       evidenceId,
       {
         evidenceId,
+        ...(durableEffectReceiptId ? { durableEffectReceiptId } : {}),
         ...(completion.completed ? { workItemState: "completed" } : {}),
       },
       subject.streamId,
@@ -3512,7 +3829,10 @@ function createQueries(database: Database, clock: Readonly<{ now: () => number }
           contentHash: revision.content_hash,
           origin:
             revision.origin_kind === "manual"
-              ? { kind: "manual" }
+              ? WorkSourceOriginSchema.parse({
+                  kind: "manual",
+                  ...(revision.origin_reference_json ? JSON.parse(revision.origin_reference_json) : {}),
+                })
               : revision.origin_kind === "authoring"
                 ? {
                     kind: "authoring",
@@ -3913,6 +4233,10 @@ function readStreamRecords(database: Database, context: WorkGraphContext, stream
       id: row.id,
       title: row.title,
       description: row.purpose,
+      ...(row.charter_json ? { charter: JSON.parse(row.charter_json) } : {}),
+      ...(row.master_status_json ? { masterStatus: JSON.parse(row.master_status_json) } : {}),
+      ...(row.notes_source_json ? { notesSource: JSON.parse(row.notes_source_json) } : {}),
+      ...(row.public_pr_confirmed_at === null ? {} : { publicPrConfirmedAt: Number(row.public_pr_confirmed_at) }),
       lifecycleState: row.lifecycle,
       visibility: row.visibility,
       pinned: !!row.pinned,
@@ -4028,6 +4352,9 @@ function readWorkItemRecords(database: Database, context: WorkGraphContext, work
       completionContract: JSON.parse(row.completion_contract_json),
       evidenceIds: readEvidenceIds(database, context, "work_item", row.id),
       executionDefaults: JSON.parse(row.execution_overrides_json),
+      ...(row.created_by_actor_type ? { createdByActorType: row.created_by_actor_type } : {}),
+      ...(row.created_by_actor_id ? { createdByActorId: row.created_by_actor_id } : {}),
+      ...(row.origin_attempt_id ? { originAttemptId: row.origin_attempt_id } : {}),
       ...(row.lifecycle === "abandoned"
         ? { abandonedAt: Number(row.abandoned_at), abandonReason: row.abandoned_reason }
         : {}),
@@ -4352,6 +4679,31 @@ function sqliteAttentionItem(database: Database, context: WorkGraphContext, row:
       },
     })
   }
+  if (row.kind === "master_escalation") {
+    if (!row.last_error || !row.stream_id) throw new Error(`Master escalation ${row.id} is incomplete`)
+    const stream = database.prepare(`
+      SELECT master_status_json FROM wg_v2_streams
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).get(context.organizationId, context.ownerUserId, row.stream_id) as { master_status_json: string | null } | undefined
+    const status = stream?.master_status_json ? JSON.parse(stream.master_status_json) as {
+      sessionId?: unknown
+      receiptRefs?: unknown
+    } : undefined
+    return AttentionItemSchema.parse({
+      kind: row.kind,
+      ownerUserId: context.ownerUserId,
+      id: row.id,
+      updatedAt: row.updated_at,
+      ...read,
+      streamId: row.stream_id,
+      ...(typeof status?.sessionId === "string" ? { sessionId: status.sessionId } : {}),
+      reason: row.last_error,
+      evidenceIds: [],
+      receiptRefs: Array.isArray(status?.receiptRefs)
+        ? status.receiptRefs.filter((value): value is string => typeof value === "string")
+        : [],
+    })
+  }
   throw new Error(`Unsupported SQLite Attention kind ${String(row.kind)}`)
 }
 
@@ -4637,6 +4989,7 @@ async function launchAttempt(
         description: row.description,
         completionContract: row.completion_contract_json,
         connectionIds: profile.connectionIds,
+        untrustedSource: hasExternalWorkItemSource(database, context, row.work_item_id),
       }),
       profile,
       ...(envelope?.id ? { envelopeId: envelope.id as never } : {}),
@@ -4961,6 +5314,18 @@ function admitAttempt(
     )
     .get(context.organizationId, context.ownerUserId, workItemId, occurredAt)
   if (running) return { ok: false, code: "blocked", message: "Work Item already has an active Attempt" }
+  const streamRunning = database
+    .prepare(
+      `
+    SELECT 1 FROM wg_v2_attempts attempts
+    JOIN wg_v2_leases leases ON leases.organization_id = attempts.organization_id AND leases.owner_user_id = attempts.owner_user_id AND leases.resource_type = 'work_item'
+      AND leases.resource_id = attempts.work_item_id AND leases.holder_id = attempts.id AND leases.epoch = attempts.lease_epoch
+    WHERE attempts.organization_id = ? AND attempts.owner_user_id = ? AND attempts.stream_id = ? AND attempts.lifecycle IN ('admitted', 'placing', 'running')
+      AND CAST(leases.expires_at AS INTEGER) > ? LIMIT 1
+  `,
+    )
+    .get(context.organizationId, context.ownerUserId, row.stream_id, occurredAt)
+  if (streamRunning) return { ok: false, code: "blocked", message: "Stream already has an active Attempt" }
   const resolved = resolveExecutionProfile({
     workgraph: JSON.parse(row.workgraph_defaults),
     stream: JSON.parse(row.stream_defaults),
@@ -5046,7 +5411,8 @@ function ownedStream(database: Database, context: WorkGraphContext, streamId: st
   return database
     .prepare(
       `
-    SELECT id, title, lifecycle, visibility, row_version, envelope_identity_json, replacement_reset_json
+    SELECT id, title, lifecycle, visibility, row_version, envelope_identity_json, replacement_reset_json,
+      notes_source_json, public_pr_confirmed_at
     FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?
   `,
     )
@@ -5257,6 +5623,21 @@ function sourcePlanningEvidence(
     placementMatches: explicit,
     duplicateMatches: rankDuplicateMatches(duplicates, candidate),
   }
+}
+
+function hasExternalWorkItemSource(database: Database, context: WorkGraphContext, workItemId: string) {
+  return !!database.prepare(`
+    SELECT 1 FROM wg_v2_record_source_revisions refs
+    JOIN wg_v2_work_source_revisions revisions
+      ON revisions.organization_id = refs.organization_id AND revisions.owner_user_id = refs.owner_user_id
+      AND revisions.id = refs.source_revision_id
+    WHERE refs.organization_id = ? AND refs.owner_user_id = ? AND refs.record_type = 'work_item'
+      AND refs.record_id = ? AND (
+        revisions.origin_kind = 'external'
+        OR json_extract(revisions.origin_reference_json, '$.derivedFromExternal') = 1
+      )
+    LIMIT 1
+  `).get(context.organizationId, context.ownerUserId, workItemId)
 }
 
 function addSourceReference(
@@ -6076,6 +6457,96 @@ function hash(value: string) {
   return createHash("sha256").update(value).digest("hex")
 }
 
+function charterMatchesHash(charter: Readonly<{ text: string; hash: string }>) {
+  return hash(charter.text) === charter.hash.toLowerCase()
+}
+
+function enqueueSqliteMasterWake(
+  database: Database,
+  context: WorkGraphContext,
+  streamId: string,
+  occurredAt: number,
+  trigger: "mailbox" | "task_settled" | "schedule",
+) {
+  const stream = database.prepare(`
+    SELECT charter_json FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+  `).get(context.organizationId, context.ownerUserId, streamId) as { charter_json: string | null } | undefined
+  const receipts = trigger === "task_settled"
+    ? (database.prepare(`
+        SELECT terminal_result_json FROM wg_v2_attempts
+        WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND terminal_result_json IS NOT NULL
+        ORDER BY CAST(updated_at AS INTEGER) DESC LIMIT 20
+      `).all(context.organizationId, context.ownerUserId, streamId) as Array<{ terminal_result_json: string }>)
+        .flatMap((row) => {
+          const result = JSON.parse(row.terminal_result_json) as { artifactRefs?: unknown }
+          return Array.isArray(result.artifactRefs)
+            ? result.artifactRefs.filter((value): value is string => typeof value === "string" && !!value.trim())
+            : []
+        }).slice(0, 100)
+    : []
+  const charter = stream?.charter_json ? JSON.parse(stream.charter_json) as { hash?: unknown } : undefined
+  database.prepare(`
+    UPDATE wg_v2_streams SET master_status_json = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+  `).run(JSON.stringify({
+    state: "pending",
+    message: trigger === "mailbox" ? "Master message queued" : "Task settlement queued for master",
+    receiptRefs: receipts,
+    ...(typeof charter?.hash === "string" ? { charterHash: charter.hash } : {}),
+    updatedAt: occurredAt,
+  }), context.organizationId, context.ownerUserId, streamId)
+  database.prepare(`
+    INSERT INTO wg_v2_due_jobs
+      (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'master_wake', ?, ?, 'pending', ?, ?, ?)
+    ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO UPDATE SET
+      due_at = MIN(wg_v2_due_jobs.due_at, excluded.due_at), status = 'pending', payload_json = excluded.payload_json,
+      claimed_by = NULL, claim_expires_at = NULL, last_error = NULL,
+      lease_epoch = CASE WHEN wg_v2_due_jobs.status IN ('completed', 'cancelled', 'attention', 'failed_terminal') THEN 0 ELSE wg_v2_due_jobs.lease_epoch END,
+      row_version = wg_v2_due_jobs.row_version + 1, updated_at = excluded.updated_at
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    `master_wake_${streamId}`,
+    streamId,
+    streamId,
+    occurredAt,
+    JSON.stringify({ streamId, trigger }),
+    occurredAt,
+    occurredAt,
+  )
+}
+
+function enqueueSqliteMasterSchedule(
+  database: Database,
+  context: WorkGraphContext,
+  streamId: string,
+  occurredAt: number,
+) {
+  database.prepare(`
+    INSERT INTO wg_v2_due_jobs
+      (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'master_wake', ?, ?, 'pending', ?, ?, ?)
+    ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO NOTHING
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    `master_schedule_${streamId}`,
+    streamId,
+    `${streamId}:schedule`,
+    nextDailyMasterRun(occurredAt),
+    JSON.stringify({ streamId, trigger: "schedule" }),
+    occurredAt,
+    occurredAt,
+  )
+}
+
+function nextDailyMasterRun(afterMs: number) {
+  const after = new Date(afterMs)
+  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
+  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
   if (value && typeof value === "object") {
@@ -6153,6 +6624,8 @@ type StreamRow = {
   row_version: number
   envelope_identity_json: string | null
   replacement_reset_json: string | null
+  notes_source_json: string | null
+  public_pr_confirmed_at: string | number | null
 }
 type OutcomeRow = { id: string; stream_id: string; lifecycle: string; row_version: number }
 type WorkItemVersionRow = { id: string; stream_id: string; lifecycle: string; row_version: number }
@@ -6219,6 +6692,11 @@ type ChangeRow = {
     | "admission_confirmed"
     | "stream_created"
     | "stream_updated"
+    | "stream_charter_updated"
+    | "master_called"
+    | "master_audit_recorded"
+    | "public_pr_confirmation_requested"
+    | "public_pr_confirmed"
     | "stream_lifecycle_changed"
     | "stream_visibility_changed"
     | "stream_replacement_reset_completed"
@@ -6260,6 +6738,10 @@ type StreamRecordRow = {
   id: string
   title: string
   purpose: string
+  charter_json: string | null
+  master_status_json: string | null
+  notes_source_json: string | null
+  public_pr_confirmed_at: string | number | null
   lifecycle: string
   visibility: string
   pinned: number
@@ -6298,6 +6780,9 @@ type WorkItemRecordRow = {
   priority: number
   execution_overrides_json: string
   completion_contract_json: string
+  created_by_actor_type: "user" | "agent" | "system" | null
+  created_by_actor_id: string | null
+  origin_attempt_id: string | null
   abandoned_reason: string | null
   abandoned_at: string | number | null
   row_version: number
@@ -6356,6 +6841,7 @@ type AttentionRow = {
     | "attempt"
     | "unorganized_ai_work"
     | "configuration_required"
+    | "master_escalation"
   id: string
   updated_at: number
   job_type: string | null

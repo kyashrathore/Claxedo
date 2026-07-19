@@ -102,6 +102,13 @@ export type HostedAppOverrides = {
     workspaceId: string
     sessionId: string
   }) => Promise<void>
+  /** Node-hosted channel delivery seam for exact WorkGraph Stream masters. */
+  workGraphNotifyOwner?: (input: {
+    ownerUserId: string
+    orgId: string
+    idempotencyKey: string
+    text: string
+  }) => Promise<{ channel: string; reference: string; duplicate: boolean }>
   /** Deterministic hosted capability gate for component tests. */
   entitlementGate?: EntitlementGate
   /** D11 supplies hosted document index/blob storage through this Worker-safe seam. */
@@ -246,6 +253,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const attemptOperationExecutor = createHostedAttemptOperationExecutor({
     env: plane.env,
     ...(attemptTranscriptRetention ? { retainTranscript: attemptTranscriptRetention } : {}),
+    ...(overrides.workGraphNotifyOwner ? { notifyOwner: overrides.workGraphNotifyOwner } : {}),
     ...(liveSyncRoom
       ? {
           notifyChanged: async (principal: { ownerUserId: string; orgId: string }) => {

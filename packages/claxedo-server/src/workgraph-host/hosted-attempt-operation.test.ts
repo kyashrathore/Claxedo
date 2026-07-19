@@ -42,6 +42,78 @@ describe("hosted Attempt operation endpoint", () => {
     })])
   })
 
+  it("maps an exact hosted master binding into a CAS-protected structured notes command", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const execute = createHostedAttemptOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        mutation: async (_fn, args) => {
+          mutations.push(args)
+          if (!("command" in args)) return { version: 7 }
+          return { ok: true, operationId: "notes-1", cursor: "1", value: { recorded: true } }
+        },
+      },
+    })!
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, notesOperation())).resolves.toMatchObject({ ok: true })
+    expect(mutations).toEqual([
+      expect.objectContaining({ stream_id: "stream-1", owner_subject: "alice" }),
+      expect.objectContaining({
+        actor_id: "ses_master_stream-1",
+        command: {
+          version: 1,
+          type: "update_stream_notes",
+          streamId: "stream-1",
+          expectedVersion: 7,
+          status: ["Ready"],
+          learnings: [],
+          externalReferences: [],
+        },
+      }),
+    ])
+  })
+
+  it("delivers an owner-scoped master notification before recording its integration receipt", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const notifyOwner = vi.fn(async () => ({
+      channel: "slack",
+      reference: "channel:slack:slack:team:channel:thread",
+      duplicate: false,
+    }))
+    const execute = createHostedAttemptOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      notifyOwner,
+      executor: {
+        mutation: async (_fn, args) => {
+          mutations.push(args)
+          return { ok: true, operationId: "notify-1", cursor: "1", value: { evidenceId: "evidence-notify" } }
+        },
+      },
+    })!
+
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, notificationOperation()))
+      .resolves.toMatchObject({ ok: true })
+    expect(notifyOwner).toHaveBeenCalledWith({
+      ownerUserId: "alice",
+      orgId: "org-acme",
+      idempotencyKey: "notify-1",
+      text: "Stream is ready",
+    })
+    expect(mutations).toEqual([expect.objectContaining({
+      actor_id: "ses_master_stream-1",
+      command: {
+        version: 1,
+        type: "record_evidence",
+        subject: { type: "stream", streamId: "stream-1" },
+        evidence: {
+          kind: "integration",
+          summary: "Notified the Stream owner through slack",
+          effect: "published",
+          reference: "channel:slack:slack:team:channel:thread",
+        },
+      },
+    })])
+  })
+
   it("rings live-sync after an agent command without failing the durable result when the nudge fails", async () => {
     const changed: unknown[] = []
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
@@ -250,6 +322,42 @@ function completion() {
           evidence: { kind: "test_result" as const, summary: "verified", passed: true },
         },
       ],
+    },
+  }
+}
+
+function notesOperation() {
+  return {
+    version: 1 as const,
+    identity: {
+      attemptId: "master_stream-1" as never,
+      streamId: "stream-1" as never,
+      sessionId: "ses_master_stream-1",
+      workspaceId: "workspace-1",
+    },
+    operation: {
+      type: "update_stream_notes" as const,
+      operationId: "notes-1" as never,
+      status: ["Ready"],
+      learnings: [],
+      externalReferences: [],
+    },
+  }
+}
+
+function notificationOperation() {
+  return {
+    version: 1 as const,
+    identity: {
+      attemptId: "master_stream-1" as never,
+      streamId: "stream-1" as never,
+      sessionId: "ses_master_stream-1",
+      workspaceId: "workspace-1",
+    },
+    operation: {
+      type: "notify_owner" as const,
+      operationId: "notify-1" as never,
+      message: "Stream is ready",
     },
   }
 }

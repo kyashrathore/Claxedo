@@ -9,6 +9,7 @@ import type {
   StreamEnvelopeID,
   WorkspaceExecutionPort,
 } from "@claxedo/workgraph"
+import { evaluateLandingIntegrity } from "@claxedo/workgraph/domain"
 
 /** A gateway to durable Session V2 admission, interruption, and semantic result projection. */
 export type WorkGraphSessionGateway = Readonly<{
@@ -17,8 +18,10 @@ export type WorkGraphSessionGateway = Readonly<{
   admit: (
     input: Readonly<{
       attemptId: string
+      streamId?: string
       leaseEpoch?: number
       sessionId?: string
+      messageId?: string
       directory: string
       workspaceId?: string
       title: string
@@ -150,7 +153,8 @@ export function createLocalWorkspaceExecution(
       if (!(await exists(path.join(directory, ".git")))) throw new Error("Execution workspace is not provisioned")
       return {
         sessionId: (await input.sessions.admit({
-          attemptId: request.attemptId,
+        attemptId: request.attemptId,
+        streamId: request.streamId,
           leaseEpoch: request.leaseEpoch,
           directory,
           workspaceId: request.workspaceId,
@@ -165,6 +169,34 @@ export function createLocalWorkspaceExecution(
     },
     cancel: async (_context, request) => input.sessions.cancel(request.sessionId, request.reason),
     result: async (_context, request) => input.sessions.result(request.sessionId),
+    land: async (context, request) =>
+      serialize(JSON.stringify([context.organizationId, context.ownerUserId, request.streamId]), async () => {
+        const directory = envelopeDirectory(context, request.streamId)
+        if (!(await exists(path.join(directory, ".git")))) throw new Error("Execution workspace is not provisioned")
+        const beforeHead = (await run("git", ["-C", directory, "rev-parse", "HEAD"])).stdout.trim()
+        const expectedHead = (await run("git", ["-C", directory, "rev-parse", request.expectedHead])).stdout.trim()
+        if (beforeHead !== expectedHead) throw new Error("landing_head_changed")
+        const candidate = (await run("git", ["-C", directory, "rev-parse", request.candidateRevision])).stdout.trim()
+        const changed = (await run("git", ["-C", directory, "diff", "--name-only", "--diff-filter=ACDMRT", beforeHead, candidate, "--"]))
+          .stdout.split("\n").map((value) => value.trim()).filter(Boolean)
+        const integrity = evaluateLandingIntegrity({
+          changes: await Promise.all(changed.map(async (file) => ({
+            path: file,
+            before: await revisionFile(run, directory, beforeHead, file),
+            after: await revisionFile(run, directory, candidate, file),
+          }))),
+          forbiddenPatterns: request.forbiddenPatterns,
+        })
+        if (!integrity.ok) throw new LandingIntegrityError(integrity.error.findings)
+        try {
+          await run("git", ["-C", directory, "merge", "--no-ff", "--no-edit", candidate])
+        } catch (error) {
+          await run("git", ["-C", directory, "merge", "--abort"]).catch(() => undefined)
+          throw error
+        }
+        const afterHead = (await run("git", ["-C", directory, "rev-parse", "HEAD"])).stdout.trim()
+        return { beforeHead, afterHead, diffRef: `${beforeHead}..${afterHead}` }
+      }),
     cleanup: async (context, request) =>
       serialize(JSON.stringify([context.organizationId, context.ownerUserId, request.streamId]), async () => {
         const root = streamRoot(context, request.streamId)
@@ -194,6 +226,26 @@ export function createLocalWorkspaceExecution(
         await fs.rm(root, { recursive: true, force: true })
       }),
   }
+}
+
+export class LandingIntegrityError extends Error {
+  readonly code = "landing_integrity_violation"
+
+  constructor(readonly findings: ReadonlyArray<Readonly<{ path: string; rule: string; message: string }>>) {
+    super(`Landing integrity rejected ${findings.length} finding${findings.length === 1 ? "" : "s"}`)
+  }
+}
+
+async function revisionFile(
+  run: (file: string, args: string[]) => Promise<{ stdout: string }>,
+  directory: string,
+  revision: string,
+  file: string,
+) {
+  return run("git", ["-C", directory, "show", `${revision}:${file}`]).then(
+    (result) => result.stdout,
+    () => undefined,
+  )
 }
 
 function encode(value: string) {

@@ -144,6 +144,10 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       workgraph_id TEXT NOT NULL,
       title TEXT NOT NULL,
       purpose TEXT NOT NULL,
+      charter_json TEXT,
+      master_status_json TEXT,
+      notes_source_json TEXT,
+      public_pr_confirmed_at TEXT,
       stream_kind TEXT NOT NULL DEFAULT 'finite',
       lifecycle TEXT NOT NULL,
       visibility TEXT NOT NULL DEFAULT 'visible',
@@ -619,6 +623,21 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS wg_v2_master_mailbox (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      provenance_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'consumed')),
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS wg_v2_migration_intake (
       organization_id TEXT NOT NULL,
       owner_user_id TEXT NOT NULL,
@@ -699,6 +718,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
     CREATE INDEX IF NOT EXISTS wg_v2_changes_stream_idx ON wg_v2_changes(organization_id, owner_user_id, stream_id, cursor);
     CREATE INDEX IF NOT EXISTS wg_v2_outbox_due_idx ON wg_v2_outbox(organization_id, owner_user_id, status, available_at);
     CREATE INDEX IF NOT EXISTS wg_v2_due_jobs_due_idx ON wg_v2_due_jobs(organization_id, owner_user_id, status, due_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_master_mailbox_pending_idx ON wg_v2_master_mailbox(organization_id, owner_user_id, stream_id, status, created_at);
     CREATE INDEX IF NOT EXISTS wg_v2_migration_intake_status_idx ON wg_v2_migration_intake(organization_id, owner_user_id, status, created_at);
   `)
 
@@ -722,6 +742,18 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
   if (!streamColumns.some((column) => column.name === "activity_granularity")) {
     db.exec("ALTER TABLE wg_v2_streams ADD COLUMN activity_granularity TEXT NOT NULL DEFAULT 'progress'")
   }
+  if (!streamColumns.some((column) => column.name === "charter_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN charter_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "master_status_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN master_status_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "notes_source_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN notes_source_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "public_pr_confirmed_at")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN public_pr_confirmed_at TEXT")
+  }
   const workItemColumns = db.query("PRAGMA table_info(wg_v2_work_items)").all() as Array<{ name: string }>
   if (!workItemColumns.some((column) => column.name === "created_by_actor_type")) {
     db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN created_by_actor_type TEXT")
@@ -731,6 +763,10 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
   }
   if (!workItemColumns.some((column) => column.name === "origin_attempt_id")) {
     db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN origin_attempt_id TEXT")
+  }
+  const masterMailboxColumns = db.query("PRAGMA table_info(wg_v2_master_mailbox)").all() as Array<{ name: string }>
+  if (!masterMailboxColumns.some((column) => column.name === "schema_version")) {
+    db.exec(`ALTER TABLE wg_v2_master_mailbox ADD COLUMN schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION}`)
   }
   const sourceViewColumns = db.query("PRAGMA table_info(wg_v2_source_views)").all() as Array<{ name: string }>
   if (!sourceViewColumns.some((column) => column.name === "target_json")) {

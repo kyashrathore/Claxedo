@@ -69,6 +69,7 @@ export type ChannelAccessStore = {
 /** Persistence port for channel→account bindings. */
 export type ChannelIdentityBindingStore = {
   get(channel: ChannelId, externalUserId: string): Promise<ChannelIdentityBinding | undefined>
+  listBoundForAccount(accountId: string): Promise<ChannelIdentityBinding[]>
   put(binding: ChannelIdentityBinding): Promise<void>
 }
 
@@ -172,6 +173,9 @@ export function createMemoryChannelIdentityBindingStore(): ChannelIdentityBindin
   return {
     async get(channel, externalUserId) {
       return bindings.get(key(channel, externalUserId))
+    },
+    async listBoundForAccount(accountId) {
+      return [...bindings.values()].filter((binding) => binding.status === "bound" && binding.accountId === accountId)
     },
     async put(binding) {
       bindings.set(key(binding.channel, binding.externalUserId), binding)

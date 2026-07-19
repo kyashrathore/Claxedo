@@ -30,6 +30,14 @@ const stagedItem = attention({
   // @ts-expect-error test fixture
   record: { id: "item_pa", state: "pending_approval", title: "Draft the plan", dependencyIds: [], version: 3, streamId: "stream_1" },
 })
+const masterEscalation = attention({
+  kind: "master_escalation",
+  id: "stream_1",
+  streamId: "stream_1",
+  reason: "Merge queue stopped on a conflict",
+  evidenceIds: [],
+  receiptRefs: ["diff:ours", "diff:theirs"],
+})
 type BodyOverrides = Partial<Parameters<typeof WaitingPanelBody>[0]>
 function body(items: AttentionItem[], overrides: BodyOverrides = {}) {
   const base = {
@@ -54,6 +62,13 @@ describe("WaitingPanelBody", () => {
     expect(screen.getByText("Which auth strategy?")).toBeInTheDocument()
     expect(screen.getByText("Backfill invoices")).toBeInTheDocument()
     expect(screen.getByText("blocked")).toBeInTheDocument()
+  })
+
+  test("renders master escalations as critical owner work", () => {
+    render(() => body([masterEscalation]))
+    expect(screen.getByText("Master needs your help")).toBeInTheDocument()
+    expect(screen.getByText("Merge queue stopped on a conflict")).toBeInTheDocument()
+    expect(document.querySelector(".workgraph-waiting-row-glyph.is-critical")).not.toBeNull()
   })
 
   test("selecting a row pairs the underlying attention item with the row's exact element (opens a dialog upstream)", async () => {

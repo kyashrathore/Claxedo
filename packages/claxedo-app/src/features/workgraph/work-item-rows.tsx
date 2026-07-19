@@ -238,6 +238,17 @@ export function WorkItemLeaf(props: {
       setBusy(false)
     }
   }
+  const stop = async (event: MouseEvent) => {
+    event.stopPropagation()
+    const attempt = latestAttempt()
+    if (busy() || attempt?.state !== "running") return
+    setBusy(true)
+    try {
+      await props.mutate(() => props.client.cancelAttempt(attempt.id, attempt.version, "Stopped from task row"))
+    } finally {
+      setBusy(false)
+    }
+  }
   const openSession = async (event: MouseEvent) => {
     event.stopPropagation()
     const attempt = latestAttempt()
@@ -289,10 +300,18 @@ export function WorkItemLeaf(props: {
       </Show>
       <span class="workgraph-leaf-gap" aria-hidden="true" />
       <Show when={label() === "ready"}>
-        <span class="workgraph-leaf-state text-text-weaker">{props.streamPaused ? "Ready · paused" : "Queued"}</span>
+        <span
+          class="workgraph-leaf-state text-text-weaker"
+          classList={{ "workgraph-leaf-paused": props.streamPaused }}
+        >
+          {props.streamPaused ? "Ready · paused" : "Queued"}
+        </span>
       </Show>
       <Show when={showState()}>
         <span class="workgraph-leaf-state text-text-weaker">{props.item.state.replaceAll("_", " ")}</span>
+      </Show>
+      <Show when={latestAttempt()?.state === "cancelled" && isRetryable(props.item, props.attempts)}>
+        <span class="workgraph-leaf-state workgraph-leaf-stopped text-text-weaker">Stopped · Retry</span>
       </Show>
       <Show when={sessionError()}>{(message) => <span class="workgraph-leaf-session-error" role="alert">{message()}</span>}</Show>
       <Show when={label() === "staged"}>
@@ -307,7 +326,7 @@ export function WorkItemLeaf(props: {
                 disabled={busy()}
                 onClick={(event) => void approve(event)}
               >
-                <span>{busy() ? "Approving…" : "Approve"}</span>
+                <span>{busy() ? "Approving…" : props.item.createdByActorType === "user" ? "Run" : "Approve & run"}</span>
                 <Icon name="check-small" size="small" />
               </button>
               <button
@@ -360,13 +379,25 @@ export function WorkItemLeaf(props: {
       <Show when={isRetryable(props.item, props.attempts)}>
         <button
           type="button"
-          class="workgraph-leaf-session"
+          class="workgraph-leaf-session workgraph-leaf-retry"
           aria-label={`Retry task ${props.item.title}`}
           disabled={busy()}
           onClick={(event) => void retry(event)}
         >
           <span>{busy() ? "Retrying…" : "Retry"}</span>
           <Icon name="reset" size="small" />
+        </button>
+      </Show>
+      <Show when={latestAttempt()?.state === "running"}>
+        <button
+          type="button"
+          class="workgraph-leaf-session workgraph-leaf-stop"
+          aria-label={`Stop task ${props.item.title}`}
+          disabled={busy()}
+          onClick={(event) => void stop(event)}
+        >
+          <span>{busy() ? "Stopping…" : "Stop"}</span>
+          <Icon name="stop" size="small" />
         </button>
       </Show>
       <Show when={sessionAvailable()}>

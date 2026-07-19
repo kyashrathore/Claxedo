@@ -2,8 +2,16 @@ import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { defaultHomeRegion } from "../region"
 import type { ControlPlaneServices } from "../control-plane/services"
-import { AdmissionAgentPlanSchema, WorkGraphAttemptToolNames, WorkGraphBrokerTokenHeader } from "@claxedo/workgraph/contracts"
+import {
+  AdmissionAgentPlanSchema,
+  DEFAULT_STREAM_CHARTER_HINTS,
+  ResolvedExecutionProfileSchema,
+  WorkGraphAttemptToolNames,
+  WorkGraphMasterToolNames,
+  WorkGraphBrokerTokenHeader,
+} from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
+import { buildTrustedConnectionContext } from "@claxedo/workgraph"
 import {
   createWorkGraphOperationalReporter,
   type WorkGraphOperationalReporter,
@@ -38,6 +46,11 @@ const api = anyApi as unknown as {
     confirmLaunch: Mutation
     settleRejectedProvision: Mutation
     compensateRejectedLaunch: Mutation
+    claimMasterTurn: Mutation
+    reserveMasterAdmission: Mutation
+    confirmMasterAdmission: Mutation
+    completeMasterTurn: Mutation
+    failMasterTurn: Mutation
   }
   workgraphBackground: {
     drainSessionIntake: Mutation
@@ -133,6 +146,10 @@ type RunningBackgroundSession = {
 type SourcePlanClaim = Omit<BackgroundClaim, "streamId"> & { proposalId: string; sessionId?: string }
 type RunningSourcePlan = RunningBackgroundSession
 export type WorkerTenant = SettlementTenant
+export type HostedMasterIntent = SettlementTenant & Readonly<{
+  streamId: string
+  trigger: "mailbox" | "task_settled" | "schedule"
+}>
 
 /** Durable Worker dispatcher over SandboxManager → authenticated relay → Session V2. */
 export function createHostedWorkGraphRuntime(
@@ -158,6 +175,16 @@ export function createHostedWorkGraphRuntime(
   const sessionPublisher =
     options.sessionPublisher ?? (options.executor ? undefined : convexSessionPublisher(url, serviceToken))
   return {
+    master: (intent: HostedMasterIntent) => reconcileHostedMaster({
+      client,
+      services,
+      request,
+      serviceToken,
+      workerId,
+      now,
+      intent,
+      brokerUrl: clean(env.CLAXEDO_PUBLIC_URL) ?? clean(env.CLAXEDO_SERVER_URL) ?? clean(env.CLAXEDO_CENTRAL_URL),
+    }),
     listStaleTenants: async (
       input: { now?: number; thresholdMs?: number; limit?: number } = {},
     ) =>
@@ -195,7 +222,8 @@ export function createHostedWorkGraphRuntime(
                 (tool) =>
                   tool === "connection_work_source_list" ||
                   tool === "connection_work_source_comment" ||
-                  tool === "connection_work_source_update",
+                  tool === "connection_work_source_update" ||
+                  tool === "connection_code_host_open_pr",
               )
               const brokerUrl =
                 clean(env.CLAXEDO_PUBLIC_URL) ?? clean(env.CLAXEDO_SERVER_URL) ?? clean(env.CLAXEDO_CENTRAL_URL)
@@ -609,6 +637,291 @@ export function createHostedWorkGraphRuntime(
       }
     },
   }
+}
+
+type HostedMasterClaim = Readonly<{
+  state: "settled" | "launch" | "monitor"
+  ownerSubject?: string
+  stream?: {
+    id: string
+    title: string
+    charter?: { text: string; hash: string }
+    executionDefaults: unknown
+    rowVersion: number
+  }
+  sessionId?: string
+  turnId?: string
+  historyAfter?: number
+  admissionConfirmed?: boolean
+  failureCount?: number
+  trigger?: "mailbox" | "task_settled" | "schedule"
+  mailbox?: Array<{ id: string; message: string; provenance: unknown }>
+  attempts?: Array<{
+    id: string
+    workItemId: string
+    state: string
+    result?: unknown
+    resolvedExecution: unknown
+    updatedAt: number
+  }>
+  evidenceIds?: string[]
+  artifactRefs?: string[]
+}>
+
+async function reconcileHostedMaster(input: Readonly<{
+  client: Executor
+  services: ControlPlaneServices
+  request: RuntimeFetch
+  serviceToken: string
+  workerId: string
+  now: () => number
+  intent: HostedMasterIntent
+  brokerUrl?: string
+}>) {
+  const claim = await input.client.mutation(api.workgraphRuntime.claimMasterTurn, {
+    service_token: input.serviceToken,
+    organization_id: input.intent.organizationId,
+    owner_user_id: input.intent.ownerUserId,
+    stream_id: input.intent.streamId,
+    trigger: input.intent.trigger,
+    now: input.now(),
+  }) as HostedMasterClaim
+  if (claim.state === "settled") return { settled: true, state: "hibernating" }
+  if (!claim.stream || !claim.ownerSubject || !claim.sessionId || !claim.turnId || !claim.trigger) {
+    throw new Error("Hosted master claim is incomplete")
+  }
+  try {
+    const profile = resolveHostedMasterProfile(claim)
+    const connectionTools = profile.tools.filter((tool) =>
+      tool === "connection_work_source_list" || tool === "connection_work_source_comment" ||
+      tool === "connection_work_source_update" || tool === "connection_code_host_open_pr")
+    if (!input.brokerUrl) throw new Error("Hosted masters require a central broker URL")
+    if (profile.connectionIds.length > 0 && !connectionTools.length) {
+      throw new Error("Connection-bound masters require explicit Connection tools and a central broker URL")
+    }
+    const brokerOrigin = input.brokerUrl ? new URL(input.brokerUrl).origin : undefined
+    const manager = input.services.sandbox.sandboxManager
+    const provider = input.services.relay.provider
+    if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
+    const workspaceId = await workGraphWorkspaceId(
+      input.intent.organizationId,
+      input.intent.ownerUserId,
+      input.intent.streamId,
+    )
+    const placement = await manager.ensure(workspaceId, {
+      homeRegion: input.services.defaultHomeRegion ?? defaultHomeRegion(),
+      labels: {
+        workload: "workgraph-master",
+        organizationId: input.intent.organizationId,
+        ownerUserId: input.intent.ownerUserId,
+        streamId: input.intent.streamId,
+      },
+      runtimeCwd: "/workspace",
+      env: {
+        WORKSPACE_RUNTIME_RUNNER: profile.harness,
+        ...(brokerOrigin ? { WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: brokerOrigin } : {}),
+      },
+      source: profile.environment.kind === "hosted_workspace" && profile.environment.repositoryUrl
+        ? { kind: "git", repoUrl: profile.environment.repositoryUrl, branch: profile.repository?.baseRevision ?? "HEAD" }
+        : profile.repository?.remoteUrl
+          ? { kind: "git", repoUrl: profile.repository.remoteUrl, branch: profile.repository.baseRevision }
+          : { kind: "empty" },
+      exposure: { kind: "relay" },
+    })
+    if (placement.status === "provisioning") {
+      return { settled: false, state: "provisioning", retryAfterMs: placement.retryAfterMs }
+    }
+    if (placement.status !== "ready") throw new Error(placement.error ?? "Hosted master workspace is unavailable")
+    const token = await provider.mintRuntimeAccessToken({
+      workspaceId,
+      hostId: placement.hostId,
+      subject: claim.ownerSubject,
+      orgId: input.intent.organizationId,
+      role: "owner",
+      ttlMs: 10 * 60_000,
+    })
+    const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
+    const runtime = runtimeRequest(input.request, relay, workspaceId, token.token)
+    if (claim.state === "launch") {
+      const created = await runtime("/api/session", {
+        method: "POST",
+        body: JSON.stringify({
+          id: claim.sessionId,
+          title: `Master · ${claim.stream.title}`,
+          agent: profile.agent,
+          model: { providerID: profile.model.providerId, id: profile.model.modelId, variant: profile.effort },
+          tools: [...new Set([
+            ...profile.tools.filter((tool) => !tool.includes("approve")),
+            ...WorkGraphMasterToolNames,
+          ])],
+          location: { directory: "/workspace" },
+        }),
+      })
+      const body = await created.json() as { id?: string; data?: { id?: string } }
+      if ((body.id ?? body.data?.id) !== claim.sessionId) {
+        throw new Error("Hosted master Session did not adopt its durable identity")
+      }
+      const attemptId = `master_${claim.stream.id}`
+      await runtime("/api/workgraph/attempt-binding", {
+        method: "POST",
+        headers: { [WorkGraphBrokerTokenHeader]: token.token },
+        body: JSON.stringify({
+          version: 1,
+          identity: { attemptId, streamId: claim.stream.id, sessionId: claim.sessionId, workspaceId },
+          tools: WorkGraphMasterToolNames,
+          brokerUrl: input.brokerUrl,
+        }),
+      })
+      if (profile.connectionIds.length > 0) {
+        await input.client.mutation(api.workgraphConnections.bindAttemptConnections, {
+          service_token: input.serviceToken,
+          ownerUserId: input.intent.ownerUserId,
+          orgId: input.intent.organizationId,
+          attemptId,
+          sessionId: claim.sessionId,
+          workspaceId,
+          connectionIds: profile.connectionIds,
+          tools: connectionTools,
+        })
+        await runtime("/api/workgraph/connection-binding", {
+          method: "POST",
+          headers: { [WorkGraphBrokerTokenHeader]: token.token },
+          body: JSON.stringify({
+            version: 1,
+            identity: { attemptId, sessionId: claim.sessionId, workspaceId },
+            connectionIds: profile.connectionIds,
+            tools: connectionTools,
+            brokerUrl: input.brokerUrl,
+          }),
+        })
+      }
+      const historyAfter = claim.historyAfter ?? latestHistorySequence(await hostedSessionHistory(runtime, claim.sessionId))
+      if (claim.historyAfter === undefined) {
+        const reserved = await input.client.mutation(api.workgraphRuntime.reserveMasterAdmission, {
+          service_token: input.serviceToken,
+          organization_id: input.intent.organizationId,
+          owner_user_id: input.intent.ownerUserId,
+          stream_id: input.intent.streamId,
+          turn_id: claim.turnId,
+          history_after: historyAfter,
+          now: input.now(),
+        }) as { accepted?: boolean }
+        if (!reserved.accepted) return { settled: true, state: "superseded" }
+      }
+      await runtime(`/api/session/${encodeURIComponent(claim.sessionId)}/prompt`, {
+        method: "POST",
+        body: JSON.stringify({
+          id: `msg_${claim.turnId}`,
+          prompt: { text: hostedMasterPrompt(claim, profile.connectionIds) },
+          delivery: "steer",
+          resume: true,
+        }),
+      })
+      const confirmed = await input.client.mutation(api.workgraphRuntime.confirmMasterAdmission, {
+        service_token: input.serviceToken,
+        organization_id: input.intent.organizationId,
+        owner_user_id: input.intent.ownerUserId,
+        stream_id: input.intent.streamId,
+        turn_id: claim.turnId,
+        now: input.now(),
+      }) as { accepted?: boolean }
+      if (!confirmed.accepted) return { settled: true, state: "superseded" }
+      return { settled: false, state: "running", retryAfterMs: 1_000 }
+    }
+    const events = await hostedSessionHistory(runtime, claim.sessionId, claim.historyAfter ?? 0)
+    const terminal = events.findLast((event) =>
+      event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
+    )
+    if (!terminal) return { settled: false, state: "running", retryAfterMs: 1_000 }
+    if (profile.connectionIds.length > 0) {
+      await runtime(`/api/workgraph/connection-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
+    }
+    await runtime(`/api/workgraph/attempt-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
+    if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
+    const charter = await hostedMasterCharter(claim.stream.charter)
+    return await input.client.mutation(api.workgraphRuntime.completeMasterTurn, {
+      service_token: input.serviceToken,
+      organization_id: input.intent.organizationId,
+      owner_user_id: input.intent.ownerUserId,
+      stream_id: input.intent.streamId,
+      turn_id: claim.turnId,
+      trigger: claim.trigger,
+      charter_hash: charter.hash,
+      cited_charter_clause: charter.clause,
+      model_version: `${profile.model.providerId}/${profile.model.modelId}`,
+      reasoning_summary: masterReasoningSummary(events),
+      tool_calls: masterToolCalls(events),
+      resulting_diffs: claim.artifactRefs ?? [],
+      evidence_ids: claim.evidenceIds ?? [],
+      outcome: "completed",
+      now: input.now(),
+    })
+  } catch (error) {
+    return await input.client.mutation(api.workgraphRuntime.failMasterTurn, {
+      service_token: input.serviceToken,
+      organization_id: input.intent.organizationId,
+      owner_user_id: input.intent.ownerUserId,
+      stream_id: input.intent.streamId,
+      turn_id: claim.turnId,
+      reason: error instanceof Error ? error.message : String(error),
+      now: input.now(),
+    })
+  }
+}
+
+function resolveHostedMasterProfile(claim: HostedMasterClaim) {
+  for (const candidate of [claim.stream?.executionDefaults, ...(claim.attempts ?? []).map((attempt) => attempt.resolvedExecution)]) {
+    const parsed = ResolvedExecutionProfileSchema.safeParse(candidate)
+    if (parsed.success && parsed.data.environment.kind === "hosted_workspace") return parsed.data
+  }
+  throw new Error("Hosted master requires a fully resolved hosted execution profile")
+}
+
+function hostedMasterPrompt(claim: HostedMasterClaim, connectionIds: readonly string[]) {
+  const charter = claim.stream?.charter?.text || DEFAULT_STREAM_CHARTER_HINTS.join("\n")
+  const mailbox = (claim.mailbox ?? []).filter((message) => {
+    const value = message.provenance && typeof message.provenance === "object" ? message.provenance as Record<string, unknown> : undefined
+    const actor = value?.actor && typeof value.actor === "object" ? value.actor as Record<string, unknown> : undefined
+    return actor?.id !== claim.sessionId
+  })
+  return [
+    `You are the long-lived master for Stream ${claim.stream?.id}: ${claim.stream?.title}.`,
+    "Charter:",
+    charter,
+    "Hard authority envelope: never approve agent-proposed work; never push, merge, or force-push a protected ref; externally visible changes require charter authority and durable receipts.",
+    "Duties: maintain the envelope merge queue, revalidate against its moving head, keep structured notes, create draft PRs by default, notify the owner within charter cadence, and escalate unresolved conflicts once.",
+    `Mailbox:\n${mailbox.length ? mailbox.map((message) => `- ${message.message}`).join("\n") : "- (empty)"}`,
+    `Recent terminal attempts:\n${claim.attempts?.length ? claim.attempts.map((attempt) => `- ${attempt.id} (${attempt.state}) task=${attempt.workItemId} result=${JSON.stringify(attempt.result ?? null)}`).join("\n") : "- (none)"}`,
+    buildTrustedConnectionContext(connectionIds),
+    "For each action, cite the charter clause and include working file/diff/PR receipt references in your status.",
+  ].filter((section): section is string => !!section).join("\n\n")
+}
+
+async function hostedMasterCharter(charter: { text: string; hash: string } | undefined) {
+  if (charter) return { ...charter, clause: charter.text.split("\n").find((line) => line.trim())?.trim() || "Act within the Stream charter." }
+  const text = DEFAULT_STREAM_CHARTER_HINTS.join("\n")
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
+  return {
+    text,
+    hash: Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    clause: DEFAULT_STREAM_CHARTER_HINTS[0]!,
+  }
+}
+
+function latestHistorySequence(events: readonly SessionEvent[]) {
+  return events.reduce((latest, event) => Math.max(latest, event.durable?.seq ?? 0), 0)
+}
+
+function masterReasoningSummary(events: readonly SessionEvent[]) {
+  const text = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
+  return typeof text === "string" && text.trim() ? text.trim().slice(0, 10_000) : "Completed the serialized master turn."
+}
+
+function masterToolCalls(events: readonly SessionEvent[]) {
+  return [...new Set(events.flatMap((event) => {
+    const tool = typeof event.data.tool === "string" ? event.data.tool : typeof event.data.name === "string" ? event.data.name : undefined
+    return tool && event.type.includes("tool") ? [tool] : []
+  }))].slice(0, 100)
 }
 
 function managedAttemptPrompt(prompt: string) {
@@ -1209,9 +1522,10 @@ function hostedSessionMessages(value: unknown) {
 async function hostedSessionHistory(
   runtime: (path: string, init?: RequestInit) => Promise<Response>,
   sessionId: string,
+  initialAfter = 0,
 ) {
   const events: SessionEvent[] = []
-  let after = 0
+  let after = initialAfter
   for (;;) {
     const history = await runtime(`/api/session/${encodeURIComponent(sessionId)}/history?limit=100&after=${after}`)
     const page = hostedSessionHistoryPage(await history.json())

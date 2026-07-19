@@ -1,16 +1,20 @@
 import { v } from "convex/values"
-import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, PublicEventPayloadSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor } from "@claxedo/workgraph/contracts"
+import type { GenericMutationCtx } from "convex/server"
+import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, PublicEventPayloadSchema, UpdateStreamNotesCommandSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor } from "@claxedo/workgraph/contracts"
 import { rankDuplicateMatches, rankStreamMatches } from "@claxedo/workgraph/matching"
 import {
   dependencyGraphHasCycle,
   evaluateCompletionContract,
+  renderStreamNotes,
   validateExecutionProfileDefaultsAgainstCapabilities,
   validateResolvedExecutionProfileAgainstCapabilities,
 } from "@claxedo/workgraph/domain"
 import { ExecutionCapabilitiesSchema, ResolvedExecutionProfileSchema, isExecutionCapabilityCatalogFresh } from "@claxedo/workgraph/contracts"
 import { authedMutation, serviceMutation } from "./model"
 import { requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject, workGraphOwnerDeletionBarrier } from "./workgraphModel"
-import { initializeAttentionProjection, removeAttentionRecord, syncAttentionResource, syncCandidateTransition } from "./workgraphAttention"
+import { initializeAttentionProjection, removeAttentionRecord, syncAttentionRecord, syncAttentionResource, syncCandidateTransition } from "./workgraphAttention"
+import { createLaneWakeIfIdle, createWakeInTx } from "./wakes"
+import type { DataModel, Doc, Id } from "./_generated/dataModel"
 
 const ROOT_ID = "workgraph_default"
 const OWNER_EVENT_SEQUENCE = "__workgraph_owner__"
@@ -20,6 +24,12 @@ const supported = new Set([
   "revise_work_source",
   "create_stream",
   "update_stream",
+  "set_stream_charter",
+  "call_master",
+  "update_stream_notes",
+  "request_public_pr_confirmation",
+  "confirm_public_pr",
+  "record_master_audit",
   "set_stream_lifecycle",
   "create_outcome",
   "update_outcome",
@@ -97,6 +107,20 @@ export const executeForService = serviceMutation({
       operationId: args.operation_id,
       command: args.command,
     })
+  },
+})
+
+export const readStreamVersionForService = serviceMutation({
+  args: {
+    service_token: v.string(),
+    organization_id: v.id("orgs"),
+    owner_subject: v.string(),
+    stream_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    const stream = await owned(ctx, "workgraph_streams", String(tenant.organization_id), String(tenant.owner_user_id), args.stream_id)
+    return stream ? { version: stream.row_version } : {}
   },
 })
 
@@ -367,6 +391,8 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     )
   }
   if (command.type === "create_stream") {
+    if (command.charter && command.charter.hash.toLowerCase() !== await sha256(command.charter.text))
+      return rejected(input.operationId, "validation_error", "Stream charter text does not match its declared hash")
     if (command.source && !(await exactSourceRevision(ctx, input.organizationId, input.ownerUserId, command.source))) {
       return rejected(input.operationId, "version_conflict", "Stream source is not the current Work Source head")
     }
@@ -378,6 +404,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       workgraph_id: ROOT_ID,
       title: command.title,
       ...(command.description === undefined ? {} : { description: command.description }),
+      ...(command.charter === undefined ? {} : { charter: command.charter }),
       lifecycle_state: "active",
       visibility: "visible",
       pinned: false,
@@ -392,6 +419,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       created_at: now,
       updated_at: now,
     })
+    await enqueueMasterSchedule(ctx, input.organizationId, input.ownerUserId, id, now, input.actor.id)
     return pending("stream_created", "stream", id, { streamId: id }, id)
   }
   if (command.type === "update_stream") {
@@ -408,6 +436,197 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       updated_at: now,
     })
     return pending("stream_updated", "stream", stream.id, { streamId: stream.id }, stream.id)
+  }
+  if (command.type === "set_stream_charter") {
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
+    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(input.operationId, "version_conflict", "Stream version changed")
+    if (command.charter.hash.toLowerCase() !== await sha256(command.charter.text))
+      return rejected(input.operationId, "validation_error", "Stream charter text does not match its declared hash")
+    await ctx.db.patch(stream._id, {
+      charter: command.charter,
+      row_version: stream.row_version + 1,
+      updated_at: now,
+    })
+    return pending(
+      "stream_charter_updated",
+      "stream",
+      stream.id,
+      { streamId: stream.id, charterHash: command.charter.hash },
+      stream.id,
+    )
+  }
+  if (command.type === "call_master") {
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
+    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(input.operationId, "version_conflict", "Stream version changed")
+    if (stream.lifecycle_state === "closed")
+      return rejected(input.operationId, "invalid_transition", "Closed Streams cannot receive master messages")
+    const messageId = resourceId("master_message", input)
+    await ctx.db.insert("workgraph_master_mailbox", {
+      organization_id: input.organizationId,
+      owner_user_id: input.ownerUserId,
+      stream_id: stream.id,
+      id: messageId,
+      message: command.message,
+      provenance: provenance(input),
+      status: "pending",
+      created_at: now,
+      updated_at: now,
+    })
+    await enqueueMasterWake(ctx, input.organizationId, input.ownerUserId, stream.id, now, "mailbox", input.actor.id)
+    return pending(
+      "master_called",
+      "stream",
+      stream.id,
+      { streamId: stream.id, mailboxMessageId: messageId },
+      stream.id,
+    )
+  }
+  if (command.type === "update_stream_notes") {
+    const notes = UpdateStreamNotesCommandSchema.parse(command)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, notes.streamId)
+    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== notes.expectedVersion)
+      return rejected(input.operationId, "version_conflict", "Stream version changed")
+    if (input.actor.type !== "agent" || input.actor.id !== `ses_master_${stream.id}`)
+      return rejected(input.operationId, "forbidden", "Only the Stream master can update Stream notes")
+    const references = await Promise.all(notes.externalReferences.map(async (reference) => {
+      const revision = await owned(
+        ctx,
+        "work_source_revisions",
+        input.organizationId,
+        input.ownerUserId,
+        reference.source.revisionId,
+      )
+      return revision &&
+        revision.work_source_id === reference.source.workSourceId &&
+        revision.content_hash === reference.source.contentHash &&
+        revision.origin?.kind === "external"
+    }))
+    if (references.some((valid) => !valid)) {
+      return rejected(
+        input.operationId,
+        "validation_error",
+        "Stream notes external references require exact externally-originated Work Source revisions",
+      )
+    }
+    const content = renderStreamNotes(notes)
+    const contentHash = await sha256(content)
+    const sourceId = stream.notes_source?.work_source_id ?? resourceId("source", input)
+    const revisionId = resourceId("revision", input)
+    if (stream.notes_source) {
+      const source = await owned(ctx, "work_sources", input.organizationId, input.ownerUserId, sourceId)
+      if (!source) return rejected(input.operationId, "not_found", "Stream notes Work Source not found")
+      await ctx.db.insert("work_source_revisions", {
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        id: revisionId,
+        work_source_id: sourceId,
+        revision_number: source.latest_revision_number + 1,
+        content,
+        content_hash: contentHash,
+        origin: { kind: "manual", ...(notes.externalReferences.length ? { derivedFromExternal: true } : {}) },
+        created_by: input.actor,
+        schema_version: 1,
+        created_at: now,
+      })
+      await ctx.db.patch(source._id, {
+        latest_revision_id: revisionId,
+        latest_revision_number: source.latest_revision_number + 1,
+        row_version: source.row_version + 1,
+        updated_at: now,
+      })
+    } else {
+      await ctx.db.insert("work_sources", {
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        id: sourceId,
+        workgraph_id: ROOT_ID,
+        title: `Notes · ${stream.title}`,
+        source_kind: "manual",
+        metadata: { kind: "stream_notes", streamId: stream.id },
+        latest_revision_id: revisionId,
+        latest_revision_number: 1,
+        row_version: 1,
+        schema_version: 1,
+        created_at: now,
+        updated_at: now,
+      })
+      await ctx.db.insert("work_source_revisions", {
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        id: revisionId,
+        work_source_id: sourceId,
+        revision_number: 1,
+        content,
+        content_hash: contentHash,
+        origin: { kind: "manual", ...(notes.externalReferences.length ? { derivedFromExternal: true } : {}) },
+        created_by: input.actor,
+        schema_version: 1,
+        created_at: now,
+      })
+    }
+    const notesSource = { work_source_id: sourceId, revision_id: revisionId, content_hash: contentHash }
+    await ctx.db.patch(stream._id, { notes_source: notesSource, row_version: stream.row_version + 1, updated_at: now })
+    return pending(
+      "stream_notes_updated",
+      "stream",
+      stream.id,
+      { streamId: stream.id, notesSource: { workSourceId: sourceId, revisionId, contentHash } },
+      stream.id,
+    )
+  }
+  if (command.type === "request_public_pr_confirmation") {
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
+    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion) return rejected(input.operationId, "version_conflict", "Stream version changed")
+    const sessionId = `ses_master_${stream.id}`
+    if (input.actor.type !== "agent" || input.actor.id !== sessionId)
+      return rejected(input.operationId, "forbidden", "Only the Stream master can request public PR confirmation")
+    if (stream.public_pr_confirmed_at !== undefined) {
+      return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, alreadyConfirmed: true }, stream.id)
+    }
+    const reason = `Confirm the first non-draft pull request to public repository ${command.repository}: ${command.title}`
+    const masterStatus = { state: "attention", sessionId, message: reason, receiptRefs: [], updatedAt: now }
+    await ctx.db.patch(stream._id, { master_status: masterStatus, updated_at: now })
+    await syncAttentionRecord(ctx, "workgraph_streams", { ...stream, master_status: masterStatus, updated_at: now })
+    return pending("public_pr_confirmation_requested", "stream", stream.id, { streamId: stream.id, repository: command.repository, title: command.title }, stream.id)
+  }
+  if (command.type === "confirm_public_pr") {
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
+    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion) return rejected(input.operationId, "version_conflict", "Stream version changed")
+    if (input.actor.type !== "user") return rejected(input.operationId, "forbidden", "Public PR confirmation requires the owner")
+    const masterStatus = { state: "hibernating", sessionId: `ses_master_${stream.id}`, message: "Public PR action confirmed", receiptRefs: [], updatedAt: now }
+    const saved = { ...stream, public_pr_confirmed_at: now, master_status: masterStatus, row_version: stream.row_version + 1, updated_at: now }
+    await ctx.db.patch(stream._id, saved)
+    await syncAttentionRecord(ctx, "workgraph_streams", saved)
+    await enqueueMasterWake(ctx, input.organizationId, input.ownerUserId, stream.id, now, "mailbox")
+    return pending("public_pr_confirmed", "stream", stream.id, { streamId: stream.id, confirmedAt: now }, stream.id)
+  }
+  if (command.type === "record_master_audit") {
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
+    if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    if (stream.row_version !== command.expectedVersion)
+      return rejected(input.operationId, "version_conflict", "Stream version changed")
+    if (input.actor.type !== "agent" || input.actor.id !== command.sessionId || command.sessionId !== `ses_master_${stream.id}`)
+      return rejected(input.operationId, "forbidden", "Only the Stream master can record master audit events")
+    return pending("master_audit_recorded", "stream", stream.id, {
+      streamId: stream.id,
+      sessionId: command.sessionId,
+      wakeTrigger: command.wakeTrigger,
+      charterHash: command.charterHash,
+      citedCharterClause: command.citedCharterClause,
+      modelVersion: command.modelVersion,
+      reasoningSummary: command.reasoningSummary,
+      toolCalls: command.toolCalls,
+      resultingDiffs: command.resultingDiffs,
+      evidenceIds: command.evidenceIds,
+      outcome: command.outcome,
+    }, stream.id)
   }
   if (command.type === "set_stream_lifecycle") {
     const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
@@ -495,7 +714,14 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       revision_number: source.latest_revision_number + 1,
       content: command.content,
       content_hash: contentHash,
-      origin: command.authoring ? { kind: "authoring", ...command.authoring } : { kind: "manual" },
+      origin: command.authoring
+        ? { kind: "authoring", ...command.authoring }
+        : {
+          kind: "manual",
+          ...(previousOrigin.kind === "external" || previousOrigin.kind === "manual" && previousOrigin.derivedFromExternal
+            ? { derivedFromExternal: true }
+            : {}),
+        },
       created_by: input.actor,
       schema_version: 1,
       created_at: now,
@@ -566,6 +792,19 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     // approved (`pending`); agent/system-created tasks enter the approval gate
     // (`pending_approval`) and never run until the owner approves them (plan §4).
     const bornState = input.actor.type === "user" ? "pending" : "pending_approval"
+    const originAttemptId = input.actor.type === "agent"
+      ? (await ctx.db
+          .query("workgraph_session_bindings")
+          .withIndex("by_tenant_session", (query: any) => query
+            .eq("organization_id", input.organizationId)
+            .eq("owner_user_id", input.ownerUserId)
+            .eq("session_id", input.actor.id))
+          .filter((query: any) => query.and(
+            query.eq(query.field("state"), "active"),
+            query.eq(query.field("stream_id"), stream.id),
+          ))
+          .first())?.current_attempt_id
+      : undefined
     await ctx.db.insert("workgraph_work_items", {
       organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
@@ -577,6 +816,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       state: bornState,
       created_by_actor_type: input.actor.type,
       created_by_actor_id: input.actor.id,
+      ...(originAttemptId === undefined ? {} : { origin_attempt_id: originAttemptId }),
       priority: command.priority ?? 0,
       source_revision_refs: command.source ? [sourceRef(command.source)] : [],
       completion_contract: command.completionContract,
@@ -1264,7 +1504,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     }
     await syncAttentionResource(ctx, input.organizationId, input.ownerUserId, "workgraph_attempts", attempt.id)
     await syncAttentionResource(ctx, input.organizationId, input.ownerUserId, "workgraph_work_items", item.id)
-    if (lease) await ctx.db.delete(lease._id)
+    await releaseAttemptLeases(ctx, input.organizationId, input.ownerUserId, attempt)
     if (attempt.execution_kind === "managed") {
       const binding = existingBinding ?? (await ctx.db
         .query("workgraph_session_bindings")
@@ -1284,6 +1524,16 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, attempt.stream_id)
       if (stream) await continueStream(ctx, stream, now)
     }
+    await enqueueMasterWake(
+      ctx,
+      input.organizationId,
+      input.ownerUserId,
+      attempt.stream_id,
+      now,
+      "task_settled",
+      input.actor.id,
+      command.artifacts ?? [],
+    )
     return pending(
       "attempt_completed",
       "attempt",
@@ -1310,12 +1560,16 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       ? subject
       : await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, subject.stream_id)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
+    const streamId = command.subject.type === "stream" ? subject.id : subject.stream_id
     const id = resourceId("evidence", input)
+    const durableEffectReceiptId = command.evidence.kind === "integration" && command.evidence.effect !== "other"
+      ? resourceId("receipt", input)
+      : undefined
     await ctx.db.insert("workgraph_evidence", {
       organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
-      stream_id: subject.stream_id,
+      stream_id: streamId,
       subject_type: command.subject.type,
       subject_id: subjectId,
       evidence_kind: command.evidence.kind,
@@ -1324,6 +1578,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
         ...command.evidence,
         requirementId: command.requirementId,
         sourceAttemptId: command.sourceAttemptId,
+        ...(durableEffectReceiptId ? { durableEffectReceiptId } : {}),
       },
       provenance: provenance(input),
       schema_version: 1,
@@ -1366,8 +1621,8 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       await ctx.db.insert("workgraph_durable_effect_receipts", {
         organization_id: input.organizationId,
         owner_user_id: input.ownerUserId,
-        id: resourceId("receipt", input),
-        stream_id: subject.stream_id,
+        id: durableEffectReceiptId!,
+        stream_id: streamId,
         effect_kind: command.evidence.effect,
         idempotency_key: `${input.operationId}:integration`,
         external_reference: { reference: command.evidence.reference },
@@ -1382,10 +1637,14 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       })
     }
     if (completed) {
-      const currentStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, subject.stream_id)
+      const currentStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, streamId)
       if (currentStream) await continueStream(ctx, currentStream, now)
     }
-    return pending("evidence_recorded", "evidence", id, { evidenceId: id, ...(completed ? { workItemState: "completed" } : {}) }, subject.stream_id)
+    return pending("evidence_recorded", "evidence", id, {
+      evidenceId: id,
+      ...(durableEffectReceiptId ? { durableEffectReceiptId } : {}),
+      ...(completed ? { workItemState: "completed" } : {}),
+    }, streamId)
   }
   const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
   if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
@@ -1612,6 +1871,8 @@ async function exactSourceRevision(ctx: any, organization: string, owner: string
 }
 
 async function confirmAdmission(ctx: any, input: CommandInput, command: any, now: number) {
+  if (command.charter && command.charter.hash.toLowerCase() !== await sha256(command.charter.text))
+    return rejected(input.operationId, "validation_error", "Stream charter text does not match its declared hash")
   const proposal = await owned(ctx, "workgraph_admission_proposals", input.organizationId, input.ownerUserId, command.proposalId)
   if (!proposal) return rejected(input.operationId, "not_found", "Admission proposal not found")
   if (proposal.row_version !== command.expectedVersion)
@@ -1678,6 +1939,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
       id: streamId,
       workgraph_id: ROOT_ID,
       title: command.selection.streamTitle,
+      ...(command.charter === undefined ? {} : { charter: command.charter }),
       lifecycle_state: "active",
       visibility: "visible",
       pinned: false,
@@ -1696,6 +1958,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
     const revision = sourceRef(command.source)
     await ctx.db.patch(existing._id, {
       source_revision_refs: appendSourceRevision(existing.source_revision_refs ?? [], revision),
+      ...(command.charter === undefined ? {} : { charter: command.charter }),
       row_version: existing.row_version + 1,
       updated_at: now,
     })
@@ -1726,16 +1989,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
         row_version: attempt.row_version + 1,
         updated_at: now,
       })
-      const lease = await ctx.db
-        .query("workgraph_leases")
-        .withIndex("by_tenant_resource", (q: any) =>
-          q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId)
-            .eq("resource_type", "work_item")
-            .eq("resource_id", attempt.work_item_id),
-        )
-        .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
-        .unique()
-      if (lease?.holder_id === attempt.id) await ctx.db.delete(lease._id)
+      await releaseAttemptLeases(ctx, input.organizationId, input.ownerUserId, attempt)
       const launch = await ctx.db
         .query("workgraph_outbox")
         .withIndex("by_tenant_idempotency", (q: any) =>
@@ -1772,6 +2026,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
         source: command.source,
         requestedAt: now,
       },
+      ...(command.charter === undefined ? {} : { charter: command.charter }),
       row_version: existing.row_version + 1,
       updated_at: now,
     })
@@ -1993,6 +2248,16 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
     }
     await ctx.db.delete(existingLease._id)
   }
+  const streamLease = await ctx.db
+    .query("workgraph_leases")
+    .withIndex("by_tenant_resource", (q: any) =>
+      q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("resource_type", "stream").eq("resource_id", stream.id),
+    )
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
+    .unique()
+  if (streamLease && streamLease.expires_at > now)
+    return { ok: false as const, code: "blocked", message: "Stream already has an active Attempt" }
+  if (streamLease) await ctx.db.delete(streamLease._id)
   const outcome = item.outcome_id
     ? await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, item.outcome_id)
     : undefined
@@ -2033,7 +2298,7 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
     .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .collect()
   const attemptId = `${resourceId("attempt", input)}_${item.id}`
-  const leaseEpoch = (existingLease?.epoch ?? 0) + 1
+  const leaseEpoch = Math.max(existingLease?.epoch ?? 0, streamLease?.epoch ?? 0) + 1
   await ctx.db.insert("workgraph_attempts", {
     organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
@@ -2066,6 +2331,21 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
     created_at: now,
     updated_at: now,
   })
+  await ctx.db.insert("workgraph_leases", {
+    organization_id: input.organizationId,
+    owner_user_id: input.ownerUserId,
+    id: `lease_stream_${attemptId}`,
+    resource_type: "stream",
+    resource_id: stream.id,
+    stream_id: stream.id,
+    holder_id: attemptId,
+    epoch: leaseEpoch,
+    expires_at: now + 10 * 60_000,
+    row_version: 1,
+    schema_version: 1,
+    created_at: now,
+    updated_at: now,
+  })
   await ctx.db.insert("workgraph_outbox", {
     organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
@@ -2084,6 +2364,29 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
   })
   await ctx.db.patch(item._id, { state: "active", row_version: item.row_version + 1, updated_at: now })
   return { ok: true as const, attemptId, leaseEpoch }
+}
+
+async function releaseAttemptLeases(
+  ctx: GenericMutationCtx<DataModel>,
+  organization: string,
+  owner: string,
+  attempt: Pick<Doc<"workgraph_attempts">, "id" | "stream_id" | "work_item_id">,
+) {
+  const leases = await Promise.all(
+    [
+      { resourceType: "work_item" as const, resourceId: attempt.work_item_id },
+      { resourceType: "stream" as const, resourceId: attempt.stream_id },
+    ].map((resource) =>
+      ctx.db
+        .query("workgraph_leases")
+        .withIndex("by_tenant_resource", (query) =>
+          query.eq("organization_id", organization as Id<"orgs">).eq("owner_user_id", owner as Id<"users">).eq("resource_type", resource.resourceType).eq("resource_id", resource.resourceId),
+        )
+        .filter((query) => query.eq(query.field("organization_id"), organization as Id<"orgs">))
+        .unique(),
+    ),
+  )
+  await Promise.all(leases.flatMap((lease) => lease?.holder_id === attempt.id ? [ctx.db.delete(lease._id)] : []))
 }
 
 export function resolveCanonicalAttemptExecutionDefaults(input: Readonly<{
@@ -2439,6 +2742,76 @@ export async function appendOwnedWorkGraphChange(ctx: any, input: Readonly<{
     created_at: input.now,
   })
   return cursor
+}
+
+export async function enqueueMasterWake(
+  ctx: any,
+  organizationId: string,
+  ownerUserId: string,
+  streamId: string,
+  now: number,
+  trigger: "mailbox" | "task_settled" | "schedule",
+  actorId = "workgraph_runtime",
+  receiptRefs: readonly string[] = [],
+) {
+  const stream = await owned(ctx, "workgraph_streams", organizationId, ownerUserId, streamId)
+  if (stream) await ctx.db.patch(stream._id, {
+    master_status: {
+      state: "pending",
+      message: trigger === "mailbox" ? "Master message queued" : "Task settlement queued for master",
+      receiptRefs: [...receiptRefs].slice(0, 100),
+      ...(typeof stream.charter?.hash === "string" ? { charterHash: stream.charter.hash } : {}),
+      updatedAt: now,
+    },
+  })
+  const serialKey = `workgraph-master:${organizationId}:${ownerUserId}:${streamId}`
+  return createLaneWakeIfIdle(ctx, {
+    id: `wake_master_${crypto.randomUUID()}`,
+    workspaceId: `wg-master:${organizationId}:${ownerUserId}:${streamId}`,
+    triggerType: "at",
+    kind: "workgraph_master",
+    serialKey,
+    intentJson: JSON.stringify({ organizationId, ownerUserId, streamId, trigger }),
+    state: "pending",
+    depth: 0,
+    createdBy: actorId,
+    createdAt: now,
+    fireAt: now,
+    attempts: 0,
+  })
+}
+
+async function enqueueMasterSchedule(
+  ctx: any,
+  organizationId: string,
+  ownerUserId: string,
+  streamId: string,
+  now: number,
+  actorId: string,
+) {
+  const serialKey = `workgraph-master:${organizationId}:${ownerUserId}:${streamId}`
+  return createWakeInTx(ctx, {
+    id: `wake_master_schedule_${crypto.randomUUID()}`,
+    workspaceId: `wg-master:${organizationId}:${ownerUserId}:${streamId}`,
+    triggerType: "at",
+    kind: "workgraph_master",
+    serialKey,
+    intentJson: JSON.stringify({ organizationId, ownerUserId, streamId, trigger: "schedule" }),
+    state: "pending",
+    depth: 0,
+    createdBy: actorId,
+    createdAt: now,
+    fireAt: nextDailyMasterRun(now),
+    schedule: "daily@06:00Z",
+    idempotencyKey: `master-schedule:${streamId}`,
+    attempts: 0,
+  })
+}
+
+function nextDailyMasterRun(afterMs: number) {
+  const after = new Date(afterMs)
+  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
+  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
 }
 
 async function saveOperation(

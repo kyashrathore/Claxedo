@@ -1,4 +1,11 @@
 export { evaluateCompletionContract } from "./completion"
+export {
+  evaluateLandingIntegrity,
+  type LandingFileChange,
+  type LandingIntegrityEvaluation,
+  type LandingIntegrityFinding,
+} from "./landing-integrity"
+export { renderStreamNotes } from "./stream-notes"
 export { dependencyGraphHasCycle } from "./dependencies"
 export {
   evaluateWorkItemLaunchability,

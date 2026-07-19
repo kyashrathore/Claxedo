@@ -56,6 +56,7 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     dismissDecision: vi.fn(),
     markNotificationRead: vi.fn(),
     confirmAdmission: vi.fn(),
+    confirmPublicPr: vi.fn(),
     dismissAdmission: vi.fn(),
     stageIntakeCandidate: vi.fn(),
     dismissIntakeCandidate: vi.fn(),
@@ -102,6 +103,17 @@ const candidate = (id: string, title: string) => IntakeCandidateDtoSchema.parse(
   externalStatus: "open",
 })
 const unorganizedItem = { ownerUserId: "user_1", id: "uaw", updatedAt: 5, kind: "unorganized_ai_work", counts: { total: 2, externalIssues: 2, sessions: 0 } } as AttentionItem
+const masterEscalationItem = {
+  ownerUserId: "user_1",
+  id: "stream_1",
+  updatedAt: 5,
+  kind: "master_escalation",
+  streamId: "stream_1",
+  sessionId: "ses_master_stream_1",
+  reason: "Landing conflict remained after three attempts",
+  evidenceIds: [],
+  receiptRefs: ["diff:ours", "diff:theirs"],
+} as AttentionItem
 
 const ok: CommandResult = { ok: true, operationId: "op_1", cursor: "c_1", value: {} } as CommandResult
 
@@ -298,6 +310,53 @@ describe("WaitingItemDialog — failed task", () => {
   })
 })
 
+describe("WaitingItemDialog — master escalation", () => {
+  test("shows the halt reason and opens the master's exact Session", async () => {
+    const onOpenSession = vi.fn()
+    render(() => (
+      <WaitingItemDialog
+        selection={masterEscalationItem}
+        source={baseSource({})}
+        onClose={() => {}}
+        onResolved={() => {}}
+        onOpenSession={onOpenSession}
+      />
+    ))
+
+    expect(await screen.findByText("Landing conflict remained after three attempts")).toBeInTheDocument()
+    expect(screen.getByText("diff:ours")).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("button", { name: "Open in project" }))
+    expect(onOpenSession).toHaveBeenCalledWith({ sessionId: "ses_master_stream_1" })
+  })
+
+  test("confirms the first public non-draft PR with the latest Stream version", async () => {
+    const confirmPublicPr = vi.fn(async () => ok)
+    const onResolved = vi.fn()
+    const onClose = vi.fn()
+    const source = baseSource({
+      stream: vi.fn(async () => ({ id: "stream_1", version: 7 }) as never),
+      confirmPublicPr,
+    })
+    render(() => (
+      <WaitingItemDialog
+        selection={{
+          ...masterEscalationItem,
+          reason: "Confirm the first non-draft pull request to public repository claxedo/app: Release WorkGraph V2",
+        }}
+        source={source}
+        onClose={onClose}
+        onResolved={onResolved}
+      />
+    ))
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Confirm public PR" }))
+
+    await waitFor(() => expect(confirmPublicPr).toHaveBeenCalledWith("stream_1", 7))
+    await waitFor(() => expect(onResolved).toHaveBeenCalledOnce())
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+})
+
 describe("TaskDialog — execution and activity", () => {
   test("shows a layout-shaped skeleton while the work item loads, not bare text", async () => {
     let resolve: (value: WorkItemDto) => void = () => {}
@@ -449,6 +508,42 @@ describe("TaskDialog — execution and activity", () => {
     await fireEvent.click(await screen.findByRole("button", { name: `Open session ${failedAttempt.executionReferences.sessionId}` }))
     expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedAttempt.executionReferences.sessionId }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  test("shows the Stream master's full update with safe actionable receipt links", async () => {
+    const onOpenSession = vi.fn(async () => {})
+    const source = baseSource({
+      workItem: vi.fn(async () => failedWorkItem),
+      latestAttempt: vi.fn(async () => failedAttempt),
+    })
+    render(() => (
+      <TaskDialog
+        item={failedWorkItem}
+        source={source}
+        streamAttempts={[{
+          ...failedAttempt.attempt,
+          result: { summary: "Deployment diff", artifactRefs: ["diff:deployment"], finishedAt: 3 },
+          executionReferences: failedAttempt.executionReferences,
+        }]}
+        masterStatus={{
+          state: "hibernating",
+          sessionId: "ses_master_stream_1",
+          message: "Merged the deployment task and opened its pull request.",
+          receiptRefs: ["diff:deployment", "https://github.test/pull/42"],
+          updatedAt: 20,
+        }}
+        onClose={() => {}}
+        onResolved={() => {}}
+        onOpenSession={onOpenSession}
+      />
+    ))
+
+    expect(await screen.findByText("Master activity")).toBeInTheDocument()
+    expect(screen.getByText("Merged the deployment task and opened its pull request.")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/42" }))
+      .toHaveAttribute("href", "https://github.test/pull/42")
+    await fireEvent.click(screen.getByRole("button", { name: "Open master receipt diff:deployment" }))
+    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedAttempt.executionReferences.sessionId }))
   })
 })
 

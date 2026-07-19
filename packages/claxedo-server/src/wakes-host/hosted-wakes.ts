@@ -9,6 +9,7 @@
 //   reconcile. If the reconcile reports unsettled work (sandbox provisioning,
 //   launches in flight), the sink schedules a durable RETRY WAKE on the same
 //   lane — the retry survives isolate death because it is a row, not a timer.
+// - `workgraph_master`: one serialized turn for a Stream's durable master.
 
 import { createWakes, type WakeDriver, type Wakes, type WakeStore } from "@claxedo/wakes"
 import { clean } from "../control-plane/adapters/worker/hosted-compose"
@@ -25,6 +26,26 @@ const RETRY_MIN_MS = 1_000
 const RETRY_MAX_MS = 30_000
 
 export const WORKGRAPH_SETTLE_KIND = "workgraph_settle"
+export const WORKGRAPH_MASTER_KIND = "workgraph_master"
+
+export type WorkGraphMasterIntent = SettlementTenant & Readonly<{
+  streamId: string
+  trigger: "mailbox" | "task_settled" | "schedule"
+}>
+
+export function workGraphMasterKey(intent: Pick<WorkGraphMasterIntent, "organizationId" | "ownerUserId" | "streamId">) {
+  return `workgraph-master:${intent.organizationId}:${intent.ownerUserId}:${intent.streamId}`
+}
+
+export function workGraphMasterWake(intent: WorkGraphMasterIntent, now: number) {
+  return {
+    kind: WORKGRAPH_MASTER_KIND,
+    serialKey: workGraphMasterKey(intent),
+    workspaceId: `wg-master:${intent.organizationId}:${intent.ownerUserId}:${intent.streamId}`,
+    at: now,
+    intent,
+  }
+}
 
 /**
  * The dirty-flag wake for one tenant. Deliberately NO engine idempotencyKey:
@@ -51,10 +72,26 @@ export function parseSettleTenant(intentJson: string): SettlementTenant {
   return { organizationId: intent.organizationId, ownerUserId: intent.ownerUserId }
 }
 
+export function parseMasterIntent(intentJson: string): WorkGraphMasterIntent {
+  const intent = JSON.parse(intentJson) as Partial<WorkGraphMasterIntent> | null
+  if (
+    !intent || typeof intent.organizationId !== "string" || typeof intent.ownerUserId !== "string" ||
+    typeof intent.streamId !== "string" ||
+    (intent.trigger !== "mailbox" && intent.trigger !== "task_settled" && intent.trigger !== "schedule")
+  ) throw new Error("workgraph_master wake carries no Stream identity")
+  return {
+    organizationId: intent.organizationId,
+    ownerUserId: intent.ownerUserId,
+    streamId: intent.streamId,
+    trigger: intent.trigger,
+  }
+}
+
 type ComposeOptions = Readonly<{
   now?: () => number
   /** Injectable settle for tests; defaults to the tenant-scoped hosted reconcile. */
   settle?: (tenant: SettlementTenant) => Promise<unknown>
+  master?: (intent: WorkGraphMasterIntent) => Promise<unknown>
   store?: WakeStore
 }>
 
@@ -79,6 +116,7 @@ export function composeHostedWakes(
   }
   const store = options.store ?? new ConvexWakeStore({ url: url!, serviceToken: serviceToken!, now })
   let settleRuntime: ((tenant: SettlementTenant) => Promise<unknown>) | undefined
+  let masterRuntime: ((intent: WorkGraphMasterIntent) => Promise<unknown>) | undefined
   const settle = (tenant: SettlementTenant) => {
     if (options.settle) return options.settle(tenant)
     if (!settleRuntime) {
@@ -94,12 +132,28 @@ export function composeHostedWakes(
     }
     return settleRuntime(tenant)
   }
+  const master = (intent: WorkGraphMasterIntent) => {
+    if (options.master) return options.master(intent)
+    if (!masterRuntime) {
+      const hostedEnv = { ...env, CLAXEDO_WORKGRAPH_WORKER_ID: `claxedo-master-lane:${workGraphMasterKey(intent)}` }
+      const runtime = createHostedWorkGraphRuntime(hostedEnv, composeHostedControlPlane(hostedEnv).services)
+      if (!runtime) {
+        throw new HostedWorkerCompositionError(
+          "wakes_master_unavailable",
+          "workgraph_master requires hosted Convex storage and a Control Plane service token",
+        )
+      }
+      masterRuntime = runtime.master
+    }
+    return masterRuntime(intent)
+  }
   // Late-bound so the sink can schedule retry wakes through the same engine.
   let wakes: Wakes
   wakes = createWakes({
     store,
     driver,
     now,
+    computeNextRun: nextDailyMasterRun,
     budgets: {
       maxLiveWakes: Number.MAX_SAFE_INTEGER,
       creationRatePerHour: Number.MAX_SAFE_INTEGER,
@@ -123,9 +177,32 @@ export function composeHostedWakes(
           })
         }
       },
+      [WORKGRAPH_MASTER_KIND]: async (wake) => {
+        const intent = parseMasterIntent(wake.intentJson)
+        const result = await master(intent)
+        const delay = settleRetryDelayMs(result)
+        if (delay !== undefined) {
+          const fireAt = now() + delay
+          await wakes.schedule({
+            workspaceId: wake.workspaceId,
+            kind: WORKGRAPH_MASTER_KIND,
+            serialKey: wake.serialKey ?? undefined,
+            at: fireAt,
+            intent,
+            idempotencyKey: `master:${workGraphMasterKey(intent)}:${fireAt}`,
+          })
+        }
+      },
     },
   })
   return wakes
+}
+
+export function nextDailyMasterRun(schedule: string, afterMs: number) {
+  if (schedule !== "daily@06:00Z") throw new Error(`Unsupported hosted wake schedule: ${schedule}`)
+  const after = new Date(afterMs)
+  const candidate = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), 6)
+  return candidate > afterMs ? candidate : candidate + 24 * 60 * 60_000
 }
 
 /**

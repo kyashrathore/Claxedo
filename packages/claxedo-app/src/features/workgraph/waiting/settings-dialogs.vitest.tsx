@@ -331,6 +331,8 @@ describe("StreamSettingsDialog", () => {
     const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
     render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
     await screen.findByText("Stream settings")
+    expect(screen.getByText("Blank charter defaults")).toBeInTheDocument()
+    expect(screen.getByText("Ask before the first externally visible action.")).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
     fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "detailed" } })
@@ -348,6 +350,8 @@ describe("StreamSettingsDialog", () => {
           tools: ["shell"],
         }),
         activityGranularity: "detailed",
+        charterText: "",
+        charterChanged: false,
       }),
     )
   })
