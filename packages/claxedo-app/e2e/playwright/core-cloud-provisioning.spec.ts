@@ -131,7 +131,11 @@ const DIR = "/tmp/e2e-core-cloud-provisioning"
 const PROJECT_ID = "proj_core_cloud_provisioning"
 const WORKSPACE_ID = "ws_core_cloud_provisioning"
 const SESSION_ID = "ses_core_cloud_provisioning"
-const BIG_PICKLE = { id: "big-pickle", name: "Big Pickle" }
+// Real, versioned, servable house-model id — NOT the bare "big-pickle", which
+// the app reserves as the non-selectable pre-provisioning placeholder
+// (`signed-workspace-model.ts`); serving that exact id as the only model leaves
+// the composer stuck on "Select model". Display name stays "Big Pickle".
+const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
 
 type PipelineStep = "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready"
 

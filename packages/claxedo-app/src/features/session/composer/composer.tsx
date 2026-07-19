@@ -637,7 +637,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Clickability must never become submittability. Viewer-role hard-blocks
     // unconditionally (via roleSubmitBlocked); every other block reason also
     // guards the handler — except while a turn is running, so Stop stays live.
-    submitBlocked: () => !stoppable() && submitBlock() !== null,
+    //
+    // EXCEPTION: the opencode-mode model gate (`no-model` / `no-credential`) is
+    // surfaced by the submit pipeline's OWN guard (`submit.ts` →
+    // `modelAgentRequired` toast), which both refuses to send AND explains why.
+    // Hard-blocking it here silently swallows the keypress and the user never
+    // learns they must pick a model (regression from the guard added in
+    // 71091f031a, which over-corrected past viewer-role). Let the handler reach
+    // that guard for those two reasons; harness/inert reasons stay hard-blocked
+    // (a harness-mode send could otherwise dispatch to a not-ready harness).
+    submitBlocked: () => {
+      if (stoppable()) return false
+      const block = submitBlock()
+      if (!block) return false
+      if (!toolbarHarnessMode(scope()) && (block.reason === "no-model" || block.reason === "no-credential")) return false
+      return true
+    },
     prompt,
     imageCount: () => imageAttachments().length,
     commentCount,

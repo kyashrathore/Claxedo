@@ -325,7 +325,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "opencode", modelID: "big-pickle" })
+    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
 
     // Zero relay config-options requests for the entire scenario — pi has no config options.
@@ -449,7 +449,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
     // The strongest proof: the payload actually dispatched through the relay carries
     // "opencode", never the local pane's "claude-acp" selection.
-    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text, providerID: "opencode", modelID: "big-pickle" })
+    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${text}`)
   })
 })

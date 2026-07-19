@@ -186,7 +186,11 @@ const DIR = "/tmp/e2e-core-user-hosted-workspace"
 // `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`); a frame
 // with any other value is dropped by `runtimeEnvelope` (src/context/global-sdk.tsx).
 const RUNTIME_EVENT_CONTRACT_VERSION = 3
-const BIG_PICKLE = { id: "big-pickle", name: "Big Pickle" }
+// Real, versioned, servable house-model id — NOT the bare "big-pickle", which
+// the app reserves as the non-selectable pre-provisioning placeholder
+// (`signed-workspace-model.ts`); serving that exact id as the only model leaves
+// the composer stuck on "Select model". Display name stays "Big Pickle".
+const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
 
 const USER_HOSTED_STEP_SUMMARY = {
   connecting_workspace: "Connecting to your workspace before the composer unlocks.",
@@ -585,6 +589,20 @@ async function installUserHostedRuntimeMock(
       // what behavior 3's routing assertion checks.
       return json(route, {})
     }
+
+    // ---- Control-plane provider catalog (bare origin, ALWAYS) ----
+    // The signed control plane serves a bare `GET /provider` (and
+    // `/provider/auth`) that returns an EMPTY catalog for the default
+    // (opencode) harness — the workspace's real provider/model list is a
+    // RUNTIME-owned read routed through the relay (`/workspaces/:id/provider`
+    // above), exactly as `packages/claxedo-server/src/routes/hosted-shell.ts`
+    // (`GET /provider` → `emptyProvider()`) does. The app fires this global
+    // control-plane catalog query independent of any workspace's readiness, so
+    // — like `/api/claxedo/bootstrap` and `/api/control/session-list` above —
+    // it is NOT the per-workspace runtime lane and is deliberately NOT counted
+    // in `bareHitsDuringReady`.
+    if (url.pathname === "/provider") return json(route, { all: [], connected: [], default: {} })
+    if (url.pathname === "/provider/auth") return json(route, {})
 
     if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
     return json(route, { error: "unhandled request in core-user-hosted-workspace mock", path: url.pathname }, 598)

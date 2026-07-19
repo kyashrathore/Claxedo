@@ -235,8 +235,8 @@ function paidProviderBody() {
         name: "opencode",
         env: [],
         models: {
-          "big-pickle": {
-            id: "big-pickle",
+          "big-pickle-1": {
+            id: "big-pickle-1",
             name: "Big Pickle",
             // See the `family` comment on the anthropic models below — a
             // provider's single model with an omitted `family` is ALSO
@@ -328,7 +328,7 @@ function paidProviderBody() {
         },
       },
     ],
-    default: { opencode: "big-pickle", anthropic: "claude-sonnet-4-6" },
+    default: { opencode: "big-pickle-1", anthropic: "claude-sonnet-4-6" },
     connected: ["opencode", "anthropic"],
   }
 }
@@ -370,7 +370,7 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
         project: [{ id: mock.session.projectId, worktree: mock.session.dir, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
         provider: body,
         provider_auth: { opencode: [{ type: "api", label: "API key" }], anthropic: [{ type: "api", label: "API key" }] },
-        config: { provider: { id: "opencode", model: "big-pickle" }, agent: { id: "build" } },
+        config: { provider: { id: "opencode", model: "big-pickle-1" }, agent: { id: "build" } },
       }),
     })
   })
