@@ -454,8 +454,19 @@ async function dragTabOntoRightEdge(page: Page, tab: Locator, target: Locator) {
  * (divider, focus, snapshot-restore, reload-persistence) that does not itself
  * care about a real conversational turn. */
 async function buildDraftPlusTerminalSplit(page: Page) {
-  await installPtyMock(page)
+  // These structural scenarios keep the draft/terminal panes inert (no conversational
+  // turn), but the app shell still has to BOOT: `ConnectionGate` polls
+  // `/api/claxedo/health` and the shell then resolves the workspace
+  // (`resolveWorkspace` -> bootstrap/`/api/workspace/resolve`). None of that is served
+  // by `installPtyMock` alone, so on the health-gated `/${slug}/session` boot route
+  // (`ConnectionGate.revealBeforeHealth` is false for it — see `src/app/entry/app.tsx`)
+  // the shell dies on the `ConnectionError`/error-boundary surface without a live
+  // backend. `installMockRuntime` supplies the full offline boot surface (health,
+  // bootstrap, workspace resolve, events, agent config) exactly as the turn-driven
+  // behaviors below already rely on; the modelled session id stays unused here.
   await seedOneProject(page, DIR)
+  await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+  await installPtyMock(page)
   await openWorkbench(page, DIR)
   await unpinSidebarForSwitcher(page)
   await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 20_000 })
@@ -841,8 +852,9 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
   )
 
   test("header buttons create the corresponding surface — behavior 16", async ({ page }) => {
-    await installPtyMock(page)
     await seedOneProject(page, DIR)
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installPtyMock(page)
     await openWorkbench(page, DIR)
     await unpinSidebarForSwitcher(page)
     await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 20_000 })
