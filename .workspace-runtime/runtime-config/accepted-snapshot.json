@@ -1,6 +1,6 @@
 {
-  "revision": 1,
-  "acceptedAt": "2026-07-18T16:03:36.165Z",
+  "revision": 85,
+  "acceptedAt": "2026-07-19T17:37:35.015Z",
   "snapshot": {
     "version": 1,
     "harness": {
@@ -11,13 +11,7 @@
       "keys": []
     },
     "auth": {
-      "keys": [
-        "claude-acp",
-        "claude-sdk",
-        "codex-acp",
-        "codex-app-server",
-        "openai"
-      ]
+      "keys": []
     },
     "agent_extensions": {
       "version": 1,
