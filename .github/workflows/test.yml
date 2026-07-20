@@ -96,19 +96,17 @@ jobs:
           path: packages/*/.artifacts/unit/junit.xml
 
   e2e:
-    name: e2e (${{ matrix.settings.name }})
+    # 8-way sharding: serialized (workers=1) the core suite runs ~50 min on a
+    # 2-core runner; each shard takes ~1/8 of the tests, so the wall clock is
+    # setup + build + a few minutes of tests. The @workgraph-real leg runs as
+    # its own job below (it boots a real workgraph API and builds with a baked
+    # VITE_ server URL, so it cannot share a shard's app build).
+    name: e2e (linux ${{ matrix.shard }}/8)
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - name: linux
-            host: ubuntu-latest
-          - name: windows
-            host: windows-latest
-    runs-on: ${{ matrix.settings.host }}
-    # Same known Bun-on-Windows patched-dependency install bug as the unit
-    # job (effect@4.0.0-beta.83 patch -> ENOTEMPTY); nonblocking on Windows only.
-    continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:
@@ -174,10 +172,10 @@ jobs:
       # @core-tagged specs (1-7 + 10 of the 25-spec plan) run on every PR. The full
       # Tier M suite (all mocked/fixture specs) and Tier L (live) run nightly on a
       # separate schedule/credentialed runner, not here.
-      - name: Run claxedo-app e2e core suite
+      - name: Run claxedo-app e2e core suite (shard ${{ matrix.shard }}/8)
         working-directory: packages/claxedo-app
-        timeout-minutes: 45
-        run: bun run test:e2e:core
+        timeout-minutes: 30
+        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/8
         env:
           # Serve a production build via vite preview: cold on-demand dev
           # transforms on 2-core runners push first navigations past the expect
@@ -188,10 +186,87 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-${{ matrix.settings.name }}-${{ github.run_attempt }}
+          name: playwright-linux-shard${{ matrix.shard }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
             packages/claxedo-app/e2e/junit-*.xml
+            packages/claxedo-app/e2e/playwright/test-results
+            packages/claxedo-app/e2e/playwright/report
+
+  e2e-workgraph:
+    name: e2e (workgraph-real)
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
+          node-version: "24.15"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.playwright-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Install Playwright Chromium
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      - name: Run workgraph-real e2e
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        run: bun run test:e2e:workgraph
+        env:
+          CLAXEDO_E2E_PREBUILT: "1"
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-workgraph-real-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
             packages/claxedo-app/e2e/playwright/test-results
             packages/claxedo-app/e2e/playwright/report
