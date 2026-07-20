@@ -1563,19 +1563,42 @@ async function availablePort() {
 
 async function waitForOpenCode(port: number, process: ReturnType<typeof spawn>, logs: string[]) {
   const diagT0 = Date.now()
-  for (let attempt = 0; attempt < 100; attempt++) {
+  // Budget the whole boot rather than a fixed attempt count, and bound every
+  // probe with an AbortSignal timeout. On a cold CI runner the engine's first
+  // `bun run ./src/index.ts serve` transpiles the entire Effect server tree on
+  // demand: `NodeHttpServer.layer` binds the listen socket early in that layer
+  // build, but the request handler is only wired once the (slow, cold) route
+  // layer finishes building. In that window the socket accepts the TCP
+  // connection yet never answers — and an *untimed* fetch sends its request into
+  // that void and hangs forever, because Node's HTTP parser consumes the request
+  // before any `request` listener exists and never replays it once the handler
+  // attaches. That is exactly the observed ~240s silent hook timeout (no throw,
+  // no per-attempt log). Timing out each probe lets the loop keep retrying with
+  // fresh connections until the handler is live, and the total deadline turns a
+  // genuinely stuck boot into a fast failure that carries the engine's own logs.
+  const deadlineMs = 120_000
+  let attempt = 0
+  while (Date.now() - diagT0 < deadlineMs) {
+    attempt++
     if (process.exitCode !== null) throw new Error(`OpenCode exited before readiness:\n${logs.join("")}`)
     const fetchT0 = Date.now()
-    const ready = await fetch(`http://127.0.0.1:${port}/global/health`).then((response) => response.ok, () => false)
+    const ready = await fetch(`http://127.0.0.1:${port}/global/health`, {
+      signal: AbortSignal.timeout(2_000),
+    }).then((response) => response.ok, () => false)
     const fetchMs = Date.now() - fetchT0
-    if (fetchMs > 500) console.error(`[harness-diag] waitForOpenCode attempt ${attempt} fetch took ${fetchMs}ms (total +${Date.now() - diagT0}ms)`)
+    // Unconditional (throttled) per-attempt checkpoint so CI shows the probe loop
+    // is progressing and pinpoints where a boot stalls instead of going silent.
+    if (attempt <= 3 || attempt % 10 === 0 || fetchMs > 500)
+      console.error(
+        `[harness-diag] waitForOpenCode attempt ${attempt} ready=${ready} fetch=${fetchMs}ms (total +${Date.now() - diagT0}ms)`,
+      )
     if (ready) {
       console.error(`[harness-diag] waitForOpenCode ready at attempt ${attempt}, total +${Date.now() - diagT0}ms`)
       return
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error(`OpenCode did not become ready:\n${logs.join("")}`)
+  throw new Error(`OpenCode did not become ready within ${deadlineMs}ms:\n${logs.join("")}`)
 }
 
 function object(input: unknown) {
