@@ -95,10 +95,43 @@ export function applyOpencodeConversationEvent(chat: ConversationChatHandle, eve
 }
 
 function mergeChatMessage(current: UIMessage, snapshot: UIMessage): UIMessage {
+  // For a settled (completed) assistant message the fetched snapshot's part
+  // list is authoritative: matching parts still merge (preserving longer live
+  // text), but chat-only parts are dropped rather than re-appended. Streamed
+  // parts carry projection-synthesized ids that can differ from the persisted
+  // ids for the same content (e.g. `000000_<msgId>-text` vs `<msgId>_text`),
+  // so appending them alongside the persisted part renders the reply twice.
+  if (settledAssistantMessage(snapshot) && snapshot.parts.length > 0) {
+    return {
+      ...snapshot,
+      parts: snapshot.parts.map((part) => {
+        const id = opencodePartId(part)
+        const existing = id ? current.parts.find((item) => opencodePartId(item) === id) : undefined
+        return existing ? mergeChatPart(existing, part) : part
+      }),
+    }
+  }
   return {
     ...snapshot,
     parts: mergeChatParts(current.parts, snapshot.parts),
   }
+}
+
+/**
+ * True when the message is an assistant message whose turn has settled
+ * (`time.completed` stamped). Once settled, the persisted history is the
+ * source of truth for the message's parts: late-delivered streamed part
+ * events (SSE batches racing the REST history refetch) must not append new
+ * parts, or the same logical content shows up twice under two part ids.
+ */
+function settledAssistantMessage(message: UIMessage) {
+  const stored = (message as ConversationUIMessage).metadata?.opencodeMessage
+  if (!stored || stored.role !== "assistant") return false
+  return typeof (stored.time as { completed?: number } | undefined)?.completed === "number"
+}
+
+function hasChatPart(message: UIMessage, partID: string) {
+  return message.parts.some((part) => opencodePartId(part) === partID)
 }
 
 function mergeChatParts(current: MessagePart[], snapshot: MessagePart[]) {
@@ -161,6 +194,11 @@ function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   const index = current.findIndex((message) => message.id === part.messageID)
   if (index === -1) return false
   const message = current[index]!
+  // A settled assistant message only accepts updates to parts it already has —
+  // a late-delivered streamed part (delayed SSE batch arriving after the REST
+  // history refetch landed the completed message) must not append a second
+  // copy of content the persisted part already carries under a different id.
+  if (settledAssistantMessage(message) && !hasChatPart(message, part.id)) return false
   chat.setMessages(replaceAt(current, index, {
     ...message,
     parts: upsertChatParts(message.parts, part.id, mapped),
@@ -194,6 +232,9 @@ function appendPartDelta(
   const index = current.findIndex((message) => message.id === messageID)
   if (index === -1) return false
   const message = current[index]!
+  // Same settled-message guard as upsertPart: a delta for a part the settled
+  // message does not have would create a fresh part and duplicate the reply.
+  if (settledAssistantMessage(message) && !hasChatPart(message, partID)) return false
   chat.setMessages(replaceAt(current, index, {
     ...message,
     parts: appendTextDelta(message.parts, partID, delta),

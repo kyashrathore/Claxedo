@@ -230,6 +230,56 @@ describe("opencode conversation chat adapter", () => {
     expect(handle.written).toHaveLength(3)
   })
 
+  test("a settled assistant message rejects late streamed parts under a different part id", () => {
+    // Ordering raced in CI: the REST history refetch lands the completed
+    // assistant row (persisted part id `<msgId>_text`) BEFORE the delayed SSE
+    // batch delivers the compat projection's streamed part (synthesized id
+    // `000000_<msgId>-text`) for the same reply. The late part must not append
+    // a second copy of the text.
+    const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+    const handle = chat(opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
+    }))
+
+    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+      part: textPart("000000_msg_assistant-text", "msg_assistant", ""),
+    }))).toBe(false)
+    expect(applyOpencodeConversationEvent(handle, event("message.part.delta", {
+      messageID: "msg_assistant",
+      partID: "000000_msg_assistant-text",
+      delta: "hello",
+    }))).toBe(false)
+    expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello" }])
+
+    // Updates to a part the settled message already has still apply.
+    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+      part: textPart("msg_assistant_text", "msg_assistant", "hello!"),
+    }))).toBe(true)
+    expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello!" }])
+  })
+
+  test("snapshot merge treats a settled assistant message's fetched parts as authoritative", () => {
+    // Reverse ordering of the race above: a streamed part attached first, then
+    // the completed REST row hydrates. The persisted part set wins; the
+    // chat-only streamed twin is dropped instead of re-appended.
+    const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+    const live = opencodeConversationSnapshot({
+      messages: [message("msg_assistant")],
+      parts: { msg_assistant: [textPart("000000_msg_assistant-text", "msg_assistant", "hello")] },
+    })
+    const fetched = opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
+    })
+
+    expect(mergeConversationSnapshot(live, fetched)).toMatchObject([{
+      id: "msg_assistant",
+      parts: [{ type: "text", content: "hello" }],
+    }])
+    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toHaveLength(1)
+  })
+
   test("snapshot merge preserves chat-owned live deltas for matching parts", () => {
     const snapshot = opencodeConversationSnapshot({
       messages: [message("msg_assistant")],
