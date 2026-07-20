@@ -556,6 +556,45 @@ describe("hosted WorkGraph composition", () => {
     expect(nudge).toHaveBeenCalledWith({ organizationId: "org_internal_a", ownerUserId: "internal_user_a" })
   })
 
+  test("also nudges the fast control lane for a control-effect command", async () => {
+    const nudge = vi.fn()
+    const nudgeControl = vi.fn()
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      dispatcher: { nudge, nudgeControl },
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "delete_a",
+        command: { version: 1, type: "delete_stream", streamId: "stream_a", expectedVersion: 1, reason: "Discard" },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(nudge).toHaveBeenCalledOnce()
+    expect(nudgeControl).toHaveBeenCalledWith({ organizationId: "org_internal_a", ownerUserId: "internal_user_a" })
+  })
+
+  test("does not nudge the control lane for a non-control command", async () => {
+    const nudge = vi.fn()
+    const nudgeControl = vi.fn()
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      dispatcher: { nudge, nudgeControl },
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "op_a", command: { version: 1, type: "create_stream", title: "Mine" } }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(nudge).toHaveBeenCalledOnce()
+    expect(nudgeControl).not.toHaveBeenCalled()
+  })
+
   test("does not nudge settlement when a command returns a failure", async () => {
     const nudge = vi.fn()
     const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {

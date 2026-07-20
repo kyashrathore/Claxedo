@@ -65,6 +65,23 @@ describe("createWakeSettlementDispatcher", () => {
     expect(body.serialKey).toBe(mutations[0]!.args.serialKey)
   })
 
+  it("nudgeControl targets the dedicated control lane, not the settle lane", async () => {
+    const { dispatcher, mutations, nudges, reported, flush } = harness()
+    dispatcher.nudgeControl!(TENANT)
+    await flush()
+
+    expect(reported).toHaveLength(0)
+    expect(mutations).toHaveLength(1)
+    expect(mutations[0]!.args).toMatchObject({ kind: "workgraph_control", fireAt: 1_000 })
+    const serialKey = mutations[0]!.args.serialKey as string
+    expect(serialKey.endsWith(":control")).toBe(true)
+    // A distinct serialKey => a distinct ClaxedoWakeLane DO instance, so the
+    // control drain never queues behind the settle lane.
+    expect(serialKey).not.toBe(JSON.stringify(TENANT))
+    expect(nudges).toHaveLength(1)
+    expect((nudges[0]!.body as { serialKey: string }).serialKey).toBe(serialKey)
+  })
+
   it("a failing wake creation reports and never reaches the DO or the caller", async () => {
     const { dispatcher, nudges, reported, flush } = harness({ mutationError: new Error("convex down") })
     expect(() => dispatcher.nudge(TENANT)).not.toThrow()

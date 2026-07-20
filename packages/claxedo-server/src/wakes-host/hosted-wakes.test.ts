@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import type { SettlementTenant } from "../workgraph-host/settlement-dispatcher"
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import {
+  WORKGRAPH_CONTROL_KIND,
   WORKGRAPH_MASTER_KIND,
   WORKGRAPH_SETTLE_KIND,
   composeHostedWakes,
@@ -9,6 +10,7 @@ import {
   parseMasterIntent,
   settleRetryDelayMs,
   nextDailyMasterRun,
+  workGraphControlWake,
   workGraphSettleWake,
   workGraphMasterWake,
 } from "./hosted-wakes"
@@ -31,6 +33,37 @@ describe("workGraphSettleWake", () => {
     expect(parseSettleTenant(JSON.stringify(TENANT))).toEqual(TENANT)
     expect(() => parseSettleTenant("null")).toThrow(/tenant/)
     expect(() => parseSettleTenant('{"organizationId":"x"}')).toThrow(/tenant/)
+  })
+})
+
+describe("workGraphControlWake", () => {
+  it("shapes a control wake on a dedicated `${tenant}:control` lane", () => {
+    const settle = workGraphSettleWake(TENANT, 1_000)
+    const control = workGraphControlWake(TENANT, 1_000)
+    expect(control.kind).toBe(WORKGRAPH_CONTROL_KIND)
+    expect(control.at).toBe(1_000)
+    expect(control.intent).toEqual(TENANT)
+    // Distinct lane from settle => its own idle ClaxedoWakeLane DO instance.
+    expect(control.serialKey).toBe(`${settle.serialKey}:control`)
+    expect(control.serialKey).not.toBe(settle.serialKey)
+    expect(parseSettleTenant(JSON.stringify(control.intent))).toEqual(TENANT)
+  })
+
+  it("fires through the registered control sink, isolated from settle", async () => {
+    const store = new SqliteWakeStore()
+    const controlled: unknown[] = []
+    const settled: unknown[] = []
+    const wakes = composeHostedWakes({} as HostedWorkerEnv, { nudge: () => {} }, {
+      now: () => 1_000,
+      store,
+      settle: async (tenant) => void settled.push(tenant),
+      control: async (tenant) => void controlled.push(tenant),
+    })
+    const wake = workGraphControlWake(TENANT, 1_000)
+    await wakes.schedule(wake)
+    expect((await wakes.runDue(wake.serialKey)).fired).toBe(1)
+    expect(controlled).toEqual([TENANT])
+    expect(settled).toEqual([]) // the settle sink is never invoked on the control lane
   })
 })
 

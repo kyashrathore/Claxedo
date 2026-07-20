@@ -198,6 +198,7 @@ export function createHostedWorkGraphRuntime(
       background?: boolean
       tenants?: WorkerTenant[]
       trigger?: WorkGraphReconciliationTrigger
+      controlOnly?: boolean
     } = {}) => {
       const claimedAt = now()
       const trigger = run.trigger ?? "cron"
@@ -208,6 +209,32 @@ export function createHostedWorkGraphRuntime(
             service_token: serviceToken,
             limit: 500,
           })) as WorkerTenant[])
+        // Fast control lane: a Stream delete/close/interrupt control effect has
+        // ZERO launch dependency, yet on the shared per-tenant settle lane its
+        // settle wake queues behind a 15-20s launch-provision + running-attempt
+        // history-poll pass (measured: settle-wake fired_at - fire_at p90 22.8s,
+        // p95 32.2s on staging), which blew a bare-Stream delete's <20s SLA.
+        // The dedicated control WakeLane (serialKey `${tenant}:control`) nudges
+        // this path so the delete drains on its own idle lane in ~1-2s, never
+        // waiting on the launch lane. The launch lane + 15-min sweep still drain
+        // any control effect this fast path misses, so it is purely additive.
+        if (run.controlOnly) {
+          const controls = await drainControlEffects(
+            client,
+            services,
+            request,
+            serviceToken,
+            workerId,
+            now,
+            tenants,
+            telemetry,
+          )
+          return {
+            launched: [],
+            results: [],
+            background: { controls, intake: { completed: 0 }, sourcePlanning: { launched: [], results: [] } },
+          }
+        }
         const claims = (await tenantRows(client, api.workgraphRuntime.claimLaunches, tenants, {
           service_token: serviceToken,
           worker_id: workerId,
@@ -962,7 +989,13 @@ function managedAttemptPrompt(prompt: string) {
   ].join("\n")
 }
 
-async function reconcileBackground(
+// Drain ONLY the control-effect outbox (stream delete/close, attempt
+// interrupt). Deliberately excludes session intake and source planning (both
+// of which reconcileBackground also runs) because source planning can
+// provision a sandbox — the control drain must stay fast (~1s) so the
+// dedicated control WakeLane never inherits provisioning latency. Split out so
+// the `controlOnly` reconcile path can run it in isolation.
+async function drainControlEffects(
   client: Executor,
   services: ControlPlaneServices,
   request: RuntimeFetch,
@@ -1070,6 +1103,29 @@ async function reconcileBackground(
         })
       }
     }),
+  )
+  return controlResults
+}
+
+async function reconcileBackground(
+  client: Executor,
+  services: ControlPlaneServices,
+  request: RuntimeFetch,
+  serviceToken: string,
+  workerId: string,
+  now: () => number,
+  tenants: readonly WorkerTenant[],
+  telemetry: WorkGraphOperationalReporter,
+) {
+  const controlResults = await drainControlEffects(
+    client,
+    services,
+    request,
+    serviceToken,
+    workerId,
+    now,
+    tenants,
+    telemetry,
   )
   const intakeRows = (await tenantResults(client, api.workgraphBackground.drainSessionIntake, tenants, {
     service_token: serviceToken,

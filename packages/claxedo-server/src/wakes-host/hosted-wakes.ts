@@ -33,6 +33,13 @@ const RETRY_MAX_MS = 30_000
 
 export const WORKGRAPH_SETTLE_KIND = "workgraph_settle"
 export const WORKGRAPH_MASTER_KIND = "workgraph_master"
+// Control effects (Stream delete/close, Attempt interrupt) drain on a lane
+// distinct from `workgraph_settle` so they never queue behind a tenant's
+// launch-provision / running-history reconcile pass (measured settle-wake
+// lateness p90 22.8s / p95 32.2s on staging). Same ClaxedoWakeLane DO class,
+// just a `${tenant}:control` serialKey → its own idle DO instance; no wrangler
+// migration. The settle lane + 15-min sweep still backstop the outbox truth.
+export const WORKGRAPH_CONTROL_KIND = "workgraph_control"
 
 export type WorkGraphMasterIntent = SettlementTenant & Readonly<{
   streamId: string
@@ -70,6 +77,18 @@ export function workGraphSettleWake(tenant: SettlementTenant, now: number) {
   }
 }
 
+/** The control-drain dirty flag for one tenant, on its own dedicated lane. */
+export function workGraphControlWake(tenant: SettlementTenant, now: number) {
+  const key = settlementTenantKey(tenant)
+  return {
+    kind: WORKGRAPH_CONTROL_KIND,
+    serialKey: `${key}:control`,
+    workspaceId: `wg:${key}:control`,
+    at: now,
+    intent: tenant,
+  }
+}
+
 export function parseSettleTenant(intentJson: string): SettlementTenant {
   const intent = JSON.parse(intentJson) as Partial<SettlementTenant> | null
   if (!intent || typeof intent.organizationId !== "string" || typeof intent.ownerUserId !== "string") {
@@ -97,6 +116,8 @@ type ComposeOptions = Readonly<{
   now?: () => number
   /** Injectable settle for tests; defaults to the tenant-scoped hosted reconcile. */
   settle?: (tenant: SettlementTenant) => Promise<unknown>
+  /** Injectable control drain for tests; defaults to a `controlOnly` reconcile. */
+  control?: (tenant: SettlementTenant) => Promise<unknown>
   master?: (intent: WorkGraphMasterIntent) => Promise<unknown>
   store?: WakeStore
 }>
@@ -122,6 +143,7 @@ export function composeHostedWakes(
   }
   const store = options.store ?? new ConvexWakeStore({ url: url!, serviceToken: serviceToken!, now })
   let settleRuntime: ((tenant: SettlementTenant) => Promise<unknown>) | undefined
+  let controlRuntime: ((tenant: SettlementTenant) => Promise<unknown>) | undefined
   let masterRuntime: ((intent: WorkGraphMasterIntent) => Promise<unknown>) | undefined
   const settle = (tenant: SettlementTenant) => {
     if (options.settle) return options.settle(tenant)
@@ -137,6 +159,23 @@ export function composeHostedWakes(
       settleRuntime = (target) => runtime.reconcile({ tenants: [target], trigger: "nudge" })
     }
     return settleRuntime(tenant)
+  }
+  // Control-only reconcile: same runtime, but `controlOnly` skips launch
+  // provisioning / running-history polling so the drain stays ~1-2s.
+  const control = (tenant: SettlementTenant) => {
+    if (options.control) return options.control(tenant)
+    if (!controlRuntime) {
+      const hostedEnv = { ...env, CLAXEDO_WORKGRAPH_WORKER_ID: `claxedo-control-lane:${settlementTenantKey(tenant)}` }
+      const runtime = createHostedWorkGraphRuntime(hostedEnv, composeHostedControlPlane(hostedEnv).services)
+      if (!runtime) {
+        throw new HostedWorkerCompositionError(
+          "wakes_settle_unavailable",
+          "workgraph_control requires hosted Convex storage and a Control Plane service token",
+        )
+      }
+      controlRuntime = (target) => runtime.reconcile({ tenants: [target], trigger: "nudge", controlOnly: true })
+    }
+    return controlRuntime(tenant)
   }
   const master = (intent: WorkGraphMasterIntent) => {
     if (options.master) return options.master(intent)
@@ -180,6 +219,22 @@ export function composeHostedWakes(
             intent: tenant,
             // per-target-time key: bursts coalesce, distinct retries don't
             idempotencyKey: `settle:${settlementTenantKey(tenant)}:${fireAt}`,
+          })
+        }
+      },
+      [WORKGRAPH_CONTROL_KIND]: async (wake) => {
+        const tenant = parseSettleTenant(wake.intentJson)
+        const result = await control(tenant)
+        const delay = settleRetryDelayMs(result)
+        if (delay !== undefined) {
+          const fireAt = now() + delay
+          await wakes.schedule({
+            workspaceId: wake.workspaceId,
+            kind: WORKGRAPH_CONTROL_KIND,
+            serialKey: wake.serialKey ?? undefined,
+            at: fireAt,
+            intent: tenant,
+            idempotencyKey: `control:${settlementTenantKey(tenant)}:${fireAt}`,
           })
         }
       },

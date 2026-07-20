@@ -13,7 +13,7 @@ import { anyApi, type FunctionReference } from "convex/server"
 import { reportError } from "../observability/report"
 import type { SettlementDispatcher } from "../workgraph-host/settlement-dispatcher"
 import { dispatchWakeLaneNudge, type WakeLaneNamespace } from "./wake-lane"
-import { workGraphSettleWake } from "./hosted-wakes"
+import { workGraphControlWake, workGraphSettleWake } from "./hosted-wakes"
 
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as { wakes: { nudgeLaneWake: Mutation } }
@@ -50,45 +50,58 @@ export function createWakeSettlementDispatcher(input: Readonly<{
       // A nudge and its reporting are advisory. Neither may affect the command response.
     }
   }
+  type WakeShape = Readonly<{
+    kind: string
+    serialKey: string
+    workspaceId: string
+    at: number
+    intent: Parameters<SettlementDispatcher["nudge"]>[0]
+  }>
+  const dispatch = (shapeFor: (t: number) => WakeShape) => {
+    try {
+      input.waitUntil(
+        (async () => {
+          const t = now()
+          const shape = shapeFor(t)
+          await executor.mutation(api.wakes.nudgeLaneWake, {
+            service_token: input.serviceToken,
+            id: `wake_${crypto.randomUUID()}`,
+            sessionId: null,
+            workspaceId: shape.workspaceId,
+            triggerType: "at",
+            kind: shape.kind,
+            serialKey: shape.serialKey,
+            intentJson: JSON.stringify(shape.intent),
+            resultJson: null,
+            state: "pending",
+            expiresAt: null,
+            depth: 0,
+            createdBy: "wake-settlement-dispatcher",
+            createdAt: t,
+            firedAt: null,
+            fireAt: shape.at,
+            schedule: null,
+            eventKey: null,
+            token: null,
+            prompt: null,
+            resolvedBy: null,
+            idempotencyKey: null,
+            leaseUntil: null,
+            attempts: 0,
+          })
+          await dispatchWakeLaneNudge(input.namespace, { serialKey: shape.serialKey, fireAt: t })
+        })().catch(report),
+      )
+    } catch (error) {
+      report(error)
+    }
+  }
   return {
     nudge(tenant) {
-      try {
-        input.waitUntil(
-          (async () => {
-            const t = now()
-            const shape = workGraphSettleWake(tenant, t)
-            await executor.mutation(api.wakes.nudgeLaneWake, {
-              service_token: input.serviceToken,
-              id: `wake_${crypto.randomUUID()}`,
-              sessionId: null,
-              workspaceId: shape.workspaceId,
-              triggerType: "at",
-              kind: shape.kind,
-              serialKey: shape.serialKey,
-              intentJson: JSON.stringify(shape.intent),
-              resultJson: null,
-              state: "pending",
-              expiresAt: null,
-              depth: 0,
-              createdBy: "wake-settlement-dispatcher",
-              createdAt: t,
-              firedAt: null,
-              fireAt: shape.at,
-              schedule: null,
-              eventKey: null,
-              token: null,
-              prompt: null,
-              resolvedBy: null,
-              idempotencyKey: null,
-              leaseUntil: null,
-              attempts: 0,
-            })
-            await dispatchWakeLaneNudge(input.namespace, { serialKey: shape.serialKey, fireAt: t })
-          })().catch(report),
-        )
-      } catch (error) {
-        report(error)
-      }
+      dispatch((t) => workGraphSettleWake(tenant, t))
+    },
+    nudgeControl(tenant) {
+      dispatch((t) => workGraphControlWake(tenant, t))
     },
   }
 }

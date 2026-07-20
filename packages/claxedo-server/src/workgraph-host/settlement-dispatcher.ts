@@ -12,6 +12,13 @@ export function settlementTenantKey(tenant: SettlementTenant) {
 export interface SettlementDispatcher {
   /** Fire-and-forget. Must never throw into the caller or block the response. */
   nudge(tenant: SettlementTenant): void
+  /**
+   * Optional fast path for control-effect commands (Stream delete/close,
+   * Attempt interrupt): drain the control outbox on a dedicated lane that does
+   * not queue behind launch provisioning. Purely additive — a dispatcher
+   * without it (or a command that skips it) still settles via `nudge` + sweep.
+   */
+  nudgeControl?(tenant: SettlementTenant): void
 }
 
 export const noopSettlementDispatcher: SettlementDispatcher = {
