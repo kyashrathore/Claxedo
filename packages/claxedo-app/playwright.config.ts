@@ -45,7 +45,9 @@ export default defineConfig({
   // Under a prebuilt static server, per-file parallelism is safe: mocks are
   // page-scoped route interceptions and every spec keys its own /tmp dir. The
   // single-worker pin only protects dev-serving runs (module-graph contention).
-  workers: suite === "all" || suite === "core" ? (prebuilt ? 4 : 1) : undefined,
+  // 2 workers, not 4: CI runners have 4 vCPUs and four chromiums starve the
+  // heavyweight dialog specs (settings-auth cluster timeouts at workers=4).
+  workers: suite === "all" || suite === "core" ? (prebuilt ? 2 : 1) : undefined,
   reporter: [["html", { outputFolder: "e2e/playwright/report", open: "never" }], ["line"]],
   webServer,
   use: {

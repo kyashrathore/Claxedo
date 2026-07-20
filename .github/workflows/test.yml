@@ -96,16 +96,16 @@ jobs:
           path: packages/*/.artifacts/unit/junit.xml
 
   e2e:
-    # 8-way sharding: serialized (workers=1) the core suite runs ~50 min on a
-    # 2-core runner; each shard takes ~1/8 of the tests, so the wall clock is
+    # 12-way sharding: serialized (workers=1) the core suite runs ~50 min on a
+    # 2-core runner; each shard takes ~1/12 of the tests, so the wall clock is
     # setup + build + a few minutes of tests. The @workgraph-real leg runs as
     # its own job below (it boots a real workgraph API and builds with a baked
     # VITE_ server URL, so it cannot share a shard's app build).
-    name: e2e (linux ${{ matrix.shard }}/8)
+    name: e2e (linux ${{ matrix.shard }}/12)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -172,10 +172,10 @@ jobs:
       # @core-tagged specs (1-7 + 10 of the 25-spec plan) run on every PR. The full
       # Tier M suite (all mocked/fixture specs) and Tier L (live) run nightly on a
       # separate schedule/credentialed runner, not here.
-      - name: Run claxedo-app e2e core suite (shard ${{ matrix.shard }}/8)
+      - name: Run claxedo-app e2e core suite (shard ${{ matrix.shard }}/12)
         working-directory: packages/claxedo-app
         timeout-minutes: 30
-        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/8
+        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/12
         env:
           # Serve a production build via vite preview: cold on-demand dev
           # transforms on 2-core runners push first navigations past the expect
