@@ -132,6 +132,26 @@ jobs:
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         run: bun install
 
+      # The @claxedo workspace packages resolve through their dist/ exports,
+      # which don't exist on a fresh checkout; the desktop server bundle
+      # imports them. Same list as test.yml's dist-resolved build step.
+      - name: Build dist-resolved workspace packages
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
       - name: Pin release version
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         shell: bash
