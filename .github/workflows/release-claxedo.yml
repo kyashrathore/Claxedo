@@ -55,6 +55,10 @@ jobs:
 
   build-desktop:
     needs: prepare
+    # The VITE_* cloud vars are environment-scoped, not repo-level. Only the
+    # staging environment exists today; switch to production once that
+    # environment is created and promoted.
+    environment: staging
     runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
@@ -143,7 +147,15 @@ jobs:
         env:
           CLAXEDO_CHANNEL: prod
           RUST_TARGET: ${{ matrix.target }}
-        run: bun --cwd packages/claxedo-desktop run build
+          # Bake cloud sign-in support (same vars as the hosted web deploy).
+          # Without these the packaged app is local-only: authEnabled is a
+          # build-time flag and Clerk needs its publishable key at build time.
+          VITE_AUTH_ENABLED: "true"
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+        working-directory: packages/claxedo-desktop
+        run: bun run build
 
       - name: Import Apple certificate
         if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
@@ -176,21 +188,24 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bun --cwd packages/claxedo-desktop run ${{ matrix.cmd }} -- --${{ matrix.arch }}
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }}
 
       - name: Package Windows
         if: runner.os == 'Windows' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
         env:
           CLAXEDO_CHANNEL: prod
           RUST_TARGET: ${{ matrix.target }}
-        run: bun --cwd packages/claxedo-desktop run ${{ matrix.cmd }}
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }}
 
       - name: Package Linux
         if: runner.os == 'Linux' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
         env:
           CLAXEDO_CHANNEL: prod
           RUST_TARGET: ${{ matrix.target }}
-        run: bun --cwd packages/claxedo-desktop run ${{ matrix.cmd }} -- --${{ matrix.arch }}
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }}
 
       - name: Upload build artifacts
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
@@ -208,7 +223,9 @@ jobs:
             packages/claxedo-desktop/dist/*.yaml
             packages/claxedo-desktop/dist/*.blockmap
           retention-days: 7
-          if-no-files-found: warn
+          # A packaging step that silently produces nothing must fail here,
+          # not surface later as an empty release (bit by the bun --cwd no-op).
+          if-no-files-found: error
 
       - name: Cleanup keychain
         if: runner.os == 'macOS' && always()
