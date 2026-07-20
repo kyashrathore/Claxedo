@@ -8,7 +8,7 @@ on:
     inputs:
       version:
         description: "Version to release (e.g. 0.0.60)"
-        required: false
+        required: true
         type: string
       platforms:
         description: "Platforms to build"
@@ -25,7 +25,7 @@ env:
   CLAXEDO_CHANNEL: prod
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   prepare:
@@ -45,7 +45,8 @@ jobs:
           elif [[ "$GITHUB_REF" == refs/tags/claxedo-v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/claxedo-v}"
           else
-            VERSION=$(jq -r .version packages/claxedo-desktop/package.json)
+            echo "No version input and no claxedo-v* tag; refusing to release the package.json placeholder version" >&2
+            exit 1
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -105,7 +106,7 @@ jobs:
 
       - name: Setup Bun
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -220,6 +221,8 @@ jobs:
   create-release:
     needs: [prepare, build-desktop]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -246,7 +249,7 @@ jobs:
           ls -la release/
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: Claxedo v${{ needs.prepare.outputs.version }}
@@ -260,11 +263,13 @@ jobs:
   finalize-latest-yml:
     needs: [prepare, build-desktop, create-release]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
