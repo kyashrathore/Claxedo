@@ -416,7 +416,13 @@ function nonBackgroundNoiseConsole(entries: string[]) {
  * (`${userMessageID}_r`, production convention) — pass it to
  * `loadTrace`/`loadFixtureFile` so fixture parts attach to that row.
  */
-async function primeHarness(page: Page, harness: string): Promise<{ mock: MockRuntimeHandles; dir: string; sessionId: string; assistantId: string }> {
+async function primeHarness(page: Page, harness: string): Promise<{
+  mock: MockRuntimeHandles
+  dir: string
+  sessionId: string
+  assistantId: string
+  assistantInfo: Record<string, unknown>
+}> {
   const dir = `/tmp/e2e-core-harness-rendering-matrix-${harness}`
   const sessionId = `ses_harness_matrix_${harness}`
   const mock = await installMockRuntime(page, {
@@ -455,11 +461,65 @@ async function primeHarness(page: Page, harness: string): Promise<{ mock: MockRu
 
   const assistantId = mock.requests.promptBodies[0]?.assistantID
   if (!assistantId) throw new Error("primeHarness: no prompt dispatch recorded — cannot derive the assistant row id")
-  return { mock: { ...mock, emit: bridgedEmit as MockRuntimeHandles["emit"] }, dir, sessionId, assistantId }
+
+  // Wait for the primed turn to SETTLE (driveTurn stamps `time.completed` a tick
+  // after the reply's final part — reply visibility above races it) and capture
+  // the settled assistant info row from the mocked REST history. `replay()`
+  // needs it: since the settled-message part guard (opencode-conversation.ts's
+  // `settledAssistantMessage`, 69c6977757) a completed assistant message rejects
+  // part events for part ids it does not already have, so the fixture trace must
+  // be delivered while the row is (deterministically) re-opened.
+  let assistantInfo: Record<string, unknown> | undefined
+  await expect.poll(async () => {
+    const rows = await page.evaluate(async (id) => {
+      const response = await fetch(`/session/${id}/message`)
+      return response.json() as Promise<Array<{ info?: { id?: string; time?: { completed?: number } } }>>
+    }, sessionId)
+    const row = rows.find((item) => item.info?.id === assistantId)
+    if (typeof row?.info?.time?.completed !== "number") return false
+    assistantInfo = row.info as Record<string, unknown>
+    return true
+  }, { timeout: 15_000 }).toBe(true)
+
+  return {
+    mock: { ...mock, emit: bridgedEmit as MockRuntimeHandles["emit"] },
+    dir,
+    sessionId,
+    assistantId,
+    assistantInfo: assistantInfo!,
+  }
 }
 
-async function replay(mock: MockRuntimeHandles, dir: string, trace: Envelope[]) {
+/**
+ * Replays a fixture trace onto the primed assistant row. The row is already
+ * SETTLED (`time.completed` — primeHarness waits for it), and settled assistant
+ * messages reject part events for unknown part ids (the duplicate-reply race
+ * fix in `opencode-conversation.ts`). So the replay brackets the trace with two
+ * `message.updated` events: first re-open the row (same info, `time.completed`
+ * stripped) so the fixture parts attach, then re-settle it with the original
+ * persisted info — deterministic signals only, no wall-clock waits, and the
+ * final state (settled turn carrying the fixture parts) matches what these
+ * assertions always exercised.
+ */
+async function replay(
+  mock: MockRuntimeHandles,
+  dir: string,
+  trace: Envelope[],
+  assistantInfo: Record<string, unknown>,
+) {
+  const { completed: _completed, ...openTime } = (assistantInfo.time ?? {}) as Record<string, unknown>
+  mock.emit(
+    {
+      type: "message.updated",
+      properties: { sessionID: assistantInfo.sessionID, info: { ...assistantInfo, time: openTime } },
+    } as never,
+    dir,
+  )
   for (const envelope of trace) mock.emit(envelope.payload as never, envelope.directory || dir)
+  mock.emit(
+    { type: "message.updated", properties: { sessionID: assistantInfo.sessionID, info: assistantInfo } } as never,
+    dir,
+  )
 }
 
 const assistantContent = () => SELECTORS.assistantContentVisible
@@ -536,9 +596,9 @@ async function revealTurn(page: Page) {
 
 test.describe("core harness rendering matrix @core", () => {
   test("opencode native — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
@@ -582,9 +642,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("opencode native — apply_patch dedicated renderer, GenericTool fallback, compaction divider — behaviors 3,4,7,16", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
@@ -614,9 +674,9 @@ test.describe("core harness rendering matrix @core", () => {
   // reached `getMsgParts`/`renderablePart`/`PART_MAPPING["compaction"]`. Fixed by adding
   // the lossless compaction round-trip to the projection (both directions).
   test("opencode native — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
@@ -629,9 +689,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("opencode native — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
-    await replay(mock, dir, trace) // ends with the question part PENDING
+    await replay(mock, dir, trace, assistantInfo) // ends with the question part PENDING
 
     const content = page.locator(assistantContent())
     const questionText = "Which environment should I target?"
@@ -660,7 +720,7 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("opencode native — todowrite never renders a tool row — behavior 9", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"]').count()
 
@@ -677,7 +737,7 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("opencode native — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
     const content = page.locator(assistantContent())
 
@@ -705,7 +765,7 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("opencode native — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"], [data-component="text-part"], [data-component="reasoning-part"]').count()
 
@@ -720,9 +780,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("pi — shares the native rendering path (text renders) — behavior 1", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "pi")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"pi")
     const trace = loadTrace("pi", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
@@ -736,9 +796,9 @@ test.describe("core harness rendering matrix @core", () => {
   // harnesses: even a single context-group tool renders inside the
   // closed-by-default `ContextToolGroup` collapsible, so `revealTurn` opens it.
   test("pi — one dedicated tool renderer (config.json subtitle) — behavior 3", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "pi")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"pi")
     const trace = loadTrace("pi", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
     // Delivery anchor: the leading text lands (shared native path) before we unfold.
@@ -752,9 +812,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, Task child link — behaviors 1,3,9,15,16", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "claude-acp")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-acp")
     const trace = loadTrace("claude-acp", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
@@ -785,9 +845,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("codex-acp — Permission fake tool routes to the dock (not a tool row); apply_patch resolves to edit; bash — behaviors 3,12,16", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "codex-acp")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"codex-acp")
     const trace = loadTrace("codex-acp", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     // behavior 12: the permission dock renders, driven by permission.asked.
     await expect(page.locator('[data-slot="permission-header-title"]')).toBeVisible({ timeout: 45_000 })
@@ -814,9 +874,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task child link, todowrite hidden — behaviors 9,13,14,15,16", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "cursor-acp")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"cursor-acp")
     const trace = loadTrace("cursor-acp", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
@@ -843,10 +903,10 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("claude-sdk (native) — raw \"Grep\" falls back to GenericTool, TodoWrite hidden — behaviors 4,9", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "claude-sdk")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-sdk")
     const content = page.locator(assistantContent())
     const trace = loadTrace("claude-sdk", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     // behavior 4: raw native "Grep" (capitalized) does not match the "grep"
     // ToolRegistry key -> GenericTool fallback, raw name verbatim in the title.
@@ -869,9 +929,9 @@ test.describe("core harness rendering matrix @core", () => {
   // is correct; it only shows once the user enables the setting, which this test does
   // via the real settings UI before asserting.
   test("claude-sdk (native) — reasoning part renders, diagnostics add zero extra rows — behaviors 2,17", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "claude-sdk")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-sdk")
     const trace = loadTrace("claude-sdk", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     await enableReasoningSummaries(page)
 
@@ -897,9 +957,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("codex-app-server (native) — proposed plan renders as plain text, \"command\" normalizes to the bash renderer — behaviors 4,11,17", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "codex-app-server")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"codex-app-server")
     const trace = loadTrace("codex-app-server", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
@@ -918,9 +978,9 @@ test.describe("core harness rendering matrix @core", () => {
   })
 
   test("cursor-sdk (native) — assistant snapshot dedup, \"shell\" normalizes to the bash renderer, updateTodos hidden — behaviors 1,4,9", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "cursor-sdk")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"cursor-sdk")
     const trace = loadTrace("cursor-sdk", assistantId)
-    await replay(mock, dir, trace)
+    await replay(mock, dir, trace, assistantInfo)
 
     const content = page.locator(assistantContent())
 
@@ -948,7 +1008,7 @@ test.describe("core harness rendering matrix @core", () => {
   // DOM. Fixed by registering `FilePartDisplay` (image inline + preview, audio player,
   // resource-link row) and adding "file" to the renderable set.
   test("assistant file-type parts (image/audio/resource-link) render — behavior 6", async ({ page }) => {
-    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const sessionID = "ses_harness_matrix_opencode"
     const filePart = (id: string, mime: string, url: string, filename: string, source?: unknown) =>
       mock.emit(
