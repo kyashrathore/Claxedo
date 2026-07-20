@@ -214,6 +214,24 @@ export function createHostedWorkGraphRuntime(
           now: claimedAt,
           limit: 10,
         })) as Claim[]
+        // Control effects (stream deletion/interrupt) are fast, budget-gated
+        // operations that used to drain LAST, behind slow launch provisioning and
+        // running-attempt history polling. On the shared per-tenant settle lane a
+        // launch-heavy pass takes 18-24s, so a bare-Stream delete blew its <20s
+        // SLA even though its own `completeControlEffect` needs only ~1s. Start the
+        // background drain CONCURRENTLY so the deletion settles independent of
+        // launch load; it claims its own outbox rows, so there is no data
+        // dependency on `launched`/`results`. Settle it to a tagged result so an
+        // early throw in the launch phase can never orphan the promise.
+        const backgroundEnabled = !(options.background === false || run.background === false)
+        const backgroundSettled: Promise<
+          { ok: true; value: Awaited<ReturnType<typeof reconcileBackground>> | undefined } | { ok: false; error: unknown }
+        > = backgroundEnabled
+          ? reconcileBackground(client, services, request, serviceToken, workerId, now, tenants, telemetry).then(
+              (value) => ({ ok: true as const, value }),
+              (error) => ({ ok: false as const, error }),
+            )
+          : Promise.resolve({ ok: true as const, value: undefined })
         const launched = await Promise.all(
           claims.map(async (claim) => {
             let compensationTarget: { sessionId: string; workspaceId: string } | undefined
@@ -616,10 +634,9 @@ export function createHostedWorkGraphRuntime(
             }
           }),
         )
-        const background =
-          options.background === false || run.background === false
-            ? undefined
-            : await reconcileBackground(client, services, request, serviceToken, workerId, now, tenants, telemetry)
+        const backgroundOutcome = await backgroundSettled
+        if (!backgroundOutcome.ok) throw backgroundOutcome.error
+        const background = backgroundOutcome.value
         recordAttemptTelemetry(telemetry, trigger, claims, running, launched, results, now() - claimedAt)
         return { launched, results, ...(background ? { background } : {}) }
       } catch (error) {

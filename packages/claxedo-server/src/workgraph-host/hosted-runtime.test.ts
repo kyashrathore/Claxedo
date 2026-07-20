@@ -563,6 +563,134 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(mutations).toContainEqual(expect.objectContaining({ outbox_id: "control-a", ok: true }))
   })
 
+  test("settles a control effect without waiting for a slow launch on the same tenant lane", async () => {
+    // Staging regression: a bare-Stream deletion blew its <20s settlement SLA
+    // because the control-effect drain used to run AFTER launch provisioning in
+    // the same per-tenant reconcile pass. Here a launch's provisioning blocks
+    // indefinitely; the delete's completeControlEffect must still fire (proving
+    // the drain now runs concurrently, not head-of-line blocked behind launches).
+    let releaseLaunch: () => void = () => {}
+    const launchGate = new Promise<void>((resolve) => {
+      releaseLaunch = resolve
+    })
+    let launchReleased = false
+    let controlAckedWhileLaunchPending: boolean | undefined
+    let launchClaims = 0
+    const released: string[] = []
+    const readyPlacement = {
+      status: "ready" as const,
+      sandboxId: "sandbox",
+      url: "https://runtime.test",
+      hostId: "host-a",
+      epoch: 1,
+      homeRegion: "us-east",
+    }
+
+    const runtime = createHostedWorkGraphRuntime(
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_PUBLIC_URL: "https://central.test",
+      },
+      {
+        sandbox: {
+          sandboxManager: {
+            // Launch provisioning blocks until the gate is released.
+            ensure: async () => {
+              await launchGate
+              return readyPlacement
+            },
+            target: async () => readyPlacement,
+            release: async (workspaceId: string) => {
+              released.push(workspaceId)
+            },
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
+      } as unknown as ControlPlaneServices,
+      {
+        executor: {
+          mutation: async (_fn, args) => {
+            // claimLaunches (first) → one gated launch; claimSourcePlans and any
+            // re-claim → nothing. Both are limit-10 worker-fenced claims.
+            if (args.limit === 10 && "worker_id" in args) {
+              if (launchClaims++ > 0) return []
+              return [
+                {
+                  ownerUserId: "user-a",
+                  ownerSubject: "user-a",
+                  orgId: "org-a",
+                  outboxId: "launch-b",
+                  attemptId: "attempt-b",
+                  streamId: "stream-b",
+                  workItemId: "item-b",
+                  leaseEpoch: 1,
+                  title: "Slow launch",
+                  prompt: "Run slow launch",
+                  profile: {
+                    environment: { kind: "hosted_workspace" },
+                    harness: "claxedo-v2",
+                    agent: "build",
+                    model: { providerId: "openai", modelId: "gpt-5" },
+                    effort: "high",
+                    tools: [],
+                    connectionIds: [],
+                  },
+                },
+              ]
+            }
+            // claimControlEffects → one Stream delete on the same tenant.
+            if (args.limit === 25 && "worker_id" in args)
+              return [
+                {
+                  ownerUserId: "user-a",
+                  orgId: "org-a",
+                  outboxId: "control-a",
+                  streamId: "stream-a",
+                  effectType: "finalize_stream",
+                  payload: { finalize: "delete", sessions: [] },
+                },
+              ]
+            // completeControlEffect: capture whether the launch is still gated.
+            if ("outbox_id" in args && "ok" in args) {
+              if (args.outbox_id === "control-a") controlAckedWhileLaunchPending = !launchReleased
+              return { settled: true }
+            }
+            if ("outbox_id" in args) return { accepted: true, settled: true }
+            if (args.limit === 25) return { completed: 0 }
+            return []
+          },
+        },
+        fetch: async (input) => {
+          if (new URL(String(input)).pathname.endsWith("/api/session")) return Response.json({ id: "session-b" })
+          return Response.json({})
+        },
+      },
+    )
+
+    const reconcilePromise = runtime?.reconcile({ tenants: [{ organizationId: "org-a", ownerUserId: "user-a" }] })
+    try {
+      // While the launch is gated, the concurrent background drain must reach the
+      // control ack. Poll briefly rather than await the (still-blocked) reconcile.
+      const deadline = Date.now() + 1000
+      while (controlAckedWhileLaunchPending === undefined && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect(controlAckedWhileLaunchPending).toBe(true)
+      expect(released).toHaveLength(1)
+    } finally {
+      // Always release so a regressed (sequential) runtime fails on the assertion
+      // above instead of hanging on the never-settling reconcile promise.
+      launchReleased = true
+      releaseLaunch()
+      await reconcilePromise
+    }
+  })
 
 
   test("recovers an expired durable Attempt after restart and fences stale completion", async () => {
@@ -781,7 +909,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       payload: { finalize: "cancel", sessionId: "session-a" },
       fetch: async () => new Response("failed", { status: 500 }),
     })
-    expect(mutations[3]).toMatchObject({ ok: false, reason: expect.stringContaining("500") })
+    expect(mutations.find((m) => "ok" in m)).toMatchObject({ ok: false, reason: expect.stringContaining("500") })
   })
 
   test("does not acknowledge interruption when Session placement is non-ready", async () => {
@@ -790,7 +918,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       payload: { finalize: "cancel", sessionId: "session-a" },
       targetStatus: "provisioning",
     })
-    expect(mutations[3]).toMatchObject({ ok: false, reason: expect.stringContaining("not ready") })
+    expect(mutations.find((m) => "ok" in m)).toMatchObject({ ok: false, reason: expect.stringContaining("not ready") })
   })
 
   test("finalizes close by interrupting Sessions without destroying or releasing the workspace", async () => {
@@ -807,7 +935,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         released.push(workspaceId)
       },
     })
-    expect(mutations[3]).toMatchObject({ ok: true })
+    expect(mutations.find((m) => "ok" in m)).toMatchObject({ ok: true })
     expect(destroyed).toEqual([])
     expect(released).toEqual([])
   })
@@ -824,7 +952,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         released.push(workspaceId)
       },
     })
-    expect(mutations[3]).toMatchObject({ ok: true })
+    expect(mutations.find((m) => "ok" in m)).toMatchObject({ ok: true })
     expect(released).toHaveLength(1)
   })
 
@@ -834,7 +962,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       payload: { finalize: "replace", sessions: [] },
       destroy: async () => ({ ok: false as const, reason: "runtime_lease_not_ready" }),
     })
-    expect(mutations[3]).toMatchObject({
+    expect(mutations.find((m) => "ok" in m)).toMatchObject({
       ok: false,
       reason: "Hosted WorkGraph replacement reset failed: runtime_lease_not_ready",
     })
@@ -847,7 +975,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       targetStatus: "provisioning",
       destroy: async () => ({ ok: false as const, reason: "runtime_lease_missing" }),
     })
-    expect(mutations[3]).toMatchObject({ ok: true })
+    expect(mutations.find((m) => "ok" in m)).toMatchObject({ ok: true })
   })
 
   test("destroys a late claimed placement before settling its rejected launch fence", async () => {
@@ -2670,8 +2798,11 @@ async function runControlEffect(input: {
           if (args.limit === 500 && Object.keys(args).length === 2)
             return [{ organizationId: "org-a", ownerUserId: "user-a" }]
           mutations.push(args)
-          if (mutations.length <= 2) return []
-          if (mutations.length === 3)
+          // Dispatch on the request SHAPE, not call order: the background
+          // control-effect drain now runs concurrently with the launch/running
+          // phases, so `mutations.length` is no longer a stable sequencer.
+          // claimControlEffects is the only worker-fenced limit-25 claim.
+          if (args.limit === 25 && "worker_id" in args)
             return [
               {
                 ownerUserId: "user-a",
@@ -2682,8 +2813,11 @@ async function runControlEffect(input: {
                 payload: input.payload,
               },
             ]
-          if (mutations.length === 4) return { settled: true }
-          if (mutations.length === 5) return { completed: 0 }
+          // completeControlEffect ack (carries the `ok` field the tests inspect).
+          if ("outbox_id" in args) return { settled: true }
+          // drainSessionIntake backlog probe (limit-25, no worker fence).
+          if (args.limit === 25) return { completed: 0 }
+          // claimLaunches / listRunning / claimSourcePlans: nothing to do here.
           return []
         },
       },
