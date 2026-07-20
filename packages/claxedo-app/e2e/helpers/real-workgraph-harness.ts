@@ -37,6 +37,7 @@ import {
   createLocalWorkGraphAgentTools,
   localSessionContext,
   localSessionExecution,
+  localSessionOwnerDirected,
 } from "../../../claxedo-server/src/workgraph-agent-tools"
 import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server/src/opencode-engine"
 
@@ -415,6 +416,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       ownerUserId,
       sessionExecution: (sessionId) => localSessionExecution(realSessions.fetch, sessionId),
       sessionContext: (sessionId) => localSessionContext(realSessions.fetch, sessionId),
+      sessionOwnerDirected: (sessionId) => localSessionOwnerDirected(realSessions.fetch, sessionId),
     }))
   }
   diagMark("after configureApplicationTools (opencode ready)")
