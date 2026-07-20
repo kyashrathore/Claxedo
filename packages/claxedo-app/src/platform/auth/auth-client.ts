@@ -328,6 +328,15 @@ export function useAuth() {
     isSignedIn: () => !!user() || !!session() || !!testAuth().__CLAXEDO_TEST_AUTH_USER__,
     /** Sign in through Clerk's hosted/redirect flow */
     signIn: async (options?: { redirectUrl?: string }) => {
+      // E2E observability seam (DEV || prebuilt e2e bundle; stripped from real
+      // production): the harness has no Clerk key, so the redirect is a no-op
+      // and the UI's "Redirecting..." state clears within a microtask — the
+      // only race-free way for a spec to prove Continue triggered sign-in is
+      // recording the invocation itself.
+      if (import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1") {
+        const scope = window as typeof window & { __claxedoSignInCalls?: { redirectUrl?: string }[] };
+        (scope.__claxedoSignInCalls ??= []).push({ redirectUrl: options?.redirectUrl });
+      }
       const instance = await ensureClerkLoaded();
       const redirectUrl = options?.redirectUrl ?? window.location.origin;
       await instance?.redirectToSignIn({

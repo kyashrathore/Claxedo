@@ -1564,10 +1564,16 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("link", { name: /Terms of Service/i })).toBeVisible()
 
       await continueButton.click()
-      // signIn() redirects via Clerk (no key configured in this harness ⇒ ensureClerkLoaded
-      // resolves to null and redirectToSignIn is a no-op) — the observable contract is the
-      // button entering its "Redirecting..." busy state, not a real Clerk navigation.
-      await expect(page.getByText("Redirecting...")).toBeVisible({ timeout: 5_000 })
+      // No Clerk key in this harness ⇒ the redirect is a no-op and the button's
+      // "Redirecting..." state clears within a microtask — asserting that label
+      // was racy by construction on starved runners. The race-free contract is
+      // that the click INVOKED sign-in, recorded by the e2e seam in
+      // auth-client.ts (__claxedoSignInCalls, DEV || VITE_CLAXEDO_E2E gated).
+      await expect
+        .poll(async () =>
+          page.evaluate(() => (window as typeof window & { __claxedoSignInCalls?: unknown[] }).__claxedoSignInCalls?.length ?? 0),
+        )
+        .toBe(1)
     })
   })
 
