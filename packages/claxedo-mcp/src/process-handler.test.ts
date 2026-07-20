@@ -24,15 +24,15 @@ function createMockHttp() {
   const httpFn = async (path: string, init?: RequestInit, mode?: string, directory?: string) => {
     calls.push({ path, init, mode, directory })
 
-    if (path === "/process" && init?.method === "POST") {
+    if (path === "/api/wr/process" && init?.method === "POST") {
       const body = JSON.parse(init.body as string)
       return { id: "proc_new123", name: body.name, command: body.command, args: body.args || [] }
     }
-    if (path.startsWith("/process/") && init?.method === "PUT") {
+    if (path.startsWith("/api/wr/process/") && init?.method === "PUT") {
       const body = JSON.parse(init.body as string)
       return { id: "proc_upd123", name: body.name || "updated", command: body.command || "cmd", args: [] }
     }
-    if (path.startsWith("/process/") && init?.method === "DELETE") {
+    if (path.startsWith("/api/wr/process/") && init?.method === "DELETE") {
       return true
     }
     throw new Error(`Unmocked http path: ${path}`)
@@ -287,7 +287,7 @@ describe("process handler", () => {
       expect(result.content[0].text).toContain("Process config created")
 
       const httpCall = mockHttp.calls[0]
-      expect(httpCall.path).toBe("/process")
+      expect(httpCall.path).toBe("/api/wr/process")
       expect(httpCall.init?.method).toBe("POST")
       const body = JSON.parse(httpCall.init!.body as string)
       expect(body.id).toMatch(/^proc_/)
@@ -364,7 +364,7 @@ describe("process handler", () => {
       expect(result.content[0].text).toContain("updated")
 
       const httpCall = mockHttp.calls[0]
-      expect(httpCall.path).toBe("/process/proc_1")
+      expect(httpCall.path).toBe("/api/wr/process/proc_1")
       expect(httpCall.init?.method).toBe("PUT")
     })
 
@@ -397,7 +397,7 @@ describe("process handler", () => {
       expect(result.content[0].text).toContain("proc_1 removed")
 
       const httpCall = mockHttp.calls[0]
-      expect(httpCall.path).toBe("/process/proc_1")
+      expect(httpCall.path).toBe("/api/wr/process/proc_1")
       expect(httpCall.init?.method).toBe("DELETE")
     })
 

@@ -137,6 +137,9 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   realSessions?: boolean
   realMasters?: boolean
 }>): Promise<RealWorkGraphHarness> {
+  const diagT0 = Date.now()
+  const diagMark = (label: string) => process.stderr.write(`[harness-diag] ${label} +${Date.now() - diagT0}ms\n`)
+  diagMark("start")
   fs.mkdirSync(input.temporaryRoot ?? os.tmpdir(), { recursive: true })
   const directory = fs.mkdtempSync(path.join(input.temporaryRoot ?? os.tmpdir(), "claxedo-workgraph-browser-"))
   const database = new Database(path.join(directory, "workgraph.sqlite"))
@@ -183,6 +186,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     })
     if (!result.ok) throw new Error(`Controlled ${integration.name} Connection failed: ${result.code}`)
   }))
+  diagMark("connections connected")
   const connectedRows = await connections.list({ teamOwner })
   const connectionIds = Object.fromEntries(integrationFixtures.map((integration) => {
     const row = connectedRows.find((connection) => connection.integrationId === integration.integrationId)
@@ -228,6 +232,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         publicRepository: boolean
       }>) => Promise<boolean>)
     | undefined
+  diagMark("before createRealSessionRuntime")
   const realSessions = input.realSessions
     ? await createRealSessionRuntime(directory, `http://127.0.0.1:${input.port}`, (forward) => createSessionV2WorkGraphGateway(forward, {
         executeAttempt: (context, request, signal) => {
@@ -250,6 +255,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         pullRequestEffects,
       }))
     : undefined
+  diagMark("after createRealSessionRuntime (provider mock server listening)")
   const execution = createLocalWorkspaceExecution({
     worktreeRoot: path.join(directory, "worktrees"),
     repositoryDirectory: async () => repository,
@@ -270,6 +276,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     },
   })
   const generationSessions = createGenerationSessions()
+  diagMark("before createLocalEmbeddedWorkGraph")
   const embedded = await createLocalEmbeddedWorkGraph({
     database,
     ...(input.trustedAuthContexts ? { auth: trustedAuth(input.trustedAuthContexts) } : {}),
@@ -401,6 +408,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     if (!result.ok) throw new Error(result.error.message)
     return false
   }
+  diagMark("after createLocalEmbeddedWorkGraph, before configureApplicationTools")
   if (realSessions) {
     await realSessions.configureApplicationTools(await createLocalWorkGraphAgentTools(embedded, {
       organizationId,
@@ -409,6 +417,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       sessionContext: (sessionId) => localSessionContext(realSessions.fetch, sessionId),
     }))
   }
+  diagMark("after configureApplicationTools (opencode ready)")
   let backgroundFailure: unknown
   let lastReconcile: unknown
   let background = Promise.resolve<unknown>(undefined)
@@ -466,6 +475,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     socket.once("close", () => sockets.delete(socket))
   })
   const port = await listen(server, input.port)
+  diagMark("main WorkGraph API server listening")
   const runReconcile = () => serialized(async () => {
     const result = await embedded.reconcile(context())
     lastReconcile = result
@@ -1290,11 +1300,14 @@ async function createRealSessionRuntime(
     records,
     fetch: forward,
     configureApplicationTools: async (tools) => {
+      const diagT0 = Date.now()
+      process.stderr.write(`[harness-diag] configureApplicationTools start +0ms\n`)
       applicationTools = tools
       fs.writeFileSync(
         applicationToolPlugin,
         applicationToolPluginSource(tools, `${claxedoServerUrl}/api/workgraph/application-tool`),
       )
+      process.stderr.write(`[harness-diag] plugin written, spawning bun +${Date.now() - diagT0}ms\n`)
       opencode = spawn(
         "bun",
         ["run", "--conditions=browser", "./src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", String(opencodePort)],
@@ -1313,9 +1326,11 @@ async function createRealSessionRuntime(
           stdio: ["ignore", "pipe", "pipe"],
         },
       )
+      process.stderr.write(`[harness-diag] bun spawned pid=${opencode.pid}, waiting for health +${Date.now() - diagT0}ms\n`)
       opencode.stdout.on("data", (chunk) => logs.push(String(chunk)))
       opencode.stderr.on("data", (chunk) => logs.push(String(chunk)))
       await waitForOpenCode(opencodePort, opencode, logs)
+      process.stderr.write(`[harness-diag] opencode healthy +${Date.now() - diagT0}ms\n`)
     },
     invokeApplicationTool: async (input) => {
       const invocation = object(input)
@@ -1547,10 +1562,17 @@ async function availablePort() {
 }
 
 async function waitForOpenCode(port: number, process: ReturnType<typeof spawn>, logs: string[]) {
+  const diagT0 = Date.now()
   for (let attempt = 0; attempt < 100; attempt++) {
     if (process.exitCode !== null) throw new Error(`OpenCode exited before readiness:\n${logs.join("")}`)
+    const fetchT0 = Date.now()
     const ready = await fetch(`http://127.0.0.1:${port}/global/health`).then((response) => response.ok, () => false)
-    if (ready) return
+    const fetchMs = Date.now() - fetchT0
+    if (fetchMs > 500) console.error(`[harness-diag] waitForOpenCode attempt ${attempt} fetch took ${fetchMs}ms (total +${Date.now() - diagT0}ms)`)
+    if (ready) {
+      console.error(`[harness-diag] waitForOpenCode ready at attempt ${attempt}, total +${Date.now() - diagT0}ms`)
+      return
+    }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw new Error(`OpenCode did not become ready:\n${logs.join("")}`)

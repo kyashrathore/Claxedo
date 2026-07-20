@@ -10,6 +10,8 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
 
 > Also tracked, no entry needed: `core-busy-abort-errors.spec.ts:611` (stale-busy reconcile, behavior 2) was a contention suspect but **passed** in the 12-shard tune — resolved, watch for flake.
 
+Decisions recorded 2026-07-20; execution in progress (see git history).
+
 ---
 
 ## 1. Failing — needs a decision
@@ -23,7 +25,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
   - **A (recommended)**: app — invalidate/refetch the `session-list` query on `session.lifecycle` events. S/M.
   - **B**: spec — assert only the flat-inventory refetch effect (weakens the test; no longer proves the user-visible row appears).
   - **C**: accept as a known limitation (users must reload to see harness-created sessions — poor UX).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 2. core-workgraph — "executes GitHub, Linear, and Jira issues through real Session V2 Connections end to end"
 - **Status**: failing-CI-only (workgraph-real job; the other 3 tests in that job pass)
@@ -33,7 +35,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
 - **Options**:
   - **A (recommended)**: diagnose the `beforeEach` stall (download the `playwright-workgraph-real` artifact's `error-context.md`/trace for this test), then fix the setup or raise the hook budget honestly. M.
   - **B**: `test.fixme` until after launch with a "beforeEach 240s timeout, Connections env boot" note.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 3. core-harness-rendering-matrix — "pi — shares the native rendering path (text renders) — behavior 1"
 - **Status**: failing-everywhere
@@ -44,7 +46,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
   - **A (recommended)**: app — give `pi` a default-model auto-pick path, or render the model control in pi mode (selector owner decides semantics). M.
   - **B**: app — expose pi model selection in whatever UI is intended and update the spec choreography to drive it. M.
   - **C**: remove `pi` from the rendering matrix until pi model UX is designed. S.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 4. core-settings-auth — "/cli-login behaviors 28 & 29" (exchange CLI token / exchange-failure error)
 - **Status**: failing under the production build only (pass under dev serving)
@@ -55,7 +57,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
   - **A (recommended)**: diagnose properly under prebuilt serving (trace the built bundle), then fix at the honest layer. M.
   - **B**: `test.fixme` both with a "prebuilt-delta, undiagnosed" note until someone can trace it.
   - **C**: run just these two under dev serving in CI (split-mode hack) — dishonest: it hides a real prod-only regression. Not recommended.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 5. documents-core — "repository index is metadata-only and edits file in place without a managed copy — behavior 2"
 - **Status**: failing-everywhere
@@ -66,7 +68,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
   - **A (recommended)**: rewrite the spec against the new per-file "Add to Documents" flow. M.
   - **B**: delete the test if behavior 2's contract is now obsolete.
   - **C**: `test.fixme` with a "Documents surface in flux" note until Documents settles.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 6. core-cloud-offline-roles — reconnect-overlay pair (behaviors 4, 6/7)
 - **Status**: failing-CI-only (still red on the 12-shard × 2-worker tune)
@@ -76,7 +78,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
 - **Options**:
   - **A (recommended)**: per-test timing hardening (widen the reconnect/toast-absence polls, reduce reliance on wall-clock cadence), then re-run. M.
   - **B**: quarantine as flaky with a tracking issue and re-enable once runner contention is understood.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 7. core-user-hosted-workspace — ready-send + Share pair (behaviors 2/3, 7)
 - **Status**: failing-CI-only (still red on the 12-shard × 2-worker tune)
@@ -86,7 +88,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
 - **Options**:
   - **A (recommended)**: per-test timing hardening (the oracle-send and toast waits are the likely victims of a starved runner). M.
   - **B**: quarantine as flaky with tracking, re-enable after contention fix.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 8. core-sidebar-tree — "account footer exposes utilities and restores focus across nested panels"
 - **Status**: failing-CI-only (still red on the 12-shard × 2-worker tune)
@@ -96,7 +98,7 @@ This doc lists every e2e test that is failing or intentionally skipped (`test.fi
 - **Options**:
   - **A (recommended)**: harden the focus-restore assertions (await focus transitions explicitly rather than on a fixed budget). M.
   - **B**: quarantine as flaky with tracking, re-enable after contention fix.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ---
 
@@ -113,7 +115,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — make `switcherItems` react to external cache writes (drop `enabled:false`, or subscribe to the status query). M.
   - **B**: keep fixme as a launch-known-issue (background dots are cosmetic).
   - **C**: delete both if the switcher dot is being removed.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 10. core-panes-split-tabs — "empty workbench auto-opens a draft, and closing it suppresses the immediate re-open — behavior 15"
 - **Status**: skipped (test.fixme, `:826`)
@@ -124,7 +126,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — fix the suppression wiring so the close path honors `blockedUntil`. S/M.
   - **B**: keep fixme as a known-issue (mild UX churn, not data loss).
   - **C**: drop the "suppression window" from the behavior spec if product decides immediate reopen is fine — then delete.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 11. core-sidebar-tree — rail-width collapse/resize (behaviors 13, 11, 12)
 - **Status**: skipped (test.fixme, `:938` + `:959` + `:973`)
@@ -135,7 +137,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — fix `size` propagation through the rail-region dispatch; all three tests re-enable together. M.
   - **B**: keep all three fixme as one launch-known-issue.
   - **C**: n/a (these are real behaviors, deletion not defensible).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 12. core-sidebar-tree — "mobile drawer opens on entry, scrim-closes, and closes on session select — behavior 14"
 - **Status**: skipped (test.fixme, `:993`)
@@ -146,7 +148,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: app — wire a mobile entry point (tap/swipe) so the drawer is reachable. M.
   - **B**: keep fixme until mobile nav is designed.
   - **C (recommended if mobile drawer is not on the roadmap)**: delete the test and the dead drawer code.
-- **Decision**: _(owner fills in)_
+- **Decision**: A+ (owner: full mobile responsive — fix it)
 
 ### 13. core-composer-modes — "the sent (optimistic) user message highlights an inline agent mention — behavior 11"
 - **Status**: skipped (test.fixme, `:538`)
@@ -157,7 +159,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — add the `"agent"` case to the part projection. S/M.
   - **B**: keep fixme (mention highlighting is cosmetic).
   - **C**: delete if inline agent-mention highlighting is dropped from scope.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 14. core-composer-modes — "Escape aborts an in-flight turn when not in shell mode and no popover is open — behavior 8"
 - **Status**: skipped (test.fixme, `:431`)
@@ -168,7 +170,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — fix busy-state propagation to the composer on the draft→session transition; then this and related busy tests re-enable. M.
   - **B**: keep fixme until the busy-source-of-truth gap is fixed.
   - **C**: n/a (real behavior).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: stop control always present — idle when idle, stop when working; background agents stoppable via background button opening side panel — investigation scheduled)
 
 ### 15. core-composer-modes — "comment-linked context chips are hidden while shell mode is active — behavior 19"
 - **Status**: skipped (test.fixme, `:690`)
@@ -179,7 +181,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: move the assertion into a file/diff spec that already has a line-comment surface. S/M.
   - **B**: keep fixme as a documented cross-spec seam.
   - **C**: delete (the gating is unit-testable at `composer.tsx` level instead).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed)
 
 ### 16. core-workspace-lifecycle — New workspace Local/Cloud flow (behaviors 8, 9, cloud dialog)
 - **Status**: skipped (test.fixme, `:544` + `:560` + `:576`)
@@ -190,7 +192,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — wire the trigger AND add a timeout/resolution path to the worktree wait; re-enable all three. M/L.
   - **B**: keep fixme until New-workspace is prioritized.
   - **C**: delete the dead Local/Cloud picker code and tests if the feature is cut.
-- **Decision**: _(owner fills in)_
+- **Decision**: C (owner: dialog is dead — everything happens through the session composer; delete)
 
 ### 17. core-settings-auth — "Log out signs out and navigates to /login — behavior 5"
 - **Status**: skipped (test.fixme, `:883`)
@@ -201,7 +203,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — fix `signOut()` so the bypass path purges state; add an `/__e2e` hook or non-webdriver mode to make it drivable. M.
   - **B**: keep fixme, file the sign-out no-op as its own bug.
   - **C**: delete the e2e assertion, cover sign-out at the unit level only.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 18. core-settings-auth — Sandbox tab + local-principal (baked-flag unreachables)
 - **Status**: skipped (test.fixme, `:810` + `:878`)
@@ -212,7 +214,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: add a per-spec/per-project build variant (or runtime override) that flips these VITE flags, then implement both. M.
   - **B**: keep fixme as documented baked-flag gaps.
   - **C**: delete — the flag-off branches are covered by reading source; low value without a build variant.
-- **Decision**: _(owner fills in)_
+- **Decision**: Remove the flag entirely (owner: sandbox options always present)
 
 ### 19. core-settings-auth — "an anonymous principal on a non-loopback transport is force-redirected to /login"
 - **Status**: skipped (test.fixme, `:1653`)
@@ -223,7 +225,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: expose a runtime server-URL override for tests (or a dedicated non-loopback harness), then implement. M.
   - **B**: keep fixme as a baked-URL gap.
   - **C**: delete — covered by reading the gate source.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 20. core-settings-auth — "InitError variants render their formatted chain with Restart — error page"
 - **Status**: skipped (test.fixme, `:1660`)
@@ -234,7 +236,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: add an `/__e2e/error-page?variant=...` injection route, then implement. S/M.
   - **B**: keep fixme until the injection route exists.
   - **C**: delete — cover ErrorPage formatting via a component/unit test.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 21. core-settings-auth — "double-submit guard: a reactive re-trigger never re-exchanges"
 - **Status**: skipped (test.fixme, `:1636`)
@@ -245,7 +247,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: add a minimal app-exposed re-trigger hook for the test, then implement. S/M.
   - **B (recommended)**: keep fixme — the guard is unit-testable; a black-box e2e adds little.
   - **C**: delete and cover at the unit level.
-- **Decision**: _(owner fills in)_
+- **Decision**: B (owner: agreed — keep fixme)
 
 ### 22. core-processes — "a process crashing after launch lights the toolbar attention dot — behavior 10 (attention-dot half)"
 - **Status**: skipped (test.fixme, `:1166`)
@@ -256,7 +258,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — make the crash-state cleanup conditional, then assert the attention dot. M.
   - **B**: keep fixme, file the unmount-clobber as its own bug.
   - **C**: n/a (real behavior).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 23. core-processes — "diagnostics dialog opens, shows tabs/health/metrics, lists a running managed process — behavior 17"
 - **Status**: skipped (test.fixme, `:1377`)
@@ -267,7 +269,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: add the sandbox-flag build variant (see entry 18), then implement. M.
   - **B (recommended)**: keep fixme until a desktop or flag-off harness exists.
   - **C**: delete if Diagnostics stays desktop-only.
-- **Decision**: _(owner fills in)_
+- **Decision**: Update test as web-negative (owner: desktop-only is correct behavior)
 
 ### 24. core-processes — "viewer role hides Add/Start/Stop/Restart/Edit controls — behavior 18 (read-only half)"
 - **Status**: skipped (test.fixme, `:1402`)
@@ -278,7 +280,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: fold the viewer-role Processes assertion into `core-cloud-offline-roles` (or a shared role fixture). M.
   - **B**: keep fixme as a documented cross-spec seam.
   - **C**: delete — role gating is generic, covered by the roles spec.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: whatever is best, avoid duplication)
 
 ### 25. core-processes — "project-shared process config is visible across two local workspaces, no leaks after stop"
 - **Status**: skipped (test.fixme, `:1413`)
@@ -289,7 +291,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: keep the live coverage as the source of truth; leave this as a pointer.
   - **B**: keep fixme with the live-spec cross-reference.
   - **C (recommended)**: delete — it duplicates a live spec and can't assert the real invariant.
-- **Decision**: _(owner fills in)_
+- **Decision**: C (owner: behavior is correct; entry was only about a mocked duplicate — delete it)
 
 ### 26. core-model-effort-agent-controls — "agent selector disabled-while-harnessPending is unreachable — behavior 7"
 - **Status**: skipped (test.fixme, `:595`)
@@ -300,7 +302,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: app — if a disabled-during-pending state is intended, adjust `selector-visibility.ts` and implement. M.
   - **B (recommended)**: keep fixme — likely the state simply doesn't exist by design.
   - **C**: delete if the mutual exclusion is the intended contract.
-- **Decision**: _(owner fills in)_
+- **Decision**: Hide agent picker for non-opencode harnesses like upstream (owner); update/delete test to match
 
 ### 27. core-harness-ownership-local — "draft harness resets to OpenCode when directory changes away from a workspace-runtime ref — behavior 9"
 - **Status**: skipped (test.fixme, `:818`)
@@ -311,7 +313,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: move the assertion into `core-harness-ownership-cloud`. S/M.
   - **B**: keep fixme as a documented cross-spec seam.
   - **C**: delete (covered by the transition's unit logic).
-- **Decision**: _(owner fills in)_
+- **Decision**: Remove the auto-reset (owner: bad UX; local embedded runtime supports all harnesses — persist the choice); spec asserts persistence
 
 ### 28. core-harness-rendering-matrix — "opencode native — compaction divider renders on the assistant timeline — behavior 7"
 - **Status**: skipped (test.fixme, `:606`)
@@ -322,7 +324,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: diagnose with devtools/store inspection, fix the assistant-timeline compaction path. M.
   - **B**: keep fixme with the "undiagnosed, store-inspection needed" note.
   - **C**: n/a (real behavior; deletion not defensible).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 29. core-harness-rendering-matrix — "claude-sdk (native) — reasoning part renders — behaviors 2,17"
 - **Status**: skipped (test.fixme, `:847`)
@@ -333,7 +335,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: diagnose the reasoning-part accumulator path with store inspection, fix. M.
   - **B**: keep fixme with the "undiagnosed" note.
   - **C**: n/a (real behavior).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 30. core-harness-rendering-matrix — "assistant file-type parts (image/audio/resource-link) render — behavior 6"
 - **Status**: skipped (test.fixme, `:908`)
@@ -344,7 +346,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: app — register a `file` part component. M.
   - **B**: keep fixme as a known rendering gap (file parts are rare today).
   - **C**: delete if assistant file parts are out of scope for launch.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 31. core-harness-rendering-matrix — "pi — one dedicated tool renderer (config.json subtitle) — behavior 3"
 - **Status**: skipped (test.fixme, `:723`)
@@ -355,7 +357,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: regenerate `pi.json` with a tool envelope via the generator script, then implement. M.
   - **B**: keep fixme until the fixture is regenerated.
   - **C**: delete if pi tool rendering isn't a launch requirement (see also entry 3).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (regenerate fixture after the pi fix)
 
 ### 32. core-boot-deep-links-home — "Home lists recent projects and Open project opens the platform dialog — behavior 3"
 - **Status**: skipped (test.fixme, `:551`)
@@ -366,7 +368,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: app — if a recents list is intended on Home, build it, then implement. M.
   - **B (recommended)**: keep fixme until Home's recents UX is decided.
   - **C**: delete — the recents list may be a retired concept; dialog coverage lives elsewhere.
-- **Decision**: _(owner fills in)_
+- **Decision**: B — keep fixme (owner asked what this is: answered — the spec pinned a never-built Home recents surface; recents would come from the local project store, not the control plane; revisit when Home UX is decided)
 
 ### 33. core-busy-abort-errors — "escalation ladder reaches the failed/unresponsive stage with Cancel and Retry — behavior 8"
 - **Status**: skipped (test.fixme, `:987`)
@@ -377,7 +379,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: add a test-only env knob to scale down the `OPTIMISTIC_STATUS_*_MS` timers (gated), then implement. S/M.
   - **B**: drive the page with Playwright `page.clock` (risky — also freezes the mock's SSE reconnect backoff; needs careful choreography).
   - **C**: keep fixme — the failed stage shares code with the proven pending/long stages.
-- **Decision**: _(owner fills in)_
+- **Decision**: A + policy (owner: no wall-clock/retry waits anywhere in e2e; simulate time where deliberate)
 
 ### 34. core-cloud-offline-roles — "a role that live-flips (viewer → editor) unlocks the composer in place, no reload — behavior 9"
 - **Status**: skipped (test.fixme, `:797`)
@@ -388,7 +390,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: harden the fixture so the refresh→role-flip is deterministic (control the mint/refresh sequencing), then implement. M.
   - **B**: keep fixme until the role-refresh fixture is deterministic.
   - **C**: n/a (real behavior).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 35. core-session-actions — "a permission raised on the child bubbles into the parent's dock and resolves — behavior 14"
 - **Status**: skipped (test.fixme(true), `:915`)
@@ -399,7 +401,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: extend the shared mock to deliver directory/workspaceId-consistent events (or control the resolved workspaceId so the remap is a no-op). M/L.
   - **B**: keep fixme until the mock mirrors the real event-delivery pipeline.
   - **C**: n/a (real behavior).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 36. core-session-actions — "title syncs to a second open pane's tab label without reload" (unreachable UI)
 - **Status**: skipped (test.fixme(true), `:1124`)
@@ -410,7 +412,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: app — wire the titlebar back in (or add a stable split-creation affordance) so the spec can drive it. M.
   - **B (recommended)**: keep fixme until the titlebar/tab-strip is re-enabled.
   - **C**: delete if the multi-pane title-sync surface is not planned.
-- **Decision**: _(owner fills in)_
+- **Decision**: Rewrite against the real surface (owner: the tab strip shown when the sidebar is collapsed, not a per-pane titlebar)
 
 ### 37. core-panes-split-tabs — "mod+w on the last remaining pane opens the desktop Quit dialog — behavior 6"
 - **Status**: skipped (test.fixme, `:591`)
@@ -421,7 +423,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: add a desktop/Electron-platform e2e tier, then implement. L.
   - **B (recommended)**: keep fixme — desktop-only, no web tier can reach it.
   - **C**: delete the e2e assertion; cover in a desktop smoke test.
-- **Decision**: _(owner fills in)_
+- **Decision**: C for web (owner) + future desktop Electron-Playwright smoke tier noted
 
 ### 38. core-panes-split-tabs — "a 2-pane split survives a full reload on a non-owning URL — behavior 14"
 - **Status**: skipped (test.fixme, `:778`)
@@ -432,7 +434,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: build a multi-terminal / seeded-layout fixture in `core-terminal`, then assert reload survival there. M.
   - **B (recommended)**: keep fixme and route the terminal-metadata-survival gap to `core-terminal`.
   - **C**: delete — the underlying persistence is covered by other reload tests.
-- **Decision**: _(owner fills in)_
+- **Decision**: B — keep fixme (owner asked what non-owning URL means: answered — a URL belonging to neither open pane; unreachable in real flows; terminal-rehydration gap routes to core-terminal)
 
 ### 39. core-turns-reload-recovery — "a forced dispatch failure restores a context-item chip into the composer — behavior 8"
 - **Status**: skipped (test.fixme, `:532`)
@@ -443,7 +445,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: reuse the @-mention route stubs once `core-composer-modes` owns them, then implement. M.
   - **B**: keep fixme as a documented shared-seam gap.
   - **C**: delete — the rollback is already proven generically.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 40. core-terminal — "a stale process-owned terminal tab is pruned instead of resurrected on reload — behavior 12"
 - **Status**: skipped (test.fixme, `:1088`)
@@ -454,7 +456,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: move the assertion into `core-processes` where the Process mocks exist. M.
   - **B**: keep fixme with the cross-spec + unit-coverage note.
   - **C**: delete — the store logic is unit-tested.
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ### 41. mobile-smoke — "multipane split and pane/tab/session drag-reorder have a touch equivalent — behavior 4"
 - **Status**: skipped (test.fixme, `:290`)
@@ -465,7 +467,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: add a tablet-width (≥768) project + a pre-seeded multi-surface fixture (2 panes or 2+ tabs), then assert drop targets + split geometry via CDP touch. M.
   - **B**: keep fixme until the fixture convention for multi-surface seeding is decided.
   - **C**: n/a (engine is real; this is a coverage gap, not deletable behavior).
-- **Decision**: _(owner fills in)_
+- **Decision**: A (owner: agreed with recommendation)
 
 ---
 
@@ -473,18 +475,18 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.
 
-| Spec / line | Test | Why off | Recommendation |
-| --- | --- | --- | --- |
-| live-claxedo-mcp-tools `:547` | process tool add/update/remove hit the wrong path and 404 — behavior 5 | REAL BUG: `process-handler.ts:275/299/311` POST/PUT/DELETE to bare `/process` instead of `/api/wr/process` (list/start/stop use the right `PROCESS_PATH`); the package's own unit test asserts the wrong path, hiding it | app fix in `process-handler.ts`; correct the unit test |
-| live-claxedo-mcp-tools `:739` | summarize_logs never surfaces a raw JSON-parse crash — behavior 10b | REAL BUG: `server.ts:66-67` `JSON.parse`s the body before checking `res.ok`; fallback `GET /session/:id/message/:messageId` (`:637-645`) is a 404 route — `JSON.parse("404 Not Found")` throws a raw SyntaxError | app fix: check `res.ok` first; fix/remove the dead fallback route |
-| live-claxedo-mcp-tools `:409/:825` | describe/beforeAll gates | `test.skip(!LIVE)` Tier L gate; inner `:825` skip on missing prereq | keep as loud env-gated skips |
-| live-agent-extensions-materialization `:726` | disable/enable a package via the marketplace UI — behavior 6 | REAL GAP: no disable/enable control in `marketplace-panel.tsx` `InstallButton` (only Install/Uninstall); server capability exists + is unit-tested | app: add the UI control, or delete the UI-driven test and keep unit coverage |
-| live-agent-extensions-materialization `:735` | install a Cursor plugin via the marketplace UI — behavior 7 | REAL GAP: no catalog entry with `kind:"plugin"` and no free-text install-by-source affordance | app: add plugin catalog/entry surface, or defer |
-| live-agent-extensions-materialization `:744` | adopt a discovered item via the marketplace UI — behavior 8 | REAL GAP: `DiscoveredSection` has only a top-level Dismiss; no per-item Adopt/Ignore though the server implements both | app: add per-item Adopt/Ignore controls |
-| live-agent-extensions-materialization `:463/:756` | cloud-half / gates | `test.skip` on `CLAXEDO_ENABLE_DOCKER_SANDBOX=1` (+ built sandbox image/authority wiring) | keep as env-gated skip; implement once docker sandbox lands |
-| live-real-harness-smoke `:595` | codex native SDK completes 3 turns + survives reload — behavior 5 | REAL BUG: against codex-cli 0.143.0 every `turn/start` fails `thread not found` for the uuid `thread/start` just returned (`driver.ts:78-92,160-174`); `codex-acp` mode works | app: fix the native codex driver thread lifecycle |
-| live-real-harness-smoke `:517/:556/:569/:584` | Tier L + missing-binary gates | `test.skip(!LIVE)` and per-binary `test.skip(!claude/!codex on PATH)` | keep as loud named skips |
-| live-user-hosted-relay `:795` | prompt through the relay lane completes a real turn — behavior 3 | REAL GAP: a fresh DRAFT nav to `/w/:workspaceId/session` for a `ws_`-shaped id renders the Local/Cloud draft picker and mis-routes through the CLOUD pipeline instead of the user-hosted gate (`session-new-workspace-options.ts` / `WorkspaceGate` mount order) | app: resolve inventory kind before rendering the Local/Cloud draft picker for a known relay-backed id |
-| live-user-hosted-relay `:880` | pause/resume the real host tunnel surfaces offline + Retry — behaviors 5,6 | BLOCKED by behavior 3's gap (gate can't reliably reach the genuine ready state for the draft-nav pattern); the tunnel lifecycle itself is proven real | fix behavior 3 first, then re-enable |
-| live-user-hosted-relay `:931` | near-expiry token triggers a real refresh, workspace stays usable — behavior 4 | UNCONFIRMED (not disproven): no `POST .../connection/refresh` observed within 20s once the gate reached ready; a different, narrower gap than 3/5/6 | diagnose the refresh trigger timing; distinguish from the draft-nav gaps |
-| live-user-hosted-relay `:682/:904` | Tier L + TTL gates | `test.skip(!LIVE)` describe gates (main + token-refresh block with shortened TTL) | keep as env-gated skips |
+| Spec / line | Test | Why off | Recommendation | Decision |
+| --- | --- | --- | --- | --- |
+| live-claxedo-mcp-tools `:547` | process tool add/update/remove hit the wrong path and 404 — behavior 5 | REAL BUG: `process-handler.ts:275/299/311` POST/PUT/DELETE to bare `/process` instead of `/api/wr/process` (list/start/stop use the right `PROCESS_PATH`); the package's own unit test asserts the wrong path, hiding it | app fix in `process-handler.ts`; correct the unit test | approved |
+| live-claxedo-mcp-tools `:739` | summarize_logs never surfaces a raw JSON-parse crash — behavior 10b | REAL BUG: `server.ts:66-67` `JSON.parse`s the body before checking `res.ok`; fallback `GET /session/:id/message/:messageId` (`:637-645`) is a 404 route — `JSON.parse("404 Not Found")` throws a raw SyntaxError | app fix: check `res.ok` first; fix/remove the dead fallback route | approved |
+| live-claxedo-mcp-tools `:409/:825` | describe/beforeAll gates | `test.skip(!LIVE)` Tier L gate; inner `:825` skip on missing prereq | keep as loud env-gated skips | keep |
+| live-agent-extensions-materialization `:726` | disable/enable a package via the marketplace UI — behavior 6 | REAL GAP: no disable/enable control in `marketplace-panel.tsx` `InstallButton` (only Install/Uninstall); server capability exists + is unit-tested | app: add the UI control, or delete the UI-driven test and keep unit coverage | approved |
+| live-agent-extensions-materialization `:735` | install a Cursor plugin via the marketplace UI — behavior 7 | REAL GAP: no catalog entry with `kind:"plugin"` and no free-text install-by-source affordance | app: add plugin catalog/entry surface, or defer | approved |
+| live-agent-extensions-materialization `:744` | adopt a discovered item via the marketplace UI — behavior 8 | REAL GAP: `DiscoveredSection` has only a top-level Dismiss; no per-item Adopt/Ignore though the server implements both | app: add per-item Adopt/Ignore controls | approved |
+| live-agent-extensions-materialization `:463/:756` | cloud-half / gates | `test.skip` on `CLAXEDO_ENABLE_DOCKER_SANDBOX=1` (+ built sandbox image/authority wiring) | keep as env-gated skip; implement once docker sandbox lands | keep |
+| live-real-harness-smoke `:595` | codex native SDK completes 3 turns + survives reload — behavior 5 | REAL BUG: against codex-cli 0.143.0 every `turn/start` fails `thread not found` for the uuid `thread/start` just returned (`driver.ts:78-92,160-174`); `codex-acp` mode works | app: fix the native codex driver thread lifecycle | approved |
+| live-real-harness-smoke `:517/:556/:569/:584` | Tier L + missing-binary gates | `test.skip(!LIVE)` and per-binary `test.skip(!claude/!codex on PATH)` | keep as loud named skips | keep |
+| live-user-hosted-relay `:795` | prompt through the relay lane completes a real turn — behavior 3 | **ROUTING ROOT CAUSE FIXED** (2026-07-20): `routeWorkspaceKind`'s directory-ref fallback in `session-screen.tsx:277-291` collapsed ANY resolved `ws_`-shaped ref into `"cloud"` regardless of the ref's OWN resolved kind, discarding `sessionWorkspaceRuntimeRef`'s already-correct `kind: "user-hosted"` default — this is what mis-routed a fresh DRAFT nav for a `ws_`-shaped id into the Local/Cloud picker → cloud pipeline. Fix: extracted pure `resolveDraftWorkspaceKind` (`view-state.ts`), unit-tested (`view-state.test.ts`); proof: `core-user-hosted-workspace.spec.ts` (the synchronous mock of this exact draft-nav pattern) passes all 6 behaviors, verified in 2 isolated runs. Test STAYS fixme: the remaining blocker is a real assistant reply needing a real model provider — no provider credentials are configured for `packages/claxedo-server` in this environment (fixture's embedded runtime has no model/auth wired, only a deliberately-stubbed `forbiddenOpencodeServer()`) | routing fix landed; re-check with real model/provider credentials once available | approved |
+| live-user-hosted-relay `:925` | pause/resume the real host tunnel surfaces offline + Retry — behaviors 5,6 | Was BLOCKED by behavior 3's gap; **that gap is now fixed** (see :795 above) and this test needs no model credentials (pause/resume + offline view only). Real body written (no longer a placeholder) but left `test.fixme`: this machine had OTHER agents' concurrent Playwright/Vite processes saturating CPU and racing the shared `e2e/playwright/test-results` dir while authoring (verified via `ps aux`), producing non-reproducible timeouts — traces/screenshots themselves failed to write (ENOENT), so no clean pass/fail signal was obtainable here | re-run this file alone on an idle machine (`CLAXEDO_E2E_LIVE=1 CLAXEDO_E2E_SUITE=live PLAYWRIGHT_SKIP_WEBSERVER=1 npx playwright test live-user-hosted-relay.spec.ts -g "behaviors 5,6"`), then flip `test.fixme` to `test` | approved |
+| live-user-hosted-relay `:984` | near-expiry token triggers a real refresh, workspace stays usable — behavior 4 | UNCONFIRMED (not disproven), and **confirmed unrelated to the :795/:925 routing gap** — its own note states `gateReachesReady` passed on a real run, ruling out the draft-workspace-ambiguity cause; no `POST .../connection/refresh` observed within 20s once the gate reached ready. Not investigated further this pass (out of scope: routing fix only) | diagnose the refresh trigger timing; distinguish from the draft-nav gaps (already distinguished — this is independent follow-up work) | approved |
+| live-user-hosted-relay `:682/:904` | Tier L + TTL gates | `test.skip(!LIVE)` describe gates (main + token-refresh block with shortened TTL) | keep as env-gated skips | keep |

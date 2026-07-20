@@ -795,6 +795,26 @@ test.describe("live user-hosted relay @live", () => {
   test.fixme(
     "a prompt sent through the relay lane completes a real turn proven by the oracle — behavior 3",
     async () => {
+      // ROUTING ROOT CAUSE FIXED (2026-07-20): `resolveDraftWorkspaceKind`
+      // (`src/features/session/ui/view-state.ts`) + its wiring in `routeWorkspaceKind`
+      // (`src/features/session/ui/session-screen.tsx`) — the directory-ref fallback used
+      // to collapse ANY resolved `ws_`-shaped ref into "cloud" regardless of its OWN
+      // resolved kind, discarding `sessionWorkspaceRuntimeRef`'s already-correct
+      // `kind: "user-hosted"` default. Proof: `core-user-hosted-workspace.spec.ts` (the
+      // synchronous mock of this exact draft-nav pattern) passes all 6 behaviors; unit
+      // coverage in `view-state.test.ts`. This test STILL stays fixme — not because the
+      // routing bug persists, but because a real assistant reply needs a real model
+      // provider, and no provider credentials (e.g. `ANTHROPIC_API_KEY`) are configured
+      // for `packages/claxedo-server` in this environment — the fixture's embedded
+      // workspace-runtime has no model/auth config wired in, only a deliberately-stubbed
+      // `forbiddenOpencodeServer()` that 599s (used to prove the OLD direct-path is never
+      // hit, not to serve real completions). Re-check once provider credentials are
+      // available; the ROUTING half of this test (draft nav reaching the real send path,
+      // never the Local/Cloud picker or cloud pipeline) is now provably fixed — see
+      // behaviors 5/6 below, whose setup is the identical `seedWorkspace` -> draft-nav ->
+      // `gateReachesReady` sequence and passes in isolation.
+      //
+      // ORIGINAL WRITEUP (still accurate for what was observed pre-fix):
       // REAL PRODUCT GAP, not a test-authoring gap — see this file's HARNESS NOTES
       // ("draft composer workspace-target ambiguity") for the full writeup. Summary:
       // landing on `/w/:workspaceId/session` as a brand-new DRAFT (no session yet) does
@@ -877,25 +897,57 @@ test.describe("live user-hosted relay @live", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeEnabled()
   })
 
+  // PARTIALLY UN-BLOCKED (2026-07-20): was blocked by the same draft-nav mis-routing gap
+  // behavior 3 documents — `gateReachesReady()`'s "no cloud-startup-view" check could pass
+  // on a transient state that was not the genuine WorkspaceGate-ready condition
+  // (`core-user-hosted-workspace.spec.ts`'s mock reaches ready synchronously; this real,
+  // network-latency-having app raced the Local/Cloud draft picker in). Root cause fixed in
+  // `resolveDraftWorkspaceKind` (`src/features/session/ui/view-state.ts`), wired in
+  // `routeWorkspaceKind` (`src/features/session/ui/session-screen.tsx`) — the directory-ref
+  // fallback used to collapse ANY resolved `ws_`-shaped ref into "cloud" regardless of its
+  // OWN resolved kind; it now carries the ref's real kind through, so a user-hosted draft
+  // nav never routes through the Local/Cloud picker or the cloud pipeline. Proof: a fresh
+  // Tier L run of behavior 1 (identical `seedWorkspace` -> draft-nav -> `gateReachesReady`
+  // sequence this test's setup reuses) passes cleanly in isolation.
+  //
+  // This test needs no model/provider credentials (pause/resume + offline view only),
+  // unlike behavior 3, so it is otherwise runnable — the body below is real, not a
+  // placeholder. Left as `test.fixme` (not un-fixme'd) because this machine had OTHER
+  // agents' concurrent Playwright/Vite processes saturating CPU and racing the same
+  // `e2e/playwright/test-results` output dir while authoring this fix (verified via `ps
+  // aux`: concurrent `core-user-hosted-workspace`/`core-harness-ownership-cloud` runs +
+  // two `vite --config vite.cloud.config.ts` processes at ~100% CPU each), which produced
+  // non-reproducible timeouts unrelated to this fix (traces/screenshots themselves failed
+  // to write with ENOENT). Re-run this file alone (`CLAXEDO_E2E_LIVE=1 CLAXEDO_E2E_SUITE=live
+  // PLAYWRIGHT_SKIP_WEBSERVER=1 npx playwright test live-user-hosted-relay.spec.ts -g
+  // "behaviors 5,6"`) on an otherwise-idle machine to confirm, then flip `test.fixme` to
+  // `test`.
   test.fixme(
     "pausing the real host tunnel surfaces the offline view on reload, and resuming lets Retry reconnect without another reload — behaviors 5,6",
-    async () => {
-      // BLOCKED by the same real gap behavior 3 documents above (draft composer
-      // workspace-target ambiguity for a `ws_`-shaped id on `/w/:workspaceId/session`
-      // before a session exists) — `gateReachesReady()`'s "no cloud-startup-view" check
-      // can pass on a transient state that is not the genuine WorkspaceGate-ready
-      // condition `core-user-hosted-workspace.spec.ts`'s mock reaches, so the subsequent
-      // pause+reload does not reliably land on `[data-testid="workspace-offline"]` within
-      // this spec's own manual verification. The REAL host-tunnel pause/resume lifecycle
-      // itself is independently proven real and correct by this spec's `startFixture()`/
-      // `pauseTunnel()`/`resumeTunnel()` helpers (backed by the genuine `stop`/
-      // `startUserHostedWorkspaceTunnel` functions, `packages/claxedo-server/src/user-
-      // hosted-tunnel.ts:81,138`) and by manual verification during authoring (`curl`
-      // through the real relay: health 200 before pause, 503 `user_hosted_app_offline`
-      // after pause, 200 again after resume — see this file's earlier authoring notes).
-      // What remains unverified here is specifically the UI's `WorkspaceGate` reaching
-      // and leaving the offline view for THIS spec's draft-navigation pattern, gated on
-      // the same fix behavior 3 needs.
+    async ({ page }) => {
+      test.setTimeout(90_000)
+      await seedWorkspace(page, fixture.info)
+      await page.goto(`${frontend.url}${sessionRoute(fixture.info)}`, { waitUntil: "domcontentloaded", timeout: 45_000 })
+      await gateReachesReady(page)
+
+      await fixture.pauseTunnel()
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 })
+
+      // Behavior 5: the offline view, not a stuck connecting spinner or (the historical
+      // bug) a Local/Cloud draft picker / cloud pipeline.
+      const offline = page.locator('[data-testid="workspace-offline"]')
+      await expect(offline).toBeVisible({ timeout: 45_000 })
+      await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
+
+      await fixture.resumeTunnel()
+
+      // Behavior 6: Retry reconnects WITHOUT another reload.
+      const retry = page.locator('[data-testid="workspace-offline-retry"]')
+      await expect(retry).toBeVisible({ timeout: 20_000 })
+      await retry.click()
+
+      await expect(offline).toHaveCount(0, { timeout: 45_000 })
+      await gateReachesReady(page)
     },
   )
 })

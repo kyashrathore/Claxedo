@@ -10,6 +10,7 @@ import {
   shouldReconcileBusySessionToIdle,
   sessionFirstFoldReady,
   sessionMessagesReady,
+  resolveDraftWorkspaceKind,
   sessionSwitchResetPlan,
   sessionUserMessages,
   shouldRenderNewSessionComposer,
@@ -522,5 +523,38 @@ describe("Claxedo session loaded-empty rendering", () => {
       workspaceId: "ws_connecting",
       workspaceReady: false,
     })).toBe(false)
+  })
+
+  test("draft workspace kind prefers the resolved (signed-inventory) kind over the fallback ref", () => {
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: "user-hosted",
+      fallbackRefKind: "cloud",
+    })).toBe("user-hosted")
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: "cloud",
+      fallbackRefKind: "user-hosted",
+    })).toBe("cloud")
+  })
+
+  test("draft workspace kind falls back to the directory-ref's OWN kind, not a blanket cloud", () => {
+    // REGRESSION: a fresh draft nav to /w/:workspaceId/session for a `ws_`-shaped
+    // user-hosted id used to resolve to "cloud" here just because a ref existed,
+    // routing the draft through the cloud sandbox picker instead of the
+    // user-hosted gate.
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: undefined,
+      fallbackRefKind: "user-hosted",
+    })).toBe("user-hosted")
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: undefined,
+      fallbackRefKind: "cloud",
+    })).toBe("cloud")
+  })
+
+  test("draft workspace kind is local when neither the resolved kind nor a ref exists", () => {
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: undefined,
+      fallbackRefKind: undefined,
+    })).toBe("local")
   })
 })

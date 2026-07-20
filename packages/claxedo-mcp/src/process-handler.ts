@@ -130,6 +130,8 @@ type ToolResult = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const PROCESS_PATH = "/api/wr/process"
+
 const clean = (value: unknown) => {
   if (typeof value !== "string") return ""
   return value.trim()
@@ -272,7 +274,7 @@ export async function handleProcess(
       if (args.dependsOn) body.dependsOn = args.dependsOn
       if (args.port) body.port = args.port
       const config = configRow(await http(
-        "/process",
+        PROCESS_PATH,
         { method: "POST", body: JSON.stringify(body) },
         "json",
         directory,
@@ -296,7 +298,7 @@ export async function handleProcess(
       if (args.dependsOn) body.dependsOn = args.dependsOn
       if (args.port) body.port = args.port
       const config = configRow(await http(
-        `/process/${encodeURIComponent(id)}`,
+        `${PROCESS_PATH}/${encodeURIComponent(id)}`,
         { method: "PUT", body: JSON.stringify(body) },
         "json",
         directory,
@@ -308,7 +310,7 @@ export async function handleProcess(
       const id = clean(args.id)
       if (!id) return errorResult('action "remove" requires "id" (process config ID).')
       await http(
-        `/process/${encodeURIComponent(id)}`,
+        `${PROCESS_PATH}/${encodeURIComponent(id)}`,
         { method: "DELETE" },
         "json",
         directory,

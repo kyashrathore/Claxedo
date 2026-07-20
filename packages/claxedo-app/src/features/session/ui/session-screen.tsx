@@ -58,6 +58,7 @@ import {
   sessionFirstFoldReady,
   sessionMessagesReady,
   shouldRenderNewSessionComposer,
+  resolveDraftWorkspaceKind,
   sessionSwitchResetPlan,
   sessionUserMessages,
   stableSessionInfo,
@@ -275,14 +276,20 @@ export default function SessionPage() {
     return workspaceId ? signedWorkspaceFromProjects(projects(), workspaceId)?.kind : undefined
   })
   const routeWorkspaceKind = createMemo<NewSessionWorkspaceKind>(() => {
-    const kind = resolvedWorkspaceKind()
     // Carry user-hosted through as its own kind (was collapsed to "cloud", which
     // dropped the self-hosted workspace into the cloud-provision composer). The
     // submit path still treats it as an existing remote workspace (connect, never
     // provision) — see resolve.ts — but the composer now presents it correctly.
-    if (kind === "user-hosted") return "user-hosted"
-    if (kind === "cloud") return "cloud"
-    return sessionWorkspaceRuntimeRef({ directory: dir() }) ? "cloud" : "local"
+    //
+    // On a fresh DRAFT nav (no inventory/ws() match yet), `resolvedWorkspaceKind`
+    // is undefined and the only signal is the directory-ref fallback below — its
+    // OWN resolved kind must be carried through too (see resolveDraftWorkspaceKind),
+    // not collapsed to "cloud" just because a ref exists. Collapsing is what
+    // mis-routed a `ws_`-shaped user-hosted draft nav into the Local/Cloud picker.
+    return resolveDraftWorkspaceKind({
+      resolvedKind: resolvedWorkspaceKind(),
+      fallbackRefKind: sessionWorkspaceRuntimeRef({ directory: dir(), projects: projects() })?.kind,
+    })
   })
   // BUG-2: the new-session composer (NewSessionDesignView below) must NOT render
   // alongside the WorkspaceGate's offline/connecting panel for a relay-backed

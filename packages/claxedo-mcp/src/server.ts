@@ -25,6 +25,7 @@ import { z } from "zod"
 import { registerBrowserTools } from "./browser-tools"
 import { mcpHttpError } from "./http-error"
 import { handleProcess, type LaunchResult, type ListResponse, type ProcessClient } from "./process-handler"
+import { formatSessionMessages, resolveResponseText, type SessionMessage } from "./message-text"
 import { claxedoRequestScope } from "./request-scope"
 import { claxedoMcpReadOnly } from "./tool-policy"
 import { registerWorkGraphTools } from "./workgraph-tools"
@@ -109,11 +110,6 @@ type TerminalSessionResponse = {
   error?: string
 }
 
-type SessionMessage = {
-  info?: { id?: string; role?: string; error?: { message?: string; data?: { message?: string } } | null }
-  parts?: Array<{ type?: string; text?: string; ignored?: boolean }>
-}
-
 type PtyInfo = {
   id: string
   title: string
@@ -149,24 +145,6 @@ const proc = (directory?: string): ProcessClient => ({
       .then((value) => value === undefined || value === true)
       .catch(() => false),
 })
-
-const messageText = (message: SessionMessage) =>
-  (message.parts || [])
-    .filter((part) => part.type === "text" && !part.ignored)
-    .map((part) => clean(part.text))
-    .filter(Boolean)
-    .join("\n")
-
-const formatSessionMessages = (messages: SessionMessage[]) =>
-  messages
-    .map((message, idx) => {
-      const role = clean(message.info?.role) || "unknown"
-      const id = clean(message.info?.id)
-      const text = messageText(message)
-      const body = text.length > 1200 ? `${text.slice(0, 1200)}...` : text
-      return `${idx + 1}. ${role}${id ? ` [${id}]` : ""}\n${body || "(no text content)"}`
-    })
-    .join("\n\n")
 
 const resolveLogQuery = (args: {
   pty_id?: string
@@ -682,17 +660,14 @@ if (!READ_ONLY) {
           "json",
           directory,
         )
-        let responseText = messageText(result).trim()
-        if (!responseText && result.info?.id) {
-          responseText = messageText(
-            await httpRequest<SessionMessage>(
-              `/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(result.info.id)}`,
-              { method: "GET" },
-              "json",
-              directory,
-            ),
-          ).trim()
-        }
+        const responseText = await resolveResponseText(result, () =>
+          httpRequest<SessionMessage[]>(
+            `/session/${encodeURIComponent(sessionID)}/message`,
+            { method: "GET" },
+            "json",
+            directory,
+          ),
+        )
         if (!responseText) {
           const errMsg = result.info?.error?.data?.message || result.info?.error?.message
           return {
