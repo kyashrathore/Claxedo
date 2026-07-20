@@ -1068,9 +1068,20 @@ test.describe("core session actions: subagent (child session) @core", () => {
     // so `mock.emit()` delivery is a coin flip that loses whenever
     // ClaxedoEventsProvider's (earlier-blocked, slower-cadence) connection
     // drains first — observed as this test's title patch never arriving.
-    // Fulfilling the next TWO connections with the same envelope reaches
-    // both consumers deterministically; the double-apply is a same-payload
-    // idempotent upsert for the one consumer that acts on it.
+    //
+    // A prior `{ times: 2 }` cap assumed exactly ONE pending connection per
+    // consumer at route-registration time — one slot each. That assumption
+    // holds under the dev server (both consumers connect on a tight, similar
+    // cadence) but not under the prebuilt production build: code-splitting
+    // shifts when each stream's chunk mounts and starts reconnecting, so
+    // ClaxedoEventsProvider's two rapid reconnects can swallow BOTH slots
+    // before global-sdk's compat stream reconnects, starving the only
+    // consumer that patches the inventory (~coin-flip failure, CLAXEDO_E2E_PREBUILT=1).
+    // Fulfilling EVERY subsequent `/api/wr/events` GET with the same envelope
+    // (no `times` cap) removes the timing dependency entirely: whichever poll
+    // the compat stream lands on next carries the frame. The frame is a
+    // same-payload idempotent upsert, so re-delivery to either consumer is a
+    // no-op, and the route is torn down with the page context when the test ends.
     const titleEnvelope = {
       directory: DIR,
       payload: {
@@ -1099,7 +1110,6 @@ test.describe("core session actions: subagent (child session) @core", () => {
           })
           .catch(() => {})
       },
-      { times: 2 },
     )
 
     await expect.poll(async () => (await inventoryRow())?.title, { timeout: 15_000 }).toBe("fix the flaky retry test")
