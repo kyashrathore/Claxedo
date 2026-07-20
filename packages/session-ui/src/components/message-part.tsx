@@ -2074,6 +2074,45 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
 }
 
+PART_MAPPING["file"] = function FilePartDisplay(props) {
+  const dialog = useDialog()
+  const part = () => props.part as FilePart
+  const name = createMemo(() => part().filename ?? getFilename(part().url) ?? part().url)
+  const isImage = createMemo(() => part().mime.startsWith("image/"))
+  const isAudio = createMemo(() => part().mime.startsWith("audio/"))
+
+  return (
+    <div data-component="file-part" data-timeline-part-id={part().id}>
+      <Switch
+        fallback={
+          <a
+            data-slot="file-part-link"
+            href={part().url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={name()}
+          >
+            <FileIcon node={{ path: name(), type: "file" }} />
+            <span data-slot="file-part-link-name">{name()}</span>
+          </a>
+        }
+      >
+        <Match when={isImage()}>
+          <img
+            data-slot="file-part-image"
+            src={part().url}
+            alt={name()}
+            onClick={() => dialog.show(() => <ImagePreview src={part().url} alt={name()} />)}
+          />
+        </Match>
+        <Match when={isAudio()}>
+          <audio data-slot="file-part-audio" controls src={part().url} aria-label={name()} />
+        </Match>
+      </Switch>
+    </div>
+  )
+}
+
 ToolRegistry.register({
   name: "read",
   render(props) {

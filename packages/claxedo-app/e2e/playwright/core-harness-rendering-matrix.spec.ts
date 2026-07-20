@@ -198,13 +198,14 @@
  *   - `ToolErrorCard` (packages/session-ui/src/components/tool-error-card.tsx) is ALSO
  *     closed by default (`defaultOpen ?? false`) — a tool part's `state.error` detail
  *     text is not in a visible DOM node until its own `Collapsible.Trigger` is expanded.
- *   Two findings remain UNRESOLVED (deferred via `test.fixme`, not weakened — see their
- *   inline citations): the assistant-timeline `compaction` part-type divider (behavior
- *   7) and the claude-sdk `reasoning` part (behavior 2) each fail to reach the DOM
- *   despite a source-verified-correct envelope shape, for a reason this remediation
- *   pass did not have time to root-cause via interactive store inspection. The `pi`
- *   harness's fixture (`e2e/fixtures/harness-traces/pi.json`) is ALSO missing its
- *   promised tool-renderer event entirely (a fixture-generation gap, not an app bug).
+ *   The assistant-timeline `compaction` divider (behavior 7), the claude-sdk `reasoning`
+ *   part (behavior 2/17), and assistant `file`-type parts (behavior 6) were previously
+ *   deferred; live store inspection root-caused all three (compaction/file dropped in the
+ *   raw-Part<->UIMessage projection; reasoning gated behind the opt-in
+ *   `showReasoningSummaries` setting) and they are now covered by real tests — see each
+ *   test's inline note. The one remaining `test.fixme` is the `pi` harness's fixture
+ *   (`e2e/fixtures/harness-traces/pi.json`), which is missing its promised tool-renderer
+ *   event entirely (a fixture-generation gap, not an app bug).
  */
 import { expect, test, type Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
@@ -464,6 +465,26 @@ async function replay(mock: MockRuntimeHandles, dir: string, trace: Envelope[]) 
 const assistantContent = () => SELECTORS.assistantContentVisible
 
 /**
+ * Reasoning summaries are an opt-in feed setting
+ * (`settings.general.showReasoningSummaries`, default `false` —
+ * `src/platform/settings/provider.tsx`); `renderablePart`
+ * (`message-timeline.data.ts`) drops every reasoning part while it is off. Flip it on
+ * through the real settings UI — the setting is reactive, so already-streamed reasoning
+ * parts appear as soon as the dialog closes.
+ */
+async function enableReasoningSummaries(page: Page) {
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+  const dialog = page.locator('[data-slot="dialog-container"]').last()
+  await expect(dialog).toBeVisible({ timeout: 10_000 })
+  const toggle = dialog.locator('[data-action="settings-feed-reasoning-summaries"] [data-slot="switch-control"]')
+  await toggle.scrollIntoViewIfNeeded()
+  await toggle.click()
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeHidden({ timeout: 5_000 })
+}
+
+/**
  * SESSION-TIMELINE REDESIGN (2026-07-18, plan `2026-07-17-004`/session-timeline
  * work) — three behaviors this file's assertions now account for, verified against
  * the live DOM (`message-timeline.tsx`/`message-timeline.data.ts`):
@@ -585,28 +606,27 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "vector search" })).toBeVisible()
   })
 
-  // behavior 7 (compaction divider): UNRESOLVED — deferred, not weakened. The
-  // `msg_assistant_1-compaction` envelope in `e2e/fixtures/harness-traces/
-  // opencode.json` (`type: "message.part.updated"`, `part.type: "compaction"`,
-  // correct `messageID`/directory, verified byte-for-byte against every other
-  // envelope in the same trace that DOES render) never reaches
-  // `[data-component="compaction-part"] [data-slot="compaction-part-divider"]`
-  // even at a 45s timeout, while every other part in the same trace (before
-  // AND after it — text/reasoning/read/list/glob/webfetch/websearch/write/
-  // skill/apply_patch/custom_mcp_tool/question) renders correctly. Source
-  // read (`PART_MAPPING["compaction"]`/`renderable()`/`groupParts()`,
-  // message-part.tsx ~1580-1596,670-712) shows no obvious gate that would
-  // exclude it — the SPEC's own OUT OF SCOPE note flags a NAME COLLISION risk
-  // worth checking first: `session-turn.tsx`'s SEPARATE, user-message-scoped
-  // `[data-slot="session-turn-compaction"]` divider (driven by
-  // `message.summary`/a compaction part on the TRIGGERING USER message, not
-  // this assistant one) may be intercepting/consuming `type: "compaction"`
-  // parts upstream of the assistant-parts pipeline. Needs interactive
-  // devtools/store inspection this remediation pass didn't have time for.
-  test.fixme(
-    "opencode native — compaction divider renders on the assistant timeline — behavior 7 — UNRESOLVED: message.part.updated envelope with part.type=\"compaction\" (opencode.json) never reaches [data-component=\"compaction-part\"], every other part in the same trace does; possible collision with session-turn.tsx's separate user-message compaction divider (see OUT OF SCOPE note) — needs interactive store inspection",
-    async () => {},
-  )
+  // behavior 7 (compaction divider). Root cause found via live store inspection (NOT the
+  // session-turn.tsx collision the prior note guessed): the assistant `compaction` part
+  // was dropped in the raw-Part<->UIMessage projection. `opencodePartToChatParts`
+  // (opencode-conversation.ts) had no "compaction" case, so — exactly like the "agent"
+  // and "file" gaps — the part never entered the TanStack UIMessage and thus never
+  // reached `getMsgParts`/`renderablePart`/`PART_MAPPING["compaction"]`. Fixed by adding
+  // the lossless compaction round-trip to the projection (both directions).
+  test("opencode native — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
+    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const trace = loadTrace("opencode", assistantId)
+    await replay(mock, dir, trace)
+
+    const content = page.locator(assistantContent())
+    await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
+    await revealTurn(page)
+
+    // The assistant `compaction` part reaches its dedicated divider renderer
+    // (PART_MAPPING["compaction"] -> MessageDivider) inline in the assistant timeline —
+    // distinct from session-turn.tsx's separate user-message compaction TurnDivider.
+    await expect(content.locator('[data-component="compaction-part"] [data-slot="compaction-part-divider"]')).toBeVisible({ timeout: 45_000 })
+  })
 
   test("opencode native — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
@@ -830,24 +850,45 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Ship it", { exact: true })).toHaveCount(0)
   })
 
-  // behaviors 2/17 (reasoning renders; diagnostics-add-zero-rows count, which
-  // depends on reasoning counting as one of the "before+3" rows): UNRESOLVED,
-  // deferred not weakened. The claude-sdk fixture's reasoning envelope
-  // (`e2e/fixtures/harness-traces/claude-sdk.json`, part id
-  // `000001_msg_assistant_1-reasoning`, `messageID: "msg_assistant_1"` —
-  // already correct, no remap needed unlike the ACP family) never reaches
-  // `[data-component="reasoning-part"]`/visible text "Let me check the grep
-  // results.", even though the trace's text part (delta-accumulated the exact
-  // same way, same message) and its "Grep" tool part both render correctly.
-  // `PART_MAPPING["reasoning"]` (message-part.tsx ~1705) gates only on
-  // `text()` (`data.store.part_text_accum_delta`) being truthy — same
-  // accumulator text parts read successfully, so the gap is specific to
-  // reasoning-typed parts and needs interactive store inspection this
-  // remediation pass didn't have time for.
-  test.fixme(
-    "claude-sdk (native) — reasoning part renders, diagnostics add zero extra rows — behaviors 2,17 — UNRESOLVED: reasoning part.text never reaches [data-component=\"reasoning-part\"] despite a correctly-shaped message.part.updated + message.part.delta pair (same accumulator path the sibling text part uses successfully) — needs interactive store inspection",
-    async () => {},
-  )
+  // behaviors 2/17 (reasoning renders; diagnostics add zero extra rows). The reasoning
+  // part is NOT undiagnosable as the prior remediation note assumed: live store
+  // inspection proved the message.part.updated(text:"")+message.part.delta pair flows
+  // correctly through the raw-Part<->UIMessage projection (opencode-conversation.ts maps
+  // reasoning->thinking, accumulates the delta, and projects back to a reasoning Part
+  // carrying the full text — verified via the projection log). The part reaches
+  // `getMsgParts`, but `renderablePart(part, showReasoning)`
+  // (message-timeline.data.ts) gates every reasoning part behind
+  // `settings.general.showReasoningSummaries()`, which DEFAULTS TO FALSE
+  // (src/platform/settings/provider.tsx) — reasoning summaries are opt-in. So the render
+  // is correct; it only shows once the user enables the setting, which this test does
+  // via the real settings UI before asserting.
+  test("claude-sdk (native) — reasoning part renders, diagnostics add zero extra rows — behaviors 2,17", async ({ page }) => {
+    const { mock, dir, assistantId } = await primeHarness(page, "claude-sdk")
+    const trace = loadTrace("claude-sdk", assistantId)
+    await replay(mock, dir, trace)
+
+    await enableReasoningSummaries(page)
+
+    const content = page.locator(assistantContent())
+    await revealTurn(page)
+
+    // behavior 2: the reasoning part (message.part.updated text:"" + message.part.delta)
+    // reaches its dedicated renderer once reasoning summaries are on. It mounts as a
+    // collapsed "Thought" accordion — expanding it reveals the delta-accumulated text.
+    const reasoning = content.locator('[data-component="reasoning-part"]')
+    await expect(reasoning).toBeVisible({ timeout: 45_000 })
+    await reasoning.locator('[data-component="tool-trigger"], [data-slot="basic-tool-tool-title"]').first().click()
+    await expect(content.getByText("Let me check the grep results.")).toBeVisible({ timeout: 45_000 })
+
+    // behavior 17: the trailing runtime.diagnostic envelope (a claude_sdk.unmapped_event
+    // diagnostic, not a Part) adds no timeline row of its own — the assistant turn's
+    // rendered content is exactly the reasoning part, the text part, and the one Grep
+    // tool row, with no phantom diagnostic/error row.
+    await expect(content.getByText("Searching the repo.")).toBeVisible()
+    await expect(content.locator('[data-component="reasoning-part"]')).toHaveCount(1)
+    await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(1)
+    await expect(content.locator('[data-component="tool-error-card"]')).toHaveCount(0)
+  })
 
   test("codex-app-server (native) — proposed plan renders as plain text, \"command\" normalizes to the bash renderer — behaviors 4,11,17", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "codex-app-server")
@@ -893,20 +934,68 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Ship adapter")).toHaveCount(0)
   })
 
-  // behavior 6: assistant `file`-type parts (image/audio data-url, resource links)
-  // have NO renderer today. `renderable()` (message-part.tsx ~line 718) falls through
-  // to `!!PART_MAPPING[part.type]` for anything that isn't tool/text/reasoning, and
-  // `PART_MAPPING` only ever registers "tool" (~1488), "compaction" (~1593),
-  // "text" (~1598), "reasoning" (~1705) — `registerPartComponent` (~947) is exported
-  // but has ZERO call sites anywhere in this repo (verified via
-  // `grep -rn registerPartComponent packages/session-ui/src`), so a `file`-type part
-  // on an assistant message is silently dropped from `groupParts()`'s output and never
-  // reaches the DOM. This is a REAL, source-verified gap — asserting it as a pass
-  // would misrepresent the plan's "file parts render with a dedicated component"
-  // claim, so it is pinned here as `fixme` rather than weakened into a vacuous
-  // assertion. See findings.
-  test.fixme(
-    "assistant file-type parts (image/audio/resource-link) render — behavior 6 — REAL GAP: no PART_MAPPING[\"file\"] registered anywhere (message-part.tsx renderable()/PART_MAPPING, confirmed zero registerPartComponent call sites)",
-    async () => {},
-  )
+  // behavior 6: assistant `file`-type parts (image/audio data-url, resource links) now
+  // reach a dedicated renderer. Previously the REAL GAP was two-layered: no
+  // `PART_MAPPING["file"]` component existed (message-part.tsx) AND the app's
+  // `renderablePart` (message-timeline.data.ts) excluded "file" from its renderable set,
+  // so a `file`-type assistant part was dropped from `groupParts()` and never hit the
+  // DOM. Fixed by registering `FilePartDisplay` (image inline + preview, audio player,
+  // resource-link row) and adding "file" to the renderable set.
+  test("assistant file-type parts (image/audio/resource-link) render — behavior 6", async ({ page }) => {
+    const { mock, dir, assistantId } = await primeHarness(page, "opencode")
+    const sessionID = "ses_harness_matrix_opencode"
+    const filePart = (id: string, mime: string, url: string, filename: string, source?: unknown) =>
+      mock.emit(
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID,
+            time: 900,
+            part: { id, sessionID, messageID: assistantId, type: "file", mime, url, filename, ...(source ? { source } : {}) },
+          },
+        } as never,
+        dir,
+      )
+
+    // 1x1 transparent PNG (image → inline + preview-on-click)
+    filePart(
+      "msg_assistant_1-file-image",
+      "image/png",
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "shot.png",
+    )
+    // audio data-url (audio → <audio controls> player)
+    filePart(
+      "msg_assistant_1-file-audio",
+      "audio/mpeg",
+      "data:audio/mpeg;base64,SUQzAAAAAAAA",
+      "clip.mp3",
+    )
+    // MCP resource link (neither image nor audio → link row)
+    filePart(
+      "msg_assistant_1-file-resource",
+      "text/html",
+      "https://example.com/report.html",
+      "report.html",
+      { type: "resource", clientName: "docs", uri: "https://example.com/report.html", text: { value: "", start: 0, end: 0 } },
+    )
+
+    const content = page.locator(assistantContent())
+
+    // File parts are standalone (non-tool) groups — not foldable — so they render inline
+    // without unfolding the turn.
+    // Image: an inline <img> pointing at the data-url.
+    const image = content.locator('[data-component="file-part"] img[data-slot="file-part-image"]')
+    await expect(image).toBeVisible({ timeout: 45_000 })
+    await expect(image).toHaveAttribute("src", /^data:image\/png;base64,/)
+
+    // Audio: an <audio controls> element.
+    await expect(content.locator('[data-component="file-part"] audio[data-slot="file-part-audio"]')).toHaveCount(1)
+
+    // Resource link: an anchor row carrying the resource href + filename.
+    const link = content.locator('[data-component="file-part"] a[data-slot="file-part-link"]')
+    await expect(link).toBeVisible()
+    await expect(link).toHaveAttribute("href", "https://example.com/report.html")
+    await expect(link.locator('[data-slot="file-part-link-name"]')).toHaveText("report.html")
+  })
 })

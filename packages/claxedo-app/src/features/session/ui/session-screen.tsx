@@ -16,7 +16,6 @@ import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-
 import { useTerminal } from "@/features/session/app-ports"
 import { useLayout } from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"

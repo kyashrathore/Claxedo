@@ -159,26 +159,16 @@
  *      `false` opens `DialogRecoverWorkspace` instead of a draft composer; confirming
  *      re-creates the worktree and opens a session at the recreated directory once a
  *      `worktree.ready` event names it.
- *   8. `DialogNewProject`'s Local/Cloud choice (and therefore the entire
- *      `DialogCreateCloudWorkspace` pipeline reachable through its "Cloud Sandbox"
- *      card) is fully implemented in the actions layer
- *      (`createProjectActions().handleNewWorkspace`) but has **no reachable UI
- *      trigger**: `RailSidebar`'s `onNewWorkspace` prop is declared
- *      (`rail-sidebar.tsx:215`) and threaded all the way down from `app-shell.tsx`, but
- *      no `onClick` anywhere inside `rail-sidebar.tsx` ever calls it — confirmed by
- *      exhaustive `grep -rn "onNewWorkspace" src`, whose only call site is the pass-
- *      through wrapper in `rail-sidebar-shell.tsx:156`, itself never invoked. The
- *      sidebar's only "+" affordance (`aria-label="New Project"`) is wired to
- *      `onNewProject`/`DialogSelectDirectory` instead (see ANATOMY).
- *   9. Independently of BEHAVIOR 8's dead trigger, `handleNewWorkspace`'s direct local-
- *      worktree branch (`onWorktreeCreated(..., wait=true)`,
- *      `project-actions.tsx:176-193`) would hang forever even if invoked: it marks
- *      `WorktreeState.pending(created)` then unconditionally `await
- *      WorktreeState.wait(created)` with no timeout, but `WorktreeState.ready()` /
- *      `WorktreeState.failed()` (`src/utils/worktree.ts`) — the only calls that can
- *      resolve that wait — are invoked nowhere in production source; every call site is
- *      in a `*.test.ts` file (confirmed via `grep -rn "WorktreeState\." src --include
- *      "*.ts" --include "*.tsx" | grep -v test`, zero `.ready(`/`.failed(` hits).
+ *   8/9. DELETED per docs/e2e-decisions.md #16 (2026-07-20): `DialogNewProject`'s
+ *      Local/Cloud picker, `DialogCreateCloudWorkspace`, `handleNewWorkspace` (and its
+ *      hang-prone `onWorktreeCreated(..., wait=true)` branch), and the `onNewWorkspace`
+ *      threading (`app-shell.tsx` → `rail-sidebar-shell.tsx` → `rail-sidebar.tsx`) were
+ *      all dead code — confirmed zero reachable UI trigger and zero call sites for the
+ *      wait=true branch outside the dead path. Live workspace creation goes through the
+ *      session composer's environment selector (`submit-directory.ts`'s
+ *      `resolveCloudSessionDirectory` for cloud; `handleNewLocalWorkspace`/
+ *      `handleNewCloudWorkspace` in `project-actions.tsx` for the direct-create paths),
+ *      covered by `core-cloud-provisioning.spec.ts` and this file's live tests.
  *
  * INVARIANTS — a project can never be listed with an invalid worktree (the client-side
  *   catalog gate applies to both the API-sourced `meta` map and the localStorage-
@@ -541,52 +531,12 @@ test.describe("core workspace lifecycle @core", () => {
     },
   )
 
-  test.fixme(
-    "New workspace Local/Cloud dialog has no reachable UI trigger — behavior 8 (real app bug)",
-    async () => {
-      // `RailSidebar`'s `onNewWorkspace` prop (rail-sidebar.tsx:215) is threaded all the
-      // way from `app-shell.tsx:101` (`onNewWorkspace={handleNewWorkspace}`) through
-      // `app-shell-layout.tsx:300` and `rail-sidebar-shell.tsx:156`, but nothing inside
-      // `rail-sidebar.tsx` ever calls `props.onNewWorkspace(...)` from an onClick/
-      // keyboard handler — confirmed via exhaustive
-      // `grep -rn "onNewWorkspace" packages/claxedo-app/src`. The only "+" affordance in
-      // the sidebar (rendered aria-label "New Project" — see HARNESS NOTES) is wired to `onNewProject` /
-      // `DialogSelectDirectory` instead (see BEHAVIOR 1), which registers a project, not
-      // a new local/cloud workspace within one. `DialogNewProject`'s Local/Cloud picker
-      // is therefore dead code from the UI's perspective today. Reported as a finding.
-    },
-  )
-
-  test.fixme(
-    "direct local-worktree creation (handleNewWorkspace) hangs forever even if triggered — behavior 9 (real app bug)",
-    async () => {
-      // Independently of behavior 8's dead trigger: `onWorktreeCreated(..., wait=true)`
-      // in project-actions.tsx:176-193 calls `WorktreeState.pending(created)` then
-      // unconditionally `await WorktreeState.wait(created)` with NO timeout wrapper.
-      // `WorktreeState.ready()`/`WorktreeState.failed()` (src/utils/worktree.ts) are the
-      // only calls that can resolve that wait, and grepping production source
-      // (`grep -rn "WorktreeState\." packages/claxedo-app/src --include "*.ts"
-      // --include "*.tsx" | grep -v test`) finds zero `.ready(`/`.failed(` call sites
-      // outside `*.test.ts` files — every existing unit test manually pokes
-      // `WorktreeState.ready(dir)` to unblock the same wait a real user would hang on
-      // forever. Reported as a finding.
-    },
-  )
-
-  test.fixme(
-    "cloud create dialog (provider select, no-configured-providers, pipeline, stalled-step, error banner) — behavior 8 (unreachable, same root cause)",
-    async () => {
-      // DialogCreateCloudWorkspace is only reachable through DialogNewProject's "Cloud
-      // Sandbox" card, which inherits behavior 8's dead trigger — there is no other
-      // entry point in the current UI. Its full anatomy (provider radio cards, the
-      // "Configure provider credentials..." warning, the Name field, the 4-step
-      // pipeline driven by `provision` events on the central Claxedo event stream, the
-      // stalled-step/120s timeout fallback, and the mid-provision error banner with
-      // "Retrying automatically...") is documented from source in this file's ANATOMY
-      // section for whoever re-wires the trigger. Reported as a finding alongside
-      // behavior 8/9.
-    },
-  )
+  // behaviors 8/9 (New workspace Local/Cloud dialog: dead trigger, hang-forever
+  // wait=true branch, and the cloud create dialog reachable only through it) —
+  // DELETED per docs/e2e-decisions.md #16 (2026-07-20). The dead code itself
+  // (onNewWorkspace threading, handleNewWorkspace, DialogNewProject,
+  // DialogCreateCloudWorkspace) was removed from src/. See this file's ANATOMY
+  // header for what was there.
 
   test("kebab Edit renames a project — behavior 3", async ({ page }) => {
     await installLifecycleMock(page)

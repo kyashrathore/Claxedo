@@ -468,6 +468,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     modelRestorePending: local.model.restorePending,
     fallbackModel: signedWorkspaceRuntimeFallback.model,
     harnessMode: () => toolbarHarnessMode(scope()),
+    isOpenCodeHarness: () => currentHarnessType(scope()) === "opencode",
     existingSession: () => !!resolvedSessionId() && resolvedSessionId() !== "new",
     variantList: local.model.variant.list,
     selectedVariant,

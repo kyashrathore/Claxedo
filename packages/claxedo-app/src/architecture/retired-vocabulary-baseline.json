@@ -9,7 +9,6 @@
   "app/workbench/state/route-intent.ts",
   "app/workbench/state/route-session-harness.test.ts",
   "app/workbench/state/route-session-harness.ts",
-  "features/session/composer/ui/selector-visibility.test.ts",
   "features/session/composer/ui/submit-create-session.test.ts",
   "app/providers/global-sync/bootstrap.test.ts",
   "features/extensions/marketplace/install-flow.test.ts",

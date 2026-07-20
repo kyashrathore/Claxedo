@@ -397,7 +397,15 @@ test.describe("core harness ownership (cloud) @core", () => {
     expect(mock.requests.harnessPostCount).toBe(0)
   })
 
-  test("a non-OpenCode harness picked on a local draft resets to OpenCode after a same-pane navigation into a cloud workspace, before any cloud request — behavior 5", async ({ page }) => {
+  // Owner decision 27 (harness reset removed): `shouldResetWorkspaceDraftHarness` was
+  // deleted. Investigation showed it was INERT for this same-pane local→cloud navigation:
+  // the cloud workspace draft is a distinct per-directory scope that defaults to OpenCode
+  // on its own, and the user's local Claude choice is preserved per-directory (its
+  // draft-default survives the navigation, verified below) — so removing the reset does
+  // NOT change this outcome and does NOT contradict the "keep the user's choice" contract:
+  // the cloud pane shows the WORKSPACE's own default, while nothing clobbers the local
+  // selection. A prompt sent through the cloud workspace therefore still carries OpenCode.
+  test("a cloud workspace draft keeps its own OpenCode default while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       projectId: PROJECT_ID,
@@ -417,38 +425,44 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
     // Client-side navigate the SAME pane to the cloud workspace's own top-level project
-    // entry via the empty-draft header's project picker (no page reload — this is the
-    // exact same-pane carryover vector shouldResetWorkspaceDraftHarness guards against).
+    // entry via the empty-draft header's project picker (no page reload).
     const projectPicker = page.getByRole("button", { name: PROJECT_NAME }).last()
     await expect(projectPicker).toBeVisible({ timeout: 20_000 })
     await projectPicker.click()
     await page.getByRole("option", { name: WORKSPACE_PROJECT_NAME }).click()
 
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
-    // The draft harness reset to OpenCode BEFORE any cloud request — proven by the DOM
-    // (exactly one plain model control) and by zero relay options requests having ever
-    // fired for the leaked "claude-acp" selection.
+    // The cloud workspace draft shows its OWN OpenCode default — exactly one plain model
+    // control, no relay options ever fetched for a carried-over "claude-acp".
     await expectOnlyOpenCodeModelControl(page)
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-acp")).toBe(false)
+    // ...and the user's local Claude choice is NOT lost — it stays persisted per-directory,
+    // ready to restore when navigating back. This is the "keep the user's choice" contract.
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Object.entries(localStorage).some(
+            ([key, value]) => key.includes("draft-default") && String(value).includes('"harness":"claude-acp"'),
+          ),
+        ),
+      )
+      .toBe(true)
 
     const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(cloudInput).toBeVisible({ timeout: 20_000 })
-    // `expectOnlyOpenCodeModelControl` above only proves a plain (non-harness)
-    // model control is showing, not that it has RESOLVED a real model yet — the
-    // cloud workspace's own provider/model catalog is a fresh relay request fired
-    // on this first-ever visit to it, and sending before it resolves hits the
-    // composer's own "no-model" submit block (see core-cloud-provisioning.spec.ts
-    // and core-user-hosted-workspace.spec.ts for the same race).
+    // `expectOnlyOpenCodeModelControl` above only proves a plain (non-harness) model
+    // control is showing, not that it has RESOLVED a real model yet — the cloud workspace's
+    // own provider/model catalog is a fresh relay request fired on this first-ever visit.
     await expect(page.locator('[data-action="prompt-model"]:visible')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
-    const text = "core harness cloud no-leak turn"
+    const text = "core harness cloud own-default turn"
     await cloudInput.click()
     await cloudInput.fill(text)
     await expect(cloudInput).toContainText(text, { timeout: 10_000 })
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    // The strongest proof: the payload actually dispatched through the relay carries
-    // "opencode", never the local pane's "claude-acp" selection.
+    // The cloud workspace draft dispatches its own OpenCode default, never the local pane's
+    // "claude-acp" selection (which is preserved for the local directory, not carried here).
     expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${text}`)
   })

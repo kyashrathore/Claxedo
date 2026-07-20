@@ -984,25 +984,78 @@ test.describe("core busy / abort / errors @core", () => {
     },
   )
 
-  test.fixme(
+  test(
     "escalation ladder reaches the failed/unresponsive stage with Cancel and Retry — behavior 8",
-    async () => {
-      // OPTIMISTIC_STATUS_FAILURE_MS = 5 * 60_000 (src/session/store/
-      // session-status-dispatcher.ts:15) — reaching the "failed" stage in real time
-      // costs five minutes of wall-clock per attempt, which is impractical for a
-      // CI-speed mocked spec (this file's own 60s default test timeout, and the
-      // suite's overall runtime budget, both rule it out). The mechanism itself is
-      // exercised identically to the "pending"/"long" stages proven above
-      // (`dispatchSessionStatusTimeoutStage`, session-status-dispatcher.ts:168-182) —
-      // only the wall-clock distance differs. Reaching this deterministically would
-      // need either (a) a test-only scale-down knob on
-      // OPTIMISTIC_STATUS_{REDISPATCH,PENDING,LONG,FAILURE}_MS gated by an env var, or
-      // (b) driving the whole page with Playwright's `page.clock` installed before
-      // first navigation (risky here: it would also freeze the mock's own SSE
-      // reconnect backoff timer, which is real browser-side setTimeout — see
-      // mock-runtime.ts "How streaming works" — requiring careful interleaved
-      // fastForward/drain choreography this spec does not attempt). See this task's
-      // findings for a recommendation.
+    async ({ page }) => {
+      // The "failed" stage otherwise fires at OPTIMISTIC_STATUS_FAILURE_MS =
+      // 5 * 60_000 of real wall-clock (session-status-dispatcher.ts:15), impractical
+      // at CI speed. Instead of freezing time (page.clock would also stall the mock's
+      // SSE reconnect backoff), we set the dispatcher's gated `__claxedoStatusTimerScale`
+      // hook BEFORE first navigation so ONLY the four escalation delays scale down
+      // proportionally — order between stages is preserved, so this reaches "failed"
+      // through the exact same redispatch→pending→long→failed timer ladder the
+      // "pending"/"long" test above proves, just faster. The mock's own backoff timer
+      // is untouched.
+      const STATUS_TIMER_SCALE = 0.02 // redispatch 160ms · pending 400ms · long 900ms · failed 6s
+      await page.addInitScript((scale: number) => {
+        ;(window as typeof window & { __claxedoStatusTimerScale?: number }).__claxedoStatusTimerScale = scale
+      }, STATUS_TIMER_SCALE)
+
+      test.setTimeout(120_000)
+      const abortState = await registerAbortRoute(page)
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
+      await silencePromptAsync(page)
+      await neutralizeStatusPoll(page)
+
+      await seedOneProject(page, DIR)
+      const input = await openDraftPrompt(page, DIR)
+
+      // First send creates the session and moves the URL onto its route. The Retry
+      // affordance is only meaningful once the composer's scope is stable: while the
+      // route is still the fresh draft ("new"), the draft→session handoff flips
+      // `resolvedSessionId` inside the composer's boot scope, which resets the
+      // "last submitted prompt" snapshot that Retry restores. So we drive the
+      // realistic hang→cancel→resend flow — after this send stabilizes the scope on
+      // SESSION_ID, the SECOND send below re-arms the ladder with the snapshot intact.
+      await input.click()
+      await input.fill("is anyone still there")
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(page, "URL never moved onto the created session's route").toHaveURL(sessionUrlPattern(SESSION_ID), {
+        timeout: 20_000,
+      })
+      await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+
+      // Cancel the first (silent) turn to return the composer to ready without a
+      // scope change, then resend on the now-stable session route.
+      await submitIcon(page).click()
+      await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+
+      await input.click()
+      await input.fill("still nothing?")
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+
+      const stage = page.getByTestId("session-status-stage")
+      // The banner appears (pending/long — proven as a stepped ladder by the
+      // sibling behavior-8 test above at real timers) and then reaches the terminal
+      // "failed" stage. We assert the terminal stage directly rather than pinning the
+      // pending→long transitions here: setup latency (send → thinking) is NOT scaled,
+      // so on a slow runner the intermediate stages can already have elapsed before
+      // these checks run. "failed" is stable (rank 4, never advances) until Cancel, so
+      // this is deterministic regardless of runner speed.
+      await expect(stage, "escalation banner never appeared").toBeVisible({ timeout: 30_000 })
+      await expect(stage).toHaveAttribute("data-stage", "failed", { timeout: 30_000 })
+      await expect(stage).toContainText("unresponsive")
+
+      // At the terminal stage BOTH controls are offered: Cancel to abort the stuck
+      // run and Retry to re-run the last prompt.
+      await expect(page.locator('[data-action="session-status-cancel"]')).toBeVisible()
+      await expect(page.locator('[data-action="session-status-retry"]')).toBeVisible()
+
+      await page.locator('[data-action="session-status-cancel"]').click()
+      await expect(stage, "escalation banner did not clear after Cancel").toHaveCount(0, { timeout: 15_000 })
+      await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+      await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     },
   )
 })

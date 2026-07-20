@@ -9,10 +9,10 @@
  * the browser reloads mid-provision. This spec owns that generic "landed on a
  * not-yet-ready cloud workspace" contract: the 4-step pipeline UI, composer unlock on
  * ready, one send through the relay (oracle), reload-resume, and the two create-failure
- * shapes. It does NOT own the create-workspace DIALOG's own in-dialog pipeline UI (a
- * separate component, `DialogCreateCloudWorkspace` in
- * `src/components/dialog-create-cloud-workspace.tsx`, with its own `PROVISION_PIPELINE`
- * const) — that belongs to `core-workspace-lifecycle` (spec 18).
+ * shapes. It does NOT own the create-workspace DIALOG's own in-dialog pipeline UI —
+ * that was a separate component, `DialogCreateCloudWorkspace`, with its own
+ * `PROVISION_PIPELINE` const, reachable only through the dead New-workspace Local/Cloud
+ * picker; DELETED as dead code per docs/e2e-decisions.md #16 (2026-07-20).
  *
  * STATE MODEL — the SINGLE connection authority is `workspaceConnection` (in-memory
  * Solid store, `src/shell/workspace/workspace-connection.ts`), keyed by `workspaceId`,

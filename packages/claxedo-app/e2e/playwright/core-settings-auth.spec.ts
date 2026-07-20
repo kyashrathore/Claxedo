@@ -807,10 +807,9 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("heading", { name: "Sandbox Providers", exact: true })).toBeVisible()
     })
 
-    test.fixme(
-      "Sandbox tab is absent when sandboxEnabled is false — unreachable: VITE_SANDBOX_ENABLED is baked true at Vite-start for the whole shared dev server (.env.local), not flippable per-spec (see SPEC HARNESS NOTES, src/index.tsx:93, src/components/dialog-settings.tsx:151-156)",
-      async () => {},
-    )
+    // The former "Sandbox tab is absent when sandboxEnabled is false" fixme was
+    // deleted: VITE_SANDBOX_ENABLED was removed and sandbox surfaces are always
+    // present now (owner decision), so there is no flag-off branch left to cover.
 
     test("mobile viewport: menu mode by default, tab selection drills into content, back returns to menu — behavior 3", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })

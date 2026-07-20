@@ -7,17 +7,13 @@ import {
   findProjectForWorkspace,
   message,
 } from "@/features/workspaces/app-ports"
-import { getFilename } from "@/lib/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { validWorktree } from "@/platform/sync/worktree"
 
-import { DialogCreateCloudWorkspace } from "../ui/dialogs/create-cloud-workspace"
-import { DialogNewProject } from "../ui/dialogs/new-project"
 import { api, getDefaultBaseUrl } from "@/platform/api/api"
 import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/domain-types"
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
 import { getAuthToken } from "@/platform/auth/auth-client"
-import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { capture as phCapture } from "@/platform/telemetry/analytics"
 import { workspaceSessionRoute } from "@/platform/identity/route"
@@ -152,138 +148,6 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         }}
       />
     ))
-  }
-
-  const handleNewWorkspace = async (project: ProjectItem): Promise<WorkspaceBarItem | undefined> => {
-    const worktree = project.worktree
-
-    const onWorktreeCreated = async (
-      created: string,
-      name: string,
-      wait = false,
-    ): Promise<WorkspaceBarItem | undefined> => {
-      props.flowLog("workspace created", {
-        projectId: project.id,
-        created,
-        name,
-        routeDir: props.activeDirectory(),
-        routeSession: props.params.id,
-      })
-
-      const item = {
-        id: created,
-        directory: created,
-        name,
-        projectWorktree: worktree,
-        canDelete: true,
-      } satisfies WorkspaceBarItem
-
-      if (wait) WorktreeState.pending(created)
-      const cacheReady = ensureDirectorySessionCache(props.directorySessionCacheActions, created)
-      if (!wait) void cacheReady
-      props.state.workspace.recordAccess(project.id, created)
-
-      if (wait) {
-        const result = await WorktreeState.wait(created)
-        if (result.status === "failed") {
-          showToast({
-            title: "Failed to create worktree",
-            description: result.message,
-            variant: "error",
-          })
-          return undefined
-        }
-
-        await cacheReady
-      }
-
-      const tabId = openProjectSessionSurface(created)
-
-      if (tabId)
-        nav(workspaceSessionRoute(created), "new-workspace-created", {
-          projectId: project.id,
-          created,
-          tabId,
-        })
-
-      return item
-    }
-
-    const handleError = (err: unknown) => {
-      if (
-        err &&
-        typeof err === "object" &&
-        "name" in err &&
-        (err as { name?: unknown }).name === "WorktreeNotGitError"
-      ) {
-        showToast({
-          title: "Worktrees require a git project",
-          description: message(err),
-          variant: "error",
-        })
-        return
-      }
-      showToast({
-        title: "Failed to create worktree",
-        description: message(err),
-        variant: "error",
-      })
-    }
-
-    const createLocalWorktree = async (): Promise<WorkspaceBarItem | undefined> => {
-      try {
-        const result = await props.globalSDK.client.worktree.create({ directory: worktree, worktreeCreateInput: {} })
-        const created = result.data?.directory
-        const name = result.data?.name
-        if (created) {
-          // The create call resolved, so the worktree exists on disk. Nothing
-          // else in production flips WorktreeState pending→ready, so mark it
-          // ready here; otherwise onWorktreeCreated's WorktreeState.wait() below
-          // blocks forever (core-workspace-lifecycle:544).
-          WorktreeState.ready(created)
-          return onWorktreeCreated(created, name ?? getFilename(created), true)
-        }
-      } catch (err) {
-        handleError(err)
-      }
-      return undefined
-    }
-
-    // When sandbox is enabled, let the user choose between local worktree and cloud sandbox
-    if (props.config?.sandboxEnabled) {
-      return new Promise<WorkspaceBarItem | undefined>((resolve) => {
-        void props.dialog.show(() => (
-          <DialogNewProject
-            onLocal={async () => {
-              props.dialog.close()
-              resolve(await createLocalWorktree())
-            }}
-            onCloud={() => {
-              void props.dialog.show(() => (
-                <DialogCreateCloudWorkspace
-                  projectId={project.id}
-                  onCreated={async (dir) => {
-                    await props.globalBootstrapActions.bootstrap().catch(() => undefined)
-                    props.dialog.close()
-                    resolve(await onWorktreeCreated(dir, getFilename(dir)))
-                  }}
-                  onClose={() => {
-                    props.dialog.close()
-                    resolve(undefined)
-                  }}
-                />
-              ))
-            }}
-            onClose={() => {
-              props.dialog.close()
-              resolve(undefined)
-            }}
-          />
-        ))
-      })
-    }
-
-    return createLocalWorktree()
   }
 
   /** Create a local worktree directly — no dialog */
@@ -585,7 +449,6 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   return {
     handleNewProject,
-    handleNewWorkspace,
     handleNewLocalWorkspace,
     handleNewCloudWorkspace,
     handleSettings,

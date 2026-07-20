@@ -166,7 +166,6 @@ export type RailSidebarProps = {
   onSessionSelect?: (workspaceDir: string, sessionId: string) => void
   onNewSession?: (workspaceDir: string) => void
   onNewTerminal?: (workspaceDir: string, command?: string, title?: string) => void
-  onNewWorkspace?: (project: ProjectItem) => void
   onNewProject?: () => void
   onRemoveProject?: (project: ProjectItem) => void
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
@@ -1195,6 +1194,11 @@ export function RailSidebar(props: RailSidebarProps) {
     setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   }
   const activateSession = (session: Row) => {
+    // Notify the shell that a session was picked. `activateSession` itself owns
+    // the full navigation (prefetch/fast-switch/workspace-panel restore), so the
+    // shell only uses this to close the mobile drawer — it must NOT re-run the
+    // parent's navigation here or the two paths would double-open.
+    props.onSessionSelect?.(sessionDirectory(session), session.id)
     const existingId = existingSessionContentId(session)
     if (existingId) {
       const directory = sessionDirectory(session)

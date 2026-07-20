@@ -295,8 +295,9 @@
  *     there is no override seam (no query param, no injectable global). The desktop
  *     Electron entry point that sets `platform: "desktop"` and wires a real `quit()`
  *     is a SEPARATE build (`claxedo-desktop`) never exercised by this suite, so
- *     behavior 6 (Quit dialog) is permanently unreachable here — `test.fixme`,
- *     verification belongs to a desktop-specific test surface, not this spec.
+ *     behavior 6 (Quit dialog) is permanently unreachable here — DELETED per
+ *     docs/e2e-decisions.md #37 (2026-07-20); verification belongs to a future
+ *     Electron smoke tier, not this spec.
  *   - The real terminal PTY create route is `/api/wr/pty` (`terminal-connection.ts`'s
  *     `terminalPtyApiPath`), NOT `/api/claxedo/pty` (a stale path used by the
  *     retired `e2e-legacy/workspace-shell.spec.ts` fixture — do not copy that
@@ -487,6 +488,43 @@ async function buildDraftPlusTerminalSplit(page: Page) {
   }
 }
 
+/** Sends a first prompt (promoting the draft to a real SESSION_ID surface,
+ * driven to `idle`), then opens a fresh draft so SESSION_ID is a backgrounded,
+ * unfocused switcher tab. Returns the mock plus a locator for that tab and a
+ * reader for its status dot. Used by the switcher-status-dot behaviors. */
+async function establishBackgroundedSession(page: Page) {
+  await seedOneProject(page, DIR)
+  const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "codex-acp" })
+  await installPtyMock(page)
+  await openWorkbench(page, DIR)
+  await unpinSidebarForSwitcher(page)
+
+  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  await expect(input).toBeVisible({ timeout: 20_000 })
+  await input.click()
+  await input.fill("establish session")
+  await page.locator(SELECTORS.submitControl).last().click()
+  await expectAssistantReplyVisible(page, "ack 1: establish session")
+
+  // Capture the real session tab's title while it is still the sole (active)
+  // tab, so we can target that exact tab by a stable identity even after focus
+  // changes flip which tab carries `aria-current="page"`.
+  await expect(activeTitleButton(page)).toBeVisible({ timeout: 10_000 })
+  const sessionTabTitle = await activeTitleButton(page).getAttribute("aria-label")
+  if (!sessionTabTitle) throw new Error("establishBackgroundedSession: no session tab title")
+
+  // Open a fresh draft so the real session tab is unfocused/backgrounded.
+  await page.getByRole("button", { name: "New Session", exact: true }).first().click()
+  await expect(switcherTabs(page)).toHaveCount(2, { timeout: 10_000 })
+
+  const sessionTab = page.locator('[data-testid="compact-switcher-tab"]').filter({
+    has: page.locator(`[data-testid="switcher-title-button"][aria-label="${sessionTabTitle}"]`),
+  })
+  const sessionDot = sessionTab.locator('[data-switcher-status]')
+  const sessionDotStatus = async () => (await sessionDot.getAttribute("data-switcher-status").catch(() => null)) ?? "none"
+  return { mock, sessionTab, sessionDot, sessionDotStatus, sessionTabTitle }
+}
+
 test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
   test("dragging a background tab onto a pane's edge splits the workbench — behavior 1", async ({ page }) => {
     const { sessionContent, terminalContent } = await buildDraftPlusTerminalSplit(page)
@@ -588,16 +626,9 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible()
   })
 
-  test.fixme(
-    "mod+w on the last remaining pane opens the desktop Quit dialog — behavior 6 (unreachable: web target hardcodes platform:'web', src/main.tsx:41-46; gate at src/claxedo-ui/layouts/rail-keyboard-controller.tsx:27)",
-    async () => {
-      // Intentionally not implemented — see SPEC HARNESS NOTES. This Playwright
-      // target always renders src/main.tsx's web/cloud Platform object, which has
-      // no `quit` handler and platform:"web" !== "desktop", so
-      // rail-keyboard-controller.tsx's `input.platform.platform === "desktop"`
-      // branch can never be entered from here.
-    },
-  )
+  // "mod+w on the last remaining pane opens the desktop Quit dialog — behavior 6" —
+  // DELETED per docs/e2e-decisions.md #37 (2026-07-20): desktop-only, no web-tier
+  // impact; desktop behavior moves to a future Electron smoke tier.
 
   test("mod+\\ splits the focused pane by revealing the MRU hidden surface — behavior 7", async ({ page }) => {
     // Fixed in Wave 2 (WP-B2): the keyboard split handler
@@ -700,60 +731,32 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     expect(after).toEqual(before)
   })
 
-  test.fixme(
-    "a busy background tab shows an amber working dot that clears on focus — behaviors 11 (real app bug: switcher status dot never reacts past its FIRST post-open transition)",
-    async () => {
-      // REAL APP BUG, not a test gap — confirmed by direct query-cache
-      // inspection (`window.__claxedoQueryClient`, exposed by
-      // `src/shared/query/query-client.ts:19`). Sequence that reproduces it:
-      // (1) send a real turn to completion for SESSION_ID (query cache ends
-      // at `{type:"idle"}`), (2) background that tab by opening a second
-      // draft, (3) `mock.emit(session.status busy)` — the switcher dot
-      // correctly flips to `data-switcher-status="working"` (first
-      // transition after open — works), (4) `mock.emit(session.status
-      // idle)` — `queryClient.getQueryData(["shell","session",SESSION_ID,
-      // "status"])` correctly reads back `{"type":"idle"}` within 5s
-      // (`src/session/store/session-status-dispatcher.ts`'s
-      // `dispatchSessionStatusEvent` → `setSessionStatusQueryData` writes it
-      // unconditionally since busy≠idle), but the switcher tab's
-      // `data-switcher-status` DOM attribute stays stuck at `"working"`
-      // indefinitely (still `"working"` after 30s of polling) — i.e. the
-      // underlying data is provably correct while
-      // `useRailHeaderSurfaces`'s `switcherItems` memo
-      // (`src/claxedo-ui/layouts/rail-header-surfaces.ts:110-136`, built on
-      // `useQueries(..., { enabled: false })` at line 37-45) never
-      // re-renders off the SECOND cache write for an already-open,
-      // never-focused background tab — a `@tanstack/solid-query`
-      // `enabled:false` + external `setQueryData` reactivity gap. This is
-      // the SAME symptom independently observed for behavior 12 (busy→done
-      // dot) — see that fixme for the matching repro. NOT the same issue as
-      // `core-sidebar-tree.spec.ts`'s stale "shared-helper gap" fixme
-      // (`mock.emit()` not reaching `/api/wr/events`) — that plumbing gap
-      // is already fixed (`e2e/helpers/mock-runtime.ts:573-586` mounts
-      // `/api/wr/events` unconditionally); this is a distinct, still-live
-      // UI-reactivity bug one layer up. Asserting "not working" here would
-      // pass by accident only if the dot never even reacted once, which is
-      // not what's actually broken — flagged as a finding, not weakened.
-    },
-  )
+  test("a busy background tab flips its switcher status dot to working and then to done as it settles — behavior 11", async ({ page }) => {
+    const { mock, sessionDotStatus } = await establishBackgroundedSession(page)
 
-  test.fixme(
-    "a background tab shows a done dot after settling unfocused, cleared on focus — behavior 12 (real app bug: switcher status dot never reacts past its FIRST post-open transition)",
-    async () => {
-      // REAL APP BUG — see behavior 11's fixme for the full repro and root
-      // cause (`useRailHeaderSurfaces`'s `switcherItems` memo,
-      // `src/claxedo-ui/layouts/rail-header-surfaces.ts`, stops reacting to
-      // `dispatchSessionStatusEvent`-pushed query-cache writes for a
-      // backgrounded tab after the first one). Confirmed identically here:
-      // `mock.emit(busy)` correctly flips the dot to "working" (first
-      // transition), but the immediately-following `mock.emit(idle)` —
-      // which per `nextUnseenDone` (`surface-status.ts:89-98`) should flip
-      // it to "done" (`previousActive && !active`, unfocused) — never
-      // lands in the DOM; the dot stays "working" (same symptom as
-      // behavior 11, same underlying query key). Flagged as a finding, not
-      // weakened into a passing-by-accident assertion.
-    },
-  )
+    // A busy turn on the backgrounded tab surfaces the amber working dot.
+    mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
+    await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("working")
+
+    // Settling to idle while still unfocused must be reflected too: the switcher
+    // has to react to the SECOND external status write (the enabled:false +
+    // external-write reactivity gap this fix closes), not freeze on the first —
+    // the working dot flips to the done badge.
+    mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
+    await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("done")
+  })
+
+  test("a background tab shows a done dot after busy settles to idle while unfocused — behavior 12", async ({ page }) => {
+    const { mock, sessionDotStatus } = await establishBackgroundedSession(page)
+
+    // Drive a busy -> idle turn entirely while the tab is unfocused. The dot
+    // must track BOTH writes — working on busy, then the done badge on the
+    // second (idle) write — rather than freezing on working.
+    mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
+    await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("working")
+    mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
+    await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("done")
+  })
 
   test("switching away from a split and back restores it via the saved snapshot — behavior 13", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
@@ -823,33 +826,50 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     },
   )
 
-  test.fixme(
-    "empty workbench auto-opens a draft, and closing it suppresses the immediate re-open — behavior 15 (real app bug: the 2s suppression never engages)",
-    async () => {
-      // REAL APP BUG, confirmed via 10ms-granularity in-browser polling
-      // (a `setInterval` sampler installed with `page.evaluate`, avoiding
-      // Playwright-side round-trip latency entirely): closing the sole
-      // auto-opened draft's own switcher-tab X button — the "user explicitly
-      // closed the last focused tab" path that's supposed to call
-      // `blockNextAutoOpen()` (`rail-empty-draft-controller.ts`, blocks
-      // `shouldOpenEmptyDraftSession` for `Date.now() < blockedUntil`,
-      // `blockedUntil = Date.now() + 2_000`) — is followed by a BRAND NEW
-      // draft contentId within ~80-100ms, not after a 2-second suppression
-      // window. The sampler never once observed `[data-testid="empty"]`
-      // (count stayed 0 for the full 2.5s capture) — the workbench visibly
-      // never goes empty at all; the old draft's `data-workbench-content` id
-      // is replaced by a new one almost instantly. Either
-      // `onLastFocusedSurfaceClosed` (wired `app-shell-layout.tsx` →
-      // `rail-workbench-controller.ts` → `rail-header-surfaces.ts`'s
-      // `closeSurface`) isn't actually reaching `blockNextAutoOpen`, or the
-      // suppression check isn't being honored by the reactive effect that
-      // re-opens the draft — the wiring reads correctly in the source but
-      // the observed runtime behavior contradicts it. Flagged as a finding,
-      // not routed around by asserting the (non-suppressed) replacement as
-      // if it were the intended immediate-reopen behavior — this spec's own
-      // BEHAVIORS #15 explicitly claims a suppression window exists.
-    },
-  )
+  test("empty workbench auto-opens a draft, and closing it suppresses the immediate re-open — behavior 15", async ({ page }) => {
+    await seedOneProject(page, DIR)
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installPtyMock(page)
+    await openWorkbench(page, DIR)
+    await unpinSidebarForSwitcher(page)
+
+    // The empty workbench auto-opens a draft session in a rendered pane.
+    await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 20_000 })
+    await expect(switcherTabs(page)).toHaveCount(1, { timeout: 10_000 })
+    await expect(page.locator("[data-workbench-content]")).toHaveCount(1)
+
+    // Close the sole draft via its own switcher-tab X (revealed on hover).
+    const draftTitle = await activeTitleButton(page).getAttribute("aria-label")
+    const tab = page.locator('[data-testid="compact-switcher-tab"]').filter({
+      has: page.locator(`[data-testid="switcher-title-button"][aria-label="${draftTitle}"]`),
+    })
+    await tab.hover()
+    await tab.getByRole("button", { name: `Close ${draftTitle}`, exact: true }).click()
+
+    // The close is honored: the workbench renders its empty state (no pane) and
+    // HOLDS it across the ~2s suppression window rather than a fresh draft pane
+    // replacing the closed one within ~100ms. Sample the rendered pane / empty
+    // state at fine granularity entirely in-page (Playwright round-trips are too
+    // coarse to catch a ~100ms replacement) and assert the workbench never
+    // re-populated a pane during the window.
+    const held = await page.evaluate(async () => {
+      const paneCounts: number[] = []
+      const emptyCounts: number[] = []
+      for (let i = 0; i < 40; i++) {
+        paneCounts.push(document.querySelectorAll("[data-workbench-content]").length)
+        emptyCounts.push(document.querySelectorAll('[data-testid="empty"]').length)
+        await new Promise((r) => setTimeout(r, 40))
+      }
+      return {
+        maxPanes: Math.max(...paneCounts),
+        minEmpty: Math.min(...emptyCounts),
+      }
+    })
+    // Suppression: no pane was rendered at any sample, and the empty state was
+    // present throughout the ~1.6s window.
+    expect(held.maxPanes).toBe(0)
+    expect(held.minEmpty).toBeGreaterThan(0)
+  })
 
   test("header buttons create the corresponding surface — behavior 16", async ({ page }) => {
     await seedOneProject(page, DIR)

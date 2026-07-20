@@ -1076,17 +1076,8 @@ test.describe("core terminal panel @core", () => {
     expect(api.creates.length, "reload must not create a brand-new PTY").toBe(createCountBeforeReload)
   })
 
-  // Stale process-owned tab cleanup (`cleanupStaleProcessTabs`,
-  // src/claxedo-ui/context/process-pane.tsx:384-416) only runs when the Process
-  // feature's `fetchProcesses()` resolves (GET /api/wr/process), which requires
-  // standing up spec 20's Process panel mocks/UI surface and a matching persisted
-  // ClaxedoState `terminal.owner["process:<configId>"]` seed — genuinely core-processes
-  // (spec 20) territory per the plan's own split ("process-owned PTY does not
-  // duplicate as a terminal tab" is one of spec 20's own behaviors). The underlying
-  // store operation (`terminal.removeStale`) is already covered at the unit level
-  // (src/context/terminal-zombie.test.ts). See findings for the handoff.
-  test.fixme(
-    "a stale process-owned terminal tab is pruned instead of resurrected on reload — behaviors 12",
-    async () => {},
-  )
+  // "a stale process-owned terminal tab is pruned instead of resurrected on reload —
+  // behavior 12" — MOVED to core-processes.spec.ts per docs/e2e-decisions.md #40
+  // (2026-07-20): the pruning only runs when the Process feature's data loads, which
+  // needs the Process panel mocks that live in core-processes, not here.
 })

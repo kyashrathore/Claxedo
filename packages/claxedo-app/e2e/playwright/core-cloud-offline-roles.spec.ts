@@ -180,6 +180,16 @@ const DIR = WORKSPACE_ID
 const UH_DIR = `${DIR}/.claxedo/user-hosted/workspaces/${UH_WORKSPACE_ID}`
 const PROJECT_ID = "proj_core13"
 
+// Contention-tolerant ceiling for the reactive (re)connect state transitions —
+// composer-ready, the startup overlay, and `data-review-workspace-ready`. These
+// are driven synchronously by the `__claxedoConnections` escape hatch (no real
+// reconnect backoff is waited on), so the ceiling never gates the happy path; it
+// only absorbs reactive-update lag on a starved runner. Each assertion still
+// awaits the actual state transition, so a genuinely broken transition still
+// fails — the wider ceiling just outlasts the 10s expect default that a loaded
+// box was blowing (doc entry 6: CI-only, "runner-contention timing").
+const RECONNECT_STATE_TIMEOUT = 30_000
+
 type RelayRole = "owner" | "admin" | "editor" | "viewer"
 
 type MintResponse = { status: number; role?: RelayRole; tokenExpiresAt?: number }
@@ -538,7 +548,7 @@ function composerEditor(page: Page) {
 }
 
 async function waitForComposerReady(page: Page, state: HarnessState) {
-  await expect(composerEditor(page), debugSuffix(state)).toBeVisible({ timeout: 20_000 })
+  await expect(composerEditor(page), debugSuffix(state)).toBeVisible({ timeout: RECONNECT_STATE_TIMEOUT })
 }
 
 async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
@@ -645,7 +655,12 @@ test.describe("core cloud offline & roles @core", () => {
       ;(window as typeof window & { __claxedoConnections?: { markReconnecting?: (id: string) => void } }).__claxedoConnections?.markReconnecting?.(id)
     }, WORKSPACE_ID)
 
-    await expect(page.locator('[data-component="cloud-startup-view"]'), debugSuffix(state)).toBeVisible({ timeout: 10_000 })
+    // Await the reconnecting overlay explicitly — this is the transition, and its
+    // arrival is also the settle window that lets any (buggy) toast surface before
+    // the toasts-absent check below runs.
+    await expect(page.locator('[data-component="cloud-startup-view"]'), debugSuffix(state)).toBeVisible({
+      timeout: RECONNECT_STATE_TIMEOUT,
+    })
     await expect(toasts(page)).toHaveCount(0)
 
     await page.evaluate((id) => {
@@ -690,7 +705,11 @@ test.describe("core cloud offline & roles @core", () => {
     // armed subtree survives a reconnect instead of being torn down/remounted.
     const reviewPaneRoot = page.locator('[data-testid="review-pane-root"]')
     await expect(reviewRegion, debugSuffix(state)).toHaveCount(1)
-    await expect(reviewRegion).toHaveAttribute("data-review-workspace-ready", "true")
+    // Reactive: readiness flips true only once the mocked connect resolves. Give it
+    // the contention ceiling — it still awaits the actual attribute transition.
+    await expect(reviewRegion).toHaveAttribute("data-review-workspace-ready", "true", {
+      timeout: RECONNECT_STATE_TIMEOUT,
+    })
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
     await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0)
 
@@ -705,14 +724,20 @@ test.describe("core cloud offline & roles @core", () => {
     // ...even though the pending overlay legitimately reappears on top of it during
     // the drop (reviewRegionPolicy's showPending tracks readiness independently of
     // armed — see SPEC ANATOMY / review-region-policy.test.ts).
-    await expect(page.locator('[data-testid="workspace-review-pending"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-testid="workspace-review-pending"]')).toBeVisible({
+      timeout: RECONNECT_STATE_TIMEOUT,
+    })
 
     await page.evaluate((id) => {
       ;(window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }).__claxedoConnections?.markReconnected?.(id)
     }, WORKSPACE_ID)
 
-    await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0)
-    await expect(reviewRegion, debugSuffix(state)).toHaveAttribute("data-review-workspace-ready", "true")
+    await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0, {
+      timeout: RECONNECT_STATE_TIMEOUT,
+    })
+    await expect(reviewRegion, debugSuffix(state)).toHaveAttribute("data-review-workspace-ready", "true", {
+      timeout: RECONNECT_STATE_TIMEOUT,
+    })
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
   })
 
@@ -794,14 +819,24 @@ test.describe("core cloud offline & roles @core", () => {
   // `src/shell/workspace/workspace-connection.test.ts`, so the logic this behavior
   // describes is covered — only the end-to-end "refresh fires from ambient traffic"
   // wiring is unprovable here.
-  test.fixme("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload — behavior 9", async ({ page }) => {
+  // Behavior 9 was `test.fixme` because its original premise — a near-expiry (500ms)
+  // token racing the app's post-ready relay traffic to fire a real `/connection/refresh`
+  // carrying the upgraded role — is BOTH non-deterministic AND structurally unreachable
+  // from a loopback-served harness: `refreshWorkspaceConnection` is only invoked by the
+  // relay-direct fetch path, which is bridged through the central server whenever the
+  // server URL is loopback (see `localBackendForCurrentHost`), so the refresh request
+  // never leaves the browser here. Per doc entry 34 rec A we make the sequencing
+  // deterministic by driving the role flip through the `markRole` connection seam —
+  // the SAME `{type:"role"}` placement event `applyWorkspaceConnectionInfo` feeds on a
+  // real connect/refresh — so this exercises the real placement state machine and the
+  // real composer role-gate reactivity, minus only the unreachable network hop (the
+  // transition logic itself is additionally unit-pinned in connection-placement.test.ts
+  // / workspace-connection.test.ts). Same class of dev-only escape hatch behaviors 4/6/7
+  // already use for reconnect.
+  test("a role that live-flips (viewer -> editor) unlocks the composer in place, no reload — behavior 9", async ({ page }) => {
     await seed(page)
     const state = await installWorkspaceHarness(page)
-    // Near-expiry token: the FIRST relay fetch issued once ready (agent/vcs/provider/
-    // command/mcp/lsp all fire on mount) falls inside the default 60s refresh
-    // window and triggers a refresh before this test does anything else.
-    state.cloudMint = { status: 200, role: "viewer", tokenExpiresAt: Date.now() + 500 }
-    state.cloudRefreshRole = "editor"
+    state.cloudMint = { status: 200, role: "viewer" }
 
     await gotoDraft(page, DIR)
     await waitForComposerReady(page, state)
@@ -809,18 +844,22 @@ test.describe("core cloud offline & roles @core", () => {
     const editor = composerEditor(page)
     const submit = page.locator('[data-action="prompt-submit"]').last()
 
-    // Starts locked (viewer)...
-    await expect(editor).toHaveAttribute("aria-label", "Read-only workspace (viewer)")
+    // Starts locked (viewer).
+    await expect(editor, debugSuffix(state)).toHaveAttribute("aria-label", "Read-only workspace (viewer)")
 
-    // ...and unlocks in place once the refresh (triggered by the app's own
-    // post-ready relay traffic, not by any test-driven action) reports "editor" —
-    // no navigation, no reload, same page instance throughout.
-    await expect.poll(() => state.refreshHits.filter((id) => id === WORKSPACE_ID).length, {
-      message: debugSuffix(state),
-      timeout: 20_000,
-    }).toBeGreaterThan(0)
-    await expect(editor, debugSuffix(state)).not.toHaveAttribute("aria-label", "Read-only workspace (viewer)", { timeout: 10_000 })
-    await expect(submit).toBeEnabled({ timeout: 10_000 })
+    // A live role upgrade arrives (viewer -> editor) without any navigation or reload.
+    await page.evaluate((id) => {
+      ;(
+        window as typeof window & { __claxedoConnections?: { markRole?: (id: string, role: string) => void } }
+      ).__claxedoConnections?.markRole?.(id, "editor")
+    }, WORKSPACE_ID)
+
+    // ...and the composer unlocks in place — placeholder gone, submit enabled — on the
+    // same page instance. Contention ceiling on the reactive transition, not a sleep.
+    await expect(editor, debugSuffix(state)).not.toHaveAttribute("aria-label", "Read-only workspace (viewer)", {
+      timeout: RECONNECT_STATE_TIMEOUT,
+    })
+    await expect(submit, debugSuffix(state)).toBeEnabled({ timeout: RECONNECT_STATE_TIMEOUT })
     await expect(submit).not.toHaveAttribute("aria-label", "Read-only workspace")
   })
 })

@@ -139,6 +139,20 @@ export function sessionListQueryOptions(input: {
   })
 }
 
+// A harness/non-opencode `POST /session` only publishes a `session.lifecycle`
+// "created" event; it never streams the per-directory session rows the way an
+// interactive session does. The flat inventory (`GET /api/control/sessions`)
+// already refetches on that event, but the paginated per-section query
+// (`GET /api/control/session-list`) that actually feeds the rendered rail rows
+// does not — so the new session stays invisible until a full reload. Invalidate
+// every session-list query so the active section refetches and the row appears.
+export function invalidateSessionListQueries(input: { baseUrl?: string } = {}) {
+  const base = input.baseUrl === undefined ? undefined : normalizedBase(input.baseUrl)
+  return queryClient.invalidateQueries({
+    predicate: (query) => isSessionListQueryKey(query.queryKey, base),
+  })
+}
+
 export function reconcileArchivedSessionListQueryData(input: {
   baseUrl?: string
   sessionRef: string

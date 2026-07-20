@@ -210,7 +210,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
 
           <DropdownMenu.Separator />
           <DropdownMenu.Group>
-            <Show when={usePlatform().platform === "desktop" || config?.sandboxEnabled !== true}>
+            <Show when={usePlatform().platform === "desktop"}>
               <DropdownMenu.Item onSelect={() => select(props.onDiagnostics)}>
                 <Icon name="warning" size="small" />
                 <DropdownMenu.ItemLabel>Diagnostics</DropdownMenu.ItemLabel>

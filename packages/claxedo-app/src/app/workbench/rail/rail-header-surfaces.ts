@@ -1,5 +1,6 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
 import { useQueries } from "@tanstack/solid-query"
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { getFilename } from "@/lib/path"
 
 import { buildSwitcherItemsFromState, type SwitcherStatus } from "../compact-switcher/switcher-items"
@@ -11,7 +12,13 @@ import {
 } from "../compact-switcher/surface-status"
 import type { ContentMeta } from "../state/index"
 import type { ClaxedoStateApi } from "../state/provider"
-import { sessionRequestsQueryOptions, sessionStatusQueryOptions } from "../../../features/session/data/sync/queries"
+import {
+  sessionRequestsQueryOptions,
+  sessionStatusQueryOptions,
+  type SessionRequestsQueryData,
+} from "../../../features/session/data/sync/queries"
+import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
 import type { RailWorktreeInfo } from "./rail-project-session-info"
 
 type HeaderSurfaceClient =
@@ -52,12 +59,34 @@ export function useRailHeaderSurfaces(input: {
       enabled: false,
     })),
   }))
-  const headerSessionStatus = createMemo(() =>
-    new Map(headerSessionStatusRefs().map((ref, index) => [ref.contentId, headerSessionStatusQueries[index]?.data] as const)),
-  )
-  const headerSessionRequests = createMemo(() =>
-    new Map(headerSessionStatusRefs().map((ref, index) => [ref.contentId, headerSessionRequestQueries[index]?.data] as const)),
-  )
+  // `useQueries(..., { enabled: false })` keeps these status/requests cache
+  // entries alive (gc protection) but its observer store does NOT reliably
+  // re-render off external `setQueryData` writes past the first one — a known
+  // solid-query enabled:false + external-write reactivity gap. The status/
+  // requests caches are fed entirely by external pushes
+  // (`dispatchSessionStatusEvent`), so read them straight from the cache and
+  // drive reactivity off an explicit cache subscription instead.
+  const [statusCacheEpoch, setStatusCacheEpoch] = createSignal(0)
+  onCleanup(queryClient.getQueryCache().subscribe((event) => {
+    const key = event.query.queryKey as ReadonlyArray<unknown>
+    if (key[0] === "shell" && key[1] === "session" && (key[3] === "status" || key[3] === "requests")) {
+      setStatusCacheEpoch((value) => value + 1)
+    }
+  }))
+  const headerSessionStatus = createMemo(() => {
+    statusCacheEpoch()
+    return new Map(headerSessionStatusRefs().map((ref, index) =>
+      [ref.contentId,
+        queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(ref.sessionId, "status"))
+          ?? headerSessionStatusQueries[index]?.data] as const))
+  })
+  const headerSessionRequests = createMemo(() => {
+    statusCacheEpoch()
+    return new Map(headerSessionStatusRefs().map((ref, index) =>
+      [ref.contentId,
+        queryClient.getQueryData<SessionRequestsQueryData>(shellDataKeys.sessionId(ref.sessionId, "requests"))
+          ?? headerSessionRequestQueries[index]?.data] as const))
+  })
   const [headerSessionUnseenDone, setHeaderSessionUnseenDone] = createSignal<Record<string, true | undefined>>({})
   const headerSessionActive = createMemo(() =>
     new Map(headerSessionStatusRefs().map((ref) => {

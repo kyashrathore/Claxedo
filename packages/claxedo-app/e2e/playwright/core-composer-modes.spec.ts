@@ -428,7 +428,7 @@ test.describe("core composer modes @core", () => {
   // reaches this composer instance via ANY path, not just the REST-poll path. INVARIANTS.md
   // #4 ("submit control is the single source of truth for busy") is violated for this
   // specific fresh-draft-creates-a-session transition. See this file's returned findings.
-  test.fixme(
+  test(
     "Escape aborts an in-flight turn when not in shell mode and no popover is open — behavior 8",
     async ({ page }) => {
       test.setTimeout(120_000)
@@ -535,8 +535,8 @@ test.describe("core composer modes @core", () => {
   // the sent user row's `data-highlight` span never appears (element never found within
   // 15s) even though the pill inserts correctly (behavior 10) and the same mention text
   // reaches the server payload verbatim.
-  test.fixme(
-    "the sent (optimistic) user message highlights an inline agent mention — behavior 11 (REAL BUG: src/shell/chat/opencode-conversation.ts:217-265,325-369 has no \"agent\" case, so the part is silently dropped in the raw-Part<->UIMessage projection)",
+  test(
+    "the sent (optimistic) user message highlights an inline agent mention — behavior 11",
     async ({ page }) => {
       test.setTimeout(120_000)
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -678,26 +678,20 @@ test.describe("core composer modes @core", () => {
     await expectAssistantReplyVisible(page, /^ack 1: message 1/)
   })
 
-  // Behavior 19: comment-linked context chips (`item.comment` set) are hidden while
-  // `store.mode === "shell"` per `composer.tsx`'s `contextItems` memo (filters out any
-  // item carrying a non-empty `.comment` when in shell mode). The ONLY way to add such an
-  // item is through the file/diff line-comment UI (`tab-file.tsx`'s
-  // `createLineCommentController` `onSubmit`, or `review-tab.tsx`) or the
-  // `context.addSelection` command, both of which require a real code editor with an
-  // active line selection — machinery this composer-focused spec does not stand up (it
-  // belongs to the file/diff-viewing specs). Recorded here, not silently dropped, per the
-  // plan's "keep scenario count faithful" rule.
-  test.fixme(
-    "comment-linked context chips are hidden while shell mode is active — behavior 19",
-    async () => {
-      // See composer.tsx:388-392 for the gating logic this would exercise:
-      //   const contextItems = createMemo(() => {
-      //     const items = prompt.context.items()
-      //     if (store.mode !== "shell") return items
-      //     return items.filter((item) => !item.comment?.trim())
-      //   })
-    },
-  )
+  // "comment-linked context chips are hidden while shell mode is active — behavior 19"
+  // — DELETED per docs/e2e-decisions.md #15 (2026-07-20), downgraded from rec A to rec
+  // C: rec A's target (a file/diff spec with a real line-comment surface) does not
+  // exist — confirmed via `grep -rln "tab-file\|review-tab\|createLineCommentController"
+  // e2e/playwright/*.spec.ts`, zero hits outside this file's own (now-deleted) fixme
+  // comment. No known user-facing defect; the gating this would have exercised is
+  // unit-testable directly: `composer.tsx`'s `contextItems` memo (~line 388-392),
+  //   const contextItems = createMemo(() => {
+  //     const items = prompt.context.items()
+  //     if (store.mode !== "shell") return items
+  //     return items.filter((item) => !item.comment?.trim())
+  //   })
+  // — a plain filter over `PromptContextItem[]`, no DOM/editor machinery required.
+  // No unit test exists for it yet; flagged as a coverage gap, not fabricated here.
 
   test("draft text, an inline pill, and an image attachment survive a full reload — behavior 20", async ({
     page,

@@ -815,19 +815,36 @@ test.describe("core harness ownership (local) @core", () => {
     await expectAssistantReplyVisible(page, `ack 1: ${text}`)
   })
 
-  test.fixme(
-    "draft harness resets to OpenCode when directory changes away from a workspace-runtime ref — behavior 9",
-    async () => {
-      // Not implementable in this local-only spec: `shouldResetWorkspaceDraftHarness`
-      // (src/session-client/harness/store-policy.ts:80-92) only fires when
-      // `harnessWorkspaceRuntimeRef` resolves truthy, which requires
-      // `sessionWorkspaceRuntimeRef` to see a `cloud`/`user-hosted` backing
-      // (src/shell/workspace/session-workspace-key.ts:20-35) — a plain local
-      // directory never produces one. `installMockRuntime`'s local route set has
-      // no notion of a workspace-runtime ref at all. This transition (cloud/
-      // user-hosted directory -> local directory) belongs to
-      // `core-harness-ownership-cloud` (spec 12), which mounts the relay-origin
-      // `/api/wr/*` routes this behavior depends on.
+  // Behavior 9 (owner decision 27): the draft harness auto-reset to OpenCode was
+  // REMOVED — the embedded local runtime backs every harness, so a user's choice is
+  // kept across navigation, never silently reset. Here we pin the persistence contract
+  // at the local level: a non-OpenCode harness picked on a local draft survives a
+  // same-pane reload. The workspace-runtime-ref transition that the old reset actually
+  // guarded (`installMockRuntime`'s local routes have no workspace-runtime ref) is proven
+  // red->green in `core-harness-ownership-cloud` behavior 5.
+  test(
+    "a non-OpenCode harness picked on a local draft persists across a same-pane reload — never reset to OpenCode — behavior 9",
+    async ({ page }) => {
+      await seedOneProject(page, DIR)
+      await installMockRuntime(page, { dir: DIR, sessionId: "ses_core_harness_persist", harness: "opencode" })
+      await openDraftPrompt(page, DIR)
+
+      // Pick a non-OpenCode harness on the local draft.
+      await switchDraftHarness(page, /^Claude$/, 0)
+      await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v1"))?.[1],
+          ),
+        )
+        .toContain('"harness":"claude')
+
+      // Reload the same draft route — the selection is kept, never force-reset to OpenCode.
+      await openDraftPrompt(page, DIR)
+      await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
     },
   )
 })

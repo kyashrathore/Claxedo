@@ -185,13 +185,16 @@
  *     `src/shell/workspace/workspace-gate.tsx:112-124`). Reproducing that end-to-end
  *     for a purely local Tier-M mock would mean re-building spec 13
  *     (`core-cloud-offline-roles`)'s full relay/role fixture inside this file; it
- *     belongs there instead. See `test.fixme` below for the exact reasoning.
+ *     belongs there instead — FOLDED into `core-cloud-offline-roles`' viewer-role
+ *     fixture per docs/e2e-decisions.md #24 (2026-07-20); the local `test.fixme` here
+ *     was deleted.
  *   - Project-shared process config visibility across two *local* workspaces (same
  *     `.claxedo/processes.jsonc`, sibling port assignment, "no port leaks after stop")
  *     — this is real claxedo-server worktree-sharing + OS-port-allocation behavior that
  *     a mocked HTTP layer cannot meaningfully exercise; it is covered live by
  *     `e2e-legacy/process-project-shared.spec.ts` (`CLAXEDO_PROCESS_PROJECT_SHARED_LIVE=1`,
- *     real backend + real worktrees). See `test.fixme` below.
+ *     real backend + real worktrees) — DELETED per docs/e2e-decisions.md #25
+ *     (2026-07-20); the mocked duplicate here can't assert the real invariant.
  *   - Real `.claxedo/processes.jsonc` file writes/reads — Tier L concern; behavior 16
  *     above only proves the CLIENT's reload-recovery contract against the mocked
  *     backend, not the file itself.
@@ -1374,10 +1377,48 @@ test.describe("core processes @core", () => {
     await expect(panel2.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
   })
 
+  // MOVED from core-terminal.spec.ts per docs/e2e-decisions.md #40 (2026-07-20) — the
+  // pruning (`cleanupStaleProcessTabs`/`terminal.removeStale`,
+  // src/features/processes/providers/process-pane.tsx:367-379) only runs when the
+  // Process feature's fetchProcesses() resolves, which needs this file's Process
+  // mocks. Still unimplemented here: the two extra findings from investigating the
+  // move — (1) the original comment's "already covered at the unit level
+  // (src/context/terminal-zombie.test.ts)" is STALE/WRONG — that file does not exist
+  // anywhere in the repo, and `grep -rn "removeStale"` finds zero *.test.ts hits;
+  // `removeStale` has NO test coverage today, unit or e2e. (2) the only way to get a
+  // real terminal tab pointing at a process's ptyId is `processApi.openInTab()`
+  // (process-pane.tsx:762), which has zero UI callers (`grep -rn "openInTab" src`) —
+  // there is no button wired to it, so this scenario cannot currently be driven
+  // through real UI clicks. Seeding the stale ownership state directly would require
+  // reproducing this app's per-directory persisted-storage key (a checksum of the
+  // directory, `src/platform/persistence/persist.ts:220`) — no existing spec seeds
+  // that shape via localStorage, so doing it here would be new, unreviewed
+  // infrastructure rather than a straightforward "move." Reported as a finding for
+  // whoever picks this up next: either wire `openInTab` to a UI affordance first, or
+  // add a dedicated persisted-state seeding helper for this file's checksum scheme.
   test.fixme(
-    "diagnostics dialog opens, shows tabs/health/metrics, and lists a running managed process — behavior 17 — unreachable: the sidebar account menu's \"Diagnostics\" item is gated by `<Show when={usePlatform().platform === \"desktop\" || config?.sandboxEnabled !== true}>` (rail-account-menu.tsx); this dev harness bakes `VITE_SANDBOX_ENABLED=true` (.env.local) and always runs the web platform (never \"desktop\"), so the item never renders here — same class of baked-env-flag unreachability as core-settings-auth.spec.ts's Sandbox-tab-absent-when-disabled scenario. Verified live: the rail account menu renders only View options/Usage limits/Settings/Help/Log out in this harness.",
+    "a stale process-owned terminal tab is pruned instead of resurrected on reload — behavior 12",
     async () => {},
   )
+
+  // Diagnostics is desktop-only (owner decision): the sidebar account menu's
+  // "Diagnostics" item is gated by `<Show when={usePlatform().platform === "desktop"}>`
+  // (rail-account-menu.tsx). This web harness always runs the "web" platform, so the
+  // item is intentionally absent here — assert that web-negative contract directly.
+  test("Diagnostics is absent from the account menu on the web platform — behavior 17", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installProcessMock(page, { directory: DIR })
+    await seedOneProject(page, DIR)
+    await openWorkspace(page, DIR)
+
+    await page.getByTestId("rail-account-trigger").click()
+    await expect(page.getByRole("menu")).toBeVisible()
+    // The always-present items confirm the menu actually opened...
+    await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
+    // ...while Diagnostics never renders on web.
+    await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
+  })
 
   test("mutation controls are present for a local (unconditionally-mutable) workspace — behavior 18", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -1393,25 +1434,18 @@ test.describe("core processes @core", () => {
     await expect(panel.getByRole("button", { name: "Edit process" })).toBeVisible()
   })
 
-  // See SPEC "OUT OF SCOPE": role gating requires a live WorkspaceGate relay/cloud
-  // connection with a minted viewer-role access token
-  // (src/shell/workspace/workspace-connection.ts:393-453,
-  // src/shell/workspace/workspace-gate.tsx:112-124) — reproducing that here would
-  // duplicate spec 13's (core-cloud-offline-roles) relay/role fixture rather than
-  // exercise anything specific to the Processes feature. Belongs there.
-  test.fixme(
-    "viewer role hides Add/Start/Stop/Restart/Edit controls — behavior 18 (read-only half)",
-    async () => {},
-  )
+  // "viewer role hides Add/Start/Stop/Restart/Edit controls — behavior 18 (read-only
+  // half)" — FOLDED into core-cloud-offline-roles' existing viewer-role fixture per
+  // docs/e2e-decisions.md #24 (2026-07-20): see
+  // core-cloud-offline-roles.spec.ts's "viewer role locks the composer ... and hides
+  // mutation controls — behavior 8" test, which asserts the Processes panel's "Add
+  // process" control is hidden under the SAME `canMutateProcesses()` gate that governs
+  // Start/Stop/Restart/Edit (src/features/processes/providers/process-pane.tsx) — one
+  // control proves the shared gate, no need to duplicate the relay/role fixture here.
 
-  // See SPEC "OUT OF SCOPE": this is claxedo-server worktree-sharing + real OS port
-  // allocation behavior, already covered live by
-  // e2e-legacy/process-project-shared.spec.ts (CLAXEDO_PROCESS_PROJECT_SHARED_LIVE=1,
-  // real backend, real git worktrees, real spawned child processes). A mocked HTTP
-  // layer cannot meaningfully assert "no port leaks" — there is no real OS port to
-  // leak.
-  test.fixme(
-    "project-shared process config is visible across two local workspaces with sibling port assignment, no leaks after stop",
-    async () => {},
-  )
+  // "project-shared process config is visible across two local workspaces, no leaks
+  // after stop" — DELETED per docs/e2e-decisions.md #25 (2026-07-20): duplicated a
+  // live spec and couldn't assert the real invariant with a mocked HTTP layer. Source
+  // of truth: e2e-legacy/process-project-shared.spec.ts
+  // (CLAXEDO_PROCESS_PROJECT_SHARED_LIVE=1, real backend/worktrees/child processes).
 })

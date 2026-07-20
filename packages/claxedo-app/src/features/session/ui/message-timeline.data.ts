@@ -556,7 +556,10 @@ const workGroupTools = new Set([
   "web_search",
 ])
 const hiddenTools = new Set(["todowrite"])
-const renderableParts = new Set(["compaction", "text", "reasoning", "tool"])
+// Mirrors PART_MAPPING's registered part types (message-part.tsx): non-text/reasoning/
+// tool parts render only when a dedicated component exists. "file" carries assistant
+// image/audio/resource-link attachments to FilePartDisplay.
+const renderableParts = new Set(["compaction", "text", "reasoning", "tool", "file"])
 
 export function assistantMessageSettled(message: AssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error

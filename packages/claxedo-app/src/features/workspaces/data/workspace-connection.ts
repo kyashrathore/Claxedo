@@ -116,6 +116,16 @@ if (typeof window !== "undefined") {
       ? {
           markReconnecting: markWorkspaceReconnecting,
           markReconnected: markWorkspaceReconnected,
+          // Drives the role-placement transition a live token refresh would apply
+          // (`{type:"role"}`, the same event `applyWorkspaceConnectionInfo` feeds on a
+          // real connect/refresh). Exposed for e2e because the production refresh that
+          // carries a re-minted role never fires from a loopback-served harness — its
+          // relay-direct fetch is bridged through the central server — so a role
+          // live-flip can only be driven deterministically through this seam. It goes
+          // through the real placement state machine, so the composer's role gate
+          // unlocks exactly as it would in production.
+          markRole: (workspaceId: string, role: RelayRole) =>
+            applyPlacementEvent(workspaceId, { type: "role", role }),
         }
       : {}),
   }

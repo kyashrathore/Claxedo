@@ -49,6 +49,11 @@
       "family": "terminal-scoped fetch cache",
       "writer": "features/terminal/lib/terminal-scoped-cache.ts",
       "status": "live"
+    },
+    {
+      "family": "switcher surface status",
+      "writer": "app/workbench/rail/rail-header-surfaces.ts",
+      "status": "live"
     }
   ],
   "grandfathered": [

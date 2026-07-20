@@ -138,6 +138,8 @@ describe("RailAccountMenu", () => {
   test("keeps non-auth actions available while auth is loading", async () => {
     state.status = "loading"
     state.user = {}
+    // Diagnostics is desktop-only, so drive the desktop platform to exercise it.
+    state.platform = "desktop"
     const props = renderMenu()
 
     await openMenu("Account")

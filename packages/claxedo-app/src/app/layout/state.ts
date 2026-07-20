@@ -106,6 +106,10 @@ export function createShellLayoutState(input: {
     setWorkspacePanelWidth,
     setRailWidth,
     committedRailWidth: () => committedRailWidth,
+    // A toggle-collapse mutes the hot-zone peek until the pointer leaves the
+    // corner, so hiding the rail via the toggle doesn't instantly re-peek when
+    // the Show-Sidebar affordance appears under the stationary cursor.
+    railMuted: () => mutedUntilLeave,
     railWidth,
     workspacePanelWidth,
     toggleRail: () => {

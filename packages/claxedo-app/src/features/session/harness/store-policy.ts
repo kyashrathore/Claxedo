@@ -77,20 +77,6 @@ export function harnessWorkspaceRuntimeRef(input?: HarnessScopeInput) {
   return input?.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
 }
 
-export function shouldResetWorkspaceDraftHarness(input: {
-  scope: string
-  directory?: string
-  sessionId?: string
-  harness: HarnessType
-}) {
-  return (
-    isDraftScope(input.scope) &&
-    !!harnessWorkspaceRuntimeRef(input) &&
-    (!input.sessionId || input.sessionId === "new") &&
-    input.harness !== "opencode"
-  )
-}
-
 export function refreshHarnessTypeForScope(input: {
   directory?: string
   harness: HarnessType

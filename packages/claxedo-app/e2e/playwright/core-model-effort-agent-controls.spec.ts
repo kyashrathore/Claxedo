@@ -587,15 +587,14 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(mock.requests.promptBodies[0]?.agent).toBe("review")
   })
 
-  // Behavior 7: see SPEC HARNESS NOTES. `showAgentSelector()` and `harnessPending()` are
-  // mutually exclusive in the current wiring (composer.tsx:91-101, selector-
-  // visibility.ts) — a visible-and-disabled agent selector cannot be produced through the
-  // public composer surface, so there is no positive scenario to pin here beyond what the
-  // SPEC block already documents from source.
-  test.fixme(
-    "agent selector disabled-while-harnessPending is unreachable through the public composer surface — behavior 7 (see SPEC HARNESS NOTES, composer.tsx:91-101 + selector-visibility.ts)",
-    async () => {},
-  )
+  // Behavior 7 (former fixme, deleted): the agent picker is now positively gated to the
+  // OpenCode harness — `showAgentSelector()` is `isOpenCodeHarness && agentCount > 0`
+  // (selector-visibility.ts, fed by `currentHarnessType(scope) === "opencode"` in
+  // composer.tsx). OpenCode drafts never enter `harnessPending()` (pending requires a
+  // non-OpenCode harness in "polling"), so a visible-and-disabled agent selector still
+  // cannot be produced. The positive "shows for OpenCode with agents" contract is pinned
+  // by behavior 6 above; the "hidden for non-OpenCode harnesses" half is
+  // core-harness-ownership-local's territory (this spec is plain-OpenCode only).
 
   // Behavior 8's two bugs (submit-transport.ts ignoring non-2xx on the config PATCH, and
   // the missing `prompt.toast.sessionConfigSaveFailed.title` i18n key hiding the toast's

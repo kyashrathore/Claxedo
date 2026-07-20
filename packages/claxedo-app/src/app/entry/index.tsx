@@ -90,7 +90,9 @@ export function getDefaultConfig(): ClaxedoConfig {
 
     // Feature flags - all default to false for standalone mode
     authEnabled: import.meta.env.VITE_AUTH_ENABLED === "true",
-    sandboxEnabled: import.meta.env.VITE_SANDBOX_ENABLED === "true",
+    // Sandbox surfaces are always present now — the embedded runtime backs them
+    // on every build, so there is no longer a VITE_SANDBOX_ENABLED gate.
+    sandboxEnabled: true,
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
     daytonaApiKey: envString(import.meta.env.VITE_DAYTONA_API_KEY),
     claxedoServerUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? "http://127.0.0.1:3001",

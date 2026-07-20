@@ -34,7 +34,6 @@ import {
   shouldFetchConfigOptionsForScope,
   shouldHydrateDraftFromHarnessStatus,
   shouldRefreshDirectoryAfterHarnessStatus,
-  shouldResetWorkspaceDraftHarness,
   shouldRetryModelOptions,
   shouldShowModelOptionsStaleWarning,
   shouldUseLocalHarnessConfigApi,
@@ -552,57 +551,6 @@ describe("harness config helpers", () => {
       expect(shouldHydrateDraftFromHarnessStatus({
         useLocalHarnessConfig: true,
         workspaceRuntime: true,
-      })).toBe(false)
-    })
-  })
-
-  describe("workspace draft runner defaults", () => {
-    test("resets stale runner preferences for workspace draft routes", () => {
-      expect(shouldResetWorkspaceDraftHarness({
-        scope: "draft:ws_1:route",
-        directory: "ws_1",
-        sessionId: "new",
-        harness: "cursor-acp",
-      })).toBe(true)
-    })
-
-    test("resets stale runner preferences for legacy workspace draft routes", () => {
-      expect(shouldResetWorkspaceDraftHarness({
-        scope: "draft:workspace:ws_1:route",
-        directory: "workspace:ws_1",
-        sessionId: "new",
-        harness: "cursor-acp",
-      })).toBe(true)
-    })
-
-    test("resets surface draft preferences when the active directory is a workspace id", () => {
-      expect(shouldResetWorkspaceDraftHarness({
-        scope: "draft:surface_1",
-        directory: "ws_1",
-        sessionId: "new",
-        harness: "cursor-acp",
-      })).toBe(true)
-    })
-
-    test("preserves explicit runners for existing workspace sessions", () => {
-      expect(shouldResetWorkspaceDraftHarness({
-        scope: "session:ws_1:ses_1",
-        directory: "ws_1",
-        sessionId: "ses_1",
-        harness: "cursor-acp",
-      })).toBe(false)
-    })
-
-    test("does not reset filesystem drafts or OpenCode drafts", () => {
-      expect(shouldResetWorkspaceDraftHarness({
-        scope: "draft:/tmp/project:route",
-        directory: "/tmp/project",
-        harness: "cursor-acp",
-      })).toBe(false)
-      expect(shouldResetWorkspaceDraftHarness({
-        scope: "draft:ws_1:route",
-        directory: "ws_1",
-        harness: "opencode",
       })).toBe(false)
     })
   })

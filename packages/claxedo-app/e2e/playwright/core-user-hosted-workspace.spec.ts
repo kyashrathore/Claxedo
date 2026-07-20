@@ -181,6 +181,12 @@ const WORKSPACE_ID = "ws_core_user_hosted_workspace"
 // sessions are runtime-native, so this matches production, not just the gate.
 const SESSION_ID = "run_core_user_hosted_workspace"
 const DIR = "/tmp/e2e-core-user-hosted-workspace"
+// Contention-tolerant ceiling for reactive UI transitions that a starved CI runner
+// was blowing past the 10-20s local budget (doc entry 7: CI-only, "runner-contention
+// timing"; the oracle-send and Share-toast waits are the named victims). Every use
+// still awaits the actual state transition — this only outlasts host lag, it never
+// weakens what is asserted.
+const CONTENTION_TIMEOUT = 45_000
 // The AgentRuntimeEvent contract version the consumer requires verbatim
 // (`AGENT_RUNTIME_EVENT_CONTRACT_VERSION` in
 // `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`); a frame
@@ -674,7 +680,7 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
 
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    await expect(input).toBeVisible({ timeout: 20_000 })
+    await expect(input).toBeVisible({ timeout: CONTENTION_TIMEOUT })
     await expect(input).toHaveAttribute("contenteditable", "true")
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
     // The gate unlocking only proves the CONNECTION is ready — the draft's own
@@ -684,7 +690,9 @@ test.describe("core user-hosted workspace @core", () => {
     // block, which no-ops the click — wait for a real model to land in the
     // model control first, matching core-cloud-provisioning.spec.ts and
     // core-harness-ownership-cloud.spec.ts's established pattern.
-    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, {
+      timeout: CONTENTION_TIMEOUT,
+    })
 
     const promptText = "core user-hosted workspace first turn"
     await input.click()
@@ -855,14 +863,20 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
     const moreOptions = page.getByRole("button", { name: /More options for/i }).first()
+    await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
     await moreOptions.hover()
     await moreOptions.click({ force: true })
 
     const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
-    await expect(shareItem).toBeVisible({ timeout: 10_000 })
+    await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })
     await shareItem.click()
 
-    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Workspace shared", { timeout: 10_000 })
+    // Await the confirmation toast explicitly (it appears only after the register
+    // POST resolves) — the register-request assertion below then confirms the exact
+    // network effect that produced it.
+    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Workspace shared", {
+      timeout: CONTENTION_TIMEOUT,
+    })
     expect(requests).toEqual([`POST /api/workspace/${encodeURIComponent(PROJECT_ID)}/user-hosted/register`])
   })
 })

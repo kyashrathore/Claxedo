@@ -261,6 +261,17 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       metadata: { ...part.metadata, opencodePartId: part.id, opencodePart: part },
     }]
   }
+  // Compaction markers carry no payload beyond their type/id. TanStack's MessagePart
+  // union has no "compaction" variant, so (like "agent") we carry it as a custom-typed
+  // part and stash the original for a lossless round-trip. Dropping it here silently
+  // hid the assistant-timeline compaction divider (PART_MAPPING["compaction"]).
+  if (part.type === "compaction") {
+    return [{
+      type: "compaction",
+      metadata: { opencodePartId: part.id, opencodePart: part },
+      // as-any: MessagePart union has no "compaction" variant; carry it as a custom part.
+    } as unknown as MessagePart]
+  }
   // @-mention parts. TanStack's MessagePart union has no "agent" variant, so we
   // carry the mention as a custom-typed part (cast, like "thinking") and stash
   // the original AgentPart in metadata for a lossless round-trip back to
@@ -377,6 +388,16 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
       ...stored,
       messageID: message.id,
     }]
+  }
+  // Compaction marker → OpenCode CompactionPart. Reuse the stored original when
+  // present (lossless); otherwise reconstruct the minimal envelope.
+  if ((part.type as string) === "compaction") {
+    return [stored ? { ...stored, messageID: message.id } : {
+      id: metadata?.opencodePartId ?? `${message.id}:compaction`,
+      sessionID: chatMessageSessionId(message),
+      messageID: message.id,
+      type: "compaction",
+    } as Part]
   }
   // Agent mention → OpenCode AgentPart. Reuse the stored original when present
   // (lossless); otherwise reconstruct from the carried name/source (the path a

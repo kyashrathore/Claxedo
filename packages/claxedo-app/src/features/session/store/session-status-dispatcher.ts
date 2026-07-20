@@ -187,11 +187,27 @@ export function schedulePromptSessionStatusTimeouts(input: {
 }) {
   if (promptSessionStatusTimeouts.has(input.sessionID)) return
   promptSessionStatusTimeouts.set(input.sessionID, [
-    scheduleTimeout(input, "redispatch", OPTIMISTIC_STATUS_REDISPATCH_MS),
-    scheduleTimeout(input, "pending", OPTIMISTIC_STATUS_PENDING_MS),
-    scheduleTimeout(input, "long", OPTIMISTIC_STATUS_LONG_MS),
-    scheduleTimeout(input, "failed", OPTIMISTIC_STATUS_FAILURE_MS),
+    scheduleTimeout(input, "redispatch", scaledStatusTimeout(OPTIMISTIC_STATUS_REDISPATCH_MS)),
+    scheduleTimeout(input, "pending", scaledStatusTimeout(OPTIMISTIC_STATUS_PENDING_MS)),
+    scheduleTimeout(input, "long", scaledStatusTimeout(OPTIMISTIC_STATUS_LONG_MS)),
+    scheduleTimeout(input, "failed", scaledStatusTimeout(OPTIMISTIC_STATUS_FAILURE_MS)),
   ])
+}
+
+// Test-only escalation-timer scale. The "failed" stage otherwise fires at five
+// minutes of real wall-clock (OPTIMISTIC_STATUS_FAILURE_MS), which no CI-speed
+// spec can wait for; a spec that needs to reach a late stage sets a small
+// positive factor on this window hook BEFORE first navigation so the four
+// escalation delays scale down proportionally (order between stages is
+// preserved). Double-gated: only consulted in a DEV build (stripped from
+// production, same as the `__claxedoConnections` reconnect hatch) AND only when
+// the hook holds a finite positive number. This scales only these timers, not the
+// mock's separate SSE reconnect backoff.
+function scaledStatusTimeout(ms: number): number {
+  if (!import.meta.env.DEV || typeof window === "undefined") return ms
+  const scale = (window as typeof window & { __claxedoStatusTimerScale?: unknown }).__claxedoStatusTimerScale
+  if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0) return ms
+  return Math.max(1, Math.round(ms * scale))
 }
 
 export function clearPromptSessionStatusTimeouts(sessionID: string) {

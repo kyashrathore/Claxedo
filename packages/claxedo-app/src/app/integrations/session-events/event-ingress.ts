@@ -1,4 +1,5 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
+import { invalidateSessionListQueries } from "@/features/session/data/query/session-list"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
@@ -229,6 +230,11 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   if (!next) return
   input.children.mark(event.directory)
   if (event.phase !== "created" || !event.info) return
+  // The rendered rail rows come from the paginated `session-list` query, which
+  // this projection's cache write does not feed; refetch it so the newly
+  // created session row appears without a reload (matches the flat-inventory
+  // refresh `applySessionEvent` performs below).
+  void invalidateSessionListQueries()
   const info = event.info as LifecycleSession
   applySessionStatusSseEvent({
     directory: event.directory,

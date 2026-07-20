@@ -11,7 +11,6 @@ import { configureAppPortsForTest } from "@/app/integrations/test-support/app-po
 beforeEach(() => configureAppPortsForTest())
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
-let WorktreeState: typeof import("@/platform/sync/worktree").Worktree
 let deleteDialogProps: undefined | { onDelete: (dir: string) => Promise<void> | void }
 const worktreeStates = new Map<string, { status: "pending" | "ready" } | { status: "failed"; message: string }>()
 const worktreeWaiters = new Map<string, Array<(state: { status: "pending" | "ready" } | { status: "failed"; message: string }) => void>>()
@@ -89,14 +88,6 @@ beforeAll(async () => {
     DialogSelectDirectory: () => null,
   }))
 
-  mock.module("../ui/dialogs/create-cloud-workspace", () => ({
-    DialogCreateCloudWorkspace: () => null,
-  }))
-
-  mock.module("../ui/dialogs/new-project", () => ({
-    DialogNewProject: () => null,
-  }))
-
   mock.module("../../../app/dialogs/index", () => ({
     DialogDeleteSession: () => null,
     DialogDeleteWorkspace: (props: { onDelete: (dir: string) => Promise<void> | void }) => {
@@ -125,7 +116,6 @@ beforeAll(async () => {
 
   const mod = await import("./project-actions")
   createProjectActions = mod.createProjectActions
-  WorktreeState = (await import("@/platform/sync/worktree")).Worktree
 })
 
 beforeEach(() => {
@@ -283,75 +273,13 @@ function make(dir: string) {
   return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
 }
 
-describe("createProjectActions.handleNewWorkspace", () => {
-  test("opens the new session tab after a successful worktree create without an external readiness signal", async () => {
-    // Regression for core-workspace-lifecycle:544. A resolved
-    // client.worktree.create means the worktree exists on disk, so the flow
-    // must proceed to open the session tab on its own. Nothing in production
-    // ever flips WorktreeState pending→ready, so the previous code awaited
-    // WorktreeState.wait() forever — the old test masked the hang by calling
-    // WorktreeState.ready(dir) by hand, a signal production never emits.
-    const dir = `/workspace/feature-${Date.now().toString(36)}`
-    const { props, adds, acts, navs, nav } = make(dir)
-
-    const result = await createProjectActions(props, nav).handleNewWorkspace(project({
-      id: "p1",
-      worktree: "/workspace/main",
-      sandboxes: [],
-    }))
-
-    expect(result).toEqual({
-      id: dir,
-      directory: dir,
-      name: "feature",
-      projectWorktree: "/workspace/main",
-      canDelete: true,
-    })
-    expect(adds).toEqual([{ directory: dir, sessionId: "new", title: "New Session" }])
-    expect(acts).toEqual(["tab-new"])
-    expect(navs).toEqual([
-      {
-        path: workspaceSessionRoute(dir),
-        reason: "new-workspace-created",
-        details: {
-          projectId: "p1",
-          created: dir,
-          tabId: "tab-new",
-        },
-      },
-    ])
-  })
-
-  test("shows an error and skips tab creation when the worktree create call rejects", async () => {
-    const dir = `/workspace/feature-${Date.now().toString(36)}-fail`
-    const { props, adds, acts, navs, nav } = make(dir)
-    // The real production failure path is a rejected create call (caught by
-    // handleError), not an externally-injected WorktreeState.failed() that
-    // nothing in production emits.
-    props.globalSDK.client.worktree.create = async () => {
-      throw new Error("boom")
-    }
-    toasts.length = 0
-
-    const result = await createProjectActions(props, nav).handleNewWorkspace(project({
-      id: "p1",
-      worktree: "/workspace/main",
-      sandboxes: [],
-    }))
-
-    expect(result).toBeUndefined()
-    expect(adds).toEqual([])
-    expect(acts).toEqual([])
-    expect(navs).toEqual([])
-    expect(toasts).toEqual([
-      {
-        title: "Failed to create worktree",
-        description: "boom",
-        variant: "error",
-      },
-    ])
-  })
-
+describe("createProjectActions", () => {
+  // NOTE: handleNewWorkspace (the Local/Cloud picker behind onNewWorkspace) was
+  // deleted as dead code — see docs/e2e-decisions.md #16. It had zero reachable
+  // UI trigger; the live workspace-creation surface is
+  // handleNewLocalWorkspace/handleNewCloudWorkspace below, exercised by the
+  // session composer's environment selector (see core-cloud-provisioning.spec.ts
+  // and core-workspace-lifecycle.spec.ts).
   test("direct local workspace creation warms the directory session cache before opening a session", async () => {
     const dir = `/workspace/feature-${Date.now().toString(36)}-direct`
     const { props, adds, navs, nav, cacheEnsures } = make(dir)

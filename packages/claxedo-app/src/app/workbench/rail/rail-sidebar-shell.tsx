@@ -5,7 +5,6 @@ import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { RailSidebar } from "./rail-sidebar"
 import type { ProjectItem, SessionItem, WorkspaceItem } from "./domain-types"
-import type { WorkspaceBarItem } from "./workspace-toolbar"
 
 export type RailSidebarShellProps = {
   activeGlobal: Accessor<boolean>
@@ -28,7 +27,6 @@ export type RailSidebarShellProps = {
   onNewProject?: () => void
   onNewSession?: (workspaceDir?: string, paneId?: string) => void
   onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
-  onNewWorkspace?: (project: ProjectItem) => Promise<WorkspaceBarItem | undefined>
   onOpenMarketplace?: () => void
   onOpenWorkGraph?: () => void
   onRailCancelCollapse: () => void
@@ -160,8 +158,10 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
               props.onWorkspaceSelect?.(project, workspaceDir)
               props.closeMobileSidebar()
             }}
-            onSessionSelect={(workspaceDir, sessionId) => {
-              props.onSessionSelect?.(workspaceDir, sessionId)
+            onSessionSelect={() => {
+              // `RailSidebar.activateSession` already performs the full session
+              // navigation, so this fires only to dismiss the narrow-viewport
+              // drawer — re-invoking the parent handler would double-navigate.
               props.closeMobileSidebar()
             }}
             onNewSession={(workspaceDir) => {
@@ -176,11 +176,6 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
             onArchiveSession={props.onArchiveSession}
             onDeleteWorkspace={props.onDeleteWorkspace}
             onRemoveProject={props.onRemoveProject}
-            onNewWorkspace={async (project) => {
-              const result = await props.onNewWorkspace?.(project)
-              props.closeMobileSidebar()
-              return result
-            }}
             onNewProject={() => {
               props.onNewProject?.()
               props.closeMobileSidebar()

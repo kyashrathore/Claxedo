@@ -225,6 +225,13 @@ const DIR = "/tmp/e2e-core-sidebar-tree"
 const PROJECT_ID = "proj_core_sidebar_tree"
 const SESSION_ID = "ses_core_sidebar_tree_mock"
 
+// Contention-tolerant ceiling for the keyboard-driven menu/focus transitions in the
+// account-footer test, which a starved CI runner was blowing past the 10s expect
+// default (doc entry 8: CI-only, focus-restoration "timing-sensitive under
+// contention"). Each assertion still awaits the actual visibility/focus transition —
+// the wider ceiling only outlasts host lag, it never weakens the assertion.
+const MENU_FOCUS_TIMEOUT = 30_000
+
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
@@ -732,9 +739,9 @@ test.describe("core sidebar tree @core", () => {
     const trigger = page.getByTestId("rail-account-trigger")
     await trigger.focus()
     await page.keyboard.press("Enter")
-    await expect(trigger).toHaveAttribute("aria-expanded", "true")
-    await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible()
-    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
+    await expect(trigger).toHaveAttribute("aria-expanded", "true", { timeout: MENU_FOCUS_TIMEOUT })
+    await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
+    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
     // "Diagnostics" is gated by `<Show when={usePlatform().platform === "desktop" ||
     // config?.sandboxEnabled !== true}>` (rail-account-menu.tsx) — this dev harness
     // bakes `VITE_SANDBOX_ENABLED=true` (.env.local) and runs the web platform (never
@@ -742,30 +749,30 @@ test.describe("core sidebar tree @core", () => {
     // unreachable-by-baked-env-flag gating documented in core-settings-auth.spec.ts's
     // HARNESS NOTES (e.g. the Sandbox-tab-absent-when-disabled scenario).
     await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
-    await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible()
-    await expect(page.getByRole("menuitem", { name: "Help" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
+    await expect(page.getByRole("menuitem", { name: "Help" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
 
     await page.getByRole("menuitem", { name: "View options" }).focus()
     await page.keyboard.press("ArrowRight")
-    await expect(page.getByRole("menuitemradio", { name: "All" })).toBeVisible()
+    await expect(page.getByRole("menuitemradio", { name: "All" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
     await page.keyboard.press("Escape")
-    await expect(page.getByRole("menuitemradio", { name: "All" })).toHaveCount(0)
-    await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible()
+    await expect(page.getByRole("menuitemradio", { name: "All" })).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
+    await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
 
     await page.getByRole("menuitem", { name: "Usage limits" }).focus()
     await page.keyboard.press("ArrowRight")
     const refreshUsage = page.getByRole("menuitem", { name: "Refresh usage limits" })
-    await expect(refreshUsage).toBeVisible()
-    await expect(refreshUsage).toBeFocused()
+    await expect(refreshUsage).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
+    await expect(refreshUsage).toBeFocused({ timeout: MENU_FOCUS_TIMEOUT })
 
     await page.keyboard.press("Escape")
-    await expect(refreshUsage).toHaveCount(0)
-    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
+    await expect(refreshUsage).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
+    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
 
     await page.keyboard.press("Escape")
-    await expect(page.getByRole("menu")).toHaveCount(0)
-    await expect(trigger).toBeFocused()
-    await expect(trigger).toHaveAttribute("aria-expanded", "false")
+    await expect(page.getByRole("menu")).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
+    await expect(trigger).toBeFocused({ timeout: MENU_FOCUS_TIMEOUT })
+    await expect(trigger).toHaveAttribute("aria-expanded", "false", { timeout: MENU_FOCUS_TIMEOUT })
   })
 
   test("view state persists to localStorage across reload; malformed JSON falls back to defaults — behavior 8", async ({ page }) => {
@@ -935,78 +942,129 @@ test.describe("core sidebar tree @core", () => {
     await expect(toggle).toHaveCount(0)
   })
 
-  test.fixme(
-    "sidebar-toggle collapses/expands the rail's width — behavior 13 (real app bug)",
-    async () => {
-      // REAL APP BUG, not a test/mock gap. `railToggleCommand`
-      // (`src/shell/layout/commands.ts:31-43`) dispatches ONE `region.update`
-      // that sets BOTH `docked: !docked` AND `size: {unit:"px", value: docked
-      // ? 0 : expandedWidth}` on the "rail" region. Reproduced directly: after
-      // clicking `[data-testid="sidebar-toggle"]`, the toggle button itself
-      // disappears (`docked()` — `sidebarPinned()` in
-      // `src/shell/app-shell-layout.tsx:231` — correctly flips to false), but
-      // `[data-testid="rail-sidebar"]`'s inline `width` style stays frozen at
-      // "260px" — `sidebarWidth()` (app-shell-layout.tsx:229,
-      // `railRegion().size.unit === "px" ? railRegion().size.value : 260`)
-      // never reflects the dispatched `size.value: 0`. Same symptom, same
-      // computation, blocks drag-resize and hot-zone peek below too (both
-      // read/write the same `rail` region). This scenario cannot pass until
-      // the `rail` region's `size` actually propagates through the same
-      // dispatch that updates `docked`.
-    },
-  )
+  test("sidebar-toggle collapses/expands the rail's width — behavior 13", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "width" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
 
-  test.fixme(
-    "hot-zone peek expands an unpinned collapsed sidebar; leaving the rail auto-collapses it — behavior 11 (real app bug)",
-    async () => {
-      // REAL APP BUG, not a test gap — blocked by the same rail-width
-      // dispatch bug as "sidebar-toggle collapses/expands the rail's width"
-      // above (`src/shell/layout/commands.ts:31-43`,
-      // `src/shell/app-shell-layout.tsx:229`): the sidebar never visually
-      // collapses in the first place (its prerequisite step), so the
-      // hot-zone peek/auto-collapse cycle this behavior names has nothing to
-      // peek FROM. Filed as a finding alongside the toggle one; re-enable
-      // once the rail region's `size` propagates correctly.
-    },
-  )
+    // Read the dispatched inline width (the rail carries a 1px right border, so
+    // the bordered client rect never reads exactly 0 when collapsed).
+    const railWidth = () =>
+      page.locator('[data-testid="rail-sidebar"]').evaluate((el) => parseFloat((el as HTMLElement).style.width) || 0)
 
-  test.fixme(
-    "drag-resizing the sidebar handle changes width live and persists across reload — behavior 12 (real app bug)",
-    async () => {
-      // REAL APP BUG, not a test gap. Reproduced directly: dragging
-      // `[aria-hidden="true"].cursor-col-resize` from x=257 (the rail's
-      // right edge at the default 260px width) out to a wider position never
-      // changes `[data-testid="rail-sidebar"]`'s width, even mid-drag before
-      // mouseup (this behavior's own title claims "changes width live").
-      // `startResize`/`handleResizeMove`
-      // (`src/claxedo-ui/layouts/rail-sidebar-shell.tsx:83-96` and its
-      // `pointermove` listener) compute the drag delta against
-      // `props.sidebarWidth()`, the SAME accessor implicated in the
-      // sidebar-toggle finding above (`src/shell/app-shell-layout.tsx:229`)
-      // — so this is very likely the identical rail-width-propagation defect
-      // surfacing through a second entry point, not an independent bug.
-      // Filed as a finding; re-enable once the rail region's `size`
-      // propagates correctly.
-    },
-  )
+    // Docked at the default 260px.
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
 
-  test.fixme(
-    "mobile drawer opens on entry, scrim-closes, and closes on session select — behavior 14 (dead code)",
-    async () => {
-      // REAL APP BUG, not a test gap: the mobile drawer's `mobileSidebarOpen`
-      // signal (`src/claxedo-ui/layouts/rail-shell-chrome-state.ts:18`) has no
-      // production call site that ever sets it `true` — `closeMobileSidebar`
-      // (line 61) is the ONLY setter wired anywhere. There is currently no
-      // user action (tap, swipe, hot-zone) that opens the drawer on a mobile
-      // viewport, so the scrim-close and close-on-select paths this behavior
-      // names are unreachable from the UI today. Compounding it, even if the
-      // drawer were open, "close on session select" is separately dead:
-      // `RailSidebar`'s `onSessionSelect` prop (`src/claxedo-ui/layouts/rail-
-      // sidebar.tsx:212`) is declared but never invoked anywhere in the
-      // component, so `RailSidebarShell`'s wrapper that calls
-      // `closeMobileSidebar()` after it (`rail-sidebar-shell.tsx:139-142`)
-      // never fires from a real session click. Filed as a finding; this spec
-      // cannot exercise BEHAVIORS #14 until the app wires an entry point.
-    },
-  )
+    // Collapsing the docked rail flips `docked` (the toggle hides) AND drives
+    // the rail's width to 0 — `railToggleCommand` dispatches both on one
+    // `region.update`, and `sidebarWidth()` must reflect the dispatched size.
+    await page.locator('[data-testid="sidebar-toggle"]').click()
+    await expect(page.locator('[data-testid="sidebar-toggle"]')).toHaveCount(0)
+    // Collapsing holds: the Show-Sidebar affordance rendering under the still
+    // cursor must NOT re-peek the rail (the peek is muted until the pointer
+    // leaves the corner), so the width settles at 0 without moving the mouse.
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(0)
+
+    // Re-expanding via the header "Show Sidebar" affordance restores the width.
+    await page.getByRole("button", { name: "Show Sidebar" }).click()
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
+    await expect(page.locator('[data-testid="sidebar-toggle"]')).toBeVisible()
+  })
+
+  test("hot-zone peek expands an unpinned collapsed sidebar; leaving the rail auto-collapses it — behavior 11", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "peek" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const rail = page.locator('[data-testid="rail-sidebar"]')
+    const railWidth = () => rail.evaluate((el) => parseFloat((el as HTMLElement).style.width) || 0)
+    const railPinned = () => rail.evaluate((el) => el.getAttribute("data-pinned") !== null)
+
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
+
+    // Collapse into the unpinned, zero-width state this behavior peeks from.
+    await page.locator('[data-testid="sidebar-toggle"]').click()
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(0)
+    // Move the pointer clear of the corner so the toggle-collapse mute lifts.
+    await page.mouse.move(700, 420)
+    await expect.poll(railPinned).toBe(false)
+
+    // Entering the top-left hot-zone peeks the rail open without re-docking it.
+    await page.mouse.move(8, 8)
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
+    expect(await railPinned()).toBe(false)
+
+    // Leaving the rail lets it auto-collapse again.
+    await page.mouse.move(700, 420)
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(0)
+  })
+
+  test("drag-resizing the sidebar handle changes width live and persists across reload — behavior 12", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "drag" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const rail = page.locator('[data-testid="rail-sidebar"]')
+    const railWidth = () => rail.evaluate((el) => parseFloat((el as HTMLElement).style.width) || 0)
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
+
+    // The resize handle straddles the rail's right edge but its parent clips
+    // the outer half (overflow-hidden), so grab a pixel just inside the 260px
+    // edge. Drag right by 80px: the width tracks the pointer live.
+    await page.mouse.move(258, 360)
+    await page.mouse.down()
+    await page.mouse.move(338, 360, { steps: 6 })
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(340)
+    await page.mouse.up()
+    await expect.poll(railWidth, { timeout: 10_000 }).toBe(340)
+
+    // The committed width survives a full reload.
+    await openTree(page, DIR)
+    await expect.poll(railWidth, { timeout: 15_000 }).toBe(340)
+  })
+
+  test("mobile drawer opens via the opener, scrim-closes, and closes on session select — behavior 14", async ({ page }) => {
+    // Live once WP-C3 §3.1 wired the drawer end to end: `openMobileSidebar`
+    // (rail-shell-chrome-state.ts) is a real setter reached from the `md:hidden`
+    // opener button in rail-sidebar-shell.tsx, and `RailSidebar.activateSession`
+    // now invokes `onSessionSelect`, which the shell uses to close the drawer on
+    // a session pick (the session's own navigation is owned by activateSession,
+    // so the shell wrapper only dismisses the drawer — it never re-navigates).
+    await page.setViewportSize({ width: 390, height: 844 })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "drawer" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const opener = page.locator('[data-testid="mobile-sidebar-opener"]')
+    const scrim = page.locator('[data-testid="mobile-sidebar-scrim"]')
+
+    // Closed on entry: the opener is the only reachable affordance, no scrim yet.
+    await expect(opener).toBeVisible({ timeout: 10_000 })
+    await expect(opener).toHaveAttribute("aria-expanded", "false")
+    await expect(scrim).toHaveCount(0)
+
+    // Opener opens the drawer (scrim appears; opener stays mounted as a toggle).
+    await opener.click()
+    await expect(scrim).toBeVisible({ timeout: 5_000 })
+    await expect(opener).toHaveAttribute("aria-expanded", "true")
+
+    // Tapping the scrim (right of the 280px drawer) closes it.
+    await scrim.click({ position: { x: 340, y: 400 } })
+    await expect(scrim).toHaveCount(0)
+    await expect(opener).toHaveAttribute("aria-expanded", "false")
+
+    // Re-open, then pick a session: the drawer closes AND the row activates.
+    await opener.click()
+    await expect(scrim).toBeVisible({ timeout: 5_000 })
+    const row = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_drawer_0"]')
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.click()
+    await expect(scrim).toHaveCount(0)
+    await expect(opener).toHaveAttribute("aria-expanded", "false")
+    await expect(row).toHaveAttribute("data-active", "true", { timeout: 15_000 })
+  })
 })

@@ -15,7 +15,6 @@ import {
   shouldFetchConfigOptionsForScope,
   shouldHydrateDraftFromHarnessStatus,
   shouldRefreshDirectoryAfterHarnessStatus,
-  shouldResetWorkspaceDraftHarness,
   type HarnessScopeInput,
 } from "./store-policy"
 import {
@@ -105,15 +104,9 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     const existingSession = !!params?.sessionId && params.sessionId !== "new"
     if (existingSession) input.markServer?.(scope)
     const draftDefault = existingSession ? undefined : input.beginDraftDefault?.(scope, params)
-    const currentHarness = input.state(scope)?.harness ?? "opencode"
-    if (!input.beginDraftDefault && shouldResetWorkspaceDraftHarness({
-      scope,
-      directory: params?.directory,
-      sessionId: params?.sessionId,
-      harness: currentHarness,
-    })) {
-      input.resetWorkspaceDraftHarness(scope)
-    }
+    // The draft harness selection persists across directory switches — the
+    // embedded local runtime backs every harness, so a user's choice is never
+    // force-reset to OpenCode when navigating between workspaces.
     if (input.cache.getSeen(scope) === key) return
     const pending = pendingByScope.get(scope)
     if (pending?.key === key) return pending.run

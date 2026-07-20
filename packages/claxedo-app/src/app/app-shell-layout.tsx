@@ -93,11 +93,6 @@ export type AppShellLayoutProps = ParentProps<{
   onNewProject?: () => void
 
   /**
-   * Callback to create a new worktree in a project
-   */
-  onNewWorkspace?: (project: ProjectItem) => Promise<import("./workbench/rail/workspace-toolbar").WorkspaceBarItem | undefined>
-
-  /**
    * Callback to open settings
    */
   onSettings?: () => void
@@ -273,6 +268,10 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   }
   const handleSidebarHotZoneEnter = () => {
     if (sidebarPinned() || sidebarExpanded()) return
+    // After a toggle-collapse the peek is muted until the pointer leaves the
+    // corner; without this the Show-Sidebar button rendering under the still
+    // cursor would immediately re-peek the rail we just hid.
+    if (shellLayout.railMuted()) return
     shellLayout.peekRail(true)
   }
   const handleSidebarMouseLeave = () => {
@@ -332,7 +331,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onNewProject={props.onNewProject}
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
-          onNewWorkspace={props.onNewWorkspace}
           onOpenMarketplace={props.onOpenMarketplace}
           onOpenWorkGraph={props.onOpenWorkGraph}
           onRemoveProject={props.onRemoveProject}
