@@ -36,15 +36,26 @@ function openDatabase(file: string): SqliteDatabase {
   return new BetterSqlite(file)
 }
 
+// persist() serializes the whole store, so its cost grows with total history. Coalescing
+// changes behind a trailing timer bounds disk writes to at most one snapshot per interval
+// even while a turn streams hundreds of part events.
+const FLUSH_COALESCE_MS = 250
+
 /** @internal */
 export class SqliteRuntimeStore extends MemoryRuntimeStore {
   private db: SqliteDatabase
   private hydrating = true
+  private dirty = false
+  private flushTimer: ReturnType<typeof setTimeout> | null = null
+  private flushError: unknown = null
 
   constructor(options: SqliteRuntimeStoreOptions) {
     super()
     fs.mkdirSync(options.root, { recursive: true, mode: 0o755 })
     this.db = openDatabase(path.join(options.root, "agent-runtime.db"))
+    this.db.exec("PRAGMA journal_mode = WAL")
+    this.db.exec("PRAGMA synchronous = NORMAL")
+    this.db.exec("PRAGMA busy_timeout = 5000")
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_store_snapshot (
         id TEXT PRIMARY KEY,
@@ -60,12 +71,44 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
   }
 
   override close() {
-    this.persist()
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = null
+    }
+    this.flushNow()
     this.db.close?.()
   }
 
   protected override afterChange() {
-    if (!this.hydrating) this.persist()
+    if (this.hydrating) return
+    this.dirty = true
+    this.scheduleFlush()
+    if (this.flushError) {
+      const error = this.flushError
+      this.flushError = null
+      throw error
+    }
+  }
+
+  private scheduleFlush() {
+    if (this.flushTimer) return
+    const timer = setTimeout(() => {
+      this.flushTimer = null
+      try {
+        this.flushNow()
+      } catch (error) {
+        // A timer has no caller to throw to; surface the failure on the next store write.
+        this.flushError = error
+      }
+    }, FLUSH_COALESCE_MS)
+    timer.unref?.()
+    this.flushTimer = timer
+  }
+
+  private flushNow() {
+    if (!this.dirty) return
+    this.persist()
+    this.dirty = false
   }
 
   private persist() {

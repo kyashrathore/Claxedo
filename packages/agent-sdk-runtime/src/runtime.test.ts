@@ -635,6 +635,50 @@ describe("createAgentRuntime", () => {
     }
   })
 
+  test("sqlite store coalesces event bursts into a single snapshot write", async () => {
+    const root = tempRoot()
+    try {
+      const store = createSqliteRuntimeStore({ root })
+      const internals = store as unknown as {
+        persist(): void
+        bindSession(input: { sessionId: string; directory: string; agentSessionId: string }): void
+        appendEvent(input: { sessionId: string; payload: unknown }): unknown
+        close(): void
+      }
+      let persistCount = 0
+      const originalPersist = internals.persist.bind(internals)
+      internals.persist = () => {
+        persistCount++
+        originalPersist()
+      }
+      internals.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "ses_1" })
+      for (let i = 0; i < 100; i++) {
+        internals.appendEvent({
+          sessionId: "ses_1",
+          payload: sessionUpdated(buildSession({
+            id: "ses_1",
+            directory: "/repo",
+            title: `Streamed ${i}`,
+          })),
+        })
+      }
+      expect(persistCount).toBe(0)
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(persistCount).toBe(1)
+      internals.close()
+      expect(persistCount).toBe(1)
+
+      const reopened = createSqliteRuntimeStore({ root }) as unknown as {
+        getSession(id: string): { title: string | null } | null
+        close(): void
+      }
+      expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
+      reopened.close()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("keeps convex isolated behind its subpath", () => {
     expect(() => createConvexRuntimeStore()).toThrow("requires a Convex client, authority, or projection callbacks")
     expect(() => createConvexRuntimeStore({ client: {} })).toThrow("client-backed persistence is not implemented")
