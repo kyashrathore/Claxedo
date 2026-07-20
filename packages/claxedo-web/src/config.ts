@@ -7,7 +7,7 @@ export const appUrl =
 
 export const previewSrc = `${appUrl}/demo/?embed=1`
 
-export const contact = "https://discord.gg/jSyhEQyT"
+export const contact = "https://discord.gg/GC6QagQ8QE"
 export const github = "https://github.com/kyashrathore/Claxedo"
 export const docs = "https://docs.claxedo.com"
 

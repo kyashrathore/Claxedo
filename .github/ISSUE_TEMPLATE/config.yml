@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 💬 Questions & Discussion
+  - name: 💬 Discord Community
+    url: https://discord.gg/GC6QagQ8QE
+    about: Chat with the community — support, troubleshooting, and general discussion.
+  - name: 📝 Questions & Discussion
     url: https://github.com/kyashrathore/Claxedo/issues
-    about: For support, troubleshooting, how-to questions, and general discussion — open an issue and tag it appropriately.
+    about: Prefer async? Open an issue and tag it appropriately.

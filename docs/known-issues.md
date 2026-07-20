@@ -41,11 +41,10 @@ behind dev. Additionally the shipped auto-updater channel expects a
 in-app updates cannot be delivered until the next release is cut properly
 (tag push through release-claxedo.yml with the Apple secrets verified).
 
-### 5. No community channel (deliberately deferred at launch)
-The old Discord invite is dead and has been removed from the site footer
-and issue templates; GitHub Issues is the only support channel until a new
-Discord (or alternative) is stood up and re-linked
-(`packages/claxedo-web/src/config.ts`, `.github/ISSUE_TEMPLATE/config.yml`).
+### 5. ~~No community channel~~ — RESOLVED 2026-07-20
+A permanent Discord invite (discord.gg/GC6QagQ8QE, no expiry/limit,
+verified via Discord API) is wired into the site footer and the issue
+templates alongside GitHub Issues.
 
 ### 6. Production environment has never been deployed
 The `production` GitHub Environment does not exist, so the promote path has
