@@ -879,26 +879,49 @@ test.describe("core settings + auth @core", () => {
       async () => {},
     )
 
-    test.fixme(
-      "Log out signs out and navigates to /login — behavior 5 — unreachable + a real app bug: (1) `isSignedIn()` " +
-        "(src/utils/auth-client.ts:295) ORs in `!!testAuth().__CLAXEDO_TEST_AUTH_USER__`, and `testAuth()` " +
-        "(src/utils/auth-client.ts:112-159) is a pure function of `navigator.webdriver`/window flags with NO " +
-        "dependency on session state — so under Playwright (`webdriver===true`) the principal is UNCONDITIONALLY " +
-        "signed-in on every render, including the one right after sign-out; `/login`'s own redirect-if-already-" +
-        "signed guard (behavior 25) immediately bounces back to the workbench. Verified live: clicking Log out " +
-        "DOES navigate to `/login` (a `framenavigated` event fires for it) but the very next frame navigation " +
-        "lands back on the session route — confirmed with a throwaway debug spec against a real `vite dev` " +
-        "server, not just by reading source. Disabling the bypass first (`disableTestAuthBypass()`) would dodge " +
-        "the bounce-back but then the Account section never shows a signed-in identity to log out FROM in the " +
-        "first place — same chicken-and-egg class as the already-fixme'd scenarios above. (2) Independently, a " +
-        "real app bug: `initializeClerk()`'s test-auth-bypass branch (src/utils/auth-client.ts:164-173) calls " +
-        "`setUser(...)` but never assigns the module-level `clerkLoadPromise`, so `signOut()` " +
-        "(src/utils/auth-client.ts:307-315) hits `if (!clerkLoadPromise) return;` at line 308 and no-ops before " +
-        "ever reaching `setSession(null)`/`setUser(null)`/`clear()` — sign-out under the dev/test bypass never " +
-        "purges persisted auth state (reproduced: `opencode.marker.should-be-purged` survives a Log-out click). " +
-        "Filed as a finding rather than patched here (out of scope for spec remediation).",
-      async () => {},
-    )
+    // Entry #17 (decision A). Previously fixme for two reasons, both fixed at
+    // the app layer (src/platform/auth/auth-client.ts):
+    //   (1) `isSignedIn()` was unconditionally true under Playwright
+    //       (navigator.webdriver), so `/login`'s redirect-if-signed guard
+    //       bounced back to the workbench. Fixed by an EXPLICIT signed-state
+    //       override: `signOut()` sets `__CLAXEDO_TEST_SIGNED_OUT__`, which
+    //       `testAuth()` honours to report an anonymous principal — an e2e-only
+    //       seam (dev/e2e builds only), NOT a production behavior change.
+    //   (2) `signOut()` no-op'd under the bypass because the bypass branch of
+    //       `initializeClerk()` never assigns `clerkLoadPromise`, so the old
+    //       `if (!clerkLoadPromise) return` short-circuited before the purge.
+    //       Fixed: the bypass path now clears state and purges persisted keys.
+    test("Log out signs out, purges persisted auth state, and stays on /login — behavior 5", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+      await seedProject(page, DIR)
+      await openWorkbench(page, DIR)
+
+      // Seed a persisted `opencode.*` marker that a real sign-out must purge
+      // (clearPersistedAuthState wipes every opencode.* / projection-cache key).
+      await page.evaluate(() => localStorage.setItem("opencode.marker.should-be-purged", "1"))
+
+      await openSettings(page)
+      const logout = page.getByRole("button", { name: "Log out" })
+      await expect(logout).toBeVisible()
+      await logout.click()
+
+      // The synthetic principal is now signed OUT, so `/login`'s
+      // redirect-if-already-signed guard no longer bounces back to the
+      // workbench — landing (and staying) on /login proves the principal is
+      // anonymous (a still-signed principal would bounce to "/"). Generous
+      // timeout: LoginPage is a lazily code-split route whose chunk import is
+      // slow under a loaded dev server (never a wall-clock sleep).
+      await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 })
+      // The anonymous login page's "Continue" CTA renders. A CSS/text locator,
+      // not getByRole: the Settings dialog stays in the app-wide DialogProvider
+      // stack across the route change and its modal marks siblings aria-inert,
+      // so the accessibility-tree query can't see the (rendered) button.
+      await expect(page.locator("button").filter({ hasText: "Continue" })).toBeVisible({ timeout: 20_000 })
+
+      // Persisted auth state was purged by the (previously no-op) sign-out.
+      const marker = await page.evaluate(() => localStorage.getItem("opencode.marker.should-be-purged"))
+      expect(marker).toBeNull()
+    })
   })
 
   test.describe("General: appearance preview/commit + notifications + updates", () => {
@@ -1649,16 +1672,61 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     })
 
-    test.fixme(
-      "an anonymous principal on a non-loopback transport is force-redirected to /login with a loading placeholder — unreachable: CloudAuthGate's `server.url` traces to getClaxedoServerUrl(), hardcoded to the build-time VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 (always loopback) for the whole shared dev server; nothing settable at request time from a Playwright spec flips ServerProvider's resolved default server (src/app.tsx:307-316, src/utils/api.ts:211-223; see SPEC HARNESS NOTES)",
-      async () => {},
-    )
+    // Entry #19 (decision A). Provable now via an e2e-only runtime server-URL
+    // override: `resolveDefaultUrl()` (src/app/entry/app.tsx) reads
+    // `window.__CLAXEDO_E2E_SERVER_URL__` in a dev/e2e build, so a spec can
+    // force ServerProvider's resolved default (hence CloudAuthGate's
+    // `server.url`) to a non-loopback host. Baked out of production.
+    test("an anonymous principal on a non-loopback transport is force-redirected to /login — behavior 30b", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+      await seedProject(page, DIR)
+      await disableTestAuthBypass(page)
+      // Force the resolved default server to a NON-loopback host, so
+      // centralTransportForServer(server.url) !== "loopback" ⇒ needsSignedAuth().
+      await page.addInitScript(() => {
+        ;(window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__ =
+          "https://cloud.example.test"
+      })
+
+      await page.goto(`/${slug(DIR)}/session`)
+      await page.waitForLoadState("domcontentloaded")
+
+      // Anonymous + non-loopback ⇒ the signed gate redirects to /login (a brief
+      // "Loading..." placeholder shows while the session status resolves first).
+      await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 })
+      await expect(page.getByRole("button", { name: "Continue" })).toBeVisible({ timeout: 10_000 })
+    })
   })
 
   test.describe("error page (top-level ErrorBoundary fallback)", () => {
-    test.fixme(
-      "InitError variants render their formatted chain with Restart (and no Check-for-updates on web) — unreachable: the top-level ErrorBoundary (src/app.tsx AppBaseProviders, wraps <ErrorPage error={error} />) has no deterministic black-box trigger in this app — unlike the dialog matrix (`/__e2e/dialog-matrix`, src/e2e/dialog-matrix-harness.tsx), there is no analogous `/__e2e/error-page?variant=...` crash-injection route; filing a finding recommending one rather than forcing a real render-time crash through an undocumented side channel",
-      async () => {},
-    )
+    // Entry #20 (decision A). Provable now via the `/__e2e/error-page?variant=`
+    // injection route (src/app/routes/error-page-harness.tsx), which mounts the
+    // real <ErrorPage> for a chosen InitError variant — the ErrorBoundary
+    // fallback content without a real render-time crash. Route is dev/e2e-only.
+    test("InitError variants render their formatted chain with Restart (and no Check-for-updates on web) — behavior 31", async ({ page }) => {
+      await page.goto("/__e2e/error-page?variant=MCPFailed")
+      await page.waitForLoadState("domcontentloaded")
+
+      await expect(page.getByTestId("error-page-harness")).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible()
+
+      // The formatted chain for the chosen InitError variant renders in the
+      // read-only Error Details field.
+      const details = page.getByRole("textbox", { name: "Error Details" })
+      await expect(details).toHaveValue(/MCPFailed[\s\S]*MCP server "github" failed/)
+
+      // Restart is always present; Check-for-updates is web-absent
+      // (platform.checkUpdate is undefined on the web platform).
+      await expect(page.getByRole("button", { name: "Restart" })).toBeVisible()
+      await expect(page.getByRole("button", { name: "Check for updates" })).toHaveCount(0)
+
+      // A different variant re-renders a distinct cause-chain through the same
+      // route (proves the formatter's `Caused by:` nesting, not just one shape).
+      await page.goto("/__e2e/error-page?variant=causeChain")
+      await page.waitForLoadState("domcontentloaded")
+      await expect(page.getByRole("textbox", { name: "Error Details" })).toHaveValue(
+        /Failed to reach provider[\s\S]*Caused by:[\s\S]*socket hang up/,
+      )
+    })
   })
 })

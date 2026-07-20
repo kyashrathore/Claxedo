@@ -113,13 +113,30 @@ function testAuth(): {
   __CLAXEDO_TEST_AUTH_TOKEN__?: string;
   __CLAXEDO_TEST_AUTH_USER__?: unknown;
 } {
-  if (!import.meta.env.DEV && import.meta.env.MODE !== "test") return {};
+  // Gate the whole synthetic-auth surface to build contexts that are NEVER
+  // production: the dev server (`DEV`), vitest (`MODE==="test"`), and the
+  // Playwright prebuilt e2e server (`VITE_CLAXEDO_E2E==="1"`, baked at build).
+  // A real production build sets none of these, so vite constant-folds this to
+  // `if (true) return {}` and the entire bypass — including the synthetic
+  // `test-bypass-token` — is dead-code-eliminated out of the shipped bundle.
+  if (
+    !import.meta.env.DEV &&
+    import.meta.env.MODE !== "test" &&
+    import.meta.env.VITE_CLAXEDO_E2E !== "1"
+  ) return {};
   if (typeof window === "undefined") return {};
   const w = window as typeof window & {
     __CLAXEDO_TEST_AUTH_TOKEN__?: string;
     __CLAXEDO_TEST_AUTH_USER__?: unknown;
     __CLAXEDO_DISABLE_TEST_AUTH_BYPASS__?: boolean;
+    __CLAXEDO_TEST_SIGNED_OUT__?: boolean;
   };
+  // Explicit signed-out override: once `signOut()` marks the synthetic session
+  // signed out, report NO principal regardless of the webdriver/token/
+  // localStorage sources below, so a Log-out flow is drivable end to end (the
+  // principal actually becomes anonymous instead of the webdriver bypass
+  // re-asserting "signed" on the very next render).
+  if (w.__CLAXEDO_TEST_SIGNED_OUT__) return {};
   if (w.__CLAXEDO_TEST_AUTH_TOKEN__ || w.__CLAXEDO_TEST_AUTH_USER__) return w;
   if (
     import.meta.env.VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS === "1" ||
@@ -168,6 +185,21 @@ export function initializeClerk(): Promise<void> {
   if (bypass.__CLAXEDO_TEST_AUTH_TOKEN__ || bypass.__CLAXEDO_TEST_AUTH_USER__) {
     setSession(null);
     setUser(bypass.__CLAXEDO_TEST_AUTH_USER__ ?? { id: "test-user" });
+    setLoading(false);
+    return Promise.resolve();
+  }
+
+  // Post-sign-out under the e2e test-auth bypass: `testAuth()` now returns {}
+  // (the signed-out marker is set), but the real Clerk SDK must NOT be loaded
+  // to fill the gap — Tier M makes no real network calls. Stay anonymous. The
+  // marker is only ever set by this module's own bypass `signOut()`, so real
+  // local-dev Clerk sign-in (which never sets it) is unaffected.
+  if (
+    typeof window !== "undefined" &&
+    (window as typeof window & { __CLAXEDO_TEST_SIGNED_OUT__?: boolean }).__CLAXEDO_TEST_SIGNED_OUT__
+  ) {
+    setSession(null);
+    setUser(null);
     setLoading(false);
     return Promise.resolve();
   }
@@ -306,10 +338,21 @@ export function useAuth() {
     },
     /** Sign out and clear session */
     signOut: async () => {
-      if (!clerkLoadPromise) return;
-      await clerkLoadPromise;
+      // The test-auth bypass branch of initializeClerk() never assigns
+      // clerkLoadPromise, so the old `if (!clerkLoadPromise) return` guard made
+      // sign-out a silent no-op under the bypass (persisted state survived a
+      // Log out). Detect the bypass and mark the synthetic session signed out
+      // so `testAuth()` stops reporting a signed principal; still purge state.
+      const testUser = !!testAuth().__CLAXEDO_TEST_AUTH_USER__;
+      if (!clerkLoadPromise && !testUser) return;
+      if (testUser && typeof window !== "undefined") {
+        (window as typeof window & { __CLAXEDO_TEST_SIGNED_OUT__?: boolean }).__CLAXEDO_TEST_SIGNED_OUT__ = true;
+      }
 
-      await clerk.signOut().catch(() => undefined);
+      if (clerkLoadPromise) {
+        await clerkLoadPromise;
+        await clerk.signOut().catch(() => undefined);
+      }
       setSession(null);
       setUser(null);
       clear();

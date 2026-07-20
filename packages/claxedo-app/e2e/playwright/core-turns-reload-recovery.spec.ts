@@ -529,25 +529,92 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     expect(mock.requests.promptCount).toBe(2) // the forced-failed attempt never reached the real handler
   })
 
-  test.fixme(
-    "a forced dispatch failure restores a context-item chip into the composer — behavior 8",
-    async () => {
-      // Deliberately not implemented: inserting a context-item "chip" (a file/comment
-      // reference rendered by PromptContextItems,
-      // src/components/prompt-input/context-items.tsx) requires the @-mention popover's
-      // file-search wiring (`searchFilesAndDirectories` / `recentFiles`,
-      // src/components/prompt-input/popover-controller.ts:29-45,
-      // src/session-client/composer/composer.tsx:258,507-508), which the shared
-      // e2e/helpers/mock-runtime.ts does not stub (it has no `/find/file`-equivalent
-      // route) and which is `core-composer-modes`' territory to build/own. The dispatch-
-      // failure ROLLBACK mechanism itself is proven generically by the text+attachment
-      // case above — `restoreCommentItems`/`removeCommentItems` in
-      // src/components/prompt-input/submit.ts treat every context item uniformly
-      // regardless of how it was inserted, so this is a missing test seam, not a known
-      // app bug. Revisit once core-composer-modes lands @-mention route stubs that this
-      // spec (or a shared helper) can reuse.
-    },
-  )
+  test("a forced dispatch failure restores a context-item chip into the composer — behavior 8", async ({
+    page,
+  }) => {
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+
+    // First send succeeds normally and creates the session.
+    await sendAndProve(page, "core turns chip dispatch failure setup", "ack 1: core turns chip dispatch failure setup")
+
+    // Stub the composer's @-mention file-search endpoint (`searchFilesAndDirectories` ->
+    // `GET /find/file`, src/app/providers/file.tsx). installMockRuntime's own default
+    // (mock-runtime.ts) answers every query with `[]`; this override, registered AFTER
+    // install, wins per Playwright's last-registered-first matching — same pattern as
+    // core-composer-modes.spec.ts's overrideMentionAgents for the agent half of the same
+    // popover.
+    const MENTION_FILE_PATH = "src/chip-context-file.ts"
+    await page.route("**/find/file**", (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname !== "/find/file") return route.fallback()
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([MENTION_FILE_PATH]) })
+    })
+
+    // Same fail-once layering as the text+attachment case above.
+    let forceFailure = false
+    let forcedFailureCount = 0
+    await page.route("**/session/*/prompt_async**", async (route) => {
+      const url = new URL(route.request().url())
+      if (!/^\/session\/[^/]+\/prompt_async$/.test(url.pathname)) return route.fallback()
+      if (!forceFailure) return route.fallback()
+      forceFailure = false
+      forcedFailureCount += 1
+      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "dispatch failed" }) })
+    })
+
+    const input = composer(page)
+    const failingText = "core turns chip dispatch failure message"
+    await input.click()
+    await input.fill(failingText + " ")
+    await expect(input).toContainText(failingText, { timeout: 10_000 })
+
+    // Same choreography as core-composer-modes.spec.ts's "@ mention popover keyboard
+    // nav inserts a pill" (behavior 10): type `@`+query, wait for the popover row, Enter
+    // inserts the active item as an inline pill.
+    await page.keyboard.type("@chip-context")
+    const fileOption = page.locator('button[role="option"]').filter({ hasText: MENTION_FILE_PATH })
+    await expect(fileOption).toBeVisible({ timeout: 15_000 })
+    await page.keyboard.press("Enter")
+
+    const pill = input.locator(`[data-type="file"][data-path="${MENTION_FILE_PATH}"]`)
+    await expect(pill).toBeVisible({ timeout: 10_000 })
+
+    await page.keyboard.type("please look")
+
+    forceFailure = true
+    await submitControl(page).click()
+
+    // The forced 500 is the real, deterministic signal that the failure round-trip has
+    // actually happened (never a bare sleep — e2e/INVARIANTS.md authoring rule #3).
+    await expect.poll(() => forcedFailureCount, { timeout: 10_000 }).toBe(1)
+    await expect
+      .poll(() => mock.requests.badResponses.some((entry) => entry.includes("prompt_async")), { timeout: 10_000 })
+      .toBe(true)
+
+    // Error toast.
+    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Failed to send prompt", { timeout: 10_000 })
+
+    // Optimistic user row removed; still only turn 1 on the timeline.
+    await expect(
+      page.locator(SELECTORS.userMessageContent).getByText("please look", { exact: false }),
+    ).toHaveCount(0, { timeout: 10_000 })
+    await expectTurnCounts(page, { user: 1, assistant: 1 })
+
+    // Composer state restored exactly: text AND the mention pill (the context-item chip).
+    await expect(input).toContainText(failingText, { timeout: 10_000 })
+    await expect(pill).toBeVisible({ timeout: 10_000 })
+    await expect(input).toContainText("please look", { timeout: 10_000 })
+
+    // Retry affordance: no dedicated Retry button — the restored composer's own Send
+    // control resubmits the exact same content, and this time it succeeds.
+    await submitControl(page).click()
+    await expectAssistantReplyVisible(page, /^ack 2: /)
+    await expectTurnCounts(page, { user: 2, assistant: 2 })
+    await expectNoDuplicateRows(page)
+    expect(mock.requests.promptCount).toBe(2) // the forced-failed attempt never reached the real handler
+  })
 
   test("scrolling to the top loads older turns without duplicating rows and preserves the scroll anchor — behavior 9", async ({
     page,

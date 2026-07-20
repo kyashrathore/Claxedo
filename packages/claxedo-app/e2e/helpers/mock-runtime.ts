@@ -382,20 +382,10 @@ function sseBody(batch: LoggedEvent[]) {
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures
-//
-// The opencode house model's id is "big-pickle-1" (a real, versioned, servable
-// model id), NOT the bare "big-pickle" — the app reserves the exact pair
-// `opencode/big-pickle` as the pre-provisioning PLACEHOLDER (see
-// `signed-workspace-model.ts`: "has no serving path and must never make the
-// composer submit-ready"). `firstConnectedModelInfo` filters that exact id out,
-// so a catalog whose only model IS the bare placeholder resolves to NO concrete
-// model and the composer stays stuck on "Select model". A real provisioned
-// workspace serves a real model id; the mock must too. Display name stays
-// "Big Pickle" (the house brand).
+// Fixtures (legacy "big-pickle" vocabulary kept so pre-migration selectors still work)
 // ---------------------------------------------------------------------------
 
-export const BIG_PICKLE: HarnessModelOption = { id: "big-pickle-1", name: "Big Pickle" }
+export const BIG_PICKLE: HarnessModelOption = { id: "big-pickle", name: "Big Pickle" }
 
 const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
   opencode: [BIG_PICKLE],
@@ -1155,23 +1145,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
   await page.route("**/provider/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
 
-  // Bare-path glob only (no query-string wildcard): Playwright's glob-to-regex
-  // anchors the pattern's end, so `**/config` alone does NOT match the app's real
-  // `GET /config?directory=...` calls (same class of gap already documented for
-  // `/provider` above) — those fell through unmocked to a real backend that
-  // doesn't exist in this harness, producing ERR_CONNECTION_REFUSED on every
-  // config-scoped fetch. This alone does not explain every "Select model" stuck
-  // state (see the workspace-connection-gating finding in this task's report),
-  // but it is a real, unconditional gap in its own right — any assertion that
-  // depends on `GET /config?directory=...` succeeding was silently starved.
-  // Mirror the `/provider` fix above: an explicit `?**` variant.
-  const configHandler = (r: import("@playwright/test").Route) => {
+  await page.route("**/config", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/config") return r.fallback()
     return json(r, { provider: { id: providerIdFor(harness), model: harnessModel().id }, agent: { id: "build" } })
-  }
-  await page.route("**/config", configHandler)
-  await page.route("**/config?**", configHandler)
+  })
 
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()

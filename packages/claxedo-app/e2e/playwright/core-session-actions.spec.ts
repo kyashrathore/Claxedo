@@ -223,7 +223,7 @@
  *     app-shell.tsx` line 115 passes `// titlebar={<Titlebar />}` commented out — and no
  *     labelled/keyboard-documented workbench-split-creation trigger exists in
  *     `src/claxedo-ui/layouts/rail-keyboard-commands.ts` (only focus-left/focus-right).
- *     See the `test.fixme` below and this file's returned findings.
+ *     See this file's returned findings.
  */
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
@@ -912,36 +912,27 @@ test.describe("core session actions: subagent (child session) @core", () => {
   test("a permission raised on the child bubbles into the parent's dock and resolves — behavior 14", async ({
     page,
   }) => {
-    test.fixme(
-      true,
-      "Blocked by a shared-mock/app-architecture gap, verified live (not just by reading " +
-        "source), distinct from and deeper than the submit-readiness gap this file's " +
-        "installRelayEventDrainWorkaround already fixes: a synthetic SSE event's `directory` " +
-        "field is remapped before delivery by `eventDirectoryForLiveSession` " +
-        "(src/context/global-sdk.tsx:72-82) — `if (input.liveSession?.workspaceId) return " +
-        "input.liveSession.workspaceId` — into whatever workspaceId the app resolved for the " +
-        "CURRENT route (here, mock-runtime.ts's default `/api/workspace/resolve` handler " +
-        "returns `local-${sessionId}`, i.e. `local-ses_core_session_actions_parent`, not the " +
-        "literal directory string). The remapped value is then checked against " +
-        "`input.children.has(directory)` (src/context/global-sync/event-ingress.ts:103) before " +
-        "`routeDirectoryEvent` (and therefore `applyDirectoryEventToShellQueries`, which is the " +
-        "ONLY path that populates the permission-request cache the composer dock reads — see " +
-        "this spec's own SPEC block: 'permission.asked/question.asked SSE events are cache-" +
-        "only... no GET re-fetch is involved') ever runs — and that remapped, synthetic " +
-        "workspace-id string is not a key `children` is known to track. Confirmed live: the " +
-        "identical relay workaround reliably delivers a `session.idle` event for this file's " +
-        "revert/unrevert scenarios (single-session, reached via the real create-session flow), " +
-        "but the same delivery mechanism for THIS scenario's `permission.asked` — a distinct " +
-        "session (CHILD_ID) opened only via a hand-rolled parent/child fixture, never through " +
-        "the real session-creation path that would establish a consistent live-session/" +
-        "workspace-id binding — never reaches the dock; `[data-slot=\"permission-header-" +
-        "title\"]` never appears. Fixing this generally requires either controlling exactly " +
-        "what workspaceId the app resolves for a given directory (so the remap becomes a no-op) " +
-        "or a mock-runtime.ts change that mirrors the real event-delivery pipeline more closely " +
-        "— out of reach for a narrow spec-local page.route in the pooled phase. Filed as a " +
-        "finding; this test stays fixme (not deleted, not weakened) until the shared mock is " +
-        "extended to cover directory/workspaceId-consistent event delivery.",
-    )
+    // HISTORY (un-fixme'd, entry #35): this was previously `test.fixme`'d on the
+    // theory that a synthetic `permission.asked`'s `directory` — remapped by
+    // `eventDirectoryForLiveSession` (src/app/providers/global-sdk/provider.tsx) to
+    // the route's resolved workspaceId (`local-ses_core_session_actions_parent`) —
+    // would fail the `children.has(directory)` gate
+    // (src/app/integrations/session-events/event-ingress.ts) and so never reach
+    // `applyDirectoryEventToShellQueries`, "the ONLY path that populates the
+    // permission cache". That was true under the old `src/context/*` layout. The
+    // app-shell refactor changed it: `applyDirectoryEventToShellQueries`
+    // (src/features/session/data/sync/directory-event-projector.ts) now runs in
+    // BOTH branches of the `children.has(directory)` check, and keys the
+    // permission-request cache by `permission.sessionID` (the CHILD's id), not by
+    // directory. So the child's permission reaches the parent's dock regardless of
+    // how the workspace-id remap lands — no bypass, no forced binding. The mock
+    // emits a production-shaped `permission.asked` (PermissionRequest properties,
+    // sessionID = CHILD_ID) delivered over the real `/api/wr/events` +
+    // `/api/wr/runtime-events` SSE channels via installRelayEventDrainWorkaround.
+    // The `replied.sessionID === CHILD_ID` assertion below is the end-to-end oracle:
+    // it can only hold if the dock rendered the CHILD's permission and the
+    // Allow-once POST routed to `/session/CHILD_ID/permissions/...`. Negative
+    // control (dropping the emit) leaves the header absent and times out.
 
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: PARENT_ID, projectId: PROJECT_ID, projectName: PROJECT_NAME })
     await installRelayEventDrainWorkaround(page, mock)
@@ -1119,17 +1110,54 @@ test.describe("core session actions: subagent (child session) @core", () => {
   })
 })
 
-test.describe("core session actions: unreachable UI @core", () => {
-  test("title syncs to a second open pane's tab label without reload", async () => {
-    test.fixme(
-      true,
-      "No mounted UI surface shows a second open session's title live: the tab strip " +
-        "(src/components/titlebar.tsx TabNavItem) exists but is never rendered — " +
-        "src/shell/app-shell.tsx:115 passes `// titlebar={<Titlebar />}` commented out — " +
-        "and no labelled/keyboard-documented workbench-split-creation command exists in " +
-        "src/claxedo-ui/layouts/rail-keyboard-commands.ts (only claxedo.split.focusLeft/" +
-        "focusRight). Reported as a finding for either wiring the titlebar back in or " +
-        "adding a stable split-creation affordance this spec can drive.",
-    )
+test.describe("core session actions: switcher tab title sync @core", () => {
+  test("title syncs to the session's own switcher-strip tab label without reload", async ({ page }) => {
+    // The real "second surface" for a session's title is the compact switcher strip
+    // (src/app/workbench/compact-switcher/compact-switcher.tsx) rendered in the
+    // workbench header — but ONLY while the sidebar rail is unpinned
+    // (workbench-shell-header.tsx:80, `<Show when={!props.sidebarPinned()}>`, wired to
+    // `CompactSwitcher`). `sidebarPinned` is `railRegion().docked !== false`
+    // (app-shell-layout.tsx:231), so collapsing the rail via the `sidebar-toggle`
+    // button (the collapse/expand bug fixed for behavior 13 in core-sidebar-tree)
+    // un-docks it and reveals the strip. There's no per-pane `Titlebar` anymore —
+    // that surface is dead/commented out — this switcher strip is what's real.
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
+    const mutations = trackSessionMutations(page)
+    await mutations.install()
+    await sendFirstPrompt(page, mock, "switcher tab title sync original title")
+
+    // Collapse the sidebar rail to reveal the switcher strip.
+    const toggle = page.locator('[data-testid="sidebar-toggle"]')
+    await expect(toggle).toBeVisible({ timeout: 10_000 })
+    await toggle.click()
+    await expect(toggle).toHaveCount(0)
+
+    const switcher = page.locator('[data-testid="compact-switcher"]')
+    await expect(switcher).toBeVisible({ timeout: 10_000 })
+    const tab = switcher.locator('[data-testid="compact-switcher-tab"]')
+    await expect(tab).toHaveCount(1)
+    const switcherTitle = tab.locator('[data-testid="switcher-title"]')
+    await expect(switcherTitle).toHaveText("switcher tab title sync original title", { timeout: 10_000 })
+
+    // Rename through the real, rendered inline editor (behaviors 1-3's choreography):
+    // double-click the header title, type the new value, commit with Enter.
+    await page.locator('h1[data-slot="session-title-child"]').dblclick()
+    const editor = page.locator('input[data-slot="session-title-child"]')
+    await expect(editor).toBeVisible({ timeout: 5_000 })
+    await editor.fill("switcher tab title sync renamed")
+    await editor.press("Enter")
+
+    // The rename actually committed: a PATCH fired with the new title.
+    await expect.poll(() => mutations.patches.length, { timeout: 10_000 }).toBeGreaterThan(0)
+    const patch = mutations.patches.at(-1)!
+    expect(patch.id).toBe(mock.session.id)
+    expect((patch.body as { title?: string }).title).toBe("switcher tab title sync renamed")
+
+    // The header itself updates (same local-first cache write behavior 3 proves).
+    await expect(page.locator('h1[data-slot="session-title-child"]')).toHaveText("switcher tab title sync renamed", { timeout: 5_000 })
+
+    // The switcher strip's OWN tab for this same session updates live too, without a
+    // reload — no navigation happens between the rename and this assertion.
+    await expect(switcherTitle).toHaveText("switcher tab title sync renamed", { timeout: 10_000 })
   })
 })

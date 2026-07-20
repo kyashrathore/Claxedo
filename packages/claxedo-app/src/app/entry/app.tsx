@@ -302,6 +302,21 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   )
 }
 
+/**
+ * e2e-only runtime override for the resolved default server URL. Returns a
+ * spec-supplied `window.__CLAXEDO_E2E_SERVER_URL__` only in a dev/e2e build so
+ * a Playwright spec can drive a non-loopback transport (making
+ * `CloudAuthGate`'s `needsSignedAuth()` true) without a separate hosted
+ * harness. A real production build sets neither flag, so this folds to
+ * `undefined` and is eliminated — no production behavior change.
+ */
+function e2eServerUrlOverride(): string | undefined {
+  if (!(import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1")) return undefined
+  if (typeof window === "undefined") return undefined
+  const url = (window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__
+  return typeof url === "string" && url.trim() ? url.trim() : undefined
+}
+
 function CloudAuthGate(props: ParentProps) {
   const config = useConfigOptional()
   const session = useAuthSession()
@@ -360,6 +375,13 @@ function AuthenticatedLayout(
   const resolveDefaultUrl = () => {
     // Demo mode: use current origin so MSW service worker intercepts all requests
     if (isDemoMode()) return window.location.origin
+    // e2e-only: let a spec force a non-loopback default server so the
+    // signed-auth redirect boundary (CloudAuthGate → /login for an anonymous
+    // principal on a non-loopback transport) is provable. Gated to the dev
+    // server / prebuilt e2e build; a real production build sets neither flag,
+    // so this constant-folds away and the window read is tree-shaken out.
+    const e2eServer = e2eServerUrlOverride()
+    if (e2eServer) return e2eServer
     if (props.defaultServer) return props.defaultServer as string
     if (stored) return stored
     if (isHostedAppHostname(location.hostname)) return getClaxedoServerUrl()
@@ -438,7 +460,7 @@ export function AppInterface(props: {
         />
       ) : null}
 
-      {import.meta.env.DEV ? (
+      {import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1" ? (
         <Route
           path="/__e2e/error-page"
           component={() => (

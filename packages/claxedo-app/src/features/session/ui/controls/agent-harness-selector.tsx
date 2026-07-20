@@ -174,6 +174,38 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       return
     }
   })
+  // Pi single-model auto-pick. The draft-default policy above only runs off a
+  // SAVED preference (`resolveCurrentDraftDefault` no-ops without a stored
+  // `draftDefault.harness`), so a pi harness that arrived purely from hydration
+  // (`applyStatus` sets `harness: "pi"` + a bare model id, but no provider —
+  // the harness-config probe carries no `modelProviderID`) is left with no
+  // resolvable `selectedModelKey`: `harnessModelKeyForSubmit` requires an
+  // explicit pi provider (why `picked()` excludes pi from the bare-id
+  // fallback), so Send stays `no-model`-blocked and a fresh pi draft can never
+  // dispatch. When the catalog resolves to exactly one connected model, adopt
+  // it WITH its catalog provider — supplying the provider `picked()` refuses to
+  // guess, rather than relaxing that guard. Ambiguous (0 or >1) catalogs still
+  // fall through to an explicit choice.
+  createEffect(() => {
+    if (harness() !== "pi") return
+    if (props.modelLocked || sessionLocked()) return
+    if (piProviders.loading() || piProviders.error()) return
+    // Already submit-ready (auto-picked here, saved-default-resolved, or user-picked).
+    if (selection().selectedModelKey || picked()) return
+    // A saved-but-unavailable model owns the surface (shows its own error) — don't override it.
+    if (selection().draftDefaultState === "saved-model-unavailable") return
+    const connectedModels = piCatalog().rows.filter((row) => row.connected)
+    if (connectedModels.length !== 1) return
+    const only = connectedModels[0]
+    const dir = directory()
+    if (!dir) return
+    void props.harnessController.setModel(
+      scope(),
+      { providerID: only.provider.id, modelID: only.id },
+      { directory: dir, sessionId: sessionId() },
+      { provider: only.provider.name, model: only.name },
+    )
+  })
   // A coarse boolean memo: only notifies when the polling boundary is crossed,
   // never on unrelated store writes. The re-probe effect below depends on this
   // (not a raw `selection().readiness` read) so a re-probe that re-applies the

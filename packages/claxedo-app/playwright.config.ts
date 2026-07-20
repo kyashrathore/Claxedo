@@ -21,7 +21,12 @@ const webServer =
     : {
         command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${
           prebuilt
-            ? `bun run build && bun x vite preview --config vite.cloud.config.ts --port ${port} --strictPort`
+            ? // VITE_CLAXEDO_E2E=1 keeps the e2e-only harness seams (test-auth
+              // bypass, /__e2e/* routes, the server-URL override) alive in the
+              // production bundle — they are tree-shaken out of any build that
+              // does NOT set this flag, so real production is unaffected. The
+              // dev server needs no flag (import.meta.env.DEV covers it).
+              `VITE_CLAXEDO_E2E=1 bun run build && bun x vite preview --config vite.cloud.config.ts --port ${port} --strictPort`
             : `bun run dev -- --port ${port}`
         }`,
         url: baseURL,

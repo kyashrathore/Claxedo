@@ -6,6 +6,7 @@ import {
   KIND_LABEL,
   type CatalogEntry,
   type DiscoveredExtension,
+  type DiscoveredExtensionAction,
   type InstallStatus,
   type MachineDiscoveredItem,
   type MachineHarness,
@@ -122,7 +123,10 @@ export const MachineCard: Component<{
 
 export const DiscoveredSection: Component<{
   items: DiscoveredExtension[]
+  pending: Record<string, DiscoveredExtensionAction>
   onDismiss: () => void
+  onAdopt: (item: DiscoveredExtension) => void
+  onIgnore: (item: DiscoveredExtension) => void
 }> = (props) => (
   <section class="mb-6 flex flex-col gap-2 rounded-md border border-border-weak-base/40 bg-surface-raised-base/30 px-4 py-3">
     <div class="flex items-baseline justify-between">
@@ -140,26 +144,69 @@ export const DiscoveredSection: Component<{
     </div>
     <ul class="flex flex-col gap-1 pt-1">
       <For each={props.items}>
-        {(item) => (
-          <li class="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-[12px] hover:bg-surface-base-hover/40">
-            <div class="min-w-0 truncate font-mono text-text-base">{item.path}</div>
-            <div class="flex shrink-0 items-center gap-2 text-[10px] text-text-weak">
-              <span class="rounded bg-surface-base px-1.5 py-0.5 uppercase tracking-wider">{DISCOVERY_LABEL[item.kind]}</span>
-              <span>{item.state}</span>
-            </div>
-          </li>
-        )}
+        {(item) => <DiscoveredRow item={item} pending={props.pending[item.path]} onAdopt={() => props.onAdopt(item)} onIgnore={() => props.onIgnore(item)} />}
       </For>
     </ul>
   </section>
 )
 
+const DiscoveredRow: Component<{
+  item: DiscoveredExtension
+  pending: DiscoveredExtensionAction | undefined
+  onAdopt: () => void
+  onIgnore: () => void
+}> = (props) => {
+  const isAdopted = () => props.item.state === "adopted"
+  const isIgnored = () => props.item.state === "ignored"
+  const isPending = () => props.pending !== undefined
+  return (
+    <li class="group/discovered flex items-center justify-between gap-3 rounded px-2 py-1.5 text-[12px] hover:bg-surface-base-hover/40">
+      <div class="min-w-0 truncate font-mono text-text-base">{props.item.path}</div>
+      <div class="flex shrink-0 items-center gap-2 text-[10px] text-text-weak">
+        <span class="rounded bg-surface-base px-1.5 py-0.5 uppercase tracking-wider">{DISCOVERY_LABEL[props.item.kind]}</span>
+        <span class="w-14 text-right group-hover/discovered:hidden" classList={{ "text-icon-success-base": isAdopted() }}>{props.item.state}</span>
+        <div class="hidden items-center gap-1 group-hover/discovered:flex">
+          <button
+            type="button"
+            class="flex h-6 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-base transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onAdopt()
+            }}
+            disabled={isPending() || isAdopted()}
+            title="Adopt this config so Claxedo manages it"
+          >
+            <Icon name={props.pending === "adopt" ? "dot-grid" : "circle-check"} size="small" class={props.pending === "adopt" ? "animate-spin" : ""} />
+            {isAdopted() ? "Adopted" : "Adopt"}
+          </button>
+          <button
+            type="button"
+            class="flex h-6 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-weak transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onIgnore()
+            }}
+            disabled={isPending() || isIgnored()}
+            title="Ignore this config"
+          >
+            <Icon name={props.pending === "ignore" ? "dot-grid" : "circle-ban-sign"} size="small" class={props.pending === "ignore" ? "animate-spin" : ""} />
+            {isIgnored() ? "Ignored" : "Ignore"}
+          </button>
+        </div>
+      </div>
+    </li>
+  )
+}
+
 export const ExtensionCard: Component<{
   entry: CatalogEntry
   installed: boolean
   status: InstallStatus
+  enabled: boolean
+  toggling: boolean
   onInstall: () => void
   onUninstall: () => void
+  onToggleEnablement: () => void
 }> = (props) => {
   const scopeLabel = createMemo(() => {
     if (props.entry.recommendedScope === "machine") return "Machine"
@@ -218,8 +265,11 @@ export const ExtensionCard: Component<{
           <InstallButton
             installed={props.installed}
             status={props.status}
+            enabled={props.enabled}
+            toggling={props.toggling}
             onClick={props.onInstall}
             onUninstall={props.onUninstall}
+            onToggleEnablement={props.onToggleEnablement}
           />
         </div>
         <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-text-weaker">
@@ -235,35 +285,65 @@ export const ExtensionCard: Component<{
 export const InstallButton: Component<{
   installed: boolean
   status: InstallStatus
+  enabled: boolean
+  toggling: boolean
   onClick: () => void
   onUninstall: () => void
+  onToggleEnablement: () => void
 }> = (props) => {
   const isInstalled = () => props.installed || props.status === "installed"
   const isInstalling = () => props.status === "installing"
   const isUninstalling = () => props.status === "uninstalling"
+  const isDisabled = () => isInstalled() && !props.enabled
 
   return (
     <Show
       when={!isInstalled()}
       fallback={
         <div class="group/install relative flex shrink-0">
-          <span class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base group-hover/install:hidden">
-            <Icon name="check-small" size="small" class="text-icon-success-base" />
-            {isUninstalling() ? "Removing…" : "Installed"}
-          </span>
-          <button
-            type="button"
-            class="hidden h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base transition-colors hover:border-border-critical-base hover:bg-surface-critical-base/10 hover:text-text-on-critical-base disabled:opacity-60 group-hover/install:flex"
-            onClick={(event) => {
-              event.stopPropagation()
-              props.onUninstall()
-            }}
-            disabled={isUninstalling()}
-            title="Uninstall this extension"
+          <span
+            class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base group-hover/install:hidden"
+            classList={{ "text-text-weak": isDisabled() }}
           >
-            <Icon name={isUninstalling() ? "dot-grid" : "trash"} size="small" class={isUninstalling() ? "animate-spin" : ""} />
-            {isUninstalling() ? "Removing…" : "Uninstall"}
-          </button>
+            <Icon
+              name={isDisabled() ? "circle-ban-sign" : "check-small"}
+              size="small"
+              class={isDisabled() ? "text-icon-weak-base" : "text-icon-success-base"}
+            />
+            {isUninstalling() ? "Removing…" : isDisabled() ? "Disabled" : "Installed"}
+          </span>
+          <div class="hidden shrink-0 items-center gap-1 group-hover/install:flex">
+            <button
+              type="button"
+              class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onToggleEnablement()
+              }}
+              disabled={props.toggling || isUninstalling()}
+              title={props.enabled ? "Disable without uninstalling" : "Re-enable this extension"}
+            >
+              <Icon
+                name={props.toggling ? "dot-grid" : props.enabled ? "circle-ban-sign" : "circle-check"}
+                size="small"
+                class={props.toggling ? "animate-spin" : ""}
+              />
+              {props.toggling ? (props.enabled ? "Disabling…" : "Enabling…") : props.enabled ? "Disable" : "Enable"}
+            </button>
+            <button
+              type="button"
+              class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base transition-colors hover:border-border-critical-base hover:bg-surface-critical-base/10 hover:text-text-on-critical-base disabled:opacity-60"
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onUninstall()
+              }}
+              disabled={isUninstalling()}
+              title="Uninstall this extension"
+            >
+              <Icon name={isUninstalling() ? "dot-grid" : "trash"} size="small" class={isUninstalling() ? "animate-spin" : ""} />
+              {isUninstalling() ? "Removing…" : "Uninstall"}
+            </button>
+          </div>
         </div>
       }
     >

@@ -595,6 +595,81 @@ async function openDocument(page: Page, id: string) {
   await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
 }
 
+// Legacy base64 directory-slug route (`legacyDirectoryRouteKey` in
+// src/platform/identity/route.ts). Used only to reach a draft session view so
+// the workbench shell (with its per-pane "Open Files" toggle) mounts — the
+// same pattern core-composer-modes.spec.ts's `openDraftPrompt` and
+// core-cloud-offline-roles.spec.ts's `gotoDraft` already rely on.
+function slug(value: string) {
+  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+
+async function openDraftSession(page: Page, dir: string) {
+  await page.goto(`/${slug(dir)}/session`, { waitUntil: "domcontentloaded" })
+  await page.waitForLoadState("domcontentloaded")
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-component="prompt-input"]').last()).toBeVisible({ timeout: 20_000 })
+}
+
+// Mirrors core-cloud-offline-roles.spec.ts's `openWorkspaceNavigator` helper —
+// the workspace panel may already be open (skip the opener) or closed
+// (open it first), then toggle to the named navigator.
+async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
+  const openPanel = page.getByRole("button", { name: "Open workspace panel", exact: true }).first()
+  if (await openPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await openPanel.click({ timeout: 5_000 }).catch(() => {})
+  }
+  await expect(page.getByRole("button", { name: `Open ${navigator}`, exact: true }).last()).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.getByRole("button", { name: `Open ${navigator}`, exact: true }).last().click()
+}
+
+// The real per-file flow reads the repo file's own bytes over the file API
+// before "Add to Documents" ever runs (src/app/workbench/content/tab-file.tsx
+// -> sdk.client.file.read). `installMockRuntime` only stubs `/file**` under
+// the relay (cloud) origin; local-mode specs like this one get no file-API
+// mock at all, so this file backs GET /file (tree list), /file/status, and
+// /file/content with the same `repositoryFiles` map DocumentRuntime already
+// uses for `/documents/from-repo` and the indexed document's placement I/O —
+// one source of truth for "what's on disk" across both APIs.
+const FILE_API_PATHS = new Set(["/file", "/file/status", "/file/content", "/find", "/find/file", "/find/symbol"])
+
+async function installRepositoryFilesystem(page: Page, files: Map<string, string>) {
+  // Matched by an exact-pathname predicate, NOT a `**/file**` glob: this local
+  // dev/preview server also serves build assets (chunk/source-map filenames
+  // routinely contain the substring "file"), so a broad glob risks swallowing
+  // an unrelated asset request and blanking the whole app boot.
+  await page.route(
+    (url) => FILE_API_PATHS.has(url.pathname),
+    (route) => {
+      const request = route.request()
+      if (request.method() !== "GET") return route.fallback()
+      const url = new URL(request.url())
+      if (url.pathname === "/file/content") {
+        const path = url.searchParams.get("path") ?? ""
+        const content = files.get(path)
+        if (content === undefined) return error(route, 404, "file_not_found", "File not found")
+        return json(route, { type: "text", content })
+      }
+      if (url.pathname === "/file/status") return json(route, [])
+      if (url.pathname === "/file") {
+        const path = url.searchParams.get("path") ?? ""
+        if (path !== "") return json(route, [])
+        const entries = [...files.keys()].map((filePath) => ({
+          name: filePath.split("/").at(-1)!,
+          path: filePath,
+          absolute: `${DIR}/${filePath}`,
+          type: "file" as const,
+          ignored: false,
+        }))
+        return json(route, entries)
+      }
+      return json(route, [])
+    },
+  )
+}
+
 async function sourceEditor(page: Page) {
   const source = page.getByLabel("Document Markdown source")
   const editSource = page.getByRole("button", { name: "Edit source" })
@@ -703,32 +778,52 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
   test("repository index is metadata-only and edits file in place without a managed copy — behavior 2", async ({
     page,
   }, testInfo) => {
+    // The Documents-index repository importer this behavior originally drove was
+    // intentionally removed (commit 76953781d7; document-index.vitest.tsx now
+    // asserts the index "does not carry a repository importer"). The contract it
+    // proved is unchanged — repository docs are metadata-only, edits land on the
+    // real file, never a managed copy — but the entry point moved to the repo
+    // file's own tab: open it, then use its "Add to Documents" icon
+    // (src/app/workbench/content/tab-file.tsx). See docs/e2e-decisions.md #5.
     annotate(testInfo, "repository filesystem is simulated")
     const runtime = new DocumentRuntime()
-    runtime.repositoryFiles.set("docs/repository.md", "Heading\n=======\n\nrepository original\n")
+    runtime.repositoryFiles.set("repository.md", "Heading\n=======\n\nrepository original\n")
     await bootstrap(page, runtime)
-    await openIndex(page)
-    await page.getByRole("button", { name: "Add to Documents" }).click()
-    const dialog = page.getByRole("dialog", { name: "Add repository document" })
-    await expect(dialog).toBeVisible()
-    await dialog.getByRole("textbox", { name: "Repository Markdown path" }).fill("docs/repository.md")
-    await proveGeometry(page, dialog, testInfo, "repository-import-dialog")
-    await dialog.getByRole("button", { name: "Add document" }).click()
-    await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
+    await installRepositoryFilesystem(page, runtime.repositoryFiles)
+
+    await openDraftSession(page, DIR)
+    await openWorkspaceNavigator(page, "Files")
+    const fileNode = page.locator('[data-file-tree-path="repository.md"]')
+    await expect(fileNode).toBeVisible({ timeout: 20_000 })
+    await fileNode.click()
+
+    const addToDocuments = page.getByRole("button", { name: "Add to Documents" })
+    await expect(addToDocuments).toBeVisible({ timeout: 20_000 })
+    await proveGeometry(page, addToDocuments, testInfo, "repository-file-tab-add-to-documents")
+    await addToDocuments.click()
+
+    await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
     const indexed = [...runtime.documents.values()].find(
-      (candidate) => candidate.summary.repository_relative_path === "docs/repository.md",
+      (candidate) => candidate.summary.repository_relative_path === "repository.md",
     )!.summary
     const document = runtime.inspect(indexed.id)
+    // No project_id: the per-file flow (review-workspace.tsx's
+    // collaborateWithMarkdown) never resolves one — unlike the deleted index
+    // importer, it only has directory/workspaceId/path in scope. workspace_id
+    // itself resolves to the PROJECT's id, not the raw directory: this fixture
+    // project carries no per-directory `workspaces` map (that field is for
+    // hybrid/toolSandbox-backed projects only), so collaborateWithMarkdown's
+    // `workspace?.workspaceId ?? workspace?.id ?? project?.id` fallback chain
+    // bottoms out on the plain local project's own id.
     expect(runtime.requests.find((request) => request.pathname === "/documents/from-repo")?.body).toEqual({
-      project_id: PROJECT_ID,
       directory: DIR,
-      workspace_id: DIR,
-      path: "docs/repository.md",
+      workspace_id: PROJECT_ID,
+      path: "repository.md",
       display_name: "repository.md",
     })
     const contentReadsBeforeIndex = runtime.requests.filter((request) => request.pathname.endsWith("/content")).length
     await openIndex(page)
-    await expect(page.getByRole("list", { name: "Documents" })).toContainText("docs/repository.md")
+    await expect(page.getByRole("list", { name: "Documents" })).toContainText("repository.md")
     expect(runtime.requests.filter((request) => request.pathname.endsWith("/content"))).toHaveLength(
       contentReadsBeforeIndex,
     )
@@ -740,7 +835,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await page.getByRole("button", { name: /repository\.md/ }).click()
     const next = "Heading\n=======\n\nrepository edited in place\n"
     await saveSource(page, next)
-    expect(runtime.repositoryFiles.get("docs/repository.md")).toBe(next)
+    expect(runtime.repositoryFiles.get("repository.md")).toBe(next)
     expect(runtime.managedFiles.has(document.summary.repository_relative_path!)).toBe(false)
     await proveGeometry(page, await sourceEditor(page), testInfo, "repository-edit-in-place")
   })

@@ -728,22 +728,28 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
   })
 
-  // behavior 3 (pi's "one dedicated tool renderer" half): REAL FIXTURE GAP, not
-  // an app bug. `e2e/fixtures/harness-traces/pi.json`'s committed `main` array
-  // has exactly 3 envelopes (text `.updated`, text `.delta`, reasoning
-  // `.updated`) — verified via `python3 -c "import json; print(len(json.load(
-  // open('e2e/fixtures/harness-traces/pi.json'))['main']))"` → 3. It never
-  // includes the "one dedicated tool renderer" event the SPEC's HARNESS NOTES
-  // and this behavior promise. Hand-authoring a plausible-looking `read`-tool
-  // envelope here would violate DoD #4 ("a script regenerates them;
-  // hand-edited fixtures are rejected") — the fixture must be regenerated via
-  // `bun run e2e/fixtures/generate-harness-fixtures.ts`, which is out of this
-  // remediation's safe scope (touches a committed, shared fixture file used
-  // by every scenario in this spec, not spec-file-local).
-  test.fixme(
-    "pi — one dedicated tool renderer (config.json subtitle) — behavior 3 — REAL GAP: e2e/fixtures/harness-traces/pi.json's committed trace has no tool-type envelope at all (3 items: text update/delta + reasoning only)",
-    async () => {},
-  )
+  // behavior 3 (pi's "one dedicated tool renderer" half): the regenerated pi
+  // trace now carries a `read` tool envelope (fixture `main[3]`, produced by
+  // `generate-harness-fixtures.ts`'s `opencodeNativeTrace("pi").slice(0, 4)` —
+  // NOT hand-authored, satisfying DoD #4). It proves a Pi tool part reaches its
+  // dedicated ToolRegistry `read` renderer, exactly like the other native
+  // harnesses: even a single context-group tool renders inside the
+  // closed-by-default `ContextToolGroup` collapsible, so `revealTurn` opens it.
+  test("pi — one dedicated tool renderer (config.json subtitle) — behavior 3", async ({ page }) => {
+    const { mock, dir, assistantId } = await primeHarness(page, "pi")
+    const trace = loadTrace("pi", assistantId)
+    await replay(mock, dir, trace)
+
+    const content = page.locator(assistantContent())
+    // Delivery anchor: the leading text lands (shared native path) before we unfold.
+    await expect(content.getByText("Reading the config, then editing it.")).toBeVisible({ timeout: 45_000 })
+    await revealTurn(page)
+
+    // The `read` tool reaches its dedicated renderer — subtitle = the read path.
+    await expect(
+      content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "config.json" }).first(),
+    ).toBeVisible({ timeout: 45_000 })
+  })
 
   test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, Task child link — behaviors 1,3,9,15,16", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "claude-acp")

@@ -7,11 +7,16 @@ import { mcpExtensionUrl } from "./api"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import {
+  applyDiscoveredState,
   categoryEntries,
   catalogFromJson,
   discoveredExtensionsFromJson,
+  discoveredStateForAction,
+  discoveredStateFromResponse,
+  enablementToggle,
   installedRecordsFromJson,
   isEntryInstalled,
+  isRecordEnabled,
   jsonOrError,
   machineItemsFromJson,
   packageNameFromSource,
@@ -19,6 +24,8 @@ import {
   type CatalogCategoryId,
   type CatalogEntry,
   type DiscoveredExtension,
+  type DiscoveredExtensionAction,
+  type EnablementStatus,
   type InstalledRecord,
   type InstallStatus,
   type MachineDiscoveredItem,
@@ -62,6 +69,8 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   const [machineItems, setMachineItems] = createSignal<MachineDiscoveredItem[]>([])
   const [scanLoading, setScanLoading] = createSignal(false)
   const [machineDeleting, setMachineDeleting] = createSignal<Record<string, boolean>>({})
+  const [enablementState, setEnablementState] = createSignal<Record<string, EnablementStatus>>({})
+  const [discoveredPending, setDiscoveredPending] = createSignal<Record<string, DiscoveredExtensionAction>>({})
 
   const installedIds = createMemo(() => {
     const set = new Set<string>()
@@ -81,6 +90,14 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
 
   const setStatus = (id: string, status: InstallStatus) =>
     setInstallState((prev) => ({ ...prev, [id]: status }))
+
+  // Effective enabled state for a card: a disabled install carries
+  // `enabled: false`; everything else (including not-yet-loaded records) is
+  // treated as enabled.
+  const entryEnabled = (entry: CatalogEntry): boolean => {
+    const record = findInstalledRecord(entry)
+    return record ? isRecordEnabled(record) : true
+  }
 
   const [catalog] = createResource(async () => {
     const url = extensionUrl("/catalog")
@@ -270,6 +287,78 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     }
   }
 
+  const toggleEnablement = async (entry: CatalogEntry) => {
+    const record = findInstalledRecord(entry)
+    if (!record) {
+      showToast({ title: `Not installed (no record found)`, variant: "default", duration: 3000 })
+      return
+    }
+    if (enablementState()[entry.id] === "toggling") return
+    const { path, nextEnabled } = enablementToggle(record)
+    setEnablementState((prev) => ({ ...prev, [entry.id]: "toggling" }))
+    try {
+      const url = extensionUrl(`/${encodeURIComponent(record.id)}/${path}`, {
+        scope: record.scope,
+        directory: record.directory,
+      })
+      const res = await localRequest()(url.toString(), {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      })
+      await jsonOrError(res)
+      setInstalledRecords((prev) => prev.map((r) => (r === record ? { ...r, enabled: nextEnabled } : r)))
+      showToast({
+        title: `${entry.name} ${nextEnabled ? "enabled" : "disabled"}`,
+        variant: "success",
+        duration: 3000,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast({ title: `Failed to ${path} ${entry.name}`, description: message, variant: "error", duration: 5000 })
+    } finally {
+      setEnablementState((prev) => {
+        const next = { ...prev }
+        delete next[entry.id]
+        return next
+      })
+    }
+  }
+
+  const setDiscoveredState = async (item: DiscoveredExtension, action: DiscoveredExtensionAction) => {
+    const dir = props.directory
+    if (!dir) {
+      showToast({ title: "Open a project to manage discovered config", variant: "default", duration: 4000 })
+      return
+    }
+    if (discoveredPending()[item.path]) return
+    setDiscoveredPending((prev) => ({ ...prev, [item.path]: action }))
+    try {
+      const url = extensionUrl(`/${action}`, { directory: dir })
+      const res = await localRequest()(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ directory: dir, path: item.path }),
+      })
+      const body = await jsonOrError(res)
+      const state = discoveredStateFromResponse(body) ?? discoveredStateForAction(action)
+      setDiscovered((prev) => applyDiscoveredState(prev, item.path, state))
+      showToast({
+        title: action === "adopt" ? `Adopted ${item.path}` : `Ignored ${item.path}`,
+        variant: "success",
+        duration: 3000,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast({ title: `Failed to ${action} ${item.path}`, description: message, variant: "error", duration: 5000 })
+    } finally {
+      setDiscoveredPending((prev) => {
+        const next = { ...prev }
+        delete next[item.path]
+        return next
+      })
+    }
+  }
+
   const deleteMachineItem = async (item: MachineDiscoveredItem) => {
     const key = `${item.harness}/${item.kind}/${item.name}`
     if (machineDeleting()[key]) return
@@ -376,7 +465,13 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
 
           <div class="flex flex-col gap-8">
             <Show when={discovered().length > 0}>
-              <DiscoveredSection items={discovered()} onDismiss={() => setDiscovered([])} />
+              <DiscoveredSection
+                items={discovered()}
+                pending={discoveredPending()}
+                onDismiss={() => setDiscovered([])}
+                onAdopt={(item) => setDiscoveredState(item, "adopt")}
+                onIgnore={(item) => setDiscoveredState(item, "ignore")}
+              />
             </Show>
 
             <Show when={catalog.loading}>
@@ -404,8 +499,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                           entry={entry}
                           installed={isEntryInstalled(entry, installedIds())}
                           status={installState()[entry.id] ?? "idle"}
+                          enabled={entryEnabled(entry)}
+                          toggling={enablementState()[entry.id] === "toggling"}
                           onInstall={() => install(entry)}
                           onUninstall={() => uninstall(entry)}
+                          onToggleEnablement={() => toggleEnablement(entry)}
                         />
                       )}
                     </For>
@@ -442,8 +540,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                             entry={entry}
                             installed={isEntryInstalled(entry, installedIds())}
                             status={installState()[entry.id] ?? "idle"}
+                            enabled={entryEnabled(entry)}
+                            toggling={enablementState()[entry.id] === "toggling"}
                             onInstall={() => install(entry)}
                             onUninstall={() => uninstall(entry)}
+                            onToggleEnablement={() => toggleEnablement(entry)}
                           />
                         )}
                       </For>

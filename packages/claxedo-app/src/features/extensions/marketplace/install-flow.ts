@@ -35,7 +35,17 @@ export type InstalledRecord = {
   package_name?: string
   scope: "machine" | "project"
   directory?: string
+  enabled?: boolean
 }
+
+export type EnablementStatus = "idle" | "toggling"
+
+// The server's discovery-state mutation endpoints: adopt persists the
+// discovered config as owned, ignore records it as intentionally skipped.
+// Both take `{ directory, path }` where `path` is the relative candidate
+// path the scan itself reported (`scanExistingAgentExtensionConfig` ->
+// `row.item.path`), so the value round-trips unchanged.
+export type DiscoveredExtensionAction = "adopt" | "ignore"
 
 export type DiscoveredExtension = {
   path: string
@@ -211,6 +221,7 @@ export function installedRecordsFromJson(input: unknown, scope: "machine" | "pro
     return [{
       id: install.id,
       ...("package_name" in install && typeof install.package_name === "string" ? { package_name: install.package_name } : {}),
+      ...("enabled" in install && typeof install.enabled === "boolean" ? { enabled: install.enabled } : {}),
       scope,
       directory,
     }]
@@ -297,4 +308,48 @@ export function isEntryInstalled(entry: CatalogEntry, installed: Set<string>): b
   if (installed.has(entry.id)) return true
   const pkgName = packageNameFromSource(entry.source)
   return pkgName.length > 0 && installed.has(pkgName)
+}
+
+// A record with no explicit `enabled` field is treated as enabled — the
+// server only writes `enabled: false` for a deliberately-disabled install,
+// and older list payloads omit the field entirely.
+export function isRecordEnabled(record: Pick<InstalledRecord, "enabled">): boolean {
+  return record.enabled !== false
+}
+
+// The disable/enable lifecycle is a single toggle: an enabled install's
+// action is to disable it (`POST /extensions/:id/disable`) and vice versa.
+// `nextEnabled` is the optimistic local state to apply once the request
+// resolves.
+export function enablementToggle(record: Pick<InstalledRecord, "enabled">): {
+  path: "enable" | "disable"
+  nextEnabled: boolean
+} {
+  return isRecordEnabled(record)
+    ? { path: "disable", nextEnabled: false }
+    : { path: "enable", nextEnabled: true }
+}
+
+// adopt -> "adopted", ignore -> "ignored". Used to optimistically project the
+// discovered row's new state when the server response omits it.
+export function discoveredStateForAction(action: DiscoveredExtensionAction): DiscoveredExtension["state"] {
+  return action === "adopt" ? "adopted" : "ignored"
+}
+
+// Parse the discovery-state mutation response (`setDiscoveredAgentExtension
+// ConfigState` returns `{ path, kind, state }`); fall back to the caller's
+// intended state when the body is malformed.
+export function discoveredStateFromResponse(input: unknown): DiscoveredExtension["state"] | undefined {
+  if (!input || typeof input !== "object" || !("state" in input)) return undefined
+  return discoveryState((input as { state: unknown }).state)
+}
+
+// Immutably project the new state onto the matching discovered row, keyed by
+// the candidate path (the scan's stable identity for a row).
+export function applyDiscoveredState(
+  items: DiscoveredExtension[],
+  path: string,
+  state: DiscoveredExtension["state"],
+): DiscoveredExtension[] {
+  return items.map((item) => (item.path === path ? { ...item, state } : item))
 }

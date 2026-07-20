@@ -1,18 +1,25 @@
 import { describe, expect, it } from "bun:test"
 import {
+  applyDiscoveredState,
   catalogEntryFromJson,
   catalogFromJson,
   categoryEntries,
   discoveredExtensionFromJson,
   discoveredExtensionsFromJson,
+  discoveredStateForAction,
+  discoveredStateFromResponse,
+  enablementToggle,
   installedRecordsFromJson,
   isEntryInstalled,
+  isRecordEnabled,
   jsonOrError,
+  KIND_LABEL,
   machineItemFromJson,
   machineItemsFromJson,
   packageNameFromSource,
   responseErrorMessage,
   type CatalogEntry,
+  type DiscoveredExtension,
 } from "./install-flow"
 
 function fullEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -69,6 +76,18 @@ describe("catalogEntryFromJson", () => {
     expect(catalogEntryFromJson(null)).toEqual([])
     expect(catalogEntryFromJson("nope")).toEqual([])
   })
+
+  // Behavior 7 (plugin-kind install): the marketplace card/install path is
+  // kind-agnostic — a `kind: "plugin"` catalog entry parses and renders
+  // through the exact same ExtensionCard/InstallButton path as a skill or an
+  // MCP. The only gap is that the curated server catalog ships zero plugin
+  // entries today (see catalog note in the changes report); the UI is ready
+  // the moment one is added.
+  it("parses a kind:'plugin' entry and labels it 'Plugin'", () => {
+    const parsed = catalogEntryFromJson(fullEntry({ kind: "plugin" }))
+    expect(parsed).toEqual([fullEntry({ kind: "plugin" })])
+    expect(KIND_LABEL[parsed[0].kind]).toBe("Plugin")
+  })
 })
 
 describe("catalogFromJson", () => {
@@ -110,6 +129,64 @@ describe("installedRecordsFromJson", () => {
   it("returns undefined for a shape without desired.installs", () => {
     expect(installedRecordsFromJson({ desired: {} }, "machine", undefined)).toBeUndefined()
     expect(installedRecordsFromJson(null, "machine", undefined)).toBeUndefined()
+  })
+
+  it("carries the boolean enabled flag when present, omits it otherwise", () => {
+    const records = installedRecordsFromJson(
+      { desired: { installs: [{ id: "off", enabled: false }, { id: "on", enabled: true }, { id: "legacy" }, { id: "bad", enabled: "yes" }] } },
+      "machine",
+      undefined,
+    )
+    expect(records).toEqual([
+      { id: "off", enabled: false, scope: "machine", directory: undefined },
+      { id: "on", enabled: true, scope: "machine", directory: undefined },
+      { id: "legacy", scope: "machine", directory: undefined },
+      { id: "bad", scope: "machine", directory: undefined },
+    ])
+  })
+})
+
+describe("isRecordEnabled", () => {
+  it("treats a missing or true flag as enabled, only false as disabled", () => {
+    expect(isRecordEnabled({})).toBe(true)
+    expect(isRecordEnabled({ enabled: true })).toBe(true)
+    expect(isRecordEnabled({ enabled: false })).toBe(false)
+  })
+})
+
+describe("enablementToggle", () => {
+  it("an enabled install toggles to disable, a disabled one toggles to enable", () => {
+    expect(enablementToggle({ enabled: true })).toEqual({ path: "disable", nextEnabled: false })
+    expect(enablementToggle({})).toEqual({ path: "disable", nextEnabled: false })
+    expect(enablementToggle({ enabled: false })).toEqual({ path: "enable", nextEnabled: true })
+  })
+})
+
+describe("discovered adopt/ignore helpers", () => {
+  it("discoveredStateForAction maps the verb to its resulting state", () => {
+    expect(discoveredStateForAction("adopt")).toBe("adopted")
+    expect(discoveredStateForAction("ignore")).toBe("ignored")
+  })
+
+  it("discoveredStateFromResponse reads the server's state, undefined when malformed", () => {
+    expect(discoveredStateFromResponse({ path: "mcp.json", kind: "mcp-config", state: "adopted" })).toBe("adopted")
+    expect(discoveredStateFromResponse({ path: "mcp.json", kind: "mcp-config", state: "ignored" })).toBe("ignored")
+    expect(discoveredStateFromResponse({ state: "not-a-state" })).toBeUndefined()
+    expect(discoveredStateFromResponse(null)).toBeUndefined()
+    expect(discoveredStateFromResponse({})).toBeUndefined()
+  })
+
+  it("applyDiscoveredState projects the new state onto only the matching row", () => {
+    const items: DiscoveredExtension[] = [
+      { path: "mcp.json", kind: "mcp-config", state: "discovered" },
+      { path: ".claude", kind: "harness-config-dir", state: "discovered" },
+    ]
+    expect(applyDiscoveredState(items, "mcp.json", "adopted")).toEqual([
+      { path: "mcp.json", kind: "mcp-config", state: "adopted" },
+      { path: ".claude", kind: "harness-config-dir", state: "discovered" },
+    ])
+    // No matching path -> list is returned unchanged in value.
+    expect(applyDiscoveredState(items, "nope", "ignored")).toEqual(items)
   })
 })
 

@@ -583,8 +583,12 @@ function build() {
   }
   const pi = {
     // Pi's coverage is intentionally reduced — see file header. Reuse the same
-    // generator; the spec only replays a text reply + one tool renderer for it.
-    main: opencodeNativeTrace("pi").slice(0, 3),
+    // generator; the spec only replays a text reply + one dedicated tool renderer
+    // for it. The first 4 native envelopes are text `.updated`, text `.delta`,
+    // reasoning `.updated`, and the `read` tool (`config.json` subtitle) — enough
+    // to prove both that Pi shares the native text path (behavior 1) and that a
+    // Pi tool part reaches its dedicated ToolRegistry renderer (behavior 3).
+    main: opencodeNativeTrace("pi").slice(0, 4),
   }
 
   return {

@@ -72,13 +72,15 @@
  *      no subprocess) completes the same 3-turn + reload journey.
  *   4. The `codex-acp` harness (a genuinely spawned `codex-acp` subprocess) completes
  *      the same 3-turn + reload journey.
- *   5. [REAL APP BUG — `test.fixme`, see HARNESS NOTES] The `codex-app-server`
- *      (native Codex SDK) harness cannot complete a single turn against the
- *      installed `codex-cli` (0.143.0): every turn fails with `thread not found:
- *      <uuid>` from the codex subprocess itself. Reproduced twice, independently,
- *      against two fresh sessions/threads (ruling out state reuse) via direct
- *      `POST /session/:id/prompt_async` against a live `claxedo-server` — see
- *      HARNESS NOTES for the exact driver-code locus.
+ *   5. The `codex-app-server` (native Codex SDK) harness completes the same 3-turn +
+ *      reload journey. This was previously a `test.fixme` documenting a "REAL APP BUG"
+ *      — `thread not found: <uuid>` on `turn/start` against codex-cli 0.143.0 — but
+ *      that skew is resolved: the driver's two-step lifecycle plus its fresh-process
+ *      `thread/resume` recovery (`startTurnWithThreadRecovery`) now complete real
+ *      turns against BOTH codex-cli 0.143.0 and 0.144.x, verified 2026-07-20 at the
+ *      driver level (real `CodexHarnessAdapter`, real ChatGPT auth) and from the
+ *      published `@claxedo/agent-sdk-runtime@0.5.3` bundle. See HARNESS NOTES / the
+ *      behavior-5 test comment for the evidence.
  *   6. Gating: with `CLAXEDO_E2E_LIVE` unset, every test in this file is skipped
  *      with a visible, human-readable reason (never a silent no-op — Playwright's
  *      HTML/line reporter shows the reason string). With `CLAXEDO_E2E_LIVE=1`: if
@@ -176,8 +178,11 @@
  *     SILENT no-reason skips, e.g. the pre-refactor suite's Tier-L-in-name-only
  *     files that quietly skipped everything with no explanation at all — see
  *     `docs/plans/2026-07-10-001-...-plan.md`'s "Why" section item 1). A harness
- *     whose binary IS present but whose real turn errors (behavior 5) is a hard
- *     `test.fixme` failure citation, never silently skipped or downgraded.
+ *     whose binary IS present but whose real turn genuinely errored would be a hard
+ *     failure citation (a `test.fixme`), never silently skipped or downgraded — this
+ *     is how behavior 5 (native codex-app-server) was tracked while its `thread not
+ *     found` skew was open; that skew is now resolved and behavior 5 is a normal
+ *     live test (see BEHAVIORS #5).
  *   - `claude-sdk`'s credential source: this environment's `claude-sdk` (native,
  *     non-ACP) harness resolved and answered without any `ANTHROPIC_API_KEY` being
  *     set, meaning it shares the local `claude` CLI's own OAuth session — this spec
@@ -592,25 +597,34 @@ test.describe("live real-harness smoke @live", () => {
     await runLiveHarnessSmoke(page, dir, { id: "codex-acp", option: /^Codex$/, optionIndex: 0 })
   })
 
-  test.fixme(
-    "codex native SDK harness completes 3 real turns and survives reload — behavior 5",
-    async () => {
-      // REAL APP BUG, not a test gap or a missing prereq — see this file's SPEC
-      // block, HARNESS NOTES, and BEHAVIORS #5 for the full writeup. Summary:
-      // packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:78-92
-      // (`createAgentSession` -> `thread/start` -> captures `threadId`) and
-      // driver.ts:160-174 (`runTurn` -> `turn/start` referencing that SAME
-      // `threadId` on the SAME long-lived subprocess). Against the locally
-      // installed codex-cli 0.143.0, every `turn/start` call fails with
-      // `thread not found: <the exact uuid thread/start just returned>` —
-      // reproduced twice via direct `POST /session/:id/prompt_async` against a
-      // live claxedo-server, on two independently fresh sessions, with a 3s
-      // settle delay between session-create and prompt (ruling out a same-tick
-      // race). The same binary's `codex-acp` mode (a different code path)
-      // completes turns successfully (this file's codex-acp test), so this is
-      // not an auth/environment gap — it is a protocol/version skew in the
-      // native codex-app-server driver's two-step thread lifecycle. Fix belongs
-      // in packages/agent-sdk-runtime/src/harnesses/codex/driver.ts, not here.
-    },
-  )
+  test("codex native SDK harness completes 3 real turns and survives reload — behavior 5", async ({
+    page,
+  }) => {
+    // Previously `test.fixme` for a "REAL APP BUG": against codex-cli 0.143.0 every
+    // `turn/start` was reported to fail `thread not found: <uuid>` for the thread
+    // `thread/start` had just returned. That bug is NOT reproducible in the current
+    // driver: the native codex-app-server two-step lifecycle
+    // (`packages/agent-sdk-runtime/src/harnesses/codex/driver.ts` — `createAgentSession`
+    // -> `thread/start`, then `runTurn` -> `turn/start`, plus the fresh-process
+    // `thread/resume` recovery in `startTurnWithThreadRecovery`) completes real turns
+    // against BOTH codex-cli 0.143.0 and 0.144.x. Verified 2026-07-20 by driving the
+    // real `CodexHarnessAdapter` (createSession + sendMessage, the exact path
+    // `POST /session/:id/prompt_async` invokes) against real ChatGPT auth: 3 turns in
+    // one session plus a reload (dispose -> respawn -> resume) all returned real model
+    // output with no `thread not found`, from BOTH the source driver and the published
+    // `@claxedo/agent-sdk-runtime@0.5.3` bundle. The recovery mechanism added in
+    // 086be6cb7d resolved the original skew. Now a first-class live-smoke harness like
+    // its siblings (native SDK == the second `Codex` option, index 1).
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    test.skip(
+      !binary,
+      "codex binary not found on PATH (or CLAXEDO_E2E_CODEX_BIN failed `--version`) — " +
+        "the native codex-app-server harness shares its credential source with the CLI " +
+        "(ChatGPT auth in ~/.codex/auth.json); install and authenticate `codex` to " +
+        "include it in this live smoke run.",
+    )
+    const dir = await makeWorkspace("codex-sdk")
+    await seedOneProject(page, dir)
+    await runLiveHarnessSmoke(page, dir, { id: "codex-sdk", option: /^Codex$/, optionIndex: 1 })
+  })
 })

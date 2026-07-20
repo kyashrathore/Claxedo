@@ -133,36 +133,39 @@
  *      `installed.json`/`lock.json`, drops its key from `materialized.json`
  *      entirely, and the card reverts to the "Install" affordance with an
  *      "... uninstalled" toast.
- *   6. [REAL APP GAP — `test.fixme`] Disable/enable a package without
- *      uninstalling it: the server implements this fully
+ *   6. [UI LANDED, `test.fixme` awaiting live run] Disable/enable a package
+ *      without uninstalling it: the server implements this fully
  *      (`POST /api/claxedo/agent-config/extensions/:id/enable|disable`,
  *      `packages/agent-extensions/src/install.ts`'s `disableAgentExtension`/
  *      `enableAgentExtension`, both unit-tested server-side in
- *      `packages/claxedo-server/src/agent-extensions/install.test.ts`), but
- *      `marketplace-panel.tsx`'s `InstallButton` (lines 1026-1074) offers
- *      only two states — "Install" and "Installed" (which hover-reveals
- *      "Uninstall") — with no disable/enable control anywhere in the panel.
- *      See HARNESS NOTES for the full grep evidence.
- *   7. [REAL APP GAP — `test.fixme`] Installing a Cursor plugin: the
- *      materializer has a real, tested plugin path
+ *      `packages/claxedo-server/src/agent-extensions/install.test.ts`). The
+ *      marketplace panel now surfaces it: the installed pill's group/install
+ *      wrapper hover-reveals a "Disable" control (and, once disabled, an
+ *      "Enable" control) alongside "Uninstall" — `cards.tsx`'s `InstallButton`.
+ *      The body below drives it end-to-end but stays fixme until an idle
+ *      CLAXEDO_E2E_LIVE machine is available (see HARNESS NOTES).
+ *   7. [UI PATH LANDED, `test.fixme` blocked on catalog] Installing a Cursor
+ *      plugin: the materializer has a real, tested plugin path
  *      (`materialize.ts:235-253`'s `materializeDiscoveredComponent` ->
- *      `materializeCursorLocalPlugin` in `materializers/cursor.ts`), but the
- *      curated catalog (`agent-extensions/catalog.ts`'s `ENTRIES`) has zero
- *      entries with `kind: "plugin"`, and the marketplace UI has no
- *      free-text "install by source" affordance to reach an uncataloged
- *      plugin package either — installing a Cursor plugin is unreachable
- *      through the real install surface today.
+ *      `materializeCursorLocalPlugin` in `materializers/cursor.ts`), and the
+ *      marketplace card/install path is kind-agnostic — a `kind: "plugin"`
+ *      catalog entry renders and installs through the same ExtensionCard /
+ *      `install()` surface (proven at the unit layer). The remaining gap is
+ *      purely the curated catalog (`agent-extensions/catalog.ts`'s `ENTRIES`)
+ *      shipping zero `kind: "plugin"` entries; per the "do not invent catalog
+ *      entries" rule this body stays fixme until a real plugin entry exists.
  *   8. "Detect existing" (behavior half, real): clicking the aside's scan
  *      button against a throwaway project directory with a hand-written
  *      `.mcp.json` renders that file in the "Already on this machine"
  *      section with `kind: "MCP config"` and `state: "discovered"` (a real
  *      `GET /api/claxedo/agent-config/extensions/scan` round trip).
- *      [REAL APP GAP — `test.fixme`, adopt half] The panel never renders a
- *      per-row Adopt/Ignore control even though the server implements both
- *      (`POST /extensions/adopt`, `POST /extensions/ignore`) —
- *      `DiscoveredSection` (`marketplace-panel.tsx` lines 914-946) renders
- *      only path/kind/state text and a single top-level "Dismiss" button
- *      that clears the local list without calling either endpoint.
+ *      [UI LANDED, `test.fixme` awaiting live run, adopt half] Each
+ *      `DiscoveredSection` row now hover-reveals per-item "Adopt" and
+ *      "Ignore" controls wired to `POST /extensions/adopt` /
+ *      `POST /extensions/ignore` ({ directory, path }) — `cards.tsx`'s
+ *      `DiscoveredRow` — while the top-level "Dismiss" (local clear) stays.
+ *      The body below drives adopt end-to-end but stays fixme until an idle
+ *      CLAXEDO_E2E_LIVE machine is available.
  *   9. Cloud half (gated): installing at workspace scope inside a Docker
  *      sandbox pushes the install through `applyRuntimeAgentExtensions`
  *      inside the sandbox filesystem, observable via
@@ -237,12 +240,14 @@
  *     free); instead tests are ordered so state built by an earlier test
  *     never poisons a later one's assertions (see the ordering comment
  *     above `test.describe.configure({ mode: "serial" })` below).
- *   - Behavior 6 grep evidence: `grep -n "disable" packages/claxedo-app/src/
- *     marketplace/marketplace-panel.tsx` matches only Tailwind
- *     `disabled:opacity-*` classes and the `disabled={...}` DOM attribute on
- *     the Install/Uninstall/Delete buttons themselves — zero references to
- *     `/enable` or `/disable` as a URL path or an intentional lifecycle
- *     action.
+ *   - Behavior 6 UI (landed): the disable/enable lifecycle now lives in
+ *     `packages/claxedo-app/src/features/extensions/marketplace/panel.tsx`'s
+ *     `toggleEnablement` (POST `/extensions/:id/{disable,enable}` via
+ *     `extensionUrl`) and `cards.tsx`'s `InstallButton` hover row; the pure
+ *     `enablementToggle` / `isRecordEnabled` logic is unit-tested in
+ *     `install-flow.test.ts`. (Historical note: before this change, `grep -n
+ *     "disable"` on the panel matched only Tailwind `disabled:opacity-*`
+ *     classes and `disabled={...}` DOM attributes — no lifecycle action.)
  *   - Behavior 4's partial-write is real, correct materializer behavior, not
  *     a test bug: `materialize.ts`'s `materializePackage` wraps EACH
  *     (runner, component) pair in its own `try/catch`
@@ -718,32 +723,147 @@ test.describe("live agent extensions materialization @live", () => {
     await expect(page.getByText("MCP config")).toBeVisible()
   })
 
-  // [REAL APP GAP — see SPEC block, BEHAVIORS #6] No disable/enable UI
-  // control exists in marketplace-panel.tsx's InstallButton — only
-  // Install/Installed(→Uninstall). The server-side capability is real and
-  // separately unit-tested; there is nothing for this UI-driven Tier L spec
-  // to click.
+  // [UI LANDED, awaiting live run — see SPEC block, BEHAVIORS #6] The
+  // disable/enable toggle now exists: hovering the "Installed" pill's
+  // group/install wrapper reveals a "Disable" control (and, once disabled, an
+  // "Enable" control), wired to POST /extensions/:id/{disable,enable}. The
+  // pure request/state logic (`enablementToggle`, `isRecordEnabled`,
+  // `installedRecordsFromJson`'s enabled parse) is unit-tested in
+  // `install-flow.test.ts`. This body drives the real UI + real materializer
+  // and is ready to un-fixme on an idle machine with CLAXEDO_E2E_LIVE=1 (it
+  // could not be executed in this authoring session's contended env — see
+  // HARNESS NOTES).
   test.fixme(
     "disable a package via the marketplace UI removes artifacts but retains state, enable restores them — behavior 6",
-    async () => {},
+    async ({ page }) => {
+      await gotoMarketplace(page)
+      await installViaUi(page, "PDF")
+      await expectToast(page, "PDF installed")
+      await expectInstalledPill(page, "PDF")
+
+      const skillDir = path.join(scratchHome, ".claude", "skills", "pdf")
+      expect(await exists(skillDir)).toBe(true)
+
+      // Disable — hover the installed pill's own wrapper (group/install) to
+      // reveal the "Disable" control (exact:true so it never resolves the
+      // hidden "Uninstall"/"Enable" siblings).
+      const card = extensionCard(page, "PDF")
+      const installGroup = card.locator('[class*="group/install"]')
+      await installGroup.hover()
+      await installGroup.getByRole("button", { name: "Disable", exact: true }).click()
+      await expectToast(page, "PDF disabled")
+
+      // Desired state retained (enabled:false), materialized status flipped to
+      // "disabled", artifact removed from disk.
+      const installedAfterDisable = await readJsonFile(path.join(stateRoot(), "installed.json"))
+      const disabledInstall = (installedAfterDisable.installs as Array<{ id: string; enabled: boolean }>).find((i) => i.id === "anthropic-skill-pdf")
+      expect(disabledInstall?.enabled).toBe(false)
+      const materializedDisabled = await readJsonFile(path.join(stateRoot(), "materialized.json"))
+      expect((materializedDisabled.packages as Record<string, { status: string }>)["anthropic-skill-pdf"]?.status).toBe("disabled")
+      expect(await exists(skillDir)).toBe(false)
+
+      // Enable — restores the artifact and materialized status.
+      await installGroup.hover()
+      await installGroup.getByRole("button", { name: "Enable", exact: true }).click()
+      await expectToast(page, "PDF enabled")
+      const installedAfterEnable = await readJsonFile(path.join(stateRoot(), "installed.json"))
+      const enabledInstall = (installedAfterEnable.installs as Array<{ id: string; enabled: boolean }>).find((i) => i.id === "anthropic-skill-pdf")
+      expect(enabledInstall?.enabled).toBe(true)
+      const materializedEnabled = await readJsonFile(path.join(stateRoot(), "materialized.json"))
+      expect((materializedEnabled.packages as Record<string, { status: string }>)["anthropic-skill-pdf"]?.status).toBe("applied")
+      expect(await exists(skillDir)).toBe(true)
+
+      // Clean the shared state for any later test in this serial file.
+      await uninstallViaUi(page, "PDF")
+      await expectToast(page, "PDF uninstalled")
+    },
   )
 
-  // [REAL APP GAP — see SPEC block, BEHAVIORS #7] No catalog entry has
-  // kind: "plugin" and the marketplace UI has no free-text install-by-source
-  // affordance, so a Cursor plugin cannot be installed through the real
-  // install surface today even though the materializer supports it.
+  // [UI PATH LANDED, blocked on CATALOG — see SPEC block, BEHAVIORS #7] The
+  // marketplace card/install path is kind-agnostic: ExtensionCard renders a
+  // `kind: "plugin"` entry (KIND_LABEL.plugin -> "Plugin") and `install()`
+  // POSTs source/scope/targets identically for every kind, so the moment the
+  // curated catalog (`packages/claxedo-server/src/agent-extensions/
+  // catalog.ts`'s ENTRIES) gains a `kind: "plugin"` entry it installs through
+  // the exact same surface — no further UI work is required. Proven at the
+  // unit layer by install-flow.test.ts's "parses a kind:'plugin' entry and
+  // labels it 'Plugin'". This body STAYS fixme until a real plugin catalog
+  // entry exists (per the task's "do not invent catalog entries" rule) AND a
+  // live run is available; there is genuinely nothing installable of
+  // kind:"plugin" to drive end-to-end today.
   test.fixme(
     "install a Cursor plugin via the marketplace UI — behavior 7",
     async () => {},
   )
 
-  // [REAL APP GAP — see SPEC block, BEHAVIORS #8] DiscoveredSection renders
-  // scan results with only a top-level "Dismiss" button; there is no
-  // per-item Adopt/Ignore control even though the server implements both
-  // POST /extensions/adopt and POST /extensions/ignore.
+  // [UI LANDED, awaiting live run — see SPEC block, BEHAVIORS #8] Each
+  // DiscoveredSection row now hover-reveals per-item "Adopt" and "Ignore"
+  // controls (group/discovered), wired to POST /extensions/{adopt,ignore}
+  // with { directory, path }; the top-level "Dismiss" (local clear) stays.
+  // Pure request/state logic (`discoveredStateForAction`,
+  // `discoveredStateFromResponse`, `applyDiscoveredState`) is unit-tested in
+  // install-flow.test.ts. This body drives the real UI + real
+  // discovery.json persistence and is ready to un-fixme on an idle machine
+  // with CLAXEDO_E2E_LIVE=1 (could not run in this contended authoring env —
+  // see HARNESS NOTES).
   test.fixme(
     "adopt a discovered item via the marketplace UI — behavior 8 (adopt half)",
-    async () => {},
+    async ({ page }) => {
+      const dir = await makeWorkspace("adopt")
+      // "mcp.json" (no leading dot) is the real scan candidate path
+      // (`scan.ts`'s `candidates`) — the value the UI shows and that the
+      // adopt request must round-trip back to the server unchanged.
+      await fs.writeFile(
+        path.join(dir, "mcp.json"),
+        `${JSON.stringify({ mcpServers: { "pre-existing": { command: "/bin/true" } } }, null, 2)}\n`,
+      )
+
+      await page.addInitScript((d: string) => {
+        localStorage.clear()
+        ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+          serverUrl: window.location.origin,
+          activeDirectory: d,
+        }
+        localStorage.setItem(
+          "opencode.global.dat:server",
+          JSON.stringify({
+            list: [],
+            projects: { local: [{ worktree: d, expanded: true }] },
+            lastProject: {},
+            workspaceServer: {},
+            closedProjects: {},
+          }),
+        )
+      }, dir)
+
+      await page.goto(`/${slug(dir)}/session`)
+      await page.waitForLoadState("domcontentloaded")
+      await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+      await page.goto("/marketplace")
+      await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+      await page.getByRole("button", { name: /Detect existing/ }).click()
+      await expect(page.getByText(/Detected \d+ existing item/)).toBeVisible({ timeout: 20_000 })
+
+      // The discovered row for mcp.json — hover reveals the Adopt control.
+      const row = page.locator("li.group\\/discovered").filter({ has: page.getByText("mcp.json", { exact: false }) })
+      await expect(row).toBeVisible({ timeout: 10_000 })
+      await row.hover()
+      await row.getByRole("button", { name: "Adopt", exact: true }).click()
+      await expectToast(page, "Adopted mcp.json")
+
+      // Server persisted the adopted state under the project's
+      // .agent-extensions/discovery.json (real POST /extensions/adopt round
+      // trip, not a local-only clear like Dismiss).
+      const discovery = await readJsonFile(path.join(dir, ".agent-extensions", "discovery.json"))
+      const records = discovery.records as Array<{ path: string; state: string }>
+      expect(records.some((r) => r.path === "mcp.json" && r.state === "adopted")).toBe(true)
+
+      // Row reflects the new adopted state inline.
+      await row.hover()
+      await expect(row.getByText("Adopted", { exact: true })).toBeVisible({ timeout: 10_000 })
+    },
   )
 
   // Cloud half — gated on the explicit opt-in env var per this suite's Tier
