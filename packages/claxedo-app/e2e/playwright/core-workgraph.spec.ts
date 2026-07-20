@@ -815,7 +815,18 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       await harness.runReconcile()
       return Promise.all(workItemIds.map(async (workItemId) =>
         (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state))
-    }, { timeout: 20_000 }).toEqual(["completed", "completed"])
+    }, { timeout: 20_000 }).toEqual(["completed", "completed"]).catch(async (error) => {
+      const attempts = harness.embedded.database.prepare(
+        "SELECT id, work_item_id, lifecycle, session_id FROM wg_v2_attempts ORDER BY created_at",
+      ).all()
+      const due = harness.embedded.database.prepare(
+        "SELECT id, job_type, status, last_error, lease_epoch, due_at FROM wg_v2_due_jobs",
+      ).all()
+      const status = harness.embedded.database.prepare(
+        "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
+      ).get(streamId)
+      throw new Error(`${String(error)}\nAttempts: ${JSON.stringify(attempts)}\nDue jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+    })
     await expect.poll(async () => {
       await harness.runReconcile()
       const auditCount = (harness.embedded.database.prepare(
@@ -831,12 +842,18 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
         JSON.stringify(status.receiptRefs) === JSON.stringify(["diff:master-landing", "diff:master-candidate"])
     }, { timeout: 20_000 }).toBe(true).catch((error) => {
       const due = harness.embedded.database.prepare(
-        "SELECT status, last_error, lease_epoch FROM wg_v2_due_jobs WHERE job_type = 'master_wake'",
+        "SELECT id, status, last_error, lease_epoch, due_at, row_version, payload_json FROM wg_v2_due_jobs WHERE job_type = 'master_wake'",
       ).all()
       const status = harness.embedded.database.prepare(
         "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
       ).get(streamId)
-      throw new Error(`${String(error)}\nMaster jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      const auditRows = harness.embedded.database.prepare(
+        "SELECT payload_json, occurred_at FROM wg_v2_events WHERE event_type = 'master_audit_recorded' ORDER BY sequence",
+      ).all()
+      const auditOps = harness.embedded.database.prepare(
+        "SELECT id, result_status, created_at FROM wg_v2_operation_results WHERE command_type = 'record_master_audit'",
+      ).all()
+      throw new Error(`${String(error)}\nMaster jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nAudit events: ${JSON.stringify(auditRows)}\nAudit ops: ${JSON.stringify(auditOps)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
     })
 
     const audits = harness.embedded.database.prepare(

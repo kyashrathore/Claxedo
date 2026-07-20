@@ -283,6 +283,8 @@ type SqliteQueries = Readonly<{
 
 type SqliteStoreResult = Readonly<{
   store: AtomicWorkGraphStore<SqliteCommands, SqliteQueries>
+  /** Re-drives launch reconciliation (admit + launch ready Work Items) — safe to call from a periodic reconciler. */
+  drainReadyStreams: () => Promise<void>
   faults: Readonly<{ failNextAppend: () => void }>
 }>
 
@@ -677,6 +679,12 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
 
   return {
     store: defineAtomicWorkGraphStore({ commands, queries: createQueries(database, clock) }),
+    // Exposed so a periodic reconciler can re-drive launch reconciliation: the
+    // per-command drain is one-shot, and a pass that skips a Stream (transient
+    // capability-read failure, a worktree busy with a master turn, a crash
+    // between settle and drain) otherwise leaves launchable pending Work Items
+    // stranded until the next unrelated command happens to run.
+    drainReadyStreams,
     faults: {
       failNextAppend: () => {
         failNextAppend = true
@@ -689,6 +697,8 @@ export function createSqliteWorkGraphService(input: SqliteWorkGraphStoreInput): 
   service: WorkGraphService<SqliteCommands, SqliteQueries>
   attemptRuntime: AttemptRuntimePort
   attemptResults: AttemptResultStore
+  /** Re-drives launch reconciliation (admit + launch ready Work Items); see the store's `drainReadyStreams`. */
+  drainReadyStreams: () => Promise<void>
   faults: Readonly<{ failNextAppend: () => void }>
 }> {
   const adapter = createSqliteWorkGraphStore(input)
@@ -697,6 +707,7 @@ export function createSqliteWorkGraphService(input: SqliteWorkGraphStoreInput): 
     service: createWorkGraphService(adapter.store),
     attemptRuntime,
     attemptResults: attemptRuntime,
+    drainReadyStreams: adapter.drainReadyStreams,
     faults: adapter.faults,
   }
 }

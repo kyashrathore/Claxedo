@@ -166,6 +166,7 @@ async function runTurn(
       if (result.state === "cancelled") throw new Error("Master Session was cancelled")
       if (result.state !== "succeeded") throw new Error("Master Session returned an unsupported result")
       const charter = charterDetails(claimed.stream)
+      const resultingDiffs = [...new Set([...artifactRefs(claimed.attempts), ...result.artifacts])]
       const audit = await input.execute(masterContext(context, sessionId), {
         operationId: `audit_master_${claimed.stream.id}_${wake.row_version}` as never,
         command: {
@@ -180,7 +181,7 @@ async function runTurn(
           modelVersion: `${profile.model.providerId}/${profile.model.modelId}`,
           reasoningSummary: result.summary,
           toolCalls: [],
-          resultingDiffs: [...new Set([...artifactRefs(claimed.attempts), ...result.artifacts])],
+          resultingDiffs,
           evidenceIds: evidenceIds(input.database, context, claimed.attempts),
           outcome: "succeeded",
         },
@@ -191,7 +192,7 @@ async function runTurn(
           UPDATE wg_v2_master_mailbox SET status = 'consumed', updated_at = ?
           WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'claimed'
         `).run(now(), context.organizationId, context.ownerUserId, message.id))
-        return complete(input.database, context, wake, now(), "completed")
+        return complete(input.database, context, wake, now(), "completed", resultingDiffs)
       })()
       return { ...completed, sessionId }
     }
@@ -335,6 +336,7 @@ function complete(
   wake: MasterWakeRow,
   completedAt: number,
   status: "completed" | "cancelled",
+  receiptRefs?: readonly string[],
 ) {
   const scheduled = wakeTrigger(wake.payload_json) === "schedule" && status === "completed"
   const claimedRowVersion = wake.status === "pending" ? wake.row_version + 1 : wake.row_version
@@ -360,6 +362,10 @@ function complete(
     sessionId: masterSessionId(wake.stream_id),
     message: status === "completed" ? "Master is up to date" : "Master stopped",
     updatedAt: completedAt,
+    // A completed turn surfaces its audit's resulting diffs as the master's
+    // durable receipts, mirroring the Convex runtime (`recordMasterTurn` sets
+    // `receiptRefs: args.resulting_diffs` alongside "Master is up to date").
+    ...(receiptRefs ? { receiptRefs } : {}),
   })
   return { status }
 }
@@ -369,7 +375,14 @@ function setMasterStatus(
   database: Database,
   context: WorkGraphContext,
   streamId: string,
-  next: Readonly<{ state: string; escalation?: string; sessionId?: string; message: string; updatedAt: number }>,
+  next: Readonly<{
+    state: string
+    escalation?: string
+    sessionId?: string
+    message: string
+    updatedAt: number
+    receiptRefs?: readonly string[]
+  }>,
 ) {
   const row = database.prepare(`
     SELECT master_status_json, charter_json FROM wg_v2_streams
@@ -387,7 +400,7 @@ function setMasterStatus(
     WHERE organization_id = ? AND owner_user_id = ? AND id = ?
   `).run(JSON.stringify({
     ...next,
-    receiptRefs: Array.isArray(previous?.receiptRefs) ? previous.receiptRefs : [],
+    receiptRefs: next.receiptRefs ?? (Array.isArray(previous?.receiptRefs) ? previous.receiptRefs : []),
     ...(typeof charter?.hash === "string" ? { charterHash: charter.hash } : {}),
   }), context.organizationId, context.ownerUserId, streamId)
 }

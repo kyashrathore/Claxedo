@@ -246,6 +246,13 @@ export async function createLocalEmbeddedWorkGraph(
           )
         }),
       )
+      // Launch reconciliation: re-drive the ready-stream drain every tick. The
+      // per-command drain is one-shot — when a pass skips a Stream (capability
+      // read hiccup, envelope worktree busy with a master turn) a launchable
+      // pending Work Item would otherwise stay stranded until some unrelated
+      // command runs, which is exactly the "dependent Task still pending"
+      // stall the workgraph-real e2e kept hitting.
+      await adapter.drainReadyStreams()
       await master?.runDue(context)
       operationalTelemetry?.queue({
         kind: "attempt",

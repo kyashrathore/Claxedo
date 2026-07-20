@@ -122,6 +122,16 @@ describe("local WorkGraph master runtime", () => {
       reasoningSummary: "Landed the ready task.",
       resultingDiffs: ["diff:task-one"],
     })
+    // Completion surfaces the audit's resulting diffs as the master's durable
+    // receipts (Convex parity: `recordMasterTurn` stores `receiptRefs:
+    // resulting_diffs` next to "Master is up to date").
+    expect(JSON.parse((database.prepare(
+      "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
+    ).get(streamId) as { master_status_json: string }).master_status_json)).toMatchObject({
+      state: "hibernating",
+      message: "Master is up to date",
+      receiptRefs: ["diff:task-one"],
+    })
 
     await workgraph.service.execute(context, {
       operationId: "call-failing" as never,
