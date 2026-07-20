@@ -166,11 +166,25 @@ async function bundleClaudeAgentAcp() {
 function copyCodexAcp() {
   const target = targetPlatformArch()
   const pkgName = `codex-acp-${target.platform}-${target.arch}`
-  const binPath = resolveBunPackage(
-    `@zed-industries+${pkgName}@`,
-    `@zed-industries/${pkgName}/bin/codex-acp`,
-    WS_RUNTIME_DIR,
-  )
+  const resolveBin = () =>
+    resolveBunPackage(`@zed-industries+${pkgName}@`, `@zed-industries/${pkgName}/bin/codex-acp`, WS_RUNTIME_DIR)
+
+  let binPath = resolveBin()
+  if (!binPath) {
+    // Fresh installs only fetch the host platform's optional variant (and a
+    // checkout that predates the devDependency has none). Pull every platform
+    // variant the same way opencode's build script does for its native deps.
+    const desktopPkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8"))
+    const version = desktopPkg.devDependencies?.["@zed-industries/codex-acp"]
+    if (version) {
+      log(`codex-acp ${target.platform}-${target.arch} not in store; installing all-platform variants...`)
+      const result = Bun.spawnSync(
+        ["bun", "install", `--os=*`, `--cpu=*`, `@zed-industries/codex-acp@${version}`],
+        { cwd: path.resolve(import.meta.dirname, ".."), stdout: "inherit", stderr: "inherit" },
+      )
+      if (result.exitCode === 0) binPath = resolveBin()
+    }
+  }
 
   if (!binPath) {
     warn(`codex-acp native binary not found for ${target.platform}-${target.arch}, skipping`)

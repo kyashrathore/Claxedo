@@ -31,7 +31,7 @@
   },
   "main": "./out/main/index.js",
   "dependencies": {
-    "@claxedo/app": "workspace:0.0.59",
+    "@claxedo/app": "workspace:*",
     "@opencode-ai/session-ui": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@solid-primitives/i18n": "2.2.1",
@@ -60,6 +60,7 @@
     "electron-vite": "5.0.0",
     "typescript": "catalog:",
     "vite": "7.1.4",
-    "vite-plugin-solid": "2.11.10"
+    "vite-plugin-solid": "2.11.10",
+    "@zed-industries/codex-acp": "0.10.0"
   }
 }
