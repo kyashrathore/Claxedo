@@ -181,6 +181,13 @@ jobs:
           # transforms on 2-core runners push first navigations past the expect
           # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
           CLAXEDO_E2E_PREBUILT: "1"
+          # The spec harness bakes these at build time (core-settings-auth.spec
+          # HARNESS NOTES): auth/sandbox surfaces only exist in the bundle when
+          # the flags are set, and the server URL mirrors the repo's .env.local
+          # assumption. Locally vite reads .env.local; CI must set them.
+          VITE_AUTH_ENABLED: "true"
+          VITE_SANDBOX_ENABLED: "true"
+          VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
 
       - name: Upload Playwright artifacts
         if: always()
