@@ -181,6 +181,8 @@ jobs:
           # transforms on 2-core runners push first navigations past the expect
           # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
           CLAXEDO_E2E_PREBUILT: "1"
+          # Videos of passing tests bloat shard artifacts; failures keep theirs.
+          PLAYWRIGHT_VIDEO: "0"
           # The spec harness bakes these at build time (core-settings-auth.spec
           # HARNESS NOTES): auth/sandbox surfaces only exist in the bundle when
           # the flags are set, and the server URL mirrors the repo's .env.local

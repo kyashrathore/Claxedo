@@ -5,7 +5,15 @@ process.env.PLAYWRIGHT_PORT ??= String(port)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`
 const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 const suite = process.env.CLAXEDO_E2E_SUITE ?? "happy"
-const video = process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core" ? "on" : "retain-on-failure"
+// PLAYWRIGHT_VIDEO=0 is an explicit off-switch: the old `|| suite === "core"`
+// override recorded video for every core test regardless, ballooning CI shard
+// artifacts (and slowing every local run) with videos of passing tests.
+const video =
+  process.env.PLAYWRIGHT_VIDEO === "0"
+    ? "retain-on-failure"
+    : process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core"
+      ? "on"
+      : "retain-on-failure"
 const grep = suite === "happy" ? /@happy/ : suite === "core" ? /@core/ : undefined
 const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
