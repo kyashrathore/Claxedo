@@ -276,16 +276,10 @@ export default function SessionPage() {
     return workspaceId ? signedWorkspaceFromProjects(projects(), workspaceId)?.kind : undefined
   })
   const routeWorkspaceKind = createMemo<NewSessionWorkspaceKind>(() => {
-    // Carry user-hosted through as its own kind (was collapsed to "cloud", which
-    // dropped the self-hosted workspace into the cloud-provision composer). The
-    // submit path still treats it as an existing remote workspace (connect, never
-    // provision) — see resolve.ts — but the composer now presents it correctly.
-    //
-    // On a fresh DRAFT nav (no inventory/ws() match yet), `resolvedWorkspaceKind`
-    // is undefined and the only signal is the directory-ref fallback below — its
-    // OWN resolved kind must be carried through too (see resolveDraftWorkspaceKind),
-    // not collapsed to "cloud" just because a ref exists. Collapsing is what
-    // mis-routed a `ws_`-shaped user-hosted draft nav into the Local/Cloud picker.
+    // On a fresh DRAFT nav the inventory hasn't resolved yet and the only signal
+    // is the directory-ref fallback — resolveDraftWorkspaceKind carries the ref's
+    // OWN kind through instead of collapsing every ref to "cloud" (the collapse
+    // mis-routed ws_-shaped user-hosted draft navs into the Local/Cloud picker).
     return resolveDraftWorkspaceKind({
       resolvedKind: resolvedWorkspaceKind(),
       fallbackRefKind: sessionWorkspaceRuntimeRef({ directory: dir(), projects: projects() })?.kind,
