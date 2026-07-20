@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/wakes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -27,7 +27,7 @@
     "typescript": "catalog:",
     "vitest": "2.1.9"
   },
-  "description": "Resume an idle agent session from an out-of-band trigger \u2014 a durable wake fired by time, an external event, or an authorized approval.",
+  "description": "Resume an idle agent session from an out-of-band trigger — a durable wake fired by time, an external event, or an authorized approval.",
   "license": "MIT",
   "repository": {
     "type": "git",

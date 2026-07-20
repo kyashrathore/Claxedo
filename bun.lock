@@ -33,7 +33,7 @@
     },
     "packages/agent-event-runtime": {
       "name": "@claxedo/agent-event-runtime",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.2.1",
         "@anthropic-ai/claude-agent-sdk": "0.3.210",
@@ -51,7 +51,7 @@
     },
     "packages/agent-extensions": {
       "name": "@claxedo/agent-extensions",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "bin": {
         "agent-extensions": "./dist/main.mjs",
       },
@@ -68,13 +68,13 @@
     },
     "packages/agent-sdk-runtime": {
       "name": "@claxedo/agent-sdk-runtime",
-      "version": "0.5.3",
+      "version": "0.6.0",
       "dependencies": {
         "@agentclientprotocol/codex-acp": "1.1.2",
         "@agentclientprotocol/sdk": "1.2.1",
         "@anthropic-ai/claude-agent-sdk": "0.3.210",
         "@anthropic-ai/sdk": "0.111.0",
-        "@claxedo/agent-event-runtime": "0.5.2",
+        "@claxedo/agent-event-runtime": "0.6.0",
         "@cursor/sdk": "1.0.23",
         "@mariozechner/pi-agent-core": "0.73.1",
         "@mariozechner/pi-ai": "0.73.1",
@@ -98,7 +98,7 @@
       "name": "@claxedo/app",
       "version": "0.0.59",
       "dependencies": {
-        "@claxedo/agent-event-runtime": "workspace:0.5.2",
+        "@claxedo/agent-event-runtime": "workspace:0.6.0",
         "@claxedo/workgraph": "workspace:*",
         "@clerk/clerk-js": "5.125.10",
         "@json-render/core": "0.14.1",
@@ -202,7 +202,7 @@
     },
     "packages/claxedo-channels": {
       "name": "@claxedo/channels",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "dependencies": {
         "@chat-adapter/discord": "4.32.0",
         "@chat-adapter/github": "4.32.0",
@@ -222,7 +222,7 @@
     },
     "packages/claxedo-connections": {
       "name": "@claxedo/connections",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "hono": "4.10.7",
       },
@@ -277,12 +277,12 @@
     },
     "packages/claxedo-mcp": {
       "name": "@claxedo/mcp",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "bin": {
         "claxedo-mcp": "dist/server.js",
       },
       "dependencies": {
-        "@claxedo/workgraph": "0.2.1",
+        "@claxedo/workgraph": "0.3.0",
         "@modelcontextprotocol/sdk": "1.25.2",
         "zod": "4.1.8",
       },
@@ -298,17 +298,17 @@
       "name": "@claxedo/server",
       "version": "1.0.0",
       "dependencies": {
-        "@claxedo/agent-extensions": "workspace:0.5.2",
-        "@claxedo/agent-sdk-runtime": "workspace:0.5.3",
-        "@claxedo/channels": "workspace:0.2.1",
-        "@claxedo/connections": "0.2.0",
-        "@claxedo/mcp": "workspace:0.2.1",
-        "@claxedo/sandbox-manager": "workspace:0.5.2",
-        "@claxedo/wakes": "workspace:0.1.0",
-        "@claxedo/workgraph": "0.2.1",
-        "@claxedo/workspace-relay": "workspace:0.5.2",
-        "@claxedo/workspace-relay-protocol": "workspace:0.5.2",
-        "@claxedo/workspace-runtime": "workspace:0.5.3",
+        "@claxedo/agent-extensions": "workspace:0.6.0",
+        "@claxedo/agent-sdk-runtime": "workspace:0.6.0",
+        "@claxedo/channels": "workspace:0.3.0",
+        "@claxedo/connections": "0.3.0",
+        "@claxedo/mcp": "workspace:0.3.0",
+        "@claxedo/sandbox-manager": "workspace:0.6.0",
+        "@claxedo/wakes": "workspace:0.2.0",
+        "@claxedo/workgraph": "0.3.0",
+        "@claxedo/workspace-relay": "workspace:0.6.0",
+        "@claxedo/workspace-relay-protocol": "workspace:0.6.0",
+        "@claxedo/workspace-runtime": "workspace:0.6.0",
         "@daytona/sdk": "0.192.0",
         "@hono/node-server": "1.19.11",
         "@hono/node-ws": "1.3.1",
@@ -727,7 +727,7 @@
     },
     "packages/sandbox-manager": {
       "name": "@claxedo/sandbox-manager",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "dependencies": {
         "@daytona/sdk": "0.192.0",
         "@vercel/sandbox": "1.10.2",
@@ -943,7 +943,7 @@
     },
     "packages/wakes": {
       "name": "@claxedo/wakes",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "better-sqlite3": "12.10.0",
         "ms": "2.1.3",
@@ -959,7 +959,7 @@
     },
     "packages/workgraph": {
       "name": "@claxedo/workgraph",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "dependencies": {
         "@noble/hashes": "2.2.0",
         "better-sqlite3": "12.10.0",
@@ -975,12 +975,12 @@
     },
     "packages/workspace-relay": {
       "name": "@claxedo/workspace-relay",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "bin": {
         "workspace-relay": "dist/main.mjs",
       },
       "dependencies": {
-        "@claxedo/workspace-relay-protocol": "0.5.2",
+        "@claxedo/workspace-relay-protocol": "0.6.0",
         "@sentry/bun": "10.64.0",
         "hono": "4.10.7",
         "jose": "6.0.11",
@@ -996,7 +996,7 @@
     },
     "packages/workspace-relay-protocol": {
       "name": "@claxedo/workspace-relay-protocol",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "dependencies": {
         "jose": "6.0.11",
       },
@@ -1010,17 +1010,17 @@
     },
     "packages/workspace-runtime": {
       "name": "@claxedo/workspace-runtime",
-      "version": "0.5.3",
+      "version": "0.6.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.2.1",
         "@anthropic-ai/claude-agent-sdk": "0.3.210",
         "@anthropic-ai/sdk": "0.111.0",
-        "@claxedo/agent-event-runtime": "0.5.2",
-        "@claxedo/agent-extensions": "0.5.2",
-        "@claxedo/agent-sdk-runtime": "0.5.3",
-        "@claxedo/workgraph": "0.2.1",
-        "@claxedo/workspace-relay": "0.5.2",
-        "@claxedo/workspace-relay-protocol": "0.5.2",
+        "@claxedo/agent-event-runtime": "0.6.0",
+        "@claxedo/agent-extensions": "0.6.0",
+        "@claxedo/agent-sdk-runtime": "0.6.0",
+        "@claxedo/workgraph": "0.3.0",
+        "@claxedo/workspace-relay": "0.6.0",
+        "@claxedo/workspace-relay-protocol": "0.6.0",
         "@hono/node-server": "1.19.11",
         "@hono/node-ws": "1.3.1",
         "better-sqlite3": "12.10.0",

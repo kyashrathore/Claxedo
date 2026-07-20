@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/sandbox-manager",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "type": "module",
   "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
   "license": "MIT",

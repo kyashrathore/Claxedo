@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/channels",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "Channel ingress for agent sessions: route GitHub, Slack, Telegram, Discord, and WhatsApp messages into Claxedo runtimes with dedup, session resolution, and approval bridging",

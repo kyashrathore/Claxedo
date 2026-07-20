@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-extensions",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "type": "module",
   "description": "Install and materialize reusable agent capabilities (skills, MCP configs, plugins) into Codex, Claude, OpenCode, and Cursor runner-native locations",
   "license": "MIT",
