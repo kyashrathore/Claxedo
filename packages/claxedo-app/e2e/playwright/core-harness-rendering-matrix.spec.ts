@@ -463,12 +463,15 @@ async function primeHarness(page: Page, harness: string): Promise<{
   if (!assistantId) throw new Error("primeHarness: no prompt dispatch recorded — cannot derive the assistant row id")
 
   // Wait for the primed turn to SETTLE (driveTurn stamps `time.completed` a tick
-  // after the reply's final part — reply visibility above races it) and capture
-  // the settled assistant info row from the mocked REST history. `replay()`
-  // needs it: since the settled-message part guard (opencode-conversation.ts's
-  // `settledAssistantMessage`, 69c6977757) a completed assistant message rejects
-  // part events for part ids it does not already have, so the fixture trace must
-  // be delivered while the row is (deterministically) re-opened.
+  // after the reply's final part — reply visibility above races it), capture the
+  // settled assistant info row, then RE-OPEN it. Since the settled-message part
+  // guard (opencode-conversation.ts's `settledAssistantMessage`, 69c6977757) a
+  // completed assistant message rejects part events for part ids it does not
+  // already have — so every test here (whether it drives parts through
+  // `replay()` or emits them directly) needs the row deterministically open
+  // before it delivers fixture parts. Waiting first makes the re-open
+  // deterministic (no race against driveTurn's async settle); re-opening here,
+  // once, covers direct-emit tests that never call `replay()`.
   let assistantInfo: Record<string, unknown> | undefined
   await expect.poll(async () => {
     const rows = await page.evaluate(async (id) => {
@@ -480,6 +483,15 @@ async function primeHarness(page: Page, harness: string): Promise<{
     assistantInfo = row.info as Record<string, unknown>
     return true
   }, { timeout: 15_000 }).toBe(true)
+
+  const { completed: _completed, ...openTime } = (assistantInfo!.time ?? {}) as Record<string, unknown>
+  bridgedEmit(
+    {
+      type: "message.updated",
+      properties: { sessionID: assistantInfo!.sessionID, info: { ...assistantInfo!, time: openTime } },
+    } as never,
+    dir,
+  )
 
   return {
     mock: { ...mock, emit: bridgedEmit as MockRuntimeHandles["emit"] },
