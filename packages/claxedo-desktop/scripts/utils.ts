@@ -82,6 +82,29 @@ export function getCurrentSidecar(target = RUST_TARGET ?? nativeTarget()) {
   return binaryConfig
 }
 
+/**
+ * Node-style platform/arch for the build TARGET (RUST_TARGET when set,
+ * host otherwise). Anything selecting per-platform binaries at build time
+ * must use this, not process.platform/arch, or cross-arch packaging ships
+ * host-arch binaries.
+ */
+export function targetPlatformArch(target = RUST_TARGET ?? nativeTarget()): { platform: string; arch: string } {
+  switch (target) {
+    case "aarch64-apple-darwin":
+      return { platform: "darwin", arch: "arm64" }
+    case "x86_64-apple-darwin":
+      return { platform: "darwin", arch: "x64" }
+    case "x86_64-pc-windows-msvc":
+      return { platform: "win32", arch: "x64" }
+    case "x86_64-unknown-linux-gnu":
+      return { platform: "linux", arch: "x64" }
+    case "aarch64-unknown-linux-gnu":
+      return { platform: "linux", arch: "arm64" }
+    default:
+      throw new Error(`Unsupported Rust target '${target}'`)
+  }
+}
+
 export async function copyBinaryToSidecarFolder(source: string) {
   const dir = `resources`
   await $`mkdir -p ${dir}`

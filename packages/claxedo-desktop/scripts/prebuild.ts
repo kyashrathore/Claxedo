@@ -12,7 +12,7 @@ import { $ } from "bun"
 import * as fs from "fs"
 import * as path from "path"
 
-import { copyBinaryToSidecarFolder, copyIcons as copyChannelIcons, getCurrentSidecar, windowsify } from "./utils"
+import { copyBinaryToSidecarFolder, copyIcons as copyChannelIcons, getCurrentSidecar, targetPlatformArch, windowsify } from "./utils"
 
 // ── Paths ──
 
@@ -34,8 +34,13 @@ const warn = (msg: string) => console.warn(`[prebuild] ${msg}`)
 function resolveBunPackage(pkgPrefix: string, subpath: string, localFallbackDir?: string): string | undefined {
   const bunDir = path.resolve(ROOT_NODE_MODULES, ".bun")
   if (fs.existsSync(bunDir)) {
-    const match = fs.readdirSync(bunDir).find((d) => d.startsWith(pkgPrefix))
-    if (match) {
+    // Prefer the highest version when the store holds several (numeric sort
+    // so 0.23.x beats 0.9.x).
+    const matches = fs
+      .readdirSync(bunDir)
+      .filter((d) => d.startsWith(pkgPrefix))
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    for (const match of matches) {
       const candidate = path.join(bunDir, match, "node_modules", subpath)
       if (fs.existsSync(candidate)) return candidate
     }
@@ -70,14 +75,25 @@ async function buildSidecar() {
 
   log("Building patched OpenCode sidecar...")
   try {
+    const target = targetPlatformArch()
+    const cross = target.platform !== process.platform || target.arch !== process.arch
     // Claxedo ships its own Electron renderer, so skip embedding upstream's
     // web UI in the sidecar — its source (packages/app) was removed in the fork.
-    await (sidecarConfig.ocBinary.includes("-baseline")
-      ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
-      : $`bun run build --single --skip-install --skip-embed-web-ui`
-    ).cwd(OPENCODE_DIR).env({
+    const flags = ["--single"]
+    if (sidecarConfig.ocBinary.includes("-baseline")) flags.push("--baseline")
+    // A cross build must NOT skip install: build.ts's install step is what
+    // pulls the all-platform variants of the native deps (@ff-labs/fff-bun,
+    // @opentui/core, @parcel/watcher) the target arch resolves against.
+    if (!cross) flags.push("--skip-install")
+    flags.push("--skip-embed-web-ui")
+    await $`bun run build ${flags}`.cwd(OPENCODE_DIR).env({
       ...Bun.env,
       MODELS_DEV_API_JSON: models,
+      // Cross-compile the sidecar for the RUST_TARGET arch (bun downloads
+      // the target's bun binary); without these a CI x64 build on an arm64
+      // runner produces an arm64 sidecar the copy step can't find.
+      OPENCODE_BUILD_OS: target.platform,
+      OPENCODE_BUILD_ARCH: target.arch,
     })
 
     await copyBinaryToSidecarFolder(binaryPath)
@@ -120,8 +136,14 @@ async function bundleServer() {
 // ── ACP binaries ──
 
 async function bundleClaudeAgentAcp() {
-  const entry = path.resolve(WS_RUNTIME_DIR, "node_modules/@zed-industries/claude-agent-acp/dist/index.js")
-  if (!fs.existsSync(entry)) {
+  // Hoisting-proof lookup: a fresh CI install hoists this into the .bun
+  // store, not under workspace-runtime/node_modules.
+  const entry = resolveBunPackage(
+    "@zed-industries+claude-agent-acp@",
+    "@zed-industries/claude-agent-acp/dist/index.js",
+    WS_RUNTIME_DIR,
+  )
+  if (!entry) {
     warn("claude-agent-acp not found, skipping")
     return
   }
@@ -142,7 +164,8 @@ async function bundleClaudeAgentAcp() {
 }
 
 function copyCodexAcp() {
-  const pkgName = `codex-acp-${process.platform}-${process.arch}`
+  const target = targetPlatformArch()
+  const pkgName = `codex-acp-${target.platform}-${target.arch}`
   const binPath = resolveBunPackage(
     `@zed-industries+${pkgName}@`,
     `@zed-industries/${pkgName}/bin/codex-acp`,
@@ -150,7 +173,7 @@ function copyCodexAcp() {
   )
 
   if (!binPath) {
-    warn(`codex-acp native binary not found for ${process.platform}-${process.arch}, skipping`)
+    warn(`codex-acp native binary not found for ${target.platform}-${target.arch}, skipping`)
     return
   }
   copyExecutable(binPath, path.resolve(ACP_DIR, "codex-acp"))
@@ -179,7 +202,8 @@ function copyClaudeSdkCli() {
   const vendorSrc = path.join(path.dirname(sdkCliPath), "vendor")
   if (!fs.existsSync(vendorSrc)) return
 
-  const platKey = `${process.arch}-${process.platform}`
+  const target = targetPlatformArch()
+  const platKey = `${target.arch}-${target.platform}`
   const vendorDest = path.resolve(ACP_DIR, "vendor")
 
   for (const tool of fs.readdirSync(vendorSrc)) {

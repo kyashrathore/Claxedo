@@ -113,9 +113,14 @@ const allTargets: {
   },
 ]
 
+// OPENCODE_BUILD_OS/ARCH let a host cross-compile a --single build for
+// another platform (bun downloads the target's bun binary); the smoke test
+// below already skips non-native binaries.
+const buildOs = process.env.OPENCODE_BUILD_OS ?? process.platform
+const buildArch = process.env.OPENCODE_BUILD_ARCH ?? process.arch
 const targets = singleFlag
   ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
+      if (item.os !== buildOs || item.arch !== buildArch) {
         return false
       }
 
