@@ -112,7 +112,12 @@ if (typeof window !== "undefined") {
   ;(window as typeof window & { __claxedoConnections?: unknown }).__claxedoConnections = {
     snapshot: () => JSON.parse(JSON.stringify(connections)),
     runtimes: () => [...runtimes.entries()].map(([id, rt]) => ({ id, generation: rt.generation, teardown: !!rt.teardownTimer })),
-    ...(import.meta.env.DEV
+    // Gated on DEV OR a prebuilt e2e bundle (`VITE_CLAXEDO_E2E==="1"`, baked at
+    // build): CI serves a production build via `vite preview`, where
+    // `import.meta.env.DEV` is false, so gating on DEV alone strips these drive
+    // hatches and the reconnect/role specs can't drive their transitions. Stripped
+    // from real production, which never sets the flag.
+    ...(import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1"
       ? {
           markReconnecting: markWorkspaceReconnecting,
           markReconnected: markWorkspaceReconnected,

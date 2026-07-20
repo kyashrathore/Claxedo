@@ -199,12 +199,15 @@ export function schedulePromptSessionStatusTimeouts(input: {
 // spec can wait for; a spec that needs to reach a late stage sets a small
 // positive factor on this window hook BEFORE first navigation so the four
 // escalation delays scale down proportionally (order between stages is
-// preserved). Double-gated: only consulted in a DEV build (stripped from
+// preserved). Double-gated: only consulted in a DEV build OR a prebuilt e2e
+// bundle (`VITE_CLAXEDO_E2E==="1"`, baked at build — CI serves a production
+// build via `vite preview`, where `import.meta.env.DEV` is false, so gating on
+// DEV alone strips this seam and the ladder never scales; stripped from real
 // production, same as the `__claxedoConnections` reconnect hatch) AND only when
 // the hook holds a finite positive number. This scales only these timers, not the
 // mock's separate SSE reconnect backoff.
 function scaledStatusTimeout(ms: number): number {
-  if (!import.meta.env.DEV || typeof window === "undefined") return ms
+  if ((!import.meta.env.DEV && import.meta.env.VITE_CLAXEDO_E2E !== "1") || typeof window === "undefined") return ms
   const scale = (window as typeof window & { __claxedoStatusTimerScale?: unknown }).__claxedoStatusTimerScale
   if (typeof scale !== "number" || !Number.isFinite(scale) || scale <= 0) return ms
   return Math.max(1, Math.round(ms * scale))
