@@ -120,6 +120,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: Ensure node-gyp can build (macOS)
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        # tree-sitter-powershell's trusted install script runs node-gyp 8.x,
+        # which imports distutils — removed in Python 3.12. Which python
+        # node-gyp finds on macos-latest is roulette; setuptools restores
+        # distutils deterministically.
+        run: python3 -m pip install --break-system-packages setuptools || python3 -m pip install setuptools
+
       - name: Install dependencies
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         run: bun install
