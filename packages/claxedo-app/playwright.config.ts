@@ -9,14 +9,24 @@ const video = process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core" ? "on" : 
 const grep = suite === "happy" ? /@happy/ : suite === "core" ? /@core/ : undefined
 const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
+// CLAXEDO_E2E_PREBUILT=1 serves a production build via `vite preview` instead
+// of the dev server. CI needs this: cold on-demand dev transforms on a 2-core
+// runner push every first navigation past the expect timeouts (the suite went
+// 188-failed/2.5h under dev serving, all toBeVisible timeouts). Mocks are
+// page.route interceptions, so serving mode is behavior-invisible.
+const prebuilt = process.env.CLAXEDO_E2E_PREBUILT === "1"
 const webServer =
   process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
     ? undefined
     : {
-        command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}bun run dev -- --port ${port}`,
+        command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${
+          prebuilt
+            ? `bun run build && bun x vite preview --config vite.cloud.config.ts --port ${port} --strictPort`
+            : `bun run dev -- --port ${port}`
+        }`,
         url: baseURL,
         reuseExistingServer: reuse,
-        timeout: 120_000,
+        timeout: prebuilt ? 600_000 : 120_000,
       }
 
 export default defineConfig({

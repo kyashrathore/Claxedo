@@ -176,8 +176,13 @@ jobs:
       # separate schedule/credentialed runner, not here.
       - name: Run claxedo-app e2e core suite
         working-directory: packages/claxedo-app
-        timeout-minutes: 30
+        timeout-minutes: 45
         run: bun run test:e2e:core
+        env:
+          # Serve a production build via vite preview: cold on-demand dev
+          # transforms on 2-core runners push first navigations past the expect
+          # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
+          CLAXEDO_E2E_PREBUILT: "1"
 
       - name: Upload Playwright artifacts
         if: always()
