@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { EventEmitter } from "node:events"
-import { existsSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import { createServer } from "node:net"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -181,6 +181,22 @@ async function startClaxedoServer(opencodeUrl: string, opencodePassword?: string
       if (existsSync(cliPath)) {
         process.env.CLAUDE_CODE_EXECUTABLE = cliPath
       }
+    }
+  }
+
+  // The embedded claxedo-server hard-requires CLAXEDO_WORKGRAPH_REPOSITORY to be
+  // an absolute directory at composition (server.ts) — unset, startServer throws
+  // and the whole claxedo-server dies, leaving the renderer on the bare opencode
+  // sidecar (which does not serve /api/claxedo/*), i.e. a "Could not reach" white
+  // screen. There is no single project repo on desktop, so default WorkGraph to a
+  // stable dir under userData; it only needs to exist for the server to boot.
+  if (!process.env.CLAXEDO_WORKGRAPH_REPOSITORY?.trim()) {
+    const workgraphDir = join(app.getPath("userData"), "workgraph")
+    try {
+      mkdirSync(workgraphDir, { recursive: true })
+      process.env.CLAXEDO_WORKGRAPH_REPOSITORY = workgraphDir
+    } catch (err) {
+      logger.warn("failed to prepare WorkGraph repository directory", { workgraphDir, error: String(err) })
     }
   }
 
