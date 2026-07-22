@@ -6,18 +6,17 @@ const destination = path.resolve(import.meta.dir, "../src/content/docs/framework
 const check = process.argv.includes("--check")
 const compatComponents = ["Note", "Warning", "Card", "CardGroup", "Steps", "Step", "CodeGroup", "ParamField", "ResponseField"] as const
 
+// The framework landing (`index.mdx`) is not synced into the Starlight docs.
+// It is served as a standalone main-site page at `src/pages/framework.astro`
+// (full-width marketing layout, no docs sidebar). Only the reference/guide
+// content below it lives inside the docs route.
 const files = (await readdir(source, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith(".mdx"))
   .map((entry) => path.relative(source, path.join(entry.parentPath, entry.name)))
+  .filter((relative) => relative !== "index.mdx")
   .sort()
 
 const transform = (relative: string, input: string) => {
-  if (relative === "index.mdx") {
-    const frontmatterEnd = input.indexOf("\n---", 4)
-    if (frontmatterEnd < 0) throw new Error("Framework landing is missing frontmatter")
-    return `${input.slice(0, frontmatterEnd + 4)}\n\nimport FrameworkHero from "../../../components/framework/FrameworkHero.astro"\n\n<FrameworkHero />\n`
-  }
-
   const output = input
     .replace(/href="\/(?!framework(?:\/|"))/g, 'href="/framework/')
     .replace(/\]\(\/(?!framework(?:\/|\)))/g, "](/framework/")

@@ -1,61 +1,247 @@
 ---
+import { Code } from "astro:components"
 import CopyPrompt from "./CopyPrompt.astro"
 import { requireClaim } from "../../content/claims"
+import claudeIcon from "../../../../ui/src/assets/icons/file-types/claude.svg"
+import codexIcon from "../../../../ui/src/assets/icons/provider/openai.svg"
+import geminiIcon from "../../../../ui/src/assets/icons/file-types/gemini-ai.svg"
+import opencodeIcon from "../../../../ui/src/assets/icons/provider/opencode.svg"
 const frameworkRuntime = requireClaim("framework-runtime")
+const harnesses = [
+  { label: "Claude Code", note: "Chat UI + terminal", icon: claudeIcon.src },
+  { label: "Codex", note: "Chat UI + terminal", icon: codexIcon.src },
+  { label: "Gemini CLI", note: "Terminal", icon: geminiIcon.src },
+  { label: "OpenCode", note: "Chat UI + terminal", icon: opencodeIcon.src },
+]
+const cookbookSource = `const runtime = createAgentRuntime({
+  store: createMemoryRuntimeStore(),
+  harnesses: [harnessFactory(pick)],
+})
+
+const session = await runtime.sessions.create({
+  directory: dir,
+  harness: { id: pick.id, access: pick.access },
+  model: { providerID: pick.id, modelID: "default" },
+})
+
+const events = runtime.events.subscribe({ sessionId: session.id })
+await runtime.turns.start({ sessionId: session.id, agent: "", text: prompt })
+`
 const capabilities = [
-  ["Workspace runtime", "Sessions, terminals, files, processes, and git behind one host contract.", "/framework/packages/workspace-runtime"],
-  ["Normalized events", "One event vocabulary across supported harness adapters.", "/framework/packages/agent-event-runtime"],
-  ["Relay", "Authenticated reach to workspace hosts without a public inbound port.", "/framework/packages/workspace-relay"],
-  ["Extensions", "Skills and configuration resolved through explicit scopes.", "/framework/concepts/extensions"],
-  ["WorkGraph", "Durable Streams, Tasks, Attempts, decisions, and evidence.", "/framework/packages/workgraph"],
-  ["Connections", "Capability-scoped access to external systems.", "/framework/packages/connections"],
+  ["@claxedo/workspace-runtime", "Workspace runtime", "One host contract for sessions, terminals, files, processes, and git — the same surface whether the workspace runs locally or on a machine you control.", "/framework/packages/workspace-runtime"],
+  ["@claxedo/agent-sdk-runtime", "Agent runtime", "The AgentRuntime facade over coding-agent harnesses — create sessions, start turns, and stream session events through one API across Claude Code, Codex, OpenCode, and more.", "/framework/packages/agent-sdk-runtime"],
+  ["@claxedo/agent-event-runtime", "Normalized events", "A single event vocabulary across supported harness adapters, so clients read one stream instead of every harness's native protocol.", "/framework/packages/agent-event-runtime"],
+  ["@claxedo/workspace-relay", "Relay", "Authenticated reach to a workspace host without opening a public inbound port — verified forwarding between client and host.", "/framework/packages/workspace-relay"],
+  ["@claxedo/connections", "Connections", "Capability-scoped access to external systems — each connection grants only the access a turn actually needs.", "/framework/packages/connections"],
+  ["@claxedo/channels", "Channels", "Route GitHub, Slack, Telegram, Discord, and WhatsApp messages into agent sessions, with dedup, session resolution, and approval bridging.", "/framework/packages/channels"],
+  ["@claxedo/agent-extensions", "Extensions", "Skills, MCP servers, plugins, and instructions resolved through explicit scopes, then synced into each workspace or sandbox.", "/framework/concepts/extensions"],
+  ["@claxedo/workgraph", "WorkGraph", "Durable Streams, Tasks, and Attempts with decisions and evidence, so work outlives any single session or reconnect.", "/framework/packages/workgraph"],
+  ["@claxedo/mcp", "MCP server", "An MCP server and CLI that exposes Claxedo documents, WorkGraph, processes, logs, sessions, and browser tools to any MCP client.", "/framework/packages/mcp"],
+]
+const ecosystem = ["More agents via ACP", "MCP servers", "Skills", "Your AI provider", "Your sandbox provider"]
+const handoff = [
+  ["Guide", "Start with the product model", "/framework/guides/introduction"],
+  ["Reference", "Routes, tools, and events", "/framework/api/overview"],
+  ["CLI", "Commands and operational paths", "/framework/cli"],
+  ["Packages", "Composable TypeScript modules", "/framework/packages"],
+  ["Cookbook", "Runnable examples", "/framework/cookbook/overview"],
+  ["Ecosystem", "Harnesses and integrations", "/framework/ecosystem"],
 ]
 ---
 
-<div class="framework-landing">
-  <div class="release-banner"><span>FRAMEWORK PREVIEW</span><a href="/framework/guides/introduction">Read the current contracts →</a></div>
-  <section class="framework-hero"><p>OPEN-SOURCE WORKSPACE FOUNDATION</p><h1>The open-source foundation behind Claxedo.</h1><p class="lead">A TypeScript workspace and integration layer around existing coding-agent harnesses: runtime, normalized events, extensions, relay, connections, WorkGraph, and deployment contracts.</p><div class="hero-links"><a href="/framework/guides/introduction">Start the guide</a><a href="https://github.com/kyashrathore/Claxedo">View source ↗</a></div></section>
+<section class="fw-hero">
+  <div class="fw-hero-inner">
+    <p class="fw-badge"><span aria-hidden="true"></span>Framework preview</p>
+    <p class="eyebrow">Open-source workspace foundation</p>
+    <h1 class="display">The open-source foundation behind Claxedo.</h1>
+    <p class="fw-lead">A TypeScript workspace and integration layer around existing coding-agent harnesses: runtime, normalized events, extensions, relay, connections, WorkGraph, and deployment contracts.</p>
+    <div class="actions">
+      <a class="btn-primary" href="/framework/guides/introduction">Start the guide</a>
+      <a class="btn-secondary" href="https://github.com/kyashrathore/Claxedo">View source <span aria-hidden="true">↗</span></a>
+    </div>
+    <div class="status-line" aria-label="Framework principles"><span>Harness neutral</span><span>Explicit placement boundaries</span></div>
+  </div>
+</section>
 
-  <CopyPrompt />
+<section class="section">
+  <div class="section-inner fw-split">
+    <div>
+      <p class="eyebrow">01 · Runnable cookbook</p>
+      <h2 class="section-title">Bring a harness into a real workspace.</h2>
+      <p class="section-copy">The tested cookbook discovers an authenticated harness, creates an Agent Runtime Session, subscribes to normalized events, and starts a provider turn. This essential-path excerpt uses the same public API as the complete runnable recipe.</p>
+      <a class="feature-link" href="https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/01-hello-agent.ts">Open the complete recipe <span aria-hidden="true">↗</span></a>
+    </div>
+    <div class="fw-code"><Code code={cookbookSource} lang="ts" theme="css-variables" /></div>
+  </div>
+</section>
 
-  <section class="framework-chapter"><div><span>01 · RUNNABLE COOKBOOK</span><h2>Bring a harness into a real workspace.</h2><p>The tested cookbook discovers an authenticated harness, creates an Agent Runtime Session, subscribes to normalized events, and starts a provider turn. This essential-path excerpt uses the same public API as the complete runnable recipe.</p><a href="https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/01-hello-agent.ts">Open the complete recipe ↗</a></div><pre tabindex="0"><code><b>const</b> runtime = createAgentRuntime({`{`}<br />&nbsp;&nbsp;store: createMemoryRuntimeStore(),<br />&nbsp;&nbsp;harnesses: [harnessFactory(pick)],<br />{`}`})<br /><br /><b>const</b> session = <b>await</b> runtime.sessions.create({`{`}<br />&nbsp;&nbsp;directory: dir,<br />&nbsp;&nbsp;harness: {`{ id: pick.id, access: pick.access }`},<br />&nbsp;&nbsp;model: {`{ providerID: pick.id, modelID: "default" }`},<br />{`}`})<br /><br /><b>const</b> events = runtime.events.subscribe({`{ sessionId: session.id }`})<br /><b>await</b> runtime.turns.start({`{ sessionId: session.id, agent: "", text: prompt }`})</code></pre></section>
+<section class="section">
+  <div class="section-inner">
+    <CopyPrompt />
+  </div>
+</section>
 
-  <section class="framework-chapter lineage"><div><span>02 · FOUNDATION + LINEAGE</span><h2>Built on the OpenCode engine. Extended as a workspace system.</h2><p>Claxedo credits the engine it builds on. The public repository adds the connected workspace clients, server, relay, protocol, runtime packages, and WorkGraph around that engine.</p></div><div class="layer-stack"><i>CLIENTS</i><i>SERVER + WORKGRAPH</i><i>RELAY + PROTOCOL</i><i>WORKSPACE RUNTIME</i><i class="engine">OPENCODE ENGINE</i></div></section>
+<section class="section">
+  <div class="section-inner fw-split">
+    <div>
+      <p class="eyebrow">02 · Continuity</p>
+      <h2 class="section-title">State crosses reconnect boundaries deliberately.</h2>
+      <p class="section-copy">{frameworkRuntime.publicWording}</p>
+    </div>
+    <div class="fw-flow">
+      <span>CLIENT</span><b>authenticated connection</b>
+      <span>RELAY</span><b>verified forwarding</b>
+      <span>WORKSPACE HOST</span>
+    </div>
+  </div>
+</section>
 
-  <section class="framework-chapter"><div><span>03 · CONTINUITY</span><h2>State crosses reconnect boundaries deliberately.</h2><p>{frameworkRuntime.publicWording}</p></div><div class="continuity-demo"><span>CLIENT</span><b>authenticated connection</b><span>RELAY</span><b>verified forwarding</b><span>WORKSPACE HOST</span></div></section>
+<section class="section dark-band">
+  <div class="section-inner">
+    <p class="eyebrow">03 · Bring your existing stack</p>
+    <h2 class="section-title">Keep the harnesses and tools you already use.</h2>
+    <div class="fw-harness">
+      {harnesses.map((h) => (
+        <article><img src={h.icon} alt="" /><span><b>{h.label}</b><small>{h.note}</small></span></article>
+      ))}
+      <article class="fw-harness-any"><span class="fw-glyph" aria-hidden="true">›_</span><span><b>Any agent CLI</b><small>First-class terminal</small></span></article>
+      <article class="fw-harness-more"><span class="fw-glyph" aria-hidden="true">+</span><span><b>More through ACP</b><small>Bring a compatible agent</small></span></article>
+    </div>
+    <div class="fw-chips">{ecosystem.map((item) => <i>{item}</i>)}</div>
+  </div>
+</section>
 
-  <section class="ecosystem"><span>04 · BRING YOUR EXISTING STACK</span><div>{["Claude Code", "Codex", "Gemini CLI", "OpenCode", "ACP", "MCP", "Skills", "Your provider", "Your sandbox"].map((item) => <i>{item}</i>)}</div></section>
+<section class="section">
+  <div class="section-inner">
+    <p class="eyebrow">04 · Capability catalog</p>
+    <h2 class="section-title">Compose the workspace layer you need.</h2>
+    <p class="section-copy fw-grid-lead">Each capability is a composable TypeScript package with its own documented boundary. Take one, or the whole workspace layer.</p>
+    <div class="fw-grid">{capabilities.map(([pkg, title, description, href]) => (
+      <a href={href}><code class="fw-pkg">{pkg}</code><strong>{title}</strong><p>{description}</p><small>Read the contract <span aria-hidden="true">→</span></small></a>
+    ))}</div>
+  </div>
+</section>
 
-  <section class="capability-section"><span>05 · CAPABILITY CATALOG</span><h2>Compose the workspace layer you need.</h2><div class="capability-grid">{capabilities.map(([title, description, href]) => <a href={href}><strong>{title}</strong><p>{description}</p><small>Read the contract →</small></a>)}</div></section>
+<section class="section dark-band">
+  <div class="section-inner fw-split">
+    <div>
+      <p class="eyebrow">05 · Architecture + placement</p>
+      <h2 class="section-title">One workspace model. Explicit boundaries.</h2>
+      <p class="section-copy">Local and connected compositions decide where clients, coordination, model execution, and tools run. Each package documents its own boundary so product composition does not become an implicit framework promise.</p>
+    </div>
+    <div class="fw-arch">
+      <div><small>CLIENT</small><strong>Desktop / Web</strong></div>
+      <i aria-hidden="true">↕</i>
+      <div><small>COORDINATION</small><strong>Server / Relay</strong></div>
+      <i aria-hidden="true">↕</i>
+      <div><small>EXECUTION</small><strong>Workspace Host</strong></div>
+    </div>
+  </div>
+</section>
 
-  <section class="architecture"><div><span>06 · ARCHITECTURE + PLACEMENT</span><h2>One workspace model. Explicit boundaries.</h2><p>Local and connected compositions decide where clients, coordination, model execution, and tools run. Each package documents its own boundary so product composition does not become an implicit framework promise.</p></div><div class="architecture-map"><div><small>CLIENT</small><b>Desktop / Web</b></div><i>↕</i><div><small>COORDINATION</small><b>Server / Relay</b></div><i>↕</i><div><small>EXECUTION</small><b>Workspace Host</b></div></div></section>
-
-  <section class="docs-handoff"><span>07 · KEEP READING</span><h2>From first workspace to package contract.</h2><div><a href="/framework/guides/introduction">Guide <small>Start with the product model</small></a><a href="/framework/api/overview">Reference <small>Routes, tools, and events</small></a><a href="/framework/cli">CLI <small>Commands and operational paths</small></a><a href="/framework/packages">Packages <small>Composable TypeScript modules</small></a><a href="/framework/cookbook/overview">Cookbook <small>Runnable examples</small></a><a href="/framework/ecosystem">Ecosystem <small>Harnesses and integrations</small></a></div><a class="download-return" href="/download" data-analytics-event="download_app" data-analytics-placement="framework-landing">Download app</a></section>
-</div>
+<section class="section">
+  <div class="section-inner">
+    <p class="eyebrow">06 · Keep reading</p>
+    <h2 class="section-title">From first workspace to package contract.</h2>
+    <div class="fw-grid fw-grid-handoff">{handoff.map(([title, description, href]) => (
+      <a href={href}><strong>{title}</strong><small>{description}</small></a>
+    ))}</div>
+    <div class="actions"><a class="btn-secondary" href="/download" data-analytics-event="download_app" data-analytics-placement="framework-landing">Download app</a></div>
+  </div>
+</section>
 
 <style>
-  .framework-landing { --landing-line: var(--sl-color-gray-5); }
-  .release-banner { display: flex; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border: 1px solid var(--landing-line); border-radius: .6rem; background: var(--sl-color-gray-7); font: 500 .68rem var(--sl-font-mono); }
-  .framework-hero { padding: clamp(3.5rem, 8vw, 6.5rem) 0; }
-  .framework-hero > p:first-child, .framework-chapter span, .ecosystem > span, .capability-section > span, .architecture span, .docs-handoff > span { color: var(--sl-color-gray-3); font: 500 .66rem var(--sl-font-mono); letter-spacing: .08em; }
-  .framework-hero h1 { max-width: 15ch; margin: 1.4rem 0; font: 500 clamp(2.5rem, 5.6vw, 4.4rem)/1.03 var(--sl-font); letter-spacing: -.045em; }
-  .lead { max-width: 42rem; color: var(--sl-color-gray-2); font-size: 1.12rem; line-height: 1.65; }
-  .hero-links { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 2rem; }
-  .hero-links a, .download-return { padding: .7rem 1.05rem; border: 1px solid var(--sl-color-gray-5); border-radius: .4rem; font: 500 .78rem var(--sl-font); letter-spacing: -.01em; text-decoration: none; }
-  .hero-links a:first-child, .download-return { border-color: transparent; background: var(--sl-color-text-accent); color: var(--sl-color-black); }
-  .framework-chapter, .architecture { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(2rem, 6vw, 6rem); padding: clamp(3.5rem, 7vw, 6rem) 0; border-top: 1px solid var(--landing-line); }
-  .framework-chapter h2, .capability-section h2, .architecture h2, .docs-handoff h2 { margin: 1.2rem 0; font: 500 clamp(1.7rem, 3.4vw, 2.5rem)/1.1 var(--sl-font); letter-spacing: -.035em; }
-  .framework-chapter > div > p, .architecture > div > p { color: var(--sl-color-gray-2); line-height: 1.7; }
-  .framework-chapter pre { align-self: center; overflow: auto; padding: 1.4rem; border: 1px solid var(--landing-line); border-radius: .6rem; background: var(--sl-color-gray-7); font-size: .75rem; line-height: 1.8; }
-  .layer-stack { display: grid; align-content: center; border: 1px solid var(--landing-line); border-radius: .6rem; overflow: hidden; } .layer-stack i { padding: .95rem 1rem; background: var(--sl-color-gray-7); font: 500 .68rem var(--sl-font-mono); font-style: normal; } .layer-stack i + i { border-top: 1px solid var(--landing-line); } .layer-stack .engine { background: var(--sl-color-text-accent); color: var(--sl-color-black); }
-  .continuity-demo { display: grid; grid-template-columns: 1fr; align-content: center; text-align: center; } .continuity-demo span { padding: .95rem; border: 1px solid var(--landing-line); background: var(--sl-color-gray-7); } .continuity-demo span:first-child { border-radius: .6rem .6rem 0 0; } .continuity-demo span:last-child { border-radius: 0 0 .6rem .6rem; } .continuity-demo b { padding: .45rem; color: var(--sl-color-gray-3); font: .62rem var(--sl-font-mono); }
-  .ecosystem, .capability-section, .docs-handoff { padding: clamp(3.5rem, 7vw, 6rem) 0; border-top: 1px solid var(--landing-line); }
-  .ecosystem > div { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 2rem; border: 1px solid var(--landing-line); border-radius: .6rem; overflow: hidden; } .ecosystem i { padding: .95rem 1rem; background: var(--sl-color-gray-7); font: 500 .72rem var(--sl-font-mono); font-style: normal; } .ecosystem i:not(:nth-child(3n + 1)) { border-left: 1px solid var(--landing-line); } .ecosystem i:nth-child(n + 4) { border-top: 1px solid var(--landing-line); }
-  .capability-grid, .docs-handoff > div { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 2.5rem; border: 1px solid var(--landing-line); border-radius: .6rem; overflow: hidden; } .capability-grid a, .docs-handoff > div a { min-height: 12rem; display: flex; flex-direction: column; padding: 1.2rem; background: var(--sl-color-gray-7); text-decoration: none; } .capability-grid a:not(:nth-child(3n + 1)), .docs-handoff > div a:not(:nth-child(3n + 1)) { border-left: 1px solid var(--landing-line); } .capability-grid a:nth-child(n + 4), .docs-handoff > div a:nth-child(n + 4) { border-top: 1px solid var(--landing-line); }
-  .capability-grid strong { font-weight: 500; letter-spacing: -.015em; }
-  .capability-grid p { color: var(--sl-color-gray-2); font-size: .85rem; } .capability-grid small { margin-top: auto; color: var(--sl-color-gray-3); font: .62rem var(--sl-font-mono); }
-  .architecture-map { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; } .architecture-map div { min-height: 7.5rem; display: grid; place-items: center; align-content: center; gap: .45rem; border: 1px solid var(--landing-line); border-radius: .6rem; background: var(--sl-color-gray-7); text-align: center; } .architecture-map small { color: var(--sl-color-gray-3); font: .6rem var(--sl-font-mono); } .architecture-map i { padding: .4rem; color: var(--sl-color-gray-3); font-style: normal; }
-  .docs-handoff > div a { min-height: 8rem; font: 500 1.15rem/1.25 var(--sl-font); letter-spacing: -.02em; } .docs-handoff > div small { margin-top: auto; padding-top: 1rem; color: var(--sl-color-gray-3); font: .62rem var(--sl-font-mono); }
-  .download-return { display: inline-flex; margin-top: 2rem; }
-  @media (max-width: 48rem) { .framework-chapter, .architecture { grid-template-columns: 1fr; } .ecosystem > div, .capability-grid, .docs-handoff > div { grid-template-columns: 1fr; } .ecosystem i, .capability-grid a, .docs-handoff > div a { border-left: 0 !important; border-top: 1px solid var(--landing-line); } .architecture-map { grid-template-columns: 1fr; } .architecture-map i { transform: rotate(90deg); } }
+  /* Framework landing reuses the main-site primitives (.section, .eyebrow,
+     .section-title, .section-copy, .btn-*, .dark-band, .feature-link). Only
+     the landing-specific compositions are styled here, on the site tokens. */
+  .fw-hero { padding: clamp(3.5rem, 8vw, 7rem) var(--gutter) clamp(3rem, 6vw, 5rem); overflow: hidden; }
+  .fw-hero-inner { max-width: 72rem; margin-inline: auto; }
+  .fw-hero .display { max-width: 20ch; margin-bottom: 1.4rem; }
+  .fw-badge { display: inline-flex; align-items: center; gap: .5rem; margin: 0 0 1.6rem; padding: .4rem .75rem; border: 1px solid var(--line-strong); border-radius: 100px; background: var(--surface); color: var(--ink-soft); font: 500 .68rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+  .fw-badge span { width: .42rem; height: .42rem; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+  .fw-lead { max-width: 44rem; margin-bottom: 2rem; color: var(--ink-soft); font-size: clamp(1rem, 1.3vw, 1.15rem); line-height: 1.65; text-wrap: pretty; }
+
+  .fw-split { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: clamp(2rem, 6vw, 5rem); align-items: start; }
+  .fw-split .feature-link { margin-top: 1.75rem; }
+
+  /* Code excerpt reads as a product surface, matching .feature-visual.
+     Shiki renders its own <pre>; blend its background into the site surface. */
+  .fw-code {
+    align-self: start; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: 0 0 0 1px var(--line), 0 24px 56px -28px rgb(0 0 0 / .65);
+    /* Shiki `css-variables` theme token palette (github-dark-flavored). */
+    --astro-code-color-text: #c9d1d9;
+    --astro-code-color-background: #0e0e0e;
+    --astro-code-token-keyword: #ff7b72;
+    --astro-code-token-function: #d2a8ff;
+    --astro-code-token-string: #a5d6ff;
+    --astro-code-token-string-expression: #a5d6ff;
+    --astro-code-token-constant: #79c0ff;
+    --astro-code-token-parameter: #ffa657;
+    --astro-code-token-punctuation: #c9d1d9;
+    --astro-code-token-comment: #8b949e;
+    --astro-code-token-link: #a5d6ff;
+  }
+  .fw-code :global(pre) { margin: 0; padding: 1.5rem; overflow: auto; background: #0e0e0e !important; font-family: var(--font-mono); font-size: .78rem; line-height: 1.85; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  .fw-code :global(pre)::-webkit-scrollbar { height: 8px; width: 8px; }
+  .fw-code :global(pre)::-webkit-scrollbar-track { background: transparent; }
+  .fw-code :global(pre)::-webkit-scrollbar-thumb { border-radius: 100px; background: var(--line-strong); }
+  .fw-code :global(pre)::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+  .fw-code :global(code) { font-family: inherit; }
+
+  /* Continuity flow: alternating hosts and hops. */
+  .fw-flow { align-self: start; display: grid; overflow: hidden; text-align: center; border: 1px solid var(--line); border-radius: var(--radius-lg); }
+  .fw-flow span { padding: 1.05rem; background: var(--surface); color: var(--ink); font: 500 .72rem/1 var(--font-mono); letter-spacing: .04em; }
+  .fw-flow span + span { border-top: 1px solid var(--line); }
+  .fw-flow b { padding: .5rem; color: var(--ink-faint); font: .64rem/1 var(--font-mono); font-weight: 400; border-block: 1px solid var(--line); }
+
+  /* Harness cards echo the homepage .harness-grid: provider logo + label. */
+  .fw-harness { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin-top: 3rem; }
+  .fw-harness article { min-height: 6.75rem; display: flex; align-items: center; gap: 1.1rem; padding: 1.2rem 1.4rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); transition: transform .18s ease, border-color .18s ease; }
+  .fw-harness article:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+  .fw-harness img { width: 1.9rem; height: 1.9rem; flex: 0 0 auto; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); opacity: .92; }
+  .fw-harness article > span:last-child { display: grid; gap: .3rem; }
+  .fw-harness b { font-size: .92rem; font-weight: 500; }
+  .fw-harness small { color: var(--ink-faint); font: .6rem/1.4 var(--font-mono); }
+  .fw-glyph { width: 1.9rem; flex: 0 0 auto; color: var(--ink-soft); font: 500 1.35rem/1 var(--font-mono); text-align: center; }
+  .fw-harness-more { border-style: dashed; }
+  .fw-harness-more .fw-glyph, .fw-harness-more b { color: var(--ink-soft); }
+
+  /* Secondary stack chips below the harness cards. */
+  .fw-chips { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .8rem; }
+  .fw-chips i { padding: .6rem .9rem; border: 1px solid var(--line); border-radius: 100px; background: var(--surface); color: var(--ink-soft); font: 500 .74rem/1 var(--font-mono); font-style: normal; transition: border-color .18s ease, color .18s ease; }
+  .fw-chips i:hover { border-color: var(--line-strong); color: var(--ink); }
+
+  /* Capability + handoff cards mirror .continuity-grid. */
+  .fw-grid-lead { margin-top: 1.2rem; }
+  .fw-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin-top: 2.5rem; }
+  .fw-grid a { display: flex; flex-direction: column; min-height: 14rem; padding: 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; transition: transform .18s ease, border-color .18s ease; }
+  .fw-grid a:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+  .fw-pkg { width: fit-content; margin-bottom: .9rem; padding: .28rem .55rem; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent-text); font: 500 .68rem/1 var(--font-mono); letter-spacing: -.01em; }
+  .fw-grid strong { font: 500 1.1rem/1.25 var(--font-sans); letter-spacing: -.02em; }
+  .fw-grid p { margin: .6rem 0 0; color: var(--ink-soft); font-size: .88rem; line-height: 1.55; }
+  .fw-grid small { margin-top: auto; padding-top: 1rem; color: var(--ink-faint); font: .64rem/1 var(--font-mono); }
+  .fw-grid small span { display: inline-block; transition: transform .18s ease; }
+  .fw-grid a:hover small span { transform: translateX(3px); }
+  .fw-grid-handoff { margin-top: 3rem; }
+  .fw-grid-handoff a { min-height: 8rem; }
+  .fw-grid-handoff strong { font-size: 1.2rem; }
+
+  /* Architecture map mirrors .placement-map arrows. */
+  .fw-arch { align-self: start; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: .5rem; }
+  .fw-arch > div { min-height: 7.5rem; display: grid; place-content: center; gap: .5rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); text-align: center; }
+  .fw-arch small { color: var(--ink-faint); font: .6rem/1 var(--font-mono); letter-spacing: .06em; }
+  .fw-arch strong { font: 500 .95rem/1.2 var(--font-sans); }
+  .fw-arch i { color: var(--ink-faint); font-size: 1.1rem; font-style: normal; }
+
+  .section .actions { margin-top: 2.5rem; }
+
+  @media (max-width: 60rem) {
+    .fw-split { grid-template-columns: 1fr; gap: 2rem; }
+    .fw-harness, .fw-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 42rem) {
+    .fw-harness, .fw-grid { grid-template-columns: 1fr; }
+    .fw-arch { grid-template-columns: 1fr; }
+    .fw-arch i { transform: rotate(90deg); }
+  }
 </style>

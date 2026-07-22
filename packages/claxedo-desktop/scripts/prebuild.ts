@@ -194,50 +194,10 @@ function copyCodexAcp() {
   log("codex-acp binary copied")
 }
 
-/**
- * claude-agent-acp spawns a real Claude Code CLI subprocess for queries.
- * Copy cli.js + platform vendor binaries from @anthropic-ai/claude-agent-sdk.
- */
-function copyClaudeSdkCli() {
-  const sdkCliPath = resolveBunPackage(
-    "@anthropic-ai+claude-agent-sdk@",
-    "@anthropic-ai/claude-agent-sdk/cli.js",
-    WS_RUNTIME_DIR,
-  )
-
-  if (!sdkCliPath) {
-    warn("claude-agent-sdk cli.js not found, skipping")
-    return
-  }
-  copyExecutable(sdkCliPath, path.resolve(ACP_DIR, "claude-cli.js"))
-  log("claude-agent-sdk cli.js copied")
-
-  // Copy platform-specific vendor binaries (ripgrep, tree-sitter, audio-capture)
-  const vendorSrc = path.join(path.dirname(sdkCliPath), "vendor")
-  if (!fs.existsSync(vendorSrc)) return
-
-  const target = targetPlatformArch()
-  const platKey = `${target.arch}-${target.platform}`
-  const vendorDest = path.resolve(ACP_DIR, "vendor")
-
-  for (const tool of fs.readdirSync(vendorSrc)) {
-    const platDir = path.join(vendorSrc, tool, platKey)
-    if (!fs.existsSync(platDir) || !fs.statSync(platDir).isDirectory()) continue
-
-    const destDir = path.join(vendorDest, tool, platKey)
-    fs.mkdirSync(destDir, { recursive: true })
-    for (const f of fs.readdirSync(platDir)) {
-      copyExecutable(path.join(platDir, f), path.join(destDir, f))
-    }
-    log(`vendor/${tool}/${platKey} copied`)
-  }
-}
-
 async function copyAcpBinaries() {
   fs.mkdirSync(ACP_DIR, { recursive: true })
   await bundleClaudeAgentAcp()
   copyCodexAcp()
-  copyClaudeSdkCli()
 }
 
 // ── Main ──

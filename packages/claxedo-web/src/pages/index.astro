@@ -35,7 +35,7 @@ const publicSource = requireClaim("public-source")
         </div>
         <div class="product-shot hero-shot">
           <a class="zoomable-image" href="/screenshots/marketing-workspace.png" target="_blank" rel="noopener" aria-label="Open the Claxedo workspace screenshot full size">
-            <img src="/screenshots/marketing-workspace.png" width="4314" height="2694" alt="Claxedo showing a completed coding-agent session beside its changed files in the review workspace" loading="eager" fetchpriority="high" />
+            <img src="/screenshots/marketing-workspace.png" width="3024" height="1964" alt="Claxedo showing a coding-agent chat beside a split-diff review and the project file tree" loading="eager" fetchpriority="high" />
           </a>
         </div>
       </section>
@@ -71,7 +71,7 @@ const publicSource = requireClaim("public-source")
           <div class="feature-copy"><p class="eyebrow">03 · Chat + terminal</p><h2 class="section-title">Use the chat UI. Or use the terminal.</h2><p class="section-copy">{agentCliAccess.publicWording} {sessionsAndTerminals.publicWording}</p><p class="support-line">One workspace. Two first-class ways to work.</p></div>
           <div class="feature-visual feature-visual-session">
             <a class="zoomable-image" href="/screenshots/marketing-session-terminal.png" target="_blank" rel="noopener" aria-label="Open the chat and terminal screenshot full size">
-              <img src="/screenshots/marketing-session-terminal.png" width="2305" height="1374" alt="A Claude Code terminal session and its chat UI open side by side in the same Claxedo workspace" loading="lazy" />
+              <img src="/screenshots/marketing-session-terminal.png" width="3024" height="1964" alt="An OpenAI Codex terminal session and a chat session open side by side in the same Claxedo workspace" loading="lazy" />
             </a>
           </div>
         </div>
@@ -159,10 +159,11 @@ const publicSource = requireClaim("public-source")
   .feature-copy .section-copy { margin-top: 1.6rem; }
   .feature-visual { position: relative; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #0e0e0e; box-shadow: 0 0 0 1px var(--line), 0 24px 56px -28px rgb(0 0 0 / .65); overflow: hidden; }
   .feature-visual img { width: 100%; height: 100%; display: block; object-fit: cover; }
-  .feature-visual-session { aspect-ratio: 1.67; background: #0b0b0b; }
+  .feature-visual-session { aspect-ratio: 1.54; background: #0b0b0b; }
   .feature-visual-session img { object-fit: contain; }
-  .feature-visual-workgraph { min-height: 30rem; display: grid; place-items: center; padding: clamp(1.25rem, 4vw, 3rem); background: radial-gradient(circle at 50% 42%, #202020 0%, #111 52%, #0b0b0b 100%); }
-  .feature-visual-workgraph img { width: min(100%, 27rem); height: auto; max-height: 34rem; object-fit: contain; border: 1px solid #343434; border-radius: .7rem; box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .45); }
+  .feature-visual-workgraph { align-self: center; min-height: 0; display: grid; align-items: center; justify-items: end; padding: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
+  .feature-visual-workgraph::after { content: none; }
+  .feature-visual-workgraph img { width: min(100%, 28rem); height: auto; max-height: 34rem; object-fit: contain; border: 1px solid #343434; border-radius: .7rem; box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .45); }
   .feature-block-session { background: linear-gradient(145deg, var(--surface) 0%, var(--surface) 54%, color-mix(in srgb, var(--brand) 7%, var(--surface)) 100%); }
   .feature-block-workgraph { grid-template-columns: minmax(17rem, .78fr) minmax(0, 1.22fr); background: linear-gradient(145deg, var(--surface) 0%, var(--surface) 50%, color-mix(in srgb, #65a9ff 8%, var(--surface)) 100%); }
   .support-line { margin: 1.5rem 0 0; color: var(--ink-faint); font: .7rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
@@ -220,7 +221,7 @@ const publicSource = requireClaim("public-source")
     .split-copy, .feature-block, .feature-block-workgraph { grid-template-columns: 1fr; gap: 2rem; }
     .harness-grid { grid-template-columns: repeat(2, 1fr); }
     .feature-copy { padding: .5rem; }
-    .feature-visual-workgraph { min-height: 28rem; }
+    .feature-visual-workgraph { min-height: 0; }
     .extension-map { min-height: 26rem; }
   }
   @media (max-width: 42rem) {
@@ -229,7 +230,7 @@ const publicSource = requireClaim("public-source")
     .harness-grid article { min-height: 6.5rem; }
     .feature-block { padding: .8rem; }
     .feature-copy { padding: 1rem .5rem; }
-    .feature-visual-workgraph { min-height: 25rem; padding: 1rem; }
+    .feature-visual-workgraph { min-height: 0; padding: 1rem; }
     .extension-map { min-height: 0; grid-template-columns: 1fr; gap: 1rem; }
     .extension-flow { width: 5rem; margin-inline: auto; transform: rotate(90deg); }
     .extension-source, .extension-target { min-height: 15rem; }

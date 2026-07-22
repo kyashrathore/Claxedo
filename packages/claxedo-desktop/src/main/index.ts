@@ -28,7 +28,9 @@ app.setPath(
 const { autoUpdater } = pkg
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
+import { ensureAgentPath } from "./agent-path"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
+import { resolveSystemClaude } from "./claude-executable"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
 import type { CommandChild } from "./cli"
@@ -93,6 +95,7 @@ setupApp()
 
 function setupApp() {
   ensureLoopbackNoProxy()
+  ensureAgentPath()
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
 
   if (!app.requestSingleInstanceLock()) {
@@ -174,14 +177,16 @@ async function startClaxedoServer(opencodeUrl: string, opencodePassword?: string
 
   if (existsSync(acpDir)) {
     process.env.CLAXEDO_ACP_DIR = acpDir
+  }
 
-    // claude-agent-acp spawns a Claude Code CLI subprocess for queries
-    if (!process.env.CLAUDE_CODE_EXECUTABLE) {
-      const cliPath = join(acpDir, "claude-cli.js")
-      if (existsSync(cliPath)) {
-        process.env.CLAUDE_CODE_EXECUTABLE = cliPath
-      }
-    }
+  // Both Claude paths spawn the user's installed Claude Code CLI, never a
+  // bundled binary: the native SDK harness via pathToClaudeCodeExecutable and
+  // the ACP adapter via CLAUDE_CODE_EXECUTABLE. Resolve it once here so a
+  // GUI-trimmed PATH still finds a standard install.
+  if (!process.env.CLAUDE_CODE_EXECUTABLE) {
+    const claude = resolveSystemClaude()
+    if (claude) process.env.CLAUDE_CODE_EXECUTABLE = claude
+    else logger.warn("Claude Code CLI not found; Claude harnesses need `claude` installed and on PATH")
   }
 
   // The embedded claxedo-server hard-requires CLAXEDO_WORKGRAPH_REPOSITORY to be

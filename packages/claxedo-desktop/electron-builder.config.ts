@@ -55,6 +55,11 @@ const getBase = (): Configuration => ({
     "!**/node_modules/@opencode-ai/ui/**",
     "!**/node_modules/@openai/codex/vendor",
     "!**/node_modules/@anthropic-ai/claude-agent-sdk/vendor",
+    // The Claude native harness spawns the user's (or the sandbox image's)
+    // installed `claude` via pathToClaudeCodeExecutable, so the SDK's ~230MB
+    // per-platform native binary is never used at runtime — drop every variant
+    // (target included) instead of shipping it dead in the app.
+    "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
     ...foreignPlatformExcludes,
   ],
   asarUnpack: [

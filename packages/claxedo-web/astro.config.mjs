@@ -24,6 +24,12 @@ const focusableCodeBlocks = {
 export default defineConfig({
   site: 'https://claxedo.com',
   trailingSlash: 'never',
+  // Astro's own <Code> component (used by the framework landing) highlights
+  // via Shiki's `css-variables` theme — the only theme in this build's bundle.
+  // Token colors are set through --astro-code-* variables in the component CSS.
+  markdown: {
+    shikiConfig: { theme: 'css-variables' },
+  },
   integrations: [
     sitemap({
       serialize: (item) => ({ ...item, url: item.url === 'https://claxedo.com' ? `${item.url}/` : item.url }),
@@ -42,7 +48,7 @@ export default defineConfig({
       components: { Header: './src/components/framework/FrameworkHeader.astro' },
       lastUpdated: true,
       sidebar: [
-        { label: 'Framework', slug: 'framework' },
+        { label: 'Framework overview', link: '/framework' },
         { label: 'Guide', autogenerate: { directory: 'framework/guides' } },
         { label: 'Concepts', autogenerate: { directory: 'framework/concepts', collapsed: true } },
         { label: 'Deploy', autogenerate: { directory: 'framework/deploy', collapsed: true } },

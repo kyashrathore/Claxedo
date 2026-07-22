@@ -1,0 +1,20 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import FrameworkHero from "../components/framework/FrameworkHero.astro"
+
+const title = "Claxedo Framework — The open-source foundation behind Claxedo"
+const description =
+  "A TypeScript workspace and integration layer around existing coding-agent harnesses: runtime, normalized events, extensions, relay, connections, WorkGraph, and deployment contracts."
+---
+
+<Layout title={title} description={description}>
+  <div class="shell">
+    <Nav active="framework" />
+    <main id="main-content">
+      <FrameworkHero />
+    </main>
+    <Footer />
+  </div>
+</Layout>

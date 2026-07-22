@@ -156,7 +156,6 @@ export function spec(root = ROOT): Spec {
       "resources/icons/icon.ico",
       windowsify("resources/opencode-cli"),
       "resources/acp/claude-agent-acp",
-      "resources/acp/claude-cli.js",
       "resources/acp/codex-acp",
     ],
     match: [["out/main/claxedo-server.js", "resources/claxedo-server.js"]],
