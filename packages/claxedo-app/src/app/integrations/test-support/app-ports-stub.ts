@@ -142,8 +142,6 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {
   useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
-  useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
-  useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useSessionSyncOptional: lazy("@/features/session/providers/session-sync", "useSessionSyncOptional"),
   useClaxedoState: lazy("@/app/workbench/state", "useClaxedoState"),
   markdownPathFromHref: lazy("@/app/workbench/lib/open-markdown-page-tab", "markdownPathFromHref"),

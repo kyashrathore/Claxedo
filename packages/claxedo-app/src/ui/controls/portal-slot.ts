@@ -26,6 +26,7 @@ export function createPortalSlot(name: string): PortalSlot {
 }
 
 export const [browserToolbarSlot, setBrowserToolbarSlot] = createPortalSlot("browser-toolbar")
+export const [processToolbarSlot, setProcessToolbarSlot] = createPortalSlot("process-toolbar")
 
 /**
  * B3.4 — review-toolbar L2 portal slot.
@@ -41,6 +42,12 @@ export const [browserToolbarSlot, setBrowserToolbarSlot] = createPortalSlot("bro
  * we degrade gracefully.
  */
 export const [reviewToolbarSlot, setReviewToolbarSlot] = createPortalSlot("review-toolbar")
+
+// Review view controls (expand/collapse-all + unified/split toggle). Mounted by
+// the L2 strip immediately to the left of the Files/Changes/Processes navigator
+// so the controls sit at the far right of the review header, independent of the
+// toolbar body's internal flex layout.
+export const [reviewControlsSlot, setReviewControlsSlot] = createPortalSlot("review-controls")
 
 export const [reviewTabHeaderSlot, setReviewTabHeaderSlot] = createPortalSlot("review-tab-header")
 

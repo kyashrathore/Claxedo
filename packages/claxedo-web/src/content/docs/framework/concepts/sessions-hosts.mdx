@@ -1,0 +1,97 @@
+---
+title: "Sessions & hosts"
+description: "Understand where a session's work actually runs — the host that owns the project directory, and the placement axis that routes sessions to local, cloud, or hybrid workspaces."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Warning from "../../../../components/framework/compat/Warning.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+
+
+A session is where an agent does work. `@claxedo/workspace-runtime` is the
+**per-workspace host** — one process per workspace — that owns that work:
+harness lifecycle, sessions, terminals, managed processes, files, diffs, and
+runtime events, all pinned to the project directory.
+
+## The host is the execution boundary
+
+The UI never imports the runtime package directly. A browser talks to your
+control plane, which proxies to a workspace-runtime instance. Two ideas describe
+where a session's work lands:
+
+- **`host`** — *where the workspace-runtime process runs*: a local worktree on a
+  laptop, a container, or a cloud VM. The host owns the project directory and
+  every runtime surface pinned to it.
+- **`toolSandbox`** — *where the agent's tools execute* relative to that host.
+  This is the placement axis a product routes on when a session can run locally,
+  in the cloud, or in a hybrid split.
+
+<Note>
+`host` and `toolSandbox` are the current session-placement vocabulary
+(replacing the older `runnerHost` term). The runtime package always runs next to
+one project directory; your control plane decides which host backs a given
+session and how to reach it. In code you will not type these concept names —
+the field a session API actually routes on is a placement field your app
+defines. The cookbook's [place-anywhere recipe](/framework/cookbook/overview) shows the
+mechanics: the same `/api/wr` route served by a loopback host and by a
+relay-attached host, switched with one exposure option.
+</Note>
+
+## Workspace backings
+
+The runtime only needs to run next to the project directory. That directory can
+live in several places:
+
+| Backing | How it works |
+| --- | --- |
+| Local worktree | The runtime runs next to a project directory on the user's machine; the product calls it over loopback. |
+| Container / Docker | The runtime runs inside or beside a container where the project directory is mounted, e.g. `/workspace/repo`. |
+| Cloud VM | The runtime runs on a VM next to the project checkout. The control plane reaches it directly on private networking or through Relay. |
+| User-hosted team workspace | A user runs the runtime locally, it attaches to Relay, and authorized teammates reach it through the control plane. |
+
+## Runtime shapes (trust boundaries)
+
+The runtime supports five deployment shapes. They share the same per-workspace
+route surface but **not** the same trust boundary:
+
+| Shape | How it is created | Listen / auth |
+| --- | --- | --- |
+| Local loopback | `startServer(port, { exposure: loopbackWorkspaceRuntimeExposure() })` | May run without host-level auth because the socket is loopback-only. |
+| Private VM | `startServer(port, { exposure: privateNetworkWorkspaceRuntimeExposure(...), target })` | Needs a host guard **and** runtime auth, or relay-host auth. Surrounding network is the boundary. |
+| Relay-attached | `startServer(port, await workspaceRelayRuntimeOptionsFromEnv(env, port))` | Verifies Relay Host Tokens and may maintain an outbound tunnel to the relay. |
+| Embedded Hono app | `createWorkspaceRuntimeApp()` mounted in another process | The embedding process owns the network/auth boundary. |
+| Low-level host object | `createWorkspaceHost()` / `mountWorkspaceCore()` | No socket is created; the caller owns routing, auth, lifecycle, and disposal. |
+
+<Warning>
+`startServer()` defaults its listen host to `127.0.0.1`. Binding to a
+non-loopback host (`0.0.0.0`, `::`, a LAN address) requires relay-host auth, a
+guarded private-network exposure, or the explicit
+`WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=1` dev-unsafe opt-out.
+</Warning>
+
+## Path containment
+
+Every session, file, PTY, process, and diff/VCS route is pinned to the
+workspace directory. Absolute paths, `..` escapes, null bytes, and symlinks that
+resolve outside the workspace are rejected before the route reads, writes,
+streams file content, or starts a subprocess. Client-provided subprocess env is
+filtered through the same allowlist/denylist policy used by PTY startup.
+
+## Switching harness live
+
+The harness is not fixed at host start. After the user selects a harness, push a
+new snapshot to `/api/wr/config`; when harness id, access, or connection
+changes, the runtime disposes the old adapter and creates the matching one:
+
+| Harness config | Adapter |
+| --- | --- |
+| `{ id: "opencode", access: "native" }` | `OpenCodeHarnessAdapter` |
+| `{ id: "claude" \| "codex" \| "cursor", access: "acp" }` | `AcpHarnessAdapter` |
+| `{ id: "claude", access: "native" }` | `ClaudeHarnessAdapter` |
+| `{ id: "codex", access: "native" }` | `CodexHarnessAdapter` |
+| `{ id: "cursor", access: "native" }` | `CursorHarnessAdapter` |
+| `{ id: "pi", access: "native" }` | `PiHarnessAdapter` |
+
+<Card title="Deploy the host" href="/framework/deploy/local" icon="server">
+  Local, private VM, and relay-attached recipes for the workspace-runtime host.
+</Card>

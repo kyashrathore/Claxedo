@@ -1,0 +1,81 @@
+---
+title: "04 — Kill and resume"
+description: "SIGKILL a process holding a live agent session; a fresh process reopens the same sqlite root and recovers the session and its full transcript."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+
+
+The process dies, the session doesn't. A child process creates a session and
+completes a real agent turn, then gets `SIGKILL` — no `dispose()`, no
+graceful close. A second, fresh process opens the same sqlite root and
+recovers the session and its transcript.
+
+## Run
+
+```bash
+bun run recipe:04-kill-and-resume
+```
+
+<Note>
+Uses `better-sqlite3` (already a cookbook dependency — the store falls back
+to it under Node; under Bun it uses `bun:sqlite`). A coding-agent CLI on PATH
+makes the killed process complete a real turn first; with no harness, phase 1
+still creates and persists the session and says so honestly.
+</Note>
+
+## The core
+
+```ts
+import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
+
+// phase 1 (child process): a store at a shared root, a session, a real turn…
+const runtime = createAgentRuntime({
+  store: createSqliteRuntimeStore({ root }),
+  harnesses: [...],
+})
+// …then the parent sends SIGKILL while the store is open.
+
+// phase 2 (fresh process): same root, nothing else shared.
+const recovered = createSqliteRuntimeStore({ root }) // hydrates from agent-runtime.db
+```
+
+The store write-through-persists the full snapshot on every mutation, which
+is exactly why a hard kill loses nothing. Full source:
+[`src/recipes/04-kill-and-resume.ts`](https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/04-kill-and-resume.ts)
+
+## Expected output
+
+```text
+[parent] sent SIGKILL to pid 49596 — no dispose(), no graceful close, nothing.
+
+--- 04-kill-and-resume ---
+{
+  "harness": "codex (native)",
+  "turnInKilledProcess": "completed",
+  "killed": "pid 49596 (SIGKILL while holding the store open)",
+  "recoveredBy": "pid 51220 (fresh process, same sqlite root)",
+  "sessionIdMatches": true,
+  "recoveredTitle": "kill me, I'll be back",
+  "recoveredMessages": 2,
+  "lastAssistantText": "RESUME PROOF",
+  "verdict": "killed pid 49596 -> new process recovered session c1ea984c-… with 2 messages"
+}
+--- end ---
+```
+
+Pids and the session id vary per run.
+
+## Lift this into your app
+
+Swap `createMemoryRuntimeStore()` for `createSqliteRuntimeStore({ root })` and
+your sessions survive restarts, crashes, and deploys with no other code
+change — "resume" is just reopening the store and reading the session by id.
+One timing note: the terminal event publishes a beat before the store finishes
+the turn, so poll briefly instead of reading `lastTurn` immediately.
+
+<Card title="05 — Workspace host" icon="server" href="/framework/cookbook/05-workspace-host">
+  One loopback host is workspace infrastructure: files, git, diffs, processes,
+  events.
+</Card>

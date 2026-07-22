@@ -1,6 +1,6 @@
 # Claxedo Packages
 
-> 📖 **Published docs: [docs.claxedo.com](https://docs.claxedo.com).** This
+> 📖 **Published docs: [claxedo.com/framework](https://claxedo.com/framework).** This
 > directory is the in-repo source; the hosted site is assembled from it and the
 > package READMEs.
 

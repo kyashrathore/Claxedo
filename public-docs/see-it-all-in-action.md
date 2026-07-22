@@ -191,8 +191,7 @@ They do not call `CLAXEDO_SERVER_URL`; instead `@claxedo/mcp` calls a local
 HTTP bridge exposed by the Claxedo **desktop** app (Electron), addressed by
 the `CLAXEDO_DESKTOP_URL` / `CLAXEDO_DESKTOP_TOKEN` environment variables that
 the desktop app injects into the MCP subprocess at spawn time. That bridge
-only exists when the user is running the Claxedo desktop app with
-`CLAXEDO_ENABLE_BROWSER_TAB=1`; without it, browser tool calls return a
+exists while the user is running the Claxedo desktop app; without it, browser tool calls return a
 legible "desktop app required" error instead of making a network call.
 
 Example tool calls an MCP client could make:

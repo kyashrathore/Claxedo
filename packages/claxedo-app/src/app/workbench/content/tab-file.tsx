@@ -27,6 +27,7 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@/lib/path"
 import { checksum } from "@/lib/encode"
+import { imagePreviewUrl } from "@/platform/files/file-preview"
 import type { LineComment } from "@/platform/comments/provider"
 
 // Module-level signal tracking which file paths are in preview mode.
@@ -69,7 +70,12 @@ export function TabFile(props: TabFileProps) {
   const language = useLanguage()
   const prompt = usePrompt()
 
+  // Text files carry `content` (rendered by the code viewer); binary files
+  // (images, etc.) carry `binary` with the base64 payload + mime type.
   const [content, setContent] = createSignal<string | undefined>()
+  const [binary, setBinary] = createSignal<
+    { content: string; encoding?: "base64"; mimeType?: string } | undefined
+  >()
   const [error, setError] = createSignal<string | undefined>()
   const [loading, setLoading] = createSignal(true)
   const [openedComment, setOpenedComment] = createSignal<string | null>(null)
@@ -107,7 +113,15 @@ export function TabFile(props: TabFileProps) {
       .read({ path })
       .then((res) => {
         if (seq !== loadSeq) return
-        setContent(res.data?.content)
+        const data = res.data
+        if (data?.type === "binary") {
+          setBinary({ content: data.content, encoding: data.encoding, mimeType: data.mimeType })
+          setContent(undefined)
+          setLoading(false)
+          return
+        }
+        setBinary(undefined)
+        setContent(data?.content)
         setLoading(false)
       })
       .catch((e: unknown) => {
@@ -133,26 +147,25 @@ export function TabFile(props: TabFileProps) {
     relative = relative.replace(/^\/+/, "")
     if (relative !== props.path.replace(/^\/+/, "")) return
     if (watchTimer) clearTimeout(watchTimer)
-    watchTimer = setTimeout(() => loadFile(props.path, { silent: true }), 150)
+    const path = props.path
+    watchTimer = setTimeout(() => {
+      if (props.path !== path) return
+      loadFile(path, { silent: true })
+    }, 150)
   })
   onCleanup(() => {
+    loadSeq++
     if (watchTimer) clearTimeout(watchTimer)
     stopWatch()
   })
 
-  const scheduleLoadFile = (path: string) => {
-    const load = () => loadFile(path)
-    if (typeof requestAnimationFrame !== "function") {
-      queueMicrotask(load)
-      return
-    }
-    requestAnimationFrame(() => setTimeout(load, 0))
-  }
-
   createEffect(
     on(
       () => props.path,
-      (path) => scheduleLoadFile(path),
+      (path) => {
+        if (watchTimer) clearTimeout(watchTimer)
+        loadFile(path)
+      },
     ),
   )
 
@@ -204,6 +217,10 @@ export function TabFile(props: TabFileProps) {
       cacheKey: checksum(text),
     }
   })
+
+  const imageSrc = createMemo(() => imagePreviewUrl({ path: props.path, text: content(), binary: binary() }))
+  // A binary file we can't preview inline (pdf, archive, font, …).
+  const unpreviewableBinary = createMemo(() => !!binary() && !imageSrc())
 
   const isMd = createMemo(() => isMarkdownPath(props.path))
   const previewing = createMemo(() => isMd() && !sourcePaths().has(props.path))
@@ -336,6 +353,27 @@ export function TabFile(props: TabFileProps) {
 
           <Match when={error()}>
             {(e) => <div class="px-4 py-6 text-text-on-critical-base">{e()}</div>}
+          </Match>
+
+          <Match when={imageSrc()}>
+            {(src) => (
+              <div class="flex min-h-full items-center justify-center p-6">
+                <img
+                  src={src()}
+                  alt={getFilename(props.path)}
+                  class="max-h-full max-w-full object-contain"
+                  style={{ "image-rendering": "auto" }}
+                />
+              </div>
+            )}
+          </Match>
+
+          <Match when={unpreviewableBinary()}>
+            <div class="flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-text-weak">
+              <FileIcon node={{ path: props.path, type: "file" }} class="size-8 opacity-70" />
+              <div class="text-sm text-text-base">{getFilename(props.path)}</div>
+              <div class="text-xs">Binary file — no inline preview available.</div>
+            </div>
           </Match>
 
           <Match when={file()}>

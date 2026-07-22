@@ -1,0 +1,61 @@
+---
+import CopyPrompt from "./CopyPrompt.astro"
+import { requireClaim } from "../../content/claims"
+const frameworkRuntime = requireClaim("framework-runtime")
+const capabilities = [
+  ["Workspace runtime", "Sessions, terminals, files, processes, and git behind one host contract.", "/framework/packages/workspace-runtime"],
+  ["Normalized events", "One event vocabulary across supported harness adapters.", "/framework/packages/agent-event-runtime"],
+  ["Relay", "Authenticated reach to workspace hosts without a public inbound port.", "/framework/packages/workspace-relay"],
+  ["Extensions", "Skills and configuration resolved through explicit scopes.", "/framework/concepts/extensions"],
+  ["WorkGraph", "Durable Streams, Tasks, Attempts, decisions, and evidence.", "/framework/packages/workgraph"],
+  ["Connections", "Capability-scoped access to external systems.", "/framework/packages/connections"],
+]
+---
+
+<div class="framework-landing">
+  <div class="release-banner"><span>FRAMEWORK PREVIEW</span><a href="/framework/guides/introduction">Read the current contracts →</a></div>
+  <section class="framework-hero"><p>OPEN-SOURCE WORKSPACE FOUNDATION</p><h1>The open-source foundation behind Claxedo.</h1><p class="lead">A TypeScript workspace and integration layer around existing coding-agent harnesses: runtime, normalized events, extensions, relay, connections, WorkGraph, and deployment contracts.</p><div class="hero-links"><a href="/framework/guides/introduction">Start the guide</a><a href="https://github.com/kyashrathore/Claxedo">View source ↗</a></div></section>
+
+  <CopyPrompt />
+
+  <section class="framework-chapter"><div><span>01 · RUNNABLE COOKBOOK</span><h2>Bring a harness into a real workspace.</h2><p>The tested cookbook discovers an authenticated harness, creates an Agent Runtime Session, subscribes to normalized events, and starts a provider turn. This essential-path excerpt uses the same public API as the complete runnable recipe.</p><a href="https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/01-hello-agent.ts">Open the complete recipe ↗</a></div><pre tabindex="0"><code><b>const</b> runtime = createAgentRuntime({`{`}<br />&nbsp;&nbsp;store: createMemoryRuntimeStore(),<br />&nbsp;&nbsp;harnesses: [harnessFactory(pick)],<br />{`}`})<br /><br /><b>const</b> session = <b>await</b> runtime.sessions.create({`{`}<br />&nbsp;&nbsp;directory: dir,<br />&nbsp;&nbsp;harness: {`{ id: pick.id, access: pick.access }`},<br />&nbsp;&nbsp;model: {`{ providerID: pick.id, modelID: "default" }`},<br />{`}`})<br /><br /><b>const</b> events = runtime.events.subscribe({`{ sessionId: session.id }`})<br /><b>await</b> runtime.turns.start({`{ sessionId: session.id, agent: "", text: prompt }`})</code></pre></section>
+
+  <section class="framework-chapter lineage"><div><span>02 · FOUNDATION + LINEAGE</span><h2>Built on the OpenCode engine. Extended as a workspace system.</h2><p>Claxedo credits the engine it builds on. The public repository adds the connected workspace clients, server, relay, protocol, runtime packages, and WorkGraph around that engine.</p></div><div class="layer-stack"><i>CLIENTS</i><i>SERVER + WORKGRAPH</i><i>RELAY + PROTOCOL</i><i>WORKSPACE RUNTIME</i><i class="engine">OPENCODE ENGINE</i></div></section>
+
+  <section class="framework-chapter"><div><span>03 · CONTINUITY</span><h2>State crosses reconnect boundaries deliberately.</h2><p>{frameworkRuntime.publicWording}</p></div><div class="continuity-demo"><span>CLIENT</span><b>authenticated connection</b><span>RELAY</span><b>verified forwarding</b><span>WORKSPACE HOST</span></div></section>
+
+  <section class="ecosystem"><span>04 · BRING YOUR EXISTING STACK</span><div>{["Claude Code", "Codex", "Gemini CLI", "OpenCode", "ACP", "MCP", "Skills", "Your provider", "Your sandbox"].map((item) => <i>{item}</i>)}</div></section>
+
+  <section class="capability-section"><span>05 · CAPABILITY CATALOG</span><h2>Compose the workspace layer you need.</h2><div class="capability-grid">{capabilities.map(([title, description, href]) => <a href={href}><strong>{title}</strong><p>{description}</p><small>Read the contract →</small></a>)}</div></section>
+
+  <section class="architecture"><div><span>06 · ARCHITECTURE + PLACEMENT</span><h2>One workspace model. Explicit boundaries.</h2><p>Local and connected compositions decide where clients, coordination, model execution, and tools run. Each package documents its own boundary so product composition does not become an implicit framework promise.</p></div><div class="architecture-map"><div><small>CLIENT</small><b>Desktop / Web</b></div><i>↕</i><div><small>COORDINATION</small><b>Server / Relay</b></div><i>↕</i><div><small>EXECUTION</small><b>Workspace Host</b></div></div></section>
+
+  <section class="docs-handoff"><span>07 · KEEP READING</span><h2>From first workspace to package contract.</h2><div><a href="/framework/guides/introduction">Guide <small>Start with the product model</small></a><a href="/framework/api/overview">Reference <small>Routes, tools, and events</small></a><a href="/framework/cli">CLI <small>Commands and operational paths</small></a><a href="/framework/packages">Packages <small>Composable TypeScript modules</small></a><a href="/framework/cookbook/overview">Cookbook <small>Runnable examples</small></a><a href="/framework/ecosystem">Ecosystem <small>Harnesses and integrations</small></a></div><a class="download-return" href="/download" data-analytics-event="download_app" data-analytics-placement="framework-landing">Download app</a></section>
+</div>
+
+<style>
+  .framework-landing { --landing-line: var(--sl-color-gray-5); }
+  .release-banner { display: flex; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border: 1px solid var(--landing-line); border-radius: .6rem; background: var(--sl-color-gray-7); font: 500 .68rem var(--sl-font-mono); }
+  .framework-hero { padding: clamp(3.5rem, 8vw, 6.5rem) 0; }
+  .framework-hero > p:first-child, .framework-chapter span, .ecosystem > span, .capability-section > span, .architecture span, .docs-handoff > span { color: var(--sl-color-gray-3); font: 500 .66rem var(--sl-font-mono); letter-spacing: .08em; }
+  .framework-hero h1 { max-width: 15ch; margin: 1.4rem 0; font: 500 clamp(2.5rem, 5.6vw, 4.4rem)/1.03 var(--sl-font); letter-spacing: -.045em; }
+  .lead { max-width: 42rem; color: var(--sl-color-gray-2); font-size: 1.12rem; line-height: 1.65; }
+  .hero-links { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 2rem; }
+  .hero-links a, .download-return { padding: .7rem 1.05rem; border: 1px solid var(--sl-color-gray-5); border-radius: .4rem; font: 500 .78rem var(--sl-font); letter-spacing: -.01em; text-decoration: none; }
+  .hero-links a:first-child, .download-return { border-color: transparent; background: var(--sl-color-text-accent); color: var(--sl-color-black); }
+  .framework-chapter, .architecture { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(2rem, 6vw, 6rem); padding: clamp(3.5rem, 7vw, 6rem) 0; border-top: 1px solid var(--landing-line); }
+  .framework-chapter h2, .capability-section h2, .architecture h2, .docs-handoff h2 { margin: 1.2rem 0; font: 500 clamp(1.7rem, 3.4vw, 2.5rem)/1.1 var(--sl-font); letter-spacing: -.035em; }
+  .framework-chapter > div > p, .architecture > div > p { color: var(--sl-color-gray-2); line-height: 1.7; }
+  .framework-chapter pre { align-self: center; overflow: auto; padding: 1.4rem; border: 1px solid var(--landing-line); border-radius: .6rem; background: var(--sl-color-gray-7); font-size: .75rem; line-height: 1.8; }
+  .layer-stack { display: grid; align-content: center; border: 1px solid var(--landing-line); border-radius: .6rem; overflow: hidden; } .layer-stack i { padding: .95rem 1rem; background: var(--sl-color-gray-7); font: 500 .68rem var(--sl-font-mono); font-style: normal; } .layer-stack i + i { border-top: 1px solid var(--landing-line); } .layer-stack .engine { background: var(--sl-color-text-accent); color: var(--sl-color-black); }
+  .continuity-demo { display: grid; grid-template-columns: 1fr; align-content: center; text-align: center; } .continuity-demo span { padding: .95rem; border: 1px solid var(--landing-line); background: var(--sl-color-gray-7); } .continuity-demo span:first-child { border-radius: .6rem .6rem 0 0; } .continuity-demo span:last-child { border-radius: 0 0 .6rem .6rem; } .continuity-demo b { padding: .45rem; color: var(--sl-color-gray-3); font: .62rem var(--sl-font-mono); }
+  .ecosystem, .capability-section, .docs-handoff { padding: clamp(3.5rem, 7vw, 6rem) 0; border-top: 1px solid var(--landing-line); }
+  .ecosystem > div { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 2rem; border: 1px solid var(--landing-line); border-radius: .6rem; overflow: hidden; } .ecosystem i { padding: .95rem 1rem; background: var(--sl-color-gray-7); font: 500 .72rem var(--sl-font-mono); font-style: normal; } .ecosystem i:not(:nth-child(3n + 1)) { border-left: 1px solid var(--landing-line); } .ecosystem i:nth-child(n + 4) { border-top: 1px solid var(--landing-line); }
+  .capability-grid, .docs-handoff > div { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 2.5rem; border: 1px solid var(--landing-line); border-radius: .6rem; overflow: hidden; } .capability-grid a, .docs-handoff > div a { min-height: 12rem; display: flex; flex-direction: column; padding: 1.2rem; background: var(--sl-color-gray-7); text-decoration: none; } .capability-grid a:not(:nth-child(3n + 1)), .docs-handoff > div a:not(:nth-child(3n + 1)) { border-left: 1px solid var(--landing-line); } .capability-grid a:nth-child(n + 4), .docs-handoff > div a:nth-child(n + 4) { border-top: 1px solid var(--landing-line); }
+  .capability-grid strong { font-weight: 500; letter-spacing: -.015em; }
+  .capability-grid p { color: var(--sl-color-gray-2); font-size: .85rem; } .capability-grid small { margin-top: auto; color: var(--sl-color-gray-3); font: .62rem var(--sl-font-mono); }
+  .architecture-map { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; } .architecture-map div { min-height: 7.5rem; display: grid; place-items: center; align-content: center; gap: .45rem; border: 1px solid var(--landing-line); border-radius: .6rem; background: var(--sl-color-gray-7); text-align: center; } .architecture-map small { color: var(--sl-color-gray-3); font: .6rem var(--sl-font-mono); } .architecture-map i { padding: .4rem; color: var(--sl-color-gray-3); font-style: normal; }
+  .docs-handoff > div a { min-height: 8rem; font: 500 1.15rem/1.25 var(--sl-font); letter-spacing: -.02em; } .docs-handoff > div small { margin-top: auto; padding-top: 1rem; color: var(--sl-color-gray-3); font: .62rem var(--sl-font-mono); }
+  .download-return { display: inline-flex; margin-top: 2rem; }
+  @media (max-width: 48rem) { .framework-chapter, .architecture { grid-template-columns: 1fr; } .ecosystem > div, .capability-grid, .docs-handoff > div { grid-template-columns: 1fr; } .ecosystem i, .capability-grid a, .docs-handoff > div a { border-left: 0 !important; border-top: 1px solid var(--landing-line); } .architecture-map { grid-template-columns: 1fr; } .architecture-map i { transform: rotate(90deg); } }
+</style>

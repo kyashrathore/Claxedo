@@ -1,15 +1,18 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-07-16
+Last updated: 2026-07-21
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
-
-
+- [Claxedo public website strategy](./2026-07-20-001-feat-claxedo-website-strategy-plan.md)
+  - Repository implementation and local launch acceptance are complete. The
+    production cutover remains active pending a named hosting/edge owner,
+    analytics provider and data owner, deployed smoke evidence, and the
+    monitored retirement of the legacy documentation deployment.
 - [Connections framework](./2026-07-03-004-feat-connections-framework-plan.md)
   - Retained because `packages/claxedo-server` source comments still refer to
     this design while defining integration routes and connection storage.

@@ -672,10 +672,6 @@ async function installRepositoryFilesystem(page: Page, files: Map<string, string
 
 async function sourceEditor(page: Page) {
   const source = page.getByLabel("Document Markdown source")
-  const editSource = page.getByRole("button", { name: "Edit source" })
-  await expect(source.or(editSource)).toBeVisible()
-  if (await source.isVisible()) return source
-  await editSource.click()
   await expect(source).toBeVisible()
   return source
 }
@@ -754,8 +750,10 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
     const created = [...runtime.documents.values()][0]!
-    const exact = "---\ntitle: Exact bytes\n---\n\n# Managed\n\n- alpha\n- beta\n"
-    await saveSource(page, exact)
+    const exact = "---\ntitle: Exact bytes\n---\n\nManaged\n=======\n\n- alpha\n- beta\n"
+    runtime.externalEdit(created.summary.id, exact)
+    await openDocument(page, created.summary.id)
+    await expect(await sourceEditor(page)).toHaveValue(exact)
     expect(runtime.managedFiles.get(created.summary.managed_relative_path!)).toBe(exact)
     await proveGeometry(page, page.getByRole("main", { name: "Document editor" }), testInfo, "managed-exact-saved")
 
@@ -845,13 +843,44 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
   }, testInfo) => {
     annotate(testInfo)
     const runtime = new DocumentRuntime()
-    const supportedBytes = "# Supported\n\nExact rich bytes.\n"
+    const supportedBytes =
+      "# Supported\n\nExact rich bytes with [link](https://claxedo.com) and `inline`.\n\n## Details\n\n```sh\nnpm test\n```\n"
     const supported = runtime.seed({ id: "supported_document", displayName: "Supported", markdown: supportedBytes })
     const unsupported = "# MDX\n\n<Component answer={42} />\n"
     const document = runtime.seed({ id: "unsupported_document", displayName: "MDX", markdown: unsupported })
     await bootstrap(page, runtime)
     await openDocument(page, supported.summary.id)
     await expect(page.getByRole("textbox", { name: "Document rich editor" })).toBeVisible()
+    const richTextColors = await page.locator(".notion-editor .tiptap").evaluate((root) => {
+      const color = (selector: string) => getComputedStyle(root.querySelector(selector)!).color
+      return {
+        prose: color("p"),
+        link: color("a"),
+        inlineCode: color("p code"),
+        codeBlock: color("pre code"),
+      }
+    })
+    expect(new Set(Object.values(richTextColors))).toEqual(new Set([richTextColors.prose]))
+    const codeBlock = page.locator(".notion-editor .tiptap pre code")
+    await expect(page.getByRole("textbox", { name: "Document rich editor" })).toHaveAttribute("spellcheck", "true")
+    await expect(codeBlock).toHaveAttribute("spellcheck", "false")
+    await expect(codeBlock).toHaveAttribute("autocorrect", "off")
+    await expect(codeBlock).toHaveAttribute("autocapitalize", "off")
+    const tocLayout = await page.locator(".notion-toc-wrap").evaluate((toc) => {
+      const editor = toc.closest("section")!.querySelector(".tiptap")!
+      const scroller = toc.closest(".notion-page-shell")!.parentElement!
+      return {
+        position: getComputedStyle(toc).position,
+        tocTop: toc.getBoundingClientRect().top,
+        tocRight: toc.getBoundingClientRect().right,
+        editorLeft: editor.getBoundingClientRect().left,
+        scrollerTop: scroller.getBoundingClientRect().top,
+        scrollerHeight: scroller.getBoundingClientRect().height,
+      }
+    })
+    expect(tocLayout.position).toBe("sticky")
+    expect(tocLayout.tocTop - tocLayout.scrollerTop).toBeLessThan(tocLayout.scrollerHeight * 0.4)
+    expect(tocLayout.tocRight).toBeLessThan(tocLayout.editorLeft)
     await page.goto(INDEX_URL)
     expect(runtime.contentWrites(supported.summary.id)).toHaveLength(0)
     expect(runtime.managedFiles.get(supported.summary.managed_relative_path!)).toBe(supportedBytes)
@@ -1045,7 +1074,39 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
       document.dispatchEvent(new Event("selectionchange"))
       paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))
     })
-    await page.getByRole("button", { name: "Bold" }).click()
+    const formatting = page.getByRole("toolbar", { name: "Document formatting" })
+    await expect(formatting).toBeVisible()
+    expect(await formatting.getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.ariaLabel))).toEqual([
+      "Bold",
+      "Italic",
+      "Underline",
+      "Strikethrough",
+      "Inline code",
+      "Highlight",
+      "Link",
+      "Turn into",
+    ])
+    const toolbarTokens = await formatting.evaluate((toolbar) => {
+      const probe = document.createElement("div")
+      probe.style.cssText = [
+        "position:fixed",
+        "background:var(--surface-raised-stronger-non-alpha)",
+        "border:1px solid var(--border-weak-base)",
+        "border-radius:var(--radius-md)",
+        "font-family:var(--font-family-sans)",
+      ].join(";")
+      document.body.append(probe)
+      const actual = getComputedStyle(toolbar)
+      const expected = getComputedStyle(probe)
+      const result = {
+        actual: [actual.backgroundColor, actual.borderTopColor, actual.borderRadius, actual.fontFamily],
+        expected: [expected.backgroundColor, expected.borderTopColor, expected.borderRadius, expected.fontFamily],
+      }
+      probe.remove()
+      return result
+    })
+    expect(toolbarTokens.actual).toEqual(toolbarTokens.expected)
+    await formatting.getByRole("button", { name: "Bold" }).click()
 
     await rich.evaluate((element) => {
       const range = document.createRange()

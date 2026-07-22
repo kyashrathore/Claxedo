@@ -2,8 +2,6 @@ import { Match, Switch, createEffect, createSignal, on } from "solid-js"
 import { DocumentApiError, documentsApi, type OpenDocument } from "../data/documents-api"
 import DocumentEditor from "./document-editor"
 import { DocumentRecoveryState } from "./recovery-states"
-import { useGlobalSDK, useSDK } from "../app-ports"
-import { createSelectionTransform } from "./selection-transform"
 
 export type TabPageProps = {
   pageId: string
@@ -16,16 +14,7 @@ export type TabPageProps = {
   onBackToIndex?: () => void
 }
 
-export function selectionSDK<TLocal, TGlobal>(
-  workspacePath: string | undefined,
-  local: () => TLocal,
-  global: () => TGlobal,
-): TLocal | TGlobal {
-  return workspacePath ? local() : global()
-}
-
 export function TabPage(props: TabPageProps) {
-  const sdk = selectionSDK(props.directory, useSDK, useGlobalSDK)
   const [document, setDocument] = createSignal<OpenDocument>()
   const [loading, setLoading] = createSignal(true)
   const [error, setError] = createSignal<unknown>()
@@ -89,10 +78,6 @@ export function TabPage(props: TabPageProps) {
               onTitleChange={props.onTitleChange}
               onBackToIndex={props.onBackToIndex}
               reportError={(error) => console.error("[documents] editor persistence error", error)}
-              transformSelection={createSelectionTransform({
-                client: sdk.client,
-                sessionId: () => props.sessionId ?? next().summary.session_id ?? undefined,
-              })}
             />
           )}
         </Match>

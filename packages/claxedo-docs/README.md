@@ -1,7 +1,8 @@
 # @claxedo/docs
 
-The Claxedo developer documentation — a [Mintlify](https://mintlify.com) site
-published at **docs.claxedo.com**.
+The legacy Mintlify authoring source for Claxedo developer documentation. The canonical public documentation now builds at **claxedo.com/framework** from `packages/claxedo-web`.
+
+This package remains deployable during migration so `docs.claxedo.com` can stay available until the complete one-hop redirect report passes against the production edge. Do not retire it or move DNS based on repository tests alone.
 
 This is a **separate** site from the upstream `packages/docs/` Mintlify
 starter boilerplate. Content is **assembled** from the source-of-truth
@@ -40,8 +41,7 @@ update the corresponding page (or the README it links to).
    `kyashrathore/Claxedo` repo and point it at this directory
    (`packages/claxedo-docs`). It builds on every push and posts preview
    deploys on PRs.
-2. Add the `docs.claxedo.com` custom domain in the Mintlify dashboard and
-   create the CNAME per Mintlify's instructions.
+2. Preserve the `docs.claxedo.com` custom domain until the redirect manifest in `packages/claxedo-web/deploy/redirects.json` is bound and verified in production.
 
 The site has no build step of its own beyond Mintlify's — there is nothing to
 publish to npm (`private: true`).

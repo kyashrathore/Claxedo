@@ -1,77 +1,48 @@
 ---
 import DownloadMenu from "./DownloadMenu.astro"
 import { github } from "../config"
+import { marketingActions } from "../content/routes"
+import { commercialNavigation } from "../content/site"
 
 interface Props {
-  active?: "home" | "app" | "framework"
+  active?: "home" | "pricing" | "download" | "compare" | "framework"
 }
 
 const { active } = Astro.props
 ---
 
-<nav class="nav">
-  <a href="/" class="nav-logo">
-    <svg class="brand-mark" viewBox="-100 -90 200 180" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-linecap="round" aria-hidden="true">
-      <path class="brand-mark-arc" d="M 38,-72 A 84,84 0 1 0 38,72"></path>
-      <circle class="brand-mark-dot" cx="38" cy="-72" r="5"></circle>
-      <circle class="brand-mark-core" cx="38" cy="-72" r="2"></circle>
-      <circle class="brand-mark-dot" cx="38" cy="72" r="5"></circle>
-      <circle class="brand-mark-core" cx="38" cy="72" r="2"></circle>
-    </svg>
+<nav class="nav" aria-label="Primary" data-open="false">
+  <a href="/" class="nav-logo" aria-label="Claxedo home">
+    <span class="brand-mark" aria-hidden="true"></span>
     <span>Claxedo</span>
   </a>
-  <div class="nav-links">
-    <a href="/#stack">Stack</a>
-    <a href="/app" class={active === "app" ? "is-active" : undefined}>App</a>
-    <a href="/framework" class={active === "framework" ? "is-active" : undefined}>Packages</a>
-    <a href={github} class="nav-gh">GitHub</a>
+
+  <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+
+  <div class="nav-links" id="site-menu">
+    {commercialNavigation.map((item) => <a href={item.href}>{item.label}</a>)}
+    <a href="/compare" aria-current={active === "compare" ? "page" : undefined}>Compare</a>
+    <a href={github}>GitHub</a>
   </div>
+
   <div class="nav-actions">
-    <a class="btn-primary" href="/#deploy">Deploy</a>
-    <DownloadMenu label="Download" extraClass="as-secondary" />
+    <a
+      class="btn-secondary"
+      href={marketingActions.framework.href}
+      data-analytics-event={marketingActions.framework.event}
+      data-analytics-placement="header"
+    >Open-source framework</a>
+    <DownloadMenu placement="header" />
   </div>
 </nav>
 
-<style>
-  .nav-actions { display: flex; align-items: center; gap: 10px; }
-
-  .nav-actions :global(.as-secondary) {
-    background: transparent;
-    color: var(--text-strong);
-    border-color: var(--border);
-  }
-
-  .nav-actions :global(.as-secondary:hover) {
-    background: var(--bg-weak);
-  }
-
-  @media (max-width: 40rem) {
-    .nav-actions :global(.dl-wrap) { display: none; }
-  }
-</style>
-
 <script>
-  const triggers = document.querySelectorAll<HTMLButtonElement>(".dl-trigger")
+  const nav = document.querySelector<HTMLElement>(".nav")
+  const toggle = nav?.querySelector<HTMLButtonElement>(".menu-toggle")
 
-  function closeAll(except?: Element) {
-    document.querySelectorAll(".dl-wrap.is-open").forEach((w) => {
-      if (w !== except) w.classList.remove("is-open")
-    })
-  }
-
-  triggers.forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation()
-      const wrap = btn.closest(".dl-wrap")
-      if (!wrap) return
-      const opening = !wrap.classList.contains("is-open")
-      closeAll(wrap)
-      wrap.classList.toggle("is-open", opening)
-    })
-  })
-
-  document.addEventListener("click", () => closeAll())
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeAll()
+  toggle?.addEventListener("click", () => {
+    const open = nav?.dataset.open !== "true"
+    if (nav) nav.dataset.open = String(open)
+    toggle.setAttribute("aria-expanded", String(open))
   })
 </script>

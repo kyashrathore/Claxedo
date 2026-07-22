@@ -49,6 +49,19 @@ export function timelineAnchorFileHref(anchor: Element): string | undefined {
 }
 
 /**
+ * File href of the anchor a plain left-click targets, or undefined for
+ * modifier/middle clicks and non-file anchors. Used by the capture-phase
+ * handler so it can preventDefault before the browser's target="_blank"
+ * new-window default action runs.
+ */
+export function timelineAnchorClickTarget(event: MouseEvent): string | undefined {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
+  const target = event.target instanceof Element ? event.target : null
+  const anchor = target?.closest("a[href]")
+  return anchor ? timelineAnchorFileHref(anchor) : undefined
+}
+
+/**
  * Resolve the file path a context-menu event targets. Inline-code chips carry
  * the path as their text; filename slots render only the basename — there the
  * full path travels on a `data-path` attribute set at the render sites.

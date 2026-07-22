@@ -1,0 +1,41 @@
+---
+import { github, version } from "../config"
+import { canonicalUrl } from "../content/routes"
+import { site } from "../content/site"
+
+interface Props { pathname: string }
+const { pathname } = Astro.props
+const graph: Record<string, unknown>[] = [
+  {
+    "@type": "Organization",
+    "@id": canonicalUrl("/#organization"),
+    name: site.name,
+    url: canonicalUrl("/"),
+    logo: canonicalUrl("/brand/claxedo-icon-dark.svg"),
+    sameAs: [github, "https://www.npmjs.com/org/claxedo"],
+  },
+  {
+    "@type": "WebSite",
+    "@id": canonicalUrl("/#website"),
+    name: site.name,
+    url: canonicalUrl("/"),
+    publisher: { "@id": canonicalUrl("/#organization") },
+  },
+]
+
+if (["/", "/download", "/pricing"].includes(pathname.replace(/\/$/, "") || "/")) {
+  graph.push({
+    "@type": "SoftwareApplication",
+    name: site.clients.desktop.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Windows, Linux",
+    softwareVersion: version,
+    url: canonicalUrl("/download"),
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free during beta" },
+    publisher: { "@id": canonicalUrl("/#organization") },
+  })
+}
+
+const value = JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replaceAll("<", "\\u003c")
+---
+<script is:inline type="application/ld+json" set:html={value} />

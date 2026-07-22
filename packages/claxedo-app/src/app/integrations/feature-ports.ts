@@ -157,8 +157,6 @@ configureSettingsAppPorts({
 
 configureDocumentsAppPorts({
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
-  useSDK: SDK.useSDK,
-  useGlobalSDK: GlobalSDK.useGlobalSDK,
   useSessionSyncOptional: SessionSync.useSessionSyncOptional,
   useClaxedoState: State.useClaxedoState,
   markdownPathFromHref: MarkdownTab.markdownPathFromHref,

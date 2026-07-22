@@ -139,13 +139,12 @@ and authenticated with `CLAXEDO_DESKTOP_TOKEN`.
 
 The Electron main process binds that bridge to `127.0.0.1` on an ephemeral
 port, mints the per-launch secret, and pushes both values into this MCP
-subprocess's environment **at spawn time** — but only when the desktop app is
-launched with `CLAXEDO_ENABLE_BROWSER_TAB=1`. A standalone MCP client (Claude
+subprocess's environment **at spawn time**. A standalone MCP client (Claude
 Desktop, Codex, a terminal) cannot supply these values, so its browser tools
 have no bridge to reach. When the pair is absent, every browser tool returns a
 legible message:
 
-> Browser tabs require the Claxedo desktop app with `CLAXEDO_ENABLE_BROWSER_TAB=1`.
+> Browser tabs require the Claxedo desktop app.
 
 In short: `browser_*` tools work only when the MCP subprocess is spawned by the
 Claxedo desktop app. Everywhere else they are present in the tool list but

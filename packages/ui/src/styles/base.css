@@ -82,18 +82,18 @@ a {
   cursor: default;
 }
 
-#root:not([aria-hidden]) *[data-tauri-drag-region] {
+#root:not([aria-hidden]) *[data-window-drag-region] {
   app-region: drag;
 }
 
-*[data-tauri-drag-region] button,
-*[data-tauri-drag-region] a,
-*[data-tauri-drag-region] input,
-*[data-tauri-drag-region] textarea,
-*[data-tauri-drag-region] select,
-*[data-tauri-drag-region] [role="button"],
-*[data-tauri-drag-region] [role="menuitem"],
-*[data-tauri-drag-region] [contenteditable] {
+*[data-window-drag-region] button,
+*[data-window-drag-region] a,
+*[data-window-drag-region] input,
+*[data-window-drag-region] textarea,
+*[data-window-drag-region] select,
+*[data-window-drag-region] [role="button"],
+*[data-window-drag-region] [role="menuitem"],
+*[data-window-drag-region] [contenteditable] {
   app-region: no-drag;
 }
 

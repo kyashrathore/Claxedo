@@ -36,9 +36,11 @@ vi.mock("@opencode-ai/ui/tooltip", () => ({
 }))
 
 import { ProcessPanePanel, type ProcessPanePanelProps } from "./process-pane-panel"
+import { setProcessToolbarSlot } from "@/ui/controls/portal-slot"
 
 afterEach(() => {
   cleanup()
+  setProcessToolbarSlot(null)
   document.body.innerHTML = ""
 })
 
@@ -76,6 +78,27 @@ function defaults(overrides: Partial<ProcessPanePanelProps> = {}): ProcessPanePa
 // ---------------------------------------------------------------------------
 
 describe("ProcessPanePanel UI rendering", () => {
+  test("moves its header into the workspace toolbar without keeping a duplicate row", () => {
+    const host = document.createElement("div")
+    document.body.append(host)
+    setProcessToolbarSlot(host)
+    const { container } = render(() => (
+      <ProcessPanePanel
+        {...defaults({
+          portalHeader: true,
+          onEdit: vi.fn(),
+          process: { configId: "proc_1", status: "idle", restartCount: 0 },
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='process-pane-header']")).toBeNull()
+    expect(host.querySelector("[data-testid='process-pane-header']")?.textContent).toContain("Dev Server")
+    expect(host.querySelector("[aria-label='Start process']")).toBeNull()
+    expect(host.querySelector("[aria-label='Edit process']")).not.toBeNull()
+    expect(container.querySelector("[data-process-action='start-fallback']")).not.toBeNull()
+  })
+
   test("renders terminal when ptyId exists and process is running", () => {
     const { container } = render(() => (
       <ProcessPanePanel
@@ -112,7 +135,8 @@ describe("ProcessPanePanel UI rendering", () => {
 
     expect(container.querySelector("[data-testid='process-terminal']")).toBeNull()
     expect(container.textContent).toContain("Process not running")
-    expect(container.querySelector("[aria-label='Start process']")).not.toBeNull()
+    expect(container.querySelector("[aria-label='Start process']")).toBeNull()
+    expect(container.querySelector("[data-process-action='start-fallback']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Stop process']")).toBeNull()
     // Restart hidden for dormant states (Start covers it)
     expect(container.querySelector("[aria-label='Restart process']")).toBeNull()
@@ -130,7 +154,7 @@ describe("ProcessPanePanel UI rendering", () => {
     expect(container.querySelector("[data-testid='process-terminal']")).toBeNull()
     expect(container.textContent).toContain("Crashed")
     expect(container.textContent).toContain("exit 1")
-    expect(container.querySelector("[aria-label='Start process']")).not.toBeNull()
+    expect(container.querySelector("[data-process-action='start-fallback']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Stop process']")).toBeNull()
     expect(container.querySelector("[aria-label='Restart process']")).toBeNull()
   })
@@ -152,7 +176,7 @@ describe("ProcessPanePanel UI rendering", () => {
     expect(container.querySelector("[data-testid='process-terminal']")).toBeNull()
     expect(container.textContent).toContain("Failed to start")
     expect(container.textContent).toContain("HTTP 404")
-    expect(container.querySelector("[aria-label='Start process']")).not.toBeNull()
+    expect(container.querySelector("[data-process-action='start-fallback']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Stop process']")).toBeNull()
   })
 
@@ -216,7 +240,7 @@ describe("ProcessPanePanel UI rendering", () => {
       />
     ))
 
-    const startBtn = container.querySelector("[aria-label='Start process']") as HTMLElement
+    const startBtn = container.querySelector("[data-process-action='start-fallback']") as HTMLElement
     expect(startBtn).not.toBeNull()
     fireEvent.click(startBtn)
     expect(onStart).toHaveBeenCalledTimes(1)

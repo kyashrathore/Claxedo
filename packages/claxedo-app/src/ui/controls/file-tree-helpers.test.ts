@@ -7,6 +7,7 @@ import {
   resolveTreeKeyAction,
   shouldListExpanded,
   shouldListRoot,
+  visibleCountForActivePath,
 } from "./file-tree-helpers"
 
 describe("shouldListRoot", () => {
@@ -83,6 +84,24 @@ describe("parentPath / leafName", () => {
   test("a path with no separator has an empty parent and is its own leaf", () => {
     expect(parentPath("root.ts")).toBe("")
     expect(leafName("root.ts")).toBe("root.ts")
+  })
+})
+
+describe("visibleCountForActivePath", () => {
+  const paths = Array.from({ length: 60 }, (_, index) => `item-${index}`)
+
+  test("materializes the batch containing the active row", () => {
+    expect(visibleCountForActivePath({ paths, active: "item-40", batchSize: 24, current: 24 })).toBe(48)
+  })
+
+  test("materializes an active file's ancestor directory", () => {
+    expect(
+      visibleCountForActivePath({ paths: ["a", "src", "z"], active: "src/deep/file.ts", batchSize: 1, current: 1 }),
+    ).toBe(2)
+  })
+
+  test("keeps the current count when the active path is outside this level", () => {
+    expect(visibleCountForActivePath({ paths, active: "missing/file.ts", batchSize: 24, current: 24 })).toBe(24)
   })
 })
 

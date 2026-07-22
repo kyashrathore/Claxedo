@@ -1,0 +1,93 @@
+@font-face {
+  font-family: "Claxedo Mono";
+  src: url("/fonts/claxedo-mono.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Starlight tokens mirror the Claxedo app (oc-2 theme, dark-first). */
+:root {
+  --sl-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sl-font-mono: "Claxedo Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sl-color-accent-low: #1b2852;
+  --sl-color-accent: #7698fd;
+  --sl-color-accent-high: #c3d4fd;
+  --sl-color-white: #ededed;
+  --sl-color-gray-1: #a0a0a0;
+  --sl-color-gray-2: #8f8f8f;
+  --sl-color-gray-3: #808080;
+  --sl-color-gray-4: #3a3a3a;
+  --sl-color-gray-5: #282828;
+  --sl-color-gray-6: #1c1c1c;
+  --sl-color-gray-7: #161616;
+  --sl-color-black: #101010;
+  --sl-content-width: 54rem;
+  --sl-scrollbar-thumb: rgb(160 160 160 / 28%);
+  --sl-scrollbar-thumb-hover: rgb(160 160 160 / 48%);
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #ecf1fe;
+  --sl-color-accent: #3b5cf6;
+  --sl-color-accent-high: #263fa9;
+  --sl-color-white: #171717;
+  --sl-color-gray-1: #3a3a3a;
+  --sl-color-gray-2: #5c5c5c;
+  --sl-color-gray-3: #6f6f6f;
+  --sl-color-gray-4: #aeaeae;
+  --sl-color-gray-5: #dbdbdb;
+  --sl-color-gray-6: #f2f2f2;
+  --sl-color-gray-7: #ffffff;
+  --sl-color-black: #f8f8f8;
+  --sl-scrollbar-thumb: rgb(23 23 23 / 22%);
+  --sl-scrollbar-thumb-hover: rgb(23 23 23 / 40%);
+}
+
+/* Keep page and navigation scrollbars quiet against the docs chrome. */
+* {
+  scrollbar-color: var(--sl-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 2.5rem;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--sl-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sl-scrollbar-thumb-hover);
+}
+
+.site-title { letter-spacing: -.02em; }
+.content-panel h1, .content-panel h2, .content-panel h3 { letter-spacing: -.03em; }
+.sl-markdown-content h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.05; }
+.sl-markdown-content h2 { margin-top: 3rem; font-size: 1.7rem; }
+.sl-card-grid, .sl-steps, .sl-code-group { margin-block: 1.5rem; }
+.sl-card-grid { display: grid; grid-template-columns: repeat(var(--card-columns, 2), minmax(0, 1fr)); border: 1px solid var(--sl-color-gray-5); border-radius: .6rem; overflow: hidden; }
+.sl-card { display: flex; flex-direction: column; gap: .6rem; min-height: 8rem; padding: 1rem; background: var(--sl-color-gray-7); text-decoration: none; }
+.sl-card:nth-child(even) { border-left: 1px solid var(--sl-color-gray-5); }
+.sl-card:nth-child(n + 3) { border-top: 1px solid var(--sl-color-gray-5); }
+.sl-card > div { color: var(--sl-color-gray-2); }
+.sl-note, .sl-warning { margin-block: 1.5rem; padding: 1rem 1.2rem; border-inline-start: 2px solid var(--sl-color-accent); border-radius: 0 .4rem .4rem 0; background: var(--sl-color-gray-6); }
+.sl-warning { border-color: #cb9f34; }
+.sl-steps > li { padding-bottom: 2rem; }
+.sl-code-group { padding: .4rem; border: 1px solid var(--sl-color-gray-5); border-radius: .6rem; }
+.sl-api-field { margin-block: 1rem; padding: 1rem; border: 1px solid var(--sl-color-gray-5); border-radius: .6rem; background: var(--sl-color-gray-7); }
+.sl-api-field > div:first-child { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
+.sl-api-field span, .sl-api-field b { color: var(--sl-color-gray-3); font: 500 .65rem var(--sl-font-mono); }
+.sl-api-field b { padding: .2rem .35rem; border-radius: .25rem; background: var(--sl-color-accent-low); color: var(--sl-color-accent-high); text-transform: uppercase; }
+@media (max-width: 40rem) { .sl-card-grid { grid-template-columns: 1fr; } .sl-card:nth-child(even) { border-left: 0; } .sl-card + .sl-card { border-top: 1px solid var(--sl-color-gray-5); } }

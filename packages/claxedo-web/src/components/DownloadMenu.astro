@@ -1,21 +1,22 @@
 ---
-import { downloads } from "../config"
+import { marketingActions } from "../content/routes"
+import TrackedLink from "./TrackedLink.astro"
 
 interface Props {
   label?: string
-  up?: boolean
   extraClass?: string
+  placement?: string
 }
 
-const { label = "Download Free", up = false, extraClass = "" } = Astro.props
+const { label = marketingActions.download.label, extraClass = "", placement = "inline" } = Astro.props
 ---
 
-<div class={`dl-wrap${up ? " dl-wrap--up" : ""}`}>
-  <button type="button" class={`btn-primary dl-trigger ${extraClass}`}>
-    {label}
-    <svg class="dl-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3" /></svg>
-  </button>
-  <div class="dl-menu">
-    {downloads.map((d) => <a href={d.href} class="dl-item">{d.label}</a>)}
-  </div>
-</div>
+<TrackedLink
+  class={`btn-primary ${extraClass}`}
+  href={marketingActions.download.href}
+  event={marketingActions.download.event}
+  placement={placement}
+>
+  {label}
+  <span aria-hidden="true">↓</span>
+</TrackedLink>

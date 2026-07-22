@@ -1,0 +1,37 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import Nav from "../../components/Nav.astro"
+import Footer from "../../components/Footer.astro"
+import DownloadMenu from "../../components/DownloadMenu.astro"
+import { currentComparisons, trackedAlternatives } from "../../content/competitors"
+import { marketingActions } from "../../content/routes"
+
+const groups = Object.groupBy(currentComparisons, (competitor) => competitor.category)
+---
+
+<Layout title="Compare Claxedo" description="Evidence-backed comparisons between Claxedo and adjacent coding-agent products.">
+  <div class="shell">
+    <Nav active="compare" />
+    <main id="main-content">
+      <section class="compare-hero rule-grid"><p class="eyebrow">Maintained comparisons</p><h1 class="display">Choose the layer you need.</h1><p class="section-copy">Claxedo is a workspace around existing coding-agent harnesses. These comparisons explain where adjacent agents, orchestrators, remote-access tools, and connected workspaces overlap—and where the product boundary changes the decision.</p></section>
+      <section class="section"><div class="section-inner comparison-groups">{Object.entries(groups).map(([category, items]) => items && <section><h2>{category}</h2><div class="comparison-cards">{items.map((competitor) => <a href={`/compare/${competitor.slug}`}><span>0{competitor.priority}</span><h3>Claxedo vs. {competitor.name}</h3><p>{competitor.boundary}</p><small>Reviewed {competitor.lastReviewed} →</small></a>)}</div></section>)}</div></section>
+      <section class="section dark-band"><div class="section-inner"><p class="eyebrow">Research coverage</p><h2 class="section-title">Tracked broadly. Published carefully.</h2><p class="section-copy">The registry tracks the wider landscape without creating pages that nobody can maintain. Only comparisons with current first-party evidence, ownership, and a review deadline enter public discovery.</p><div class="tracked-grid">{Object.entries(trackedAlternatives).map(([group, names]) => <div><h3>{group}</h3><p>{names.join(" · ")}</p></div>)}</div></div></section>
+      <section class="section"><div class="section-inner"><p class="eyebrow">Try the product, inspect the foundation</p><h2 class="section-title">Make the comparison concrete.</h2><div class="actions"><DownloadMenu placement="compare-index" /><a class="btn-secondary" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement="compare-index">{marketingActions.framework.label}</a></div></div></section>
+    </main>
+    <Footer />
+  </div>
+</Layout>
+
+<style>
+  .compare-hero { padding: var(--section) var(--gutter); } .compare-hero > * { max-width: 72rem; margin-inline: auto; } .compare-hero .section-copy { margin-inline: auto; }
+  .comparison-groups { display: grid; gap: 4rem; } .comparison-groups > section > h2 { margin-bottom: 1rem; color: var(--ink-faint); font: 500 .68rem var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+  .comparison-cards { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .comparison-cards a { min-height: 16rem; padding: 1.5rem; background: var(--surface); text-decoration: none; }
+  .comparison-cards a:nth-child(even) { border-left: 1px solid var(--line); } .comparison-cards a:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .comparison-cards a:hover { background: var(--surface-hover); } .comparison-cards span, .comparison-cards small { color: var(--ink-faint); font: .66rem var(--font-mono); }
+  .comparison-cards h3 { margin: 2.5rem 0 .8rem; font: 500 1.35rem/1.2 var(--font-sans); letter-spacing: -.025em; } .comparison-cards p { color: var(--ink-soft); font-size: .9rem; } .comparison-cards small { display: block; margin-top: 2rem; }
+  .tracked-grid { display: grid; grid-template-columns: 1fr 1fr; margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .tracked-grid div { padding: 1.3rem; background: var(--surface); } .tracked-grid div:nth-child(even) { border-left: 1px solid var(--line); } .tracked-grid div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .tracked-grid h3 { font: 500 .7rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; } .tracked-grid p { margin: 1rem 0 0; font-size: .84rem; line-height: 1.7; }
+  @media (max-width: 42rem) { .comparison-cards, .tracked-grid { grid-template-columns: 1fr; } .comparison-cards a:nth-child(even), .tracked-grid div:nth-child(even) { border-left: 0; } .comparison-cards a + a, .tracked-grid div + div { border-top: 1px solid var(--line); } }
+</style>

@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, shell } from "electron"
+import { app, BrowserWindow, Menu, shell } from "electron"
 
 import { UPDATER_ENABLED } from "./constants"
 
@@ -15,7 +15,7 @@ export function createMenu(deps: Deps) {
 
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: "Claxedo",
+      label: app.getName(),
       submenu: [
         { role: "about" },
         {

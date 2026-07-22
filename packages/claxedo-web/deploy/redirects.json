@@ -1,0 +1,500 @@
+{
+  "version": 1,
+  "generatedFrom": "packages/claxedo-docs/**/*.mdx",
+  "hostingBinding": {
+    "status": "unbound",
+    "reason": "The active claxedo.com and docs.claxedo.com edge provider is not declared in this repository. Bind this manifest before DNS cutover."
+  },
+  "redirects": [
+    {
+      "host": "docs.claxedo.com",
+      "from": "/",
+      "aliases": [],
+      "to": "https://claxedo.com/framework",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/api/channels",
+      "aliases": [
+        "/api/channels/"
+      ],
+      "to": "https://claxedo.com/framework/api/channels",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/api/connections",
+      "aliases": [
+        "/api/connections/"
+      ],
+      "to": "https://claxedo.com/framework/api/connections",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/api/mcp",
+      "aliases": [
+        "/api/mcp/"
+      ],
+      "to": "https://claxedo.com/framework/api/mcp",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/api/overview",
+      "aliases": [
+        "/api/overview/"
+      ],
+      "to": "https://claxedo.com/framework/api/overview",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/api/relay",
+      "aliases": [
+        "/api/relay/"
+      ],
+      "to": "https://claxedo.com/framework/api/relay",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/api/workspace-runtime",
+      "aliases": [
+        "/api/workspace-runtime/"
+      ],
+      "to": "https://claxedo.com/framework/api/workspace-runtime",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cli",
+      "aliases": [
+        "/cli/"
+      ],
+      "to": "https://claxedo.com/framework/cli",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/concepts/connections-capabilities",
+      "aliases": [
+        "/concepts/connections-capabilities/"
+      ],
+      "to": "https://claxedo.com/framework/concepts/connections-capabilities",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/concepts/credentials-sandbox",
+      "aliases": [
+        "/concepts/credentials-sandbox/"
+      ],
+      "to": "https://claxedo.com/framework/concepts/credentials-sandbox",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/concepts/extensions",
+      "aliases": [
+        "/concepts/extensions/"
+      ],
+      "to": "https://claxedo.com/framework/concepts/extensions",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/concepts/layer-stack",
+      "aliases": [
+        "/concepts/layer-stack/"
+      ],
+      "to": "https://claxedo.com/framework/concepts/layer-stack",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/concepts/sessions-hosts",
+      "aliases": [
+        "/concepts/sessions-hosts/"
+      ],
+      "to": "https://claxedo.com/framework/concepts/sessions-hosts",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/01-hello-agent",
+      "aliases": [
+        "/cookbook/01-hello-agent/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/01-hello-agent",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/02-harness-swap",
+      "aliases": [
+        "/cookbook/02-harness-swap/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/02-harness-swap",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/03-one-event-shape",
+      "aliases": [
+        "/cookbook/03-one-event-shape/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/03-one-event-shape",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/04-kill-and-resume",
+      "aliases": [
+        "/cookbook/04-kill-and-resume/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/04-kill-and-resume",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/05-workspace-host",
+      "aliases": [
+        "/cookbook/05-workspace-host/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/05-workspace-host",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/06-extensions-once",
+      "aliases": [
+        "/cookbook/06-extensions-once/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/06-extensions-once",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/07-sandbox-secrets",
+      "aliases": [
+        "/cookbook/07-sandbox-secrets/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/07-sandbox-secrets",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/08-place-anywhere",
+      "aliases": [
+        "/cookbook/08-place-anywhere/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/08-place-anywhere",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/cookbook/overview",
+      "aliases": [
+        "/cookbook/overview/"
+      ],
+      "to": "https://claxedo.com/framework/cookbook/overview",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/deploy/hosted-control-plane",
+      "aliases": [
+        "/deploy/hosted-control-plane/"
+      ],
+      "to": "https://claxedo.com/framework/deploy/hosted-control-plane",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/deploy/local",
+      "aliases": [
+        "/deploy/local/"
+      ],
+      "to": "https://claxedo.com/framework/deploy/local",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/deploy/private-vm",
+      "aliases": [
+        "/deploy/private-vm/"
+      ],
+      "to": "https://claxedo.com/framework/deploy/private-vm",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/deploy/relay-attached",
+      "aliases": [
+        "/deploy/relay-attached/"
+      ],
+      "to": "https://claxedo.com/framework/deploy/relay-attached",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/deploy/sandbox-drivers-secrets",
+      "aliases": [
+        "/deploy/sandbox-drivers-secrets/"
+      ],
+      "to": "https://claxedo.com/framework/deploy/sandbox-drivers-secrets",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/deploy/self-host-fly",
+      "aliases": [
+        "/deploy/self-host-fly/"
+      ],
+      "to": "https://claxedo.com/framework/deploy/self-host-fly",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/ecosystem",
+      "aliases": [
+        "/ecosystem/"
+      ],
+      "to": "https://claxedo.com/framework/ecosystem",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/guides/install",
+      "aliases": [
+        "/guides/install/"
+      ],
+      "to": "https://claxedo.com/framework/guides/install",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/guides/introduction",
+      "aliases": [
+        "/guides/introduction/"
+      ],
+      "to": "https://claxedo.com/framework/guides/introduction",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/guides/see-it-in-action",
+      "aliases": [
+        "/guides/see-it-in-action/"
+      ],
+      "to": "https://claxedo.com/framework/guides/see-it-in-action",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/integrations",
+      "aliases": [
+        "/integrations/"
+      ],
+      "to": "https://claxedo.com/framework/integrations",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages",
+      "aliases": [
+        "/packages/"
+      ],
+      "to": "https://claxedo.com/framework/packages",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/agent-event-runtime",
+      "aliases": [
+        "/packages/agent-event-runtime/"
+      ],
+      "to": "https://claxedo.com/framework/packages/agent-event-runtime",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/agent-extensions",
+      "aliases": [
+        "/packages/agent-extensions/"
+      ],
+      "to": "https://claxedo.com/framework/packages/agent-extensions",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/agent-sdk-runtime",
+      "aliases": [
+        "/packages/agent-sdk-runtime/"
+      ],
+      "to": "https://claxedo.com/framework/packages/agent-sdk-runtime",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/channels",
+      "aliases": [
+        "/packages/channels/"
+      ],
+      "to": "https://claxedo.com/framework/packages/channels",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/connections",
+      "aliases": [
+        "/packages/connections/"
+      ],
+      "to": "https://claxedo.com/framework/packages/connections",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/control-plane",
+      "aliases": [
+        "/packages/control-plane/"
+      ],
+      "to": "https://claxedo.com/framework/packages/control-plane",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/mcp",
+      "aliases": [
+        "/packages/mcp/"
+      ],
+      "to": "https://claxedo.com/framework/packages/mcp",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/sandbox-manager",
+      "aliases": [
+        "/packages/sandbox-manager/"
+      ],
+      "to": "https://claxedo.com/framework/packages/sandbox-manager",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/wakes",
+      "aliases": [
+        "/packages/wakes/"
+      ],
+      "to": "https://claxedo.com/framework/packages/wakes",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/workgraph",
+      "aliases": [
+        "/packages/workgraph/"
+      ],
+      "to": "https://claxedo.com/framework/packages/workgraph",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/workspace-relay",
+      "aliases": [
+        "/packages/workspace-relay/"
+      ],
+      "to": "https://claxedo.com/framework/packages/workspace-relay",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/workspace-relay-protocol",
+      "aliases": [
+        "/packages/workspace-relay-protocol/"
+      ],
+      "to": "https://claxedo.com/framework/packages/workspace-relay-protocol",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/packages/workspace-runtime",
+      "aliases": [
+        "/packages/workspace-runtime/"
+      ],
+      "to": "https://claxedo.com/framework/packages/workspace-runtime",
+      "status": 301,
+      "preserveQuery": false
+    },
+    {
+      "host": "docs.claxedo.com",
+      "from": "/sdk",
+      "aliases": [
+        "/sdk/"
+      ],
+      "to": "https://claxedo.com/framework/sdk",
+      "status": 301,
+      "preserveQuery": false
+    }
+  ],
+  "publicOriginRedirects": [
+    {
+      "host": "claxedo.com",
+      "from": "/app",
+      "aliases": [
+        "/app/"
+      ],
+      "to": "https://claxedo.com/",
+      "status": 301,
+      "preserveQuery": false
+    }
+  ]
+}

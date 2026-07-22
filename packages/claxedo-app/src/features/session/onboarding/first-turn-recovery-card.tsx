@@ -32,7 +32,7 @@ function RawDetail(props: { detail: string }) {
             class="mt-0.5 shrink-0 text-icon-weak-base transition-transform duration-150"
             style={{ transform: open() ? "rotate(90deg)" : "rotate(0deg)" }}
           />
-          <span class="min-w-0 flex-1 truncate font-mono text-12-regular text-text-weaker">{props.detail}</span>
+          <span class="min-w-0 flex-1 line-clamp-2 break-words font-mono text-12-regular text-text-weaker">{props.detail}</span>
         </button>
         <Show when={open()}>
           <Tooltip value={copied() ? "Copied" : "Copy error"} placement="top" gutter={4}>

@@ -2,7 +2,8 @@
  * Main-process wiring for the agent-browser feature.
  *
  * Call `setupBrowserTab()` once at startup (inside `app.whenReady` so the
- * session partition is available). Guarded by `CLAXEDO_ENABLE_BROWSER_TAB=1`.
+ * session partition is available). Enabled by default; setting
+ * `CLAXEDO_ENABLE_BROWSER_TAB=0` disables it for diagnostics.
  *
  * When enabled, this:
  *   1. configures the `persist:agent-browser` session (default-deny permissions,

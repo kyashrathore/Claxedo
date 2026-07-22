@@ -6,7 +6,7 @@ relay-attached workspace placement. Every recipe is a single liftable file
 under [`src/recipes/`](src/recipes/) that either completes with printed proof
 or prints `SKIP: <reason>` — never a stack trace.
 
-Docs with expected output per recipe: **[docs.claxedo.com](https://docs.claxedo.com)**
+Docs with expected output per recipe: **[claxedo.com/framework](https://claxedo.com/framework/cookbook/overview)**
 (Cookbook tab).
 
 ## Run

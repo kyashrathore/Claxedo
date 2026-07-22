@@ -11,8 +11,8 @@
  *   - blocked from navigating to non-http(s) URLs (`will-navigate`)
  *   - blocked from downloads (`will-download`)
  *
- * This is called once at main-process startup, guarded by the
- * `CLAXEDO_ENABLE_BROWSER_TAB` flag. Running the configuration more than once
+ * This is called once at main-process startup when the browser capability is
+ * enabled. Running the configuration more than once
  * is a no-op because the permission / window-open / navigation handlers replace
  * any prior registration.
  */

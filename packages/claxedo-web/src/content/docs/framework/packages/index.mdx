@@ -1,0 +1,36 @@
+---
+title: Packages
+description: Composable TypeScript packages that make up the Claxedo workspace framework.
+---
+
+import Card from "../../../../components/framework/compat/Card.astro"
+import CardGroup from "../../../../components/framework/compat/CardGroup.astro"
+
+
+# Compose the workspace layer you need
+
+Claxedo's framework catalog covers public packages and documented in-repository
+composition boundaries. It divides the workspace system into explicit runtime,
+relay, capability, orchestration, and control-plane layers. Start with the
+boundary closest to the contract you need, then follow its dependency notes.
+
+<CardGroup cols={2}>
+  <Card title="Workspace runtime" href="/framework/packages/workspace-runtime">
+    Sessions, terminals, files, processes, git, and workspace-host contracts.
+  </Card>
+  <Card title="Agent runtime" href="/framework/packages/agent-event-runtime">
+    Normalized coding-agent events and harness adapter contracts.
+  </Card>
+  <Card title="Relay and protocol" href="/framework/packages/workspace-relay">
+    Authenticated reach to workspace hosts and the protocol carried between them.
+  </Card>
+  <Card title="Capabilities" href="/framework/packages/connections">
+    Connections, channels, MCP, extensions, and sandbox boundaries.
+  </Card>
+  <Card title="WorkGraph and wakes" href="/framework/packages/workgraph">
+    Durable work state, evidence, and wake-driven orchestration.
+  </Card>
+  <Card title="Product control plane" href="/framework/packages/control-plane">
+    The private, in-repository server composition used by connected deployments.
+  </Card>
+</CardGroup>

@@ -1,0 +1,43 @@
+---
+import type { GetStaticPaths } from "astro"
+import Layout from "../../layouts/Layout.astro"
+import Nav from "../../components/Nav.astro"
+import Footer from "../../components/Footer.astro"
+import DownloadMenu from "../../components/DownloadMenu.astro"
+import ComparisonTable from "../../components/ComparisonTable.astro"
+import ComparisonSources from "../../components/ComparisonSources.astro"
+import { comparisonIsExpired, publicComparisons, type Competitor } from "../../content/competitors"
+import { marketingActions } from "../../content/routes"
+
+export const getStaticPaths = (() => publicComparisons.map((competitor) => ({ params: { competitor: competitor.slug }, props: { competitor } }))) satisfies GetStaticPaths
+
+interface Props { competitor: Competitor }
+const { competitor } = Astro.props
+const expired = comparisonIsExpired(competitor)
+---
+
+<Layout title={`Claxedo vs. ${competitor.name}`} description={`A sourced comparison of Claxedo and ${competitor.name}.`} noindex={expired}>
+  <div class="shell">
+    <Nav active="compare" />
+    <main id="main-content">
+      <section class="comparison-hero rule-grid"><a href="/compare" class="text-link">← All comparisons</a><p class="eyebrow">{competitor.category}</p><h1 class="display">Claxedo vs. {competitor.name}</h1><p class="section-copy">A factual scope comparison for buyers deciding which product layer they need. Reviewed against first-party sources on {competitor.lastReviewed}.</p>{expired && <div class="review-notice" role="status">This comparison is past its review deadline. It remains available at its canonical URL but is excluded from search discovery until re-verified.</div>}</section>
+      <section class="section"><div class="section-inner"><div class="intro-grid"><article><span>DESIGNED FOR</span><p>{competitor.intendedFor}</p></article><article><span>GENUINE STRENGTH</span><p>{competitor.strength}</p></article></div><ComparisonTable competitor={competitor} /></div></section>
+      <section class="section dark-band"><div class="section-inner"><p class="eyebrow">Verified facts</p><h2 class="section-title">What the current sources say.</h2><div class="fact-grid">{competitor.facts.map((fact) => <article><span>{fact.label}</span><p>{fact.value}</p><a href={fact.source}>Source ↗</a></article>)}</div></div></section>
+      <section class="section"><div class="section-inner source-layout"><ComparisonSources competitor={competitor} /><div><p class="eyebrow">Make your own assessment</p><h2 class="section-title">Use the workspace. Read the code.</h2><div class="actions"><DownloadMenu placement={`compare-${competitor.slug}`} /><a class="btn-secondary" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement={`compare-${competitor.slug}`}>{marketingActions.framework.label}</a></div></div></div></section>
+    </main>
+    <Footer />
+  </div>
+</Layout>
+
+<style>
+  .comparison-hero { padding: var(--section) var(--gutter); } .comparison-hero > * { max-width: 72rem; margin-inline: auto; } .comparison-hero > .text-link { display: block; margin-bottom: 4rem; }
+  .review-notice { max-width: 72rem; margin-top: 2rem; padding: 1rem 1.2rem; border: 1px solid var(--warn-text); border-radius: var(--radius); background: var(--warn-bg); color: var(--warn-text); font-size: .9rem; }
+  .intro-grid { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .intro-grid article { min-height: 11rem; padding: 1.5rem; background: var(--surface); } .intro-grid article + article { border-left: 1px solid var(--line); }
+  .intro-grid span, .fact-grid span { color: var(--ink-faint); font: .65rem var(--font-mono); letter-spacing: .06em; } .intro-grid p { margin: 2.5rem 0 0; color: var(--ink-soft); }
+  .fact-grid { display: grid; grid-template-columns: repeat(2, 1fr); margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .fact-grid article { min-height: 12rem; display: flex; flex-direction: column; padding: 1.5rem; background: var(--surface); } .fact-grid article:nth-child(even) { border-left: 1px solid var(--line); } .fact-grid article:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .fact-grid p { margin: 2.5rem 0 1rem; } .fact-grid a { margin-top: auto; color: var(--accent-text); font: .68rem var(--font-mono); text-decoration: none; }
+  .source-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: clamp(2rem, 7vw, 7rem); align-items: start; }
+  @media (max-width: 48rem) { .intro-grid, .fact-grid, .source-layout { grid-template-columns: 1fr; } .intro-grid article + article, .fact-grid article:nth-child(even) { border-left: 0; border-top: 1px solid var(--line); } }
+</style>

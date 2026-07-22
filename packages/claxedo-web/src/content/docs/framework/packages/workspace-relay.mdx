@@ -1,0 +1,95 @@
+---
+title: "@claxedo/workspace-relay"
+description: "The single canonical tunnel process routing authenticated browser traffic to workspace-runtime hosts, with JWT workspace tokens and a header-stripping trust boundary."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Warning from "../../../../components/framework/compat/Warning.astro"
+import CodeGroup from "../../../../components/framework/compat/CodeGroup.astro"
+
+
+`@claxedo/workspace-relay` is the canonical tunnel process between cloud-hosted browsers and `@claxedo/workspace-runtime` hosts, whether the host is a cloud VM or a user laptop. It verifies short-lived runtime access tokens, calls a configured target resolver/revocation callback, and forwards accepted traffic to the selected host with a freshly minted relay-host token. It is a public edge service — not the identity provider or policy database.
+
+<Note>
+Published on npm at **0.5.1** (`license: MIT`, `publishConfig.access: public`). Ships a `workspace-relay` bin.
+</Note>
+
+<Warning>
+The packaged bin and default server bootstrap run on **Bun** (they use `Bun.*` APIs); Node is not supported for the standalone process today. The other supported runtime is the Cloudflare Worker adapter. Production v1 is deliberately single-instance for user-hosted traffic — one active relay process per fleet.
+</Warning>
+
+## Install
+
+<CodeGroup>
+```sh npm
+npm install @claxedo/workspace-relay
+```
+
+```sh pnpm
+pnpm add @claxedo/workspace-relay
+```
+
+```sh bun
+bun add @claxedo/workspace-relay
+```
+</CodeGroup>
+
+## Quickstart
+
+Swap the relay's auth backend in a self-hosted deployment by passing a `TokenVerifier` from the protocol package:
+
+```ts
+import { createWorkspaceRelay } from "@claxedo/workspace-relay"
+import { createStaticTokenVerifier } from "@claxedo/workspace-relay-protocol"
+
+const now = Math.floor(Date.now() / 1000)
+
+const verifier = createStaticTokenVerifier({
+  tokens: {
+    "tok-tenant-1": {
+      subject: "u1",
+      scopes: ["workspace:write"],
+      // Must satisfy RuntimeAccessTokenClaims — the relay re-validates
+      // the verifier's output and rejects incomplete claims:
+      claims: {
+        iss: "claxedo-control-plane", // fixed Runtime Access Token issuer
+        aud: "workspace-relay",       // fixed Runtime Access Token audience
+        sub: "u1",
+        org_id: "org_1",
+        workspace_id: "ws_1", // bound to the workspace id in the request URL
+        host_id: "host_1",
+        role: "editor",       // "viewer" | "editor" | "admin" | "owner"
+        exp: now + 300,
+        iat: now,
+        jti: "jti-1",
+      },
+    },
+  },
+})
+
+const relay = createWorkspaceRelay({
+  // ...resolver/key options...
+  tokenVerifier: verifier,
+})
+```
+
+A custom verifier is only the crypto/introspection authority; the relay still validates its output into `RuntimeAccessTokenClaims`, binds the URL workspace id to the claims, applies revocation, and allowlists roles. The relay refuses to boot in production if `CLAXEDO_RELAY_RESOLVER_TOKEN` is missing.
+
+## Key capabilities
+
+- **Three-token model** — Runtime Access Token (RAT), Host Tunnel Token (HTT), and per-request Relay Host Token (RHT), each with bound issuer/audience/expiry.
+- **Forwarding boundary** — strips client-supplied `x-forwarded-*`, `x-real-ip`, and internal/supervisor headers; replaces `Authorization` with an RHT and sets `x-forwarded-by: workspace-relay`.
+- **Revocation** — `isRuntimeAccessTokenActive` is checked on every new HTTP request and WebSocket upgrade; long-lived sockets are authorized at establishment.
+- **Adapters** — Bun bootstrap (`createWorkspaceRelayBun`) and a Cloudflare Worker deployment.
+
+## Privileged surfaces
+
+<Warning>
+`GET /metrics` is privileged operational data. In production set `CLAXEDO_RELAY_METRICS_TOKEN` and scrape with a bearer token; unconfigured, it only allows loopback callers and otherwise fails closed. Cloudflare tracing (`Server-Timing` headers) is off by default and cannot be forced by clients without the operator secret `CLAXEDO_RELAY_TRACE_FORCE_SECRET`.
+</Warning>
+
+Wire types live in the sibling `@claxedo/workspace-relay-protocol` package — the split lets non-Node consumers implement the tunnel protocol without pulling Hono and Jose.
+
+## Full API
+
+See the [README on GitHub](https://github.com/kyashrathore/Claxedo/tree/dev/packages/workspace-relay) for the full public-surface table, token TTLs, env-var configuration, and the external-directory design for multi-instance topologies.

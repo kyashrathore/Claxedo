@@ -1,0 +1,47 @@
+---
+const prompt = "Read https://claxedo.com/start.md and assess the private self-host evaluation path for infrastructure I control. App-level authentication is not shipped, so do not expose Claxedo to the public internet or describe an unauthenticated deployment as production-ready. Prefer private networking, plan safe teardown, verify health, and ask before creating billable resources. Use authenticated CLIs or the platform secret store for credentials. Never paste secrets into chat, commit them, embed them in generated configuration, pass them in command arguments, or write them to logs."
+---
+
+<div class="copy-prompt" data-copy-prompt>
+  <div><span>AGENT-GUIDED SELF-HOST REVIEW</span><strong>Assess a private evaluation path before creating infrastructure.</strong></div>
+  <pre tabindex="0"><code>{prompt}</code></pre>
+  <button type="button" data-copy-button data-copy-value={prompt}>Copy prompt</button>
+  <p data-copy-status aria-live="polite">Keep credentials in authenticated CLIs or the target platform's secret store.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-copy-prompt]").forEach((root) => {
+    const button = root.querySelector<HTMLButtonElement>("[data-copy-button]")
+    const status = root.querySelector<HTMLElement>("[data-copy-status]")
+    button?.addEventListener("click", async () => {
+      if (!navigator.clipboard?.writeText) {
+        button.textContent = "Copy prompt"
+        if (status) status.textContent = "Clipboard access is unavailable. Select the prompt and copy it manually."
+        return
+      }
+      if (button.disabled) return
+      button.disabled = true
+      button.textContent = "Copying"
+      if (status) status.textContent = "Copying the private-evaluation prompt."
+      await navigator.clipboard.writeText(button.dataset.copyValue ?? "").then(() => {
+        button.textContent = "Copied"
+        if (status) status.textContent = "Prompt copied. Review the plan before the agent creates billable resources."
+      }).catch(() => {
+        button.textContent = "Copy prompt"
+        if (status) status.textContent = "Clipboard access was denied. Select the prompt and copy it manually."
+      })
+      button.disabled = false
+    })
+  })
+</script>
+
+<style>
+  .copy-prompt { display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin: 2.5rem 0; padding: 1.2rem; border: 1px solid var(--sl-color-gray-5); border-radius: .6rem; background: var(--sl-color-gray-7); }
+  .copy-prompt > div { display: grid; gap: .5rem; }
+  .copy-prompt span, .copy-prompt p { font: 500 .68rem var(--sl-font-mono); }
+  .copy-prompt span { color: var(--sl-color-gray-3); }
+  .copy-prompt pre { grid-column: 1 / -1; max-height: 14rem; margin: 0; white-space: pre-wrap; }
+  .copy-prompt button { min-height: 2.4rem; padding: .5rem .9rem; border: 0; border-radius: .4rem; background: var(--sl-color-text-accent); color: var(--sl-color-black); cursor: pointer; font: 500 .72rem var(--sl-font-mono); }
+  .copy-prompt p { grid-column: 1 / -1; margin: 0; color: var(--sl-color-gray-3); }
+  @media (max-width: 36rem) { .copy-prompt { grid-template-columns: 1fr; } }
+</style>

@@ -143,7 +143,7 @@ export function OnboardingEmptyState(props: {
       dialog.show(() => <DialogSelectProvider />)
       return
     }
-    platform.openLink("https://docs.claxedo.com")
+    platform.openLink("https://claxedo.com/framework")
   }
 
   function connectProvider(providerId: string) {

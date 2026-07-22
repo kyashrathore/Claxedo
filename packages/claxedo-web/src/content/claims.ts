@@ -1,0 +1,167 @@
+export type ClaimStatus = "verified" | "withheld"
+
+export type Claim = {
+  id: string
+  publicWording: string
+  owner: string
+  evidence: readonly string[]
+  status: ClaimStatus
+  verifiedAt?: string
+  reason?: string
+}
+
+export const claims = [
+  {
+    id: "free-beta",
+    publicWording: "Claxedo is free during beta.",
+    owner: "Claxedo product",
+    evidence: ["docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md"],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "desktop-local-mode",
+    publicWording: "Start locally without a Claxedo account.",
+    owner: "Claxedo Desktop",
+    evidence: ["packages/claxedo-desktop/package.json", "packages/claxedo-app/src/platform/auth/auth-session.ts"],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "sessions-and-terminals",
+    publicWording: "Chat sessions and terminals are equally first-class parts of the workspace.",
+    owner: "Claxedo App",
+    evidence: [
+      "packages/claxedo-app/src/app/workbench/rail/onboarding-empty-state.tsx",
+      "packages/claxedo-app/src/features/terminal/actions/terminal-actions.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "agent-cli-access",
+    publicWording: "Use supported coding agents through Claxedo's chat UI, or run any installed agent CLI in a terminal.",
+    owner: "Claxedo App",
+    evidence: [
+      "packages/agent-sdk-runtime/package.json",
+      "packages/claxedo-app/src/features/session/conversation/conversation-chat-client.ts",
+      "packages/claxedo-app/src/features/terminal/actions/terminal-actions.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "connected-placement",
+    publicWording: "Start work on your machine and reopen the same workspace from the desktop app or browser.",
+    owner: "Claxedo runtime",
+    evidence: [
+      "packages/claxedo-app/src/platform/runtime/cloud/workspace-runtime-store.ts",
+      "packages/claxedo-server/src/routes/remote-access.test.ts",
+      "packages/workspace-relay/src/composition.test.ts",
+      "packages/workspace-runtime/src/sdk-transport-parity.test.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "agent-extensions",
+    publicWording: "Agent Extensions package skills, instructions, MCP servers, plugins, hooks, and supporting files as portable agent setup.",
+    owner: "Agent Extensions",
+    evidence: [
+      "packages/agent-extensions/src/index.ts",
+      "packages/agent-extensions/src/materialize.ts",
+      "packages/agent-extensions/src/materializers/mcp.ts",
+      "packages/agent-extensions/src/materializers/skills.ts",
+      "packages/agent-extensions/src/materializers/cursor.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "acp-client",
+    publicWording: "Claxedo can present ACP-compatible agents in its structured chat UI.",
+    owner: "Agent runtime",
+    evidence: [
+      "packages/agent-sdk-runtime/src/adapters.ts",
+      "packages/agent-event-runtime/src/harnesses/acp/event-translator.ts",
+      "packages/agent-event-runtime/src/harnesses/acp/golden-compat.test.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "framework-runtime",
+    publicWording: "Workspace runtime, relay, and client contracts keep sessions, terminals, files, processes, and events behind explicit placement boundaries.",
+    owner: "Claxedo Framework",
+    evidence: [
+      "packages/workspace-runtime/src/public-api.test.ts",
+      "packages/workspace-runtime/src/routes/manifest.ts",
+      "packages/workspace-runtime/src/routes/pty.test.ts",
+      "packages/workspace-runtime/src/routes/file.test.ts",
+      "packages/workspace-runtime/src/routes/process.test.ts",
+      "packages/workspace-runtime/src/routes/session.test.ts",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "workgraph-local",
+    publicWording: "WorkGraph organizes durable Streams, Tasks, Attempts, decisions, and evidence.",
+    owner: "WorkGraph",
+    evidence: ["packages/workgraph/README.md", "packages/claxedo-app/src/features/workgraph/index.ts"],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "opencode-lineage",
+    publicWording: "Claxedo is built on the OpenCode engine.",
+    owner: "Claxedo maintainers",
+    evidence: ["LICENSE", "packages/opencode/package.json"],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "public-source",
+    publicWording: "Claxedo's clients, server, relay, protocol, WorkGraph, and framework are developed in the public repository.",
+    owner: "Claxedo maintainers",
+    evidence: [
+      "packages/claxedo-app/package.json",
+      "packages/claxedo-desktop/package.json",
+      "packages/claxedo-server/package.json",
+      "packages/workspace-relay/package.json",
+      "packages/workspace-relay-protocol/package.json",
+      "packages/workgraph/package.json",
+    ],
+    status: "verified",
+    verifiedAt: "2026-07-21",
+  },
+  {
+    id: "hosted-source-parity",
+    publicWording: "The hosted and self-hosted products run the same complete source composition.",
+    owner: "Claxedo operations",
+    evidence: [],
+    status: "withheld",
+    reason: "Requires deployed-composition evidence from the production owner.",
+  },
+  {
+    id: "setup-continuity",
+    publicWording: "Credentials and setup automatically follow users across machines and cloud workspaces.",
+    owner: "Claxedo connections",
+    evidence: [],
+    status: "withheld",
+    reason: "Requires a security-reviewed cross-machine acceptance artifact.",
+  },
+] as const satisfies readonly Claim[]
+
+export const publishableClaims = claims.filter(
+  (claim): claim is (typeof claims)[number] & { status: "verified"; verifiedAt: string } =>
+    claim.status === "verified" && claim.evidence.length > 0 && Boolean(claim.verifiedAt),
+)
+
+export const claim = (id: string) => publishableClaims.find((item) => item.id === id)
+
+export const requireClaim = (id: string) => {
+  const item = claim(id)
+  if (!item) throw new Error(`Public page requires a verified claim: ${id}`)
+  return item
+}

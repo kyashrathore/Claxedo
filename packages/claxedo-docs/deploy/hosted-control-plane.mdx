@@ -17,6 +17,37 @@ is **never** bundled into the Worker.
 The Worker entrypoint is `packages/claxedo-server/src/worker.ts`, which serves
 the Worker-safe app from `src/hosted-app.ts`.
 
+## Agent deploy
+
+Copy this brief into a coding agent that has the repository checked out and
+Cloudflare Wrangler access. The agent should stop for secrets and account-level
+choices, explain each required value, and verify the deployed system before it
+finishes.
+
+```text
+Deploy my Claxedo control plane to my Cloudflare account from this repository.
+
+Follow packages/claxedo-docs/deploy/hosted-control-plane.mdx and the existing
+packages/claxedo-server/wrangler.toml. First inspect the current configuration
+and run the Worker import-graph tests plus a Wrangler dry run. Then list the
+required public configuration and secrets, explain where each value comes from,
+and ask me for only the values you cannot safely generate or discover. Never
+print secret values after they are entered.
+
+Deploy the Worker only after the preflight passes. Verify /api/claxedo/health,
+/api/claxedo/mode, /.well-known/jwks.json, and compatibility metadata on the
+deployed URL. Remember that the Cloudflare Worker is the control plane: confirm
+the workspace authority, relay, and local or sandbox runtime are connected
+rather than claiming that local execution runs inside the Worker. Finish with
+the deployed URL, verification results, remaining optional integrations, and
+the exact rollback command.
+```
+
+Cloudflare's repository deploy buttons are not used here yet because this is a
+monorepo and the Worker depends on sibling workspace packages. The guided path
+keeps the existing build graph intact while still handing the mechanical work
+to an agent.
+
 ## Worker API surface
 
 | Method | Path | Notes |

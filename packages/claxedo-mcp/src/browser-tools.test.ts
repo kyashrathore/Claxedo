@@ -114,7 +114,7 @@ describe("browser-tools: desktop env gating", () => {
     expect(result.isError).toBe(true)
     const text = result.content[0]?.type === "text" ? result.content[0].text : ""
     expect(text).toContain("desktop app")
-    expect(text).toContain("CLAXEDO_ENABLE_BROWSER_TAB")
+    expect(text).toContain("open a browser tab")
   })
 
   test("returns legible isError when token is missing", async () => {

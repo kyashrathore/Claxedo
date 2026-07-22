@@ -23,7 +23,7 @@ export const DESKTOP_MCP_ORIGIN = "claxedo-agent-tools://local"
 
 /** Legible message surfaced to the agent when we're not running alongside a desktop app. */
 export const DESKTOP_UNAVAILABLE_MESSAGE =
-  "Browser tabs require the Claxedo desktop app with CLAXEDO_ENABLE_BROWSER_TAB=1. " +
+  "Browser tabs require the Claxedo desktop app. " +
   "Ask the user to open a browser tab in the desktop client, then retry."
 
 export type DesktopEnv = {

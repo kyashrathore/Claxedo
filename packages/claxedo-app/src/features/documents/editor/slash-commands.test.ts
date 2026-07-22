@@ -44,14 +44,14 @@ describe("slashCommandItems data integrity", () => {
   })
 
   test("all groups are from known set", () => {
-    const knownGroups = new Set(["AI", "Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
+    const knownGroups = new Set(["Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
     for (const item of slashCommandItems) {
       expect(knownGroups.has(item.group)).toBe(true)
     }
   })
 
   test("has at least one item per known group", () => {
-    const knownGroups = new Set(["AI", "Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
+    const knownGroups = new Set(["Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
     const groupsWithItems = new Set(slashCommandItems.map((item) => item.group))
     for (const group of knownGroups) {
       expect(groupsWithItems.has(group)).toBe(true)
@@ -82,15 +82,6 @@ describe("slash command filtering", () => {
     expect(ids).toContain("bullet_list")
     expect(ids).toContain("ordered_list")
     expect(ids).toContain("todo")
-  })
-
-  test('query "ai" matches Ask AI plus text via "plain" in its description', () => {
-    const results = filterItems("ai")
-    expect(results.length).toBe(3)
-    const ids = results.map((item) => item.id)
-    expect(ids).toContain("ai_open")
-    expect(ids).toContain("text")
-    expect(ids).toContain("mermaid")
   })
 
   test('query "zzzzz" returns empty array', () => {
@@ -140,20 +131,6 @@ function findItem(id: string) {
 // ── Command callback tests ────────────────────────────────────────────
 
 describe("slash command callbacks", () => {
-  test('"ai_open" dispatches claxedo-page-ai-open event', () => {
-    const events: CustomEvent[] = []
-    const handler = (e: Event) => events.push(e as CustomEvent)
-    window.addEventListener("claxedo-page-ai-open", handler)
-    try {
-      const { editor, calls } = mockEditor()
-      findItem("ai_open").command({ editor, range })
-      expect(calls).toContain("deleteRange")
-      expect(events).toHaveLength(1)
-    } finally {
-      window.removeEventListener("claxedo-page-ai-open", handler)
-    }
-  })
-
   test('"text" command calls setParagraph', () => {
     const { editor, calls } = mockEditor()
     findItem("text").command({ editor, range })

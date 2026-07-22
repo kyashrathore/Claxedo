@@ -1,0 +1,5 @@
+---
+interface Props { cols?: number }
+const { cols = 2 } = Astro.props
+---
+<div class="sl-card-grid" style={`--card-columns:${cols}`}><slot /></div>
