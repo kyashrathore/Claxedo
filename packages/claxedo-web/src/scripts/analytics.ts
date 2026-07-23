@@ -1,4 +1,4 @@
-export const conversionEventNames = ["download_app", "explore_framework"] as const
+export const conversionEventNames = ["open_claxedo", "deploy_cloudflare", "download_app", "explore_framework"] as const
 export type ConversionEventName = (typeof conversionEventNames)[number]
 
 export const conversionRoutes = ["/", "/app", "/compare", "/download", "/framework", "/pricing", "/404"] as const
@@ -47,14 +47,14 @@ declare global {
 
 if (typeof document !== "undefined") {
   document.addEventListener("click", (event) => {
-    const link = (event.target as Element | null)?.closest<HTMLAnchorElement>("a[data-analytics-event]")
-    if (!link) return
+    const target = (event.target as Element | null)?.closest<HTMLElement>("[data-analytics-event]")
+    if (!target) return
     const conversion = buildConversionEvent({
-      name: link.dataset.analyticsEvent,
+      name: target.dataset.analyticsEvent,
       route: new URL(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ?? "/404", window.location.origin).pathname,
-      placement: link.dataset.analyticsPlacement,
-      platform: link.dataset.analyticsPlatform,
-      version: link.dataset.analyticsVersion,
+      placement: target.dataset.analyticsPlacement,
+      platform: target.dataset.analyticsPlatform,
+      version: target.dataset.analyticsVersion,
     })
     if (!conversion) return
     window.__claxedoAnalyticsEvents ??= []

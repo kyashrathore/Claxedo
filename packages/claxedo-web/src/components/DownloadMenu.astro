@@ -6,13 +6,14 @@ interface Props {
   label?: string
   extraClass?: string
   placement?: string
+  variant?: "primary" | "secondary"
 }
 
-const { label = marketingActions.download.label, extraClass = "", placement = "inline" } = Astro.props
+const { label = marketingActions.download.label, extraClass = "", placement = "inline", variant = "primary" } = Astro.props
 ---
 
 <TrackedLink
-  class={`btn-primary ${extraClass}`}
+  class={`btn-${variant} ${extraClass}`}
   href={marketingActions.download.href}
   event={marketingActions.download.event}
   placement={placement}

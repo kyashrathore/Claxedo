@@ -2,36 +2,173 @@
 import Layout from "../../layouts/Layout.astro"
 import Nav from "../../components/Nav.astro"
 import Footer from "../../components/Footer.astro"
-import DownloadMenu from "../../components/DownloadMenu.astro"
-import { currentComparisons, trackedAlternatives } from "../../content/competitors"
+import DeploymentPrompt from "../../components/DeploymentPrompt.astro"
+import TrackedLink from "../../components/TrackedLink.astro"
+import {
+  claxedoFeatures,
+  currentComparisons,
+  featureRows,
+  trackedAlternatives,
+  type FeatureKey,
+  type FeatureState,
+} from "../../content/competitors"
 import { marketingActions } from "../../content/routes"
 
-const groups = Object.groupBy(currentComparisons, (competitor) => competitor.category)
+const rows = [...currentComparisons].sort((a, b) => a.priority - b.priority)
+
+const columns = [
+  { name: "Claxedo", href: null as string | null, us: true, features: claxedoFeatures as Record<FeatureKey, FeatureState> },
+  ...rows.map((c) => ({ name: c.name, href: `/compare/${c.slug}` as string | null, us: false, features: c.features })),
+]
+
+// One footnote per "partial" cell, in reading order (row by row).
+const partials: { product: string; feature: string; note: string }[] = []
+for (const { key, label } of featureRows) {
+  for (const c of rows) {
+    if (c.features[key] === "partial") {
+      partials.push({ product: c.name, feature: label, note: c.featureNotes?.[key] ?? "Partial or limited — see the full comparison." })
+    }
+  }
+}
 ---
 
-<Layout title="Compare Claxedo" description="Evidence-backed comparisons between Claxedo and adjacent coding-agent products.">
+<Layout title="Claxedo vs. the alternatives — a sourced comparison" description="How Claxedo compares to Paseo, Synara, Conductor, Superset, T3 Code, and OpenCode — a feature matrix with first-party sources.">
   <div class="shell">
     <Nav active="compare" />
     <main id="main-content">
-      <section class="compare-hero rule-grid"><p class="eyebrow">Maintained comparisons</p><h1 class="display">Choose the layer you need.</h1><p class="section-copy">Claxedo is a workspace around existing coding-agent harnesses. These comparisons explain where adjacent agents, orchestrators, remote-access tools, and connected workspaces overlap—and where the product boundary changes the decision.</p></section>
-      <section class="section"><div class="section-inner comparison-groups">{Object.entries(groups).map(([category, items]) => items && <section><h2>{category}</h2><div class="comparison-cards">{items.map((competitor) => <a href={`/compare/${competitor.slug}`}><span>0{competitor.priority}</span><h3>Claxedo vs. {competitor.name}</h3><p>{competitor.boundary}</p><small>Reviewed {competitor.lastReviewed} →</small></a>)}</div></section>)}</div></section>
-      <section class="section dark-band"><div class="section-inner"><p class="eyebrow">Research coverage</p><h2 class="section-title">Tracked broadly. Published carefully.</h2><p class="section-copy">The registry tracks the wider landscape without creating pages that nobody can maintain. Only comparisons with current first-party evidence, ownership, and a review deadline enter public discovery.</p><div class="tracked-grid">{Object.entries(trackedAlternatives).map(([group, names]) => <div><h3>{group}</h3><p>{names.join(" · ")}</p></div>)}</div></div></section>
-      <section class="section"><div class="section-inner"><p class="eyebrow">Try the product, inspect the foundation</p><h2 class="section-title">Make the comparison concrete.</h2><div class="actions"><DownloadMenu placement="compare-index" /><a class="btn-secondary" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement="compare-index">{marketingActions.framework.label}</a></div></div></section>
+      <section class="cmp-hero">
+        <div class="cmp-hero-inner">
+          <p class="eyebrow">Comparisons</p>
+          <h1 class="display">The whole field, side by side.</h1>
+          <p class="cmp-lead">Most tools here are single-operator apps or closed clouds. Claxedo is the harness-neutral, open-source, multi-user workspace your team self-hosts. Every claim links to a first-party source.</p>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-inner">
+          <p class="eyebrow">At a glance</p>
+          <h2 class="section-title">Every capability, in one table.</h2>
+          <div class="matrix-scroll">
+            <table class="matrix">
+              <thead>
+                <tr>
+                  <th scope="col">Feature</th>
+                  {columns.map((col) => (
+                    <th scope="col" class={col.us ? "matrix-us" : undefined}>{col.href ? <a href={col.href}>{col.name}</a> : col.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {featureRows.map(({ key, label }) => (
+                  <tr>
+                    <th scope="row">{label}</th>
+                    {columns.map((col) => (
+                      <td class={col.us ? "matrix-us" : undefined}>
+                        {col.features[key] === "yes" && <span class="tick tick-yes" title="Yes" aria-label="Yes">✓</span>}
+                        {col.features[key] === "partial" && <span class="tick-partial" title="Partial — see notes below" aria-label="Partial, see notes"><span class="tick tick-yes" aria-hidden="true">✓</span><sup class="fn" aria-hidden="true">*</sup></span>}
+                        {col.features[key] === "no" && <span class="tick tick-no" title="No" aria-label="No">—</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p class="matrix-legend"><span class="tick tick-yes" aria-hidden="true">✓</span> Yes<span class="lg-partial" aria-hidden="true"><span class="tick tick-yes">✓</span><sup class="fn">*</sup></span> Partial — see notes<span class="tick tick-no" aria-hidden="true">—</span> No</p>
+          <ul class="matrix-notes">{partials.map((p) => <li><strong>{p.product}</strong> · {p.feature} — {p.note}</li>)}</ul>
+          <p class="matrix-note">The pattern: everyone breaks on being <em>not fully open</em> or <em>single-operator</em>. Only Paseo is a real self-host peer — and nobody else ships a durable task ledger.</p>
+        </div>
+      </section>
+
+      <section class="section dark-band">
+        <div class="section-inner">
+          <p class="eyebrow">Deep dives</p>
+          <h2 class="section-title">Read the full comparison.</h2>
+          <div class="cmp-cards">
+            {rows.map((c) => (
+              <a href={`/compare/${c.slug}`}>
+                <span>0{c.priority} · {c.category}</span>
+                <h3>Claxedo vs. {c.name}</h3>
+                <p>{c.tagline}</p>
+                <small>Read the comparison <span aria-hidden="true">→</span></small>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-inner">
+          <p class="eyebrow">Research coverage</p>
+          <h2 class="section-title">Tracked broadly. Published carefully.</h2>
+          <p class="section-copy">We watch the wider landscape but only publish maintained, sourced pages. These are on the radar, not yet full comparisons.</p>
+          <div class="tracked-grid">{Object.entries(trackedAlternatives).map(([group, names]) => <div><h3>{group}</h3><p>{names.join(" · ")}</p></div>)}</div>
+        </div>
+      </section>
+
+      <section class="section dark-band">
+        <div class="section-inner cmp-final">
+          <p class="eyebrow">Get started</p>
+          <h2 class="section-title">The fastest comparison is running both.</h2>
+          <div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="compare-index">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><DeploymentPrompt class="btn-secondary" placement="compare-index" /></div>
+        </div>
+      </section>
     </main>
     <Footer />
   </div>
 </Layout>
 
 <style>
-  .compare-hero { padding: var(--section) var(--gutter); } .compare-hero > * { max-width: 72rem; margin-inline: auto; } .compare-hero .section-copy { margin-inline: auto; }
-  .comparison-groups { display: grid; gap: 4rem; } .comparison-groups > section > h2 { margin-bottom: 1rem; color: var(--ink-faint); font: 500 .68rem var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
-  .comparison-cards { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
-  .comparison-cards a { min-height: 16rem; padding: 1.5rem; background: var(--surface); text-decoration: none; }
-  .comparison-cards a:nth-child(even) { border-left: 1px solid var(--line); } .comparison-cards a:nth-child(n + 3) { border-top: 1px solid var(--line); }
-  .comparison-cards a:hover { background: var(--surface-hover); } .comparison-cards span, .comparison-cards small { color: var(--ink-faint); font: .66rem var(--font-mono); }
-  .comparison-cards h3 { margin: 2.5rem 0 .8rem; font: 500 1.35rem/1.2 var(--font-sans); letter-spacing: -.025em; } .comparison-cards p { color: var(--ink-soft); font-size: .9rem; } .comparison-cards small { display: block; margin-top: 2rem; }
+  .cmp-hero { padding: clamp(3.5rem, 8vw, 6.5rem) var(--gutter) clamp(2.5rem, 5vw, 4rem); }
+  .cmp-hero-inner { max-width: 72rem; margin-inline: auto; }
+  .cmp-hero .display { max-width: 18ch; }
+  .cmp-lead { max-width: 46rem; margin-top: 1.4rem; color: var(--ink-soft); font-size: clamp(1rem, 1.4vw, 1.18rem); line-height: 1.6; text-wrap: pretty; }
+
+  .matrix-scroll { margin-top: 3rem; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-lg); }
+  .matrix { width: 100%; min-width: 50rem; border-collapse: collapse; background: var(--surface); }
+  .matrix th, .matrix td { padding: .85rem 1rem; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .matrix tr > *:last-child { border-right: 0; }
+  .matrix tbody tr:last-child > * { border-bottom: 0; }
+  .matrix thead th { position: sticky; top: 0; background: var(--surface-raised); color: var(--ink); font: 500 .82rem/1.2 var(--font-sans); letter-spacing: -.01em; text-align: center; vertical-align: bottom; }
+  .matrix thead th:first-child { text-align: left; color: var(--ink-faint); font: 500 .66rem/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .matrix thead th a { color: inherit; text-decoration: none; }
+  .matrix thead th a:hover { color: var(--accent-text); text-decoration: underline; }
+  .matrix tbody th { text-align: left; color: var(--ink); font: 500 .88rem/1.3 var(--font-sans); letter-spacing: -.01em; }
+  .matrix tbody td { text-align: center; vertical-align: middle; }
+  .matrix-us { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+  .tick { display: inline-flex; width: 1.5rem; height: 1.5rem; align-items: center; justify-content: center; border-radius: 50%; font: 600 .9rem/1 var(--font-sans); }
+  .tick-yes { color: var(--success); background: var(--success-soft); }
+  .tick-no { color: var(--ink-faint); background: transparent; font-weight: 400; }
+  .tick-partial, .lg-partial { display: inline-flex; align-items: flex-start; }
+  .fn { margin: .05rem 0 0 .1rem; color: var(--accent-text); font: 700 .74rem/1 var(--font-sans); }
+  .matrix-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.1rem; margin-top: 1.3rem; color: var(--ink-faint); font: 500 .74rem/1.6 var(--font-mono); }
+  .matrix-legend .tick { width: 1.3rem; height: 1.3rem; margin-right: .1rem; font-size: .78rem; }
+  .lg-partial .tick { margin-right: 0; }
+  .matrix-notes { max-width: 60rem; margin: 1.3rem 0 0; padding: 0; list-style: none; display: grid; gap: .5rem; }
+  .matrix-notes li { position: relative; padding-left: 1.15rem; color: var(--ink-soft); font-size: .82rem; line-height: 1.5; }
+  .matrix-notes li::before { content: "*"; position: absolute; left: 0; top: .15rem; color: var(--accent-text); font-weight: 700; }
+  .matrix-notes strong { color: var(--ink); font-weight: 500; }
+  .matrix-note { max-width: 52rem; margin-top: 1.4rem; color: var(--ink-faint); font-size: .9rem; line-height: 1.6; }
+  .matrix-note em { color: var(--ink); font-style: normal; font-weight: 500; }
+
+  .cmp-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin-top: 3rem; }
+  .cmp-cards a { display: flex; flex-direction: column; min-height: 13rem; padding: 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; transition: transform .18s ease, border-color .18s ease; }
+  .cmp-cards a:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+  .cmp-cards span { color: var(--ink-faint); font: 500 .64rem var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+  .cmp-cards h3 { margin: 1.4rem 0 .7rem; font: 500 1.4rem/1.2 var(--font-sans); letter-spacing: -.025em; }
+  .cmp-cards p { margin: 0; color: var(--ink-soft); font-size: .92rem; line-height: 1.5; }
+  .cmp-cards small { margin-top: auto; padding-top: 1.2rem; color: var(--ink-faint); font: .64rem var(--font-mono); }
+  .cmp-cards small span { display: inline-block; transition: transform .18s ease; }
+  .cmp-cards a:hover small span { transform: translateX(3px); }
+
   .tracked-grid { display: grid; grid-template-columns: 1fr 1fr; margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
-  .tracked-grid div { padding: 1.3rem; background: var(--surface); } .tracked-grid div:nth-child(even) { border-left: 1px solid var(--line); } .tracked-grid div:nth-child(n + 3) { border-top: 1px solid var(--line); }
-  .tracked-grid h3 { font: 500 .7rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; } .tracked-grid p { margin: 1rem 0 0; font-size: .84rem; line-height: 1.7; }
-  @media (max-width: 42rem) { .comparison-cards, .tracked-grid { grid-template-columns: 1fr; } .comparison-cards a:nth-child(even), .tracked-grid div:nth-child(even) { border-left: 0; } .comparison-cards a + a, .tracked-grid div + div { border-top: 1px solid var(--line); } }
+  .tracked-grid div { padding: 1.3rem; background: var(--surface); }
+  .tracked-grid div:nth-child(even) { border-left: 1px solid var(--line); }
+  .tracked-grid div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .tracked-grid h3 { font: 500 .7rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .tracked-grid p { margin: 1rem 0 0; color: var(--ink-soft); font-size: .84rem; line-height: 1.7; }
+
+  .cmp-final .actions { margin-top: 2rem; }
+
+  @media (max-width: 46rem) { .cmp-cards, .tracked-grid { grid-template-columns: 1fr; } .tracked-grid div:nth-child(even) { border-left: 0; } .tracked-grid div + div { border-top: 1px solid var(--line); } }
 </style>

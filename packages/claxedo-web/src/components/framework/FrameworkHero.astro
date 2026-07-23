@@ -2,6 +2,7 @@
 import { Code } from "astro:components"
 import CopyPrompt from "./CopyPrompt.astro"
 import { requireClaim } from "../../content/claims"
+import { marketingActions } from "../../content/routes"
 import claudeIcon from "../../../../ui/src/assets/icons/file-types/claude.svg"
 import codexIcon from "../../../../ui/src/assets/icons/provider/openai.svg"
 import geminiIcon from "../../../../ui/src/assets/icons/file-types/gemini-ai.svg"
@@ -146,7 +147,7 @@ const handoff = [
     <div class="fw-grid fw-grid-handoff">{handoff.map(([title, description, href]) => (
       <a href={href}><strong>{title}</strong><small>{description}</small></a>
     ))}</div>
-    <div class="actions"><a class="btn-secondary" href="/download" data-analytics-event="download_app" data-analytics-placement="framework-landing">Download app</a></div>
+    <div class="actions"><a class="btn-primary" href={marketingActions.cloud.href} data-analytics-event={marketingActions.cloud.event} data-analytics-placement="framework-landing">Open Claxedo <span aria-hidden="true">↗</span></a></div>
   </div>
 </section>
 
@@ -171,6 +172,8 @@ const handoff = [
     /* Shiki `css-variables` theme token palette (github-dark-flavored). */
     --astro-code-color-text: #c9d1d9;
     --astro-code-color-background: #0e0e0e;
+    --astro-code-foreground: #c9d1d9;
+    --astro-code-background: #0e0e0e;
     --astro-code-token-keyword: #ff7b72;
     --astro-code-token-function: #d2a8ff;
     --astro-code-token-string: #a5d6ff;

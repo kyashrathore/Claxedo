@@ -6,9 +6,9 @@ import { downloads } from "../src/config"
 
 describe("public site contract", () => {
   test("has exactly two canonical marketing actions", () => {
-    expect(approvedMarketingActions).toEqual([marketingActions.download, marketingActions.framework])
-    expect(marketingActions.download.href).toBe(routes.download)
-    expect(marketingActions.framework.href).toBe(routes.framework)
+    expect(approvedMarketingActions).toEqual([marketingActions.cloud, marketingActions.deploy])
+    expect(marketingActions.cloud.href).toBe(routes.app)
+    expect(marketingActions.deploy.href).toBe(routes.deploy)
   })
 
   test("keeps the product hierarchy and canonical origin stable", () => {

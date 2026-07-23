@@ -1,0 +1,97 @@
+---
+import { cloudflareDeploymentPrompt } from "../content/deployment"
+
+interface Props {
+  class?: string
+  placement: string
+  label?: string
+}
+
+const { class: className = "btn-secondary", placement, label = "Deploy to Cloudflare" } = Astro.props
+---
+
+<span class="deployment-copy-action" data-deployment-prompt-action>
+  <button
+    class={className}
+    type="button"
+    data-copy-deployment-prompt
+    data-analytics-event="deploy_cloudflare"
+    data-analytics-placement={placement}
+  >
+    <span class="copy-label">
+      <span class="copy-label-sizer" aria-hidden="true">{label}</span>
+      <span class="copy-label-value" data-copy-label>{label}</span>
+    </span>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="5.25" y="2.25" width="8.5" height="8.5" rx="1.5"></rect>
+      <path d="M10.75 10.75v1.5a1.5 1.5 0 0 1-1.5 1.5h-5.5a1.5 1.5 0 0 1-1.5-1.5v-5.5a1.5 1.5 0 0 1 1.5-1.5h1.5"></path>
+    </svg>
+  </button>
+  <textarea
+    class="deployment-prompt-source"
+    readonly
+    tabindex="-1"
+    aria-hidden="true"
+    data-deployment-prompt-text
+  >{cloudflareDeploymentPrompt}</textarea>
+  <span class="deployment-copy-status" aria-live="polite" data-copy-status></span>
+</span>
+
+<style>
+  .deployment-copy-action { display: inline-flex; position: relative; }
+  .deployment-copy-action button { cursor: pointer; }
+  .deployment-copy-action button svg { width: .92rem; height: .92rem; fill: none; stroke: currentColor; stroke-width: 1.25; }
+  .copy-label { display: grid; white-space: nowrap; }
+  .copy-label-sizer, .copy-label-value { grid-area: 1 / 1; }
+  .copy-label-sizer { visibility: hidden; }
+  .copy-label-value { text-align: center; }
+  .deployment-prompt-source {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .deployment-copy-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-deployment-prompt-action]").forEach((root) => {
+    if (root.dataset.copyBound === "true") return
+    root.dataset.copyBound = "true"
+    const button = root.querySelector<HTMLButtonElement>("[data-copy-deployment-prompt]")
+    const prompt = root.querySelector<HTMLTextAreaElement>("[data-deployment-prompt-text]")
+    const label = root.querySelector<HTMLElement>("[data-copy-label]")
+    const status = root.querySelector<HTMLElement>("[data-copy-status]")
+    const initialLabel = label?.textContent ?? "Deploy to Cloudflare"
+
+    button?.addEventListener("click", async () => {
+      if (!prompt || !label || !status) return
+      try {
+        await navigator.clipboard.writeText(prompt.value)
+        label.textContent = "Prompt copied"
+        status.textContent = "Cloudflare deployment prompt copied."
+      } catch {
+        prompt.focus()
+        prompt.select()
+        const copied = document.execCommand("copy")
+        label.textContent = copied ? "Prompt copied" : "Copy unavailable"
+        status.textContent = copied
+          ? "Cloudflare deployment prompt copied."
+          : "Clipboard access is unavailable."
+      }
+      window.setTimeout(() => {
+        label.textContent = initialLabel
+      }, 2400)
+    })
+  })
+</script>

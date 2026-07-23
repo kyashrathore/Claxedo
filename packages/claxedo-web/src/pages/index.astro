@@ -2,7 +2,10 @@
 import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
-import DownloadMenu from "../components/DownloadMenu.astro"
+import ArchitectureExplorer from "../components/ArchitectureExplorer.astro"
+import RuntimePlacements from "../components/RuntimePlacements.astro"
+import DeploymentPrompt from "../components/DeploymentPrompt.astro"
+import TrackedLink from "../components/TrackedLink.astro"
 import { requireClaim } from "../content/claims"
 import { marketingActions } from "../content/routes"
 import { site } from "../content/site"
@@ -15,23 +18,23 @@ const agentCliAccess = requireClaim("agent-cli-access")
 const connectedPlacement = requireClaim("connected-placement")
 const sessionsAndTerminals = requireClaim("sessions-and-terminals")
 const workgraph = requireClaim("workgraph-local")
-const publicSource = requireClaim("public-source")
 ---
 
-<Layout title="Claxedo — The open-source workspace for coding agents" description={site.description}>
+<Layout title="Claxedo — The open cloud workspace for coding agents" description={site.description}>
   <div class="shell">
     <Nav active="home" />
     <main id="main-content">
       <section class="hero-home">
         <div class="hero-copy">
-          <p class="eyebrow">Open workspace for coding agents</p>
-          <h1 class="display">The open-source workspace for coding agents.</h1>
-          <p class="hero-lead">Run coding agents in a full chat UI or directly in the terminal. Keep the conversation, files, processes, changes, and review together.</p>
+          <p class="eyebrow">Open cloud workspace for coding agents</p>
+          <h1 class="display">The open cloud workspace for coding agents.</h1>
+          <p class="hero-lead">Start on Claxedo Cloud, or deploy the open control plane to your Cloudflare account with a coding agent. Bring your harnesses, AI provider, and workspace infrastructure.</p>
           <div class="actions">
-            <DownloadMenu placement="hero" />
-            <a class="btn-secondary" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement="hero">{marketingActions.framework.label} <span aria-hidden="true">↗</span></a>
+            <TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="hero">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink>
+            <DeploymentPrompt class="btn-secondary" placement="hero" />
           </div>
-          <div class="status-line" aria-label="Bring your own providers"><span>Bring your own AI provider</span><span>Bring your own sandbox provider</span></div>
+          <a class="architecture-link" href="#architecture">Explore the open architecture <span aria-hidden="true">↓</span></a>
+          <div class="status-line" aria-label="Open platform details"><span>MIT licensed from client to runtime</span><span>Bring your own AI and sandbox providers</span></div>
         </div>
         <div class="product-shot hero-shot">
           <a class="zoomable-image" href="/screenshots/marketing-workspace.png" target="_blank" rel="noopener" aria-label="Open the Claxedo workspace screenshot full size">
@@ -39,6 +42,9 @@ const publicSource = requireClaim("public-source")
           </a>
         </div>
       </section>
+
+      <ArchitectureExplorer />
+      <RuntimePlacements />
 
       <section class="section continuity" id="product">
         <div class="section-inner">
@@ -88,17 +94,9 @@ const publicSource = requireClaim("public-source")
         </div>
       </section>
 
-      <section class="section placement-section dark-band">
-        <div class="section-inner">
-          <p class="eyebrow">05 · Placement</p><h2 class="section-title">Run the work where it belongs.</h2>
-          <p class="section-copy">Use your laptop for immediate work, a machine you control for long-running sessions, or your preferred sandbox provider for isolation. Claxedo connects the workspace; it does not resell model tokens, compute, or sandbox minutes.</p>
-          <div class="placement-map"><div><small>LOCAL</small><strong>Your laptop</strong><span>Immediate files and tools</span></div><div><small>REMOTE</small><strong>Your machine</strong><span>Persistent, long-running work</span></div><div><small>SANDBOX</small><strong>Your provider</strong><span>Isolated compute when needed</span></div></div>
-        </div>
-      </section>
-
       <section class="section extensions-section">
         <div class="section-inner feature-block extension-block">
-          <div class="feature-copy"><p class="eyebrow">06 · Agent Extensions</p><h2 class="section-title">Sync your tools automatically.</h2><p class="section-copy">Set up skills, MCP servers, plugins, and instructions once. Claxedo syncs them into each workspace or sandbox, ready for the harness you choose.</p><a class="feature-link" href="/framework/concepts/extensions">How Agent Extensions work <span aria-hidden="true">→</span></a></div>
+          <div class="feature-copy"><p class="eyebrow">05 · Agent Extensions</p><h2 class="section-title">Sync your tools automatically.</h2><p class="section-copy">Set up skills, MCP servers, plugins, and instructions once. Claxedo syncs them into each workspace or sandbox, ready for the harness you choose.</p><a class="feature-link" href="/framework/concepts/extensions">How Agent Extensions work <span aria-hidden="true">→</span></a></div>
           <div class="extension-map" role="img" aria-label="Claxedo syncs skills, MCP servers, plugins, and instructions into a workspace or sandbox for compatible coding harnesses">
             <div class="extension-source"><small>YOUR TOOLKIT</small><strong>One setup</strong><span>Skills</span><span>MCP servers</span><span>Plugins</span><span>Instructions</span></div>
             <svg class="extension-flow" viewBox="0 0 160 80" aria-hidden="true"><path d="M8 40h118" /><path d="m116 24 18 16-18 16" /><circle cx="58" cy="40" r="4" /><circle cx="88" cy="40" r="4" /></svg>
@@ -107,19 +105,12 @@ const publicSource = requireClaim("public-source")
         </div>
       </section>
 
-      <section class="section source-section" id="framework">
-        <div class="section-inner split-copy">
-          <div><p class="eyebrow">07 · Self-hosting</p><h2 class="section-title">Self-host Claxedo with Cloudflare.</h2><p class="section-copy">{publicSource.publicWording} Open the agent-guided deployment brief and let your coding agent configure the Cloudflare control plane, connect the runtime and relay, deploy, and verify the complete path with you.</p></div>
-          <a class="source-card cloudflare-card" href="/framework/deploy/hosted-control-plane#agent-deploy"><span>DEPLOY ON CLOUDFLARE</span><strong>One guided path.<br />Your account.<br />Your infrastructure.</strong><small>Open the agent deployment guide →</small></a>
-        </div>
-      </section>
-
       <section class="section thesis dark-band" id="principles">
-        <div class="section-inner thesis-grid"><p class="eyebrow">08 · Why Claxedo exists</p><h2>We do not train models.<br />We do not replace harnesses.<br />We do not resell tokens or sandbox minutes.<br /><em>We build the open system that connects them.</em></h2><p>Models, agents, and infrastructure will keep changing. The interface around them should remain open, portable, and under your control.</p></div>
+        <div class="section-inner thesis-grid"><p class="eyebrow">06 · Why Claxedo exists</p><h2>We do not train models.<br />We do not replace harnesses.<br />We do not resell tokens or sandbox minutes.<br /><em>We build the open system that connects them.</em></h2><p>Models, agents, and infrastructure will keep changing. The interface around them should remain open, portable, and under your control.</p></div>
       </section>
 
       <section class="section closing">
-        <div class="section-inner"><p class="eyebrow">09 · Start with your workspace</p><h2 class="section-title">Give your agents a workspace that stays yours.</h2><p class="section-copy">Bring your own AI provider and sandbox provider. Claxedo gives them one open workspace.</p><div class="actions"><DownloadMenu placement="closing" /><a class="btn-secondary" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement="closing">{marketingActions.framework.label}</a></div></div>
+        <div class="section-inner"><p class="eyebrow">07 · Choose your cloud</p><h2 class="section-title">Use our cloud. Or make it yours with a prompt.</h2><p class="section-copy">One open workspace for your coding harnesses, models, and infrastructure.</p><div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="closing">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><DeploymentPrompt class="btn-secondary" placement="closing" /></div></div>
       </section>
     </main>
     <Footer />
@@ -127,11 +118,16 @@ const publicSource = requireClaim("public-source")
 </Layout>
 
 <style>
-  .hero-home { padding: clamp(3.5rem, 8vw, 7rem) var(--gutter) 0; overflow: hidden; }
+  .hero-home { padding: clamp(3.5rem, 8vw, 7rem) var(--gutter) clamp(2rem, 4vw, 3.5rem); overflow: hidden; }
   .hero-copy, .hero-home > .hero-shot { max-width: 72rem; margin-inline: auto; }
   /* Linear-sized headline: smaller type, wider wrap so it reads on ~2 lines */
   .hero-copy .display { max-width: 28ch; font-size: clamp(2.35rem, 4.4vw, 3.4rem); letter-spacing: -.04em; }
   .hero-lead { max-width: 42rem; margin-bottom: 2rem; color: #c4c4c4; font-size: clamp(1rem, 1.2vw, 1.12rem); line-height: 1.6; text-wrap: pretty; }
+  @media (prefers-color-scheme: light) { .hero-lead { color: var(--ink-soft); } }
+  .architecture-link { display: inline-flex; align-items: center; gap: .45rem; margin-top: 1.15rem; color: var(--ink-soft); font: 500 .78rem var(--font-sans); text-decoration: none; }
+  .architecture-link:hover { color: var(--ink); }
+  .architecture-link span { transition: transform .18s ease; }
+  .architecture-link:hover span { transform: translateY(3px); }
   .hero-shot { position: relative; margin-top: clamp(3rem, 6vw, 5rem); }
   .hero-shot::before { content: ""; position: absolute; inset: -16% -8% -24%; z-index: -1; background: radial-gradient(56% 56% at 50% 38%, color-mix(in srgb, var(--brand) 24%, transparent), transparent 72%); filter: blur(64px); pointer-events: none; }
   .split-copy { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(2rem, 7vw, 7rem); align-items: start; }
@@ -181,16 +177,6 @@ const publicSource = requireClaim("public-source")
   .extension-target > span { margin-top: auto; color: #a0a09b; font: .67rem/1.5 var(--font-mono); }
   .feature-link { width: fit-content; margin-top: 1.5rem; color: var(--ink); font: .72rem var(--font-mono); text-decoration: none; border-bottom: 1px solid var(--line-strong); padding-bottom: .25rem; }
   .feature-link:hover { color: var(--brand); border-color: currentColor; }
-  .placement-map { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 4rem; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
-  .placement-map > div { min-height: 13rem; display: grid; align-content: space-between; gap: 1rem; padding: 1.3rem; background: var(--surface); }
-  .placement-map small, .placement-map span { color: var(--ink-faint); font: .65rem var(--font-mono); }
-  .placement-map strong { font: 500 1.25rem var(--font-sans); }
-  .source-card:hover { background: var(--surface-hover); }
-  .source-card { min-height: 24rem; display: grid; align-content: space-between; gap: 2rem; padding: 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; }
-  .source-card span, .source-card small { color: var(--ink-faint); font: .67rem var(--font-mono); }
-  .source-card strong { font: 500 clamp(1.25rem, 2vw, 1.6rem)/1.5 var(--font-mono); }
-  .cloudflare-card { background: radial-gradient(circle at 82% 18%, rgb(243 161 59 / .18) 0%, transparent 40%), var(--surface); }
-  .cloudflare-card span { color: #f3a13b; }
   .thesis-grid h2 { max-width: 30ch; margin: 2rem 0 2.5rem; font: 500 clamp(1.9rem, 4.2vw, 3.4rem)/1.1 var(--font-sans); letter-spacing: -.035em; }
   .thesis-grid h2 em { color: var(--brand); font-style: normal; }
   .thesis-grid > p:last-child { max-width: 42rem; font-size: 1.05rem; }
@@ -199,8 +185,6 @@ const publicSource = requireClaim("public-source")
   /* Hover life: cards lift + border brightens, arrows track */
   .continuity-grid article, .harness-grid article { transition: transform .18s ease, border-color .18s ease, background .18s ease; }
   .continuity-grid article:hover, .harness-grid article:hover { transform: translateY(-2px); border-color: var(--line-strong); }
-  .placement-map > div { transition: background .18s ease; }
-  .placement-map > div:hover { background: var(--surface-hover); }
   .actions .btn-secondary span, .feature-link span { display: inline-block; transition: transform .18s ease; }
   .actions .btn-secondary:hover span { transform: translate(2px, -2px); }
   .feature-link:hover span { transform: translateX(3px); }
@@ -225,7 +209,7 @@ const publicSource = requireClaim("public-source")
     .extension-map { min-height: 26rem; }
   }
   @media (max-width: 42rem) {
-    .continuity-grid, .harness-grid, .placement-map { grid-template-columns: 1fr; }
+    .continuity-grid, .harness-grid { grid-template-columns: 1fr; }
     .continuity-grid article { min-height: 12rem; }
     .harness-grid article { min-height: 6.5rem; }
     .feature-block { padding: .8rem; }
