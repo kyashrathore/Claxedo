@@ -1,26 +1,42 @@
 ---
-import type { Competitor } from "../content/competitors"
+import { capabilityRows, claxedoCapabilities, type Competitor } from "../content/competitors"
 
 interface Props { competitor: Competitor }
 const { competitor } = Astro.props
 ---
 
-<div class="comparison-table" role="table" aria-label={`Claxedo and ${competitor.name} comparison boundary`}>
-  <div class="comparison-row comparison-head" role="row"><span role="columnheader">Decision area</span><span role="columnheader">{competitor.name}</span><span role="columnheader">Claxedo</span></div>
-  <div class="comparison-row" role="row"><strong role="rowheader">Product center</strong><span>{competitor.intendedFor}</span><span>A connected workspace around coding-agent harnesses.</span></div>
-  <div class="comparison-row" role="row"><strong role="rowheader">Genuine overlap</strong><span class="wide">{competitor.overlap}</span></div>
-  <div class="comparison-row" role="row"><strong role="rowheader">Decision boundary</strong><span class="wide">{competitor.boundary}</span></div>
+<div class="cmp-table" role="table" aria-label={`Claxedo and ${competitor.name} capability comparison`}>
+  <div class="cmp-row cmp-head" role="row">
+    <span role="columnheader">Capability</span>
+    <span role="columnheader">{competitor.name}</span>
+    <span role="columnheader" class="cmp-claxedo">Claxedo</span>
+  </div>
+  {capabilityRows.map(({ key, label }) => (
+    <div class="cmp-row" role="row">
+      <strong role="rowheader">{label}</strong>
+      <span data-col={competitor.name}>{competitor.capabilities[key]}</span>
+      <span class="cmp-claxedo" data-col="Claxedo">{claxedoCapabilities[key]}</span>
+    </div>
+  ))}
 </div>
 
 <style>
-  .comparison-table { margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
-  .comparison-row { display: grid; grid-template-columns: .65fr 1fr 1fr; background: var(--surface); }
-  .comparison-row + .comparison-row { border-top: 1px solid var(--line); }
-  .comparison-row > * { min-width: 0; padding: 1.1rem 1.2rem; }
-  .comparison-row > * + * { border-left: 1px solid var(--line); }
-  .comparison-row strong, .comparison-head { font: 500 .68rem/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
-  .comparison-row span { color: var(--ink-soft); font-size: .9rem; }
-  .comparison-head { background: var(--surface-raised); color: var(--ink-faint); }
-  .wide { grid-column: 2 / -1; }
-  @media (max-width: 42rem) { .comparison-row { grid-template-columns: 1fr; } .comparison-row > * + * { border-left: 0; border-top: 1px solid var(--line); } .wide { grid-column: auto; } .comparison-head { display: none; } }
+  .cmp-table { margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .cmp-row { display: grid; grid-template-columns: minmax(0, .6fr) minmax(0, 1fr) minmax(0, 1fr); background: var(--surface); }
+  .cmp-row + .cmp-row { border-top: 1px solid var(--line); }
+  .cmp-row > * { min-width: 0; padding: 1rem 1.15rem; font-size: .88rem; line-height: 1.5; }
+  .cmp-row > * + * { border-left: 1px solid var(--line); }
+  .cmp-row strong { color: var(--ink-faint); font: 500 .66rem/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .cmp-row span { color: var(--ink-soft); }
+  .cmp-row .cmp-claxedo { color: var(--ink); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+  .cmp-head { background: var(--surface-raised); }
+  .cmp-head span, .cmp-head .cmp-claxedo { color: var(--ink); font: 500 .82rem/1 var(--font-sans); letter-spacing: -.01em; }
+  .cmp-head span[role="columnheader"]:first-child { color: var(--ink-faint); font: 500 .66rem/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  @media (max-width: 46rem) {
+    .cmp-row { grid-template-columns: 1fr; }
+    .cmp-row > * + * { border-left: 0; border-top: 1px solid var(--line); }
+    .cmp-row strong { background: var(--surface-raised); }
+    .cmp-head { display: none; }
+    .cmp-row span::before { content: attr(data-col); display: block; margin-bottom: .3rem; color: var(--ink-faint); font: 500 .6rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  }
 </style>

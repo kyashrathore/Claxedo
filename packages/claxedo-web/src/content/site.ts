@@ -2,10 +2,10 @@ import { marketingActions, routes } from "./routes"
 
 export const site = {
   name: "Claxedo",
-  category: "Connected agent workspace",
-  headline: "The open-source workspace for coding agents.",
+  category: "Open cloud workspace",
+  headline: "The open cloud workspace for coding agents.",
   description:
-    "Run Claude Code, Codex, Gemini CLI, OpenCode, and any coding-agent CLI across first-class sessions and terminals. Organize parallel agent work with WorkGraph, locally or on infrastructure you choose.",
+    "Use Claxedo Cloud or deploy the open control plane to your Cloudflare account. Run Claude Code, Codex, OpenCode, and other coding agents across connected workspace runtimes you control.",
   freeBeta: "Free during beta",
   localMode: "Local mode works without an account",
   product: {
@@ -25,10 +25,11 @@ export const site = {
 
 export const commercialNavigation = [
   { label: "Product", href: "/#product" },
+  { label: "Architecture", href: "/#architecture" },
   { label: "WorkGraph", href: "/#workgraph" },
-  { label: "How it works", href: "/#how-it-works" },
   { label: "Pricing", href: routes.pricing },
-  { label: "Why Claxedo", href: "/#principles" },
+  { label: "Framework", href: routes.framework },
+  { label: "Download", href: routes.download },
 ] as const
 
-export const approvedMarketingActions = Object.values(marketingActions)
+export const approvedMarketingActions = [marketingActions.cloud, marketingActions.deploy]

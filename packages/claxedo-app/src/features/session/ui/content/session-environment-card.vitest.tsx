@@ -24,6 +24,7 @@ function source(overrides?: Partial<SessionEnvironmentSource>): SessionEnvironme
     isolation: () => "worktree",
     worktreeDir: () => "/Users/me/.worktrees/opencode-fix",
     projectName: () => "opencode",
+    repoSlug: () => "kyashrathore/Claxedo",
     ...overrides,
   }
 }
@@ -41,14 +42,14 @@ describe("SessionEnvironmentCard", () => {
     // Bounded card surface, not the chromeless rail column.
     expect(card()).toHaveClass("is-floating")
 
-    // Worktree + branch facts, values as trailing meta. A dedicated worktree
-    // is named by its directory basename.
-    expect(within(card()).getByText("Worktree")).toBeInTheDocument()
+    // Worktree + branch facts are icon-led: the row text IS the value (no
+    // "Worktree:" / "Branch:" field label). A dedicated worktree is named by
+    // its directory basename.
     expect(within(card()).getByText("opencode-fix")).toBeInTheDocument()
     expect(within(card()).getByText("codex/feat-documents-core")).toBeInTheDocument()
 
     // Facts are not buttons — navigation lives only in the nav section.
-    expect(within(card()).getByText("Worktree").closest("button")).toBeNull()
+    expect(within(card()).getByText("opencode-fix").closest("button")).toBeNull()
     expect(within(card()).getByText("codex/feat-documents-core").closest("button")).toBeNull()
   })
 
@@ -63,6 +64,18 @@ describe("SessionEnvironmentCard", () => {
     const changesRow = within(card()).getByRole("button", { name: /Changes/ })
     expect(within(changesRow).getByText("+12")).toBeInTheDocument()
     expect(within(changesRow).getByText("−4")).toBeInTheDocument()
+  })
+
+  test("formats large diff counts with thousands separators", () => {
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source({ changes: () => ({ files: 40, added: 13895, removed: 5075 }) }),
+        onOpenTab: () => {},
+      }),
+    )
+    const changesRow = within(card()).getByRole("button", { name: /Changes/ })
+    expect(within(changesRow).getByText("+13,895")).toBeInTheDocument()
+    expect(within(changesRow).getByText("−5,075")).toBeInTheDocument()
   })
 
   test("shows 'Clean' on the Changes row when the working tree has no changes", () => {
@@ -94,7 +107,6 @@ describe("SessionEnvironmentCard", () => {
         onOpenTab: () => {},
       }),
     )
-    expect(within(card()).getByText("Worktree")).toBeInTheDocument()
     expect(within(card()).getByText("Main")).toBeInTheDocument()
     local.unmount()
 
@@ -123,6 +135,30 @@ describe("SessionEnvironmentCard", () => {
     expect(onOpenTab).toHaveBeenNthCalledWith(1, "changes")
     expect(onOpenTab).toHaveBeenNthCalledWith(2, "files")
     expect(onOpenTab).toHaveBeenNthCalledWith(3, "processes")
+  })
+
+  test("opens the repository on its git host from the Repository row", async () => {
+    const onOpenRepo = vi.fn()
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source(),
+        onOpenTab: () => {},
+        onOpenRepo,
+      }),
+    )
+    const repo = within(card()).getByRole("region", { name: "Repository" })
+    await fireEvent.click(within(repo).getByRole("button", { name: /kyashrathore\/Claxedo/ }))
+    expect(onOpenRepo).toHaveBeenCalledWith("kyashrathore/Claxedo")
+  })
+
+  test("omits the Repository row when the project has no known git remote", () => {
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source({ repoSlug: () => undefined }),
+        onOpenTab: () => {},
+      }),
+    )
+    expect(within(card()).queryByRole("region", { name: "Repository" })).toBeNull()
   })
 
   test("collapse is a route-restorable preference that survives a remount", async () => {

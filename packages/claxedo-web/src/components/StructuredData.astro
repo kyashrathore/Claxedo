@@ -1,6 +1,6 @@
 ---
 import { github, version } from "../config"
-import { canonicalUrl } from "../content/routes"
+import { canonicalUrl, routes } from "../content/routes"
 import { site } from "../content/site"
 
 interface Props { pathname: string }
@@ -23,14 +23,32 @@ const graph: Record<string, unknown>[] = [
   },
 ]
 
-if (["/", "/download", "/pricing"].includes(pathname.replace(/\/$/, "") || "/")) {
+const normalizedPath = pathname.replace(/\/$/, "") || "/"
+
+if (["/", "/pricing"].includes(normalizedPath)) {
   graph.push({
     "@type": "SoftwareApplication",
+    "@id": canonicalUrl("/#cloud-application"),
+    name: site.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Web",
+    url: routes.app,
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free during beta" },
+    publisher: { "@id": canonicalUrl("/#organization") },
+  })
+}
+
+if (["/", "/download", "/pricing"].includes(normalizedPath)) {
+  graph.push({
+    "@type": "SoftwareApplication",
+    "@id": canonicalUrl("/download#desktop-application"),
     name: site.clients.desktop.name,
     applicationCategory: "DeveloperApplication",
     operatingSystem: "macOS, Windows, Linux",
     softwareVersion: version,
     url: canonicalUrl("/download"),
+    isAccessibleForFree: true,
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free during beta" },
     publisher: { "@id": canonicalUrl("/#organization") },
   })

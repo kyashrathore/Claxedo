@@ -4,12 +4,12 @@ import { competitors, currentComparisons, publicComparisons } from "../src/conte
 describe("competitor contract", () => {
   test("publishes the six reviewed launch comparisons", () => {
     expect(currentComparisons.map((competitor) => competitor.slug)).toEqual([
-      "matrix-os",
-      "omnigent",
       "paseo",
-      "openhands",
+      "synara",
+      "conductor",
+      "superset",
       "t3-code",
-      "hermes-agent",
+      "opencode",
     ])
   })
 
@@ -30,7 +30,12 @@ describe("competitor contract", () => {
   test("keeps comparison conclusions narrower than sourced facts", () => {
     expect(
       publicComparisons.every(
-        (competitor) => competitor.boundary.length > 0 && competitor.overlap.length > 0 && competitor.facts.length >= 2,
+        (competitor) =>
+          competitor.verdict.length > 0 &&
+          competitor.genuineEdge.length >= 2 &&
+          competitor.claxedoDiffers.length >= 2 &&
+          competitor.chooseThem.length > 0 &&
+          competitor.chooseClaxedo.length > 0,
       ),
     ).toBe(true)
   })

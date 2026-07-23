@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { buildConversionEvent, conversionEventNames, conversionRoute } from "../src/scripts/analytics"
 
 describe("conversion analytics contract", () => {
-  test("emits only the two bounded conversion events", () => {
-    expect(conversionEventNames).toEqual(["download_app", "explore_framework"])
+  test("emits only the bounded conversion events", () => {
+    expect(conversionEventNames).toEqual(["open_claxedo", "deploy_cloudflare", "download_app", "explore_framework"])
     expect(buildConversionEvent({ name: "download_app", route: "/download?source=secret", placement: "download-page", platform: "linux-deb", version: "0.0.59" })).toEqual({
       name: "download_app", route: "/download", placement: "download-page", platform: "linux-deb", version: "0.0.59",
     })

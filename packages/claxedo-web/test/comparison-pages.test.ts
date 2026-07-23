@@ -8,8 +8,8 @@ describe("comparison pages", () => {
   })
 
   test("expires otherwise-current records after their review date", () => {
-    expect(currentComparisonsFor(publicComparisons, "2026-08-22")).toHaveLength(0)
-    expect(currentComparisonsFor(publicComparisons, "2026-08-21")).toHaveLength(6)
+    expect(currentComparisonsFor(publicComparisons, "2026-08-23")).toHaveLength(0)
+    expect(currentComparisonsFor(publicComparisons, "2026-08-22")).toHaveLength(6)
   })
 
   test("requires visible review metadata and first-party sources", () => {

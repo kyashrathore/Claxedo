@@ -1,0 +1,149 @@
+---
+// The three composition modes of the runtime topology. `variant="toggle"`
+// shows a segmented control that swaps one diagram at a time; `variant="row"`
+// shows all three side by side. Same visual language as ArchitectureMap.
+import { archModes } from "./arch-stages"
+interface Props { variant?: "toggle" | "row" }
+const { variant = "toggle" } = Astro.props
+---
+
+<div class:list={["arch-modes", `is-${variant}`]} data-active="local">
+  {variant === "toggle" && (
+    <div class="am-switch" role="tablist">
+      {archModes.map((m, i) => (
+        <button class:list={["am-tab", i === 0 && "is-active"]} data-mode={m.id} role="tab" type="button">{m.label}</button>
+      ))}
+    </div>
+  )}
+  {variant === "toggle" && (
+    <p class="am-lead">It's the same <code>@claxedo/workspace-runtime</code> in every mode — only where it runs, and how you reach it, changes.</p>
+  )}
+
+  <div class="am-panels">
+    {archModes.map((m, i) => (
+      <div class:list={["am-panel", i === 0 && "is-active"]} data-mode={m.id}>
+        {variant === "row" && <div class="am-label">{m.label}</div>}
+        <div class="am-viz">
+          {/* ---- LOCAL ---- */}
+          {m.id === "local" && (
+            <svg viewBox="0 0 760 158" xmlns="http://www.w3.org/2000/svg" class="am-svg" role="img" aria-label="Local mode: clients, control plane, and an embedded workspace runtime all on your machine, connected over loopback with no relay.">
+              <rect class="am-zone" x="24" y="24" width="712" height="78" rx="12"/>
+              <text class="am-tag" x="42" y="44">YOUR MACHINE</text>
+              <path class="am-flow" d="M204 64 H356" marker-end="url(#amAr)"/>
+              <path class="am-flow" d="M404 64 H556" marker-end="url(#amAr)"/>
+              <g transform="translate(180,64)"><rect class="am-tile" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><rect x="-13" y="-11" width="19" height="15" rx="2"/><path d="M-6 4 v3 M-10 9 h8"/><rect class="am-icfill" x="3" y="-4" width="10" height="15" rx="2.5"/></g></g>
+              <text class="am-name" x="180" y="124" text-anchor="middle">Clients</text>
+              <g transform="translate(380,64)"><rect class="am-tile" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><circle cx="0" cy="0" r="3.4"/><circle cx="-10" cy="-7" r="2.4"/><circle cx="10" cy="-7" r="2.4"/><circle cx="0" cy="11" r="2.4"/><path d="M-2.6 -1.8 L-8 -5.6 M2.6 -1.8 L8 -5.6 M0 3.4 L0 8.6"/></g></g>
+              <text class="am-name" x="380" y="124" text-anchor="middle">Control plane</text>
+              <text class="am-tag" x="580" y="32" text-anchor="middle">EMBEDDED · LOOPBACK</text>
+              <g transform="translate(580,64)"><rect class="am-tile am-host" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><rect x="-14" y="-11" width="28" height="22" rx="2.5"/><path d="M-8 -3 L-3 1 L-8 5 M-1 5 h7"/></g></g>
+              <text class="am-name" x="580" y="124" text-anchor="middle">Workspace runtime</text>
+              <text class="am-pkg" x="580" y="139" text-anchor="middle">@claxedo/workspace-runtime</text>
+            </svg>
+          )}
+          {/* ---- CLOUD ---- */}
+          {m.id === "cloud" && (
+            <svg viewBox="0 0 760 158" xmlns="http://www.w3.org/2000/svg" class="am-svg" role="img" aria-label="Cloud mode: clients reach the control plane, which routes across a trust boundary through the secure relay to a remote workspace host.">
+              <path class="am-flow" d="M132 64 H268" marker-end="url(#amAr)"/>
+              <path class="am-flow" d="M312 64 H388" marker-end="url(#amAr)"/>
+              <path class="am-flow" d="M432 64 H528" marker-end="url(#amAr)"/>
+              <line class="am-bound" x1="410" y1="26" x2="410" y2="102"/>
+              <rect class="am-marker" x="372" y="52" width="76" height="24" rx="12"/>
+              <g class="am-ic" transform="translate(388,64) scale(.82)"><path d="M0 -7 C 4 -5 6 -5 6 -5 C 6 0 4 4 0 6 C -4 4 -6 0 -6 -5 C -6 -5 -4 -5 0 -7 Z"/></g>
+              <text class="am-mini" x="405" y="68">relay</text>
+              <text class="am-tag" x="410" y="120" text-anchor="middle">TRUST BOUNDARY</text>
+              <g transform="translate(108,64)"><rect class="am-tile" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><rect x="-13" y="-11" width="19" height="15" rx="2"/><path d="M-6 4 v3 M-10 9 h8"/><rect class="am-icfill" x="3" y="-4" width="10" height="15" rx="2.5"/></g></g>
+              <text class="am-name" x="108" y="124" text-anchor="middle">Clients</text>
+              <g transform="translate(290,64)"><rect class="am-tile" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><circle cx="0" cy="0" r="3.4"/><circle cx="-10" cy="-7" r="2.4"/><circle cx="10" cy="-7" r="2.4"/><circle cx="0" cy="11" r="2.4"/><path d="M-2.6 -1.8 L-8 -5.6 M2.6 -1.8 L8 -5.6 M0 3.4 L0 8.6"/></g></g>
+              <text class="am-name" x="290" y="124" text-anchor="middle">Control plane</text>
+              <text class="am-tag" x="552" y="32" text-anchor="middle">REMOTE HOST</text>
+              <g transform="translate(552,64)"><rect class="am-tile am-host" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><rect x="-14" y="-11" width="28" height="22" rx="2.5"/><path d="M-8 -3 L-3 1 L-8 5 M-1 5 h7"/></g></g>
+              <text class="am-name" x="552" y="124" text-anchor="middle">Workspace runtime</text>
+              <text class="am-pkg" x="552" y="139" text-anchor="middle">@claxedo/workspace-runtime</text>
+            </svg>
+          )}
+          {/* ---- SHARED ---- */}
+          {m.id === "shared" && (
+            <svg viewBox="0 0 760 158" xmlns="http://www.w3.org/2000/svg" class="am-svg" role="img" aria-label="Shared mode: a signed-in client on another device reaches your laptop's workspace host through the relay.">
+              <path class="am-flow" d="M132 64 H268" marker-end="url(#amAr)"/>
+              <path class="am-flow" d="M312 64 H388" marker-end="url(#amAr)"/>
+              <path class="am-flow" d="M432 64 H548" marker-end="url(#amAr)"/>
+              <line class="am-bound" x1="410" y1="26" x2="410" y2="102"/>
+              <rect class="am-marker" x="372" y="52" width="76" height="24" rx="12"/>
+              <g class="am-ic" transform="translate(388,64) scale(.82)"><path d="M0 -7 C 4 -5 6 -5 6 -5 C 6 0 4 4 0 6 C -4 4 -6 0 -6 -5 C -6 -5 -4 -5 0 -7 Z"/></g>
+              <text class="am-mini" x="405" y="68">relay</text>
+              <text class="am-tag am-cx" x="108" y="30" text-anchor="middle">ANOTHER DEVICE</text>
+              <g transform="translate(108,64)"><rect class="am-tile" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><rect x="-8" y="-13" width="16" height="26" rx="3"/><path d="M-2 8 h4"/></g></g>
+              <text class="am-name" x="108" y="124" text-anchor="middle">Client</text>
+              <g transform="translate(290,64)"><rect class="am-tile" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><circle cx="0" cy="0" r="3.4"/><circle cx="-10" cy="-7" r="2.4"/><circle cx="10" cy="-7" r="2.4"/><circle cx="0" cy="11" r="2.4"/><path d="M-2.6 -1.8 L-8 -5.6 M2.6 -1.8 L8 -5.6 M0 3.4 L0 8.6"/></g></g>
+              <text class="am-name" x="290" y="124" text-anchor="middle">Control plane</text>
+              <text class="am-tag" x="572" y="32" text-anchor="middle">YOUR LAPTOP · SIGNED</text>
+              <g transform="translate(572,64)"><rect class="am-tile am-host" x="-22" y="-22" width="44" height="44" rx="11"/><g class="am-ic" transform="scale(.72)"><rect x="-14" y="-11" width="28" height="22" rx="2.5"/><path d="M-8 -3 L-3 1 L-8 5 M-1 5 h7"/></g><g class="am-lock" transform="translate(15,-15)"><circle r="8" class="am-lockbg"/><g class="am-ic" transform="scale(.5)"><rect x="-5" y="-1" width="10" height="8" rx="1.5"/><path d="M-3 -1 v-2 a3 3 0 0 1 6 0 v2"/></g></g></g>
+              <text class="am-name" x="572" y="124" text-anchor="middle">Workspace runtime</text>
+              <text class="am-pkg" x="572" y="139" text-anchor="middle">@claxedo/workspace-runtime</text>
+            </svg>
+          )}
+        </div>
+        <p class="am-caption">{m.caption}</p>
+      </div>
+    ))}
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <marker id="amAr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
+  </defs></svg>
+</div>
+
+<style>
+  .arch-modes { --am-line: var(--line); }
+  .am-switch { display: inline-flex; gap: .2rem; padding: .25rem; margin-bottom: 1.25rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+  .am-tab { padding: .4rem .95rem; border: 0; border-radius: 999px; background: transparent; color: var(--ink-faint); font: 500 .78rem var(--font-sans); letter-spacing: -.01em; cursor: pointer; transition: color .15s ease, background .15s ease; }
+  .am-tab:hover { color: var(--ink); }
+  .am-tab.is-active { background: var(--surface-hover); color: var(--ink); }
+  .am-lead { max-width: 42rem; margin: 0 0 1.25rem; color: var(--ink-soft); font-size: .92rem; line-height: 1.55; }
+  .am-lead code { padding: .05em .35em; border-radius: .3rem; background: var(--accent-soft); color: var(--accent-text); font: .85em var(--font-mono); }
+
+  .am-panel { display: none; }
+  .am-panel.is-active { display: block; }
+  .am-viz { padding: clamp(.75rem, 2vw, 1.4rem) clamp(1rem, 3vw, 2rem); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #0e0e0e; }
+  @media (prefers-color-scheme: light) { .am-viz { background: var(--bg-deep); } }
+  .am-svg { width: 100%; height: auto; display: block; }
+  .am-caption { max-width: 46rem; margin: 1rem 0 0; color: var(--ink-soft); font-size: .92rem; line-height: 1.55; }
+
+  /* row variant: all three at once */
+  .is-row .am-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+  .is-row .am-panel { display: block; }
+  .is-row .am-label { margin: 0 0 .6rem; color: var(--ink-faint); font: 500 .62rem var(--font-mono); letter-spacing: .16em; text-transform: uppercase; }
+  .is-row .am-caption { font-size: .8rem; margin-top: .75rem; }
+  @media (max-width: 60rem) { .is-row .am-panels { grid-template-columns: 1fr; } }
+
+  /* diagram tokens (shared with the hero look) */
+  .am-tile { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .am-host { stroke: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); stroke-width: 1.5; }
+  .am-pkg { fill: var(--accent-text); font: 500 8.5px var(--font-mono); }
+  .am-zone { fill: color-mix(in srgb, var(--surface) 40%, var(--bg-deep)); stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+  .am-marker { fill: var(--bg-deep); stroke: var(--line-strong); stroke-width: 1; }
+  .am-ic { fill: none; stroke: var(--ink-soft); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .am-icfill { fill: var(--surface); stroke: var(--ink-soft); stroke-width: 1.7; }
+  .am-lockbg { fill: var(--bg-deep); stroke: var(--line-strong); stroke-width: 1; }
+  .am-name { fill: var(--ink); font: 600 12.5px var(--font-sans); letter-spacing: -.01em; }
+  .am-tag { fill: var(--ink-weakest); font: 600 8.5px var(--font-mono); letter-spacing: .14em; }
+  .am-tag.am-cx { fill: color-mix(in srgb, var(--accent-text) 70%, var(--ink-weakest)); }
+  .am-mini { fill: var(--ink-soft); font: 500 9.5px var(--font-mono); }
+  .am-flow { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+  .am-bound { stroke: color-mix(in srgb, var(--success) 42%, var(--line-strong)); stroke-width: 1; stroke-dasharray: 2 5; }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>(".arch-modes.is-toggle").forEach((root) => {
+    const tabs = root.querySelectorAll<HTMLElement>(".am-tab")
+    const panels = root.querySelectorAll<HTMLElement>(".am-panel")
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const mode = tab.getAttribute("data-mode")
+        tabs.forEach((t) => t.classList.toggle("is-active", t === tab))
+        panels.forEach((p) => p.classList.toggle("is-active", p.getAttribute("data-mode") === mode))
+      })
+    })
+  })
+</script>

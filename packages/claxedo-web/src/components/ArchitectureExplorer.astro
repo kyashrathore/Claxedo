@@ -1,0 +1,53 @@
+---
+// The open-platform overview: user-facing feature copy on the left, an
+// abstract monochrome architecture sketch on the right. No toggle — the
+// deployment and brain/hand stories live in their own sections below.
+---
+<section class="section architecture-section dark-band" id="architecture" aria-labelledby="architecture-title">
+  <div class="section-inner arch-feature">
+    <div class="arch-copy">
+      <p class="eyebrow" id="architecture-title">Open architecture</p>
+      <h2>Own every layer.</h2>
+      <p>From the client you use to the runtime that does the work, Claxedo is MIT-licensed packages you can read, deploy, or replace. Bring any harness, model, or infrastructure at the edge.</p>
+    </div>
+
+    <div class="arch-right">
+      <div class="arch-viz">
+        <div class="viz-boundary">
+          <span class="viz-kicker">CLAXEDO · MIT LICENSED</span>
+          <div class="viz-flow">
+            <div class="viz-box"><b>Clients</b><small>claxedo-app</small></div>
+            <div class="viz-box"><b>Control plane</b><small>claxedo-server</small></div>
+            <div class="viz-box"><b>Connection</b><small>workspace-relay</small></div>
+            <div class="viz-box viz-box-lead"><b>Runtime</b><small>workspace-runtime</small></div>
+          </div>
+        </div>
+        <div class="viz-plug">plugs in ↓</div>
+        <div class="viz-box viz-box-ghost viz-box-ext"><b>Your stack</b><small>harnesses · models · infrastructure</small></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .architecture-section { --bg-deep: #0a0a0a; --surface: #161616; --surface-hover: #232323; }
+  .arch-feature { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: clamp(2rem, 6vw, 5rem); align-items: center; }
+  .arch-copy h2 { margin: .1rem 0 1.1rem; font: 500 clamp(1.9rem, 3.6vw, 2.9rem)/1.06 var(--font-display); letter-spacing: -.03em; }
+  .arch-copy p { margin: 0; max-width: 36ch; color: var(--ink-soft); font-size: clamp(1rem, 1.3vw, 1.12rem); line-height: 1.6; }
+
+  .arch-viz { display: grid; align-content: center; gap: 1rem; min-height: 20rem; padding: clamp(1.5rem, 3vw, 2.5rem); border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 40%, var(--bg-deep)), var(--bg-deep)); }
+  .viz-box { display: grid; align-content: center; justify-items: center; gap: .3rem; min-height: 5rem; padding: 1rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface) 55%, transparent); text-align: center; }
+  .viz-box b { font: 500 .96rem var(--font-sans); letter-spacing: -.01em; color: var(--ink); }
+  .viz-box small { color: var(--ink-faint); font: .6rem var(--font-mono); letter-spacing: .01em; }
+  .viz-box-lead { border-color: var(--ink-faint); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  .viz-box-ghost { border-style: dashed; background: transparent; }
+  .viz-kicker { color: var(--ink-faint); font: 600 .58rem var(--font-mono); letter-spacing: .14em; }
+  .viz-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; }
+  .viz-platform { display: grid; gap: .75rem; }
+  .viz-boundary { display: grid; gap: .7rem; padding: 1rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
+  .viz-plug { text-align: center; color: var(--ink-weakest); font: .6rem var(--font-mono); letter-spacing: .06em; }
+  .viz-box-ext { min-height: 4rem; }
+
+  @media (max-width: 60rem) { .arch-feature { grid-template-columns: 1fr; gap: 1.5rem; } }
+  @media (max-width: 40rem) { .viz-flow { grid-template-columns: 1fr 1fr; } }
+</style>

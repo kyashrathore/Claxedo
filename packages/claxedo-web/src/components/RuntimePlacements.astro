@@ -1,0 +1,128 @@
+---
+// The workspace runtime placed different ways — framed by the capability each
+// placement unlocks. Toggle sits at the very top and swaps heading + copy +
+// diagram in place. Heading/copy heights are reserved so nothing shifts.
+const modes = [
+  {
+    id: "embedded",
+    tab: "On your machine",
+    heading: "Keep it all on your machine.",
+    copy: "Run the whole workspace locally — the agent, its tools, and your files never leave your machine, and there's no relay in the path.",
+    left: "Control plane",
+    link: "loopback",
+    context: "on your machine",
+  },
+  {
+    id: "sandbox",
+    tab: "Cloud sandbox",
+    heading: "Spin up a cloud workspace.",
+    copy: "Get an isolated cloud workspace on demand. The control plane reaches it over the secure relay with a short-lived, minted token.",
+    left: "Control plane",
+    link: "relay",
+    context: "cloud sandbox",
+  },
+  {
+    id: "shared",
+    tab: "Your machine, shared",
+    heading: "Reach your machine anywhere.",
+    copy: "Sign in and expose the workspace running on your own machine through the relay, so you can pick it up from your phone or another computer.",
+    left: "Another device",
+    link: "relay · signed",
+    context: "your machine",
+  },
+  {
+    id: "tools",
+    tab: "Tool backend",
+    heading: "Central agent, tools on your code.",
+    copy: "A central session runs the agent, while its tools — bash, files, and processes — execute against your real project directory over the relay.",
+    left: "Central session",
+    link: "relay · tool calls",
+    context: "tools only",
+  },
+] as const
+---
+
+<section class="section runtime-section dark-band" id="runtime" aria-label="Where the workspace runs">
+  <div class="section-inner" data-runtime-placements>
+    <div class="rp-tabs" role="tablist" aria-label="Where the workspace runs">
+      {modes.map((mode, index) => (
+        <button
+          class:list={["rp-tab", index === 0 && "is-active"]}
+          type="button" role="tab"
+          aria-selected={index === 0 ? "true" : "false"}
+          data-runtime-option={mode.id}
+        >{mode.tab}</button>
+      ))}
+    </div>
+
+    {modes.map((mode, index) => (
+      <div class:list={["rp-view", index === 0 && "is-active"]} data-runtime-variant={mode.id} hidden={index !== 0}>
+        <div class="rp-copy">
+          <p class="eyebrow">Where work runs</p>
+          <h2>{mode.heading}</h2>
+          <p class="rp-lede">{mode.copy}</p>
+        </div>
+        <div class="rp-viz">
+          <div class="viz-row">
+            <div class="viz-box"><b>{mode.left}</b></div>
+            <div class="viz-link"><span>{mode.link}</span><i></i></div>
+            <div class="viz-box viz-box-lead"><b>Workspace runtime</b><small>{mode.context}</small></div>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .runtime-section { --bg-deep: #0a0a0a; --surface: #161616; --surface-hover: #232323; }
+
+  .rp-tabs { display: inline-flex; flex-wrap: wrap; gap: .25rem; margin-bottom: clamp(2rem, 4vw, 3rem); padding: .25rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-deep); }
+  .rp-tab { padding: .55rem 1.05rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-faint); font: 500 .84rem var(--font-sans); letter-spacing: -.01em; cursor: pointer; transition: color .18s ease, background .18s ease; }
+  .rp-tab:hover { color: var(--ink); }
+  .rp-tab.is-active { background: var(--surface-hover); color: var(--ink); }
+
+  .rp-view { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); gap: clamp(2rem, 6vw, 5.5rem); align-items: center; }
+  .rp-view[hidden] { display: none; }
+  .rp-copy .eyebrow { margin-bottom: 1rem; }
+  /* reserved heights keep the diagram from jumping when the copy changes */
+  .rp-copy h2 { margin: 0 0 1.1rem; min-height: 2.12em; font: 500 clamp(1.8rem, 3.2vw, 2.6rem)/1.06 var(--font-display); letter-spacing: -.03em; }
+  .rp-lede { margin: 0; min-height: 4.8em; max-width: 38ch; color: var(--ink-soft); font-size: clamp(1rem, 1.3vw, 1.1rem); line-height: 1.6; }
+
+  .rp-viz { display: grid; align-content: center; min-height: 13rem; padding: clamp(1.5rem, 3vw, 2.5rem); border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 40%, var(--bg-deep)), var(--bg-deep)); }
+  .viz-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .5rem; }
+  .viz-box { display: grid; align-content: center; justify-items: center; gap: .3rem; min-height: 5.25rem; padding: 1rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface) 55%, transparent); text-align: center; }
+  .viz-box b { font: 500 .96rem var(--font-sans); color: var(--ink); letter-spacing: -.01em; }
+  .viz-box small { color: var(--ink-faint); font: .6rem var(--font-mono); }
+  .viz-box-lead { border-color: var(--ink-faint); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  .viz-link { display: grid; justify-items: center; gap: .35rem; padding: 0 .35rem; }
+  .viz-link span { color: var(--ink-weakest); font: .56rem var(--font-mono); letter-spacing: .03em; white-space: nowrap; }
+  .viz-link i { width: 3rem; height: 1px; background: var(--line-strong); }
+
+  @media (max-width: 60rem) {
+    .rp-view { grid-template-columns: 1fr; gap: 1.75rem; }
+    .rp-copy h2, .rp-lede { min-height: 0; }
+    .rp-viz { min-height: 0; }
+  }
+  @media (max-width: 40rem) {
+    .rp-tabs { display: flex; flex-wrap: nowrap; width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .rp-tabs::-webkit-scrollbar { display: none; }
+    .rp-tab { flex: 0 0 auto; white-space: nowrap; }
+    .viz-row { grid-template-columns: 1fr; }
+    .viz-link { transform: rotate(90deg); padding: .5rem 0; }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-runtime-placements]").forEach((root) => {
+    const options = [...root.querySelectorAll<HTMLButtonElement>("[data-runtime-option]")]
+    const views = [...root.querySelectorAll<HTMLElement>("[data-runtime-variant]")]
+    options.forEach((option) => {
+      option.addEventListener("click", () => {
+        const id = option.dataset.runtimeOption
+        options.forEach((o) => { const a = o === option; o.classList.toggle("is-active", a); o.setAttribute("aria-selected", String(a)) })
+        views.forEach((v) => { const a = v.dataset.runtimeVariant === id; v.classList.toggle("is-active", a); v.hidden = !a })
+      })
+    })
+  })
+</script>

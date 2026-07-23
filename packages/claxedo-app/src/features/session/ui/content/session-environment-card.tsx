@@ -6,13 +6,15 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import { usePaneId } from "@/features/session/app-ports"
 import { useShellQueryOptions } from "@/features/session/app-ports"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { parseOwnerRepo } from "@/app/workbench/rail/rail-git-remote"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import {
   ContextCard,
   ContextCardRow,
   ContextCardSection,
 } from "@/ui/context-card/context-card"
-import { SemanticIcon } from "@/ui/semantic-icon"
+import { SemanticIcon, type SemanticIconConcept } from "@/ui/semantic-icon"
 import "./session-environment-card.css"
 
 /** The panel tabs the navigation section opens directly. */
@@ -47,6 +49,9 @@ export type SessionEnvironmentSource = {
   worktreeDir: () => string | undefined
   /** Short project label for the navigation section header ("On <project>"). */
   projectName: () => string | undefined
+  /** GitHub-style "owner/repo" for the Repository row; undefined when the
+   *  session's project has no known git remote (the row is then omitted). */
+  repoSlug: () => string | undefined
 }
 
 // The minus glyph (U+2212) reads as a real deletion marker rather than a hyphen.
@@ -84,6 +89,9 @@ export function SessionEnvironmentCard(props: {
   collapsed?: boolean
   onToggleCollapse?: () => void
   onOpenTab: (tab: EnvironmentPanelTab) => void
+  /** Open the repository (owner/repo) on its git host. Optional so the pure
+   *  card can be rendered without repo actions wired. */
+  onOpenRepo?: (slug: string) => void
 }) {
   const changes = () => props.source.changes()
   // Where the session runs, in worktree terms: the main checkout, a dedicated
@@ -96,6 +104,18 @@ export function SessionEnvironmentCard(props: {
         return dirName(props.source.worktreeDir()) ?? "Worktree"
       default:
         return "Main"
+    }
+  }
+  // The glyph carries the isolation kind so the value can stay a bare word
+  // ("Main" / "Cloud" / a worktree name) — the icon is what says *where*.
+  const isolationConcept = (): SemanticIconConcept => {
+    switch (props.source.isolation()) {
+      case "cloud":
+        return "isolationCloud"
+      case "worktree":
+        return "isolationWorktree"
+      default:
+        return "isolationLocal"
     }
   }
   const navLabel = () => {
@@ -111,8 +131,11 @@ export function SessionEnvironmentCard(props: {
           fallback={<span class="session-envcard-quiet">Clean</span>}
         >
           <span class="session-envcard-metric">
-            <span class="session-envcard-add">+{stat().added}</span>
-            <span class="session-envcard-del">{MINUS}{stat().removed}</span>
+            <span class="session-envcard-add">+{stat().added.toLocaleString()}</span>
+            <span class="session-envcard-del">
+              {MINUS}
+              {stat().removed.toLocaleString()}
+            </span>
           </span>
         </Show>
       )}
@@ -159,10 +182,14 @@ export function SessionEnvironmentCard(props: {
       collapsedLabel="Expand Environment"
       collapsedContent={navRail}
     >
-      {/* ── Facts (information only, no section label — the head names the card) ── */}
+      {/* ── Facts (information only, no section label — the head names the card).
+          Icon-led like the nav rows below so the whole card shares one icon
+          column: the glyph states the KIND (local / worktree / cloud, or a git
+          branch) and the row text is the bare value — no "Worktree:" / "Branch:"
+          field label to crowd out and truncate a long branch name. ── */}
       <ContextCardRow
-        label={<span class="session-envcard-field">Worktree</span>}
-        meta={
+        glyph={<SemanticIcon concept={isolationConcept()} size="small" />}
+        label={
           <span class="session-envcard-value" title={props.source.worktreeDir()}>
             {worktreeLabel()}
           </span>
@@ -171,8 +198,12 @@ export function SessionEnvironmentCard(props: {
       <Show when={props.source.branch()}>
         {(branch) => (
           <ContextCardRow
-            label={<span class="session-envcard-field">Branch</span>}
-            meta={<span class="session-envcard-value">{branch()}</span>}
+            glyph={<SemanticIcon concept="branch" size="small" />}
+            label={
+              <span class="session-envcard-value" title={branch()}>
+                {branch()}
+              </span>
+            }
           />
         )}
       </Show>
@@ -196,6 +227,33 @@ export function SessionEnvironmentCard(props: {
           onSelect={() => props.onOpenTab("processes")}
         />
       </ContextCardSection>
+
+      {/* ── Repository ──────────────────────────────────────────────
+          Omitted when the project has no known git remote (same "no
+          impossible rows" rule as the Branch row). The trailing glyph marks
+          it as opening out of the app. ── */}
+      <Show when={props.source.repoSlug()}>
+        {(slug) => (
+          <ContextCardSection label="Repository">
+            <ContextCardRow
+              glyph={<SemanticIcon concept="repository" size="small" />}
+              label={
+                <span class="session-envcard-value" title={`github.com/${slug()}`}>
+                  {slug()}
+                </span>
+              }
+              meta={
+                <SemanticIcon
+                  concept="openExternal"
+                  size="small"
+                  class="session-envcard-extglyph"
+                />
+              }
+              onSelect={() => props.onOpenRepo?.(slug())}
+            />
+          </ContextCardSection>
+        )}
+      </Show>
     </ContextCard>
   )
 }
@@ -226,6 +284,7 @@ export function SessionEnvironmentCardMount() {
   const state = useClaxedoState()
   const paneId = usePaneId()
   const queryOptions = useShellQueryOptions()
+  const platform = usePlatform()
   const collapse = createSessionEnvironmentCardState()
 
   const directory = () => sdk.directory
@@ -288,21 +347,35 @@ export function SessionEnvironmentCardMount() {
     queryFn: () => sdk.client.vcs.get().then((res) => res.data?.branch ?? null),
   }))
 
+  // The Project record that owns the session directory — either its git-worktree
+  // root or one of its sandbox directories. Shared by the project name and the
+  // repository slug below.
+  const owningProject = createMemo(() => {
+    const cwd = directory()
+    if (!cwd) return undefined
+    return projects().find(
+      (project) =>
+        sameWorkspaceDirectory(project.worktree, cwd) ||
+        project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
+    )
+  })
+
   // Prefer the owning Project's name over the directory basename. A session can run out
   // of a generated runtime directory (e.g. `claxedo-live-mcp-process-8FQQ9L`) or a git
   // worktree sandbox — in both cases the basename is an implementation detail, while the
   // project name is what the user recognises. Falls back to the basename when the
   // directory belongs to no known project.
-  const projectName = createMemo(() => {
-    const cwd = directory()
-    if (!cwd) return undefined
-    const owner = projects().find(
-      (project) =>
-        sameWorkspaceDirectory(project.worktree, cwd) ||
-        project.sandboxes?.some((sandbox) => sameWorkspaceDirectory(sandbox, cwd)),
-    )
-    return owner?.name || dirName(cwd)
-  })
+  const projectName = createMemo(() => owningProject()?.name || dirName(directory()))
+
+  // "owner/repo" for the Repository row, parsed from the project's git remote
+  // (any of its workspaces that carries one). parseOwnerRepo handles both SSH
+  // and https remote forms; undefined when there is no remote.
+  const repoSlug = createMemo(() =>
+    parseOwnerRepo(
+      Object.values(owningProject()?.workspaces ?? {}).find((workspace) => workspace.repo_url)
+        ?.repo_url,
+    ),
+  )
 
   const source: SessionEnvironmentSource = {
     changes,
@@ -310,6 +383,7 @@ export function SessionEnvironmentCardMount() {
     isolation,
     worktreeDir: directory,
     projectName,
+    repoSlug,
   }
 
   const openTab = (tab: EnvironmentPanelTab) => {
@@ -320,6 +394,8 @@ export function SessionEnvironmentCardMount() {
     })
   }
 
+  const openRepo = (slug: string) => platform.openLink(`https://github.com/${slug}`)
+
   return (
     <Show when={visible()}>
       <SessionEnvironmentCard
@@ -327,6 +403,7 @@ export function SessionEnvironmentCardMount() {
         collapsed={collapse.collapsed()}
         onToggleCollapse={collapse.toggle}
         onOpenTab={openTab}
+        onOpenRepo={openRepo}
       />
     </Show>
   )

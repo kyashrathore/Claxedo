@@ -2,9 +2,11 @@ export const publicOrigin = "https://claxedo.com"
 
 export const routes = {
   home: "/",
+  app: "https://app.claxedo.com",
   pricing: "/pricing",
   download: "/download",
   framework: "/framework",
+  deploy: "/framework/deploy/hosted-control-plane#agent-deploy",
   compare: "/compare",
   privacy: "/privacy",
   terms: "/terms",
@@ -13,6 +15,16 @@ export const routes = {
 } as const
 
 export const marketingActions = {
+  cloud: {
+    label: "Open Claxedo",
+    href: routes.app,
+    event: "open_claxedo",
+  },
+  deploy: {
+    label: "Deploy to Cloudflare",
+    href: routes.deploy,
+    event: "deploy_cloudflare",
+  },
   download: {
     label: "Download app",
     href: routes.download,

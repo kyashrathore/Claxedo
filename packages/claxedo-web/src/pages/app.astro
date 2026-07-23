@@ -2,17 +2,18 @@
 import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
-import DownloadMenu from "../components/DownloadMenu.astro"
+import TrackedLink from "../components/TrackedLink.astro"
+import { marketingActions } from "../content/routes"
 ---
 
-<Layout title="Claxedo is one product" description="The Claxedo app is part of the Claxedo connected agent workspace." noindex={true} canonicalPath="/">
+<Layout title="Claxedo is one product" description="Claxedo Cloud is the hosted form of the open cloud workspace for coding agents." noindex={true} canonicalPath="/">
   <div class="shell">
     <Nav />
     <main id="main-content" class="transition-page">
       <p class="eyebrow">Route transition</p>
       <h1 class="display">The app is Claxedo.</h1>
-      <p class="section-copy">Claxedo Desktop and Claxedo Web are clients for one connected agent workspace. Product information now lives on the Claxedo homepage.</p>
-      <div class="actions"><a class="btn-secondary" href="/">Go to Claxedo</a><DownloadMenu placement="app-transition" /></div>
+      <p class="section-copy">Claxedo Cloud, Desktop, Web, and the open framework are parts of one product. Product information lives on the Claxedo homepage.</p>
+      <div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="app-transition">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><a class="btn-secondary" href="/">Product overview</a></div>
     </main>
     <Footer />
   </div>

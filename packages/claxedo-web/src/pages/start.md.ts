@@ -3,11 +3,13 @@ import { canonicalUrl } from "../content/routes"
 
 const body = `# Claxedo agent entry map
 
-Claxedo is the open-source workspace around existing coding-agent harnesses.
+Claxedo is the open cloud workspace around existing coding-agent harnesses.
 
 ## Use the product
 
 - Product overview: ${canonicalUrl("/")}
+- Open Claxedo Cloud: https://app.claxedo.com
+- Cloudflare deployment reference: ${canonicalUrl("/framework/deploy/hosted-control-plane#agent-deploy")}
 - Download Claxedo Desktop: ${canonicalUrl("/download")}
 - Current beta terms: ${canonicalUrl("/pricing")}
 - Local mode works without a Claxedo account. Bring your own models and compute.
@@ -16,6 +18,7 @@ Claxedo is the open-source workspace around existing coding-agent harnesses.
 
 - Framework overview: ${canonicalUrl("/framework")}
 - Installation: ${canonicalUrl("/framework/guides/install")}
+- Cloudflare control-plane deployment: ${canonicalUrl("/framework/deploy/hosted-control-plane#agent-deploy")}
 - Self-host guide: ${canonicalUrl("/framework/deploy/self-host-fly")}
 - Package reference: ${canonicalUrl("/framework/packages")}
 - API reference: ${canonicalUrl("/framework/api/overview")}

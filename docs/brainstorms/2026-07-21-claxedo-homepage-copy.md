@@ -1,5 +1,6 @@
 ---
 date: 2026-07-21
+updated: 2026-07-23
 topic: claxedo-homepage-copy
 status: implemented
 strategy: docs/plans/2026-07-20-001-feat-claxedo-website-strategy-plan.md
@@ -8,47 +9,77 @@ implementation: packages/claxedo-web/src/pages/index.astro
 
 # Claxedo Homepage Copy
 
-This is the canonical copy deck for the `claxedo.com` homepage. The product is one open-source workspace with two first-class interaction modes: a structured chat UI and the terminal. The commercial page has exactly two marketing actions: **Download app** and **Explore the open-source framework**.
+This is the canonical homepage copy deck for `claxedo.com`. Claxedo is the open cloud workspace for coding agents. Visitors can use the hosted Claxedo product immediately or deploy the open control plane to their own Cloudflare account. Both paths use the same MIT-licensed platform packages.
+
+The homepage has exactly two conversion actions: **Open Claxedo** and **Deploy to Cloudflare**. Framework and download links remain supporting navigation.
 
 ## Search metadata
 
 **Title**
 
-> Claxedo — The open-source workspace for coding agents
+> Claxedo — The open cloud workspace for coding agents
 
 **Description**
 
-> Run Claude Code, Codex, Gemini CLI, OpenCode, and any coding-agent CLI across first-class sessions and terminals. Organize parallel agent work with WorkGraph, locally or on infrastructure you choose.
+> Run coding agents from one open cloud workspace. Use Claxedo Cloud or deploy the MIT-licensed control plane to your Cloudflare account while execution stays on infrastructure you choose.
 
 ## 1. Hero
 
 **Eyebrow**
 
-> Open workspace for coding agents
+> Open cloud workspace
 
 **Heading**
 
-> # The open-source workspace for coding agents.
+> # The open cloud workspace for coding agents.
 
 **Supporting copy**
 
-> Run coding agents in a full chat UI or directly in the terminal. Keep the conversation, files, processes, changes, and review together.
+> Run coding agents across chat, terminal, desktop, browser, and mobile. Start with Claxedo Cloud—or deploy the open control plane to your Cloudflare account with a prompt.
 
 **Actions**
 
-> **Download app**
+> **Open Claxedo**
 >
-> **Explore the open-source framework**
+> **Deploy to Cloudflare**
+>
+> Explore the open architecture ↓
+
+**Deploy to Cloudflare** is a copy button. It copies one self-contained agent brief containing the prerequisites, architecture boundary, secret-handling rules, billable-resource approval, deployment procedure, verification, upgrade, rollback, and teardown requirements. The homepage does not show those details separately.
+
+The architecture link is a tertiary in-page navigation action. It is not a third conversion path.
 
 **Provider line**
 
-> Bring your own AI provider. · Bring your own sandbox provider.
+> MIT licensed · Bring your own AI and sandbox providers
 
 **Proof**
 
-Use `marketing-workspace.png`: the seeded `Northstar` workspace with a completed release-verification conversation and three changed files in Review.
+Use `marketing-workspace.png`: the seeded `Northstar` workspace with a completed release-verification conversation and changed files in Review.
 
-## 2. Continuity
+## 2. Architecture explorer
+
+**Eyebrow**
+
+> Architecture
+
+**Heading**
+
+> ## The whole product is open.
+
+**Copy**
+
+> Claxedo Cloud and a deployment in your Cloudflare account use the same MIT-licensed platform packages. Choose where the control plane runs, then connect the machines and sandboxes where agents do their work.
+
+The section contains three keyboard-accessible views in one stable location:
+
+1. **Platform** — shows every Claxedo product layer inside a visible MIT-licensed boundary: clients, control plane, relay, protocol, workspace runtime, WorkGraph, extensions, and agent runtimes. AI and sandbox providers sit outside the boundary as user-selected infrastructure.
+2. **Deployment** — compares the hosted Claxedo control plane with the same open control plane in the user's Cloudflare account. Both connect through the relay to the user's machine, server, or sandbox.
+3. **Inside a workspace** — shows the interaction between the agent runtime, terminal, files, processes, review surfaces, extensions, and an optional remote sandbox.
+
+Desktop uses polished SVG diagrams. Mobile uses a dedicated vertical flow, not a scaled-down desktop diagram. Each view has its own deep-link hash.
+
+## 3. Continuity
 
 **Heading**
 
@@ -64,11 +95,11 @@ Use `marketing-workspace.png`: the seeded `Northstar` workspace with a completed
 >
 > Browser — Open the same running workspace from another computer.
 >
-> Mobile web — Check progress and respond when you are away from your desk.
+> Mobile web — Check progress and respond away from your desk.
 
-The page uses “your machine,” not “workspace host,” and never uses the contextless phrase “Start here.”
+The page uses “your machine,” not “workspace host,” and never uses the contextless phrase “Start here.” Product images open at full resolution on mobile.
 
-## 3. Harness neutrality
+## 4. Harness neutrality
 
 **Heading**
 
@@ -87,9 +118,9 @@ The page uses “your machine,” not “workspace host,” and never uses the c
 - Any agent CLI — First-class terminal
 - More through ACP — Bring a compatible agent
 
-Each label has a recognizable visual mark. The strip communicates accurate mode support and does not imply identical integration depth.
+The marks are recognizable and proportionally consistent. The strip communicates accurate mode support without implying identical integration depth.
 
-## 4. Chat UI and terminal
+## 5. Chat UI and terminal
 
 **Eyebrow**
 
@@ -109,11 +140,9 @@ Each label has a recognizable visual mark. The strip communicates accurate mode 
 
 **Proof**
 
-Use `marketing-session-terminal.png`: a real split Claxedo workbench with a normal Codex chat session in one pane and a Codex terminal in the other. The Session Environment card stays collapsed so the composition gives both modes equal weight without adding a marketing-made terminal surface.
+Use `marketing-session-terminal.png`: a normal Codex chat session beside a functioning Codex terminal in the same Claxedo workbench. The Session Environment card stays collapsed.
 
-The page does not call the structured chat surface an “integrated harness.” The user-visible distinction is the **chat UI** versus the **terminal**.
-
-## 5. WorkGraph
+## 6. WorkGraph
 
 **Heading**
 
@@ -123,31 +152,9 @@ The page does not call the structured chat surface an “integrated harness.” 
 
 > WorkGraph organizes durable Streams, Tasks, Attempts, decisions, and evidence. See what is ready, waiting, running, done, or waiting for your decision without reconstructing the story from chat history.
 
-**Supporting points**
-
-- **Organize around outcomes** — Break a goal into dependent tasks with explicit completion criteria.
-- **See what needs you** — Review proposed work, decisions, failed attempts, and follow-ups in one place.
-- **Keep the evidence** — Preserve attempts, decisions, artifacts, and proof beyond a single session.
-
 **Proof**
 
-Use `marketing-workgraph.png`: a close contextual capture of the populated `Ship Claxedo Cloud` Stream card. Its Tasks and varied states explain the durable-work primitive without showing the complete WorkGraph board.
-
-## 6. Placement
-
-**Heading**
-
-> ## Run the work where it belongs.
-
-**Copy**
-
-> Use your laptop for immediate work, a machine you control for long-running sessions, or your preferred sandbox provider for isolation. Claxedo connects the workspace; it does not resell model tokens, compute, or sandbox minutes.
-
-**Choices**
-
-- Local — Your laptop — Immediate files and tools
-- Remote — Your machine — Persistent, long-running work
-- Sandbox — Your provider — Isolated compute when needed
+Use `marketing-workgraph.png`: a close contextual capture of one populated `Ship Claxedo Cloud` Stream card. The crop shows Tasks and varied states without displaying the complete board.
 
 ## 7. Agent Extensions
 
@@ -159,29 +166,9 @@ Use `marketing-workgraph.png`: a close contextual capture of the populated `Ship
 
 > Set up skills, MCP servers, plugins, and instructions once. Claxedo syncs them into each workspace or sandbox, ready for the harness you choose.
 
-**Documentation link**
+The adjacent illustration shows one Agent Extension materializing into a workspace or sandbox as harness-ready configuration.
 
-> How Agent Extensions work →
-
-The adjacent illustration shows one Agent Extension flowing into a workspace or sandbox and becoming harness-ready configuration. It uses the same recognizable harness marks as the neutrality section.
-
-## 8. Self-hosting
-
-**Eyebrow**
-
-> Self-hosting
-
-**Heading**
-
-> ## Self-host Claxedo with Cloudflare.
-
-**Copy**
-
-> Claxedo's clients, server, relay, protocol, WorkGraph, and framework are developed in the public repository. Open the agent-guided deployment brief and let your coding agent configure the Cloudflare control plane, connect the runtime and relay, deploy, and verify the complete path with you.
-
-The right side is one linked deployment card. It opens `/framework/deploy/hosted-control-plane#agent-deploy`, where a copyable agent brief hand-holds preflight, secrets, deployment, health checks, and rollback. The page describes Cloudflare as the control plane and keeps runtime/relay placement explicit.
-
-## 9. Why Claxedo exists
+## 8. Why Claxedo exists
 
 > We do not train models.
 >
@@ -193,41 +180,42 @@ The right side is one linked deployment card. It opens `/framework/deploy/hosted
 >
 > Models, agents, and infrastructure will keep changing. The interface around them should remain open, portable, and under your control.
 
-## 10. Closing conversion
+## 9. Closing conversion
 
 **Heading**
 
-> ## Give your agents a workspace that stays yours.
+> ## Your agents. Your infrastructure. One open cloud workspace.
 
 **Copy**
 
-> Bring your own AI provider and sandbox provider. Claxedo gives them one open workspace.
+> Use Claxedo Cloud or deploy the open control plane to your Cloudflare account.
 
 **Actions**
 
-> **Download app**
+> **Open Claxedo**
 >
-> **Explore the open-source framework**
+> **Deploy to Cloudflare**
 
 ## Capture contract
 
-`packages/claxedo-app/e2e/playwright/marketing-screenshots.spec.ts` regenerates the three homepage images from deterministic fixtures at 1440 × 900. The fixture contains no personal project, repository, or account data. The capture removes transient reconnect notices and uses the neutral `Northstar` project.
+`packages/claxedo-app/e2e/playwright/marketing-screenshots.spec.ts` regenerates the homepage images from deterministic fixtures at 1440 × 900. The fixture contains no personal project, repository, or account data and uses the neutral `Northstar` project.
 
-## Content intentionally excluded
+## Content boundaries
 
-- “More than another chat window.”
-- “Discover at the frontier. Keep what works.”
-- “Use an integrated harness.”
-- “Start here.” and “workspace host.”
-- Repeated source cards that share one destination.
-- Placeholder testimonials, customer logos, or fabricated product evidence.
-- Additional marketing CTAs such as Start free, Try Cloud, Copy prompt, Sign up, or Contact sales.
-- Claims that all agent CLIs receive the same structured-chat integration merely because they can run in a terminal.
+- “Cloud” names the connected product and deployment model in the headline; product and cloud are not separate products.
+- The site claims MIT licensing only for packages verified by the public license and package manifests.
+- The site explains hosted and self-deployed compositions without claiming production environment parity that has not been demonstrated.
+- Cloudflare is the control plane deployment target. Execution remains on a connected user-controlled machine, server, or sandbox.
+- Deployment prerequisites and operational details live inside the copied prompt rather than a separate homepage section.
+- Framework and download are supporting destinations, not competing hero conversions.
+- The page does not use “More than another chat window,” “Discover at the frontier,” “Use an integrated harness,” “Start here,” or “workspace host.”
+- The site does not fabricate testimonials, customer logos, performance metrics, or identical structured-chat support for every CLI.
 
 ## Product sources
 
-- `packages/claxedo-app/src/app/workbench/` — first-class chat, terminal, review, and workspace surfaces.
-- `packages/claxedo-app/src/features/workgraph/` and `packages/workgraph/README.md` — WorkGraph product behavior and contracts.
+- `packages/claxedo-app/src/app/workbench/` — chat, terminal, review, and workspace surfaces.
+- `packages/claxedo-app/src/features/workgraph/` and `packages/workgraph/README.md` — WorkGraph behavior and contracts.
 - `packages/agent-extensions/` — portable extension materialization.
 - `packages/agent-sdk-runtime/` and `packages/agent-event-runtime/src/harnesses/acp/` — ACP client and normalized event behavior.
-- `docs/plans/2026-07-20-001-feat-claxedo-website-strategy-plan.md` — implementation goal, positioning, CTA hierarchy, discovery, and truth gates.
+- `packages/claxedo-server/`, `packages/claxedo-relay/`, and `packages/workspace-runtime/` — control-plane, connection, and execution boundaries.
+- `docs/plans/2026-07-20-001-feat-claxedo-website-strategy-plan.md` — implementation goal, positioning, discovery, and truth gates.
