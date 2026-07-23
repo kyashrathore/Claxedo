@@ -27,6 +27,7 @@ export function createPortalSlot(name: string): PortalSlot {
 
 export const [browserToolbarSlot, setBrowserToolbarSlot] = createPortalSlot("browser-toolbar")
 export const [processToolbarSlot, setProcessToolbarSlot] = createPortalSlot("process-toolbar")
+export const [markdownFileActionsSlot, setMarkdownFileActionsSlot] = createPortalSlot("markdown-file-actions")
 
 /**
  * B3.4 — review-toolbar L2 portal slot.

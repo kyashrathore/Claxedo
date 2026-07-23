@@ -11,16 +11,14 @@
  */
 
 import { Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
+import { Portal } from "solid-js/web"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { useComments } from "@/platform/comments/provider"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/app/providers/file"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { File, type TextFileProps } from "@/ui/session-kit"
-import {
-  createLineCommentController,
-  type LineCommentAnnotationMeta,
-} from "@/ui/session-kit"
+import { createLineCommentController, type LineCommentAnnotationMeta } from "@/ui/session-kit"
 import { Markdown } from "@/ui/session-kit"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
@@ -29,6 +27,7 @@ import { getFilename } from "@/lib/path"
 import { checksum } from "@/lib/encode"
 import { imagePreviewUrl } from "@/platform/files/file-preview"
 import type { LineComment } from "@/platform/comments/provider"
+import { markdownFileActionsSlot } from "@/ui/controls/portal-slot"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
@@ -53,18 +52,6 @@ export function toggleMarkdownPreview(path: string) {
   })
 }
 
-// Module-level registry of "Add to Documents" handlers keyed by file path.
-// In hideHeader mode the source/preview toggle lives in the shell header, so
-// the Documents action belongs there too — beside the toggle, not floating over
-// the rendered markdown. TabFile registers its handler here; the shell header
-// reads it for the active tab.
-const [collaborateHandlers, setCollaborateHandlers] = createSignal<Record<string, () => void>>({})
-
-/** The "Add to Documents" handler registered for `path`, if any. */
-export function markdownCollaborateHandler(path: string): (() => void) | undefined {
-  return collaborateHandlers()[path]
-}
-
 export type TabFileProps = {
   path: string
   class?: string
@@ -85,9 +72,7 @@ export function TabFile(props: TabFileProps) {
   // Text files carry `content` (rendered by the code viewer); binary files
   // (images, etc.) carry `binary` with the base64 payload + mime type.
   const [content, setContent] = createSignal<string | undefined>()
-  const [binary, setBinary] = createSignal<
-    { content: string; encoding?: "base64"; mimeType?: string } | undefined
-  >()
+  const [binary, setBinary] = createSignal<{ content: string; encoding?: "base64"; mimeType?: string } | undefined>()
   const [error, setError] = createSignal<string | undefined>()
   const [loading, setLoading] = createSignal(true)
   const [openedComment, setOpenedComment] = createSignal<string | null>(null)
@@ -100,16 +85,13 @@ export function TabFile(props: TabFileProps) {
     { atNonce: number | undefined; range: SelectedLineRange | null } | undefined
   >()
   const focusSelection = (): SelectedLineRange | null =>
-    props.focusLine !== undefined && props.focusLine > 0
-      ? { start: props.focusLine, end: props.focusLine }
-      : null
+    props.focusLine !== undefined && props.focusLine > 0 ? { start: props.focusLine, end: props.focusLine } : null
   const selected = createMemo<SelectedLineRange | null>(() => {
     const manual = manualSelected()
     if (manual && manual.atNonce === props.focusNonce) return manual.range
     return focusSelection()
   })
-  const setSelected = (range: SelectedLineRange | null) =>
-    setManualSelected({ atNonce: props.focusNonce, range })
+  const setSelected = (range: SelectedLineRange | null) => setManualSelected({ atNonce: props.focusNonce, range })
   let loadSeq = 0
 
   const loadFile = (path: string, opts?: { silent?: boolean }) => {
@@ -237,29 +219,6 @@ export function TabFile(props: TabFileProps) {
   const isMd = createMemo(() => isMarkdownPath(props.path))
   const previewing = createMemo(() => isMd() && !sourcePaths().has(props.path))
 
-  // Publish the Documents action so the shell header can render it beside the
-  // source toggle when this file is shown with hideHeader. Keyed by path; kept
-  // in sync with the current onCollaborate prop and cleared on unmount.
-  createEffect(() => {
-    const path = props.path
-    const handler = isMd() ? props.onCollaborate : undefined
-    setCollaborateHandlers((prev) => {
-      if (prev[path] === handler) return prev
-      const next = { ...prev }
-      if (handler) next[path] = handler
-      else delete next[path]
-      return next
-    })
-  })
-  onCleanup(() => {
-    const path = props.path
-    setCollaborateHandlers((prev) => {
-      if (!(path in prev)) return prev
-      const next = { ...prev }
-      delete next[path]
-      return next
-    })
-  })
   const fileComments = createMemo(() => comments.list(props.path))
   const commentedLines = createMemo(() => fileComments().map((comment) => comment.selection))
 
@@ -363,9 +322,21 @@ export function TabFile(props: TabFileProps) {
         </div>
       </Show>
 
-      {/* With the header hidden, both the source/preview toggle and the
-          Documents action live in the shell header (see markdownCollaborateHandler),
-          so nothing floats over the rendered markdown here. */}
+      <Show when={props.hideHeader && isMd() && props.onCollaborate && markdownFileActionsSlot()}>
+        {(mount) => (
+          <Portal mount={mount()}>
+            <Tooltip value="Add to Documents">
+              <IconButton
+                icon="page-plus"
+                variant="ghost"
+                size="small"
+                onClick={() => props.onCollaborate?.()}
+                aria-label="Add to Documents"
+              />
+            </Tooltip>
+          </Portal>
+        )}
+      </Show>
       <div class="flex-1 min-h-0 overflow-auto" ref={scrollRoot}>
         <Switch>
           <Match when={loading()}>
@@ -375,9 +346,7 @@ export function TabFile(props: TabFileProps) {
             </div>
           </Match>
 
-          <Match when={error()}>
-            {(e) => <div class="px-4 py-6 text-text-on-critical-base">{e()}</div>}
-          </Match>
+          <Match when={error()}>{(e) => <div class="px-4 py-6 text-text-on-critical-base">{e()}</div>}</Match>
 
           <Match when={imageSrc()}>
             {(src) => (
@@ -426,7 +395,6 @@ export function TabFile(props: TabFileProps) {
                     onLineNumberSelectionEnd={commentsUi.onLineSelectionEnd}
                     onLineSelectionEnd={commentsUi.onLineSelectionEnd}
                   />
-
                 </div>
                 {/* Markdown preview — lightweight, mounted on demand */}
                 <Show when={previewing()}>

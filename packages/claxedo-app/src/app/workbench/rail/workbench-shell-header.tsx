@@ -6,13 +6,14 @@ import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
   setBrowserToolbarSlot,
+  setMarkdownFileActionsSlot,
   setProcessToolbarSlot,
   setReviewControlsSlot,
   setReviewTabHeaderSlot,
   setReviewToolbarSlot,
 } from "@/ui/controls/portal-slot"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
-import { isMarkdownPath, markdownCollaborateHandler, markdownSourceView, toggleMarkdownPreview } from "../content/tab-file"
+import { isMarkdownPath, markdownSourceView, toggleMarkdownPreview } from "../content/tab-file"
 import { useClaxedoState } from "../state/index"
 import { WorkspaceScopeButtons } from "./workspace-toolbar"
 import { WorkspaceToolButtons } from "./workspace-tool-buttons"
@@ -136,19 +137,19 @@ export function WorkbenchShellHeader(props: {
           onSettings={props.onSettings}
         />
         <Show when={props.topBarRight}>
-          <div class="flex items-center gap-2 pr-1">
-            {props.topBarRight?.()}
-          </div>
+          <div class="flex items-center gap-2 pr-1">{props.topBarRight?.()}</div>
         </Show>
         <div
           ref={props.onFloatingChromeRef}
           data-testid="workspace-panel-floating-chrome"
           class="absolute inset-y-0 right-1 z-40 flex items-center gap-0.5 will-change-[opacity] transition-opacity duration-[80ms] ease-[cubic-bezier(0.2,0,0,1)]"
           classList={{
-            "opacity-0 pointer-events-none": props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible(),
+            "opacity-0 pointer-events-none":
+              props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible(),
           }}
           style={{
-            display: props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible() ? "none" : undefined,
+            display:
+              props.workspacePanelVisualOpen() && !props.workspacePanelBridgeChromeVisible() ? "none" : undefined,
           }}
         >
           <Show when={!props.workspacePanelVisualOpen() || props.workspacePanelBridgeChromeVisible()}>
@@ -236,7 +237,10 @@ function L2HeaderStrip(props: {
           </div>
         </Match>
         <Match when={workspaceTab()?.kind === "browser"}>
-          <div data-l2-context="browser" class="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pr-2">
+          <div
+            data-l2-context="browser"
+            class="grid h-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pr-2"
+          >
             <div
               ref={(el) => {
                 setBrowserToolbarSlot(el ?? null)
@@ -256,28 +260,24 @@ function L2HeaderStrip(props: {
                 {tab().path}
               </span>
               <Show when={isMarkdownPath(tab().path)}>
-                <button
-                  type="button"
-                  class="flex size-6 shrink-0 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
-                  aria-label={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
-                  title={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
-                  onClick={() => toggleMarkdownPreview(tab().path)}
-                >
-                  <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
-                </button>
-              </Show>
-              <Show when={markdownCollaborateHandler(tab().path)}>
-                {(handler) => (
+                <>
                   <button
                     type="button"
                     class="flex size-6 shrink-0 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
-                    aria-label="Add to Documents"
-                    title="Add to Documents"
-                    onClick={() => handler()()}
+                    aria-label={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
+                    title={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
+                    onClick={() => toggleMarkdownPreview(tab().path)}
                   >
-                    <Icon name="page-plus" size="small" />
+                    <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
                   </button>
-                )}
+                  <span
+                    ref={(element) => {
+                      setMarkdownFileActionsSlot(element)
+                      return () => setMarkdownFileActionsSlot(null)
+                    }}
+                    class="contents"
+                  />
+                </>
               </Show>
               <span class="flex-1" />
               <WorkspaceTools />
@@ -326,9 +326,7 @@ function L2HeaderStrip(props: {
               hidden={tabKind() !== "session" && tabKind() !== "draft-session"}
               class="min-w-0 max-w-[min(42vw,520px)] overflow-hidden"
             >
-              <span class="block truncate text-[11px] text-text-weak">
-                {focusedContent()?.content?.title ?? ""}
-              </span>
+              <span class="block truncate text-[11px] text-text-weak">{focusedContent()?.content?.title ?? ""}</span>
             </div>
             <span class="flex-1" />
             <WorkspaceTools />

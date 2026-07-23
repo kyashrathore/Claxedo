@@ -93,10 +93,7 @@ import { useWorkspaceQuery } from "@/features/session/app-ports"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { isSessionTurnActive } from "../store/session-store"
 import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
-import {
-  removeDirectorySessionTree,
-  updateDirectorySession,
-} from "../data/sync/directory-session-cache"
+import { removeDirectorySessionTree, updateDirectorySession } from "../data/sync/directory-session-cache"
 import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,
@@ -107,10 +104,16 @@ import {
   captureTimelinePrependAnchor,
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
+import { createTimelineResizeAnchor, filterVirtualIndexes, scheduleConnectedMeasure } from "./timeline-virtualization"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
-import { timelineAnchorClickTarget, timelineFileFocus, timelineFileTarget, resolveTimelinePath as resolveTimelineFilePath } from "./timeline-file-paths"
+import {
+  timelineAnchorClickTarget,
+  timelineFileFocus,
+  timelineFileTarget,
+  resolveTimelinePath as resolveTimelineFilePath,
+} from "./timeline-file-paths"
 
 installTimelineMermaid()
 
@@ -130,21 +133,7 @@ type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
 
 const timelineFallbackItemSize = 60
-
-// Ported from upstream opencode timeline/virtual-items.ts + timeline/measure.ts.
-function filterVirtualIndexes(indexes: number[], count: number) {
-  return indexes.filter((index) => index >= 0 && index < count)
-}
-function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
-  return requestAnimationFrame(() => {
-    if (element.isConnected) measure(element)
-  })
-}
-
-const timelineCache = new Map<
-  string,
-  { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined> }
->()
+const timelineCache = new Map<string, { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined> }>()
 
 const taskDescription = (part: PartType, sessionID: string) => {
   if (part.type !== "tool" || part.tool !== "task") return
@@ -322,22 +311,22 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => Pr
                   <StickyAccordionHeader>
                     <Accordion.Trigger>
                       <DiffHoverCard diff={diff}>
-                      <div data-slot="session-turn-diff-trigger">
-                        <span data-slot="session-turn-diff-path" data-path={diff.file}>
-                          <Show when={diff.file.includes("/")}>
-                            <span data-slot="session-turn-diff-directory">{`\u202A${getDirectory(diff.file)}\u202C`}</span>
-                          </Show>
-                          <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
-                        </span>
-                        <div data-slot="session-turn-diff-meta">
-                          <span data-slot="session-turn-diff-changes">
-                            <DiffChanges changes={diff} />
+                        <div data-slot="session-turn-diff-trigger">
+                          <span data-slot="session-turn-diff-path" data-path={diff.file}>
+                            <Show when={diff.file.includes("/")}>
+                              <span data-slot="session-turn-diff-directory">{`\u202A${getDirectory(diff.file)}\u202C`}</span>
+                            </Show>
+                            <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
                           </span>
-                          <span data-slot="session-turn-diff-chevron">
-                            <Icon name="chevron-down" size="small" />
-                          </span>
+                          <div data-slot="session-turn-diff-meta">
+                            <span data-slot="session-turn-diff-changes">
+                              <DiffChanges changes={diff} />
+                            </span>
+                            <span data-slot="session-turn-diff-chevron">
+                              <Icon name="chevron-down" size="small" />
+                            </span>
+                          </div>
                         </div>
-                      </div>
                       </DiffHoverCard>
                     </Accordion.Trigger>
                   </StickyAccordionHeader>
@@ -493,7 +482,11 @@ export function MessageTimeline(props: {
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
-  const directoryAgentsQuery = (_baseUrl: string | undefined, directory: string, client: ReturnType<typeof useSDK>["client"]) => {
+  const directoryAgentsQuery = (
+    _baseUrl: string | undefined,
+    directory: string,
+    client: ReturnType<typeof useSDK>["client"],
+  ) => {
     const request = platform.fetch ?? fetch
     return {
       ...agentListQuery({
@@ -721,10 +714,7 @@ export function MessageTimeline(props: {
     return plan
   }
   let virtualContent: HTMLDivElement | undefined
-  // Rows kept in the render range across a huge resize (see resizeItem below) so
-  // the browser has real geometry to re-anchor against instead of estimates.
-  let resizePinnedIndexes: number[] = []
-  let resizePinFrame: number | undefined
+  const resizeAnchor = createTimelineResizeAnchor()
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return timelineRows().length
@@ -756,64 +746,19 @@ export function MessageTimeline(props: {
       const active = id ? timelineRows().findLastIndex((row) => "userMessageID" in row && row.userMessageID === id) : -1
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
       return filterVirtualIndexes(
-        [...new Set([...resizePinnedIndexes, ...indexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b),
+        [...new Set([...resizeAnchor.pinnedIndexes(), ...indexes, ...(active < 0 ? [] : [active])])].sort(
+          (a, b) => a - b,
+        ),
         range.count,
       )
     },
   })
-  // Matches upstream opencode (packages/app/.../timeline/message-timeline.tsx).
-  // When pinned to the bottom (following a stream) we must NOT do per-item scroll
-  // adjustments: anchorTo:"end"/followOnAppend + scrollToEnd own the bottom, and
-  // adjusting every growing/shrinking row on top of that is the per-frame
-  // tug-of-war that makes streaming content jump. Only when the user has scrolled
-  // up to read history do we compensate — and then only for rows entirely ABOVE
-  // the visible range, so their read position stays put.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
-    if (props.shouldAnchorBottom()) return false
-    const first = virtualizer.range?.startIndex
-    return first !== undefined && item.index < first
-  }
-  // Upstream's re-anchor path. Instead of forcing native scrollTop every frame
-  // (which fought the virtualizer), we override resizeItem: when a single item's
-  // measured size jumps by more than a viewport height (e.g. a code block or a
-  // streaming markdown block ballooning/collapsing), pin the currently-visible
-  // rows in the render range for two frames so the browser re-anchors against
-  // real geometry, then — when anchored to the bottom — snap to the end once via
-  // scrollToEnd() on a microtask (not per-frame).
-  const resizeItem = virtualizer.resizeItem.bind(virtualizer)
-  let resizeAnchorScheduled = false
-  const anchorResizedBottom = () => {
-    if (resizeAnchorScheduled || props.hasScrollGesture()) return
-    resizeAnchorScheduled = true
-    queueMicrotask(() => {
-      resizeAnchorScheduled = false
-      if (!props.shouldAnchorBottom() || props.hasScrollGesture()) return
-      virtualizer.scrollToEnd()
-    })
-  }
-  virtualizer.resizeItem = (index: number, size: number) => {
-    const item = virtualizer.measurementsCache[index]
-    const previous = item ? (virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
-    const root = listRoot()
-    if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
-      const view = root.getBoundingClientRect()
-      resizePinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
-        .filter((element) => {
-          const rect = element.getBoundingClientRect()
-          return rect.bottom > view.top && rect.top < view.bottom
-        })
-        .map((element) => Number(element.dataset.index))
-      if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
-      resizePinFrame = requestAnimationFrame(() => {
-        resizePinFrame = requestAnimationFrame(() => {
-          resizePinFrame = undefined
-          resizePinnedIndexes = []
-        })
-      })
-    }
-    resizeItem(index, size)
-    if (root && props.shouldAnchorBottom()) anchorResizedBottom()
-  }
+  resizeAnchor.install({
+    virtualizer,
+    root: listRoot,
+    shouldAnchorBottom: props.shouldAnchorBottom,
+    hasScrollGesture: props.hasScrollGesture,
+  })
   const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const virtualItemByKey = createMemo(
     () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
@@ -855,10 +800,13 @@ export function MessageTimeline(props: {
 
     let frames = 8
     const settle = () => {
-      if (timelineInitialRevealShouldScroll({
-        hasScrollGesture: props.hasScrollGesture(),
-        shouldAnchorBottom: props.shouldAnchorBottom(),
-      })) virtualizer.scrollToEnd()
+      if (
+        timelineInitialRevealShouldScroll({
+          hasScrollGesture: props.hasScrollGesture(),
+          shouldAnchorBottom: props.shouldAnchorBottom(),
+        })
+      )
+        virtualizer.scrollToEnd()
       frames -= 1
       if (frames <= 0) {
         setInitialRevealReady(true)
@@ -918,7 +866,7 @@ export function MessageTimeline(props: {
     turnFold.persist()
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
-    if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
+    resizeAnchor.dispose()
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
@@ -958,11 +906,20 @@ export function MessageTimeline(props: {
   }
 
   const boundaryGesture = (event: { currentTarget: HTMLDivElement; target: EventTarget | null }, delta: number) =>
-    markBoundaryGesture({ root: event.currentTarget, target: event.target, delta, onMarkScrollGesture: props.onMarkScrollGesture })
+    markBoundaryGesture({
+      root: event.currentTarget,
+      target: event.target,
+      delta,
+      onMarkScrollGesture: props.onMarkScrollGesture,
+    })
 
   const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
     prepareInteractionScroll()
-    const delta = normalizeWheelDelta({ deltaY: event.deltaY, deltaMode: event.deltaMode, rootHeight: event.currentTarget.clientHeight })
+    const delta = normalizeWheelDelta({
+      deltaY: event.deltaY,
+      deltaMode: event.deltaMode,
+      rootHeight: event.currentTarget.clientHeight,
+    })
     if (!delta) return
     boundaryGesture(event, delta)
   }
@@ -1002,9 +959,7 @@ export function MessageTimeline(props: {
     if (prependLoading) updatePrependAnchor()
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
-    // Upstream keeps this handler passive: the virtualizer (anchorTo:"end" +
-    // followOnAppend) and the resizeItem re-anchor own bottom-following, so the
-    // scroll handler no longer force-writes scrollTop (which caused the fight).
+    // The virtualizer and resizeItem re-anchor own bottom-following.
     if (!props.hasScrollGesture()) return
     props.onUserScroll()
     props.onAutoScrollHandleScroll()
@@ -1503,7 +1458,10 @@ export function MessageTimeline(props: {
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-compaction">
-                <MessageDivider label={label()} icon={turnDividerRow().label === "compaction" ? "archive" : undefined} />
+                <MessageDivider
+                  label={label()}
+                  icon={turnDividerRow().label === "compaction" ? "archive" : undefined}
+                />
               </div>
             </div>
           </TimelineRowFrame>
@@ -1596,7 +1554,11 @@ export function MessageTimeline(props: {
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <Show
                 when={errorRow().recoveryClass}
-                fallback={<Card variant="error" class="error-card">{errorRow().text}</Card>}
+                fallback={
+                  <Card variant="error" class="error-card">
+                    {errorRow().text}
+                  </Card>
+                }
               >
                 {(kind) => (
                   <FirstTurnRecoveryCard
@@ -1631,18 +1593,8 @@ export function MessageTimeline(props: {
     }
     const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
 
-    // Coalesce content-driven re-measures (upstream's scheduleConnectedMeasure).
-    // A streaming row fires onSizeChange on every token (onContentRendered);
-    // scheduling a fresh rAF each time queued one measureElement per token, which
-    // — stacked on TanStack's own ResizeObserver for the same element — thrashes
-    // layout ("ResizeObserver loop completed with undelivered notifications") and
-    // makes the timeline visibly jump. Cancel any pending frame so a burst
-    // collapses to a single measure, and skip it if the row has since detached.
     let contentMeasureFrame: number | undefined
-    onCleanup(() => {
-      if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
-    })
-
+    onCleanup(() => contentMeasureFrame !== undefined && cancelAnimationFrame(contentMeasureFrame))
     onMount(() => virtualizer.measureElement(element))
 
     createEffect(
@@ -1704,7 +1656,14 @@ export function MessageTimeline(props: {
       <Show when={contextMenu()}>
         {(menu) => (
           <>
-            <div class="fixed inset-0 z-[90]" onClick={() => setContextMenu(undefined)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(undefined) }} />
+            <div
+              class="fixed inset-0 z-[90]"
+              onClick={() => setContextMenu(undefined)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setContextMenu(undefined)
+              }}
+            />
             <div
               class="fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
               style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
@@ -1764,10 +1723,7 @@ export function MessageTimeline(props: {
                 "0 51px 60px 0 rgba(0,0,0,0.10), 0 15px 18px 0 rgba(0,0,0,0.12), 0 6.386px 7.513px 0 rgba(0,0,0,0.12), 0 2.31px 2.717px 0 rgba(0,0,0,0.20)",
             }}
           >
-            <Show
-              when={sessionStatus().type === "busy"}
-              fallback={<Icon name="arrow-down-to-line" size="small" />}
-            >
+            <Show when={sessionStatus().type === "busy"} fallback={<Icon name="arrow-down-to-line" size="small" />}>
               <span class="tl-dot-wave" aria-hidden="true">
                 <span />
                 <span />
