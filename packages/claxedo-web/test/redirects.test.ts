@@ -25,7 +25,7 @@ describe("legacy redirect manifest", () => {
       const slug = pathname.replace(/^\/framework\/?/, "")
       const candidates = slug
         ? [`src/content/docs/framework/${slug}.mdx`, `src/content/docs/framework/${slug}/index.mdx`]
-        : ["src/content/docs/framework/index.mdx"]
+        : ["src/pages/framework.astro"]
       expect((await Promise.all(candidates.map((candidate) => Bun.file(new URL(candidate, root)).exists()))).some(Boolean)).toBe(true)
       expect(manifest.redirects.some((candidate) => new URL(candidate.to).pathname === redirect.from)).toBe(false)
     }
