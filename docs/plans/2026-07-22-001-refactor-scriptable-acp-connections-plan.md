@@ -1,223 +1,358 @@
 ---
-title: "refactor(agent): Make ACP connections scriptable and discoverable"
+title: "refactor(agent): Use native first-party harnesses and scriptable ACP extensions"
 type: refactor
 status: active
 date: 2026-07-22
 deepened: 2026-07-22
 ---
 
-# refactor(agent): Make ACP connections scriptable and discoverable
+# refactor(agent): Use native first-party harnesses and scriptable ACP extensions
 
 ## Overview
 
-Claxedo will present Claude, Codex, and Cursor through their native SDK harnesses. ACP remains a supported transport for other agents, with every ACP connection coming from an explicit, script-managed allowlist. An enabled connection becomes an ACP picker option automatically; a disabled, malformed, or unlisted connection is not executable.
+Claxedo will use its first-class native SDK integrations for Claude, Codex, and Cursor. Their ACP adapters, bundled binaries, duplicate picker entries, credential aliases, packaging steps, and vendor-specific runtime dependencies will be removed from the built-in product surface.
 
-The implementation turns the existing fixed ACP identities into a generic ACP connection catalog while retaining the mature `AcpHarnessAdapter`, live ACP model/config-option probing, permissions, recovery, and normalized event pipeline. It also removes the bundled Claude/Codex ACP adapter artifacts and the fixed Cursor ACP choice from the active product surface.
+ACP remains Claxedo's open extension point. An operator can add any stdio ACP-compatible agent as data in trusted configuration. The server turns each enabled configuration entry into a generic ACP harness, the app discovers it from the server-owned harness snapshot, and the workspace runtime resolves it through the same accepted registry before starting the process.
 
-## Problem Frame
+This boundary gives Claxedo two clear integration models:
 
-ACP execution is already structurally generic in `packages/workspace-runtime/src/workspace/runtime.ts`: the default registry matches any harness whose access mode is `acp`. The surrounding contracts are still closed, however:
+- **First-party agents:** Native SDK or app-server implementations maintained and tested by Claxedo.
+- **External agents:** Operator-installed ACP processes described by configuration and handled by one generic ACP adapter.
 
-- `packages/agent-sdk-runtime/src/harness-types.ts` permits only Claude, Codex, and Cursor as ACP identities.
-- `packages/claxedo-server/src/agent-config.ts` infers vendor-specific ACP binaries and stores only one selected harness, not an allowed connection catalog.
-- `packages/workspace-runtime/src/routes/config.ts` accepts a plural v2 harness list but collapses it to the first entry during normalization.
-- `packages/claxedo-app/src/features/session/ui/controls/agent-harness-selector.tsx` hard-codes all eight picker options, including three ACP vendor duplicates.
-- Desktop and runtime packages still bundle vendor ACP adapter binaries even though native SDK paths exist.
+The result removes large duplicate dependencies and per-vendor maintenance while making the ACP surface more extensible. Adding another standards-compliant ACP agent becomes a configuration operation rather than a Claxedo code change.
 
-This prevents operators from scripting another ACP-compatible agent into Claxedo and causes first-party agents to appear twice through different transports.
+## Why This Change
+
+Claude, Codex, and Cursor already have native integrations that expose their first-party lifecycle, authentication, recovery, permissions, models, and events directly. Bundling separate ACP implementations for the same agents has significant ongoing cost:
+
+- Desktop and server packages ship vendor ACP binaries and transitive dependencies in addition to the native integration.
+- Each first-party agent has two execution paths that can drift in recovery, permissions, model selection, authentication, packaging, and tests.
+- The app presents duplicate choices for the same logical agent.
+- Native defects can be hidden by an ACP fallback instead of being fixed in the supported first-party path.
+- Adding another ACP agent currently requires expanding closed unions, registries, UI options, binary inference, and test matrices.
+
+The generic ACP client is still valuable. It is comparatively small, protocol-oriented infrastructure that can connect to many independently installed agents. Claxedo should bundle that protocol client while leaving each external ACP server, its installation, and its upgrades under operator control.
+
+## Desired Outcome
+
+After this refactor:
+
+- Claude, Codex, and Cursor appear once under **Native SDK**.
+- Claxedo release artifacts contain no bundled Claude, Codex, or Cursor ACP server.
+- An operator can configure a new stdio ACP agent without changing Claxedo source.
+- A configured and enabled ACP agent appears automatically under **ACP** in the app.
+- A disabled or removed ACP agent is absent from new-session choices and cannot be started.
+- The app receives labels and availability, but never commands or environment values.
+- The central server and workspace runtime enforce the same accepted ACP registry.
+- Models, modes, permissions, and optional capabilities continue to come from live ACP negotiation.
+- Supporting the next ordinary ACP agent requires configuration and interoperability testing, not a new adapter class.
 
 ## Requirements Trace
 
-### Product surface and discovery
+### First-party consolidation
 
-- **R1 — Native first-party choices:** Claude, Codex, and Cursor appear once in the app through their native SDK harnesses and are not advertised, auto-configured, or bundled as ACP connections.
-- **R2 — Scriptable ACP definitions:** A trusted operator can define local-process and remote ACP connections declaratively, including stable ID, display label, process command/arguments/environment, or remote transport/URL/headers.
-- **R3 — Explicit allowlist:** Only valid definitions explicitly enabled by the operator are selectable or executable. Declaring an executable path is not enough without the enable decision.
-- **R4 — Automatic app discovery:** Enabled ACP definitions appear under the app's ACP group without an app code change or a second UI-side registry update.
+- **R1 — Native first-party surface:** Claude, Codex, and Cursor are built-in only through their native integrations.
+- **R2 — Dependency and packaging reduction:** Vendor ACP packages, binaries, desktop resources, credential aliases, and vendor boot logic are removed from release artifacts.
 
-### Runtime behavior and identity
+### Generic ACP extension
 
-- **R5 — End-to-end generic execution:** A discovered custom ACP connection can be selected, probed for live config/model options, persisted as session identity, run locally or in a workspace runtime, interrupted, recovered, and reloaded through the existing ACP adapter.
-- **R6 — Complete model identity:** Custom ACP models use the same access-qualified `acp:<connection-id>` key as their provider identity so model selection, sticky defaults, submit payloads, and reload cannot collide with native or direct harnesses.
-- **R7 — Deterministic config convergence:** After an atomic config write, a local or management-authenticated reload operation validates the catalog, returns accepted rows/diagnostics, fans the accepted snapshot to runtimes, and invalidates app discovery without a server restart.
+- **R3 — Open ACP identity:** Custom ACP connection IDs are validated operator-defined slugs rather than members of the closed native harness union.
+- **R4 — Scriptable definition:** A trusted configuration mutation can define an ACP connection with an ID, label, command array, optional environment, optional compatibility parameters, and enabled state.
+- **R5 — Configuration is authorization:** A valid configured entry is allowed by default; `enabled: false` preserves its settings while removing it from discovery and execution.
+- **R6 — Automatic discovery:** Every enabled ACP entry appears under the app's ACP group from server-projected data without an app registry edit.
+- **R7 — Runtime enforcement:** Both the central server and workspace runtime reject an ACP identity that is not in their current accepted registry.
+- **R8 — Generic interoperability:** The existing ACP adapter handles initialization, session creation, live model/mode discovery, permissions, MCP injection, prompting, interruption, and recovery for custom identities.
 
-### Security and compatibility
+### Lifecycle and compatibility
 
-- **R8 — Secret-safe configuration and projection:** Connection topology is stored with owner-only permissions. Secret values are supplied by references to the existing credential registry or named runtime environment variables; app catalogs, diagnostics, logs, and persisted runtime metadata never contain resolved secret values.
-- **R9 — Deterministic scripting diagnostics:** Invalid, duplicate, reserved, or disabled definitions produce stable machine-readable catalog diagnostics; they do not silently become executable and one bad entry does not erase valid entries.
-- **R10 — Durable compatibility:** Historical Claude/Codex/Cursor ACP sessions remain readable and retain their stored identity. A historical or custom session whose definition is no longer enabled cannot start another turn and reports an actionable disabled/unavailable error.
-
-### Packaging and regression safety
-
-- **R11 — Packaging cleanup:** Release packages and desktop builds no longer install, copy, contract-check, or ship Claude/Codex ACP adapter binaries; the protocol SDK and generic ACP runtime remain.
-- **R12 — Regression safety:** Native SDK, OpenCode, Pi, ACP event normalization, sticky draft defaults, session locks, runtime config application, and local/cloud placement retain their existing authority boundaries.
+- **R9 — Durable identity:** Sessions persist the logical `{ id, access: "acp" }` identity and resolve its current configured launch descriptor when execution starts.
+- **R10 — Safe configuration application:** Live config mutations validate and persist the central accepted config atomically, then rebuild discovery and fan the normalized registry to workspace runtimes without restarting the server. Per-target apply status reports whether each runtime has converged.
+- **R11 — Compatibility:** Historical first-party ACP sessions remain readable. They can continue only when the operator explicitly configures the corresponding ACP identity and supplies its process.
+- **R12 — Regression protection:** Native Claude/Codex/Cursor, OpenCode, Pi, session locking, sticky defaults, live option discovery, and local/cloud placement retain their existing authority boundaries.
 
 ## Scope Boundaries
 
-- ACP connection definitions are managed through trusted configuration and automation. An in-app connection editor is out of scope.
-- Automatic discovery means projecting accepted allowlist entries into the app. The product does not scan `$PATH`, package managers, or the filesystem for executables.
-- The first implementation supports the connection mechanisms already present in the ACP runtime: stdio process, streamable HTTP, and WebSocket.
-- Agent-specific ACP event rules may remain as historical replay compatibility. They are not active picker entries, packaged binaries, credential providers, or recommended execution paths.
-- Native SDK implementation changes are limited to any parity fixes exposed by removing their ACP alternatives. New native SDK features are tracked separately.
-- ACP server installation, upgrades, and binary distribution belong to the operator or the configured connection package. Claxedo supplies the protocol client/runtime, not third-party ACP servers.
+- The first release supports ACP over stdio processes. Streamable HTTP and WebSocket ACP connections are tracked as a later extension of the same registry contract.
+- Operators install and authenticate external ACP agents. Claxedo manages the client side of the protocol and the configured child process.
+- Live scripting uses the authenticated/local agent-config API. Direct edits to `user-agent-config.json` are supported for provisioning before server start; filesystem watching is outside this release.
+- The app consumes configured connections but does not provide a general-purpose connection editor in this release.
+- A curated ACP marketplace or installer is outside this refactor. A future catalog can generate the same config mutation without changing runtime architecture.
+- Configuration may contain environment overrides. Full trusted descriptors may be persisted in owner-only server/runtime config needed for restart recovery, but commands/environment never enter browser payloads, session records, logs, diagnostics, or public runtime status metadata.
+- A new secret-reference DSL is outside this refactor. Existing credential injection remains available where already supported.
+- Operator-defined ACP IDs may use names such as `claude`, `codex`, or `cursor`. They remain custom `acp:<id>` choices and do not restore bundled or advertised first-party ACP support.
 
-## Planning Bootstrap Assumptions
+## Prior Art and Existing Seams
 
-- “Fully scriptable” means a stable declarative config contract plus machine-readable validation/discovery, with no required UI setup.
-- The existing `~/.claxedo/user-agent-config.json` authority remains the local/self-host configuration source. Hosted deployment automation can produce the same normalized runtime snapshot through the existing management-authenticated config path.
-- Presence alone is not execution consent. Each custom ACP definition uses an explicit enabled flag.
-- Connection IDs are stable lowercase slugs. The built-in IDs and legacy first-party aliases are reserved so a custom entry cannot shadow a native harness.
-- Scripts write config atomically and call an explicit reload operation; filesystem watching is not required for correctness.
+### Paseo's generic ACP pattern
 
-## Context & Research
+The sibling Paseo implementation demonstrates the minimal viable shape:
 
-### Technology & Architecture
+- Provider IDs are open strings while built-in definitions remain a separate closed list.
+- A custom entry declares `extends: "acp"`, a label, and a command.
+- Registry construction turns each entry into `GenericACPAgentClient` and defaults it to enabled unless explicitly disabled.
+- A provider snapshot is the common source for execution and app selection.
+- Config API changes persist first, rebuild the registry, and publish new snapshots immediately.
+- A small compatibility parameter object handles protocol differences such as agents that reject injected MCP servers.
 
-- The relevant packages are TypeScript workspaces running on Bun/Node, with Hono server routes, SolidJS app state/UI, and package-level Bun/Vitest/Playwright tests.
-- `packages/agent-sdk-runtime/src/harnesses/acp/index.ts` already provides generic ACP session creation, prompting, config-option probing, permission handling, process reuse, recovery, and event projection.
-- `packages/workspace-runtime/src/workspace/runtime.ts` already uses an ordered adapter registry. Its first entry matches any `access: "acp"` harness, which is the implementation seam to preserve.
-- `packages/claxedo-server/src/agent-config.ts` owns user config loading, runtime snapshot generation, and the current vendor binary inference.
-- `packages/claxedo-app/src/features/session/harness/harness-hydrator.ts` and `profile.ts` already decode server-owned harness status into scope-local picker state.
+Claxedo will use the same principles within its existing harness/access model rather than introduce a second provider framework.
 
-### Relevant Patterns
+### Claxedo implementation seams
 
-- `SessionHarness` separates logical identity from process/remote connection metadata.
-- Runtime snapshot v2 already uses a plural `harnesses` list; the receiver currently validates every entry but applies only the first.
-- Runtime config apply is serialized and rejects ACP changes that would restart an active turn.
-- Session config is durable and session-locked after creation; new draft defaults are convenience state, not created-session authority.
-- App harness choices are grouped as ACP, Native SDK, and Direct, but the list is currently static.
-- App-facing API parsers use validating decode functions rather than trusting persisted or wire strings.
+- `packages/agent-sdk-runtime/src/harness-types.ts` owns closed harness identities and access-qualified keys.
+- `packages/agent-sdk-runtime/src/harnesses/acp/index.ts` already contains the generic ACP lifecycle and transport behavior.
+- `packages/claxedo-server/src/agent-config.ts` owns `user-agent-config.json`, default harness configuration, and runtime snapshot generation.
+- `packages/claxedo-server/src/config-fanout.ts` already propagates accepted configuration to local and hosted workspace runtimes.
+- `packages/workspace-runtime/src/routes/config.ts` already accepts snapshot v2 with a plural `harnesses` field, although it currently applies only the first harness.
+- `packages/workspace-runtime/src/workspace/runtime.ts` already dispatches every `access: "acp"` harness through the ACP adapter entry.
+- `packages/claxedo-app/src/features/session/harness/harness-hydrator.ts` already treats the server as harness-status authority.
+- `packages/claxedo-app/src/features/session/ui/controls/agent-harness-selector.tsx` already renders ACP, Native SDK, and Direct groups; only its option source is currently static.
 
-### Institutional Learnings
+## Configuration Contract
 
-- `docs/plans/2026-07-12-003-feat-sticky-workspace-harness-defaults-plan.md` establishes that server session config owns existing sessions and that live harness config options own ACP/native model eligibility.
-- `docs/e2e-decisions.md` records passing native Codex multi-turn/reload coverage, supporting the native-only first-party direction.
-- `docs/plans/2026-07-18-002-feat-background-agents-steering-plan.md` treats ACP as a portable protocol boundary whose optional capabilities must be discovered rather than assumed.
-- No `docs/solutions/` or critical-patterns file exists, so there are no additional formal solution records for this feature area.
+The trusted user config gains one direct map of ACP definitions. That map is the single configuration source; its valid enabled projection is the execution allowlist and discovery catalog. There is no second allowlist table.
 
-### External Research
+> *This illustrates the intended contract and is directional guidance for review, not implementation specification. The implementing agent should follow the repository's existing parsing and naming conventions.*
 
-External research is unnecessary. The repository already contains the ACP protocol client, generic adapter, all three transport implementations, runtime registry, config fanout, and app selector patterns needed for this refactor.
+```json
+{
+  "acp": {
+    "gemini": {
+      "label": "Gemini",
+      "command": ["gemini", "--acp"],
+      "env": {
+        "GEMINI_API_KEY": "..."
+      },
+      "params": {
+        "supportsMcpServers": true
+      },
+      "enabled": true
+    },
+    "hermes": {
+      "label": "Hermes",
+      "command": ["hermes", "acp"],
+      "enabled": false
+    }
+  }
+}
+```
+
+Contract rules:
+
+- The map key is a stable lowercase slug and becomes the logical ACP identity.
+- `label` and a non-empty `command` array are required.
+- `command[0]` is the executable; remaining values are arguments.
+- `env` is an optional string map applied over the runtime process environment.
+- `params` contains narrowly defined generic ACP compatibility switches. The initial schema includes only behavior proven necessary by existing integrations, such as MCP-server injection support.
+- `enabled` defaults to `true`. Setting it to `false` is an explicit, reversible disable operation.
+- Unknown top-level fields are handled according to the repository's versioned-config compatibility convention; invalid known fields reject the mutation.
+- The entire mutation is validated before persistence. One malformed entry leaves the previously accepted config and runtime registry unchanged.
+
+The canonical app identity is `acp:<id>`, for example `acp:gemini`. Native and direct harness keys remain unchanged. This access-qualified representation prevents collisions without forbidding useful custom slugs.
+
+## User Flows
+
+### Add and use a custom ACP agent
+
+1. The operator installs an ACP-compatible CLI and completes any authentication required by that CLI.
+2. A script sends a trusted config mutation containing the ACP definition. Offline provisioning may place the same definition in `user-agent-config.json` before server start.
+3. The server validates the complete proposed config. On success, it writes the owner-only file atomically and returns the normalized accepted configuration.
+4. The server rebuilds the accepted harness registry and fans the same normalized ACP descriptors to workspace runtimes.
+5. Harness discovery is invalidated or pushed to connected app scopes.
+6. The app receives a sanitized row such as `{ key: "acp:gemini", label: "Gemini", access: "acp", status: "ready" }` and displays it under **ACP**.
+7. The user selects Gemini. The app sends only `acp:gemini`; it does not send the command or environment.
+8. The server and workspace runtime independently resolve `acp:gemini` from their accepted registry.
+9. The generic ACP adapter starts `gemini --acp`, performs ACP initialization and session creation, and reads live models, modes, and capabilities.
+10. The user chooses any required live option and starts the session through the normal prompt path.
+
+No Claxedo source file, desktop bundle, or app option registry changes when the operator later adds another ordinary ACP agent.
+
+### Disable or remove a connection
+
+1. A script patches the connection with `enabled: false`, or explicitly removes its map entry.
+2. The server atomically persists the new config and rebuilds/fans out the registry.
+3. The connection disappears from new-session choices.
+4. New starts and follow-up execution for that logical ACP identity fail with a stable unavailable/not-configured error.
+5. Existing session history remains readable.
+
+Disabling is the preferred temporary operation because it preserves configuration. Removal is the permanent configuration cleanup operation.
+
+### Configured process is unavailable
+
+An enabled definition whose executable cannot be resolved remains visible under **ACP** with an unavailable state and diagnostic action. It cannot be selected for a new session until the process is resolvable. Keeping the row visible lets the operator distinguish “configured but not installed” from “not configured.”
+
+### Update a connection
+
+Changing the command, environment, or parameters for an existing ID intentionally rebinds that logical ACP identity. Existing sessions use the new descriptor on their next process start. Operators who need old and new behavior to coexist create a new ID, such as `gemini-v2`.
+
+This policy matches how executable upgrades already affect native and process-based integrations while avoiding a per-session copy of commands and secrets.
+
+### Historical Claude/Codex/Cursor ACP sessions
+
+Removing bundled adapters does not delete session data. A historical ACP session remains readable. If an operator still needs to run it, they can explicitly define the same logical ACP ID and provide the required command. Claxedo will treat that definition as operator-managed ACP—not as a built-in or supported first-party path.
+
+## Code Flow
+
+### Configuration and discovery
+
+> *This illustrates the intended approach and is directional guidance for review, not implementation specification.*
+
+```mermaid
+sequenceDiagram
+  participant Script as Operator script
+  participant Config as Claxedo config API
+  participant Registry as Accepted harness registry
+  participant Fanout as Runtime config fanout
+  participant Runtime as Workspace runtime
+  participant App as Claxedo app
+
+  Script->>Config: Patch ACP definition
+  Config->>Config: Validate complete config
+  Config->>Config: Persist private file atomically
+  Config->>Registry: Rebuild normalized ACP entries
+  Registry->>Fanout: Emit runtime snapshot v2
+  Fanout->>Runtime: Apply complete ACP registry
+  Registry-->>App: Publish sanitized harness snapshot
+  App->>App: Group enabled rows under ACP
+```
+
+### Selection and execution
+
+```mermaid
+sequenceDiagram
+  participant App as Claxedo app
+  participant Server as Claxedo server
+  participant Runtime as Workspace runtime
+  participant Adapter as Generic ACP adapter
+  participant Agent as Configured ACP process
+
+  App->>Server: Select acp:gemini
+  Server->>Server: Resolve exact accepted identity
+  Server->>Runtime: Create/use session with id=gemini, access=acp
+  Runtime->>Runtime: Resolve exact applied descriptor
+  Runtime->>Adapter: Create generic adapter
+  Adapter->>Agent: Spawn command and initialize ACP
+  Agent-->>Adapter: Capabilities, modes, models
+  Adapter-->>App: Sanitized live options/status
+  App->>Server: Submit prompt with selected live options
+  Server->>Runtime: Prompt existing session
+  Runtime->>Adapter: One ACP prompt stream
+```
+
+### Authority boundaries
+
+| Layer | Owns | Does not own |
+|---|---|---|
+| User config | ACP IDs, labels, commands, env, params, enabled state | Session history or UI-local selection |
+| Claxedo server | Validation, persistence, accepted registry, sanitized discovery, runtime fanout | ACP protocol execution in hosted workspaces |
+| Workspace runtime | Applied registry enforcement, adapter/process lifecycle | Editing operator config or app labels independently |
+| App | Rendering groups, selecting canonical keys, displaying live options | Commands, environment, or execution authorization |
+| Session record | Logical harness identity and selected live options | A copy of the ACP command or environment |
 
 ## Key Technical Decisions
 
-- **Separate closed native identities from open ACP identities:** Native harness IDs remain the finite built-in set. ACP connection IDs are validated operator-defined slugs carried only with `access: "acp"`. This preserves strong dispatch for native adapters while allowing generic ACP entries.
-- **Use an access-qualified app key:** App and preference state represent custom entries as `acp:<connection-id>`. The prefix prevents collisions with native/direct keys and round-trips to structured runtime identity `{ id: <connection-id>, access: "acp" }`.
-- **Make enabled definitions the allowlist:** Add a versioned ACP connection record to user agent config. Each row contains a label, explicit enable decision, and exactly one process or remote connection. Accepted rows are both the discovery catalog and the execution authorization source.
-- **Keep connection details server-owned:** Picker and bootstrap/status payloads expose key, ID, access, label, and availability only. Selection requests send the key; the server resolves it back to the trusted full descriptor before persistence or fanout.
-- **Resolve secrets at the last trusted boundary:** Declarative env/header values may be non-secret literals or references to a named runtime environment variable/existing credential-registry slot. The server/runtime resolves references only while building the trusted adapter configuration. User config is always owner-readable/writable only, and resolved values never enter catalogs, diagnostics, logs, session rows, or persisted runtime metadata.
-- **Use explicit reload rather than file-watch semantics:** A local-only or management-authenticated reload endpoint reparses the on-disk config, returns accepted rows and diagnostics, fans out the accepted snapshot, and invalidates harness-catalog queries. Entry-level validation excludes only invalid rows and applies the valid accepted set. A top-level parse/schema failure, authorization failure, fanout failure, or runtime-apply conflict leaves the previous catalog active.
-- **Use runtime snapshot v2 as the workspace allowlist:** The first harness remains the active/default harness for compatibility, while the full normalized `harnesses` list remains available to the workspace host as its execution catalog. Runtime session resolution accepts a custom ACP identity only when an exact enabled descriptor exists in that applied catalog.
-- **Do not duplicate connection secrets into session rows:** Durable session identity stores the ACP ID/access pair. The runtime resolves command, args, environment, URL, and headers from the current allowed catalog. Accepted-snapshot metadata records connection IDs and transport kinds only.
-- **Treat explicit allowlisting as remote-transport consent:** An enabled remote descriptor is sufficient authorization for its configured transport. The separate ambient `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` gate can be retired once runtime allowlist enforcement is in place.
-- **Preserve last-known-good runtime application:** A malformed catalog snapshot fails before mutation. A catalog change that would restart an active ACP turn returns the existing structured conflict and keeps the previously applied catalog; inactive-entry changes apply without restarting the active adapter.
-- **Isolate invalid definitions:** Config parsing returns accepted definitions plus stable diagnostics. Valid enabled connections continue to work when another row is invalid. Reserved IDs, duplicate normalized IDs/keys, unsupported transports, empty commands/URLs, malformed args/env/headers, and missing labels have explicit diagnostic codes.
-- **Retain historical aliases as read compatibility:** Legacy `claude-acp`, `codex-acp`, and `cursor-acp` values continue to decode for stored sessions and event replay. They are excluded from active definitions, picker choices, default binary resolution, credential catalogs, new-session selection, and packaging.
-- **Use generic ACP behavior by default:** Custom clients enter the event translator as `unknown` unless an explicit compatibility rule recognizes them. Standard ACP content, tools, permissions, plans, and config options continue through the generic translation path.
-- **Use the access-qualified key for model ownership:** A custom connection's model provider ID is `acp:<connection-id>` across live options, draft defaults, model writes, submit payloads, and recovered session config. The runtime translates that presentation identity back to the structured harness descriptor before invoking ACP.
+- **Use one data-defined registry:** The configured ACP map is simultaneously the extension catalog, allowlist, and source for runtime descriptors. This avoids separate discovery and authorization stores drifting apart.
+- **Keep native IDs closed and ACP IDs open:** Built-in adapter factories remain strongly typed. A validated ACP slug is accepted only with `access: "acp"` and exact registry membership.
+- **Use the config API for live scripting:** The existing trusted mutation boundary can validate, persist, rebuild, fan out, and notify in one operation. A filesystem watcher and separate reload endpoint would duplicate those lifecycle concerns.
+- **Validate atomically:** A malformed update does not silently disable a previously working connection or partially alter the registry.
+- **Support stdio first:** Every target in the immediate use case can use the standard process-based ACP path. Remote transports can extend the connection union later without complicating the initial product surface.
+- **Default configured entries to enabled:** Adding the configuration is the operator's allow decision. `enabled: false` supports reversible suspension without a second consent flag or table.
+- **Keep connection details out of the app:** The app selects an opaque canonical key. Trusted server/runtime layers resolve the descriptor and enforce it again before process spawn.
+- **Resolve current descriptors at execution time:** Sessions retain a stable logical ID while operational command/env changes apply on future starts. Operators use a new ID when semantic continuity matters.
+- **Use generic ACP behavior with narrow compatibility parameters:** Live protocol negotiation remains authoritative. Config flags handle optional behavior that cannot be discovered reliably; per-vendor adapter classes require evidence of a true protocol deviation.
+- **Permit operator-managed first-party slugs:** Removing built-in Claude/Codex/Cursor ACP support means Claxedo no longer bundles or advertises those adapters. It does not reduce the generic ACP protocol's openness.
+- **Remove vendor artifacts only behind native gates:** Each first-party ACP package is deleted after the corresponding native integration passes its required lifecycle and platform checks.
 
-## High-Level Technical Design
+## Does This Simplify the Codebase?
 
-> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
+### Steady-state simplification
 
-```mermaid
-flowchart LR
-  SCRIPT["Operator script writes ACP connection config"]
-  RELOAD["Authenticated/local reload"]
-  PARSE["Server validates enabled definitions"]
-  DIAG["Machine-readable diagnostics"]
-  CATALOG["Sanitized harness catalog"]
-  APP["App ACP picker group"]
-  SELECT["Selection sends access-qualified key"]
-  RESOLVE["Server resolves trusted full descriptor"]
-  SNAPSHOT["Runtime snapshot v2 allowlist"]
-  RUNTIME["Workspace runtime enforces catalog"]
-  ADAPTER["Generic ACP adapter"]
+Yes. The refactor adds generic configuration plumbing, but removes more specialized code and operational surface than it adds.
 
-  SCRIPT --> RELOAD
-  RELOAD --> PARSE
-  PARSE --> DIAG
-  PARSE --> CATALOG
-  CATALOG --> APP
-  APP --> SELECT
-  SELECT --> RESOLVE
-  RESOLVE --> SNAPSHOT
-  SNAPSHOT --> RUNTIME
-  RUNTIME --> ADAPTER
-```
+| Removed | Added or generalized |
+|---|---|
+| Three hard-coded ACP picker choices | Dynamic ACP rows from server discovery |
+| Closed ACP ID union | Validated open ACP slug for `access: "acp"` |
+| Claude/Codex ACP server dependencies | Existing generic ACP client retained |
+| Desktop ACP binary preparation and resource contracts | No replacement packaging path |
+| Vendor ACP binary inference | Explicit configured command array |
+| First-party ACP credential aliases | Operator process environment / existing credentials |
+| Repeated vendor lifecycle matrices | One generic ACP lifecycle matrix plus native tests |
+| App and runtime registries that must change together | One server-owned accepted registry |
 
-### Directional Configuration Contract
+For the next ACP agent, steady-state cost changes from “add code, types, dependencies, assets, UI entries, auth mappings, and tests” to “install the agent, add config, and verify interoperability.”
 
-The configuration shape should communicate these concepts without requiring app edits:
+### Short-term complexity
 
-```text
-acp.connections.<id>
-  label: human-readable name
-  enabled: explicit execution consent
-  connection:
-    process: command + args + non-secret values or secret references
-    OR
-    remote: transport + URL + non-secret values or secret references
-```
+The migration is cross-cutting because the current closed identity appears in shared types, server config, workspace runtime snapshots, app selection, credentials, desktop packaging, and tests. That is temporary refactor complexity, not a new permanent subsystem.
 
-The app-facing projection is deliberately smaller:
+The design stays smaller by enforcing these constraints:
 
-```text
-key + id + access=acp + label + availability
-```
+- One ACP config map; no separate database table or allowlist service.
+- One normalization path shared by discovery and runtime fanout.
+- One generic ACP adapter for ordinary clients.
+- One sanitized app projection rather than a second app-side registry.
+- One atomic config mutation path rather than file watch plus reload semantics.
+- One stdio transport in this release.
+- No bundled external ACP server installation or update manager.
 
-### State and Failure Matrix
+### Where complexity can worsen
 
-| Definition/session state | App behavior | Execution behavior |
-|---|---|---|
-| Valid and enabled | Appears under ACP | Allowed through resolved descriptor |
-| Valid and disabled | Hidden | Rejected as disabled/unlisted |
-| Malformed enabled row | Hidden; valid peers still appear | Rejected; diagnostic is queryable |
-| Reserved first-party ID | Hidden | Rejected with reserved-ID diagnostic |
-| Definition removed before a session starts | Removed on refresh | New selection/turn rejected |
-| Definition removed while a turn is active | Removed from central discovery; runtime reports apply conflict | Current turn keeps last-known-good runtime; retry applies once idle |
-| Historical ACP session, definition unavailable | Session remains readable and locked to its identity | Follow-up blocked with actionable unavailable error |
-| Remote definition enabled | Appears under ACP | Uses configured HTTP/WebSocket transport without an ambient feature flag |
+The design becomes worse if Claxedo starts adding per-agent compatibility classes, curated install logic, remote transport policy, secret-reference syntax, and independent discovery caches before real agents require them. Each addition must solve an observed interoperability or operational problem and preserve the single-registry flow.
 
-## User Flows and Edge Cases
+## Success Metrics
 
-1. **Scripted process connection:** An operator atomically writes and enables one process definition, then invokes reload. The reload response confirms acceptance, runtime fanout completes, and the refreshed app adds its label under ACP. Selecting it resolves the trusted command/args/env references, probes live options, creates a session, and stores only its logical identity.
-2. **Scripted remote connection:** An operator enables a streamable-HTTP or WebSocket definition and invokes reload. The app shows the same generic ACP choice shape; the runtime resolves header references at connection time and keeps resolved values out of app payloads and persisted metadata.
-3. **Connection disabled or removed:** It disappears from new-draft choices. Existing sessions still load history and identify their former harness, but follow-up execution returns a stable unavailable error.
-4. **Invalid configuration:** The invalid row is absent from discovery, a diagnostic names the row and validation failure, and other accepted rows remain available.
-5. **Late catalog refresh:** A stale response from another workspace, draft, or server authority cannot replace the current scope's list or selected created-session identity.
-6. **Config change during a turn:** Changes that affect the active descriptor retain the existing safe conflict behavior. Changes to an inactive catalog entry apply without touching the active process.
-7. **Fresh install:** The ACP group is absent or empty until at least one custom connection is enabled. Native SDK and Direct groups remain usable.
-8. **Partially valid reload:** A script receives the accepted rows plus per-entry diagnostics. Valid entries replace the prior accepted set and fan out; invalid entries remain hidden and unauthorized.
-9. **Failed reload:** A top-level parse/schema, authorization, fanout, or runtime-apply failure leaves the workspace's last-known-good catalog active. After resolving the failure, a later reload converges server discovery and runtime authorization.
+- The new-session picker contains exactly one built-in row each for Claude, Codex, and Cursor.
+- Release artifacts and `bun.lock` contain no first-party ACP server package or desktop ACP binary retained solely for Claude, Codex, or Cursor.
+- A previously unknown ACP ID can be added, discovered, selected, and run without editing Claxedo source.
+- Disabled and unknown ACP IDs fail before process spawn in both central and workspace-runtime paths.
+- The required independent ACP interoperability smoke completes through the generic adapter.
+- Native lifecycle gates pass for each vendor before its ACP artifact is removed.
+- The release report records the desktop/server artifact-size reduction so the dependency-removal benefit remains visible, without making a platform-specific byte threshold a release blocker.
 
 ## Open Questions
 
 ### Resolved During Planning
 
-- **Does automatic mean scanning installed binaries?** No. Discovery is automatic from accepted allowlist definitions; arbitrary executable discovery would bypass explicit consent and produce non-deterministic deployments.
-- **Where is the source of truth?** The server-owned user agent config and its normalized runtime snapshot. The app consumes a projection and never becomes a second registry.
-- **Can Claude/Codex/Cursor be re-added under custom ACP IDs?** Their reserved identities and legacy aliases are rejected for new definitions. They remain available through native SDKs.
-- **What happens to old ACP sessions?** They remain readable. Continued execution requires an active allowed definition; the product does not silently migrate a durable session to a native harness.
-- **Should the app receive commands, environment, URLs, or headers?** No. The app needs presentation identity only; trusted layers resolve connection details.
-- **How do scripts activate an edited config?** They atomically replace the config file and call the local-only or management-authenticated reload operation. The response is the machine-readable acceptance receipt.
-- **How are connection secrets represented?** Through existing credential-registry slots or named runtime environment references resolved at the trusted server/runtime boundary. The config file remains owner-only and catalogs/diagnostics carry reference names at most, never values.
-- **Should a bad row invalidate the whole catalog?** No. Per-entry diagnostics isolate operator mistakes, while runtime snapshot validation remains atomic for the accepted catalog.
-- **Is a second remote ACP feature flag required?** No. The explicit enabled allowlist becomes the authorization boundary for both process and remote connections.
+- **What counts as allowing a connection?** A valid config entry is allowed unless `enabled: false`; no second consent table is introduced.
+- **How does live scripting work?** Scripts use the trusted config mutation API. Offline file provisioning takes effect at server start.
+- **How are invalid updates handled?** The complete central mutation is rejected and the previous accepted config remains active.
+- **Can an operator still run Claude/Codex/Cursor through ACP?** Yes, as an explicitly configured custom process. Claxedo does not bundle, advertise, or maintain that path.
+- **What happens when a descriptor changes?** The stable ID intentionally rebinds to the new operational descriptor; a distinct behavior uses a distinct ID.
+- **Which transport ships first?** Stdio process connections, matching the immediate external-agent and dependency-removal use case.
 
-### Deferred to Implementation
+### Resolve Before First-Party Artifact Removal
 
-- **Exact config field spelling and schema helper names:** Preserve the concepts and validation behavior above while following the smallest existing config parsing pattern.
-- **Catalog refresh trigger:** Prefer the existing harness hydration/status refresh path; add a dedicated query only if implementation shows that status caching cannot provide timely catalog updates without coupling health and discovery.
-- **Historical label retention:** Reuse a stored/session-derived label if already available; otherwise derive a bounded title from the legacy/custom ID. The identity and execution policy are fixed regardless of final fallback copy.
+- **Independent interoperability target:** Select and version-pin one non-Claude/Codex/Cursor ACP implementation that can run in the release environment, including any required test credential arrangement. The generic registry may land before this choice; vendor artifact removal may not.
+
+### Deferred Extensions
+
+- Streamable HTTP/WebSocket ACP descriptors using the existing transport implementation.
+- Revision preconditions for deployments with demonstrated concurrent config writers.
+- Curated install/catalog UX that emits the same trusted config mutation.
+- Secret-reference syntax beyond the existing credential and private-config model.
+
+## Failure and State Behavior
+
+| Situation | Result |
+|---|---|
+| Valid enabled definition | Persisted, fanned out, shown under ACP, executable |
+| Valid disabled definition | Persisted, hidden from new choices, rejected for execution |
+| Invalid mutation | Entire mutation rejected; previous config and registry remain active |
+| Missing executable | Definition remains visible as unavailable with diagnostic; execution does not spawn |
+| Unknown `acp:<id>` selection | Rejected at server and runtime boundaries |
+| Connection removed while idle | Removed immediately from discovery and future execution |
+| Connection changed during an active turn | Current process/turn completes; the new descriptor applies to a later process start |
+| Runtime fanout failure | Server reports the apply failure and does not advertise the connection as ready for that target |
+| Historical session without definition | History readable; follow-up reports connection not configured |
+| Historical session with operator definition | Resolves through the configured generic ACP path |
 
 ## Implementation Units
 
-- [ ] **Unit 1: Open the shared ACP identity and connection contracts**
+- [ ] **Unit 1: Open ACP identity without opening native adapter dispatch**
 
-**Goal:** Represent arbitrary ACP identities and complete connection descriptors without weakening the finite native harness registry.
+**Goal:** Represent an arbitrary configured ACP identity while keeping built-in native harness factories finite.
 
-**Requirements:** R2, R5, R6, R8, R10, R12
+**Requirements:** R3, R7, R8, R9, R12
 
 **Dependencies:** None
 
@@ -226,100 +361,92 @@ key + id + access=acp + label + availability
 - Modify: `packages/agent-sdk-runtime/src/index.ts`
 - Modify: `packages/agent-sdk-runtime/src/harnesses/index.ts`
 - Modify: `packages/agent-sdk-runtime/src/harnesses/acp/index.ts`
-- Modify: `packages/agent-sdk-runtime/src/harnesses/acp/default-binaries.ts`
 - Modify: `packages/agent-sdk-runtime/src/mcp-resolver.ts`
-- Create or modify tests: `packages/agent-sdk-runtime/src/harness-types.test.ts`
+- Test: `packages/agent-sdk-runtime/src/harness-types.test.ts`
 - Test: `packages/agent-sdk-runtime/src/harnesses/acp/index.test.ts`
 - Test: `packages/agent-sdk-runtime/src/runtime.test.ts`
-- Test: `packages/agent-sdk-runtime/src/mcp-resolver.test.ts`
 
 **Approach:**
-- Split built-in native definitions from operator-defined ACP identity. Keep native factories closed over Claude, Codex, Cursor, OpenCode, and Pi.
-- Add an exported generic ACP factory/descriptor path that accepts a validated ID and explicit connection instead of inferring a vendor binary.
-- Extend process connection metadata to carry arguments and environment overrides through the trusted runtime path.
-- Make `AcpHarnessAdapter` accept a generic ACP client ID. Keep vendor-only recovery quirks behind legacy compatibility checks rather than making them the type boundary.
-- Define canonical access-qualified keys and parsing rules, including `acp:<id>` for custom connections and read-only legacy aliases.
-- Make the access-qualified key the model provider identity returned to app/runtime consumers.
-- Ensure unknown ACP IDs map to the generic event translator/client classification and MCP agent fallback without being mislabeled as Claude, Codex, or Cursor.
+- Separate the finite native harness ID type from the validated open ACP connection ID.
+- Preserve structured identity as `{ id, access }` and canonical presentation as `acp:<id>`.
+- Let `AcpHarnessAdapter` accept any validated ACP ID and explicit process descriptor.
+- Carry process arguments, environment, and the narrow compatibility parameter set through the trusted adapter construction path.
+- Keep existing vendor event/recovery rules only where historical replay or proven protocol deviations require them; default every other client to generic ACP behavior.
+
+**Execution note:** Add characterization coverage for legacy access-qualified identities before widening the type boundary.
 
 **Patterns to follow:**
-- `AgentHarnessAccess` for transport-independent access qualification.
-- `defaultWorkspaceHarnessRegistry()` for generic `access: "acp"` dispatch.
-- `acpClient()` returning `unknown` for unrecognized event compatibility.
+- `normalizeHarnessIdentity()` and `harnessKey()` for access-qualified identity.
+- The `access === "acp"` adapter match in `defaultWorkspaceHarnessRegistry()`.
+- Paseo's separation between an open provider identity and closed built-in factory list.
 
 **Test scenarios:**
-- Happy path: a valid custom slug and `access: "acp"` round-trip through identity normalization and key generation.
-- Happy path: a generic ACP factory receives process command, args, and env unchanged.
-- Edge case: native built-in IDs remain finite and still select their native factories.
-- Error path: blank, malformed, reserved, or overlong custom ACP IDs fail validation.
-- Compatibility: legacy Claude/Codex/Cursor ACP keys still decode for historical input but are not present in active definitions.
-- Integration: a fake custom ACP adapter creates a session and emits generic normalized events without vendor classification.
-- Identity: live model options and a recovered model selection retain `providerID: "acp:<id>"` without colliding with a native harness ID.
+- Happy path: `gemini` plus `access: "acp"` round-trips as `acp:gemini`.
+- Happy path: command, args, env, and supported compatibility params reach the generic adapter unchanged.
+- Edge case: custom IDs named `claude`, `codex`, or `cursor` remain ACP-qualified and cannot dispatch to native factories.
+- Error path: blank, malformed, or overlong IDs fail validation.
+- Compatibility: legacy first-party ACP keys still decode for stored sessions.
+- Regression: finite native IDs continue selecting their existing native adapters.
 
 **Verification:**
-- Shared types can express a custom ACP connection while callers cannot treat an arbitrary string as a native harness.
-- No generic ACP code path requires a Claude/Codex/Cursor default binary.
+- Adding a new ACP ID requires no edit to a TypeScript union or adapter factory table.
+- An arbitrary string still cannot select a native adapter.
 
-- [ ] **Unit 2: Add the server-owned ACP allowlist and sanitized catalog**
+- [ ] **Unit 2: Make trusted config the atomic ACP registry**
 
-**Goal:** Make trusted configuration the single source of ACP discovery and execution authorization.
+**Goal:** Add, update, disable, remove, and discover ACP definitions through one trusted configuration path.
 
-**Requirements:** R2, R3, R4, R7, R8, R9, R10
+**Requirements:** R4, R5, R6, R7, R10, R11
 
 **Dependencies:** Unit 1
 
 **Files:**
 - Modify: `packages/claxedo-server/src/agent-config.ts`
-- Modify: `packages/claxedo-server/src/routes/agent-config-harness.ts`
-- Modify: `packages/claxedo-server/src/routes/agent-config-harness-routes.ts`
 - Modify: `packages/claxedo-server/src/routes/agent-config.ts`
+- Modify: `packages/claxedo-server/src/routes/agent-config-harness-routes.ts`
 - Modify: `packages/claxedo-server/src/config-fanout.ts`
 - Modify: `packages/claxedo-server/src/harness-resolution.ts`
 - Modify: `packages/claxedo-server/src/session-harness.ts`
 - Test: `packages/claxedo-server/src/agent-config.test.ts`
-- Test: `packages/claxedo-server/src/harness-resolution.test.ts`
 - Test: `packages/claxedo-server/src/routes/agent-config-extensions.test.ts`
+- Test: `packages/claxedo-server/src/harness-resolution.test.ts`
 - Test: `packages/claxedo-server/src/multi-agent.integration.test.ts`
 
 **Approach:**
-- Add a versioned ACP connection map to `UserAgentConfig` and preserve it through every existing load/save mutation.
-- Parse each entry into accepted definitions and stable diagnostics. Require explicit enablement and exactly one valid process or remote connection.
-- Reserve native IDs and legacy aliases. Detect collisions after normalization so spelling differences cannot create ambiguous keys.
-- Add the sanitized accepted catalog to the harness status/discovery response used by app hydration. Include diagnostics on the trusted configuration endpoint for scripts and operators, not in normal picker rows.
-- Add a local-only or management-authenticated reload operation that reparses config, returns accepted rows/diagnostics, fans out the accepted snapshot, and invalidates app discovery. Apply the valid subset when individual rows fail validation; preserve the last applied catalog when the document cannot be parsed/authorized or the accepted snapshot cannot be fanned out/applied.
-- Resolve selection keys against the accepted catalog before saving a default, binding a session, probing config options, or generating a runtime snapshot. Never accept app-supplied command/env/header fields as catalog authority.
-- Resolve credential/environment references only while producing trusted runtime configuration; save the user config with mode `0600` and redact all diagnostic/log fields.
-- Remove vendor binary inference. A custom ACP process definition must provide its command; native harnesses retain their own executable resolution.
-- Generate runtime snapshot v2 with the active/default harness first and every accepted ACP descriptor included once.
+- Extend `UserAgentConfig` with the versioned ACP map and preserve it across every existing config mutation.
+- Parse and validate the entire proposed config before save. Reject invalid IDs, labels, commands, env maps, params, or enabled values without changing disk/runtime state.
+- Save `user-agent-config.json` atomically with mode `0600`.
+- Use the existing local/authenticated config route as the live scripting API. Return the normalized accepted config and stable validation errors.
+- Derive two projections from the same accepted entries: trusted runtime descriptors and sanitized app discovery rows.
+- Remove vendor ACP binary inference. Every custom ACP process supplies its command explicitly.
+- Resolve selected `acp:<id>` keys through the accepted registry before defaults, options probes, or session binding.
+- Fan out every enabled descriptor in runtime snapshot v2 while preserving the selected/default harness ordering expected by existing receivers.
 
 **Patterns to follow:**
-- `sandboxDriverConfig()` for canonical config parsing and preservation.
-- `localAgentConfigAllowed()` for the trusted configuration boundary.
-- `errorBody()` for stable machine-readable errors.
+- Existing `loadUserConfig()` / `saveUserConfig()` ownership.
+- `localAgentConfigAllowed()` for mutation authorization.
+- `fanOutConfig()` for local/cloud propagation.
+- Paseo's persist-before-runtime-update config store behavior.
 
 **Test scenarios:**
-- Happy path: two enabled custom connections round-trip through config and both appear in the sanitized catalog.
-- Happy path: process args/env and remote URL/headers reach the runtime snapshot but not the app catalog response.
-- Edge case: a disabled valid definition remains queryable in diagnostics but is absent from picker data and runtime allowlist.
-- Edge case: one malformed row does not remove a valid peer.
-- Error path: reserved first-party IDs, normalized duplicates, unsupported transport, missing process command, malformed args/env/headers, and missing remote URL return stable diagnostic codes.
-- Security: posting an unlisted `acp:<id>` or a body containing its own binary/headers is rejected without config mutation.
-- Compatibility: existing session config using a legacy first-party ACP identity resolves for reads but cannot be chosen for a new session.
-- Integration: selecting an accepted custom key saves the trusted descriptor, fans out config, and exposes its live options route.
-- Reload: an atomic file edit followed by reload returns an acceptance receipt, updates app discovery, and fans the same catalog to local/cloud runtimes without restart.
-- Partial success: a reload with one invalid row returns accepted rows plus diagnostics and applies the valid accepted set.
-- Error path: a top-level or apply failure returns diagnostics and leaves the previous runtime catalog active.
-- Secret handling: config file permissions are owner-only, reference names resolve on the trusted path, and values are absent from JSON responses and logs.
+- Happy path: adding two entries persists them and returns two sanitized enabled discovery rows.
+- Happy path: omitted `enabled` behaves as enabled; `enabled: false` remains stored but is absent from the runtime registry and picker rows.
+- Happy path: updating the command for an existing ID changes the next resolved descriptor.
+- Error path: one malformed entry rejects the entire mutation and preserves the prior file, registry, and fanout snapshot.
+- Error path: an unconfigured app selection is rejected without saving a default or session identity.
+- Security: app/status responses contain ID, key, label, access, availability, and diagnostic state but no command or env values.
+- Persistence: the config file is owner-only and unrelated MCP, auth, extension, sandbox, model, and harness fields survive ACP mutations.
+- Compatibility: a configured custom `claude` ACP identity can resolve a historical `{ id: "claude", access: "acp" }` session without becoming a built-in choice.
 
 **Verification:**
-- A script can write config, query accepted/invalid rows, and predict exactly which ACP choices the app will show.
-- The app never receives secret-bearing connection fields.
+- A script can add or disable an ACP agent through one request and observe the normalized accepted state.
+- Configuration acceptance, app discovery, and runtime authorization all derive from the same parsed entries.
 
-- [ ] **Unit 3: Retain and enforce the ACP catalog in workspace runtimes**
+- [ ] **Unit 3: Retain and enforce the full ACP registry in workspace runtimes**
 
-**Goal:** Carry the allowed catalog across local/cloud runtime boundaries and enforce it for every session operation.
+**Goal:** Make every workspace runtime capable of resolving any allowed ACP ID and rejecting everything else.
 
-**Requirements:** R3, R5, R7, R8, R9, R10, R12
+**Requirements:** R7, R8, R9, R10, R11, R12
 
 **Dependencies:** Units 1–2
 
@@ -336,42 +463,38 @@ key + id + access=acp + label + availability
 - Test: `packages/claxedo-server/src/workspace-supervisor-cloud.test.ts`
 
 **Approach:**
-- Preserve the full normalized v2 harness list in the applied snapshot while retaining the first row as the active/default harness.
-- Build an immutable applied ACP catalog keyed by canonical ID/access. Resolve custom session requests and durable session identities through this catalog before adapter creation.
-- Reject unknown, disabled, ambiguous, or descriptor-mismatched ACP requests at the runtime boundary even when a caller bypasses the app.
-- Construct process or remote transport from the catalog descriptor, including args/env and headers, and use the generic ACP adapter registry entry.
-- Keep session rows focused on logical identity. Resolve connection details from the current catalog during resume/reload so secret-bearing fields are not duplicated into durable session storage.
-- Redact accepted-snapshot metadata to IDs, labels, access, and transport kinds. Keep environment/header values out of `.workspace-runtime/runtime-config/accepted-snapshot.json` and apply-status details.
-- Resolve secret references after snapshot authorization and before adapter creation; keep resolved values in memory only for the adapter/process lifetime.
-- Refine safe config apply so inactive catalog changes do not restart the active adapter, while changes/removal of an actively used descriptor retain conflict/last-known-good behavior.
-- Replace the ambient remote ACP feature flag with catalog authorization after enforcement coverage is in place.
+- Preserve every validated v2 `harnesses` row instead of collapsing the list to its first entry.
+- Build an immutable applied ACP map keyed by canonical identity.
+- Resolve session create, resume, prompt, probe, and recovery through exact applied-map membership before adapter creation.
+- Construct the generic process adapter from the applied command, args, env, and params.
+- Store only logical session identity and selected live options. Resolve operational connection details from the applied registry.
+- Keep accepted-snapshot status metadata limited to non-secret identity, label, access, transport kind, and apply diagnostics.
+- Apply registry changes without restarting unrelated adapters. Let an active process finish its current turn; use the new descriptor when a later process is created.
 
 **Patterns to follow:**
-- `normalizeRuntimeSnapshot()` for atomic validation before mutation.
-- `applyQueue` and `unsafeAcpLiveConfigChange` for serialized safe application.
-- `sessionAdapters` and `adapterKey()` for per-identity adapter ownership.
+- `normalizeRuntimeSnapshot()` for validation before mutation.
+- Existing config apply serialization and `sessionAdapters` ownership.
+- The generic `access: "acp"` registry entry in `workspace/runtime.ts`.
 
 **Test scenarios:**
-- Happy path: a v2 snapshot applies two custom ACP definitions, keeps the declared first default, and can create sessions through either allowed identity.
-- Happy path: process args/env and remote transport settings reach the adapter factory exactly once.
-- Security: a direct session query for an unlisted ACP ID fails before process spawn or network connection.
-- Security: persisted metadata includes only redacted catalog information.
-- Security: runtime diagnostics and transport errors never echo resolved env/header values.
-- Edge case: changing an inactive definition applies without draining the active adapter.
-- Concurrency: changing/removing the active definition during a turn returns the structured conflict and keeps the old catalog/adapter usable until a later successful apply.
-- Compatibility: a historical session remains listable/readable when its ACP definition is missing, while a prompt returns the stable unavailable error.
-- Recovery: after restart, an enabled custom session resolves through the newly applied catalog and reconnects with the same logical identity.
-- Regression: native Claude/Codex/Cursor, Pi, and OpenCode still dispatch through their existing registry entries.
+- Happy path: a v2 snapshot contains multiple ACP definitions and sessions can be created through either one.
+- Integration: process command, arguments, and environment reach a fake independent ACP process and complete initialize, session creation, and a prompt.
+- Error path: a direct runtime request for an unknown or disabled ID fails before process spawn.
+- State change: changing an inactive descriptor does not disturb another active ACP process.
+- State change: changing an active descriptor lets the current turn finish and uses the new descriptor only after process replacement.
+- Recovery: a stored custom session resolves its logical ID through the registry after runtime restart.
+- Security: accepted-snapshot metadata and errors do not expose configured environment values.
+- Regression: native Claude/Codex/Cursor, OpenCode, and Pi still dispatch through their existing entries.
 
 **Verification:**
-- Allowlist enforcement holds at both central server and workspace runtime boundaries.
-- Runtime status and persisted metadata reveal no environment or header values.
+- Local and cloud workspace runtimes enforce the same normalized ACP registry.
+- No runtime path can construct an arbitrary ACP process from caller-provided connection details.
 
-- [ ] **Unit 4: Drive the app picker from the server catalog**
+- [ ] **Unit 4: Drive the ACP app group from discovery data**
 
-**Goal:** Show enabled custom ACP connections automatically and remove fixed first-party ACP choices.
+**Goal:** Replace fixed vendor ACP choices with enabled custom rows from the server.
 
-**Requirements:** R1, R4, R6, R7, R8, R10, R12
+**Requirements:** R1, R5, R6, R10, R11, R12
 
 **Dependencies:** Units 1–3
 
@@ -393,46 +516,87 @@ key + id + access=acp + label + availability
 - Test: `packages/claxedo-app/src/features/session/ui/controls/agent-harness-selector.vitest.tsx`
 
 **Approach:**
-- Replace the static `HARNESS_OPTIONS` ACP portion with catalog rows from scoped harness hydration. Keep native Claude/Codex/Cursor and Direct Pi/OpenCode as built-in rows.
-- Introduce a validated `acp:<id>` app key and catalog-backed label lookup. Derive a bounded fallback label for historical sessions not in the current catalog.
-- Keep catalog ownership scoped by server/workspace/draft identity so late responses cannot mutate another picker.
-- Feed the dynamic supported-harness list into sticky draft-default resolution. A saved custom ACP default is eligible only while its exact catalog key is enabled.
-- Send only the access-qualified key when switching. Continue using live config options for the selected ACP connection's model rows.
-- Use the same access-qualified key as provider ID for custom ACP model rows and sticky draft defaults.
-- Preserve existing-session lock behavior. An unavailable historical custom/legacy ACP session remains identified and readable but shows a non-switching unavailable state for follow-up.
-- Render the ACP group only when at least one accepted row exists. Native SDK and Direct groups remain stable.
+- Keep Native SDK and Direct built-ins as the finite static portion of the picker.
+- Replace the static ACP portion with sanitized rows from scoped harness discovery.
+- Validate `acp:<id>` at the app boundary and use the server-provided label; never decode or retain connection details.
+- Feed dynamic supported keys into draft-default resolution so a custom saved default restores only while enabled.
+- Keep created sessions harness-locked. An unavailable historical identity remains displayable but is not offered for a new session.
+- Keep an enabled but unresolved connection visible with an unavailable state and diagnostic action; exclude it from executable selections until its process resolves.
+- Refresh the scoped discovery query/store when config application publishes a new accepted registry.
 
 **Patterns to follow:**
-- `decodeHarnessState()` for validated server projections.
-- `draftDefaultApplication()` for exact saved-harness eligibility.
-- `shouldApplyHarnessSelection()` for typeahead and in-flight switch safety.
+- Existing scope keys and late-response protection in the harness store/hydrator.
+- `draftDefaultApplication()` for exact saved-choice eligibility.
+- `shouldApplyHarnessSelection()` for menu/typeahead safety.
 
 **Test scenarios:**
-- Happy path: catalog rows `acp:gemini` and `acp:goose` appear under ACP with server-provided labels.
-- Happy path: selecting a custom row sends only its canonical key and then loads its live model options.
-- Regression: Claude, Codex, and Cursor appear only under Native SDK; Pi and OpenCode remain under Direct.
-- Empty state: with no enabled custom rows, the ACP group is absent and no placeholder vendor ACP items appear.
-- Security: catalog decoder discards rows containing invalid keys/access/labels and ignores secret-shaped extra fields.
-- Persistence: a valid saved custom ACP draft default restores only while the catalog contains that exact key.
-- Compatibility: a historical `claude-acp`, `codex-acp`, or `cursor-acp` session renders a sensible label without adding that choice to a new draft.
-- Race: a late catalog response from a prior directory/server/surface does not replace the active picker list or selection.
-- Refresh: a successful reload invalidates/refetches discovery and a failed reload does not expose unapplied rows as selectable.
-- Locking: an existing session cannot switch to a newly discovered ACP connection.
+- Happy path: `acp:gemini` and `acp:hermes` appear under ACP with configured labels.
+- Happy path: selecting a row sends only its canonical key and then shows live models/modes from that connection.
+- Regression: Claude, Codex, and Cursor appear once under Native SDK; Pi and OpenCode remain under Direct.
+- Empty state: with no enabled custom entries, the ACP group is absent.
+- Disable: a config update removes a row and invalidates a saved custom draft default.
+- Unavailable: an enabled entry with a missing executable remains visible with a diagnostic state but cannot create a session.
+- Compatibility: a historical unavailable ACP session shows a stable fallback label and readable history without adding a new-session choice.
+- Race: a stale response from another workspace/draft/server cannot replace the current catalog.
+- Security: rows with malformed keys or secret-bearing unexpected fields are rejected by the app decoder.
 
 **Verification:**
-- Editing the trusted config and refreshing/hydrating is sufficient to add or remove ACP picker rows.
-- No app source registry needs a new entry for another ACP-compatible agent.
+- Adding another ACP entry changes the picker without changing app source.
+- The browser never receives command, argument, or environment data.
 
-- [ ] **Unit 5: Remove first-party ACP packaging and credential surfaces**
+- [ ] **Unit 5: Prove independent interoperability and document extension**
 
-**Goal:** Make native SDKs the only active Claude/Codex/Cursor choices and stop shipping their ACP server adapters.
+**Goal:** Demonstrate that “any ACP” is a real external contract rather than only a fake matching Claxedo's assumptions.
 
-**Requirements:** R1, R10, R11, R12
+**Requirements:** R3–R12
 
 **Dependencies:** Units 1–4
 
 **Files:**
+- Modify: `packages/claxedo-server/src/agent-lifecycle.integration.test.ts`
+- Modify: `packages/claxedo-server/src/real-acp-boot.integration.test.ts`
+- Modify: `packages/claxedo-server/src/fixtures/fake-acp.ts`
+- Modify: `packages/claxedo-app/e2e/playwright/core-harness-ownership-local.spec.ts`
+- Modify: `packages/claxedo-app/e2e/playwright/core-harness-ownership-cloud.spec.ts`
+- Modify: `packages/claxedo-app/e2e/playwright/core-harness-rendering-matrix.spec.ts`
+- Modify: `packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts`
+- Modify: `packages/claxedo-server/README.md`
+- Modify: `packages/workspace-runtime/README.md`
+- Modify: `public-docs/agent-sdk-runtime.md`
+- Modify: `public-docs/workspace-runtime.md`
+- Modify: `public-docs/supported-surfaces.md`
+
+**Approach:**
+- Replace three vendor ACP lifecycle matrices with one parameterized generic contract suite.
+- Keep historical vendor trace fixtures only where they protect durable replay/event compatibility.
+- Add a required version-pinned smoke against at least one independent non-Claude/Codex/Cursor ACP implementation in CI or the release gate.
+- Cover both `supportsMcpServers: true` and `false` so compatibility configuration is exercised through the real registry.
+- Document the config schema, live API mutation, offline provisioning, enable/disable/remove semantics, ID rebinding policy, diagnostics, process ownership, and historical-session behavior.
+
+**Test scenarios:**
+- End to end: config mutation adds an external ACP agent, the app discovers it, a session completes a turn, and reload preserves logical identity.
+- Disable: the row disappears, new execution is rejected, and old history remains readable.
+- Atomic failure: a malformed config mutation leaves the previous external agent visible and executable.
+- Cloud parity: the normalized registry reaches a hosted workspace and starts the configured process without browser-visible connection details.
+- Independent client: a real external ACP process completes initialize, session creation, model/mode discovery, permission handling, prompt streaming, and interruption where advertised.
+- Capability variance: an agent that rejects MCP servers succeeds when its config disables MCP injection.
+- Native regression: no first-party ACP option appears while all three native choices remain functional.
+
+**Verification:**
+- Documentation alone is sufficient for an operator to add another ACP-compatible process.
+- Required tests prove the config → discovery → selection → runtime → independent ACP process path.
+
+- [ ] **Unit 6: Remove first-party ACP dependencies, assets, and auth surfaces**
+
+**Goal:** Stop shipping duplicate Claude/Codex/Cursor ACP implementations after native readiness is proven.
+
+**Requirements:** R1, R2, R11, R12
+
+**Dependencies:** Units 1–5 and native parity gates
+
+**Files:**
 - Modify: `packages/agent-sdk-runtime/package.json`
+- Modify: `packages/agent-sdk-runtime/src/harnesses/acp/default-binaries.ts`
 - Modify: `packages/agent-sdk-runtime/README.md`
 - Modify: `packages/claxedo-desktop/package.json`
 - Modify: `packages/claxedo-desktop/scripts/prebuild.ts`
@@ -450,139 +614,106 @@ key + id + access=acp + label + availability
 - Test: `packages/claxedo-server/src/credentials/registry.test.ts`
 - Test: `packages/claxedo-server/src/routes/bootstrap.test.ts`
 - Test: `packages/claxedo-server/src/routes/provider-auth.test.ts`
+- Test: `packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts`
 
 **Approach:**
-- Remove dependencies and build steps for `claude-agent-acp` and `codex-acp`; remove Cursor ACP from built-in/default resolution without adding a packaged replacement.
-- Remove desktop ACP resource copying and contract requirements once no bundled ACP artifacts remain. Keep native CLI/SDK executable preparation intact.
-- Remove first-party ACP provider-auth entries, environment mappings, and credential fanout aliases from active catalogs. Native credential IDs continue to own first-party auth.
-- Let generic ACP processes inherit the runtime environment and consume explicit connection env overrides; Claxedo does not invent vendor credential slots for arbitrary ACP IDs.
-- Retain narrow legacy credential migration/read support only where deleting it would make existing stored credentials unreadable before users transition to native harnesses.
-- Update package descriptions and public exports to describe generic configured ACP support.
-
-**Patterns to follow:**
-- The current native Claude/Codex/Cursor adapters and desktop executable resolution.
-- Credential registry fanout allowlists as explicit, narrowly scoped compatibility boundaries.
+- Define native readiness per vendor across executable resolution, authentication, multi-turn prompting, permissions, interruption, recovery/reload, live models/options, and supported desktop platforms.
+- Add the missing native Cursor live coverage before removing its alternative product path.
+- Remove Claude/Codex ACP server dependencies and desktop resource preparation; remove Cursor ACP default inference and picker/auth exposure.
+- Retain `@agentclientprotocol/sdk` and the generic ACP client implementation.
+- Remove first-party ACP credential/provider aliases from active catalogs. Operator-defined ACP processes receive inherited/configured environment rather than vendor-specific Claxedo slots.
+- Keep only the minimum dated read compatibility required for legacy stored identities/credentials.
 
 **Test scenarios:**
-- Packaging: desktop release contracts pass without any `resources/acp/*` artifact.
-- Dependency: the runtime package retains `@agentclientprotocol/sdk` and drops vendor ACP server packages.
-- Native regression: each first-party native harness still resolves its executable/auth path.
-- Auth regression: bootstrap/provider-auth responses no longer advertise first-party ACP IDs and still advertise native IDs.
-- Compatibility: legacy credential records can be migrated/read according to the chosen transition path but are not offered for new ACP setup.
-- Lockfile: no transitive vendor ACP server package remains solely because of removed first-party ACP support.
+- Native gate: Claude, Codex, and Cursor each pass the defined native lifecycle matrix on supported targets.
+- Packaging: desktop contracts pass without `resources/acp` vendor binaries.
+- Dependency: the runtime retains the ACP protocol SDK and no longer depends on vendor ACP server packages.
+- Auth: bootstrap and provider-auth surfaces advertise native first-party IDs but no first-party ACP IDs.
+- Generic regression: a configured fake ACP process remains executable after vendor dependencies are removed.
+- Compatibility: historical ACP session metadata still decodes and reports configured/unavailable accurately.
 
 **Verification:**
-- Built desktop/server artifacts contain no bundled Claude/Codex ACP executable.
-- The first-party authentication surface contains only native harness entries.
+- Release artifacts contain no bundled first-party ACP server.
+- First-party agents have one supported execution and credential path each.
 
-- [ ] **Unit 6: Replace vendor ACP matrices with generic integration coverage and documentation**
+## Native Readiness Gate
 
-**Goal:** Prove the new catalog-to-session flow and document the operator contract.
+First-party ACP artifacts are removed only when the matching native integration proves:
 
-**Requirements:** R1–R12
+- The executable or SDK resolves in development and packaged desktop environments.
+- Existing authentication is discovered and actionable authentication failures are surfaced.
+- Three sequential turns complete and the session survives app/server reload.
+- Permission requests and unattended modes retain their expected behavior.
+- Interruption reaches the active native execution.
+- Live model/config options remain selectable and durable.
+- MCP/tool integration used by Claxedo remains available.
+- Supported operating-system packaging contracts pass.
 
-**Dependencies:** Units 1–5
-
-**Files:**
-- Modify: `packages/claxedo-server/src/agent-lifecycle.integration.test.ts`
-- Modify or remove: `packages/claxedo-server/src/real-acp-boot.integration.test.ts`
-- Modify: `packages/claxedo-server/src/fixtures/fake-acp.ts`
-- Modify: `packages/claxedo-app/e2e/playwright/core-harness-ownership-local.spec.ts`
-- Modify: `packages/claxedo-app/e2e/playwright/core-harness-ownership-cloud.spec.ts`
-- Modify: `packages/claxedo-app/e2e/playwright/core-harness-rendering-matrix.spec.ts`
-- Modify: `packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts`
-- Modify: `packages/claxedo-app/e2e/fixtures/harness-traces/claude-acp.json`
-- Modify: `packages/claxedo-app/e2e/fixtures/harness-traces/codex-acp.json`
-- Modify: `packages/claxedo-app/e2e/fixtures/harness-traces/cursor-acp.json`
-- Modify: `packages/claxedo-server/README.md`
-- Modify: `packages/workspace-runtime/README.md`
-- Modify: `public-docs/agent-sdk-runtime.md`
-- Modify: `public-docs/workspace-runtime.md`
-- Modify: `public-docs/supported-surfaces.md`
-
-**Approach:**
-- Replace the three duplicated fake lifecycle suites with a parameterized generic custom ACP definition that is admitted through the same config/catalog path production uses.
-- Keep focused event-translation golden coverage for vendor-specific historical traces only where it protects durable replay semantics; name it as compatibility coverage rather than active harness availability.
-- Make live first-party smoke coverage native-only. A generic ACP live smoke is optional and runs only when CI supplies an explicitly configured external ACP server; the deterministic fake integration remains the required gate.
-- Add an end-to-end app test that changes accepted config, refreshes the selector, selects the new ACP row, discovers live model options, sends a turn, reloads, and preserves session identity.
-- Document schema, ID rules, local/remote examples, enable/disable behavior, diagnostics, secret handling, config refresh, and the unavailable historical-session behavior.
-
-**Patterns to follow:**
-- Existing fake ACP binary and full lifecycle integration setup.
-- Existing live-smoke loud-skip policy for external binaries/credentials.
-- Public docs package-boundary descriptions.
-
-**Test scenarios:**
-- End-to-end happy path: an enabled custom fake ACP connection appears in the picker, creates a session, streams a reply, and survives reload.
-- End-to-end removal: disabling the connection removes it from new drafts while the created session history remains visible and follow-up is blocked.
-- End-to-end invalid row: a malformed peer produces a diagnostic without hiding the valid fake connection.
-- End-to-end reload: an atomic config edit plus reload updates both picker discovery and workspace enforcement; failed reload retains last-known-good execution.
-- Secret safety: configured env/header references work while their resolved values remain absent from browser traffic, logs, and runtime metadata.
-- Cloud parity: the same normalized catalog reaches a workspace runtime and selects the custom connection without app-side connection details.
-- Native regression: Claude, Codex, and Cursor native live/fake smokes remain available and no first-party ACP picker option is present.
-- Historical replay: retained legacy ACP trace fixtures still project existing session content correctly.
-
-**Verification:**
-- Required unit, integration, architecture, type, and browser suites cover config → discovery → selection → runtime → reload.
-- Operator documentation is sufficient to add another ACP-compatible client without changing Claxedo source.
+Claude, Codex, and Cursor are gated independently. A missing gate delays removal of that vendor's ACP artifact without blocking the generic ACP registry work.
 
 ## System-Wide Impact
 
-- **Interaction graph:** User config parsing feeds sanitized app discovery and trusted runtime snapshots. Picker selection resolves through the server catalog, session config stores logical identity, and workspace runtime resolves the full descriptor before the generic ACP adapter starts.
-- **Error propagation:** Config validation produces per-entry diagnostics; unlisted selection produces a client-safe 4xx; runtime catalog mismatch produces a stable unavailable error; transport/probe failures retain current harness error semantics.
-- **State lifecycle:** The central accepted catalog and workspace last-known-good applied catalog can briefly differ when an active-turn safety conflict occurs. Apply status must make that state visible, and a later idle retry converges them.
-- **Data integrity:** Existing session identity columns already store arbitrary strings, so no session-table rewrite is required. Connection secrets remain catalog-owned and are not copied into session rows or runtime metadata.
-- **API surface:** Shared `SessionHarness`/runtime snapshot types, local agent-config routes, workspace config apply, session route query parsing, app `HarnessId`, and package exports all change together.
-- **API parity:** Local loopback, user-hosted relay, and managed cloud workspaces consume the same normalized catalog. Native/direct choices stay available in every placement where they already work.
-- **Security boundary:** Enabling a connection authorizes command execution or a remote network endpoint. Only trusted config-management paths can create definitions; app requests select by key and cannot supply executable details.
-- **Secret lifecycle:** Config stores references under owner-only permissions; credential/environment values resolve in memory at the runtime boundary and follow the existing credential authority's rotation/revocation lifecycle.
-- **Caching:** Catalog data follows the same server/workspace scope and stale-response guards as harness status. Inactive entry changes must invalidate picker discovery without unnecessarily recreating active session adapters.
-- **Observability:** Runtime status includes active identity plus accepted catalog IDs/transport kinds and config-apply diagnostics, with secrets redacted.
-- **Unchanged invariants:** Created sessions remain harness-locked; live ACP config options remain model authority; one explicit ACP stream call path remains; native/OpenCode/Pi adapters retain their existing dispatch and storage behavior.
+- **Distribution:** Desktop/server artifacts become smaller and stop carrying vendor ACP executables that duplicate native integrations.
+- **Dependency graph:** Runtime retains the ACP protocol client but removes vendor ACP server packages and their transitive dependency trees.
+- **Extension workflow:** Ordinary ACP support moves from compile-time registration to trusted runtime configuration.
+- **Authority:** The server-owned accepted registry feeds both sanitized discovery and trusted runtime descriptors; app state does not become configuration authority.
+- **Persistence:** User config stores process definitions; session storage retains logical identity and live selections, not commands or environment.
+- **Execution:** Workspace runtime performs a second exact registry lookup before process creation, including requests that bypass the app.
+- **Caching:** Config mutation invalidates or pushes scoped harness discovery; existing late-response guards remain responsible for workspace/draft isolation.
+- **Failure propagation:** Validation errors stop before persistence; fanout/apply errors remain visible as target readiness; missing binaries produce unavailable diagnostics rather than disappearing definitions.
+- **Compatibility:** Historical identities remain decodable and can be operator-reconnected through the generic registry.
+- **Future extensibility:** Remote transports or a curated installer can produce the same normalized registry entries without changing selection or session identity.
 
-## Threat Model
+## Alternatives Considered
 
-- **Configuration tampering:** An enabled process can execute code and an enabled remote connection can reach a network endpoint. Restrict file permissions to the owner, restrict reload to local or management-authenticated callers, validate the complete accepted set before fanout, and return an auditable acceptance receipt.
-- **Selection forgery:** A compromised or stale app request could name an arbitrary ACP ID or submit its own connection details. Resolve only canonical `acp:<id>` keys through the applied allowlist at both server and workspace boundaries, and reject caller-supplied executable, environment, URL, or header fields.
-- **Secret disclosure:** Credentials could escape through app discovery, diagnostics, logs, transport errors, session persistence, or accepted-snapshot metadata. Store references rather than values, resolve them only at the final trusted boundary, redact structured failures, and assert every durable and client-facing projection is secret-free.
+- **Keep bundled first-party ACP as fallback:** Rejected because it preserves the duplicate dependency, packaging, auth, test, and support burden this refactor is intended to remove.
+- **Maintain a hard-coded catalog of every ACP agent:** Rejected because each new external agent would still require a Claxedo release and registry changes.
+- **Scan `$PATH` for ACP executables:** Rejected because ACP capability cannot be inferred reliably from arbitrary binaries and discovery would become non-deterministic.
+- **Use a separate allowlist and connection catalog:** Rejected because configuration presence already expresses operator intent; two stores can drift.
+- **Watch the config file and add a reload endpoint:** Deferred because the trusted config API already provides an atomic live mutation lifecycle. Offline file provisioning is sufficient at startup.
+- **Ship process and remote ACP transports together:** Deferred to keep the first release aligned with the common stdio ACP contract and the immediate dependency-reduction goal.
+- **Create one adapter class per external ACP agent:** Rejected as the default. Compatibility parameters or narrowly scoped protocol fixes are preferred until a client demonstrates a true behavioral divergence.
 
-## Risks & Dependencies
+## Risks and Mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Opening ACP IDs turns a closed string union into an unsafe arbitrary dispatch surface | Keep native IDs closed, validate ACP slugs, require `access: "acp"`, and enforce exact catalog membership at both central and workspace boundaries. |
-| App selection could smuggle a binary, env, URL, or headers | App sends only a canonical key; trusted server lookup supplies the descriptor and ignores/rejects caller connection fields. |
-| Secret-bearing env/headers leak through discovery or accepted-snapshot metadata | Use separate trusted and sanitized projections; add explicit redaction assertions. |
-| A script edits config but runtimes keep a stale allowlist | Require an explicit reload receipt that validates, fans out, invalidates discovery, and preserves last-known-good state on failure. |
-| Removing bundled adapters breaks users with old ACP sessions | Keep historical reads/replay, give a clear unavailable follow-up state, document transition to native, and do not silently rewrite durable harness identity. |
-| Config removal races an active turn | Preserve serialized config apply and last-known-good conflict behavior; retry after idle. |
-| Runtime v2 plural-list changes drift between emitter and receiver | Extend the existing server snapshot-accepted-by-runtime contract test and keep v1 compatibility coverage. |
-| Generic ACP clients expose different optional capabilities | Continue live capability/config-option probing and generic translation; do not infer vendor features from ID or label. |
-| Native SDK packaging is not equivalent on every OS | Keep desktop contract and native live-smoke coverage per supported target before deleting ACP assets. |
-| Current in-progress desktop/native executable changes overlap packaging files | Integrate against the final native executable-resolution contract and preserve that behavior while deleting only ACP-specific assets. |
+| Native integration lacks behavior users relied on through ACP | Gate each vendor removal on the explicit native lifecycle/platform matrix. |
+| A fake ACP server validates only Claxedo's own assumptions | Require one independent non-first-party ACP interoperability smoke. |
+| App request smuggles an executable or environment | App sends only `acp:<id>`; server and runtime resolve exact accepted descriptors. |
+| Config typo disables working connections | Validate the entire mutation before persistence and preserve the prior accepted registry on failure. |
+| Changing a descriptor surprises old sessions | Document ID rebinding semantics; operators use a new ID when behaviors must coexist. |
+| Missing binary makes a configured row unusable | Preserve the row with an unavailable diagnostic and a command-resolution report. |
+| Environment values leak through app or runtime status | Use trusted/sanitized projections and redaction assertions; persist the config owner-only. |
+| Generic clients differ in optional ACP behavior | Use live negotiation plus a small validated compatibility-params schema. |
+| Runtime registry differs from central discovery | Generate both from one normalized config and expose target apply/readiness state. |
+| Two scripts update config concurrently | Live mutations are serialized and last accepted write wins; responses return normalized state so automation can verify the result. Add revision preconditions if multi-writer deployment becomes a demonstrated requirement. |
+| Refactor grows into a marketplace or remote-connection framework | Enforce the scope constraints and require observed use cases before adding subsystems. |
 
 ## Sequencing and Rollout
 
-1. Land shared generic identity/connection contracts with legacy reads intact.
-2. Add server parsing/catalog and runtime allowlist retention/enforcement behind the existing config v2 path.
-3. Switch the app to catalog-driven ACP choices and validate local/cloud end to end.
-4. Remove active first-party ACP choices, provider-auth entries, dependencies, and desktop assets.
-5. Update integration matrices and documentation, then release as one coordinated compatibility boundary.
+1. Characterize existing identities and native lifecycle behavior.
+2. Open generic ACP identity and add the config-driven registry while current vendor ACP paths still exist.
+3. Apply/enforce the full registry in local and hosted workspace runtimes.
+4. Switch the app's ACP group from static choices to sanitized discovery.
+5. Prove an independent ACP client through the complete flow.
+6. Remove each first-party ACP dependency and artifact as its native readiness gate passes.
+7. Publish operator documentation and release notes.
 
-The rollout does not need a user-facing feature flag. Before the app switches to dynamic discovery, the server/runtime must already accept and enforce the new catalog. Vendor ACP packaging is removed only after all three native harness smokes pass on supported desktop targets.
+This sequencing keeps the new generic path independently testable before packaging cleanup. Each first-party removal can be reviewed against concrete native evidence rather than inferred from the presence of an SDK.
 
-## Documentation / Operational Notes
+## Documentation and Operational Notes
 
-- Publish the exact versioned config contract and stable diagnostic codes.
-- Document the atomic-write + reload workflow and the acceptance receipt scripts should treat as success.
-- Explain that enabled ACP entries execute trusted commands or connect to trusted remote endpoints and should be managed like other code-execution configuration.
-- Document credential/environment reference syntax, owner-only file permissions, rotation behavior, and redaction guarantees.
-- Document config reload behavior, active-turn conflicts, and how automation verifies accepted rows.
-- Document native Claude/Codex/Cursor as the supported first-party paths and custom ACP as operator-supplied.
-- Update deployment/image guidance: images include the ACP client runtime, while configured ACP servers must be installed or reachable by the operator.
-- Release notes should call out the removal of bundled first-party ACP adapters and the preserved historical-session behavior.
+- Document the exact versioned ACP configuration contract with stdio examples.
+- Document the authenticated config mutation workflow for scripts and startup-only file provisioning.
+- Explain that adding a config entry authorizes Claxedo to execute that command in the workspace runtime environment.
+- Document `enabled: false`, removal, ID rebinding, missing-binary diagnostics, and historical-session behavior.
+- Document compatibility parameters and when they should be used.
+- State that Claxedo bundles the ACP client, not external ACP servers.
+- Release notes should identify the removed first-party ACP packages and direct users to native Claude/Codex/Cursor.
+- Deployment docs should explain that external ACP binaries must be installed in or reachable from the workspace runtime where execution occurs.
 
-## Sources & References
+## Sources and References
 
 - `packages/agent-sdk-runtime/src/harness-types.ts`
 - `packages/agent-sdk-runtime/src/harnesses/acp/index.ts`
@@ -591,10 +722,12 @@ The rollout does not need a user-facing feature flag. Before the app switches to
 - `packages/claxedo-server/src/agent-config.ts`
 - `packages/claxedo-server/src/config-fanout.ts`
 - `packages/claxedo-server/src/routes/agent-config-harness-routes.ts`
-- `packages/claxedo-app/src/features/session/harness/profile.ts`
+- `packages/claxedo-app/src/features/session/harness/harness-hydrator.ts`
 - `packages/claxedo-app/src/features/session/ui/controls/agent-harness-selector.tsx`
-- `packages/claxedo-app/src/platform/identity/session-ref.ts`
 - `packages/claxedo-desktop/scripts/prebuild.ts`
 - `docs/e2e-decisions.md`
-- `docs/plans/2026-07-12-003-feat-sticky-workspace-harness-defaults-plan.md`
-- `docs/plans/2026-07-18-002-feat-background-agents-steering-plan.md`
+- Local prior art reviewed from the sibling Paseo checkout (not a repository dependency): `../paseo/packages/protocol/src/provider-config.ts`
+- Local prior art: `../paseo/packages/server/src/server/agent/provider-registry.ts`
+- Local prior art: `../paseo/packages/server/src/server/agent/providers/generic-acp-agent.ts`
+- Local prior art: `../paseo/packages/server/src/server/daemon-config-store.ts`
+- Local prior art: `../paseo/packages/app/src/provider-selection/provider-selection.ts`
