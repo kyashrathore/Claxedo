@@ -101,7 +101,6 @@ import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,
   timelineInteractionPlan,
-  timelineShouldForceNativeBottom,
 } from "./view-state"
 import {
   applyTimelinePrependAnchor,
@@ -131,6 +130,17 @@ type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
 
 const timelineFallbackItemSize = 60
+
+// Ported from upstream opencode timeline/virtual-items.ts + timeline/measure.ts.
+function filterVirtualIndexes(indexes: number[], count: number) {
+  return indexes.filter((index) => index >= 0 && index < count)
+}
+function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
+  return requestAnimationFrame(() => {
+    if (element.isConnected) measure(element)
+  })
+}
+
 const timelineCache = new Map<
   string,
   { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined> }
@@ -711,6 +721,10 @@ export function MessageTimeline(props: {
     return plan
   }
   let virtualContent: HTMLDivElement | undefined
+  // Rows kept in the render range across a huge resize (see resizeItem below) so
+  // the browser has real geometry to re-anchor against instead of estimates.
+  let resizePinnedIndexes: number[] = []
+  let resizePinFrame: number | undefined
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return timelineRows().length
@@ -741,21 +755,64 @@ export function MessageTimeline(props: {
       const id = activeMessageID()
       const active = id ? timelineRows().findLastIndex((row) => "userMessageID" in row && row.userMessageID === id) : -1
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
-      return [...new Set([...indexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b)
+      return filterVirtualIndexes(
+        [...new Set([...resizePinnedIndexes, ...indexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b),
+        range.count,
+      )
     },
   })
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.end <= (instance.scrollOffset ?? 0)
-  const scrollNativeToEnd = () => {
-    const root = listRoot()
-    if (root) root.scrollTop = root.scrollHeight
+  // Matches upstream opencode (packages/app/.../timeline/message-timeline.tsx).
+  // When pinned to the bottom (following a stream) we must NOT do per-item scroll
+  // adjustments: anchorTo:"end"/followOnAppend + scrollToEnd own the bottom, and
+  // adjusting every growing/shrinking row on top of that is the per-frame
+  // tug-of-war that makes streaming content jump. Only when the user has scrolled
+  // up to read history do we compensate — and then only for rows entirely ABOVE
+  // the visible range, so their read position stays put.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
+    if (props.shouldAnchorBottom()) return false
+    const first = virtualizer.range?.startIndex
+    return first !== undefined && item.index < first
   }
-  const scrollTimelineToEnd = () => {
-    virtualizer.scrollToOffset(Math.max(virtualizer.getTotalSize() - (listRoot()?.clientHeight ?? 0), 0), {
-      behavior: "auto",
+  // Upstream's re-anchor path. Instead of forcing native scrollTop every frame
+  // (which fought the virtualizer), we override resizeItem: when a single item's
+  // measured size jumps by more than a viewport height (e.g. a code block or a
+  // streaming markdown block ballooning/collapsing), pin the currently-visible
+  // rows in the render range for two frames so the browser re-anchors against
+  // real geometry, then — when anchored to the bottom — snap to the end once via
+  // scrollToEnd() on a microtask (not per-frame).
+  const resizeItem = virtualizer.resizeItem.bind(virtualizer)
+  let resizeAnchorScheduled = false
+  const anchorResizedBottom = () => {
+    if (resizeAnchorScheduled || props.hasScrollGesture()) return
+    resizeAnchorScheduled = true
+    queueMicrotask(() => {
+      resizeAnchorScheduled = false
+      if (!props.shouldAnchorBottom() || props.hasScrollGesture()) return
+      virtualizer.scrollToEnd()
     })
-    scrollNativeToEnd()
-    queueMicrotask(scrollNativeToEnd)
+  }
+  virtualizer.resizeItem = (index: number, size: number) => {
+    const item = virtualizer.measurementsCache[index]
+    const previous = item ? (virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
+    const root = listRoot()
+    if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
+      const view = root.getBoundingClientRect()
+      resizePinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
+        .filter((element) => {
+          const rect = element.getBoundingClientRect()
+          return rect.bottom > view.top && rect.top < view.bottom
+        })
+        .map((element) => Number(element.dataset.index))
+      if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
+      resizePinFrame = requestAnimationFrame(() => {
+        resizePinFrame = requestAnimationFrame(() => {
+          resizePinFrame = undefined
+          resizePinnedIndexes = []
+        })
+      })
+    }
+    resizeItem(index, size)
+    if (root && props.shouldAnchorBottom()) anchorResizedBottom()
   }
   const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const virtualItemByKey = createMemo(
@@ -786,29 +843,10 @@ export function MessageTimeline(props: {
       if (index === undefined) return
       virtualizer.scrollToIndex(index, { align: "center" })
     })
-    props.setScrollToEnd?.(scrollTimelineToEnd)
+    props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
 
-  let bottomSettleFrame: number | undefined
-  let bottomSettleUntil = 0
-  const scheduleBottomSettle = (duration = 30_000) => {
-    bottomSettleUntil = Math.max(bottomSettleUntil, performance.now() + duration)
-    if (bottomSettleFrame !== undefined) return
-
-    const settle = () => {
-      bottomSettleFrame = undefined
-      if (!props.shouldAnchorBottom()) return
-      if (timelineShouldForceNativeBottom({
-        hasScrollGesture: props.hasScrollGesture(),
-        shouldAnchorBottom: props.shouldAnchorBottom(),
-        rowCount: timelineRows().length,
-      })) scrollNativeToEnd()
-      if (performance.now() < bottomSettleUntil) bottomSettleFrame = requestAnimationFrame(settle)
-    }
-
-    bottomSettleFrame = requestAnimationFrame(settle)
-  }
   const scheduleInitialReveal = () => {
     if (!props.shouldAnchorBottom()) {
       setInitialRevealReady(true)
@@ -820,7 +858,7 @@ export function MessageTimeline(props: {
       if (timelineInitialRevealShouldScroll({
         hasScrollGesture: props.hasScrollGesture(),
         shouldAnchorBottom: props.shouldAnchorBottom(),
-      })) scrollNativeToEnd()
+      })) virtualizer.scrollToEnd()
       frames -= 1
       if (frames <= 0) {
         setInitialRevealReady(true)
@@ -838,9 +876,7 @@ export function MessageTimeline(props: {
       if (next < 50) requestAnimationFrame(() => setTimeout(expand, 0))
     }
     requestAnimationFrame(() => {
-      const anchorBottom = props.shouldAnchorBottom()
-      if (anchorBottom) scrollTimelineToEnd()
-      if (anchorBottom) scheduleBottomSettle()
+      if (props.shouldAnchorBottom()) virtualizer.scrollToEnd()
       scheduleInitialReveal()
       if (renderOverscan() < 50) setTimeout(expand, 0)
     })
@@ -861,8 +897,7 @@ export function MessageTimeline(props: {
     bottomAnchorFrame = requestAnimationFrame(() => {
       bottomAnchorFrame = undefined
       if (sessionKey() !== key) return
-      scrollTimelineToEnd()
-      scheduleBottomSettle()
+      virtualizer.scrollToEnd()
     })
   }
 
@@ -883,7 +918,7 @@ export function MessageTimeline(props: {
     turnFold.persist()
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
-    if (bottomSettleFrame !== undefined) cancelAnimationFrame(bottomSettleFrame)
+    if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
@@ -967,23 +1002,10 @@ export function MessageTimeline(props: {
     if (prependLoading) updatePrependAnchor()
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
-    if (!timelineInteractionPlan({ prependLoading, hasScrollGesture: props.hasScrollGesture() }).yieldToUserScroll) {
-      if (timelineShouldForceNativeBottom({
-        hasScrollGesture: props.hasScrollGesture(),
-        shouldAnchorBottom: props.shouldAnchorBottom(),
-        rowCount: timelineRows().length,
-      })) {
-        scrollNativeToEnd()
-        requestAnimationFrame(() => {
-          if (timelineInitialRevealShouldScroll({
-            hasScrollGesture: props.hasScrollGesture(),
-            shouldAnchorBottom: props.shouldAnchorBottom(),
-          })) scrollNativeToEnd()
-        })
-        scheduleBottomSettle(1_000)
-      }
-      return
-    }
+    // Upstream keeps this handler passive: the virtualizer (anchorTo:"end" +
+    // followOnAppend) and the resizeItem re-anchor own bottom-following, so the
+    // scroll handler no longer force-writes scrollTop (which caused the fight).
+    if (!props.hasScrollGesture()) return
     props.onUserScroll()
     props.onAutoScrollHandleScroll()
     props.onMarkScrollGesture(event.currentTarget)
@@ -1609,6 +1631,18 @@ export function MessageTimeline(props: {
     }
     const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
 
+    // Coalesce content-driven re-measures (upstream's scheduleConnectedMeasure).
+    // A streaming row fires onSizeChange on every token (onContentRendered);
+    // scheduling a fresh rAF each time queued one measureElement per token, which
+    // — stacked on TanStack's own ResizeObserver for the same element — thrashes
+    // layout ("ResizeObserver loop completed with undelivered notifications") and
+    // makes the timeline visibly jump. Cancel any pending frame so a burst
+    // collapses to a single measure, and skip it if the row has since detached.
+    let contentMeasureFrame: number | undefined
+    onCleanup(() => {
+      if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+    })
+
     onMount(() => virtualizer.measureElement(element))
 
     createEffect(
@@ -1631,6 +1665,7 @@ export function MessageTimeline(props: {
           width: "100%",
           height: `${item().size}px`,
           overflow: "clip",
+          "overflow-clip-margin": row()._tag === "TurnGap" ? undefined : "0.5px",
         }}
       >
         <div
@@ -1644,7 +1679,8 @@ export function MessageTimeline(props: {
             row={row()}
             onSizeChange={() => {
               setReady(true)
-              requestAnimationFrame(() => virtualizer.measureElement(element))
+              if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+              contentMeasureFrame = scheduleConnectedMeasure(element, (el) => virtualizer.measureElement(el))
             }}
           />
         </div>

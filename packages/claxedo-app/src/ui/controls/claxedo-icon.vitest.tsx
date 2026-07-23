@@ -35,6 +35,7 @@ describe("ClaxedoIcon", () => {
       "laptop",
       "reload",
       "page",
+      "page-plus",
     ] as const
 
     const view = render(() => (

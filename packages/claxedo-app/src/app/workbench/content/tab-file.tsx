@@ -53,6 +53,18 @@ export function toggleMarkdownPreview(path: string) {
   })
 }
 
+// Module-level registry of "Add to Documents" handlers keyed by file path.
+// In hideHeader mode the source/preview toggle lives in the shell header, so
+// the Documents action belongs there too — beside the toggle, not floating over
+// the rendered markdown. TabFile registers its handler here; the shell header
+// reads it for the active tab.
+const [collaborateHandlers, setCollaborateHandlers] = createSignal<Record<string, () => void>>({})
+
+/** The "Add to Documents" handler registered for `path`, if any. */
+export function markdownCollaborateHandler(path: string): (() => void) | undefined {
+  return collaborateHandlers()[path]
+}
+
 export type TabFileProps = {
   path: string
   class?: string
@@ -224,6 +236,30 @@ export function TabFile(props: TabFileProps) {
 
   const isMd = createMemo(() => isMarkdownPath(props.path))
   const previewing = createMemo(() => isMd() && !sourcePaths().has(props.path))
+
+  // Publish the Documents action so the shell header can render it beside the
+  // source toggle when this file is shown with hideHeader. Keyed by path; kept
+  // in sync with the current onCollaborate prop and cleared on unmount.
+  createEffect(() => {
+    const path = props.path
+    const handler = isMd() ? props.onCollaborate : undefined
+    setCollaborateHandlers((prev) => {
+      if (prev[path] === handler) return prev
+      const next = { ...prev }
+      if (handler) next[path] = handler
+      else delete next[path]
+      return next
+    })
+  })
+  onCleanup(() => {
+    const path = props.path
+    setCollaborateHandlers((prev) => {
+      if (!(path in prev)) return prev
+      const next = { ...prev }
+      delete next[path]
+      return next
+    })
+  })
   const fileComments = createMemo(() => comments.list(props.path))
   const commentedLines = createMemo(() => fileComments().map((comment) => comment.selection))
 
@@ -316,7 +352,7 @@ export function TabFile(props: TabFileProps) {
           <Show when={isMd() && props.onCollaborate}>
             <Tooltip value="Add to Documents">
               <IconButton
-                icon="file-text"
+                icon="page-plus"
                 variant="ghost"
                 size="small"
                 onClick={() => props.onCollaborate?.()}
@@ -327,21 +363,9 @@ export function TabFile(props: TabFileProps) {
         </div>
       </Show>
 
-      {/* With the header hidden the source/preview toggle lives in the shell
-          header next to the file name; only the Documents action floats here. */}
-      <Show when={props.hideHeader && isMd() && props.onCollaborate}>
-        <div class="absolute right-2 top-2 z-10 rounded-md border border-border-weak-base bg-background-stronger/90 p-0.5 backdrop-blur-sm">
-          <Tooltip value="Add to Documents">
-            <IconButton
-              icon="file-text"
-              variant="ghost"
-              size="small"
-              onClick={() => props.onCollaborate?.()}
-              aria-label="Add to Documents"
-            />
-          </Tooltip>
-        </div>
-      </Show>
+      {/* With the header hidden, both the source/preview toggle and the
+          Documents action live in the shell header (see markdownCollaborateHandler),
+          so nothing floats over the rendered markdown here. */}
       <div class="flex-1 min-h-0 overflow-auto" ref={scrollRoot}>
         <Switch>
           <Match when={loading()}>

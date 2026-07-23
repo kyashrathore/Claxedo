@@ -27,6 +27,18 @@ export const SEMANTIC_ICON = {
   project: "folder",
   /** A git branch. */
   branch: "branch",
+  /** Session isolation — the main local checkout. Shares the folder glyph with
+   *  `project` on purpose: both name a directory on disk, and they never appear
+   *  as glyphs on the same surface. */
+  isolationLocal: "folder",
+  /** Session isolation — a dedicated git worktree (a forked-off working tree). */
+  isolationWorktree: "fork",
+  /** Session isolation — a remote cloud / user-hosted sandbox. */
+  isolationCloud: "server",
+  /** A source repository hosted on GitHub. */
+  repository: "github",
+  /** Opens a destination outside the app (external / web link). */
+  openExternal: "square-arrow-top-right",
 } as const satisfies Record<string, IconName>
 
 export type SemanticIconConcept = keyof typeof SEMANTIC_ICON

@@ -12,7 +12,7 @@ import {
   setReviewToolbarSlot,
 } from "@/ui/controls/portal-slot"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
-import { isMarkdownPath, markdownSourceView, toggleMarkdownPreview } from "../content/tab-file"
+import { isMarkdownPath, markdownCollaborateHandler, markdownSourceView, toggleMarkdownPreview } from "../content/tab-file"
 import { useClaxedoState } from "../state/index"
 import { WorkspaceScopeButtons } from "./workspace-toolbar"
 import { WorkspaceToolButtons } from "./workspace-tool-buttons"
@@ -265,6 +265,19 @@ function L2HeaderStrip(props: {
                 >
                   <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
                 </button>
+              </Show>
+              <Show when={markdownCollaborateHandler(tab().path)}>
+                {(handler) => (
+                  <button
+                    type="button"
+                    class="flex size-6 shrink-0 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+                    aria-label="Add to Documents"
+                    title="Add to Documents"
+                    onClick={() => handler()()}
+                  >
+                    <Icon name="page-plus" size="small" />
+                  </button>
+                )}
               </Show>
               <span class="flex-1" />
               <WorkspaceTools />
