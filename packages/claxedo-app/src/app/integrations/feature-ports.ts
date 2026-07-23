@@ -14,6 +14,7 @@ import * as FileContext from "@/app/providers/file"
 import * as Providers from "@/app/providers/use-providers"
 import * as GlobalSync from "@/app/providers/global-sync/provider"
 import * as Terminal from "@/features/terminal/providers/provider"
+import * as ProcessClient from "@/features/processes/data/client"
 import * as Events from "@/app/integrations/claxedo-events"
 import * as Config from "@/app/providers/config"
 import * as QueryOptions from "@/app/integrations/sync/query-options"
@@ -83,6 +84,7 @@ configureSessionAppPorts({
   useProviders: Providers.useProviders,
   useGlobalSync: GlobalSync.useGlobalSync,
   useTerminal: Terminal.useTerminal,
+  createProcessClient: ProcessClient.createProcessClient,
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
   useFirstTurnFunnel: useOnboardingFunnel,
   useConfigOptional: Config.useConfigOptional,

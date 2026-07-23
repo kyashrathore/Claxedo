@@ -103,3 +103,96 @@
   margin-left: 0.35rem;
   color: var(--icon-diff-delete-base);
 }
+
+/* ── Processes row: running badge + quick-actions popover ──────────── */
+
+/* Green variant of the shell's status dot (default is the red unread dot). */
+.session-envcard-dot-running {
+  background: var(--surface-success-strong);
+}
+
+/* Green dot + running count, the Processes row's trailing meta. */
+.session-envcard-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.session-envcard-running-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The quick-actions popover portals out of the card; the shared popover shell
+   already supplies the surface/border/shadow, so only size + tighten here. */
+.session-envcard-proc-popover {
+  width: 15rem;
+}
+
+.session-envcard-proc-popover [data-slot="popover-body"] {
+  padding: 0.35rem;
+}
+
+.session-envcard-proc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.session-envcard-proc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-md);
+}
+
+.session-envcard-proc-name {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-envcard-proc-port {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-weaker);
+}
+
+.session-envcard-proc-action {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-md);
+  color: var(--icon-weak-base);
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.session-envcard-proc-action:hover,
+.session-envcard-proc-action:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--icon-base);
+}
+
+/* Footer link to the full panel, under a hairline. */
+.session-envcard-proc-openpanel {
+  margin-top: 0.15rem;
+  padding: 0.35rem;
+  border-top: 1px solid var(--border-weak-base);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  font-size: 0.75rem;
+  text-align: left;
+  color: var(--text-weak);
+  transition: color 110ms ease;
+}
+
+.session-envcard-proc-openpanel:hover,
+.session-envcard-proc-openpanel:focus-visible {
+  color: var(--text-base);
+}

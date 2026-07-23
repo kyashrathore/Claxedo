@@ -7,6 +7,7 @@ import type * as FileContext from "@/app/providers/file"
 import type * as Providers from "@/app/providers/use-providers"
 import type * as GlobalSync from "@/app/providers/global-sync/provider"
 import type * as Terminal from "@/features/terminal/providers/provider"
+import type * as ProcessClient from "@/features/processes/data/client"
 import type * as Events from "@/app/integrations/claxedo-events"
 import type * as Config from "@/app/providers/config"
 import type * as QueryOptions from "@/app/integrations/sync/query-options"
@@ -48,6 +49,7 @@ export type SessionAppPorts = {
   useProviders: typeof Providers.useProviders
   useGlobalSync: typeof GlobalSync.useGlobalSync
   useTerminal: typeof Terminal.useTerminal
+  createProcessClient: typeof ProcessClient.createProcessClient
   useClaxedoEventsOptional: typeof Events.useClaxedoEventsOptional
   useConfigOptional: typeof Config.useConfigOptional
   useShellQueryOptions: typeof QueryOptions.useShellQueryOptions
@@ -119,6 +121,7 @@ export const useFile = bind("useFile")
 export const useProviders = bind("useProviders")
 export const useGlobalSync = bind("useGlobalSync")
 export const useTerminal = bind("useTerminal")
+export const createProcessClient = bind("createProcessClient")
 export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")
 export const useFirstTurnFunnel = bind("useFirstTurnFunnel")
 export const useConfigOptional = bind("useConfigOptional")

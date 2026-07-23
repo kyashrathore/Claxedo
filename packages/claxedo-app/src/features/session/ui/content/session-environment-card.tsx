@@ -1,10 +1,17 @@
-import { createMemo, Show } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
+import { Icon } from "@opencode-ai/ui/icon"
+import { Popover } from "@opencode-ai/ui/popover"
 import { useSDK } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import { usePaneId } from "@/features/session/app-ports"
 import { useShellQueryOptions } from "@/features/session/app-ports"
+import { createProcessClient } from "@/features/session/app-ports"
+import { usePrompt } from "@/features/session/providers/prompt"
+import type { Process } from "@/features/processes/data/process"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import {
@@ -33,6 +40,32 @@ export type EnvironmentChanges = {
 export type EnvironmentIsolation = "worktree" | "local" | "cloud"
 
 /**
+ * A currently-running managed process, reduced to what the card needs to
+ * navigate to it: its display name, the URL it serves (when it opened a port),
+ * and the pty backing its terminal.
+ */
+export type EnvironmentRunningProcess = {
+  /** The owning process config id. */
+  id: string
+  name: string
+  /** Assigned port, when the process opened one. */
+  port?: number
+  /** `namedUrl` when one was minted, else `http://localhost:<port>`. */
+  url?: string
+  /** The pty backing the process terminal — the "open terminal" target. */
+  ptyId?: string
+}
+
+/**
+ * Managed-process summary for the Processes navigation row: how many configs
+ * exist (0 ⇒ offer to set them up) and which are running right now.
+ */
+export type EnvironmentProcesses = {
+  configured: number
+  running: EnvironmentRunningProcess[]
+}
+
+/**
  * Everything the presentational card renders, supplied lazily so the card stays
  * a pure view. The wired `SessionEnvironmentCardMount` builds this from the
  * session SDK / workspace-panel state; tests supply stubs.
@@ -47,10 +80,36 @@ export type SessionEnvironmentSource = {
   worktreeDir: () => string | undefined
   /** Short project label for the navigation section header ("On <project>"). */
   projectName: () => string | undefined
+  /** Managed-process summary; undefined while unknown (data not yet loaded). */
+  processes: () => EnvironmentProcesses | undefined
 }
 
 // The minus glyph (U+2212) reads as a real deletion marker rather than a hyphen.
 const MINUS = "−"
+
+/**
+ * Lifecycle states that count as "running" for the badge — the same predicate
+ * the process pane uses (deriveProcessPaneStatus / navigator activeStatus).
+ */
+const RUNNING_STATUSES: readonly Process.Status[] = ["running", "starting", "restarting"]
+
+/** Poll cadence for the running-count badge while the card is shown. The card
+ *  only renders while the shared panel is closed, so the panel's live SSE
+ *  stream isn't feeding status — a light poll keeps the count honest. */
+const PROCESS_POLL_MS = 5000
+
+/** Prefilled into the session composer by the "Set up dev servers" action so the
+ *  agent discovers the project's scripts and registers them as managed
+ *  processes (via the Claxedo process tools) rather than a hand-typed form. */
+const CONFIGURE_PROCESSES_PROMPT = [
+  "Set up managed dev servers for this project so I can start/stop them and open their URLs from the Environment card.",
+  "",
+  '1. Discover the project\'s runnable long-running commands — check package.json "scripts" (dev/start/serve/watch and the like), plus any Procfile, docker-compose, or framework dev command.',
+  "2. Show me the candidates you found and let me confirm which to add.",
+  "3. For each one I confirm, add it as a managed process with the Claxedo process tools, setting its port so the served URL is detected.",
+  "",
+  "Don't start anything or add processes you're unsure about without checking with me first.",
+].join("\n")
 
 function dirName(path: string | undefined) {
   if (!path) return undefined
@@ -84,6 +143,10 @@ export function SessionEnvironmentCard(props: {
   collapsed?: boolean
   onToggleCollapse?: () => void
   onOpenTab: (tab: EnvironmentPanelTab) => void
+  /** Focus the terminal backing a running process. */
+  onOpenProcessTerminal?: (process: EnvironmentRunningProcess) => void
+  /** Prefill the session composer with a "configure managed processes" prompt. */
+  onConfigureProcesses?: () => void
 }) {
   const changes = () => props.source.changes()
   // Where the session runs, in worktree terms: the main checkout, a dedicated
@@ -190,13 +253,139 @@ export function SessionEnvironmentCard(props: {
           label="Files"
           onSelect={() => props.onOpenTab("files")}
         />
-        <ContextCardRow
-          glyph={<SemanticIcon concept="processes" size="small" />}
-          label="Processes"
-          onSelect={() => props.onOpenTab("processes")}
+        <ProcessesRow
+          processes={props.source.processes()}
+          onOpenPanel={() => props.onOpenTab("processes")}
+          onOpenProcessTerminal={props.onOpenProcessTerminal}
+          onConfigureProcesses={props.onConfigureProcesses}
         />
       </ContextCardSection>
     </ContextCard>
+  )
+}
+
+/** Green dot + running count — the Processes row's trailing meta, mirroring the
+ *  `changesMeta` +N −M slot. */
+function runningBadge(count: number) {
+  return (
+    <span class="session-envcard-running">
+      <span class="ui-context-card-dot session-envcard-dot-running" aria-hidden="true" />
+      <span class="session-envcard-running-count">{count}</span>
+    </span>
+  )
+}
+
+/**
+ * The Processes navigation row, in three shapes — all confined to the row and
+ * its trailing-meta slot (never an inline accordion; the quick actions live in
+ * an anchored popover that portals out of the bounded card):
+ *   - no configs yet         → a "Set up dev servers" call-to-action that hands
+ *     the job to the session agent (prefills the composer);
+ *   - configs, none running  → the plain nav row with a quiet "Idle" meta;
+ *   - something running       → a green dot + running count that opens a popover
+ *     of per-process quick actions (open URL, open terminal) plus the panel.
+ * When `processes` is undefined (data not loaded yet / test stubs) it stays the
+ * plain nav row, preserving the row's pre-existing open-the-panel behavior.
+ */
+function ProcessesRow(props: {
+  processes: EnvironmentProcesses | undefined
+  onOpenPanel: () => void
+  onOpenProcessTerminal?: (process: EnvironmentRunningProcess) => void
+  onConfigureProcesses?: () => void
+}) {
+  const running = () => props.processes?.running ?? []
+  const glyph = () => <SemanticIcon concept="processes" size="small" />
+
+  return (
+    <Switch
+      fallback={
+        <ContextCardRow
+          glyph={glyph()}
+          label="Processes"
+          meta={
+            <Show when={props.processes && running().length === 0}>
+              <span class="session-envcard-quiet">Idle</span>
+            </Show>
+          }
+          onSelect={props.onOpenPanel}
+        />
+      }
+    >
+      {/* No managed processes configured — offer to set them up. */}
+      <Match when={props.processes?.configured === 0}>
+        <ContextCardRow
+          glyph={glyph()}
+          label="Set up dev servers"
+          onSelect={() => props.onConfigureProcesses?.()}
+        />
+      </Match>
+
+      {/* Something is running — glanceable badge + quick-actions popover. */}
+      <Match when={running().length > 0}>
+        <Popover
+          placement="left-start"
+          gutter={8}
+          triggerAs="button"
+          triggerProps={{
+            type: "button",
+            class: "ui-context-card-row is-selectable",
+            "aria-label": `Processes, ${running().length} running`,
+          }}
+          trigger={
+            <>
+              <span class="ui-context-card-row-glyph" aria-hidden="true">
+                {glyph()}
+              </span>
+              <span class="ui-context-card-row-label text-text-base">Processes</span>
+              <span class="ui-context-card-gap" aria-hidden="true" />
+              <span class="ui-context-card-row-meta text-text-weaker">{runningBadge(running().length)}</span>
+            </>
+          }
+          class="session-envcard-proc-popover"
+        >
+          <div class="session-envcard-proc-list">
+            <For each={running()}>
+              {(process) => (
+                <div class="session-envcard-proc-item">
+                  <span class="ui-context-card-dot session-envcard-dot-running" aria-hidden="true" />
+                  <span class="session-envcard-proc-name text-text-base">{process.name}</span>
+                  <Show when={process.port}>
+                    <span class="session-envcard-proc-port">:{process.port}</span>
+                  </Show>
+                  <span class="ui-context-card-gap" aria-hidden="true" />
+                  <Show when={process.url}>
+                    {(url) => (
+                      <a
+                        class="session-envcard-proc-action"
+                        href={url()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Open ${process.name} in browser`}
+                      >
+                        <Icon name="link" size="small" />
+                      </a>
+                    )}
+                  </Show>
+                  <Show when={process.ptyId}>
+                    <button
+                      type="button"
+                      class="session-envcard-proc-action"
+                      aria-label={`Open ${process.name} terminal`}
+                      onClick={() => props.onOpenProcessTerminal?.(process)}
+                    >
+                      <Icon name="console" size="small" />
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <button type="button" class="session-envcard-proc-openpanel" onClick={props.onOpenPanel}>
+              Open Processes panel
+            </button>
+          </div>
+        </Popover>
+      </Match>
+    </Switch>
   )
 }
 
@@ -226,6 +415,7 @@ export function SessionEnvironmentCardMount() {
   const state = useClaxedoState()
   const paneId = usePaneId()
   const queryOptions = useShellQueryOptions()
+  const prompt = usePrompt()
   const collapse = createSessionEnvironmentCardState()
 
   const directory = () => sdk.directory
@@ -288,6 +478,43 @@ export function SessionEnvironmentCardMount() {
     queryFn: () => sdk.client.vcs.get().then((res) => res.data?.branch ?? null),
   }))
 
+  // Managed-process status for the Processes navigation row. Processes are not
+  // on `sdk.client` — they go through the dedicated claxedo process client
+  // (same wiring the Add-process dialog uses: server URL + workspace-runtime
+  // resolver). Same query shape as the change/vcs queries (useQuery, enabled:
+  // visible()), plus a light poll so the running-count badge stays live while
+  // the card is shown.
+  const claxedoServerUrl = getClaxedoServerUrl()
+  const processClientFor = (dir: string) =>
+    createProcessClient({
+      baseUrl: claxedoServerUrl,
+      directory: dir,
+      fetch: globalThis.fetch,
+      resolveWorkspaceRuntime: (input) =>
+        resolveWorkspaceRuntime({ baseUrl: claxedoServerUrl, request: globalThis.fetch, directory: input.directory }),
+    })
+  const processesQuery = useQuery(() => ({
+    queryKey: ["session-environment", "processes", directory()],
+    enabled: visible(),
+    refetchInterval: visible() ? PROCESS_POLL_MS : false,
+    queryFn: () => processClientFor(directory()!).list(),
+  }))
+  const processes = createMemo<EnvironmentProcesses | undefined>(() => {
+    const data = processesQuery.data
+    if (!data) return undefined
+    const nameFor = new Map(data.configs.map((config) => [config.id, config.name]))
+    const running = data.processes
+      .filter((process) => RUNNING_STATUSES.includes(process.status))
+      .map((process) => ({
+        id: process.configId,
+        name: nameFor.get(process.configId) ?? process.configId,
+        port: process.assignedPort,
+        url: process.namedUrl ?? (process.assignedPort ? `http://localhost:${process.assignedPort}` : undefined),
+        ptyId: process.ptyId,
+      }))
+    return { configured: data.configs.length, running }
+  })
+
   // Prefer the owning Project's name over the directory basename. A session can run out
   // of a generated runtime directory (e.g. `claxedo-live-mcp-process-8FQQ9L`) or a git
   // worktree sandbox — in both cases the basename is an implementation detail, while the
@@ -310,6 +537,7 @@ export function SessionEnvironmentCardMount() {
     isolation,
     worktreeDir: directory,
     projectName,
+    processes,
   }
 
   const openTab = (tab: EnvironmentPanelTab) => {
@@ -320,6 +548,26 @@ export function SessionEnvironmentCardMount() {
     })
   }
 
+  // Focus the terminal backing a running process (opens it if not already a
+  // tab). `openTerminal` matches an existing terminal by directory + pty id.
+  const openProcessTerminal = (process: EnvironmentRunningProcess) => {
+    const dir = directory()
+    if (!dir || !process.ptyId) return
+    state.layout.openTerminal(dir, process.ptyId, process.name)
+  }
+
+  // Hand the "configure managed processes" task to the session agent by
+  // prefilling the composer (the intended pattern — the user reviews and sends).
+  // Append rather than clobber an in-progress draft.
+  const configureProcesses = () => {
+    const makePart = (content: string) => ({ type: "text" as const, content, start: 0, end: content.length })
+    if (prompt.dirty()) {
+      prompt.set([...prompt.current(), makePart(`\n\n${CONFIGURE_PROCESSES_PROMPT}`)])
+      return
+    }
+    prompt.set([makePart(CONFIGURE_PROCESSES_PROMPT)], CONFIGURE_PROCESSES_PROMPT.length)
+  }
+
   return (
     <Show when={visible()}>
       <SessionEnvironmentCard
@@ -327,6 +575,8 @@ export function SessionEnvironmentCardMount() {
         collapsed={collapse.collapsed()}
         onToggleCollapse={collapse.toggle}
         onOpenTab={openTab}
+        onOpenProcessTerminal={openProcessTerminal}
+        onConfigureProcesses={configureProcesses}
       />
     </Show>
   )
