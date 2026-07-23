@@ -7,6 +7,7 @@ import type * as FileContext from "@/app/providers/file"
 import type * as Providers from "@/app/providers/use-providers"
 import type * as GlobalSync from "@/app/providers/global-sync/provider"
 import type * as Terminal from "@/features/terminal/providers/provider"
+import type * as ProcessClient from "@/features/processes/data/client"
 import type * as Events from "@/app/integrations/claxedo-events"
 import type * as Config from "@/app/providers/config"
 import type * as QueryOptions from "@/app/integrations/sync/query-options"
@@ -35,6 +36,7 @@ import type * as ConnectProvider from "@/app/dialogs/connect-provider"
 import type * as ConnectAI from "@/app/dialogs/connect-ai"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
 import type * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
+import type * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 export { WORKBENCH_DRAG_MIME } from "@/lib/workbench-drag"
 
 export type SessionAppPorts = {
@@ -48,6 +50,8 @@ export type SessionAppPorts = {
   useProviders: typeof Providers.useProviders
   useGlobalSync: typeof GlobalSync.useGlobalSync
   useTerminal: typeof Terminal.useTerminal
+  createProcessClient: typeof ProcessClient.createProcessClient
+  parseOwnerRepo: typeof RailGitRemote.parseOwnerRepo
   useClaxedoEventsOptional: typeof Events.useClaxedoEventsOptional
   useConfigOptional: typeof Config.useConfigOptional
   useShellQueryOptions: typeof QueryOptions.useShellQueryOptions
@@ -89,7 +93,12 @@ export type SessionAppPorts = {
   listDocumentMentions: typeof DocumentMentions.listDocumentMentions
   documentMentionText: typeof DocumentMentions.documentMentionText
   useFirstTurnFunnel: () => {
-    emit(event: { name: "first_turn_ok" } | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" | "session" | "unknown" } | { name: "first_cloud_turn_ok" }): void
+    emit(
+      event:
+        | { name: "first_turn_ok" }
+        | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" | "session" | "unknown" }
+        | { name: "first_cloud_turn_ok" },
+    ): void
   }
 }
 
@@ -119,6 +128,8 @@ export const useFile = bind("useFile")
 export const useProviders = bind("useProviders")
 export const useGlobalSync = bind("useGlobalSync")
 export const useTerminal = bind("useTerminal")
+export const createProcessClient = bind("createProcessClient")
+export const parseOwnerRepo = bind("parseOwnerRepo")
 export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")
 export const useFirstTurnFunnel = bind("useFirstTurnFunnel")
 export const useConfigOptional = bind("useConfigOptional")
@@ -145,6 +156,7 @@ export const terminalSurfaceStatus = bind("terminalSurfaceStatus")
 export const NavigationRow = bind("NavigationRow")
 export const NavigationStatusDot = bind("NavigationStatusDot")
 export type SessionItem = RailTypes.SessionItem
+export type ProjectItem = RailTypes.ProjectItem
 export type ActionProps = LayoutActions.ActionProps
 export type Nav = LayoutActions.Nav
 export const ensureActionDirectorySessionCache = bind("ensureActionDirectorySessionCache")

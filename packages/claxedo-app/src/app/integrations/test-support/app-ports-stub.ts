@@ -65,6 +65,8 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   useProviders: lazy("@/app/providers/use-providers", "useProviders"),
   useGlobalSync: lazy("@/app/providers/global-sync/provider", "useGlobalSync"),
   useTerminal: lazy("@/features/terminal/providers/provider", "useTerminal"),
+  createProcessClient: lazy("@/features/processes/data/client", "createProcessClient"),
+  parseOwnerRepo: lazy("@/app/workbench/rail/rail-git-remote", "parseOwnerRepo"),
   useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
   useFirstTurnFunnel: () => () => ({ emit: () => undefined }),
   useConfigOptional: lazy("@/app/providers/config", "useConfigOptional"),

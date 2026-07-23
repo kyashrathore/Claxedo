@@ -25,6 +25,7 @@ function source(overrides?: Partial<SessionEnvironmentSource>): SessionEnvironme
     worktreeDir: () => "/Users/me/.worktrees/opencode-fix",
     projectName: () => "opencode",
     repoSlug: () => "kyashrathore/Claxedo",
+    processes: () => undefined,
     ...overrides,
   }
 }
@@ -159,6 +160,76 @@ describe("SessionEnvironmentCard", () => {
       }),
     )
     expect(within(card()).queryByRole("region", { name: "Repository" })).toBeNull()
+  })
+
+  test("shows a green running-count badge on the Processes row when servers are up", () => {
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source({
+          processes: () => ({
+            configured: 2,
+            running: [
+              { id: "web", name: "web", port: 3000, url: "http://localhost:3000", ptyId: "pty-web" },
+              { id: "api", name: "api", port: 4000, url: "http://localhost:4000", ptyId: "pty-api" },
+            ],
+          }),
+        }),
+        onOpenTab: () => {},
+      }),
+    )
+    const trigger = within(card()).getByRole("button", { name: "Processes, 2 running" })
+    // Running count as trailing meta, next to the green status dot.
+    expect(within(trigger).getByText("2")).toBeInTheDocument()
+    expect(trigger.querySelector(".session-envcard-dot-running")).not.toBeNull()
+  })
+
+  test("the Processes badge opens a popover to each running server's URL and terminal", async () => {
+    const onOpenProcessTerminal = vi.fn()
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source({
+          processes: () => ({
+            configured: 1,
+            running: [{ id: "web", name: "web", port: 3000, url: "http://localhost:3000", ptyId: "pty-web" }],
+          }),
+        }),
+        onOpenTab: () => {},
+        onOpenProcessTerminal,
+      }),
+    )
+    await fireEvent.click(within(card()).getByRole("button", { name: "Processes, 1 running" }))
+    // The popover portals to document.body — query document-wide, not within the card.
+    const link = await screen.findByRole("link", { name: "Open web in browser" })
+    expect(link).toHaveAttribute("href", "http://localhost:3000")
+    expect(link).toHaveAttribute("target", "_blank")
+    await fireEvent.click(screen.getByRole("button", { name: "Open web terminal" }))
+    expect(onOpenProcessTerminal).toHaveBeenCalledWith(expect.objectContaining({ id: "web", ptyId: "pty-web" }))
+  })
+
+  test("shows a quiet Idle meta when processes are configured but none are running", () => {
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source({ processes: () => ({ configured: 2, running: [] }) }),
+        onOpenTab: () => {},
+      }),
+    )
+    const row = within(card()).getByRole("button", { name: /Processes/ })
+    expect(within(row).getByText("Idle")).toBeInTheDocument()
+  })
+
+  test("offers to configure managed processes when none are set up", async () => {
+    const onConfigureProcesses = vi.fn()
+    render(() =>
+      createComponent(SessionEnvironmentCard, {
+        source: source({ processes: () => ({ configured: 0, running: [] }) }),
+        onOpenTab: () => {},
+        onConfigureProcesses,
+      }),
+    )
+    // The plain "Processes" nav row is replaced by a set-up call-to-action.
+    expect(within(card()).queryByRole("button", { name: "Processes" })).toBeNull()
+    await fireEvent.click(within(card()).getByRole("button", { name: "Set up dev servers" }))
+    expect(onConfigureProcesses).toHaveBeenCalledTimes(1)
   })
 
   test("collapse is a route-restorable preference that survives a remount", async () => {
