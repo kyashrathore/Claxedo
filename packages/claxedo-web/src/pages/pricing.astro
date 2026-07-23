@@ -1,0 +1,56 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import DownloadMenu from "../components/DownloadMenu.astro"
+import { marketingActions } from "../content/routes"
+---
+
+<Layout title="Pricing — Claxedo" description="Claxedo is free during beta. Bring your own models, compute, and sandboxes.">
+  <div class="shell">
+    <Nav active="pricing" />
+    <main id="main-content">
+      <section class="pricing-hero rule-grid">
+        <p class="eyebrow">Current offer</p>
+        <h1 class="display">Free during beta.</h1>
+        <p class="section-copy">Use Claxedo locally or connect the product without a Claxedo subscription charge during beta. We will explain the paid offer before billing begins.</p>
+      </section>
+      <section class="section">
+        <div class="section-inner price-grid">
+          <article class="price-card">
+            <div><span>CLAXEDO · BETA</span><strong>$0</strong><small>today</small></div>
+            <h2>One product. Your models and infrastructure.</h2>
+            <ul><li>Claxedo Desktop with account-free local mode</li><li>Connected Claxedo product during beta</li><li>Open-source framework and self-host documentation</li><li>macOS, Windows, and Linux downloads</li></ul>
+            <DownloadMenu placement="pricing" />
+          </article>
+          <aside>
+            <h2>What you bring</h2>
+            <dl><div><dt>Models</dt><dd>Your provider subscriptions or API credentials. Claxedo does not bundle token credits.</dd></div><div><dt>Compute</dt><dd>Your local machine, remote infrastructure, or supported sandbox provider.</dd></div><div><dt>Operations</dt><dd>If you self-host, you operate that deployment and its security boundary.</dd></div></dl>
+            <p>Paid-offer terms and future subscription prices will be published when billing is active.</p>
+          </aside>
+        </div>
+      </section>
+      <section class="section dark-band"><div class="section-inner"><p class="eyebrow">Open foundation</p><h2 class="section-title">Inspect the framework behind the product.</h2><div class="actions"><a class="btn-secondary" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement="pricing">{marketingActions.framework.label}</a></div></div></section>
+    </main>
+    <Footer />
+  </div>
+</Layout>
+
+<style>
+  .pricing-hero { padding: var(--section) var(--gutter); }
+  .pricing-hero > * { max-width: 72rem; margin-inline: auto; }
+  .pricing-hero .section-copy { margin-inline: auto; }
+  .price-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: clamp(2rem, 6vw, 6rem); }
+  .price-card { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: clamp(1.5rem, 4vw, 2.5rem); }
+  .price-card > div { display: flex; align-items: baseline; gap: .8rem; margin-bottom: 2.5rem; }
+  .price-card span, .price-card small { color: var(--ink-faint); font: .68rem var(--font-mono); letter-spacing: .05em; }
+  .price-card strong { margin-left: auto; font: 500 clamp(3rem, 6vw, 4.5rem)/1 var(--font-sans); letter-spacing: -.04em; }
+  .price-card h2, aside h2 { font: 500 1.5rem/1.2 var(--font-sans); letter-spacing: -.025em; }
+  .price-card ul { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+  .price-card li { padding: .85rem 0; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: .92rem; }
+  aside dl { margin: 2rem 0; }
+  aside dl div { padding: 1.1rem 0; border-top: 1px solid var(--line); }
+  aside dt { margin-bottom: .35rem; color: var(--ink); font: 500 .72rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  aside dd, aside > p { margin: 0; color: var(--ink-soft); font-size: .92rem; }
+  @media (max-width: 48rem) { .price-grid { grid-template-columns: 1fr; } }
+</style>

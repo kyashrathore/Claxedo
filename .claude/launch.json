@@ -42,6 +42,13 @@
       "port": 4610
     },
     {
+      "name": "claxedo-web-verify",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["astro", "dev", "--port", "4612"],
+      "cwd": "packages/claxedo-web",
+      "port": 4612
+    },
+    {
       "name": "claxedo-docs",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "mintlify@latest", "dev", "--port", "3333"],

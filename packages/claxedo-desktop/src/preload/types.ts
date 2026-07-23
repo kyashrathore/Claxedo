@@ -14,10 +14,9 @@ export type LinuxDisplayBackend = "wayland" | "auto"
 /**
  * Agentic browser-tab preload bridge.
  *
- * Exposed at `window.api.browser`. Only populated in builds / launches where
- * `CLAXEDO_ENABLE_BROWSER_TAB=1` is set on the main process — renderers must
- * treat `window.api.browser` as potentially undefined and fall back to the
- * "requires desktop" placeholder when it is absent.
+ * Exposed at `window.api.browser` in the desktop renderer. The main process
+ * reports whether the capability is available, including the diagnostic
+ * `CLAXEDO_ENABLE_BROWSER_TAB=0` opt-out.
  */
 export type BrowserRegisterResult =
   | { ok: true; webContentsId: number }

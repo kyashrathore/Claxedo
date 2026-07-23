@@ -414,7 +414,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                     const normalized = () => normalizedCache ??= { ...normalize(diff), preloaded: diff.preloaded }
 
                     const expanded = createMemo(() => open().includes(file))
-                    const mounted = createMemo(() => expanded() && (!!store.visible[file] || pinned(file)))
                     const force = () => !!store.force[file]
 
                     const comments = createMemo(() => grouped().get(file) ?? [])
@@ -621,13 +620,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                                   <div
                                     data-slot="session-review-diff-placeholder"
                                     class="rounded-lg border border-border-weak-base bg-background-stronger/40 animate-pulse"
-                                    style={{ height: "160px" }}
-                                  />
-                                </Match>
-                                <Match when={!mounted()}>
-                                  <div
-                                    data-slot="session-review-diff-placeholder"
-                                    class="rounded-lg border border-border-weak-base bg-background-stronger/40"
                                     style={{ height: "160px" }}
                                   />
                                 </Match>

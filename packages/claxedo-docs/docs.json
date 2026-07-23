@@ -65,6 +65,7 @@
       {
         "group": "Packages",
         "pages": [
+          "packages/index",
           {
             "group": "Agent runtime",
             "pages": [
@@ -119,6 +120,15 @@
           "api/mcp",
           "api/connections",
           "api/channels"
+        ]
+      },
+      {
+        "group": "CLI & SDK",
+        "pages": [
+          "cli/index",
+          "sdk/index",
+          "ecosystem/index",
+          "integrations/index"
         ]
       },
       {

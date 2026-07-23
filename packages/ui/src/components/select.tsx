@@ -15,6 +15,8 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   onSelect?: (value: T | undefined) => void
   onHighlight?: (value: T | undefined) => (() => void) | void
   class?: ComponentProps<"div">["class"]
+  triggerClass?: ComponentProps<"button">["class"]
+  contentClass?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   children?: (item: T | undefined) => JSX.Element
   triggerStyle?: JSX.CSSProperties
@@ -25,6 +27,8 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
 export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">) {
   const [local, others] = splitProps(props, [
     "class",
+    "triggerClass",
+    "contentClass",
     "classList",
     "placeholder",
     "options",
@@ -143,6 +147,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         classList={{
           ...local.classList,
           [local.class ?? ""]: !!local.class,
+          [local.triggerClass ?? ""]: !!local.triggerClass,
         }}
       >
         <Kobalte.Value<T> data-slot="select-select-trigger-value" class={local.valueClass}>
@@ -162,6 +167,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
           classList={{
             ...local.classList,
             [local.class ?? ""]: !!local.class,
+            [local.contentClass ?? ""]: !!local.contentClass,
           }}
           data-component="select-content"
           data-trigger-style={local.triggerVariant}

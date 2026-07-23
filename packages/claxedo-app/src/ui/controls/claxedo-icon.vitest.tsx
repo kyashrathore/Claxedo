@@ -6,6 +6,19 @@ import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
 describe("ClaxedoIcon", () => {
   afterEach(() => cleanup())
 
+  test("refreshes a stale shared sprite before rendering worktree icons", () => {
+    const sprite = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    sprite.id = "claxedo-icon-sprite"
+    sprite.innerHTML = '<symbol id="claxedo-icon-worktree"><path data-stale="true" /></symbol>'
+    document.body.prepend(sprite)
+
+    render(() => <ClaxedoIcon name="worktree" />)
+
+    expect(sprite.querySelector("[data-stale]")).toBeNull()
+    expect(sprite.querySelector("#claxedo-icon-worktree path")?.getAttribute("d")).toContain("M4 10H8")
+    expect(sprite.querySelector("#claxedo-icon-worktree path")?.getAttribute("stroke-width")).toBe("1.5")
+  })
+
   test("renders Claxedo-owned glyphs from the app sprite", () => {
     const names = [
       "play",

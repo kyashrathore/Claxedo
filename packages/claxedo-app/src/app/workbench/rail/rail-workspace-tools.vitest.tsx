@@ -5,7 +5,10 @@ import type { JSX } from "solid-js"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
-import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
+import {
+  setReviewWorkspaceActiveTab,
+  type ReviewWorkspaceActiveTab,
+} from "@/features/review/ui/review-workspace-active-tab"
 import { AppShellLayout } from "../../app-shell-layout"
 import type { ProjectItem } from "./domain-types"
 
@@ -79,6 +82,10 @@ vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
 
 vi.mock("../../../features/settings/ui/terminals", () => ({
   getTerminalCommands: () => ({ claude: "claude", codex: "codex", custom: [] }),
+}))
+
+vi.mock("@/platform/settings/provider", () => ({
+  useSettings: () => ({ appearance: { navigatorSide: () => "right" } }),
 }))
 
 afterEach(() => {
@@ -222,5 +229,46 @@ describe("RailLayout workspace tool gates", () => {
       expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
       expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
     })
+  })
+
+  test("keeps all workspace tools visible across review workspace tabs", async () => {
+    setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
+    renderRail({
+      id: "surface-tabs",
+      type: "session",
+      scope: "directory",
+      directory: "/repo/main",
+      sessionId: "ses_tabs",
+      content: {
+        type: "session",
+        directory: "/repo/main",
+        sessionId: "ses_tabs",
+        sessionRef: {
+          sessionId: "ses_tabs",
+          host: "workspace",
+          cwd: "/repo/main",
+          toolSandbox: { kind: "local", cwd: "/repo/main" },
+        },
+      },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+
+    const tabs = [
+      { kind: "review", label: "Review" },
+      { kind: "file", label: "README.md", path: "README.md" },
+      { kind: "browser", label: "Browser" },
+      { kind: "context", label: "Context" },
+      { kind: "process", label: "Dev server" },
+    ] satisfies ReviewWorkspaceActiveTab[]
+
+    for (const tab of tabs) {
+      setReviewWorkspaceActiveTab(tab)
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Open Changes" })).toBeTruthy()
+        expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+      })
+    }
   })
 })

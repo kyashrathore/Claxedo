@@ -1,4 +1,5 @@
 import { createRequire } from "node:module"
+import fs from "node:fs"
 import path from "node:path"
 
 // The ACP adapter binaries ship as dependencies of THIS package (the code
@@ -15,6 +16,15 @@ const ACP_BIN_PACKAGES: Record<string, string> = {
  * images symlink the bins into /usr/local/bin).
  */
 export function defaultAcpBinary(name: string): string {
+  // The packaged Electron desktop runs this code from a bundle, where the
+  // `require.resolve` below cannot find the npm package. It ships the adapters
+  // under CLAXEDO_ACP_DIR and points here — the same override claxedo-server's
+  // agent-config resolver honors, so both spawn paths agree on the binary.
+  const acpDir = process.env.CLAXEDO_ACP_DIR
+  if (acpDir) {
+    const candidate = path.join(acpDir, name)
+    if (fs.existsSync(candidate)) return candidate
+  }
   const pkgName = ACP_BIN_PACKAGES[name]
   if (!pkgName) return name
   try {

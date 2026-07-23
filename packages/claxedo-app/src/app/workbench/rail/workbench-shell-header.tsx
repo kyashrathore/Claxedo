@@ -1,9 +1,16 @@
 import { Match, Show, Switch, onCleanup, type JSX } from "solid-js"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { CompactSwitcher } from "../compact-switcher/compact-switcher"
+import { TitlebarDragRegion } from "../titlebar/titlebar-drag-region"
 import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { setBrowserToolbarSlot, setReviewTabHeaderSlot, setReviewToolbarSlot } from "@/ui/controls/portal-slot"
+import {
+  setBrowserToolbarSlot,
+  setProcessToolbarSlot,
+  setReviewControlsSlot,
+  setReviewTabHeaderSlot,
+  setReviewToolbarSlot,
+} from "@/ui/controls/portal-slot"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { isMarkdownPath, markdownSourceView, toggleMarkdownPreview } from "../content/tab-file"
 import { useClaxedoState } from "../state/index"
@@ -22,7 +29,7 @@ export function WorkspacePanelChrome(props: {
       <Show when={props.workspacePanelOpen() && props.allowFullWidth !== false}>
         <button
           type="button"
-          class="flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-[background-color,color,scale] duration-100 hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]"
+          class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
           aria-label={props.workspacePanelFullWidth() ? "Restore workspace panel width" : "Maximize workspace panel"}
           title={props.workspacePanelFullWidth() ? "Restore workspace panel width" : "Maximize workspace panel"}
           onClick={props.onToggleFullWidth}
@@ -33,7 +40,7 @@ export function WorkspacePanelChrome(props: {
       <button
         type="button"
         data-testid="workspace-panel-toggle"
-        class="relative flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-[background-color,color,scale] duration-100 hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]"
+        class="relative flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
         aria-label={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
         title={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
         aria-pressed={props.workspacePanelOpen()}
@@ -70,10 +77,24 @@ export function WorkbenchShellHeader(props: {
 }) {
   onCleanup(() => props.onFloatingChromeRef(undefined))
 
+  // The compact rail header is the topmost strip when the sidebar is unpinned,
+  // so it doubles as the OS titlebar. The whole bar is a drag surface (empty
+  // areas move the window via CSS `app-region`, interactive children opt out via
+  // base.css `no-drag`); the reserved drag zones below keep a grabbable strip
+  // after the sidebar icon and after the tabs even when the strip is packed.
   return (
     <div
       data-testid="workbench-shell-header"
-      class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base pr-10"
+      data-window-drag-region
+      class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
+      classList={{
+        // The right padding reserves room for the absolutely-positioned
+        // floating panel-chrome. That chrome is hidden while the workspace
+        // panel is open, so drop the reserve then and let the scope buttons
+        // sit flush against the panel divider instead of leaving a 40px gap.
+        "pr-10": !props.workspacePanelVisualOpen(),
+        "pr-1": props.workspacePanelVisualOpen(),
+      }}
       style={{ "padding-left": props.trafficLightPad() && !props.sidebarPinned() ? "78px" : undefined }}
     >
       <div class="flex min-w-0 flex-1 items-center gap-1 px-1">
@@ -82,7 +103,7 @@ export function WorkbenchShellHeader(props: {
             <button
               type="button"
               aria-label="Show Sidebar"
-              class="relative z-[90] hidden h-8 w-8 shrink-0 items-center justify-center rounded border-none bg-transparent p-0 text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base md:flex"
+              class="relative z-[90] hidden size-6 shrink-0 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base md:flex"
               onMouseEnter={(event) => {
                 if ((event.relatedTarget as HTMLElement | null)?.closest?.('[data-testid="rail-sidebar"]')) return
                 props.onSidebarHotZoneEnter()
@@ -92,11 +113,16 @@ export function WorkbenchShellHeader(props: {
               <Icon name="layout-left-partial" size="small" />
             </button>
           </Tooltip>
+          {/* Zone A — a fixed grab strip immediately after the sidebar icon. */}
+          <TitlebarDragRegion class="w-4 shrink-0" />
           <CompactSwitcher
             items={props.switcherItems()}
             onSelect={props.onSelectSurface}
             onClose={props.onCloseSurface}
           />
+          {/* Zone B — fills the empty space after the tabs; always leaves a
+              floor of grabbable width even when the tab strip overflows. */}
+          <TitlebarDragRegion class="min-w-8 flex-1" />
         </Show>
       </div>
       <div data-testid="workbench-header-controls" class="flex shrink-0 items-center gap-1">
@@ -166,6 +192,22 @@ function L2HeaderStrip(props: {
   }
   const reviewContextActive = () => workspaceTab()?.kind === "review" && props.workspacePanelMode() === "review"
   const workspacePanelTargetAvailable = () => props.hasWorkspacePanelTarget()
+  const WorkspaceTools = () => (
+    <WorkspaceToolButtons
+      available={workspacePanelTargetAvailable()}
+      filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
+      changesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "changes"}
+      processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
+      processesAttention={
+        !!props.focusedPanelTarget() &&
+        (claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir) ||
+          claxedoState.processPane.crashedWhileClosed())
+      }
+      showChanges
+      showProcesses
+      onToggle={props.toggleFocusedWorkspaceNavigator}
+    />
+  )
   return (
     <div
       data-testid="workbench-l2-header"
@@ -182,20 +224,15 @@ function L2HeaderStrip(props: {
               data-testid="l2-review-toolbar-slot"
               class="flex min-w-0 flex-1 items-center gap-2"
             />
-            <WorkspaceToolButtons
-              available={workspacePanelTargetAvailable()}
-              filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
-              changesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "changes"}
-              processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
-              processesAttention={
-                !!props.focusedPanelTarget() &&
-                (claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir) ||
-                  claxedoState.processPane.crashedWhileClosed())
-              }
-              showChanges
-              showProcesses
-              onToggle={props.toggleFocusedWorkspaceNavigator}
+            <div
+              ref={(el) => {
+                setReviewControlsSlot(el ?? null)
+                return () => setReviewControlsSlot(null)
+              }}
+              data-testid="l2-review-controls-slot"
+              class="flex shrink-0 items-center gap-0.5"
             />
+            <WorkspaceTools />
           </div>
         </Match>
         <Match when={workspaceTab()?.kind === "browser"}>
@@ -208,11 +245,7 @@ function L2HeaderStrip(props: {
               data-testid="l2-browser-toolbar-slot"
               class="flex h-full min-w-0 w-full items-center overflow-hidden [&>*]:min-w-0 [&>*]:w-full [&>*]:flex-1"
             />
-            <WorkspaceToolButtons
-              available={workspacePanelTargetAvailable()}
-              filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
-              onToggle={props.toggleFocusedWorkspaceNavigator}
-            />
+            <WorkspaceTools />
           </div>
         </Match>
         <Match when={activeFileTab()}>
@@ -225,7 +258,7 @@ function L2HeaderStrip(props: {
               <Show when={isMarkdownPath(tab().path)}>
                 <button
                   type="button"
-                  class="flex size-6 shrink-0 items-center justify-center rounded-md text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+                  class="flex size-6 shrink-0 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
                   aria-label={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
                   title={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
                   onClick={() => toggleMarkdownPreview(tab().path)}
@@ -234,32 +267,32 @@ function L2HeaderStrip(props: {
                 </button>
               </Show>
               <span class="flex-1" />
-              <WorkspaceToolButtons
-                available={workspacePanelTargetAvailable()}
-                filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
-                onToggle={props.toggleFocusedWorkspaceNavigator}
-              />
+              <WorkspaceTools />
             </div>
           )}
         </Match>
         <Match when={workspaceTab()}>
           {(tab) => (
             <div data-l2-context={tab().kind} class="flex min-w-0 flex-1 items-center gap-2 px-2">
-              <span class="truncate text-[12px] text-text-weak">{tab().label}</span>
-              <span class="flex-1" />
-              <WorkspaceToolButtons
-                available={workspacePanelTargetAvailable()}
-                filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
-                processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
-                processesAttention={
-                  tab().kind === "process" &&
-                  !!props.focusedPanelTarget() &&
-                  (claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir) ||
-                    claxedoState.processPane.crashedWhileClosed())
+              <Show
+                when={tab().kind === "process"}
+                fallback={
+                  <>
+                    <span class="truncate text-[12px] text-text-weak">{tab().label}</span>
+                    <span class="flex-1" />
+                  </>
                 }
-                showProcesses={tab().kind === "process"}
-                onToggle={props.toggleFocusedWorkspaceNavigator}
-              />
+              >
+                <div
+                  ref={(element) => {
+                    setProcessToolbarSlot(element)
+                    onCleanup(() => setProcessToolbarSlot(null))
+                  }}
+                  data-testid="l2-process-toolbar-slot"
+                  class="flex h-full min-w-0 flex-1 items-center overflow-hidden"
+                />
+              </Show>
+              <WorkspaceTools />
             </div>
           )}
         </Match>
@@ -285,18 +318,7 @@ function L2HeaderStrip(props: {
               </span>
             </div>
             <span class="flex-1" />
-            <WorkspaceToolButtons
-              available={workspacePanelTargetAvailable()}
-              filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
-              processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
-              processesAttention={
-                !!props.focusedPanelTarget() &&
-                (claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir) ||
-                  claxedoState.processPane.crashedWhileClosed())
-              }
-              showProcesses
-              onToggle={props.toggleFocusedWorkspaceNavigator}
-            />
+            <WorkspaceTools />
           </div>
         </Match>
       </Switch>

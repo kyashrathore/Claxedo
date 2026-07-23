@@ -53,22 +53,28 @@ export async function fileContentBody(c: OpenCodeCompatRequestContext) {
   const full = workspacePath(workspaceRoot(ws, input), c.req.query("path"))
   try {
     const buf = await fs.promises.readFile(full)
+    if (buf.includes(0)) return binaryFileContent(buf)
     try {
       return {
         type: "text",
         content: new TextDecoder("utf-8", { fatal: true }).decode(buf).trim(),
       }
     } catch {
-      return {
-        type: "binary",
-        content: "",
-      }
+      return binaryFileContent(buf)
     }
   } catch {
     return {
       type: "text",
       content: "",
     }
+  }
+}
+
+function binaryFileContent(content: Buffer) {
+  return {
+    type: "binary",
+    content: content.toString("base64"),
+    encoding: "base64",
   }
 }
 

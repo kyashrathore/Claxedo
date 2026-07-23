@@ -27,6 +27,7 @@ import {
   resolveTreeKeyAction,
   shouldListExpanded,
   shouldListRoot,
+  visibleCountForActivePath,
   type FileTreeFilter as Filter,
 } from "../../../ui/controls/file-tree-helpers"
 
@@ -417,7 +418,18 @@ export default function FileTree(props: {
     props.allowed
     setVisibleCount(batchSize())
   })
-  const visibleNodes = createMemo(() => nodes().slice(0, visibleCount()))
+  const effectiveVisibleCount = createMemo(() => {
+    const active = props.active
+    if (!active) return visibleCount()
+    return visibleCountForActivePath({
+      paths: nodes().map((node) => node.path),
+      active,
+      batchSize: batchSize(),
+      current: visibleCount(),
+    })
+  })
+
+  const visibleNodes = createMemo(() => nodes().slice(0, effectiveVisibleCount()))
   const hiddenCount = createMemo(() => Math.max(0, nodes().length - visibleNodes().length))
   const loadingEmpty = createMemo(() => {
     const dir = file.tree.state(props.path)

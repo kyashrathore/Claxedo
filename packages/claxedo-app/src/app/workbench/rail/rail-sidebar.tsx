@@ -1573,27 +1573,27 @@ export function RailSidebar(props: RailSidebarProps) {
         <Tooltip placement="top" value="New Claude terminal">
           <button
             type="button"
-            class="flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+            class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
             aria-label={`New Claude terminal in ${input.label}`}
             onClick={(e) => {
               e.stopPropagation()
               createTerminal(getTerminalCommands().claude, "Claude")
             }}
           >
-            C
+            <Icon name="claude" size="small" />
           </button>
         </Tooltip>
         <Tooltip placement="top" value="New Codex terminal">
           <button
             type="button"
-            class="flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+            class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
             aria-label={`New Codex terminal in ${input.label}`}
             onClick={(e) => {
               e.stopPropagation()
               createTerminal(getTerminalCommands().codex, "Codex")
             }}
           >
-            X
+            <Icon name="openai" size="small" />
           </button>
         </Tooltip>
         <DropdownMenu onOpenChange={handleRailMenuOpenChange}>

@@ -23,7 +23,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useFile } from "@/app/providers/file"
 import { PromptProvider } from "@/features/session/providers/prompt"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -112,6 +112,7 @@ function ReviewWorkspaceProcessSection(props: { processId: string; directory: st
         onResolveConflict={(strategy) => processPane.resolveConflict(props.processId, strategy)}
         onResolveRouteConflict={(strategy) => processPane.resolveRouteConflict(props.processId, strategy)}
         onEdit={openEditDialog}
+        portalHeader={props.active}
         renderTerminal={(terminal) => <RoleGuardedTerminal pty={terminal} />}
       />
     </Show>
@@ -453,6 +454,38 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     }
   }
 
+  const tabIcon = (tab: ReviewWorkspaceTab): ClaxedoIconName => {
+    switch (tab.kind) {
+      case "review":
+        return "review"
+      case "context":
+        return "circle-half"
+      case "file":
+        return "file-text"
+      case "browser":
+        return "globe"
+      case "process":
+        return "console"
+    }
+  }
+
+  // Optical sizing: every icon shares the same 16px slot, but a filled square
+  // (review) reads larger than an inscribed circle (context/browser) at the
+  // same box, so boxy glyphs render a hair smaller and round glyphs a hair
+  // larger to equalise perceived size next to the 13px label.
+  const tabIconPx = (tab: ReviewWorkspaceTab): number => {
+    switch (tab.kind) {
+      case "review":
+        return 13
+      case "file":
+      case "process":
+        return 14
+      case "context":
+      case "browser":
+        return 15
+    }
+  }
+
   const closeLabel = (tab: ReviewWorkspaceTab): string => {
     switch (tab.kind) {
       case "context":
@@ -482,7 +515,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       >
         <button
           type="button"
-          class="flex h-full min-w-0 flex-1 items-center px-2.5 leading-none"
+          class="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 leading-none"
           classList={{ "pr-7": tab.kind !== "review" }}
           aria-current={selected() ? "true" : undefined}
           onClick={() => setActiveTab(tab.id)}
@@ -492,6 +525,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             closeTab(tab.id)
           }}
         >
+          <Icon
+            name={tabIcon(tab)}
+            size="small"
+            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px` }}
+            classList={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
+          />
           <span class="truncate">{tabLabel(tab)}</span>
         </button>
         <Show when={tab.kind !== "review"}>
@@ -610,7 +649,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                   File
                 </DropdownMenu.Item>
                 <DropdownMenu.Item onSelect={() => openContextTab(props.sessionId)}>
-                  <Icon name="window-cursor" size="small" />
+                  <Icon name="circle-half" size="small" />
                   Context
                 </DropdownMenu.Item>
                 <DropdownMenu.Item onSelect={openBrowserTab}>

@@ -239,6 +239,9 @@ export const MermaidCodeBlock = CodeBlock.extend({
         const pre = el("pre")
         const code = el("code", {
           class: node.attrs.language ? `language-${node.attrs.language}` : "",
+          spellcheck: "false",
+          autocorrect: "off",
+          autocapitalize: "off",
         })
         pre.appendChild(code)
         return { dom: pre, contentDOM: code }
@@ -270,7 +273,11 @@ export const MermaidCodeBlock = CodeBlock.extend({
       // Code area (contentDOM — Tiptap manages this), hidden by default
       const pre = el("pre", { class: "mermaid-code" })
       pre.style.display = "none"
-      const code = el("code")
+      const code = el("code", {
+        spellcheck: "false",
+        autocorrect: "off",
+        autocapitalize: "off",
+      })
       pre.appendChild(code)
 
       // Preview area — viewport clips, svgContainer gets transformed

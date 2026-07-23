@@ -160,9 +160,36 @@
   [data-slot="session-review-trigger-actions"] {
     flex-shrink: 0;
     display: flex;
-    gap: 16px;
+    gap: 12px;
     align-items: center;
     justify-content: flex-end;
+  }
+
+  /* Calmer, denser change counts in the file list: muted + tabular at rest,
+     colorized on row hover (matches the muted-hover DiffChanges intent). Scoped
+     to review rows so the toolbar totals and activity lists are unaffected. */
+  [data-slot="session-review-trigger-actions"] [data-component="diff-changes"] {
+    gap: 6px;
+  }
+  [data-slot="session-review-trigger-actions"] [data-slot="diff-changes-additions"],
+  [data-slot="session-review-trigger-actions"] [data-slot="diff-changes-deletions"] {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-weaker);
+    transition: color 0.15s ease;
+  }
+  [data-slot="accordion-trigger"]:hover [data-slot="diff-changes-additions"] {
+    color: var(--text-diff-add-base);
+  }
+  [data-slot="accordion-trigger"]:hover [data-slot="diff-changes-deletions"] {
+    color: var(--text-diff-delete-base);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="session-review-trigger-actions"] [data-slot="diff-changes-additions"],
+    [data-slot="session-review-trigger-actions"] [data-slot="diff-changes-deletions"] {
+      transition: none;
+    }
   }
 
   [data-slot="session-review-diff-chevron"] {

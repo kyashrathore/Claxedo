@@ -32,7 +32,42 @@ try {
   console.warn(`[predev] ${e instanceof Error ? e.message : String(e)}, skipping template copy`)
 }
 
+// In dev we run the generic Electron.app binary, so macOS labels the Dock /
+// Mission Control tile from that bundle's CFBundleName ("Electron") — app.setName()
+// only renames the menu and userData path, not the running bundle. Patch the dev
+// bundle's Info.plist so it reads "Claxedo Dev". Packaged builds already get the
+// correct name from electron-builder, so this is dev-only and idempotent.
+try {
+  await patchDevBundleName("Claxedo Dev")
+} catch (e) {
+  console.warn(`[predev] ${e instanceof Error ? e.message : String(e)}, skipping dev app-name patch`)
+}
+
 await ensureElectronNativeModules()
+
+async function patchDevBundleName(name: string) {
+  if (process.platform !== "darwin") return
+  const electronBin = require("electron") as unknown as string
+  if (typeof electronBin !== "string") return
+  const marker = "/Contents/"
+  const at = electronBin.indexOf(marker)
+  if (at < 0) return
+  const appPath = electronBin.slice(0, at) // …/Electron.app
+  const plist = path.join(appPath, "Contents", "Info.plist")
+  if (!fs.existsSync(plist)) return
+  const setKey = async (key: string) => {
+    try {
+      await $`/usr/libexec/PlistBuddy -c ${`Set :${key} ${name}`} ${plist}`.quiet()
+    } catch {
+      await $`/usr/libexec/PlistBuddy -c ${`Add :${key} string ${name}`} ${plist}`.quiet().catch(() => {})
+    }
+  }
+  await setKey("CFBundleName")
+  await setKey("CFBundleDisplayName")
+  // bump mtime so LaunchServices re-reads the label
+  await $`touch ${appPath}`.quiet().catch(() => {})
+  console.log(`[predev] Patched dev Electron bundle name → "${name}"`)
+}
 
 // Build patched opencode sidecar
 const sidecarConfig = getCurrentSidecar()

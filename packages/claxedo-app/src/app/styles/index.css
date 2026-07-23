@@ -53,6 +53,121 @@
     container-name: getting-started;
   }
 
+  [data-component="session-new-design-content"] {
+    container-type: inline-size;
+    container-name: session-new-design;
+  }
+
+  [data-component="session-new-design-content"] .claxedo-new-session-project-picker {
+    width: 6.5rem;
+    min-width: 6.5rem;
+    max-width: 6.5rem;
+    flex: 0 0 6.5rem;
+  }
+
+  [data-component="session-new-design-content"] .claxedo-new-session-project-picker [data-slot="select-select-trigger-value"] {
+    min-width: 0;
+    flex: 1;
+  }
+
+  [data-component="session-new-design-content"] [data-slot="worktree-picker-shell"] {
+    width: 10rem;
+    min-width: 10rem;
+    max-width: 10rem;
+    flex: 0 0 10rem;
+  }
+
+  [data-component="session-new-design-content"] .claxedo-new-session-worktree-picker {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  [data-component="session-new-design-content"] .claxedo-new-session-worktree-picker [data-slot="select-select-trigger-value"] {
+    min-width: 0;
+    flex: 1;
+  }
+
+  /* Select content is portalled outside the container. Let Kobalte's
+     same-width positioning follow each compact trigger instead of enforcing
+     the shared menu's 104px floor, and truncate long workspace identifiers. */
+  [data-component="select-content"].claxedo-new-session-scope-menu {
+    min-width: 0;
+  }
+
+  [data-component="select-content"].claxedo-new-session-scope-menu [data-slot="select-select-item-label"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-component="session-new-design-content"] [data-slot="compact-icon"],
+  [data-component="session-new-design-content"] [data-slot="self-hosted-compact-detail"] {
+    display: none;
+  }
+
+  /* The labelled row needs about 32rem at its natural size. Compact only once
+     the composer itself crosses that fit point, independent of the viewport. */
+  @container session-new-design (max-width: 32rem) {
+    [data-component="session-new-workspace-controls"] .claxedo-new-session-project-picker {
+      width: 5.5rem;
+      min-width: 5.5rem;
+      max-width: 5.5rem;
+      flex-basis: 5.5rem;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="worktree-picker-shell"] {
+      width: 7rem;
+      min-width: 7rem;
+      max-width: 7rem;
+      flex-basis: 7rem;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="workspace-segment-button"] {
+      width: 1.5rem;
+      padding-inline: 0.25rem;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="compact-icon"] {
+      display: inline-flex;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="control-label"],
+    [data-component="session-new-workspace-controls"] [data-slot="self-hosted-detail"] {
+      display: none;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="self-hosted-compact-detail"] {
+      display: inline;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="self-hosted-workspace"] {
+      flex: 1;
+    }
+  }
+
+  /* Keep the control strip on one line in the narrowest supported pane. Both
+     names retain a compact, ellipsized slice instead of forcing a wrap. */
+  @container session-new-design (max-width: 20rem) {
+    [data-component="session-new-workspace-controls"] {
+      padding-left: 0;
+    }
+
+    [data-component="session-new-workspace-controls"] .claxedo-new-session-project-picker {
+      width: 4.5rem;
+      min-width: 4.5rem;
+      max-width: 4.5rem;
+      flex-basis: 4.5rem;
+    }
+
+    [data-component="session-new-workspace-controls"] [data-slot="worktree-picker-shell"] {
+      width: 4.75rem;
+      min-width: 4.75rem;
+      max-width: 4.75rem;
+      flex-basis: 4.75rem;
+    }
+  }
+
   [data-component="dropdown-menu-content"].desktop-app-menu,
   [data-component="dropdown-menu-sub-content"].desktop-app-menu {
     min-width: 160px;

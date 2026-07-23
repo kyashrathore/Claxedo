@@ -126,6 +126,7 @@ const sdkContext = "app/providers/sdk/sdk.tsx"
 const languageContext = "platform/i18n/provider.tsx"
 const homePage = "app/routes/home.tsx"
 const pageIndex = "features/documents/editor/document-index.tsx"
+const reviewWorkspace = "app/workbench/review/review-workspace.tsx"
 const sessionPage = "features/session/ui/session-screen.tsx"
 const sessionTimeline = "features/session/ui/message-timeline.tsx"
 const sessionController = "features/session/store/session-controller.ts"
@@ -225,6 +226,13 @@ async function files(dir: string): Promise<string[]> {
     out.push(entry)
   }
   return out
+}
+
+// Route-literal scans must read code, not prose. Comments legitimately name
+// endpoints they document the removal of (e.g. the retired `/documents/events`
+// SSE), and a bare text scan reports those as boundary violations.
+function codeOnly(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
 }
 
 async function upstreamAppText(file: string) {
@@ -557,7 +565,7 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
       if (file === "features/documents/data/documents-api.ts") continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
       if (/["'`]\/documents(?:[?"'`/])/.test(text)) {
         offenders.push(file)
       }
@@ -780,9 +788,18 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/props\.projects/)
     expect(text).toMatch(/props\.directory/)
     expect(text).toMatch(/workspaceId/)
-    expect(text).toMatch(/createFromRepository/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).not.toMatch(/project\.ensure/)
+
+    // Repository import moved out of the documents index and into the review
+    // workspace; `document-index.vitest.tsx` now asserts the index never calls
+    // it. Follow the behavior so this stays a live invariant rather than a
+    // symbol that silently no longer exists anywhere it is asserted.
+    const repositoryImport = await Bun.file(path.join(root, reviewWorkspace)).text()
+    expect(repositoryImport).toMatch(/createFromRepository/)
+    expect(repositoryImport).toMatch(/props\.directory/)
+    expect(repositoryImport).toMatch(/workspaceId/)
+    expect(repositoryImport).not.toMatch(/useGlobalSync/)
   })
 
   test("production consumers do not call global-sync project inventory actions", async () => {
@@ -971,7 +988,12 @@ describe("workspace runtime route audit", () => {
     expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/providers/)
     expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/terminals/)
     expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/sandbox-section/)
-    expect(settingsDialog).toMatch(/@\/app\/providers\/config/)
+    // The dialog no longer reads config itself — each tab owns its own data and
+    // the dialog only needs the server URL. `@/app/providers/config` is still
+    // the sanctioned config provider (app.tsx, home.tsx, rail-account-menu, …);
+    // it is simply not a dependency of the dialog shell any more. The negative
+    // assertions below remain the live invariant.
+    expect(settingsDialog).toMatch(/@\/app\/connection\/server/)
     expect(settingsDialog).not.toMatch(/@\/components\/settings\//)
     expect(settingsDialog).not.toMatch(/@\/context\/config/)
     expect(general).toMatch(/AccountSettingsSection/)

@@ -38,6 +38,10 @@
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
+    },
+    "@claxedo/app#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
     }
   }
 }

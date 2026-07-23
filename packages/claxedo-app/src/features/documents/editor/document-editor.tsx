@@ -24,7 +24,6 @@ export type DocumentEditorProps = {
   onBlockingClose?: (snapshot: PersistenceSnapshot) => void
   onController?: (controller: DocumentPersistenceController) => void
   reportError?: (error: unknown) => void
-  transformSelection?: (action: "improve" | "fix" | "shorten", selected: string) => Promise<string>
 }
 
 const memoryStorage = () => {
@@ -76,15 +75,6 @@ export default function DocumentEditor(props: DocumentEditorProps) {
     setDetection(next)
     setRichUnavailable(next.status === "source")
   }
-  const editSource = () =>
-    setDetection({
-      status: "source",
-      markdown: snapshot().draft.markdown,
-      reason: {
-        code: "manual",
-        message: "Source mode was selected for direct Markdown editing.",
-      },
-    })
   const rejectedReason = () => {
     const value = detection()
     return value.status === "rejected" ? value.reason.message : "The document cannot be edited."
@@ -215,8 +205,6 @@ export default function DocumentEditor(props: DocumentEditorProps) {
                   detection={value() as Extract<MarkdownDetection, { status: "rich" }>}
                   onInput={editMarkdown}
                   onBlur={flush}
-                  onEditSource={editSource}
-                  onSelectionAction={props.transformSelection}
                   onSerializationError={(error) => {
                     setEditorError(error.message)
                     reportError(error)

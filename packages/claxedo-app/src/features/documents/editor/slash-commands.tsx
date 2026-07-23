@@ -18,11 +18,6 @@ function promptUrl(initial?: string) {
   return window.prompt("Enter URL", initial || "https://")
 }
 
-function emitAiOpen() {
-  if (typeof window === "undefined") return
-  window.dispatchEvent(new CustomEvent("claxedo-page-ai-open"))
-}
-
 export interface SlashCommandItem {
   id: string
   group: string
@@ -44,18 +39,6 @@ export type SlashCommandSuggestionOptions = Partial<SuggestionOptions<SlashComma
 }
 
 export const slashCommandItems: SlashCommandItem[] = [
-  {
-    id: "ai_open",
-    group: "AI",
-    title: "Ask AI",
-    description: "Open AI composer",
-    icon: "✦",
-    search: "ai ask assistant prompt composer",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).run()
-      emitAiOpen()
-    },
-  },
   {
     id: "text",
     group: "Basic blocks",

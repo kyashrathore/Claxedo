@@ -10,6 +10,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 
+const h = vi.hoisted(() => ({
+  treeExpand: vi.fn(),
+}))
+
 vi.mock("@opencode-ai/ui/icon", () => ({ Icon: (props: any) => <span data-icon={props.name} /> }))
 vi.mock("@opencode-ai/ui/spinner", () => ({ Spinner: () => <span data-testid="spinner" /> }))
 vi.mock("@opencode-ai/ui/file-icon", () => ({ FileIcon: () => <span data-testid="file-icon" /> }))
@@ -38,6 +42,7 @@ vi.mock("@/app/providers/file", () => ({
       list: () => {},
       state: () => ({ loaded: true, loading: false }),
       children: () => [],
+      expand: h.treeExpand,
     },
   }),
 }))
@@ -48,6 +53,7 @@ afterEach(() => {
   cleanup()
   statusFiles = []
   searchHits = []
+  h.treeExpand.mockClear()
   document.body.innerHTML = ""
 })
 
@@ -99,5 +105,25 @@ describe("WorkspaceFilesNavigator (changes mode)", () => {
       <WorkspaceFilesNavigator mode="changes" active onFileClick={() => {}} />
     ))
     await waitFor(() => expect(view.getByText("No changed files")).toBeTruthy())
+  })
+})
+
+describe("WorkspaceFilesNavigator (files mode)", () => {
+  test("reveals an active file after its tree row mounts", async () => {
+    const view = render(() => (
+      <WorkspaceFilesNavigator mode="files" active activePath="src/deep/file.ts" onFileClick={() => {}} />
+    ))
+
+    await waitFor(() => {
+      expect(h.treeExpand).toHaveBeenCalledWith("src")
+      expect(h.treeExpand).toHaveBeenCalledWith("src/deep")
+    })
+
+    const row = document.createElement("button")
+    row.dataset.fileTreePath = "src/deep/file.ts"
+    row.scrollIntoView = vi.fn()
+    view.getByTestId("file-tree").append(row)
+
+    await waitFor(() => expect(row.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }))
   })
 })

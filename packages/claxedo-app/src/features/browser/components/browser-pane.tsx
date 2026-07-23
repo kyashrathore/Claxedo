@@ -21,17 +21,17 @@ import { normalizeAddressBarInput } from "./browser-url"
 /**
  * BrowserPane.
  *
- * When the Electron preload bridge (`window.api.browser`) is available — i.e.
- * the desktop app was launched with `CLAXEDO_ENABLE_BROWSER_TAB=1` — this
- * renders a real `<webview>` pinned to the `persist:agent-browser` partition.
+ * When the Electron preload bridge (`window.api.browser`) reports that the
+ * browser capability is available, this renders a real `<webview>` pinned to
+ * the `persist:agent-browser` partition.
  *
  * On `dom-ready`, the pane calls `browser.register(paneId, webContentsId)` so
  * the main-process `BrowserRegistry` can bind the pane to its webContents,
  * and the CDP state machine (Unit 3) takes over from there.
  *
- * When the bridge is absent (cloud / web build, or desktop launched without
- * the flag), the existing fallback UI is preserved so opening the tab stays
- * legible rather than dispatching to "Unknown content type".
+ * When the bridge is absent (cloud / web build) or reports the capability as
+ * disabled, the fallback UI keeps the tab legible rather than dispatching to
+ * "Unknown content type".
  */
 /**
  * Element-comment payload routed up to the parent (WorkspaceBrowserPanel).
@@ -200,11 +200,8 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
               when={showWebview() && api}
               fallback={
                 <div class="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-                  <div class="font-medium text-text-base">Browser tabs require the desktop app.</div>
-                  <div>
-                    Set <code>CLAXEDO_ENABLE_BROWSER_TAB=1</code> and <code>VITE_CLAXEDO_ENABLE_BROWSER_TAB=true</code>{" "}
-                    and relaunch to try this feature.
-                  </div>
+                  <div class="font-medium text-text-base">Browser tabs are unavailable.</div>
+                  <div>Open this workspace in the Claxedo desktop app to use the browser.</div>
                 </div>
               }
             >
@@ -337,7 +334,7 @@ function BrowserPaneToolbar(props: {
           <IconButton
             icon="arrow-left"
             variant="ghost"
-            size="small"
+            size="normal"
             aria-label="Go back"
             disabled={!ctx.canGoBack()}
             onClick={() => void ctx.goBack()}
@@ -348,7 +345,7 @@ function BrowserPaneToolbar(props: {
           <IconButton
             icon="arrow-right"
             variant="ghost"
-            size="small"
+            size="normal"
             aria-label="Go forward"
             disabled={!ctx.canGoForward()}
             onClick={() => void ctx.goForward()}
@@ -359,7 +356,7 @@ function BrowserPaneToolbar(props: {
           <IconButton
             icon="reload"
             variant="ghost"
-            size="small"
+            size="normal"
             aria-label="Reload"
             onClick={() => void ctx.reload(false)}
             data-testid="browser-pane-reload"
@@ -367,37 +364,28 @@ function BrowserPaneToolbar(props: {
         </Tooltip>
       </div>
       <BrowserAddressBar initialUrl={props.initialUrl} api={props.api} history={props.history} />
-      {/* Right cluster: inspect, console, overflow — tighter spacing internally,
-          larger gap from address bar so the purpose is visually distinct. */}
+      {/* Right cluster: inspect + overflow. Every control is a 24px ghost
+          icon button (the app-wide toolbar standard) so size, radius, and
+          hover-background read identically. Inspect is an on/off toggle so it
+          carries a persistent fill when armed; the overflow trigger fills only
+          while its menu is open. Console lives inside the overflow menu. */}
       <div class="flex items-center gap-0.5">
         <Tooltip value="Pick an element to annotate" placement="bottom">
           <IconButton
             icon="window-cursor"
-            size="small"
+            size="normal"
             variant="ghost"
             aria-label="Inspect element"
             aria-pressed={ctx.inspectMode()}
-            class="aria-pressed:bg-surface-base-hover aria-pressed:text-text-base"
+            class="aria-pressed:bg-surface-base-active"
             onClick={() => void ctx.setInspectMode(!ctx.inspectMode())}
             data-testid="browser-pane-inspect-toggle"
-          />
-        </Tooltip>
-        <Tooltip value="Toggle console" placement="bottom">
-          <IconButton
-            icon="console"
-            size="small"
-            variant="ghost"
-            aria-label="Toggle console"
-            aria-pressed={ctx.consoleDrawerOpen()}
-            class="aria-pressed:bg-surface-base-hover aria-pressed:text-text-base"
-            onClick={() => ctx.setConsoleDrawerOpen(!ctx.consoleDrawerOpen())}
-            data-testid="browser-pane-console-toggle"
           />
         </Tooltip>
         <DropdownMenu gutter={4} placement="bottom-end">
           <Tooltip value="Browser options" placement="bottom">
             <DropdownMenu.Trigger
-              class="flex h-7 w-7 items-center justify-center rounded-md text-text-weak hover:bg-surface-base-hover hover:text-text-base"
+              class="flex size-6 items-center justify-center rounded-sm text-icon-base transition-colors hover:bg-surface-base-hover aria-expanded:bg-surface-base-active"
               aria-label="Browser options"
               data-testid="browser-pane-menu-trigger"
             >
@@ -428,6 +416,14 @@ function BrowserPaneToolbar(props: {
                 Clear Cookies
               </DropdownMenu.Item>
               <DropdownMenu.Separator />
+              <DropdownMenu.CheckboxItem
+                checked={ctx.consoleDrawerOpen()}
+                onChange={(v) => ctx.setConsoleDrawerOpen(v)}
+                closeOnSelect={false}
+                data-testid="browser-pane-menu-console"
+              >
+                <span class="flex-1">Show console</span>
+              </DropdownMenu.CheckboxItem>
               <DropdownMenu.CheckboxItem
                 checked={ctx.agentAllowed()}
                 onChange={(v) => void ctx.setAgentAllowed(v)}

@@ -203,11 +203,7 @@ async function runGrantedPathBash(file: string, markdown: string) {
 
 async function sourceEditor(page: Page) {
   const source = page.getByLabel("Document Markdown source")
-  const editSource = page.getByRole("button", { name: "Edit source" })
-  await expect(source.or(editSource)).toBeVisible({ timeout: 30_000 })
-  if (await source.isVisible()) return source
-  await editSource.click()
-  await expect(source).toBeVisible()
+  await expect(source).toBeVisible({ timeout: 30_000 })
   return source
 }
 
@@ -371,7 +367,15 @@ test.describe.serial("live Documents core backend @live", () => {
     createdDocument = (await (await createdResponse).json()) as DocumentSummary
 
     const exact = "Heading\n=======\n\nreal managed bytes survive restart\n"
-    const source = await saveSource(page, exact)
+    const current = await requestJson<{ version: string }>(`/documents/${createdDocument.id}/content`)
+    await requestJson(`/documents/${createdDocument.id}/content`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": current.version },
+      body: JSON.stringify({ markdown: exact }),
+    })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    const source = await sourceEditor(page)
+    await expect(source).toHaveValue(exact)
     expect(createdDocument?.managed_relative_path).toBeTruthy()
     const content = await requestJson<{ markdown: string }>(
       `/documents/${encodeURIComponent(createdDocument!.id)}/content`,

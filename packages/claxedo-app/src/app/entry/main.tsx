@@ -73,7 +73,7 @@ const platform: Platform = {
       .then(() => {
         const notification = new Notification(title, {
           body: description ?? "",
-          icon: "https://opencode.ai/favicon-96x96-v3.png",
+          icon: "/favicon-96x96-v3.png",
         })
         notification.onclick = () => {
           window.focus()

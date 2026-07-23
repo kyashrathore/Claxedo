@@ -137,7 +137,9 @@ export function WorkspaceFilesNavigator(props: {
   })
 
   // Reveal the active file (opened from a link / focus): expand its ancestor
-  // directories and scroll its row into view once rendered.
+  // directories and scroll its row into view. Expanding a directory kicks off
+  // an async list, and the tree renders level-by-level as each load lands, so
+  // observe the tree until the target row is materialized.
   let treeScrollRef: HTMLDivElement | undefined
   createEffect(() => {
     const path = props.activePath
@@ -149,12 +151,19 @@ export function WorkspaceFilesNavigator(props: {
       dir = dir ? `${dir}/${segment}` : segment
       file.tree.expand(dir)
     }
-    const stopReveal = afterVisibleWork(() => {
-      treeScrollRef
-        ?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"], [aria-selected="true"]`)
-        ?.scrollIntoView({ block: "nearest" })
-    }, 120)
-    onCleanup(stopReveal)
+    const reveal = () => {
+      const row = treeScrollRef?.querySelector(`[data-file-tree-path="${CSS.escape(path)}"]`)
+      if (!row) return false
+      row.scrollIntoView({ block: "nearest" })
+      return true
+    }
+    if (reveal()) return
+    if (!treeScrollRef || typeof MutationObserver === "undefined") return
+    const observer = new MutationObserver(() => {
+      if (reveal()) observer.disconnect()
+    })
+    observer.observe(treeScrollRef, { childList: true, subtree: true })
+    onCleanup(() => observer.disconnect())
   })
 
   onCleanup(() => {

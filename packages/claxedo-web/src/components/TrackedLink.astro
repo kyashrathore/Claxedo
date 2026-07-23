@@ -1,0 +1,14 @@
+---
+import type { ConversionEventName } from "../scripts/analytics"
+
+interface Props {
+  href: string
+  event: ConversionEventName
+  placement: string
+  class?: string
+  platform?: string
+  version?: string
+}
+const { href, event, placement, class: className, platform, version } = Astro.props
+---
+<a href={href} class={className} data-analytics-event={event} data-analytics-placement={placement} data-analytics-platform={platform} data-analytics-version={version}><slot /></a>

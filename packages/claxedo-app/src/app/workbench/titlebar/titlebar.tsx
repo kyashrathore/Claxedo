@@ -33,19 +33,16 @@ import { SDKProvider } from "@/app/providers/sdk/sdk"
 import { directorySessionCacheQuery } from "@/features/session/data/sync/directory-session-cache"
 import { displayName, getProjectAvatarSource, projectForSession } from "./project"
 
-type TauriDesktopWindow = {
-  startDragging?: () => Promise<void>
-  toggleMaximize?: () => Promise<void>
-}
-
+// Legacy Tauri runtime handle, still read by the theme-sync effect below and the
+// Electron-vs-Tauri Windows-caption branch. Under Electron `__TAURI__` is absent
+// so both resolve to `undefined`; window dragging is CSS-only (see the
+// `data-window-drag-region` attribute + base.css). Removing this vestigial path
+// is tracked as a separate theme/window cleanup.
 type TauriThemeWindow = {
   setTheme?: (theme?: "light" | "dark" | null) => Promise<void>
 }
 
 type TauriApi = {
-  window?: {
-    getCurrentWindow?: () => TauriDesktopWindow
-  }
   webviewWindow?: {
     getCurrentWebviewWindow?: () => TauriThemeWindow
   }
@@ -53,8 +50,8 @@ type TauriApi = {
 
 // as-any: Tauri injects __TAURI__ at runtime; browser Window does not declare it.
 const tauriApi = () => (window as unknown as { __TAURI__?: TauriApi }).__TAURI__
-const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
 const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
+
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 44
 const minTitlebarZoom = 0.25
@@ -156,11 +153,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     },
   ])
 
-  const getWin = () => {
-    if (platform.platform !== "desktop") return
-    return currentDesktopWindow()
-  }
-
   createEffect(() => {
     if (platform.platform !== "desktop") return
 
@@ -172,39 +164,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
     void win.setTheme(value).catch(() => undefined)
   })
-
-  const interactive = (target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false
-
-    const selector =
-      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
-
-    return !!target.closest(selector)
-  }
-
-  const drag = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (e.buttons !== 1) return
-    if (interactive(e.target)) return
-
-    const win = getWin()
-    if (!win?.startDragging) return
-
-    e.preventDefault()
-    void win.startDragging().catch(() => undefined)
-  }
-
-  const maximize = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (interactive(e.target)) return
-    if (e.target instanceof Element && e.target.closest("[data-tauri-decorum-tb]")) return
-
-    const win = getWin()
-    if (!win?.toggleMaximize) return
-
-    e.preventDefault()
-    void win.toggleMaximize().catch(() => undefined)
-  }
 
   return (
     <header
@@ -222,9 +181,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           : undefined,
         "align-self": electronWindows() ? "flex-start" : undefined,
       }}
-      data-tauri-drag-region
-      onMouseDown={drag}
-      onDblClick={maximize}
+      data-window-drag-region
     >
       <Switch>
         <Match when={USE_V2_TITLEBAR}>
@@ -649,8 +606,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 "flex items-center min-w-0 justify-end": true,
                 "pr-2": !windows(),
               }}
-              data-tauri-drag-region
-              onMouseDown={drag}
+              data-window-drag-region
             >
               <div
                 ref={(el) => {

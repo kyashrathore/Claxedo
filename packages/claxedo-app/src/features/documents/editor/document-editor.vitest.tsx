@@ -73,7 +73,7 @@ describe("DocumentEditor", () => {
     const client = api()
     render(() => <DocumentEditor document={document("# Plan\n")} api={client} storage={storage()} />)
     expect(client.save).not.toHaveBeenCalled()
-    expect(screen.getByRole("button", { name: "Edit source" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Edit source" })).not.toBeInTheDocument()
     expect(screen.queryByRole("toolbar", { name: "Document formatting" })).not.toBeInTheDocument()
   })
 
@@ -119,14 +119,6 @@ describe("DocumentEditor", () => {
     expect(screen.queryByText(/still source mode/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Try rich mode" }))
     await waitFor(() => expect(screen.getByLabelText("Rich Markdown editor")).toBeInTheDocument())
-  })
-
-  test("rich to source is an explicit transition over the same Markdown draft", async () => {
-    render(() => <DocumentEditor document={document("# Heading\n")} api={api()} storage={storage()} />)
-    fireEvent.click(screen.getByRole("button", { name: "Edit source" }))
-    expect(screen.getByText("Source mode")).toBeInTheDocument()
-    expect(screen.getByText(/selected for direct Markdown editing/)).toBeInTheDocument()
-    expect(screen.getByRole("textbox", { name: "Document Markdown source" })).toHaveValue("# Heading\n")
   })
 
   test("conflict preserves compare, reload, save-copy, and confirmed overwrite actions", async () => {
@@ -238,33 +230,6 @@ describe("DocumentEditor", () => {
     // Autosave is silent while it is working; only failures earn a control.
     expect(screen.getByRole("status")).toHaveTextContent("Ready")
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument()
-  })
-
-  test("accepted selection transforms flow through the editor update into the normal save queue", async () => {
-    const client = api()
-    const transformSelection = vi.fn(async () => "Improved paragraph")
-    render(() => (
-      <DocumentEditor
-        document={document("Paragraph\n")}
-        api={client}
-        storage={storage()}
-        transformSelection={transformSelection}
-      />
-    ))
-    const editor = screen.getByRole("textbox", { name: "Document rich editor" })
-    selectEditorContents(editor)
-
-    fireEvent.click(await screen.findByRole("button", { name: "improve" }))
-
-    await waitFor(() => expect(transformSelection).toHaveBeenCalledWith("improve", "Paragraph"))
-    await waitFor(() => expect(editor).toHaveTextContent("Improved paragraph"))
-    fireEvent.focusOut(screen.getByLabelText("Rich Markdown editor"))
-    await waitFor(() =>
-      expect(client.save).toHaveBeenCalledWith(
-        "doc-1",
-        expect.objectContaining({ markdown: "Improved paragraph\n" }),
-      ),
-    )
   })
 
   test("Tiptap Markdown formatting serializes through the normal save queue and keeps the rich editor instance", async () => {

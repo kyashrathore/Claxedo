@@ -9,9 +9,9 @@ import {
   untrack,
 } from "solid-js"
 import { Portal } from "solid-js/web"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -20,7 +20,7 @@ import {
   REVIEW_POPOVER_MODES,
   type ReviewMode,
 } from "@/features/review/review-intent"
-import { reviewToolbarSlot } from "@/ui/controls/portal-slot"
+import { reviewControlsSlot, reviewToolbarSlot } from "@/ui/controls/portal-slot"
 
 export type { VcsRefs } from "@/platform/runtime/workspace-diff-client"
 import type { VcsRefs } from "@/platform/runtime/workspace-diff-client"
@@ -198,6 +198,71 @@ export function ReviewToolbar(props: ReviewToolbarProps) {
   )
 }
 
+// Single diff-view toggle glyph (inline so it can reflect state without a new
+// sprite entry). Two plain bars in currentColor to match the monochrome icon
+// set: two stacked rows for unified, two side-by-side columns for split. Sized
+// to fill the 16px box so it reads at the same weight as the neighbouring icons.
+function DiffViewToggleIcon(props: { split: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <Show
+        when={props.split}
+        fallback={
+          <>
+            <rect x="1.75" y="4" width="12.5" height="2.4" rx="0.85" />
+            <rect x="1.75" y="9.6" width="12.5" height="2.4" rx="0.85" />
+          </>
+        }
+      >
+        <rect x="4" y="1.75" width="2.4" height="12.5" rx="0.85" />
+        <rect x="9.6" y="1.75" width="2.4" height="12.5" rx="0.85" />
+      </Show>
+    </svg>
+  )
+}
+
+// The view controls live at the far right of the review header, immediately left
+// of the Files/Changes/Processes navigator. They portal into reviewControlsSlot
+// (rendered by the L2 strip beside the navigator) so their position is fixed
+// there regardless of the toolbar body's flex width; falls back to inline.
+function ReviewToolbarControls(props: {
+  allExpanded: boolean
+  onToggleAllDiffs: () => void
+  diffStyle: "unified" | "split"
+  onSetDiffStyle: (style: "unified" | "split") => void
+}) {
+  const language = useLanguage()
+  const expandLabel = () =>
+    props.allExpanded ? language.t("ui.sessionReview.collapseAll") : language.t("ui.sessionReview.expandAll")
+  const viewLabel = () =>
+    props.diffStyle === "split" ? language.t("ui.sessionReview.diffStyle.unified") : language.t("ui.sessionReview.diffStyle.split")
+  return (
+    <div class="flex shrink-0 items-center gap-0.5">
+      <Tooltip value={expandLabel()} placement="bottom" gutter={4}>
+        <button
+          type="button"
+          class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors"
+          aria-label={expandLabel()}
+          onClick={props.onToggleAllDiffs}
+        >
+          <Icon name={props.allExpanded ? "collapse" : "expand"} size="small" />
+        </button>
+      </Tooltip>
+      <Tooltip value={viewLabel()} placement="bottom" gutter={4}>
+        <button
+          type="button"
+          class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors"
+          aria-label={viewLabel()}
+          aria-pressed={props.diffStyle === "split"}
+          onClick={() => props.onSetDiffStyle(props.diffStyle === "split" ? "unified" : "split")}
+        >
+          <DiffViewToggleIcon split={props.diffStyle === "split"} />
+        </button>
+      </Tooltip>
+    </div>
+  )
+}
+
 function ReviewToolbarBody(props: ReviewToolbarProps) {
   const language = useLanguage()
   const [modeSelectorOpen, setModeSelectorOpen] = createSignal(false)
@@ -320,48 +385,39 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
         <Show when={props.loading}>
           <Spinner class="h-3 w-3 shrink-0 text-text-weak" />
         </Show>
+        <Show when={props.hasReview}>
+          <DiffChanges
+            changes={props.totalChanges}
+            class="tabular-nums [&]:!gap-2 [&_[data-slot=diff-changes-additions]]:![font-family:var(--font-family-sans)] [&_[data-slot=diff-changes-deletions]]:![font-family:var(--font-family-sans)] [&_[data-slot=diff-changes-additions]]:!font-normal [&_[data-slot=diff-changes-deletions]]:!font-normal [&_[data-slot=diff-changes-additions]]:![color:color-mix(in_srgb,var(--text-diff-add-base)_82%,var(--text-weaker))] [&_[data-slot=diff-changes-deletions]]:![color:color-mix(in_srgb,var(--text-diff-delete-base)_76%,var(--text-weaker))]"
+          />
+        </Show>
       </div>
       <span class="flex-1 min-w-0" />
       <Show when={props.hasReview}>
-        <div class="flex shrink-0 items-center gap-3 pl-1">
-          <DiffChanges
-            changes={props.totalChanges}
-            class="tabular-nums [&]:!gap-2 [&_[data-slot=diff-changes-additions]]:font-medium [&_[data-slot=diff-changes-deletions]]:font-medium"
-          />
-          <DropdownMenu>
-            <DropdownMenu.Trigger
-              class="flex h-8 w-8 items-center justify-center rounded text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors cursor-pointer border-none bg-transparent"
-              aria-label="Review options"
-            >
-              <Icon name="sliders" size="small" />
-            </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content class="z-[200]">
-              <DropdownMenu.Item onSelect={props.onToggleAllDiffs}>
-                <Icon name="chevron-grabber-vertical" size="small" />
-                {props.allExpanded
-                  ? language.t("ui.sessionReview.collapseAll")
-                  : language.t("ui.sessionReview.expandAll")}
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item onSelect={() => props.onSetDiffStyle("unified")}>
-                <Icon name="code-lines" size="small" />
-                {language.t("ui.sessionReview.diffStyle.unified")}
-                <Show when={props.diffStyle === "unified"}>
-                  <Icon name="check" size="small" class="ml-auto" />
-                </Show>
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => props.onSetDiffStyle("split")}>
-                <Icon name="layout-right" size="small" />
-                {language.t("ui.sessionReview.diffStyle.split")}
-                <Show when={props.diffStyle === "split"}>
-                  <Icon name="check" size="small" class="ml-auto" />
-                </Show>
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu>
-        </div>
+        <Show
+          when={reviewControlsSlot()}
+          fallback={
+            <div class="pl-1">
+              <ReviewToolbarControls
+                allExpanded={props.allExpanded}
+                onToggleAllDiffs={props.onToggleAllDiffs}
+                diffStyle={props.diffStyle}
+                onSetDiffStyle={props.onSetDiffStyle}
+              />
+            </div>
+          }
+        >
+          {(host) => (
+            <Portal mount={host()}>
+              <ReviewToolbarControls
+                allExpanded={props.allExpanded}
+                onToggleAllDiffs={props.onToggleAllDiffs}
+                diffStyle={props.diffStyle}
+                onSetDiffStyle={props.onSetDiffStyle}
+              />
+            </Portal>
+          )}
+        </Show>
       </Show>
     </div>
   )

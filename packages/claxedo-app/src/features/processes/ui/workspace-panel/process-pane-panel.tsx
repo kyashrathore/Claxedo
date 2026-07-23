@@ -10,10 +10,12 @@
 
 import { Show, createMemo } from "solid-js"
 import type { JSX } from "solid-js"
+import { Portal } from "solid-js/web"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { Process } from "@/features/processes/data/process"
+import { processToolbarSlot } from "@/ui/controls/portal-slot"
 import { PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS } from "./process-status-display"
 
 type ProcessStatus = Process.Status
@@ -29,6 +31,7 @@ export type ProcessPanePanelProps = {
   onResolveRouteConflict?: (strategy: "kill-existing" | "pick-new") => void
   /** Open the edit dialog for this process config */
   onEdit?: () => void
+  portalHeader?: boolean
   renderTerminal?: (terminal: ProcessTerminal) => JSX.Element
 }
 
@@ -111,6 +114,81 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
     if (!live()) return undefined
     return next
   })
+  const renderHeader = (portaled: boolean) => (
+    <div
+      data-testid="process-pane-header"
+      class="shrink-0 flex items-center gap-2 select-none"
+      classList={{
+        "h-full min-w-0 flex-1": portaled,
+        "h-8 px-2 border-b border-border-weaker-base/50 bg-background-stronger/80 backdrop-blur": !portaled,
+      }}
+    >
+      <Show when={props.config.color}>
+        <span
+          class="size-2 rounded-full shrink-0"
+          style={{ "background-color": props.config.color }}
+        />
+      </Show>
+      <StatusDot status={status()} />
+      <span class="text-[12px] font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
+        {props.config.name}
+        <Show when={primaryUrl() && isActive()}>
+          <a
+            href={primaryUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-[11px] text-text-interactive-base hover:underline font-normal truncate"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {primaryUrl()}
+          </a>
+          <Show when={showLocalSecondary()}>
+            <span
+              class="text-[10px] text-text-weak font-normal tabular-nums truncate"
+              title="Local port (raw)"
+            >
+              {localUrl()}
+            </span>
+          </Show>
+        </Show>
+      </span>
+
+      <div class="flex items-center gap-0.5 shrink-0">
+        <Show when={canStop() && status() !== "stopping"}>
+          <Tooltip value="Stop">
+            <IconButton
+              icon="stop"
+              variant="ghost"
+              onClick={props.onStop}
+              aria-label="Stop process"
+              data-process-action="stop"
+            />
+          </Tooltip>
+        </Show>
+        <Show when={!canStart() && status() !== "stopping"}>
+          <Tooltip value="Restart">
+            <IconButton
+              icon="enter"
+              variant="ghost"
+              onClick={props.onRestart}
+              aria-label="Restart process"
+              data-process-action="restart"
+            />
+          </Tooltip>
+        </Show>
+        <Show when={props.onEdit}>
+          <Tooltip value="Edit process config">
+            <IconButton
+              icon="edit-small-2"
+              variant="ghost"
+              onClick={() => props.onEdit?.()}
+              aria-label="Edit process"
+            />
+          </Tooltip>
+        </Show>
+      </div>
+    </div>
+  )
 
   return (
     <div
@@ -120,86 +198,12 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
       data-process-name={props.config.name}
       data-testid="process-pane-panel"
     >
-      {/* Title bar */}
-      <div class="shrink-0 h-8 flex items-center gap-2 px-2 border-b border-border-weaker-base/50 bg-background-stronger/80 backdrop-blur select-none">
-        {/* Color indicator + name */}
-        <Show when={props.config.color}>
-          <span
-            class="size-2 rounded-full shrink-0"
-            style={{ "background-color": props.config.color }}
-          />
-        </Show>
-        <StatusDot status={status()} />
-        <span class="text-[12px] font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
-          {props.config.name}
-          <Show when={primaryUrl() && isActive()}>
-            <a
-              href={primaryUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-[11px] text-text-interactive-base hover:underline font-normal truncate"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {primaryUrl()}
-            </a>
-            <Show when={showLocalSecondary()}>
-              <span
-                class="text-[10px] text-text-weak font-normal tabular-nums truncate"
-                title="Local port (raw)"
-              >
-                {localUrl()}
-              </span>
-            </Show>
-          </Show>
-        </span>
-
-        {/* Controls — mutually exclusive Start vs Stop/Restart, nothing during stopping */}
-        <div class="flex items-center gap-0.5 shrink-0">
-          <Show when={canStart()}>
-            <Tooltip value="Start">
-              <IconButton
-                icon="arrow-right"
-                variant="ghost"
-                onClick={props.onStart}
-                aria-label="Start process"
-                data-process-action="start"
-              />
-            </Tooltip>
-          </Show>
-          <Show when={canStop() && status() !== "stopping"}>
-            <Tooltip value="Stop">
-              <IconButton
-                icon="stop"
-                variant="ghost"
-                onClick={props.onStop}
-                aria-label="Stop process"
-                data-process-action="stop"
-              />
-            </Tooltip>
-          </Show>
-          <Show when={!canStart() && status() !== "stopping"}>
-            <Tooltip value="Restart">
-              <IconButton
-                icon="enter"
-                variant="ghost"
-                onClick={props.onRestart}
-                aria-label="Restart process"
-                data-process-action="restart"
-              />
-            </Tooltip>
-          </Show>
-          <Show when={props.onEdit}>
-            <Tooltip value="Edit process config">
-              <IconButton
-                icon="edit-small-2"
-                variant="ghost"
-                onClick={() => props.onEdit?.()}
-                aria-label="Edit process"
-              />
-            </Tooltip>
-          </Show>
-        </div>
-      </div>
+      <Show
+        when={props.portalHeader && processToolbarSlot()}
+        fallback={renderHeader(false)}
+      >
+        {(host) => <Portal mount={host()}>{renderHeader(true)}</Portal>}
+      </Show>
 
       {/* Terminal area */}
       <div class="flex-1 min-h-0 relative">

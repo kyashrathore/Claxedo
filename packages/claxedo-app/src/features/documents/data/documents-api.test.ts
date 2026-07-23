@@ -177,9 +177,17 @@ describe("documentsApi", () => {
     await expect(documentsApi.open("missing")).rejects.toMatchObject({ code: "document_not_found", status: 404 })
   })
 
-  test("archived summary stops before content and surfaces a typed recovery state", async () => {
+  test("archived summary surfaces a typed recovery state and discards the concurrent content read", async () => {
     responses.push(Response.json({ id: "doc-1", display_name: "Archived", project_id: "p1", archived_at: "now" }))
     await expect(documentsApi.open("doc-1")).rejects.toMatchObject({ code: "document_archived", status: 410 })
-    expect(calls).toHaveLength(1)
+    // `open()` deliberately fetches summary and content concurrently so a normal
+    // open costs one trip through the fetch throttle instead of two. The archived
+    // guard runs after both settle, so the content read is issued and discarded
+    // rather than skipped. The contract is the typed error, not the call count.
+    expect(calls).toHaveLength(2)
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://test.local/documents/doc-1",
+      "http://test.local/documents/doc-1/content",
+    ])
   })
 })

@@ -40,6 +40,18 @@
 }
 
 /*
+ * Flat, flush changed-files list in the review pane. The shared accordion rounds
+ * the first/last rows into a card; here we want a plain edge-to-edge list (the
+ * surrounding padding is dropped via the review-tab `classes` too). Scoped to
+ * .claxedo-workspace-review so every other accordion keeps its rounded card.
+ */
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:first-child [data-slot="accordion-header"] [data-slot="accordion-trigger"],
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child:not([data-expanded]) [data-slot="accordion-header"] [data-slot="accordion-trigger"],
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child[data-expanded] [data-slot="accordion-content"] {
+  border-radius: 0;
+}
+
+/*
  * Restore wider centered max-width for session composer and timeline.
  * Upstream narrowed from 800px/1000px to 500px/700px (commit 66d0beba6)
  * which is too narrow for Claxedo split panels.

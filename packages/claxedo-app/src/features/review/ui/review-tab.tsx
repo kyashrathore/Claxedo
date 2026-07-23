@@ -42,7 +42,7 @@ import {
   cachedReviewVcsTargets,
   updateCachedReviewVcsDiff,
 } from "./review-vcs-cache"
-import { INITIAL_REVIEW_OPEN_DIFF_LIMIT, REVIEW_OPEN_DIFF_BATCH, expandReviewOpenDiffsForScroll, initialReviewOpenDiffs } from "./review-open-diffs"
+import { initialReviewOpenDiffs } from "./review-open-diffs"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 
@@ -446,10 +446,6 @@ export function ReviewTab(props: ReviewTabProps) {
 
   const diffs = createMemo((): VcsFileDiff[] => store.remoteDiffs)
   const hasReview = createMemo(() => diffs().length > 0)
-  const visibleDiffs = createMemo(() => {
-    const loaded = new Set(store.loadedDiffs)
-    return diffs().filter((diff) => loaded.has(diff.file))
-  })
   const reviewCount = createMemo(() => diffs().length)
   const totalChanges = createMemo(() => {
     const diffList = diffs()
@@ -473,33 +469,6 @@ export function ReviewTab(props: ReviewTabProps) {
   )
   const diffFiles = createMemo(() => diffs().map((diff) => diff.file))
   const diffFileKey = createMemo(() => diffFiles().join("\0"))
-  let reviewScroll: HTMLDivElement | undefined
-  let viewportFillFrame: number | undefined
-
-  const fillReviewViewport = () => {
-    viewportFillFrame = undefined
-    const target = reviewScroll
-    if (!target) return
-    if (store.loadedDiffs.length >= diffFiles().length) return
-    if (store.loadedDiffs.length >= INITIAL_REVIEW_OPEN_DIFF_LIMIT + REVIEW_OPEN_DIFF_BATCH) return
-    if (target.scrollHeight > target.clientHeight + 24) return
-
-    const next = expandReviewOpenDiffsForScroll({
-      files: diffFiles(),
-      open: store.loadedDiffs,
-      scrollTop: target.scrollTop,
-      clientHeight: target.clientHeight,
-      scrollHeight: target.scrollHeight,
-    })
-    if (next === store.loadedDiffs || next.length === store.loadedDiffs.length) return
-    setStore("loadedDiffs", next)
-    scheduleReviewViewportFill()
-  }
-
-  const scheduleReviewViewportFill = () => {
-    if (viewportFillFrame !== undefined) return
-    viewportFillFrame = requestAnimationFrame(fillReviewViewport)
-  }
 
   createEffect(on(diffFileKey, () => {
     const files = diffFiles()
@@ -510,7 +479,6 @@ export function ReviewTab(props: ReviewTabProps) {
       setStore("loadedDiffs", loaded)
       setStore("openDiffs", focused ? [focused] : [])
     })
-    scheduleReviewViewportFill()
   }))
 
   const readFile = async (path: string): Promise<FileContent | undefined> => {
@@ -564,54 +532,12 @@ export function ReviewTab(props: ReviewTabProps) {
     node.scrollIntoView({ behavior: "auto", block: "start" })
   }
 
-  let scrollExpansionTimer: number | undefined
-  const expandDiffsNearScrollEnd = (event: Event) => {
-    const target = event.currentTarget
-    if (!(target instanceof HTMLElement)) return
-    scheduleDiffExpansion(target)
-  }
-
-  const expandDiffsOnWheel = (event: WheelEvent) => {
-    if (event.deltaY <= 0) return
-    const target = event.currentTarget
-    if (!(target instanceof HTMLElement)) return
-    if (target.scrollHeight > target.clientHeight + 24) return
-    scheduleDiffExpansion(target)
-  }
-
-  const scheduleDiffExpansion = (target: HTMLElement) => {
-    const next = expandReviewOpenDiffsForScroll({
-      files: diffFiles(),
-      open: store.loadedDiffs,
-      scrollTop: target.scrollTop,
-      clientHeight: target.clientHeight,
-      scrollHeight: target.scrollHeight,
-    })
-    if (next === store.loadedDiffs || next.length === store.loadedDiffs.length) return
-    if (scrollExpansionTimer !== undefined) window.clearTimeout(scrollExpansionTimer)
-    scrollExpansionTimer = window.setTimeout(() => {
-      scrollExpansionTimer = undefined
-      setStore("loadedDiffs", next)
-      scheduleReviewViewportFill()
-    }, 160)
-  }
-
-  onCleanup(() => {
-    if (scrollExpansionTimer === undefined) return
-    window.clearTimeout(scrollExpansionTimer)
-  })
-  onCleanup(() => {
-    if (viewportFillFrame === undefined) return
-    cancelAnimationFrame(viewportFillFrame)
-  })
-
   createEffect(on(
     () => [props.focusedDiffVersion, props.focusedDiffPath] as const,
     ([, path]) => {
       if (!path) return
       batch(() => {
         setStore("focusedFile", path)
-        if (!store.loadedDiffs.includes(path)) setStore("loadedDiffs", [...store.loadedDiffs, path])
         if (!store.openDiffs.includes(path)) setStore("openDiffs", [...store.openDiffs, path])
       })
       requestAnimationFrame(() => scrollToFile(path))
@@ -688,7 +614,7 @@ export function ReviewTab(props: ReviewTabProps) {
           >
             <div class="contents" data-review-diff-style={store.diffStyle}>
               <ClaxedoSessionReview
-                diffs={visibleDiffs()}
+                diffs={diffs()}
                 diffStyle={store.diffStyle}
                 onDiffStyleChange={(style) => setStore("diffStyle", style)}
                 comments={comments.all()}
@@ -697,12 +623,6 @@ export function ReviewTab(props: ReviewTabProps) {
                 open={store.openDiffs}
                 onOpenChange={(open) => setStore("openDiffs", open)}
                 onDiffContentRequired={loadRequiredVcsDiffContent}
-                scrollRef={(el) => {
-                  reviewScroll = el
-                  scheduleReviewViewportFill()
-                }}
-                onScroll={expandDiffsNearScrollEnd}
-                onWheel={expandDiffsOnWheel}
                 readFile={readFile}
                 onLineComment={handleLineComment}
                 onLineCommentUpdate={handleLineCommentUpdate}
@@ -712,9 +632,9 @@ export function ReviewTab(props: ReviewTabProps) {
                 focusedFile={store.focusedFile}
                 title=""
                 classes={{
-                  root: "claxedo-workspace-review pb-6 pr-3",
+                  root: "claxedo-workspace-review pb-6",
                   header: "px-3 !hidden",
-                  container: "pl-3",
+                  container: "",
                 }}
               />
             </div>

@@ -1,5 +1,3 @@
-import type * as SDK from "@/app/providers/sdk/sdk"
-import type * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import type * as SessionSync from "@/features/session/providers/session-sync"
 import type * as State from "@/app/workbench/state"
 import type * as MarkdownTab from "@/app/workbench/lib/open-markdown-page-tab"
@@ -24,8 +22,6 @@ export type DocumentsAppPorts = {
    * and `createDocumentIndexController` warns once so that cannot rot silently.
    */
   useClaxedoEventsOptional: typeof Events.useClaxedoEventsOptional
-  useSDK: typeof SDK.useSDK
-  useGlobalSDK: typeof GlobalSDK.useGlobalSDK
   useSessionSyncOptional: typeof SessionSync.useSessionSyncOptional
   useClaxedoState: typeof State.useClaxedoState
   markdownPathFromHref: typeof MarkdownTab.markdownPathFromHref
@@ -60,8 +56,6 @@ export function claxedoEventsPort() {
   return ports?.useClaxedoEventsOptional
 }
 
-export const useSDK = bind("useSDK")
-export const useGlobalSDK = bind("useGlobalSDK")
 export const useSessionSyncOptional = bind("useSessionSyncOptional")
 export const useClaxedoState = bind("useClaxedoState")
 export const markdownPathFromHref = bind("markdownPathFromHref")

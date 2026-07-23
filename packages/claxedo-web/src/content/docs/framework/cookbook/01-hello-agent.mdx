@@ -1,0 +1,86 @@
+---
+title: "01 — Hello, agent"
+description: "Create a runtime, open a session, send one message, and print a real coding-agent reply — the essential path is about 15 lines."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+
+
+The whole essential path — runtime, session, turn, reply — fits in ~15 lines.
+Everything else in the file is harness detection and printing.
+
+## Run
+
+```bash
+bun run recipe:01-hello-agent
+```
+
+<Note>
+Needs one coding-agent CLI that is installed **and** authenticated (`claude`,
+`codex`, or `cursor-agent`, native or ACP). The recipe probes each CLI's login
+state and SKIPs with the fix printed if none is ready. The agent works in a
+fresh temp directory — never in your checkout.
+</Note>
+
+## The essential path
+
+```ts
+const runtime = createAgentRuntime({
+  store: createMemoryRuntimeStore(),
+  harnesses: [harnessFactory(pick)],
+})
+
+const session = await runtime.sessions.create({
+  directory: dir,
+  harness: { id: pick.id, access: pick.access },
+  model: { providerID: pick.id, modelID: "default" }, // "default" = the harness's own default model
+  title: "hello agent",
+})
+
+const events = runtime.events.subscribe({ sessionId: session.id })
+await runtime.turns.start({
+  sessionId: session.id,
+  agent: "", // let the harness use its default agent/mode
+  text: "Reply with exactly: HELLO FROM CLAXEDO",
+})
+const turn = await waitForTurn(runtime, events, dir, 120_000)
+const reply = await settledReply(runtime, session.id)
+```
+
+Full source: [`src/recipes/01-hello-agent.ts`](https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/01-hello-agent.ts)
+
+## Expected output
+
+```text
+=== 01-hello-agent ===
+what: runtime -> session -> one message -> reply, against a real coding agent
+wow:  the whole essential path fits in ~15 lines
+
+using harness: codex (native) — codex CLI logged in
+
+--- 01-hello-agent ---
+{
+  "harness": "codex (native)",
+  "turn": "completed",
+  "reply": "HELLO FROM CLAXEDO"
+}
+--- end ---
+```
+
+The harness line depends on which CLI is authenticated on your machine.
+
+## Lift this into your app
+
+Keep the four facade calls (`sessions.create`, `events.subscribe`,
+`turns.start`, then read the transcript). Replace the temp-dir seeding with
+your real project directory, and the harness detection with the harness your
+product actually ships. Two non-obvious details worth keeping: pass
+`modelID: "default"` so each harness picks its own default model (the facade's
+built-in default is claude-shaped and other harnesses reject it), and poll
+briefly after the terminal event before reading the transcript — the store
+flush can lag it by a beat.
+
+<Card title="02 — Harness swap" icon="repeat" href="/framework/cookbook/02-harness-swap">
+  The same code, every vendor: swapping agents is swapping one string.
+</Card>

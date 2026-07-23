@@ -74,7 +74,7 @@ boundaries:
   synthetic `Origin: claxedo-agent-tools://local`, which the bridge checks as
   a CSRF defense — a request missing either is rejected. If
   `CLAXEDO_DESKTOP_URL`/`CLAXEDO_DESKTOP_TOKEN` are absent (no desktop app, or
-  `CLAXEDO_ENABLE_BROWSER_TAB` not set), `desktopRequest` short-circuits to a
+  the browser capability was explicitly disabled), `desktopRequest` short-circuits to a
   legible `DESKTOP_UNAVAILABLE_MESSAGE` rather than attempting a request. All
   five `browser_*` tools registered by `registerBrowserTools`
   (`src/browser-tools.ts`) go through `desktopRequest`.

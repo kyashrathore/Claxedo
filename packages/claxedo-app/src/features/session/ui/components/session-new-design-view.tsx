@@ -138,7 +138,7 @@ export function NewSessionDesignView(props: {
           "top-[34%]": !runtimeMode(),
         }}
       >
-        <div class="w-full max-w-[720px]">
+        <div data-component="session-new-design-content" class="w-full max-w-[720px]">
           <Show when={!runtimeMode()}>
             <div class="mb-5 flex justify-center">
               <ClaxedoLogo class="w-12 opacity-14" />
@@ -147,15 +147,15 @@ export function NewSessionDesignView(props: {
           <div>
             {props.main ?? props.children}
             <Show when={!runtimeMode()}>
-              {/* Workspace-start scope row. Desktop: one h-8 line. Mobile: the
-                  segmented toggles go icon-only and the row wraps so the
-                  worktree picker gets a full-width second line instead of
-                  clipping off-screen. `data-claxedo-compact-touch` (container
-                  opt-out, app-shell.css) keeps the 40px touch floor from
-                  inflating the now-labelled h-6 segment buttons. */}
+              {/* The content wrapper is a named inline-size container. When the
+                  session pane is squeezed, the segmented controls become
+                  icon-only while both selectors truncate on the same line.
+                  `data-claxedo-compact-touch` keeps the dense controls below
+                  the global 40px touch floor. */}
               <div
+                data-component="session-new-workspace-controls"
                 data-claxedo-compact-touch
-                class="mt-3 flex h-8 min-w-0 items-center gap-1.5 pl-2 max-md:h-auto max-md:flex-wrap max-md:gap-y-2 max-md:pl-0"
+                class="mt-3 flex h-8 min-w-0 items-center gap-1.5 pl-2"
               >
                 <Select
                   size="normal"
@@ -164,7 +164,8 @@ export function NewSessionDesignView(props: {
                   current={projectRoot()}
                   label={projectLabel}
                   onSelect={openProject}
-                  class="max-w-[220px] justify-start text-text-base max-md:max-w-[45vw]"
+                  triggerClass="claxedo-new-session-project-picker justify-start text-text-base"
+                  contentClass="claxedo-new-session-scope-menu"
                   valueClass="truncate text-13-regular text-text-weak"
                 />
                 <Show
@@ -172,18 +173,20 @@ export function NewSessionDesignView(props: {
                   fallback={
                     <div
                       data-self-hosted-pinned="true"
-                      class="flex h-7 min-w-0 items-center gap-2 rounded-md border border-border-weak-base bg-surface-base px-2.5 max-md:flex-1"
+                      data-slot="self-hosted-workspace"
+                      class="flex h-7 min-w-0 items-center gap-2 rounded-md border border-border-weak-base bg-surface-base px-2.5"
                     >
                       <span class="size-1.5 shrink-0 rounded-full bg-surface-success-strong" aria-hidden="true" />
                       <span class="truncate text-13-regular text-text-base">{pinnedWorkspaceName()}</span>
-                      <span class="shrink-0 text-12-medium text-text-weak max-md:hidden">· Self-hosted · Connected via relay</span>
-                      <span class="hidden shrink-0 text-12-medium text-text-weak max-md:inline">· Self-hosted</span>
+                      <span data-slot="self-hosted-detail" class="shrink-0 text-12-medium text-text-weak">· Self-hosted · Connected via relay</span>
+                      <span data-slot="self-hosted-compact-detail" class="shrink-0 text-12-medium text-text-weak">· Self-hosted</span>
                     </div>
                   }
                 >
                 <div
                   role="group"
                   aria-label="Workspace environment"
+                  data-slot="workspace-segmented-control"
                   class="flex h-7 shrink-0 items-center rounded-md border border-border-weak-base bg-surface-base p-0.5"
                 >
                   <For each={["local", "cloud"] satisfies NewSessionWorkspaceKind[]}>
@@ -193,6 +196,7 @@ export function NewSessionDesignView(props: {
                         aria-pressed={props.workspaceKind === value}
                         aria-label={value === "cloud" ? "Cloud workspace" : "Local workspace"}
                         title={value === "cloud" ? "Cloud workspace" : "Local workspace"}
+                        data-slot="workspace-segment-button"
                         class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium capitalize transition-colors"
                         classList={{
                           "bg-background-base text-text-base shadow-xs-border-base": props.workspaceKind === value,
@@ -200,12 +204,10 @@ export function NewSessionDesignView(props: {
                         }}
                         onClick={() => props.onWorkspaceKindChange(value)}
                       >
-                        <ClaxedoIcon
-                          name={value === "cloud" ? "cloud" : "laptop"}
-                          size="small"
-                          class="md:hidden"
-                        />
-                        <span class="max-md:hidden">{value}</span>
+                        <span data-slot="compact-icon">
+                          <ClaxedoIcon name={value === "cloud" ? "cloud" : "laptop"} size="small" />
+                        </span>
+                        <span data-slot="control-label">{value}</span>
                       </button>
                     )}
                   </For>
@@ -213,6 +215,7 @@ export function NewSessionDesignView(props: {
                 <div
                   role="group"
                   aria-label="Workspace source"
+                  data-slot="workspace-segmented-control"
                   class="flex h-7 shrink-0 items-center rounded-md border border-border-weak-base bg-surface-base p-0.5"
                 >
                   <button
@@ -220,6 +223,7 @@ export function NewSessionDesignView(props: {
                     aria-pressed={!creatingWorkspace()}
                     aria-label="Select existing workspace"
                     title="Select existing workspace"
+                    data-slot="workspace-segment-button"
                     class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium transition-colors"
                     classList={{
                       "bg-background-base text-text-base shadow-xs-border-base": !creatingWorkspace(),
@@ -232,14 +236,17 @@ export function NewSessionDesignView(props: {
                       if (next) props.onWorktreeChange(next)
                     }}
                   >
-                    <ClaxedoIcon name="worktree" size="small" class="md:hidden" />
-                    <span class="max-md:hidden">Select</span>
+                    <span data-slot="compact-icon">
+                      <ClaxedoIcon name="worktree" size="small" />
+                    </span>
+                    <span data-slot="control-label">Select</span>
                   </button>
                   <button
                     type="button"
                     aria-pressed={creatingWorkspace()}
                     aria-label="Create new workspace"
                     title="Create new workspace"
+                    data-slot="workspace-segment-button"
                     class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium transition-colors"
                     classList={{
                       "bg-background-base text-text-base shadow-xs-border-base": creatingWorkspace(),
@@ -247,18 +254,21 @@ export function NewSessionDesignView(props: {
                     }}
                     onClick={() => props.onWorktreeChange(CREATE_WORKTREE)}
                   >
-                    <ClaxedoIcon name="plus-small" size="small" class="md:hidden" />
-                    <span class="max-md:hidden">Create new</span>
+                    <span data-slot="compact-icon">
+                      <ClaxedoIcon name="plus-small" size="small" />
+                    </span>
+                    <span data-slot="control-label">Create new</span>
                   </button>
                 </div>
                 <div
                   data-new-workspace={creatingWorkspace() ? "true" : "false"}
-                  class="flex h-7 min-w-0 items-center overflow-hidden rounded-md border border-border-weak-base bg-surface-base max-md:w-full max-md:flex-1"
+                  data-slot="worktree-picker-shell"
+                  class="flex h-7 min-w-0 items-center overflow-hidden"
                 >
                   <Show
                     when={!creatingWorkspace()}
                     fallback={
-                      <div class="flex h-7 min-w-[170px] items-center gap-2 px-2.5 text-13-regular text-text-weak max-md:min-w-0 max-md:flex-1">
+                      <div data-slot="new-workspace-label" class="flex h-7 min-w-0 flex-1 items-center gap-2 px-2.5 text-13-regular text-text-weak">
                         <Icon name={props.workspaceKind === "cloud" ? "cloud-upload" : "branch"} size="small" class="shrink-0" />
                         <span class="truncate">
                           New {props.workspaceKind === "cloud" ? "cloud sandbox" : "local worktree"}
@@ -279,7 +289,8 @@ export function NewSessionDesignView(props: {
                         if (!worktreePickerOpen()) return
                         if (value) props.onWorktreeChange(value)
                       }}
-                      class="max-w-[260px] min-w-[150px] justify-start rounded-none border-0 bg-transparent text-text-base shadow-none disabled:opacity-50 max-md:w-full max-md:min-w-0 max-md:max-w-none"
+                      triggerClass="claxedo-new-session-worktree-picker justify-start text-text-base disabled:opacity-50"
+                      contentClass="claxedo-new-session-scope-menu"
                       valueClass="truncate text-13-regular text-text-weak"
                     />
                   </Show>

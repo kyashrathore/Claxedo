@@ -7,28 +7,6 @@ import type { RichMarkdown } from "@/features/documents/markdown/detector"
 import { documentRichEditorExtensions } from "./rich-extensions"
 import "./document-editor.css"
 
-type SelectionAction = "improve" | "fix" | "shorten"
-
-export type SelectionEditor = {
-  state: {
-    selection: { from: number; to: number }
-    doc: { textBetween(from: number, to: number, separator?: string): string }
-  }
-  chain(): {
-    focus(): {
-      insertContentAt(range: { from: number; to: number }, replacement: string): { run(): unknown }
-    }
-  }
-}
-
-type SelectionTransformTarget = {
-  editor: SelectionEditor
-  document: SelectionEditor["state"]["doc"]
-  from: number
-  to: number
-  selected: string
-}
-
 type TocMark = { order: number; pos: number; title: string; level: number }
 
 type ToolbarAction = {
@@ -71,7 +49,7 @@ const toolbarActions: ToolbarAction[] = [
   {
     label: "Inline code",
     icon: "<>",
-    style: "font-family:monospace;font-size:12px",
+    style: "font-family:var(--font-family-mono)",
     active: (editor) => editor.isActive("code"),
     run: (editor) => editor.chain().focus().toggleCode().run(),
   },
@@ -122,26 +100,6 @@ const blockActions: ToolbarAction[] = [
   },
 ]
 
-export function selectionTransformTarget(editor: SelectionEditor): SelectionTransformTarget | undefined {
-  const range = editor.state.selection
-  const selected = editor.state.doc.textBetween(range.from, range.to, "\n")
-  if (!selected) return
-  return { editor, document: editor.state.doc, from: range.from, to: range.to, selected }
-}
-
-export function applySelectionTransform(
-  editor: SelectionEditor | undefined,
-  target: SelectionTransformTarget,
-  replacement: string,
-) {
-  if (!editor || editor !== target.editor || editor.state.doc !== target.document) return false
-  const range = editor.state.selection
-  if (range.from !== target.from || range.to !== target.to) return false
-  if (editor.state.doc.textBetween(target.from, target.to, "\n") !== target.selected) return false
-  editor.chain().focus().insertContentAt({ from: target.from, to: target.to }, replacement).run()
-  return true
-}
-
 function mapPositionThroughReplacement(position: number, before: Editor["state"]["doc"], after: Editor["state"]["doc"]) {
   const start = before.content.findDiffStart(after.content)
   if (start === null || position <= start) return position
@@ -155,9 +113,7 @@ export function RichMode(props: {
   detection: RichMarkdown
   onInput: (markdown: string) => void
   onBlur: () => void
-  onEditSource: () => void
   onSerializationError: (error: Error) => void
-  onSelectionAction?: (action: SelectionAction, selected: string) => Promise<string>
 }) {
   let element!: HTMLDivElement
   let editor: Editor | undefined
@@ -350,20 +306,6 @@ export function RichMode(props: {
     editor = undefined
   })
 
-  const selectionAction = (action: SelectionAction) => {
-    if (!editor || !props.onSelectionAction) return
-    const target = selectionTransformTarget(editor)
-    if (!target) return
-    void props.onSelectionAction(action, target.selected).then((replacement) => {
-      const current = editor
-      if (!current || current.isDestroyed) return
-      if (applySelectionTransform(current, target, replacement)) return
-      props.onSerializationError(
-        new Error("The selection changed while the agent was working. Select the text again and retry."),
-      )
-    }, props.onSerializationError)
-  }
-
   const applyLink = () => {
     if (!editor) return
     const href = linkValue().trim()
@@ -412,11 +354,42 @@ export function RichMode(props: {
 
   return (
     <section aria-label="Rich Markdown editor">
-      <div class="notion-page-actions">
-        <button type="button" class="notion-page-action-btn" onClick={props.onEditSource}>
-          Edit source
-        </button>
-      </div>
+      <Show when={toc().length > 1}>
+        <div class="notion-toc-wrap">
+          <div class="notion-toc-menu">
+            <div class="notion-toc-menu-title">Table of contents</div>
+            <For each={toc().slice(0, 40)}>
+              {(mark) => (
+                <button
+                  type="button"
+                  class="notion-toc-menu-item"
+                  classList={{ "notion-toc-menu-item-active": activeToc() === mark.order }}
+                  style={{ "padding-left": `${10 + (mark.level - 1) * 12}px` }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => jumpToc(mark)}
+                >
+                  {mark.title}
+                </button>
+              )}
+            </For>
+          </div>
+          <div class="notion-toc-rail">
+            <For each={toc().slice(0, 40)}>
+              {(mark) => (
+                <button
+                  type="button"
+                  class="notion-toc-mark"
+                  classList={{ "notion-toc-mark-active": activeToc() === mark.order }}
+                  style={{ width: `${Math.max(14, 26 - (mark.level - 1) * 4)}px` }}
+                  title={mark.title}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => jumpToc(mark)}
+                />
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
       <Show when={empty()}>
         <div class="notion-body-placeholder">Press '/' for commands...</div>
       </Show>
@@ -432,20 +405,6 @@ export function RichMode(props: {
             style={{ left: `${position().x}px`, top: `${position().y}px` }}
             onMouseDown={(event) => event.preventDefault()}
           >
-            <Show when={props.onSelectionAction}>
-              <For each={["improve", "fix", "shorten"] as const}>
-                {(action) => (
-                  <button
-                    type="button"
-                    class="notion-toolbar-btn notion-toolbar-btn-ai capitalize"
-                    onClick={() => selectionAction(action)}
-                  >
-                    {action}
-                  </button>
-                )}
-              </For>
-              <div class="notion-toolbar-divider" />
-            </Show>
             <For each={toolbarActions}>
               {(action) => (
                 <button
@@ -586,42 +545,6 @@ export function RichMode(props: {
         )}
       </Show>
 
-      <Show when={toc().length > 1}>
-        <div class="notion-toc-wrap">
-          <div class="notion-toc-menu">
-            <div class="notion-toc-menu-title">Table of contents</div>
-            <For each={toc().slice(0, 40)}>
-              {(mark) => (
-                <button
-                  type="button"
-                  class="notion-toc-menu-item"
-                  classList={{ "notion-toc-menu-item-active": activeToc() === mark.order }}
-                  style={{ "padding-left": `${10 + (mark.level - 1) * 12}px` }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => jumpToc(mark)}
-                >
-                  {mark.title}
-                </button>
-              )}
-            </For>
-          </div>
-          <div class="notion-toc-rail">
-            <For each={toc().slice(0, 40)}>
-              {(mark) => (
-                <button
-                  type="button"
-                  class="notion-toc-mark"
-                  classList={{ "notion-toc-mark-active": activeToc() === mark.order }}
-                  style={{ width: `${Math.max(14, 26 - (mark.level - 1) * 4)}px` }}
-                  title={mark.title}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => jumpToc(mark)}
-                />
-              )}
-            </For>
-          </div>
-        </div>
-      </Show>
     </section>
   )
 }

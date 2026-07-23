@@ -66,10 +66,10 @@
  *     process" button (empty state) or one row per config (status dot, name, per-row
  *     Start/Stop/Restart `IconButton`s gated by `canMutate()`).
  *   `[data-testid="process-pane-panel"][data-process-id][data-process-name]` — a single
- *     process's panel (`ProcessPanePanel.tsx`): title bar (color dot, status
- *     `StatusDot`, name, primary URL link when running, toolbar
+ *     process's terminal panel (`ProcessPanePanel.tsx`). Its contextual L2 header
+ *     contains the color dot, status `StatusDot`, name, primary URL, toolbar
  *     `[data-process-action="start"|"stop"|"restart"]` `IconButton`s + edit
- *     `IconButton`), and a terminal area that is either the live `.xterm` (via
+ *     `IconButton`; the terminal area is either the live `.xterm` (via
  *     `RoleGuardedTerminal`) or an idle/crashed placeholder with a
  *     `[data-process-action="start-fallback"]` button. A port-conflict overlay
  *     ("Port N is in use" + "Use another port" / "Kill process & reclaim") and a
@@ -680,13 +680,28 @@ async function openProcessesNavigator(page: Page): Promise<Locator> {
   // (`<Show when={processesNavigatorVisited()}>` in workspace-panel-body.tsx),
   // so unconditionally calling it here burned most of the 60s test budget
   // before ever reaching the toggle click. `.count()` resolves immediately.
-  if ((await overlay.count()) > 0 && (await overlay.getAttribute("data-open")) === "true") return overlay
-  const toggle = processesToggle(page)
-  await expect(toggle).toBeVisible({ timeout: 10_000 })
-  const pressed = await toggle.getAttribute("aria-label")
-  if (pressed === "Close Processes") return overlay
-  await toggle.click()
+  const alreadyOpen = (await overlay.count()) > 0 && (await overlay.getAttribute("data-open")) === "true"
+  if (!alreadyOpen) {
+    const toggle = processesToggle(page)
+    await expect(toggle).toBeVisible({ timeout: 10_000 })
+    if ((await toggle.getAttribute("aria-label")) !== "Close Processes") await toggle.click()
+  }
   await expect(overlay).toHaveAttribute("data-open", "true", { timeout: 10_000 })
+  const layout = await overlay.evaluate((element) => {
+    const content = Array.from(element.parentElement?.children ?? []).find(
+      (child): child is HTMLElement => child instanceof HTMLElement && getComputedStyle(child).flexGrow === "1",
+    )
+    const navigatorBounds = element.getBoundingClientRect()
+    const contentBounds = content?.getBoundingClientRect()
+    return {
+      position: getComputedStyle(element).position,
+      overlapsReview: contentBounds
+        ? navigatorBounds.left < contentBounds.right && navigatorBounds.right > contentBounds.left
+        : true,
+    }
+  })
+  expect(layout.position).not.toBe("absolute")
+  expect(layout.overlapsReview).toBe(false)
   return overlay
 }
 
@@ -695,35 +710,19 @@ async function closeProcessesNavigator(page: Page) {
   if (await toggle.isVisible().catch(() => false)) await toggle.click()
 }
 
-/**
- * `api.start()` / `api.restart()` (from-stopped path, `process-pane.tsx`
- * `if (proc?.ptyId && !isProcessOpen()) requestProcessOpen()`) re-opens the
- * Processes LIST navigator on a successful launch whenever `isProcessOpen()`
- * is false — but that check only looks at whether `panel.navigator ===
- * "processes"`, not whether the specific process's own dedicated panel is
- * already focused. So starting a process WHILE viewing its own panel (the
- * normal flow: select from the list, which correctly closes the list
- * navigator, then click Start) makes the list navigator slide back open on
- * top of the very panel the user is looking at, intercepting further clicks
- * on it (verified empirically against the running app: `data-open` flips
- * "false" instantly on row-select, then back to "true" the moment a
- * from-stopped start/restart succeeds). Call this after any such click before
- * interacting with the panel again.
- */
-async function dismissProcessesNavigatorIfOpen(page: Page) {
-  const overlay = page.locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]')
-  if ((await overlay.count()) === 0) return
-  if ((await overlay.getAttribute("data-open").catch(() => null)) !== "true") return
-  const toggle = page.locator('button[aria-label="Close Processes"]').first()
-  if ((await toggle.count()) > 0) await toggle.click()
-  await expect(overlay).toHaveAttribute("data-open", "false", { timeout: 5_000 }).catch(() => {})
+async function clickPanelAction(page: Page, panel: Locator, action: "start" | "stop" | "restart" | "start-fallback") {
+  await processAction(page, panel, action).click()
 }
 
-/** Clicks a process-panel action button and dismisses the list navigator if
- * the click caused it to re-open (see `dismissProcessesNavigatorIfOpen`). */
-async function clickPanelAction(page: Page, panel: Locator, action: "start" | "stop" | "restart" | "start-fallback") {
-  await panel.locator(`[data-process-action="${action}"]`).click()
-  await dismissProcessesNavigatorIfOpen(page)
+function processHeader(page: Page) {
+  return page.locator('[data-testid="process-pane-header"]:visible').first()
+}
+
+function processAction(page: Page, panel: Locator, action: "start" | "stop" | "restart" | "start-fallback") {
+  if (action === "start" || action === "start-fallback") {
+    return panel.locator('[data-process-action="start-fallback"]')
+  }
+  return processHeader(page).locator(`[data-process-action="${action}"]`)
 }
 
 function addProcessButton(page: Page, overlay: Locator) {
@@ -757,14 +756,8 @@ async function openProcessPanel(page: Page, overlay: Locator, name: string): Pro
   if (await panel.isVisible().catch(() => false)) return panel
   await overlay.getByRole("button", { name: new RegExp(escapeRegExp(name)) }).first().click()
   await expect(panel).toBeVisible({ timeout: 10_000 })
-  // Selecting a process row sets `focus: {kind:"process", ...}` AND
-  // `navigator: null` in the SAME retarget() call (workspace-panel-body.tsx's
-  // onProcessSelect) — verified empirically this closes the list navigator
-  // immediately (`data-open` flips to "false" the same tick). It can come
-  // back, though: see `dismissProcessesNavigatorIfOpen` / `clickPanelAction`
-  // for the actual re-open trigger (a from-stopped start/restart's
-  // `requestProcessOpen()` call), which callers must handle around their own
-  // start/restart clicks.
+  await expect(overlay).toHaveAttribute("data-open", "true")
+  await expect(overlay).toBeVisible()
   return panel
 }
 
@@ -839,7 +832,7 @@ test.describe("core processes @core", () => {
     expect(mock.configs().map((c) => c.name)).toEqual(["dev-server"])
   })
 
-  test("selecting a process opens its dedicated panel — behavior 4", async ({ page }) => {
+  test("selecting a process opens its dedicated panel and keeps the navigator open — behavior 4", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page, { directory: DIR })
     await seedOneProject(page, DIR)
@@ -851,6 +844,15 @@ test.describe("core processes @core", () => {
 
     await expect(panel).toHaveAttribute("data-process-name", "dev-server")
     await expect(panel).toBeVisible()
+    await expect(panel.locator('[data-testid="process-pane-header"]')).toHaveCount(0)
+    await expect(processHeader(page)).toContainText("dev-server")
+    await expect(processHeader(page).locator('[data-process-action="start"]')).toHaveCount(0)
+    const editBounds = await processHeader(page).getByRole("button", { name: "Edit process" }).boundingBox()
+    const filesBounds = await page
+      .locator('button[aria-label="Open Files"], button[aria-label="Close Files"]')
+      .first()
+      .boundingBox()
+    expect(editBounds?.x).toBeLessThan(filesBounds?.x ?? 0)
   })
 
   test("start flips status to running and shows the assigned URL; stop reverts it — behaviors 5,6", async ({ page }) => {
@@ -863,18 +865,18 @@ test.describe("core processes @core", () => {
     await addProcess(page, overlay, { name: "dev-server", command: "node server.js" })
     const panel = await openProcessPanel(page, overlay, "dev-server")
 
-    const startButton = panel.locator('[data-process-action="start"]')
+    const startButton = processAction(page, panel, "start")
     await expect(startButton).toBeVisible()
     await clickPanelAction(page, panel, "start")
     await expect.poll(() => mock.requests.start, { timeout: 10_000 }).toBe(1)
 
-    const stopButton = panel.locator('[data-process-action="stop"]')
+    const stopButton = processAction(page, panel, "stop")
     await expect(stopButton).toBeVisible({ timeout: 10_000 })
     await expect(panel.locator(".xterm")).toBeVisible({ timeout: 10_000 })
 
     await clickPanelAction(page, panel, "stop")
     await expect.poll(() => mock.requests.stop, { timeout: 10_000 }).toBe(1)
-    await expect(panel.locator('[data-process-action="start"]')).toBeVisible({ timeout: 10_000 })
+    await expect(processAction(page, panel, "start")).toBeVisible({ timeout: 10_000 })
     await expect(stopButton).toHaveCount(0)
   })
 
@@ -889,17 +891,15 @@ test.describe("core processes @core", () => {
     const panel = await openProcessPanel(page, overlay, "dev-server")
 
     // Stopped -> restart uses /start.
-    const stoppedRestartOrStart = panel.locator('[data-process-action="restart"], [data-process-action="start"]').first()
+    const stoppedRestartOrStart = processAction(page, panel, "start")
     await stoppedRestartOrStart.click()
-    await dismissProcessesNavigatorIfOpen(page)
     await expect.poll(() => mock.requests.start, { timeout: 10_000 }).toBe(1)
     expect(mock.requests.restart).toBe(0)
 
     // Now running -> restart uses the dedicated /restart endpoint.
-    const restartButton = panel.locator('[data-process-action="restart"]')
+    const restartButton = processAction(page, panel, "restart")
     await expect(restartButton).toBeVisible({ timeout: 10_000 })
     await restartButton.click()
-    await dismissProcessesNavigatorIfOpen(page)
     await expect.poll(() => mock.requests.restart, { timeout: 10_000 }).toBe(1)
     expect(mock.requests.start).toBe(1)
   })
@@ -955,7 +955,7 @@ test.describe("core processes @core", () => {
     mock.setStartBehavior(configId, { kind: "failed", error: "spawn nonexistent-binary ENOENT" })
 
     const panel = await openProcessPanel(page, overlay, "broken")
-    await panel.locator('[data-process-action="start"]').click()
+    await processAction(page, panel, "start").click()
 
     await expect(panel.getByText("Failed to start")).toBeVisible({ timeout: 10_000 })
     await expect(panel.getByText("spawn nonexistent-binary ENOENT")).toBeVisible()
@@ -973,8 +973,8 @@ test.describe("core processes @core", () => {
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "flaky", command: "node flaky.js" })
     const panel = await openProcessPanel(page, overlay, "flaky")
-    await panel.locator('[data-process-action="start"]').click()
-    await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await processAction(page, panel, "start").click()
+    await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
 
     const configId = mock.configs()[0]!.id
     mock.setProcessState(configId, { status: "crashed", ptyId: undefined, exitCode: 17, exitedAt: Date.now() })
@@ -1187,9 +1187,8 @@ test.describe("core processes @core", () => {
 
     await expect(panel.getByText("4100")).toBeVisible({ timeout: 10_000 })
     await panel.getByRole("button", { name: "Use another port" }).click()
-    await dismissProcessesNavigatorIfOpen(page)
     await expect.poll(() => mock.requests.startBodies.at(-1), { timeout: 10_000 }).toEqual({ portConflict: "pick-new" })
-    await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
     await expect(panel.getByText("Port")).toHaveCount(0)
 
     // Second process: resolve via "Kill process & reclaim" instead.
@@ -1198,9 +1197,8 @@ test.describe("core processes @core", () => {
     await clickPanelAction(page, panel, "start")
     await expect(panel.getByText(/Kill process/)).toBeVisible({ timeout: 10_000 })
     await panel.getByText(/Kill process/).click()
-    await dismissProcessesNavigatorIfOpen(page)
     await expect.poll(() => mock.requests.startBodies.at(-1), { timeout: 10_000 }).toEqual({ portConflict: "kill-existing" })
-    await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
   test("route conflict overlay resolves via pick-new — behavior 12", async ({ page }) => {
@@ -1219,9 +1217,8 @@ test.describe("core processes @core", () => {
 
     await expect(panel.getByText("web.local")).toBeVisible({ timeout: 10_000 })
     await panel.getByRole("button", { name: "Use another name" }).click()
-    await dismissProcessesNavigatorIfOpen(page)
     await expect.poll(() => mock.requests.startBodies.at(-1), { timeout: 10_000 }).toEqual({ routeConflict: "pick-new" })
-    await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
   test("edit dialog pre-fills existing values and Save updates the config — behavior 13", async ({ page }) => {
@@ -1234,7 +1231,7 @@ test.describe("core processes @core", () => {
     await addProcess(page, overlay, { name: "build-watcher", command: "npm run watch" })
     const panel = await openProcessPanel(page, overlay, "build-watcher")
 
-    await panel.getByRole("button", { name: "Edit process" }).click()
+    await processHeader(page).getByRole("button", { name: "Edit process" }).click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText("Edit Process")).toBeVisible()
@@ -1260,7 +1257,7 @@ test.describe("core processes @core", () => {
     await addProcess(page, overlay, { name: "to-delete", command: "echo delete-me" })
     const panel = await openProcessPanel(page, overlay, "to-delete")
 
-    await panel.getByRole("button", { name: "Edit process" }).click()
+    await processHeader(page).getByRole("button", { name: "Edit process" }).click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
 
@@ -1347,8 +1344,8 @@ test.describe("core processes @core", () => {
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "dev-server", command: "node server.js" })
     const panel = await openProcessPanel(page, overlay, "dev-server")
-    await panel.locator('[data-process-action="start"]').click()
-    await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await processAction(page, panel, "start").click()
+    await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
 
     // Give the terminal-tab auto-detection effect a beat to (not) fire.
     await page.waitForTimeout(500)
@@ -1364,8 +1361,8 @@ test.describe("core processes @core", () => {
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "dev-server", command: "node server.js" })
     const panel = await openProcessPanel(page, overlay, "dev-server")
-    await panel.locator('[data-process-action="start"]').click()
-    await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await processAction(page, panel, "start").click()
+    await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
 
     await page.reload()
     await page.waitForLoadState("domcontentloaded")
@@ -1374,7 +1371,7 @@ test.describe("core processes @core", () => {
     const overlay2 = await openProcessesNavigator(page)
     await expect(overlay2.getByRole("button", { name: /dev-server/ })).toBeVisible({ timeout: 10_000 })
     const panel2 = await openProcessPanel(page, overlay2, "dev-server")
-    await expect(panel2.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
+    await expect(processAction(page, panel2, "stop")).toBeVisible({ timeout: 10_000 })
   })
 
   // MOVED from core-terminal.spec.ts per docs/e2e-decisions.md #40 (2026-07-20) — the
@@ -1430,8 +1427,8 @@ test.describe("core processes @core", () => {
     await expect(addProcessButton(page, overlay)).toBeVisible()
     await addProcess(page, overlay, { name: "dev-server", command: "node server.js" })
     const panel = await openProcessPanel(page, overlay, "dev-server")
-    await expect(panel.locator('[data-process-action="start"]')).toBeVisible()
-    await expect(panel.getByRole("button", { name: "Edit process" })).toBeVisible()
+    await expect(processAction(page, panel, "start")).toBeVisible()
+    await expect(processHeader(page).getByRole("button", { name: "Edit process" })).toBeVisible()
   })
 
   // "viewer role hides Add/Start/Stop/Restart/Edit controls — behavior 18 (read-only

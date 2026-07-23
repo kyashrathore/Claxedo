@@ -28,6 +28,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/app/providers/sdk/sdk", () => ({
   useSDK: () => ({
+    directory: "/repo",
+    event: { listen: () => () => {} },
     client: {
       file: {
         read: h.fileRead,
@@ -164,9 +166,21 @@ describe("TabFile comments", () => {
     expect(h.commentsUpdate).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1", "new note")
     expect(h.promptUpdateComment).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1", {
       comment: "new note",
-      preview: undefined,
+      preview: "three",
     })
     expect(h.commentsRemove).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1")
     expect(h.promptRemoveComment).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1")
   })
+
+  test("binary images render an inline preview", async () => {
+    h.fileRead.mockResolvedValueOnce({
+      data: { type: "binary", content: "aW1hZ2U=", encoding: "base64", mimeType: "application/octet-stream" },
+    })
+    const view = render(() => <TabFile path="assets/photo.png" hideHeader />)
+
+    const image = await view.findByRole("img", { name: "photo.png" })
+    expect(image.getAttribute("src")).toBe("data:image/png;base64,aW1hZ2U=")
+    expect(view.queryByTestId("file-viewer")).toBeNull()
+  })
+
 })

@@ -141,44 +141,6 @@
     overflow-y: auto;
     padding-top: 2px;
   }
-  .notion-page-actions {
-    position: absolute;
-    top: 24px;
-    right: 60px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    z-index: 4;
-  }
-  .notion-page-action-btn {
-    border: 1px solid var(--border-weak-base);
-    border-radius: 0;
-    background: color-mix(in oklch, var(--surface-inset-base) 56%, transparent);
-    color: var(--text-base);
-    font-size: 12px;
-    line-height: 1;
-    padding: 8px 10px;
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-  }
-  .notion-page-action-btn:hover {
-    background: var(--surface-base-hover);
-    color: var(--text-strong);
-    border-color: var(--border-strong-base);
-  }
-  .notion-page-action-btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-  .notion-page-action-btn-primary {
-    border-color: color-mix(in oklch, var(--surface-brand-base) 44%, var(--border-weak-base) 56%);
-    background: color-mix(in oklch, var(--surface-brand-base) 20%, transparent);
-    color: var(--text-strong);
-  }
-  .notion-page-action-btn-primary:hover {
-    background: color-mix(in oklch, var(--surface-brand-base) 28%, transparent);
-    border-color: color-mix(in oklch, var(--surface-brand-base) 58%, var(--border-weak-base) 42%);
-  }
   .notion-bottom-space {
     height: 40vh;
     min-height: 160px;
@@ -512,27 +474,11 @@
     .notion-page-shell {
       padding: 0 42px;
     }
-    .notion-page-actions {
-      right: 42px;
-    }
   }
   /* --bp-editor-compact (900 = BP_EDITOR_COMPACT, bespoke: off the Tailwind scale). */
   @media (max-width: 900px) {
     .notion-page-shell {
       padding: 0 28px;
-    }
-    .notion-page-actions {
-      position: static;
-      display: flex;
-      width: 100%;
-      justify-content: flex-end;
-      flex-wrap: wrap;
-      margin-top: 16px;
-      margin-bottom: 8px;
-    }
-    .notion-page-action-btn {
-      font-size: 11px;
-      padding: 7px 8px;
     }
     .notion-arena-member {
       grid-template-columns: 1fr;
@@ -650,7 +596,13 @@
     padding: 2px 5px;
     font-family: var(--font-mono);
     font-size: 0.9em;
-    color: var(--syntax-string);
+    color: inherit;
+  }
+  .notion-editor .tiptap pre code {
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    font-size: inherit;
   }
   .notion-editor .tiptap hr {
     border: none;
@@ -658,8 +610,9 @@
     margin: 12px 0;
   }
   .notion-editor .tiptap a {
-    color: color-mix(in oklch, var(--text-strong) 70%, #3b82f6);
+    color: inherit;
     text-decoration: underline;
+    text-decoration-color: var(--border-strong-base);
     text-underline-offset: 2px;
   }
   .notion-editor .tiptap img {
@@ -755,13 +708,14 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    background: color-mix(in oklch, var(--background-stronger) 96%, transparent);
-    border: 1px solid color-mix(in oklch, var(--border-weak-base) 82%, var(--border-strong-base) 18%);
-    border-radius: 11px;
-    padding: 5px;
-    box-shadow:
-      0 10px 28px color-mix(in oklch, #000 18%, transparent),
-      inset 0 1px 0 color-mix(in oklch, #fff 40%, transparent);
+    padding: 4px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised-stronger-non-alpha);
+    color: var(--text-base);
+    box-shadow: var(--shadow-lg);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
     animation: notion-toolbar-in 0.12s ease-out;
   }
   @keyframes notion-toolbar-in {
@@ -775,37 +729,25 @@
     min-width: 30px;
     height: 30px;
     padding: 0 7px;
-    border: none;
-    border-radius: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-base);
-    font-size: 13px;
-    font-weight: 550;
+    font: inherit;
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.1s, color 0.1s;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
   }
   .notion-toolbar-btn:hover {
-    background: color-mix(in oklch, var(--surface-base-hover) 86%, transparent);
+    background: var(--surface-raised-base-hover);
+    border-color: var(--border-weak-base);
     color: var(--text-strong);
   }
   .notion-toolbar-btn-active {
-    background: color-mix(in oklch, var(--surface-base-hover) 96%, transparent) !important;
+    background: var(--surface-raised-base-hover) !important;
+    border-color: var(--border-weak-base) !important;
     color: var(--text-strong) !important;
-  }
-  .notion-toolbar-btn-ai {
-    min-width: 58px;
-    padding: 0 10px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-  }
-  .notion-toolbar-divider {
-    width: 1px;
-    height: 18px;
-    background: color-mix(in oklch, var(--border-weak-base) 70%, var(--border-strong-base) 30%);
-    margin: 0 3px;
-    flex-shrink: 0;
   }
   .notion-link-wrap {
     position: relative;
@@ -819,19 +761,21 @@
     bottom: calc(100% + 8px);
     transform: translateX(-50%);
     width: 280px;
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-weak-base);
-    background: color-mix(in oklch, var(--background-stronger) 96%, transparent);
-    backdrop-filter: blur(9px);
+    background: var(--surface-raised-stronger-non-alpha);
+    color: var(--text-base);
     box-shadow: var(--shadow-lg);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
     padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
   .notion-link-title {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--text-weaker);
@@ -840,10 +784,10 @@
   .notion-link-input {
     width: 100%;
     border: 1px solid var(--border-weak-base);
-    border-radius: 7px;
-    background: color-mix(in oklch, var(--surface-inset-base) 75%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--surface-inset-base);
     color: var(--text-strong);
-    font-size: 13px;
+    font: inherit;
     line-height: 1.4;
     padding: 8px 9px;
     outline: none;
@@ -860,17 +804,17 @@
   }
   .notion-link-btn {
     border: 1px solid var(--border-weak-base);
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-base);
-    font-size: 12px;
+    font: inherit;
     line-height: 1;
     padding: 7px 9px;
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   }
   .notion-link-btn:hover {
-    background: var(--surface-base-hover);
+    background: var(--surface-raised-base-hover);
     color: var(--text-strong);
   }
   .notion-link-btn-primary {
@@ -897,11 +841,13 @@
     width: 220px;
     max-height: min(58vh, 360px);
     overflow: auto;
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-weak-base);
-    background: color-mix(in oklch, var(--background-stronger) 95%, transparent);
-    backdrop-filter: blur(8px);
+    background: var(--surface-raised-stronger-non-alpha);
+    color: var(--text-base);
     box-shadow: var(--shadow-lg);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
     padding: 6px;
   }
   .notion-convert-menu-above {
@@ -911,8 +857,8 @@
     top: calc(100% + 8px);
   }
   .notion-convert-menu-title {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--text-weaker);
@@ -921,10 +867,10 @@
   .notion-convert-menu-item {
     width: 100%;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-base);
-    font-size: 13px;
+    font: inherit;
     text-align: left;
     padding: 8px 9px;
     cursor: pointer;
@@ -936,15 +882,15 @@
     gap: 8px;
   }
   .notion-convert-menu-item:hover {
-    background: var(--surface-base-hover);
+    background: var(--surface-raised-base-hover);
     color: var(--text-strong);
-    border-color: color-mix(in oklch, var(--border-weak-base) 75%, transparent);
+    border-color: var(--border-weak-base);
   }
   .notion-convert-menu-item-active {
-    background: var(--surface-base-hover);
+    background: var(--surface-raised-base-hover);
     color: var(--text-strong);
-    border-color: color-mix(in oklch, var(--border-weak-base) 75%, transparent);
-    font-weight: 550;
+    border-color: var(--border-weak-base);
+    font-weight: var(--font-weight-medium);
   }
   .notion-convert-menu-check {
     color: var(--text-info);
@@ -956,11 +902,13 @@
     width: 224px;
     max-height: min(54vh, 320px);
     overflow: auto;
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-weak-base);
-    background: color-mix(in oklch, var(--background-stronger) 95%, transparent);
-    backdrop-filter: blur(8px);
+    background: var(--surface-raised-stronger-non-alpha);
+    color: var(--text-base);
     box-shadow: var(--shadow-lg);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
     padding: 6px;
     z-index: 66;
   }
@@ -971,8 +919,8 @@
     top: calc(100% + 8px);
   }
   .notion-table-menu-title {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--text-weaker);
@@ -981,277 +929,31 @@
   .notion-table-menu-item {
     width: 100%;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-base);
-    font-size: 13px;
+    font: inherit;
     text-align: left;
     padding: 8px 9px;
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease;
   }
   .notion-table-menu-item:hover {
-    background: var(--surface-base-hover);
+    background: var(--surface-raised-base-hover);
     color: var(--text-strong);
-    border-color: color-mix(in oklch, var(--border-weak-base) 75%, transparent);
+    border-color: var(--border-weak-base);
   }
   .notion-table-menu-item-danger {
-    color: color-mix(in oklch, #ef4444 70%, var(--text-base));
+    color: var(--text-danger);
   }
   .notion-table-menu-item-danger:hover {
-    color: color-mix(in oklch, #ef4444 88%, var(--text-strong));
+    color: var(--text-danger);
   }
   .notion-table-menu-separator {
     height: 1px;
     background: color-mix(in oklch, var(--border-weak-base) 80%, transparent);
     margin: 6px 4px;
   }
-  .notion-ai-menu {
-    position: fixed;
-    z-index: 62;
-    width: min(680px, calc(100vw - 20px));
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-  .notion-ai-composer {
-    display: flex;
-    align-items: flex-end;
-    min-width: 0;
-    gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid var(--border-weak-base);
-    border-radius: 16px;
-    background: color-mix(in oklch, var(--background-stronger) 94%, transparent);
-    backdrop-filter: blur(10px);
-    box-shadow: var(--shadow-lg);
-  }
-  .notion-ai-prompt-input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    color: var(--text-strong);
-    font-size: 13px;
-    line-height: 1.35;
-    padding: 6px 2px;
-    outline: none;
-    resize: none;
-    overflow-y: auto;
-    min-height: 26px;
-    max-height: 136px;
-    field-sizing: content;
-  }
-  .notion-ai-prompt-input:focus {
-    border: none;
-    box-shadow: none;
-  }
-  .notion-ai-prompt-meta {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-    flex-shrink: 0;
-    padding-bottom: 1px;
-  }
-  .notion-ai-meta-chip {
-    border: 1px solid var(--border-weak-base);
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--surface-inset-base) 55%, transparent);
-    color: var(--text-weak);
-    font-size: 12px;
-    line-height: 1;
-    padding: 6px 10px;
-    cursor: default;
-  }
-  .notion-ai-meta-icon {
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--border-weak-base);
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--surface-inset-base) 55%, transparent);
-    color: var(--text-weak);
-    font-size: 13px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: default;
-  }
-  .notion-ai-prompt-send {
-    width: 28px;
-    height: 28px;
-    border: 1px solid color-mix(in oklch, var(--surface-brand-base) 50%, var(--border-weak-base) 50%);
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--surface-brand-base) 28%, transparent);
-    color: var(--text-strong);
-    font-size: 15px;
-    line-height: 1;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .notion-ai-prompt-send:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .notion-ai-prompt-send-busy {
-    opacity: 0.92 !important;
-  }
-  .notion-ai-send-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1em;
-    height: 1em;
-  }
-  .notion-ai-prompt-send-busy .notion-ai-send-icon {
-    opacity: 0.8;
-  }
-  .notion-ai-menu-title {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--text-weaker);
-    padding: 3px 12px 4px;
-  }
-  .notion-ai-menu-list {
-    width: calc(100% - 34px);
-    margin: -2px auto 0;
-    padding: 10px 10px 8px;
-    border: 1px solid var(--border-weak-base);
-    border-top: none;
-    border-radius: 0 0 14px 14px;
-    background: color-mix(in oklch, var(--background-stronger) 96%, transparent);
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    position: relative;
-    z-index: 1;
-  }
-  .notion-ai-menu-list::-webkit-scrollbar {
-    display: none;
-  }
-  /* Pulsating three-dot indicator for AI busy state */
-  .notion-ai-dots {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    vertical-align: middle;
-    padding: 0 2px;
-  }
-  .notion-ai-dots::before,
-  .notion-ai-dots > span,
-  .notion-ai-dots::after {
-    content: "";
-    display: block;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: notion-ai-dot-pulse 1.2s ease-in-out infinite;
-  }
-  .notion-ai-dots > span { animation-delay: 0.2s; }
-  .notion-ai-dots::after { animation-delay: 0.4s; }
-  @keyframes notion-ai-dot-pulse {
-    0%, 60%, 100% { opacity: 0.25; transform: scale(0.85); }
-    30% { opacity: 1; transform: scale(1); }
-  }
-  .notion-ai-preview {
-    position: fixed;
-    z-index: 63;
-    width: min(620px, calc(100vw - 20px));
-    max-height: min(56vh, 420px);
-    border-radius: 14px;
-    border: 1px solid var(--border-weak-base);
-    background: color-mix(in oklch, var(--background-stronger) 94%, transparent);
-    backdrop-filter: blur(10px);
-    box-shadow: var(--shadow-lg);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .notion-ai-preview-title {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--text-weaker);
-    padding: 8px 12px 7px;
-    border-bottom: 1px solid var(--border-weak-base);
-  }
-  .notion-ai-preview-content {
-    padding: 11px 12px;
-    font-size: 14px;
-    line-height: 1.5;
-    color: var(--text-strong);
-    white-space: pre-wrap;
-    overflow: auto;
-  }
-  .notion-ai-preview-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding: 8px 10px;
-    border-top: 1px solid var(--border-weak-base);
-  }
-  .notion-ai-preview-btn {
-    border: 1px solid var(--border-weak-base);
-    border-radius: 7px;
-    background: transparent;
-    color: var(--text-base);
-    font-size: 12px;
-    line-height: 1;
-    padding: 7px 9px;
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-  }
-  .notion-ai-preview-btn:hover {
-    background: var(--surface-base-hover);
-    color: var(--text-strong);
-    border-color: var(--border-strong-base);
-  }
-  .notion-ai-preview-btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-  .notion-ai-preview-btn-primary {
-    color: var(--text-info);
-    border-color: color-mix(in oklch, var(--text-info) 45%, var(--border-weak-base));
-    background: color-mix(in oklch, var(--text-info) 10%, transparent);
-  }
-  .notion-ai-menu-item {
-    width: max-content;
-    border: 1px solid var(--border-weak-base);
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--surface-inset-base) 52%, transparent);
-    color: var(--text-base);
-    font-size: 12.5px;
-    text-align: left;
-    padding: 7px 12px;
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
-    line-height: 1.2;
-    flex-shrink: 0;
-  }
-  .notion-ai-menu-item:hover {
-    background: var(--surface-base-hover);
-    color: var(--text-strong);
-    border-color: color-mix(in oklch, var(--border-strong-base) 65%, transparent);
-  }
-  .notion-ai-menu-item:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   /* ── Slash command menu ── */
   .slash-command-menu {
     background: var(--background-stronger);
@@ -1349,31 +1051,20 @@
     color: var(--text-weaker);
   }
 
-  /* ── Right-side TOC rail (scoped to pane, not viewport) ── */
+  /* ── Sticky left-side TOC rail (scoped to the document scroller) ── */
   .notion-toc-wrap {
-    position: absolute;
-    right: 18px;
-    top: 50%;
+    position: sticky;
+    top: 34%;
     transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    margin-left: -42px;
     z-index: 45;
   }
-  .notion-toc-wrap-side-left {
-    left: 8px;
-    right: auto;
-  }
-  .notion-toc-wrap-side-right {
-    left: auto;
-    right: calc(var(--page-side-dock-width, calc(50% - 12px)) + 16px);
-  }
-  .notion-toc-wrap-side-left .notion-toc-menu {
-    left: calc(100% + 1px);
-    right: auto;
-  }
-  .notion-toc-wrap-side-right .notion-toc-menu {
-    left: auto;
-    right: calc(100% + 1px);
-  }
   .notion-toc-rail {
+    position: absolute;
+    right: 0;
+    width: 28px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -1401,7 +1092,8 @@
   }
   .notion-toc-menu {
     position: absolute;
-    right: calc(100% + 1px);
+    left: 1px;
+    right: auto;
     top: 50%;
     transform: translateY(-50%) scale(0.99);
     width: 260px;
@@ -1572,24 +1264,17 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
       gap: 1px;
-      border-radius: 9px;
+      border-radius: var(--radius-md);
     }
     .notion-floating-toolbar::-webkit-scrollbar {
       display: none;
-    }
-    .notion-toolbar-divider {
-      margin: 0 1px;
     }
     .notion-toolbar-btn {
       min-width: 28px;
       height: 28px;
       padding: 0 6px;
-      font-size: 11.5px;
-      border-radius: 7px;
-    }
-    .notion-toolbar-btn-ai {
-      min-width: 56px;
-      padding: 0 8px;
+      font-size: var(--font-size-small);
+      border-radius: var(--radius-sm);
     }
     .notion-convert-menu {
       position: fixed;
@@ -1606,41 +1291,6 @@
       width: auto;
       bottom: calc(env(safe-area-inset-bottom) + 44px);
       transform: none;
-    }
-    .notion-ai-menu {
-      left: 8px !important;
-      right: 8px;
-      width: auto;
-      top: auto !important;
-      bottom: calc(env(safe-area-inset-bottom) + 44px);
-      transform: none;
-    }
-    .notion-ai-composer {
-      padding: 7px 8px;
-      border-radius: 14px;
-    }
-    .notion-ai-meta-chip {
-      display: none;
-    }
-    .notion-ai-menu-list {
-      width: calc(100% - 6px);
-      margin: -1px auto 0;
-      gap: 6px;
-      padding: 8px 8px 8px;
-      border-radius: 0 0 12px 12px;
-      max-height: none;
-    }
-    .notion-ai-menu-item {
-      padding: 7px 10px;
-      font-size: 12px;
-    }
-    .notion-ai-preview {
-      left: 8px !important;
-      right: 8px;
-      top: auto !important;
-      bottom: calc(env(safe-area-inset-bottom) + 44px);
-      width: auto;
-      max-height: min(54vh, 380px);
     }
     .slash-command-menu {
       min-width: 220px;

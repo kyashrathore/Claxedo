@@ -40,7 +40,7 @@ export function createMainWindow(globals: Globals) {
     width: state.width,
     height: state.height,
     show: true,
-    title: "Claxedo",
+    title: app.getName(),
     icon: iconPath(),
     ...(process.platform === "darwin"
       ? {

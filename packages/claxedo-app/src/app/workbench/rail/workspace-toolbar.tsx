@@ -54,11 +54,11 @@ function workspaceScopeCommands() {
 export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
   const canUseTerminal = () => props.canUseTerminal !== false && !props.global
   return (
-    <div class={`flex items-center gap-0 flex-shrink-0 max-md:gap-0.5 ${props.class ?? ""}`}>
+    <div class={`flex shrink-0 items-center gap-0.5 ${props.class ?? ""}`}>
       <Tooltip value="New Session">
         <button
           type="button"
-          class="flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+          class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
           onClick={() => props.onNewSession?.()}
           aria-label="New Session"
         >
@@ -70,11 +70,11 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         <Show when={canUseTerminal()}>
           <button
             type="button"
-            class="flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+            class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
             onClick={() => props.onNewTerminal?.(workspaceScopeCommands().claude, "Claude")}
             aria-label="New Claude Terminal"
           >
-            <span class="text-xs font-bold">C</span>
+            <Icon name="claude" size="small" />
           </button>
         </Show>
       </Tooltip>
@@ -83,17 +83,17 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         <Show when={canUseTerminal()}>
           <button
             type="button"
-            class="flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+            class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
             onClick={() => props.onNewTerminal?.(workspaceScopeCommands().codex, "Codex")}
             aria-label="New Codex Terminal"
           >
-            <span class="text-xs font-bold">X</span>
+            <Icon name="openai" size="small" />
           </button>
         </Show>
       </Tooltip>
 
       <DropdownMenu>
-        <DropdownMenu.Trigger data-component="workspace-more-menu" class="flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors cursor-pointer border-none bg-transparent shrink-0 rounded max-md:rounded-lg active:scale-[0.94]">
+        <DropdownMenu.Trigger data-component="workspace-more-menu" class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base">
           <Icon name="chevron-down" size="small" />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

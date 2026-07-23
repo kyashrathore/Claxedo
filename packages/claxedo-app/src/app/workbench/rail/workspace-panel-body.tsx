@@ -317,29 +317,34 @@ export function WorkspacePanelBody(props: {
                             data-navigator="processes"
                             data-open={processesNavigatorActive() ? "true" : "false"}
                             aria-hidden={processesNavigatorActive() ? undefined : "true"}
-                            class="claxedo-workspace-navigator-overlay absolute bottom-0 right-0 top-0 z-20 w-[min(280px,calc(100%-24px))] border-l border-border-weak-base bg-background-base will-change-transform motion-reduce:transition-none"
+                            class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden bg-background-base motion-reduce:transition-none"
                             classList={{
                               "pointer-events-none": !processesNavigatorActive(),
+                              "order-first border-r border-border-weak-base": navigatorSide() === "left",
+                              "order-last border-l border-border-weak-base": navigatorSide() === "right",
+                              "border-transparent": !processesNavigatorActive(),
                             }}
                             style={{
-                              transform: processesNavigatorActive() ? "translate3d(0, 0, 0)" : "translate3d(100%, 0, 0)",
+                              width: processesNavigatorActive() ? "min(280px, 45%)" : "0px",
                               transition: PANEL_NAVIGATOR_TRANSITION,
                               "content-visibility": processesNavigatorActive() ? "visible" : "hidden",
                             }}
                           >
-                            <ProcessPaneProvider>
-                              <ProcessesNavigator
-                                directory={dir}
-                                activeProcessId={focusProcessId()}
-                                onProcessSelect={(processId) =>
-                                  claxedoState.workspacePanel.retarget({
-                                    workspaceDir: dir,
-                                    targetPaneId: targetPaneId(),
-                                    navigator: null,
-                                    focus: { kind: "process", processId },
-                                  })}
-                              />
-                            </ProcessPaneProvider>
+                            <div class="h-full w-[min(280px,45cqw)] min-w-[220px]">
+                              <ProcessPaneProvider>
+                                <ProcessesNavigator
+                                  directory={dir}
+                                  activeProcessId={focusProcessId()}
+                                  onProcessSelect={(processId) =>
+                                    claxedoState.workspacePanel.retarget({
+                                      workspaceDir: dir,
+                                      targetPaneId: targetPaneId(),
+                                      navigator: "processes",
+                                      focus: { kind: "process", processId },
+                                    })}
+                                />
+                              </ProcessPaneProvider>
+                            </div>
                           </div>
                         </Show>
                       </div>

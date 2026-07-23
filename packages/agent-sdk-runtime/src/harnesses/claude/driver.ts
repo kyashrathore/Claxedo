@@ -27,6 +27,7 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
+import { requireClaudeExecutable } from "./executable"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
@@ -117,6 +118,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       prompt: extractTextFromParts(input.input.parts),
       options: {
         cwd: input.directory,
+        // Spawn the user's / sandbox image's installed Claude Code, never a
+        // bundled binary. Throws an actionable install error when absent.
+        pathToClaudeCodeExecutable: requireClaudeExecutable(),
         includePartialMessages: true,
         abortController: input.abort,
         canUseTool: requestPermission,
@@ -177,6 +181,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       })() as AsyncIterable<never>,
       options: {
         cwd: directory ?? process.cwd(),
+        pathToClaudeCodeExecutable: requireClaudeExecutable(),
         abortController: abort,
         env: claudeSpawnEnv({
           ...process.env,

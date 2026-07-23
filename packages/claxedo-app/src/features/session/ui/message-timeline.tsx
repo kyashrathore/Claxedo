@@ -111,7 +111,7 @@ import {
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
-import { timelineAnchorFileHref, timelineFileFocus, timelineFileTarget, resolveTimelinePath as resolveTimelineFilePath } from "./timeline-file-paths"
+import { timelineAnchorClickTarget, timelineFileFocus, timelineFileTarget, resolveTimelinePath as resolveTimelineFilePath } from "./timeline-file-paths"
 
 installTimelineMermaid()
 
@@ -425,21 +425,18 @@ export function MessageTimeline(props: {
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
 
-  // Path resolution shared with the terminal's file links (see
-  // timeline-file-paths.ts): normalizes/relativizes, parses `:line[:col]`,
-  // refuses `~`/traversal/out-of-workspace paths (which used to open blank tabs).
+  // Shared with the terminal's file links (timeline-file-paths.ts):
+  // normalizes/relativizes, parses `:line[:col]`, refuses `~`/traversal/
+  // out-of-workspace paths (which used to open blank tabs).
   const fileFocus = (raw: string) => timelineFileFocus(raw, sdk.directory)
 
-  // Open a file in the workspace side panel. This reuses the exact path the terminal's
-  // file-path links already take (terminal-content.tsx `onFileLinkOpen`) rather than
-  // hand-rolling tab/review-panel calls — and notably NOT `platform.openPath`, which is
-  // desktop-only (undefined on web, so clicks silently did nothing) and hands the file to
-  // the OS instead of the panel.
+  // Open a file in the workspace side panel (same path terminal file links take
+  // via terminal-content.tsx `onFileLinkOpen`), NOT `platform.openPath` (which
+  // is desktop-only and hands the file to the OS). No `navigator: "files"` — it
+  // would slide the tree drawer over the file tab this click just opened.
   const openFileInPanel = (raw: string) => {
     const target = fileFocus(raw)
     if (!target) return
-    // No `navigator: "files"` here: forcing the tree drawer open slid it OVER
-    // the file tab this click just opened.
     claxedoState.workspacePanel.open({
       workspaceDir: sdk.directory.replace(/\/$/, ""),
       targetPaneId: paneId,
@@ -447,30 +444,32 @@ export function MessageTimeline(props: {
     })
   }
 
-  // Open `@path` / path-kind inline-code chips in assistant markdown (T16). Delegated so
-  // it covers every rendered part without per-chip handlers.
+  // Path-kind inline-code chips in assistant markdown (T16). Anchors are handled
+  // in the capture phase below (not here) so preventDefault beats the native
+  // target="_blank" new-window, which in Electron otherwise fired alongside this
+  // bubble handler — opening the link in a browser AND in the panel.
   const handleTimelinePathClick = (event: MouseEvent) => {
     if (event.defaultPrevented) return
     const target = event.target instanceof Element ? event.target : null
-    // Don't hijack the click that ends a text selection.
     const selection = typeof window !== "undefined" ? window.getSelection() : null
-    if (selection && !selection.isCollapsed) return
-    const anchor = target?.closest("a[href]")
-    if (anchor) {
-      // Workspace-file hrefs open in the side panel; web links keep their
-      // browser behavior (see timelineAnchorFileHref).
-      const raw = timelineAnchorFileHref(anchor)
-      if (!raw || !fileFocus(raw)) return
-      event.preventDefault()
-      openFileInPanel(raw)
-      return
-    }
+    if (selection && !selection.isCollapsed) return // don't hijack a text-selection click
+    if (target?.closest("a[href]")) return // anchors → capture handler below
     const raw = target?.closest('[data-inline-code-kind="path"]')?.textContent?.trim()
-    if (!raw) return
-    // Only claim the click when the chip resolves to an openable workspace path.
-    if (!fileFocus(raw)) return
+    if (!raw || !fileFocus(raw)) return
     event.preventDefault()
     openFileInPanel(raw)
+  }
+  // Capture phase runs before the link's default action (see above).
+  const registerTimelineRoot = (el: HTMLDivElement) => {
+    const onCapture = (event: MouseEvent) => {
+      const raw = timelineAnchorClickTarget(event)
+      if (!raw || !fileFocus(raw)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      openFileInPanel(raw)
+    }
+    el.addEventListener("click", onCapture, { capture: true })
+    onCleanup(() => el.removeEventListener("click", onCapture, { capture: true }))
   }
 
   // File context menu (T11): right-click a file link/path → Open / Copy path / Reveal.
@@ -1656,6 +1655,7 @@ export function MessageTimeline(props: {
   return (
     <div
       class="relative w-full h-full min-w-0"
+      ref={registerTimelineRoot}
       data-session-timeline-root
       data-session-timeline-session-id={sessionID() ?? ""}
       data-session-timeline-user-count={String(props.userMessages.length)}

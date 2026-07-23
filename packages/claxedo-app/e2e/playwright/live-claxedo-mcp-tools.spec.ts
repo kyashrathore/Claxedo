@@ -259,7 +259,7 @@ const WIRING_PORT = Number(process.env.CLAXEDO_E2E_LIVE_MCP_WIRING_PORT ?? 3097)
 const WIRING_URL = `http://127.0.0.1:${WIRING_PORT}`
 
 const DESKTOP_UNAVAILABLE_MESSAGE =
-  "Browser tabs require the Claxedo desktop app with CLAXEDO_ENABLE_BROWSER_TAB=1. " +
+  "Browser tabs require the Claxedo desktop app. " +
   "Ask the user to open a browser tab in the desktop client, then retry."
 
 let wiringServer: ChildProcess | undefined

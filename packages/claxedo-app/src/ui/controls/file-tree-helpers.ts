@@ -85,6 +85,18 @@ export function leafName(path: string): string {
   return idx === -1 ? path : path.slice(idx + 1)
 }
 
+export function visibleCountForActivePath(input: {
+  paths: readonly string[]
+  active: string
+  batchSize: number
+  current: number
+}) {
+  if (!Number.isFinite(input.batchSize) || input.batchSize <= 0) return input.current
+  const index = input.paths.findIndex((path) => input.active === path || input.active.startsWith(`${path}/`))
+  if (index === -1) return input.current
+  return Math.max(input.current, Math.ceil((index + 1) / input.batchSize) * input.batchSize)
+}
+
 export type TreeKeyAction =
   | { readonly kind: "focus"; readonly index: number }
   | { readonly kind: "toggle" }

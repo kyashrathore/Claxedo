@@ -1,20 +1,36 @@
 ---
 import { contact, github } from "../config"
+import { routes } from "../content/routes"
 ---
 
 <footer class="footer">
   <div class="footer-grid">
-    <div class="footer-col"><a href="/app">App</a></div>
-    <div class="footer-col"><a href="/framework">Framework</a></div>
-    <div class="footer-col"><a href={github}>GitHub</a></div>
-    <div class="footer-col"><a href={contact}>Discord</a></div>
-    <div class="footer-col"><a href="/privacy">Privacy</a></div>
-    <div class="footer-col"><a href="/terms">Terms</a></div>
+    <div class="footer-brand">
+      <h2>Claxedo</h2>
+      <p>The open-source workspace around the coding agents you already use.</p>
+    </div>
+    <div class="footer-col">
+      <h3>Product</h3>
+      <a href={routes.download}>Download app</a>
+      <a href={routes.pricing}>Pricing</a>
+      <a href={routes.compare}>Compare</a>
+    </div>
+    <div class="footer-col">
+      <h3>Framework</h3>
+      <a href={routes.framework}>Overview</a>
+      <a href="/framework/guides/introduction">Guide</a>
+      <a href="/framework/api/overview">Reference</a>
+    </div>
+    <div class="footer-col">
+      <h3>Company</h3>
+      <a href={github}>GitHub</a>
+      <a href={contact}>Discord</a>
+      <a href={routes.privacy}>Privacy</a>
+      <a href={routes.terms}>Terms</a>
+    </div>
   </div>
   <div class="footer-bottom">
-    <p>
-      Claxedo is MIT-licensed and open source. Bring your own harness and model —
-      <a href={github}>view the source</a>.
-    </p>
+    <span>Built on the OpenCode engine.</span>
+    <span>© {new Date().getFullYear()} Claxedo</span>
   </div>
 </footer>
