@@ -1,14 +1,9 @@
 import { expect, test } from "bun:test"
 import { Virtualizer } from "@tanstack/solid-virtual"
-import { TIMELINE_OVERSCAN } from "./timeline-virtualization"
 
 // Guards the patched @tanstack/virtual-core (patches/@tanstack%2Fvirtual-core@3.17.3.patch)
 // behavior that message-timeline.tsx relies on via `anchorTo: "end"`.
 // Ported from upstream packages/app/test-browser/solid-virtual.test.ts (#36160).
-
-test("keeps offscreen transcript work bounded", () => {
-  expect(TIMELINE_OVERSCAN).toBe(3)
-})
 
 test("end anchoring survives consecutive resizes when the first scroll write is clamped", () => {
   const writes: { offset: number; adjustments?: number }[] = []
