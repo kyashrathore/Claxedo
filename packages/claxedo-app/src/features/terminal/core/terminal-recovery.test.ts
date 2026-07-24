@@ -12,6 +12,8 @@ describe("terminal recovery", () => {
     localStorage.clear()
     clearInitialCommandMarker("pty-1")
     clearInitialCommandMarker("pty-2")
+    releaseInitialCommandClaim("pty-1")
+    releaseInitialCommandClaim("pty-2")
   })
 
   test("initial command runs once when marker is absent", () => {

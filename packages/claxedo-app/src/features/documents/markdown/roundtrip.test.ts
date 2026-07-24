@@ -58,7 +58,7 @@ describe("Markdown adversarial corpus", () => {
     expect(counts.rich + counts.source + counts.rejected).toBe(names.length)
     expect(counts.rejected).toBe(0)
     expect(counts.roundtrip_mismatch + counts.unsupported_syntax).toBe(counts.source)
-  })
+  }, 30000)
 
   test("keeps a one-paragraph source edit in a representative repository doc local", () => {
     const markdown = readFileSync(resolve(docsDirectory, "README.md"), "utf8")

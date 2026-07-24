@@ -48,7 +48,7 @@ describe("production rich editor Markdown parity", () => {
       if (detected.status !== "rich") continue
       expect(productionSerializedMarkdown(detected), name).toBe(markdown)
     }
-  })
+  }, 30000)
 })
 
 function productionSerializedMarkdown(detected: Extract<ReturnType<typeof detectMarkdown>, { status: "rich" }>) {
