@@ -342,7 +342,13 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/provider/auth") return json(route, {})
     if (url.pathname === "/path") return json(route, { worktree: DIR })
     if (url.pathname === "/config") return json(route, { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } })
+    // The ConnectionGate polls the claxedo health endpoint; a 598 here reads as
+    // "server unreachable" and gates the whole app behind the error screen.
+    if (url.pathname === "/health" || url.pathname === "/global/health" || url.pathname === "/api/claxedo/health") {
+      return json(route, { healthy: true, ok: true, version: "1.0.0-test" })
+    }
     if (url.pathname === "/project" || url.pathname === "/experimental/project") return json(route, [projectRow()])
+    if (/^\/project\/[^/]+$/.test(url.pathname)) return json(route, projectRow())
     if (url.pathname === "/agent" || url.pathname === "/app/agents") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
     if (url.pathname === "/mcp") return json(route, {})
     if (url.pathname === "/lsp") return json(route, [])
@@ -401,8 +407,12 @@ async function installCloudRuntimeMock(
     ) {
       return json(route, { ok: true })
     }
-    if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
-      return json(route, { workspaces: workspaceRegistered ? [{ workspace_id: WORKSPACE_ID, project_id: PROJECT_ID, backing: "cloud-vm", access: "cloud", display_name: "core-cloud-provisioning" }] : [] })
+    if (url.pathname === "/api/workspace") {
+      const access = url.searchParams.get("access")
+      if (access === "cloud") {
+        return json(route, { workspaces: workspaceRegistered ? [{ workspace_id: WORKSPACE_ID, project_id: PROJECT_ID, backing: "cloud-vm", access: "cloud", display_name: "core-cloud-provisioning" }] : [] })
+      }
+      return json(route, { workspaces: [] })
     }
 
     // ---- Workspace create (submit-time first-ever sandbox) ----
@@ -462,15 +472,28 @@ async function installCloudRuntimeMock(
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events" || runtimePath === "/api/wr/runtime-events") {
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
-      }
-      if (runtimePath === "/global/event" || runtimePath === "/event") {
+      // Session-scoped event channels all carry the same turn traffic — the app
+      // subscribes to whichever one its transport resolves (`/api/wr/events` is
+      // the `/global/event` rewrite target; `/api/wr/runtime-events` is the
+      // runtime-native channel). Draining the bus on each keeps the heartbeat-
+      // only channel from starving the timeline of turn deltas.
+      if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events" || runtimePath === "/api/wr/runtime-events" || runtimePath === "/global/event" || runtimePath === "/event") {
         const batch = await sessionBus.drain(4000)
         const body = batch.length === 0 ? ": heartbeat\n\n" : batch.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("")
         return route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
       }
       if (runtimePath === "/session/status") return json(route, sessionCreated ? { [SESSION_ID]: { type: "idle" } } : {})
+      // Draft-submit worktree admission (`prepareWorkspaceSessionWorktree`): a
+      // cloud draft's first turn admits a session worktree before prompt_async.
+      // `path` becomes the session directory — keep it the workspace ref so every
+      // other handler in this lane stays keyed on WORKSPACE_ID.
+      if (runtimePath === "/api/wr/worktrees" && method === "POST") {
+        return json(route, { worktree: { path: WORKSPACE_ID, branch: "main", baseCommit: "e2e-base-commit" } })
+      }
+      if (runtimePath === "/api/wr/process" || runtimePath === "/api/claxedo/process") {
+        if (method === "GET") return json(route, { configs: [], processes: [] })
+        return json(route, { error: "read-only runtime token" }, 403)
+      }
       if (runtimePath === "/session" && method === "POST") {
         requests.createSessionCount += 1
         sessionCreated = true

@@ -993,7 +993,10 @@ test.describe("core processes @core", () => {
       probe.remove()
       return rgb
     })
-    const dot = panel.locator("span.relative.inline-flex.rounded-full").first()
+    // The status dot lives in the pane header, which `portalHeader` portals out
+    // of the panel element into the pane toolbar slot — locate it by the header
+    // testid so the selector holds in both portal and inline modes.
+    const dot = page.locator('[data-testid="process-pane-header"] span.relative.inline-flex.rounded-full').first()
     await expect(dot).not.toHaveCSS("background-color", runningColor, { timeout: 15_000 })
 
     const overlay2 = await openProcessesNavigator(page)

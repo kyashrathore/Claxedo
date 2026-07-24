@@ -250,34 +250,6 @@ async function composerCleanText(page: Page) {
   return raw.replace(/​/g, "").trim()
 }
 
-/**
- * The anchor element's position within the SCROLLABLE CONTENT (i.e.
- * `rect.top` relative to the scroller PLUS the scroller's own `scrollTop`),
- * not its viewport-relative `boundingBox()`. `preserveScroll` (src/pages/
- * session/history-window.ts) only promises to cancel out the height added
- * ABOVE the anchor by newly-revealed turns — it makes no promise about (and
- * should not try to cancel) scrollTop movement the user's OWN wheel gesture
- * causes in the same tick. A viewport-relative bounding box conflates both,
- * so a real, correctly-compensated reveal still shows a `boundingBox().y`
- * delta equal to whatever the last wheel tick itself scrolled (confirmed
- * empirically: ~400px, matching a single `mouse.wheel(0, -400)`) even
- * though the anchor's actual position within the scrollable content never
- * moved. This offset is scroll-position-independent, so it isolates exactly
- * what `preserveScroll` is responsible for.
- */
-async function anchorOffsetWithinScroller(scroller: Locator, anchor: Locator) {
-  const scrollerHandle = await scroller.elementHandle()
-  const anchorHandle = await anchor.elementHandle()
-  if (!scrollerHandle || !anchorHandle) return null
-  return scrollerHandle.evaluate(
-    (scrollerEl, anchorEl) =>
-      (anchorEl as HTMLElement).getBoundingClientRect().top -
-      (scrollerEl as HTMLElement).getBoundingClientRect().top +
-      (scrollerEl as HTMLElement).scrollTop,
-    anchorHandle,
-  )
-}
-
 test.describe("core turns, reload recovery, history & send-failure recovery (local) @core", () => {
   test("2nd/3rd sends survive reload with zero duplicate rows, the same session, and a bounded request pattern — behaviors 1,2,3", async ({
     page,
@@ -631,7 +603,27 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     // oracle's geometric hit-test correctly flags as a covering overlay when it happens.
     await page.setViewportSize({ width: 1280, height: 460 })
 
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
+    // Exactly one filler line per reply sizes the hydrate-time window (turnInit=4,
+    // history-window.ts) into the narrow band this test needs (measured locally:
+    // ~515px of windowed content vs the ~275px scroller; unpadded single-line
+    // replies measure ~260px):
+    //   - ABOVE the auto-reveal trigger: scheduleHistoryFill (session-screen.tsx)
+    //     reveals everything whenever scrollHeight <= clientHeight + 1, and with
+    //     unpadded replies the windowed content sits right at that line — whether
+    //     the check samples estimated (60px/row) or measured row heights decides
+    //     the outcome, so renderedBefore<turnCount flakily failed before the
+    //     scroll gesture ever happened. ~515px clears it under both timings.
+    //   - BELOW ~2 viewports: the timeline virtualizer (message-timeline.tsx)
+    //     only mounts rows near the viewport (overscan 3), so a window tall
+    //     enough that the wheel can't cross it in one tick leaves the
+    //     top-of-window turn unmounted and outside the viewport for the whole
+    //     test — no DOM anchor or in-viewport witness survives that.
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: HARNESS_MODELS,
+      replyText: (turn, promptText) => `ack ${turn}: ${promptText}\n${"history fill line\n".repeat(1)}`,
+    })
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
@@ -685,17 +677,50 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     expect(renderedBefore).toBeLessThan(turnCount)
     await expectNoDuplicateRows(page)
 
-    // Anchor: the turn currently at the top of the rendered window.
-    const anchorText = `core turns load older message ${turnCount - renderedBefore + 1}`
-    const anchor = page.locator(SELECTORS.userMessageContent).getByText(anchorText, { exact: true })
-    await expect(anchor).toBeVisible({ timeout: 10_000 })
+    // In-viewport witness: the turn just BELOW the old window's top — what the
+    // user is actually looking at after the wheel clamps to the top of the
+    // windowed content. (The window's literal top turn sits a few px above the
+    // compensated scroll position by construction, so it is not a robust
+    // in-viewport witness; the next turn down is.) Asserted only AFTER the
+    // reveal — the virtualizer unmounts off-viewport rows, so no DOM row is
+    // measurable across the whole gesture.
+    const witness = page
+      .locator(SELECTORS.userMessageContent)
+      .getByText(`core turns load older message ${turnCount - renderedBefore + 2}`, { exact: true })
     const scroller = page.locator('[data-scrollable]:has([data-slot="session-turn-message-content"])').first()
-    // Content-relative offset, not `boundingBox()` (viewport-relative) — see
-    // `anchorOffsetWithinScroller`'s doc comment for why: `preserveScroll` only
-    // promises to cancel out height added ABOVE the anchor, not the user's own
-    // wheel-driven scrollTop movement, and a viewport-relative box conflates both.
-    const offsetBefore = await anchorOffsetWithinScroller(scroller, anchor)
-    expect(offsetBefore).not.toBeNull()
+
+    // Instrument the scroller BEFORE the gesture: record every scroll event's
+    // (scrollTop, scrollHeight) plus the exact sample where the rendered-count
+    // attribute flips to `turnCount`. The `preserveScroll` contract is checked
+    // from these samples after settle — element anchors are unreliable here
+    // because the virtualizer unmounts off-viewport rows and estimates unmounted
+    // row heights at 60px (estimateSize, message-timeline.tsx), but scroll
+    // coordinates themselves are virtualization-immune. The MutationObserver's
+    // microtask timing captures the pre-compensation position: it flushes after
+    // the reveal's synchronous DOM update but before preserveScroll's rAF
+    // scrollTop write.
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-scrollable]:has([data-slot="session-turn-message-content"])')
+      const rootEl = document.querySelector('[data-testid="session-page-root"]')
+      if (!el || !rootEl) return
+      const w = window as typeof window & {
+        __e2eScrollSamples?: Array<{ kind: string; top: number; height: number; rendered: string | null }>
+      }
+      w.__e2eScrollSamples = []
+      const sample = (kind: string) =>
+        w.__e2eScrollSamples?.push({
+          kind,
+          top: (el as HTMLElement).scrollTop,
+          height: (el as HTMLElement).scrollHeight,
+          rendered: rootEl.getAttribute("data-session-rendered-user-count"),
+        })
+      el.addEventListener("scroll", () => sample("scroll"), { passive: true })
+      new MutationObserver(() => sample("reveal")).observe(rootEl, {
+        attributes: true,
+        attributeFilter: ["data-session-rendered-user-count"],
+      })
+      sample("init")
+    })
 
     // Real wheel-scroll gesture (not a programmatic scrollTop write, which the app's
     // gesture-tracking treats as non-user and snaps back to bottom — see
@@ -744,54 +769,64 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     )
 
     // Scroll anchor preserved. The TRUE `preserveScroll` contract
-    // (src/pages/session/history-window.ts:77-91): when the reveal prepends
-    // content, `scrollTop` is compensated by exactly the scroller's
-    // `scrollHeight` growth — i.e. by the height of what got prepended — so the
-    // user's viewport does not visually jump. Neither raw coordinate is invariant
-    // on its own, and both of this test's earlier formulations were therefore
-    // wrong oracles (confirmed empirically, deltas quoted from real runs):
-    //   - the anchor's viewport-relative `boundingBox().y` also moves with the
-    //     user's OWN pre-reveal wheel scrolling (~400px per tick), which is
-    //     legitimate and not the app's to cancel (measured drift 400-792px on a
-    //     WORKING app);
-    //   - the anchor's content-relative offset GROWS by the prepended height by
-    //     definition (measured +330px on a WORKING app) — that growth is the
-    //     compensation's INPUT, not an error.
-    // The discriminating assertion: after settle, `scrollTop` ≈ prependedHeight
-    // + (the trigger-zone scrollTop the wheel left behind, which is < the 200px
-    // `turnScrollThreshold` by construction — the reveal only fires below it).
-    //   - compensation silently no-ops → scrollTop stays < 200 while
-    //     prependedHeight ≈ 330 → fails the lower bound;
-    //   - snap to very top → scrollTop 0 → fails the lower bound;
-    //   - snap back to bottom (autoscroll resuming) → scrollTop ≈
-    //     prependedHeight + oldMaxScroll (≫ +200) → fails the upper bound.
-    // Measured BEFORE the oracle-proof nudge below so that intentional,
+    // (src/features/session/ui/history-window.ts:77-91): when the reveal prepends
+    // content, `scrollTop` is compensated by exactly the scroller's `scrollHeight`
+    // growth — i.e. by the height of what got prepended — so the user's viewport
+    // does not visually jump. The assertion compares the pre-gesture init sample
+    // with the settled post-reveal geometry (instrumented samples showed an
+    // autoscroll bottom-snap landing TRANSIENTLY mid-reveal before the
+    // compensating write wins, so no mid-gesture sample is a stable reference):
+    //   - the content must have GROWN by roughly the revealed turns (the reveal
+    //     really prepended);
+    //   - compensation silently no-ops or snaps to the very top → settled
+    //     scrollTop stays in the <200px trigger zone the wheel left behind →
+    //     fails the lower bound;
+    //   - autoscroll snaps back to bottom for good → settled scrollTop ≈
+    //     maxScroll → fails the upper bound.
+    // No pixel-exact equality on purpose: the virtualizer estimates unmounted
+    // prepended rows at 60px until they mount and measure, so the compensation's
+    // input (scrollHeight growth) is approximate and gets corrected as rows
+    // measure. Measured BEFORE the oracle-proof nudge below so that intentional,
     // temporary scroll doesn't skew this independent assertion.
-    const offsetAfter = await anchorOffsetWithinScroller(scroller, anchor)
-    expect(offsetAfter).not.toBeNull()
-    const prependedHeight = (offsetAfter ?? 0) - (offsetBefore ?? 0)
-    expect(prependedHeight, "revealing older turns must add content above the anchor").toBeGreaterThan(0)
-    const scrollTopAfter = await scroller.evaluate((el) => el.scrollTop)
+    const samples = await page.evaluate(() => {
+      const w = window as typeof window & {
+        __e2eScrollSamples?: Array<{ kind: string; top: number; height: number; rendered: string | null }>
+      }
+      return w.__e2eScrollSamples ?? []
+    })
+    const heightBefore = samples.find((s) => s.kind === "init")?.height ?? 0
+    const settled = await scroller.evaluate((el) => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }))
     expect(
-      scrollTopAfter,
-      "preserveScroll must compensate scrollTop by at least the prepended height (no-op/jump-to-top otherwise)",
-    ).toBeGreaterThanOrEqual(prependedHeight - 1)
+      settled.height - heightBefore,
+      `revealing older turns must grow the scrollable content. samples=${JSON.stringify(samples)} settled=${JSON.stringify(settled)}`,
+    ).toBeGreaterThan(100)
     expect(
-      scrollTopAfter,
-      "scrollTop after the reveal must stay within the trigger zone above the compensated position (a bottom snap-back would exceed it)",
-    ).toBeLessThan(prependedHeight + 250)
-    // And the anchor turn the user was looking at is still on screen.
-    await expect(anchor).toBeInViewport()
+      settled.top,
+      "preserveScroll must compensate scrollTop by the prepended height (a no-op or jump-to-top leaves it in the <200px trigger zone)",
+    ).toBeGreaterThan(100)
+    expect(
+      settled.top,
+      "scrollTop after the reveal must stay near the compensated position, well above maxScroll (a bottom snap-back lands at maxScroll)",
+    ).toBeLessThan(settled.height - settled.client - 100)
+    // And the turn the user was looking at is still on screen — mounted again
+    // now that the compensated position sits in the middle of the list.
+    await expect(witness).toBeInViewport()
 
-    // Scrolled all the way to the top, the now-revealed oldest turn can land directly
-    // underneath the timeline's `sticky top-0 z-30` session-title bar
-    // (`data-session-title`, src/pages/session/message-timeline.tsx) — an ordinary CSS
-    // stacking interaction (the sticky header legitimately sits above whatever scrolls
-    // under it), not a bug, but one the oracle's geometric hit-test correctly refuses to
-    // wave through. A small downward nudge (real wheel gesture, matching this spec's own
-    // convention) clears the header before the oracle proof.
+    // Bring the oldest turn into the virtualizer's mounted range with real wheel
+    // gestures to the very top: with TIMELINE_OVERSCAN=3 (timeline-virtualization.ts)
+    // rows only exist in the DOM near the viewport, and the oracle's
+    // scrollIntoViewIfNeeded cannot reach a row that was never mounted. At
+    // scrollTop 0 the first reply is fully in view with its center clear of the
+    // timeline's `sticky top-0 z-30` session-title bar (`data-session-title`,
+    // message-timeline.tsx), so no header-clearing nudge is needed. No further
+    // reveal can fire here: turnStart is already 0 and a real gesture keeps
+    // autoScroll's userScrolled latched, so nothing snaps back to the bottom.
     await scroller.hover()
-    await page.mouse.wheel(0, 120)
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const top = await scroller.evaluate((el) => el.scrollTop)
+      if (top <= 0) break
+      await page.mouse.wheel(0, -400)
+    }
 
     // The earliest turn (previously hidden entirely) is now genuinely rendered — full
     // oracle proof, not just a count.

@@ -313,6 +313,14 @@ function bootstrapBody() {
   }
 }
 
+function providerCatalog() {
+  return {
+    all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", providerID: "opencode" } } }],
+    connected: ["opencode"],
+    default: { opencode: "big-pickle" },
+  }
+}
+
 function mintBody(workspaceId: string, kind: "cloud" | "user-hosted", mint: MintResponse) {
   return {
     access: kind,
@@ -434,6 +442,25 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     if (url.pathname === "/api/control/sessions") return json(route, [])
     if (url.pathname === "/api/control/session-list") return json(route, { sessions: [], nextCursor: null })
 
+    // ---- Same-origin: boot-time control-plane surface ----
+    // With the query persister installed eagerly (no longer deferred to idle),
+    // boot fires the signed workspace inventory sync, the harness-scoped central
+    // provider catalog, and the loopback-bridged global event stream before the
+    // first navigation settles. `/api/workspace` failures are tolerated by the
+    // app (`!res.ok -> []`), but the provider catalog and the events stream sit
+    // on the session route's suspense path — a 598 there crashes the route into
+    // the error boundary ("Something went wrong") before any assertion runs.
+    if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
+    if (url.pathname === "/provider") return json(route, providerCatalog())
+    if (url.pathname === "/api/wr/events" || url.pathname === "/api/wr/runtime-events" || url.pathname === "/api/claxedo/runtime-events") {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: corsHeaders(), body: sseEvent({ type: "heartbeat" }) })
+    }
+    // The workspace panel's lifecycle summary fetches its checkpoint snapshot via
+    // `getDefaultBaseUrl()` (the window origin in this harness), not the relay.
+    if (url.pathname === `/api/workspace/${WORKSPACE_ID}/checkpoints` || url.pathname === `/api/workspace/${UH_WORKSPACE_ID}/checkpoints`) {
+      return json(route, { worktrees: [] })
+    }
+
     // ---- Same-origin: loopback-proxied user-hosted health probe ----
     // `workspace-runtime-request.ts`'s `runtimeFetch` (createWorkspaceRuntimeRequest)
     // special-cases `isLoopbackHttpUrl(serverUrl) && !preferRelayOnLoopback` (true
@@ -442,19 +469,15 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // routing `prepareUserHostedRuntime`'s `/api/wr/health` poll through the
     // CENTRAL server's own origin (`${serverUrl}/workspaces/:id/api/wr/health`)
     // instead of `relayUrl` — a real "claxedo-server proxies the relay in local
-    // dev" behavior, not a mock bug. Left unmatched (the relay bucket below is
-    // gated to `RELAY_ORIGIN`'s hostname), this specific probe 598s, which
-    // `prepareUserHostedRuntime` treats as a non-transient failure and
-    // misclassifies as the generic "failed" reason instead of "no-host". Handled
-    // narrowly here (this ONE loopback-shaped path only) rather than broadening
-    // the whole relay bucket to pathname-only matching: doing that also let
-    // EVERY other loopback-routed post-ready call (agent/vcs/provider/session)
-    // resolve successfully via this same central origin, which changed the
-    // draft composer's resolved-directory state enough to fall back to the
-    // generic multi-sandbox "New Project" chrome instead of the role-gated
-    // composer under test (behaviors 8/9) — a bigger behavior change than this
-    // spec should risk. Discovered while remediating this spec under the pooled
-    // e2e run (2026-07-10).
+    // dev" behavior, not a mock bug. Kept on its own handler (rather than the
+    // per-workspace runtime bucket below) because its status drives the
+    // user-hosted offline classification under test: a 598 here reads as a
+    // non-transient failure and misclassifies as the generic "failed" reason
+    // instead of "no-host". The rest of the loopback-routed runtime surface
+    // (agent/vcs/provider/session/...) IS answered by the bucket below — the
+    // app's boot and panel-mount suspense queries throw on a 598 body and crash
+    // the route, so narrowing the bucket to the relay hostname is no longer
+    // viable (it was, when this spec was remediated on 2026-07-10).
     const loopbackHealthMatch = /^\/workspaces\/([^/]+)\/api\/wr\/health$/.exec(url.pathname)
     if (loopbackHealthMatch) {
       const workspaceId = loopbackHealthMatch[1]
@@ -468,11 +491,18 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return json(route, { healthy: true, version: "1.0.0-test" })
     }
 
-    // ---- Relay origin: per-workspace runtime surface ----
-    const relayMatch = url.hostname === new URL(RELAY_ORIGIN).hostname
-      ? /^\/workspaces\/([^/]+)(\/.*)?$/.exec(url.pathname)
-      : null
-    if (relayMatch) {
+    // ---- Per-workspace runtime surface: relay origin AND loopback-bridged
+    // central origin. `createWorkspaceRuntimeRequest` routes cloud/UH runtime
+    // calls through `${serverUrl}/workspaces/:id/...` whenever the server URL is
+    // loopback (always true in this harness), so the same path shape arrives on
+    // 127.0.0.1:3001 as on RELAY_ORIGIN. These answers are load-bearing: the
+    // session route's suspense queries (agent/provider/session) and the workspace
+    // panel's mount fetches throw the raw body of any 598, which crashes the
+    // route into the error boundary before a single assertion runs. The health
+    // probe stays on its own narrower handler above (it drives the
+    // user-hosted offline classification under test).
+    const relayMatch = /^\/workspaces\/([^/]+)(\/.*)?$/.exec(url.pathname)
+    if (relayMatch && (relayMatch[1] === WORKSPACE_ID || relayMatch[1] === UH_WORKSPACE_ID)) {
       const [, workspaceId, rest] = relayMatch
       const runtimePath = rest || "/"
       if (runtimePath === "/api/wr/health") {
@@ -490,13 +520,9 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       if (runtimePath === "/lsp") return json(route, [])
       if (runtimePath === "/agent") return json(route, [{ id: "build", name: "build", mode: "primary" }])
       if (runtimePath === "/command") return json(route, [])
-      if (runtimePath === "/provider") {
-        return json(route, {
-          all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", providerID: "opencode" } } }],
-          connected: ["opencode"],
-          default: { opencode: "big-pickle" },
-        })
-      }
+      if (runtimePath === "/file" || runtimePath.startsWith("/file/")) return json(route, [])
+      if (runtimePath.startsWith("/find")) return json(route, [])
+      if (runtimePath === "/provider") return json(route, providerCatalog())
       if (runtimePath === "/session" || runtimePath === "/experimental/session") return json(route, [])
       if (runtimePath === "/session/status") return json(route, {})
       if (runtimePath === "/permission" || runtimePath === "/question") return json(route, [])
