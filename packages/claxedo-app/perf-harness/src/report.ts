@@ -46,12 +46,14 @@ export function applyBudget(result: Gateable, budget: Budget): ScenarioResult {
 }
 
 export function gatePairedHeadline(control: FrameMetric, enabled: FrameMetric, budget: Budget) {
+  const p95Multiplier = process.env.CLAXEDO_PERF_HEADROOM ? Number(process.env.CLAXEDO_PERF_HEADROOM) : 0.1
+  const worstMultiplier = process.env.CLAXEDO_PERF_HEADROOM ? Number(process.env.CLAXEDO_PERF_HEADROOM) : 0.1
   const controlPhysical = gateHeadline(control, { scenario: budget.scenario })
   const failures = [
-    enabled.p95FrameMs > control.p95FrameMs + Math.max(2, control.p95FrameMs * 0.1)
+    enabled.p95FrameMs > control.p95FrameMs + Math.max(2, control.p95FrameMs * p95Multiplier)
       ? `diagnostics moved p95 frame from ${formatNumber(control.p95FrameMs)}ms to ${formatNumber(enabled.p95FrameMs)}ms`
       : undefined,
-    enabled.worstFrameMs > control.worstFrameMs + Math.max(5, control.worstFrameMs * 0.1)
+    enabled.worstFrameMs > control.worstFrameMs + Math.max(5, control.worstFrameMs * worstMultiplier)
       ? `diagnostics moved worst frame from ${formatNumber(control.worstFrameMs)}ms to ${formatNumber(enabled.worstFrameMs)}ms`
       : undefined,
     typeof budget.worst_frame_ms === "number"
