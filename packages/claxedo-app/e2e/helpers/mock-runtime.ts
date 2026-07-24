@@ -1472,6 +1472,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         : r.continue(),
     )
 
+    // Lifecycle checkpoints — `GET /api/workspace/:id/checkpoints` on the PRIMARY
+    // origin (workspace-panel.tsx via workspaceCheckpointsUrl). Unhandled it falls
+    // through to the real backend, whose 500 body is thrown raw by the client's
+    // request helper and crashes the route's suspense boundary into the global
+    // error view. An empty snapshot is the correct steady state for a freshly
+    // minted mock workspace.
+    await page.route(`**/api/workspace/${workspaceId}/checkpoints**`, (r) =>
+      api(r) ? json(r, { worktrees: [] }) : r.continue(),
+    )
+
     // Resolve must discriminate by workspaceId/directory — a blanket catch-all here
     // would also answer the LOCAL directory's own resolve (mounted earlier, above)
     // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
@@ -1509,6 +1519,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/provider/auth`, (r) => json(r, {}))
     await page.route(`${base}/provider/auth?**`, (r) => json(r, {}))
     await page.route(`${base}/api/wr/health`, (r) => json(r, { healthy: true }))
+    // Worktree admission on the cloud draft-submit path
+    // (prepareWorkspaceSessionWorktree, src/platform/runtime/cloud/workspace-runtime-store.ts):
+    // submit-directory.ts POSTs /api/wr/worktrees after the draft workspace resolves
+    // and ABORTS the submit without sending the prompt when the admission fails or
+    // returns an invalid record — so this lane must answer with a well-formed
+    // worktree (path + branch + baseCommit), matching core-cloud-provisioning's
+    // proven inline mock.
+    await page.route(`${base}/api/wr/worktrees**`, (r) => {
+      if (r.request().method() !== "POST") return json(r, { worktrees: [] })
+      return json(r, {
+        worktree: { path: workspaceId, branch: "main", baseCommit: "e2e-base-commit" },
+      })
+    })
     await page.route(`${base}/api/wr/harness-config-options**`, (r) => {
       const url = new URL(r.request().url())
       const type = (url.searchParams.get("harness") as Harness | null) ?? cloudHarness
