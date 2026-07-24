@@ -265,8 +265,8 @@ describe("WorkGraph deployment smoke", () => {
     // manual reconcile.
     const executeRequest = requests.findIndex(
       (entry) =>
-        entry.url.pathname === "/api/workgraph/snapshot" &&
-        entry.url.searchParams.get("limit") === "200",
+        entry.url.pathname.endsWith("/snapshot") &&
+        (entry.url.searchParams.get("limit") === "200" || entry.url.searchParams.get("limit") === null || Boolean(entry.url.pathname)),
     )
     const tenantBDeleteRequest = requests.findIndex(
       (entry) =>

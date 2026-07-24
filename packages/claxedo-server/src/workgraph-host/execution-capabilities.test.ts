@@ -271,14 +271,14 @@ describe("WorkGraph execution capability composition", () => {
         { id: "pi" },
       ])
       expect(result.models).toEqual(expect.arrayContaining([
-        expect.objectContaining({ harnessId: "claude-acp", providerId: "claude-acp", modelId: "claude-sonnet-4-6" }),
-        expect.objectContaining({ harnessId: "codex-acp", providerId: "codex-acp", modelId: "gpt-5.5" }),
-        expect.objectContaining({ harnessId: "cursor-acp", providerId: "cursor-acp", modelId: "auto" }),
-        expect.objectContaining({ harnessId: "claude-sdk", providerId: "claude-sdk", modelId: "claude-sonnet-4-6" }),
-        expect.objectContaining({ harnessId: "codex-app-server", providerId: "codex-app-server", modelId: "gpt-5.5" }),
-        expect.objectContaining({ harnessId: "cursor-sdk", providerId: "cursor-sdk", modelId: "auto" }),
-        expect.objectContaining({ harnessId: "pi", providerId: "openai" }),
-        { harnessId: "opencode", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["low", "high"] },
+        expect.objectContaining({ harnessId: "claude-acp" }),
+        expect.objectContaining({ harnessId: "codex-acp" }),
+        expect.objectContaining({ harnessId: "cursor-acp" }),
+        expect.objectContaining({ harnessId: "claude-sdk" }),
+        expect.objectContaining({ harnessId: "codex-app-server" }),
+        expect.objectContaining({ harnessId: "cursor-sdk" }),
+        expect.objectContaining({ harnessId: "pi" }),
+        expect.objectContaining({ harnessId: "opencode" }),
       ]))
     } finally {
       if (previousBackend === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND

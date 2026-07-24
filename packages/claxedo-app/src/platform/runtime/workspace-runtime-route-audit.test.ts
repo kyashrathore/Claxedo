@@ -74,6 +74,7 @@ const workspaceSelectorSyntaxBoundary = new Set([
   // export, imported directly here now instead of through a retired wrapper.
   "platform/runtime/placement.ts",
   "app/providers/global-sdk-event-fetch.ts",
+  "features/workspaces/ui/panel/workspace-panel.tsx",
 ])
 
 const sessionStatusBoundary = new Set([
@@ -3215,7 +3216,7 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/seen\.has\(session\.id\)/)
     expect(text).not.toMatch(/seen\.add\(session\.id\)/)
     const diagnostics = await Bun.file(path.join(root, "features/processes/ui/dialog-process-diagnostics.tsx")).text()
-    expect(diagnostics).toMatch(/bySession\.set\(tab\.sessionId,/)
+    expect(diagnostics).toMatch(/usePlatform\(\)\.processDiagnostics/)
     expect(diagnostics).not.toMatch(/bySession\.set\(`\$\{tab\.directory\}:\$\{tab\.sessionId\}`/)
     expect(headerSurfaces).toMatch(/sessionStatusQueryOptions/)
     expect(projectSessionInfo).toMatch(/directorySessionCacheQueryOptions/)

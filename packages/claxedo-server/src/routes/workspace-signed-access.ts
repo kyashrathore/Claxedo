@@ -4,8 +4,6 @@ import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { ConnectionRateLimiter } from "../control-plane/rate-limit"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
-import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../embedded-workspace-runtime"
-import { syncWorkspaceRuntimeAgentExtensions } from "../workspace-supervisor"
 import { controlPlaneRateLimitError, rec, txt } from "./workspace-user-hosted"
 
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
@@ -102,6 +100,12 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
   ])
   const overrides = policyOverrides as import("../agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
   const records = workspaceAgentExtensionRecords(installs)
+  const supervisorMod = "../workspace-supervisor"
+  const embeddedMod = "../embedded-workspace-runtime"
+  const [{ syncWorkspaceRuntimeAgentExtensions }, { syncEmbeddedWorkspaceRuntimeAgentExtensions }] = await Promise.all([
+    import(/* @vite-ignore */ supervisorMod),
+    import(/* @vite-ignore */ embeddedMod),
+  ])
   await Promise.all([
     syncWorkspaceRuntimeAgentExtensions(workspaceId, records, { policyOverrides: overrides }),
     syncEmbeddedWorkspaceRuntimeAgentExtensions(workspaceId, records, { policyOverrides: overrides }),

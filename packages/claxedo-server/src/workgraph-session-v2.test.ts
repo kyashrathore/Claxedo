@@ -580,6 +580,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         },
       },
       recordPullRequest,
+      authorizePullRequest: async () => true,
       pullRequestEffects: { claim, complete, fail: vi.fn(async () => undefined) },
     })
     const context = {
