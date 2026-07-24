@@ -15,6 +15,7 @@
 import { execFileSync } from "child_process"
 import fs from "fs"
 import path from "path"
+import { fileURLToPath } from "url"
 import { rollup } from "rollup"
 import dts from "rollup-plugin-dts"
 
@@ -119,7 +120,11 @@ function bundleJS() {
 }
 
 function emitDeclarations() {
-  run(path.join(ROOT, "node_modules/.bin/tsc"), [
+  // Resolve tsc through node module resolution instead of node_modules/.bin:
+  // bun only links the tsc bin for the catalog typescript (7.0.2), so this
+  // package's 5.8.2 pin gets no .bin/tsc symlink on a fresh install.
+  run(process.execPath, [
+    fileURLToPath(import.meta.resolve("typescript/lib/tsc.js")),
     "--project",
     "tsconfig.build.json",
     "--declaration",
