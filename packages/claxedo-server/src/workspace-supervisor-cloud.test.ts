@@ -132,12 +132,22 @@ function latestSandboxBootEnv(driverId?: string) {
   return calls.at(-1)?.env ?? {}
 }
 
+const mockNoCapturePersistence = {
+  resume: "same-sandbox",
+  capture: "none",
+  clone: false,
+  captureSource: "not-applicable",
+  retention: "provider-managed",
+  restoreMount: "same-resource",
+} as const
+
 const mockCreateDaytonaSandboxDriver = vi.fn((options: any) => ({
   id: "daytona",
   metadata: {
     driverRunsIn: ["worker", "node"],
     hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
     targetAccess: "relay",
+    persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
     await captureRuntimeEnv("daytona", options, input, "daytona-sdk-sb")
@@ -154,6 +164,7 @@ const mockCreateCloudflareSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["worker"],
     hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
     targetAccess: "relay",
+    persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
     await captureRuntimeEnv("cloudflare", options, input, "claxedo-cloudflare-sb")
@@ -170,6 +181,7 @@ const mockCreateModalSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["node"],
     hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
     targetAccess: "relay",
+    persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
     await captureRuntimeEnv("modal", options, input, "modal-sdk-host")
@@ -186,6 +198,14 @@ const mockCreateVercelSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["node"],
     hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
     targetAccess: "relay",
+    persistence: {
+      resume: "replacement-restore",
+      capture: "filesystem",
+      clone: false,
+      captureSource: "stopped",
+      retention: "explicit",
+      restoreMount: "new-resource",
+    },
   },
   ensureHost: async (input: any) => {
     await captureRuntimeEnv("vercel", options, input, "vercel-sdk-host")
@@ -203,6 +223,7 @@ const mockCreateBoxSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["node"],
     hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
     targetAccess: "relay",
+    persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
     await captureRuntimeEnv("box", options, input, "box-sdk-host")
@@ -220,6 +241,7 @@ const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["local"],
     hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
     targetAccess: "loopback",
+    persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
     await captureRuntimeEnv("docker", options, input, "docker-sdk-sb")
@@ -271,6 +293,9 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
     accel_base_image_id: null,
     accel_prepared_image_id: null,
     accel_snapshot_id: null,
+    checkpoint: null,
+    persistence: null,
+    restore: null,
     created_at: ts,
     updated_at: ts,
   }
@@ -314,6 +339,10 @@ vi.mock("./sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
     lastError: input.last_error ?? undefined,
     lastHeartbeatAt: input.last_heartbeat_at ?? undefined,
     lastActivityAt: input.last_activity_at ?? undefined,
+    labels: input.labels ?? undefined,
+    checkpoint: input.checkpoint ?? undefined,
+    persistence: input.persistence ?? undefined,
+    restore: input.restore ?? undefined,
   })
   const updateSupervisorSandboxLease = (workspaceId: string, patch: Partial<SandboxLeaseRow>) => {
     const prev = leases.get(workspaceId)
@@ -489,6 +518,10 @@ vi.mock("./sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
           ...(patch.lastError === undefined ? {} : { last_error: patch.lastError ?? null }),
           ...(patch.lastHeartbeatAt === undefined ? {} : { last_heartbeat_at: patch.lastHeartbeatAt }),
           ...(patch.lastActivityAt === undefined ? {} : { last_activity_at: patch.lastActivityAt }),
+          ...(patch.labels === undefined ? {} : { labels: patch.labels ?? null }),
+          ...(patch.checkpoint === undefined ? {} : { checkpoint: patch.checkpoint ?? null }),
+          ...(patch.persistence === undefined ? {} : { persistence: patch.persistence ?? null }),
+          ...(patch.restore === undefined ? {} : { restore: patch.restore ?? null }),
           updated_at: Date.now(),
         }
         leases.set(workspaceId, next)
@@ -1384,15 +1417,22 @@ describe("workspace-supervisor", () => {
       expect(entry.health_monitor).toBeUndefined()
     })
 
-    test("captures a runtime snapshot before stopping drivers that support it", async () => {
+    test("uses the canonical freeze, scrub, and provider checkpoint flow before idle stop", async () => {
       driverId = "vercel"
 
       await supervisor.ensureSupervisorSandbox("ws-stop-snap")
       await supervisor.stopSupervisorSandbox("ws-stop-snap", "idle")
 
       expect(mockVercelSnapshot).toHaveBeenCalled()
-      expect(snapshots.at(-1)?.runtime_snapshot_id).toBe("snap-stop-1")
-      expect(supervisor.getSandboxLease("ws-stop-snap")?.accel_snapshot_id).toBe("snap-stop-1")
+      expect(supervisor.getSandboxLease("ws-stop-snap")?.checkpoint).toMatchObject({
+        providerReference: "snap-stop-1",
+        sourceEpoch: 1,
+      })
+      expect((globalThis.fetch as any).mock.calls.map((call: unknown[]) => String(call[0]))).toEqual(expect.arrayContaining([
+        expect.stringContaining("/api/wr/checkpoint/freeze"),
+        expect.stringContaining("/api/wr/checkpoint/flush"),
+        expect.stringContaining("/api/wr/checkpoint/scrub"),
+      ]))
       expect(supervisor.getSupervisorSandboxTarget("ws-stop-snap")).toBeUndefined()
     })
   })

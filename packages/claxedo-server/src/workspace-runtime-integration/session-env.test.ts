@@ -146,6 +146,30 @@ describe("createClaxedoSessionEnvFactory", () => {
     expect(mocks.resolveWorkspace).toHaveBeenCalledWith({ workspaceId: "ws-1" })
   })
 
+  test("routes admitted absolute worktrees as registered runtime roots", async () => {
+    const factory = createClaxedoSessionEnvFactory({ fetchOptions })
+    const env = await factory({
+      sessionId: "s-worktree",
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: {
+        kind: "workspace-runtime",
+        workspaceId: "ws-1",
+        directory: "/home/runtime/.claxedo/workspaces/ws-1/worktrees/s-worktree",
+        worktree: "claxedo/session/s-worktree",
+        baseCommit: "a".repeat(40),
+        leaseEpoch: 2,
+      },
+    })
+    mockEmbeddedResponse(jsonResponse({ exists: true }))
+
+    await expect(env.exists("README.md")).resolves.toBe(true)
+    expect(lastEmbeddedCall().request.headers.get("x-opencode-directory")).toBe(
+      "/home/runtime/.claxedo/workspaces/ws-1/worktrees/s-worktree",
+    )
+    expect(new URL(lastEmbeddedCall().request.url).searchParams.get("path")).toBe("README.md")
+  })
+
   test("throws for an unknown workspace", async () => {
     mocks.resolveWorkspace.mockResolvedValue(undefined)
     const factory = createClaxedoSessionEnvFactory({ fetchOptions })

@@ -62,9 +62,20 @@ function RawDetail(props: { detail: string }) {
 export function FirstTurnRecoveryCard(props: {
   kind: SessionErrorClass
   detail?: string
-  onAction: (kind: SessionErrorClass) => void
+  onAction: (kind: SessionErrorClass) => unknown
 }) {
   const recovery = () => sessionRecovery(props.kind)
+  const [pending, setPending] = createSignal(false)
+  const act = async () => {
+    if (pending()) return
+    setPending(true)
+    try {
+      await props.onAction(props.kind)
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <div class="rounded-lg border border-border-weak-base bg-transparent px-4 py-3" data-testid="first-turn-recovery-card" data-recovery-class={props.kind}>
       <div class="flex items-start gap-3">
@@ -73,7 +84,14 @@ export function FirstTurnRecoveryCard(props: {
           <div class="text-14-medium text-text-strong">{recovery().title}</div>
           <div class="mt-1 text-13-regular text-text-base">{recovery().description}</div>
           <Show when={props.detail}>{(detail) => <RawDetail detail={detail()} />}</Show>
-          <Button class="mt-3" size="small" variant="secondary" onClick={() => props.onAction(props.kind)}>
+          <Button
+            class="mt-3"
+            size="small"
+            variant="secondary"
+            disabled={pending()}
+            aria-busy={pending()}
+            onClick={() => void act()}
+          >
             {recovery().label}
           </Button>
         </div>

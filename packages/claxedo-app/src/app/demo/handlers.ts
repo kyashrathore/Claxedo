@@ -888,19 +888,6 @@ export async function createHandlers() {
     http.get(`${DEMO_BASE}/api/wr/diff/targets`, () => {
       return HttpResponse.json(state.sessionDiffTargets)
     }),
-    http.get(`${DEMO_BASE}/api/wr/process/diagnostics`, () => {
-      return HttpResponse.json({
-        summary: {
-          managed: { groups: 0, rows: 0, cpu_percent: 0, rss_kb: 0, hidden_children: 0, problem_children: 0 },
-          terminal: { groups: 0, rows: 0, cpu_percent: 0, rss_kb: 0, hidden_children: 0, problem_children: 0 },
-        },
-        managed: [],
-        terminal: [],
-      })
-    }),
-    http.post(`${DEMO_BASE}/api/wr/process/diagnostics/terminate`, () => {
-      return HttpResponse.json({ success: true })
-    }),
     http.get(`${DEMO_BASE}/api/claxedo/agent-config/harness`, () => {
       return HttpResponse.json(null)
     }),

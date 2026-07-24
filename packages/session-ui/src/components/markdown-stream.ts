@@ -49,8 +49,34 @@ function heal(text: string) {
   return remend(text, { linkMode: "text-only" })
 }
 
+function complete(text: string) {
+  if (refs(text)) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
+  return marked.lexer(text).reduce<Block[]>((result, token) => {
+    if (token.type === "space") {
+      const previous = result.at(-1)
+      if (!previous) return result
+      previous.raw += token.raw
+      if (previous.mode === "full") previous.src += token.raw
+      return result
+    }
+    if (token.type === "code") {
+      const code = token as Tokens.Code
+      result.push({
+        raw: token.raw,
+        src: code.text,
+        mode: "code",
+        language: language(code.lang),
+        complete: true,
+      })
+      return result
+    }
+    result.push({ raw: token.raw, src: token.raw, mode: "full" })
+    return result
+  }, [])
+}
+
 export function stream(text: string, live: boolean): Block[] {
-  if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
+  if (!live) return complete(text)
   if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const tokens = marked.lexer(text)
   const tail = tokens.findLastIndex((token) => token.type !== "space")
@@ -85,8 +111,10 @@ export function stream(text: string, live: boolean): Block[] {
 }
 
 export function canReusePendingBlock(current: Pick<Block, "mode" | "raw"> | undefined, next: Block) {
-  if (!current || current.mode !== next.mode) return false
+  if (!current) return false
   if (next.mode === "code") return next.raw.startsWith(current.raw)
+  if (current.mode === "live" && (next.mode === "live" || next.mode === "full")) return next.raw.startsWith(current.raw)
+  if (current.mode !== next.mode) return false
   return current.raw === next.raw
 }
 

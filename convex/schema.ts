@@ -290,6 +290,9 @@ export default defineSchema({
     last_heartbeat_at: v.optional(v.number()),
     last_activity_at: v.optional(v.number()),
     labels: v.optional(v.any()),
+    checkpoint: v.optional(v.any()),
+    persistence_capabilities: v.optional(v.any()),
+    restore_status: v.optional(v.any()),
     created_at: v.number(),
     updated_at: v.number(),
   })

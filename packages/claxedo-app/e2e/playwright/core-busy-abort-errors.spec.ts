@@ -906,6 +906,18 @@ test.describe("core busy / abort / errors @core", () => {
     await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
     expect(mock.requests.promptCount).toBe(1)
 
+    const original = mock.requests.promptBodies[0]
+    await errorCard.getByRole("button", { name: "Try again" }).click()
+
+    await expect.poll(() => mock.requests.promptCount, {
+      timeout: 15_000,
+      message: "first-turn recovery did not resubmit the failed prompt",
+    }).toBe(2)
+    expect(mock.requests.createSessionCount).toBe(1)
+    expect(mock.requests.promptBodies[1]?.sessionID).toBe(SESSION_ID)
+    expect(mock.requests.promptBodies[1]?.sessionID).toBe(original?.sessionID)
+    expect(mock.requests.promptBodies[1]?.text).toBe(original?.text)
+
     await errorCard.scrollIntoViewIfNeeded()
     await page.screenshot({
       path: "test-results/evidence/core-busy-abort-errors/error-card-json-envelope-unwrapped.png",

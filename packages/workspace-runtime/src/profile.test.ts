@@ -9,6 +9,7 @@ describe("workspace profile helpers", () => {
 
   test("marks enabled capabilities without changing workspace profile", () => {
     expect(workspaceCapabilities(true)).toEqual({
+      api_version: 2,
       profile: "workspace",
       workspace_harness_enabled: true,
       session_host: true,
@@ -16,6 +17,7 @@ describe("workspace profile helpers", () => {
       command: true,
       pty: true,
       process: true,
+      process_observer: true,
       diff: true,
       config: true,
       mcp: true,
@@ -24,6 +26,7 @@ describe("workspace profile helpers", () => {
     })
 
     expect(workspaceCapabilities(false)).toEqual({
+      api_version: 2,
       profile: "workspace",
 
       workspace_harness_enabled: false,
@@ -32,6 +35,7 @@ describe("workspace profile helpers", () => {
       command: false,
       pty: true,
       process: true,
+      process_observer: true,
       diff: true,
       config: true,
       mcp: false,

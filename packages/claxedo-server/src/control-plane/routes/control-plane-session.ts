@@ -24,7 +24,7 @@ type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   beforeLocalList?: () => Promise<void>
-  createHybridSession?: (input: { title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
+  createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
 }
 
 async function signedAuth(req: Request, options: Options) {
@@ -148,10 +148,18 @@ function toolSandboxRef(input: unknown): SandboxRef | undefined {
     const directory = typeof item.directory === "string" && item.directory.trim().length > 0
       ? item.directory.trim()
       : undefined
+    const worktree = optionalText(item.worktree)
+    const baseCommit = optionalText(item.baseCommit) ?? optionalText(item.base_commit)
+    const leaseEpoch = typeof item.leaseEpoch === "number" && Number.isInteger(item.leaseEpoch) && item.leaseEpoch >= 0
+      ? item.leaseEpoch
+      : undefined
     return {
       kind: "workspace-runtime",
       workspaceId: item.workspaceId.trim(),
       ...(directory ? { directory } : {}),
+      ...(worktree ? { worktree } : {}),
+      ...(baseCommit ? { baseCommit } : {}),
+      ...(leaseEpoch !== undefined ? { leaseEpoch } : {}),
     }
   }
   throw new ControlPlaneAuthError(400, "invalid_tool_sandbox", "toolSandbox kind is unsupported")
@@ -256,8 +264,10 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const workspaceId = optionalText(body.workspaceId)
         const harness = hybridHarness(body.harness)
         const model = promptModel(body.model)
+        const sessionId = optionalText(body.sessionId) ?? optionalText(body.session_id)
         const session = options.createHybridSession
           ? await options.createHybridSession({
+              ...(sessionId ? { sessionId } : {}),
               title: sessionTitle,
               ...(workspaceId ? { workspaceId } : {}),
               toolSandbox,

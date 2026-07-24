@@ -13,6 +13,8 @@ export const WorkspaceRuntimeRoutes = {
   fileSearch: `${WorkspaceRuntimeApiPrefix}/find/file`,
   diff: `${WorkspaceRuntimeApiPrefix}/diff`,
   git: `${WorkspaceRuntimeApiPrefix}/git`,
+  worktrees: `${WorkspaceRuntimeApiPrefix}/worktrees`,
+  checkpoint: `${WorkspaceRuntimeApiPrefix}/checkpoint`,
   hook: `${WorkspaceRuntimeApiPrefix}/hook`,
   sessionEnv: `${WorkspaceRuntimeApiPrefix}/session-env`,
   workgraphConnectionBinding: "/api/workgraph/connection-binding",

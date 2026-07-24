@@ -92,6 +92,9 @@ export type WorkGraphSessionBinding = Readonly<{
   runtimeSessionId?: string
   directory: string
   harness: string
+  workspaceId?: string
+  leaseEpoch?: number
+  baseCommit?: string
 }>
 
 export type WorkGraphSessionBindingStore = Readonly<{
@@ -125,10 +128,24 @@ export function createFileWorkGraphSessionBindingStore(file: string): WorkGraphS
       const runtimeSessionId = clean(row?.runtimeSessionId)
       const directory = clean(row?.directory)
       const harness = clean(row?.harness)
+      const workspaceId = clean(row?.workspaceId)
+      const baseCommit = clean(row?.baseCommit)
+      const leaseEpoch = typeof row?.leaseEpoch === "number" && Number.isInteger(row.leaseEpoch)
+        ? row.leaseEpoch
+        : undefined
       if (!attemptId || !sessionId || !directory || !harness) {
         throw new Error("WorkGraph Session binding index contains an invalid binding")
       }
-      return { attemptId, sessionId, ...(runtimeSessionId ? { runtimeSessionId } : {}), directory, harness }
+      return {
+        attemptId,
+        sessionId,
+        ...(runtimeSessionId ? { runtimeSessionId } : {}),
+        directory,
+        harness,
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(leaseEpoch !== undefined ? { leaseEpoch } : {}),
+        ...(baseCommit ? { baseCommit } : {}),
+      }
     })
   })()
   const write = async (bindings: WorkGraphSessionBinding[]) => {
@@ -234,6 +251,15 @@ export function createHarnessWorkGraphGateway(
         if (!options.attemptContexts) throw new Error("WorkGraph Attempt tools require a trusted local context registry")
       }
       const existing = await bindings.findByAttempt(input.attemptId)
+      if (
+        existing
+        && (
+          existing.directory !== input.directory
+          || (existing.workspaceId && existing.workspaceId !== input.workspaceId)
+          || (existing.leaseEpoch !== undefined && existing.leaseEpoch !== input.leaseEpoch)
+          || (existing.baseCommit && existing.baseCommit !== input.baseCommit)
+        )
+      ) throw new Error(`WorkGraph Attempt ${input.attemptId} is already admitted with different workspace placement`)
       const binding = existing ?? await (async () => {
         const created = await request({ directory: input.directory, harness: input.profile.harness }, "/session", {
           method: "POST",
@@ -254,6 +280,9 @@ export function createHarnessWorkGraphGateway(
           ...(input.sessionId && input.sessionId !== runtimeSessionId ? { runtimeSessionId } : {}),
           directory: input.directory,
           harness: input.profile.harness,
+          ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+          ...(input.leaseEpoch !== undefined ? { leaseEpoch: input.leaseEpoch } : {}),
+          ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
         }
         await bindings.save(next)
         return next

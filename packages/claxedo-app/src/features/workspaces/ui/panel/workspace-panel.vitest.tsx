@@ -4,6 +4,17 @@ import { createSignal, onCleanup, onMount } from "solid-js"
 import { WorkspacePanel } from "./workspace-panel"
 import type { WorkspacePanelState } from "./workspace-panel-state"
 
+const apiMocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+}))
+
+vi.mock("@/platform/api/api", () => ({
+  api: apiMocks,
+  getDefaultBaseUrl: () => "http://test.local",
+  normalizeUrl: (value: string | undefined) => value?.replace(/\/+$/, ""),
+}))
+
 vi.mock("@/features/workspaces/app-ports", () => ({
   emitTerminalFit: vi.fn(),
 }))
@@ -13,6 +24,8 @@ afterEach(() => {
   cleanup()
   Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 })
   window.dispatchEvent(new Event("resize"))
+  apiMocks.get.mockReset()
+  apiMocks.post.mockReset()
 })
 
 function pointerEvent(type: string, clientX: number) {
@@ -61,6 +74,62 @@ describe("WorkspacePanel", () => {
 
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toBeInTheDocument()
     expect(screen.getByText("workspace body")).toBeInTheDocument()
+  })
+
+  test("shows cloud lifecycle identity, checkpoint, and registered worktrees", async () => {
+    apiMocks.get.mockResolvedValue({
+      lease: {
+        sandboxId: "sandbox-1",
+        driver: "cloudflare",
+        epoch: 3,
+        status: "ready",
+      },
+      checkpoint: {
+        id: "cp_3",
+        sourceEpoch: 3,
+        capturedAt: 1,
+        metadata: { scope: "directories", restoreMount: "copy-on-write" },
+      },
+      capabilities: { capture: "directories", resume: "replacement-restore" },
+      runtime: { version: "0.6.0", image: "runtime:0.6.0" },
+      worktrees: [{ sessionId: "session-1", branch: "claxedo/session/session-1", state: "active" }],
+    })
+
+    renderPanel({ ...openState, workspaceDir: "workspace:ws_cloud" })
+
+    await waitFor(() => expect(screen.getByText("cloudflare · epoch 3")).toBeInTheDocument())
+    fireEvent.click(screen.getByText("Cloud workspace"))
+    expect(screen.getByText("sandbox-1")).toBeInTheDocument()
+    expect(screen.getByText(/cp_3 · epoch 3/)).toBeInTheDocument()
+    expect(screen.getByText(/claxedo\/session\/session-1/)).toBeInTheDocument()
+  })
+
+  test("requires confirmation and sends approval for destructive cloud lifecycle operations", async () => {
+    apiMocks.get.mockResolvedValue({
+      lease: { sandboxId: "sandbox-1", driver: "vercel", epoch: 2, status: "ready" },
+      checkpoint: {
+        id: "cp_2",
+        sourceEpoch: 2,
+        capturedAt: 1,
+        metadata: { scope: "filesystem", restoreMount: "new-resource" },
+      },
+      capabilities: { capture: "filesystem", resume: "replacement-restore" },
+      worktrees: [],
+    })
+    apiMocks.post.mockResolvedValue({})
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true)
+
+    renderPanel({ ...openState, workspaceDir: "workspace:ws_cloud" })
+    await waitFor(() => expect(screen.getByText("vercel · epoch 2")).toBeInTheDocument())
+    fireEvent.click(screen.getByText("Cloud workspace"))
+    fireEvent.click(screen.getByRole("button", { name: "Replace…" }))
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
+      "http://test.local/api/workspace/ws_cloud/lifecycle/replace",
+      { approved: true, checkpointId: "cp_2" },
+    ))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("current sandbox will be discarded"))
+    confirm.mockRestore()
   })
 
   test("reports the panel shell ref and clears it on cleanup", () => {

@@ -28,6 +28,11 @@
       "types": "./src/workgraph-tools.ts",
       "development": "./src/workgraph-tools.ts",
       "default": "./dist/workgraph-tools.js"
+    },
+    "./cloud-workspace-tools": {
+      "types": "./src/cloud-workspace-tools.ts",
+      "development": "./src/cloud-workspace-tools.ts",
+      "default": "./dist/cloud-workspace-tools.js"
     }
   },
   "files": [
@@ -41,7 +46,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/server.ts src/documents-tools.ts src/workgraph-tools.ts --outdir dist --target=node",
+    "build": "bun build src/server.ts src/documents-tools.ts src/workgraph-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node",
     "prepublishOnly": "bun run build",
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",

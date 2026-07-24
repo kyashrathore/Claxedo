@@ -1,3 +1,5 @@
+import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
 export type ServerReadyData = {
@@ -134,6 +136,8 @@ export type BrowserBridge = {
   clearStorage: (paneId: string, storages?: BrowserStorageKey[]) => Promise<BrowserResult>
 }
 
+export type ProcessDiagnosticsBridge = LocalDiagnostics.Capability
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -144,7 +148,6 @@ export type ElectronAPI = {
   setWslConfig: (config: WslConfig) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
   setDisplayBackend: (backend: LinuxDisplayBackend | null) => Promise<void>
-  parseMarkdownCommand: (markdown: string) => Promise<string>
   checkAppExists: (appName: string) => Promise<boolean>
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
   resolveAppPath: (appName: string) => Promise<string | null>
@@ -193,5 +196,6 @@ export type ElectronAPI = {
   setStartAtLogin: (enabled: boolean) => Promise<void>
   setNativeTheme: (theme: "light" | "dark" | "system") => void
   getDroppedFilePaths: (files: File[]) => string[]
+  processDiagnostics: ProcessDiagnosticsBridge
   browser: BrowserBridge
 }

@@ -9,6 +9,7 @@ import type {
 } from "@claxedo/agent-sdk-runtime"
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime"
 import type { SandboxFetchOptions } from "../sandbox-target-fetch"
+import { sandboxFetch } from "../sandbox-target-fetch"
 import { ensureEmbeddedWorkspaceRuntime } from "../embedded-workspace-runtime"
 import { normalizeClaxedoRegion } from "../region"
 import { resolveWorkspace } from "../workspace-store"
@@ -78,6 +79,7 @@ function createCloudSandboxRequester(
   ws: Workspace,
   options: SandboxFetchOptions,
   connectionTurnCredential?: () => string | undefined,
+  directory?: string,
 ): SandboxRequester {
   const { sandboxManager, relayProvider } = options
   if (!sandboxManager) throw new Error(`sandbox manager unavailable: ${ws.id}`)
@@ -142,7 +144,7 @@ function createCloudSandboxRequester(
     const endpoint = await currentRelayUrl(active)
     const headers = new Headers(init?.headers)
     headers.set("authorization", `Bearer ${accessToken}`)
-    headers.set("x-opencode-directory", `workspace:${ws.id}`)
+    headers.set("x-opencode-directory", directory ?? `workspace:${ws.id}`)
     headers.set("accept-encoding", "identity")
     const credential = connectionTurnCredential?.()
     if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
@@ -189,11 +191,13 @@ function createCloudSandboxRequester(
 function createEmbeddedSandboxRequester(
   ws: Workspace,
   connectionTurnCredential?: () => string | undefined,
+  directory?: string,
 ): SandboxRequester {
   return {
     async send(requestPath, init) {
       const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
       const headers = new Headers(init?.headers)
+      if (directory) headers.set("x-opencode-directory", directory)
       const credential = connectionTurnCredential?.()
       if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
       return runtime.app.fetch(
@@ -207,10 +211,11 @@ function createSandboxRequester(
   ws: Workspace,
   options: SandboxFetchOptions,
   connectionTurnCredential?: () => string | undefined,
+  directory?: string,
 ): SandboxRequester {
   return ws.kind === "cloud"
-    ? createCloudSandboxRequester(ws, options, connectionTurnCredential)
-    : createEmbeddedSandboxRequester(ws, connectionTurnCredential)
+    ? createCloudSandboxRequester(ws, options, connectionTurnCredential, directory)
+    : createEmbeddedSandboxRequester(ws, connectionTurnCredential, directory)
 }
 
 function sandboxPath(requestPath: string) {
@@ -327,8 +332,18 @@ async function foldExecStream(
  * cross the boundary.
  */
 export function createWorkspaceRuntimeSessionEnv(input: WorkspaceRuntimeSessionEnvInput): SessionEnv {
-  const cwd = input.directory && input.directory.trim().length > 0 ? path.posix.resolve("/", input.directory) : "/"
-  const requester = createSandboxRequester(input.workspace, input.fetchOptions, input.connectionTurnCredential)
+  const registeredRoot = input.directory && path.posix.isAbsolute(input.directory) ? input.directory : undefined
+  const cwd = registeredRoot
+    ? "/"
+    : input.directory && input.directory.trim().length > 0
+      ? path.posix.resolve("/", input.directory)
+      : "/"
+  const requester = createSandboxRequester(
+    input.workspace,
+    input.fetchOptions,
+    input.connectionTurnCredential,
+    registeredRoot,
+  )
   const request = async (op: string, requestPath: string, init?: RequestInit) => {
     const response = await requester.send(requestPath, init)
     if (!response.ok) {
@@ -350,6 +365,7 @@ export function createWorkspaceRuntimeSessionEnv(input: WorkspaceRuntimeSessionE
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           command,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
           ...(relative(options?.cwd) ? { cwd: relative(options?.cwd) } : {}),
           ...(options?.env ? { env: options.env } : {}),
           ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
@@ -464,6 +480,58 @@ function reportHydrationFailure(input: WorkspaceRuntimeSessionEnvInput, failure:
 /** Resolves a tool-sandbox workspace to a concrete workspace record. */
 export type WorkspaceResolver = (input: { workspaceId: string }) => Promise<Workspace | undefined>
 
+export type WorkspaceSessionAdmission = {
+  directory: string
+  worktree: string
+  baseCommit: string
+  leaseEpoch: number
+}
+
+export async function prepareWorkspaceRuntimeSession(input: {
+  workspace: Workspace
+  sessionId: string
+  baseCommit?: string
+  fetchOptions: SandboxFetchOptions
+}): Promise<WorkspaceSessionAdmission> {
+  const target = input.workspace.kind === "cloud"
+    ? await input.fetchOptions.sandboxManager?.ensure(input.workspace.id, {
+        homeRegion: input.fetchOptions.defaultHomeRegion ?? "us-east",
+      })
+    : undefined
+  if (target && target.status !== "ready") {
+    if (target.status === "provisioning") {
+      throw new Error(`sandbox provisioning; retry after ${target.retryAfterMs}ms`)
+    }
+    throw new Error(target.error ?? `sandbox unavailable: ${input.workspace.id}`)
+  }
+  const response = await sandboxFetch(
+    input.workspace,
+    "/api/wr/worktrees",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: input.sessionId,
+        ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
+      }),
+    },
+    input.fetchOptions,
+  )
+  const body = await readJson(response) as {
+    worktree?: { path?: string; branch?: string; baseCommit?: string }
+    error?: { message?: string }
+  } | null
+  if (!response.ok || !body?.worktree?.path || !body.worktree.branch || !body.worktree.baseCommit) {
+    throw new Error(body?.error?.message ?? `workspace worktree admission failed with status ${response.status}`)
+  }
+  return {
+    directory: body.worktree.path,
+    worktree: body.worktree.branch,
+    baseCommit: body.worktree.baseCommit,
+    leaseEpoch: target?.epoch ?? 0,
+  }
+}
+
 /**
  * SessionEnv factory for central Pi sessions: dispatches on
  * `toolSandbox.kind`. `workspace-runtime` placements forward tool execution to
@@ -481,6 +549,7 @@ export function createClaxedoSessionEnvFactory(options: {
   resolveWorkspace?: WorkspaceResolver
   turnCredentials?: ConnectionTurnCredentials
   onHydrationFailure?: (failure: SessionHydrationFailure) => void
+  prepareSession?: typeof prepareWorkspaceRuntimeSession
 }): SessionEnvFactory {
   const resolve: WorkspaceResolver =
     options.resolveWorkspace ?? ((input) => resolveWorkspace({ workspaceId: input.workspaceId }))
@@ -492,10 +561,20 @@ export function createClaxedoSessionEnvFactory(options: {
     if (!workspace) {
       throw new Error(`workspace not found for tool sandbox: ${toolSandbox.workspaceId}`)
     }
+    const admitted = options.prepareSession
+      ? await options.prepareSession({
+          workspace,
+          sessionId: input.sessionId,
+          ...(toolSandbox.baseCommit ? { baseCommit: toolSandbox.baseCommit } : {}),
+          fetchOptions: options.fetchOptions,
+        })
+      : undefined
     return createWorkspaceRuntimeSessionEnv({
       workspace,
       sessionId: input.sessionId,
-      ...(toolSandbox.directory ? { directory: toolSandbox.directory } : {}),
+      ...(admitted?.directory || toolSandbox.directory
+        ? { directory: admitted?.directory ?? toolSandbox.directory! }
+        : {}),
       fetchOptions: options.fetchOptions,
       ...(connectionTurnCredential ? { connectionTurnCredential } : {}),
       ...(options.onHydrationFailure ? { onHydrationFailure: options.onHydrationFailure } : {}),

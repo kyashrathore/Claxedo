@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest"
-import { claxedoMcpMode, claxedoMcpReadOnly } from "./tool-policy"
+import {
+  assertCloudWorkspaceLifecycleApproval,
+  claxedoMcpMode,
+  claxedoMcpReadOnly,
+  cloudWorkspaceLifecycleApprovalRequired,
+} from "./tool-policy"
 
 describe("MCP tool policy", () => {
   test("defaults to full-control mode for backwards compatibility", () => {
@@ -16,5 +21,15 @@ describe("MCP tool policy", () => {
     expect(claxedoMcpMode({ CLAXEDO_MCP_READ_ONLY: "1" })).toBe("read-only")
     expect(claxedoMcpMode({ CLAXEDO_MCP_READ_ONLY: "true" })).toBe("read-only")
     expect(claxedoMcpMode({ CLAXEDO_MCP_READ_ONLY: "yes" })).toBe("read-only")
+  })
+
+  test("requires explicit approval for consequential workspace lifecycle actions", () => {
+    expect(cloudWorkspaceLifecycleApprovalRequired("stop")).toBe(false)
+    expect(cloudWorkspaceLifecycleApprovalRequired("restore")).toBe(true)
+    expect(cloudWorkspaceLifecycleApprovalRequired("replace")).toBe(true)
+    expect(cloudWorkspaceLifecycleApprovalRequired("cleanup")).toBe(true)
+    expect(cloudWorkspaceLifecycleApprovalRequired("destroy")).toBe(true)
+    expect(() => assertCloudWorkspaceLifecycleApproval("destroy", false)).toThrow(/Explicit approval/)
+    expect(() => assertCloudWorkspaceLifecycleApproval("destroy", true)).not.toThrow()
   })
 })

@@ -5,13 +5,6 @@ import { createMemoryLeaseStore, sandboxLease } from "./stores/memory"
 function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
   return {
     id: "test-driver",
-    metadata: {
-      driverRunsIn: ["node"],
-      hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
-      targetAccess: "relay",
-      secretBrokering: "native",
-      ...overrides.metadata,
-    },
     ensureHost: vi.fn(async (input) => ({
       sandboxId: `sandbox_${input.workspaceId}`,
       url: `https://runtime.test/${input.workspaceId}`,
@@ -19,6 +12,21 @@ function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
       labels: input.labels,
     })),
     ...overrides,
+    metadata: {
+      driverRunsIn: ["node"],
+      hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
+      targetAccess: "relay",
+      secretBrokering: "native",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: false,
+        captureSource: "not-applicable",
+        retention: "not-applicable",
+        restoreMount: "not-applicable",
+      },
+      ...overrides.metadata,
+    },
   }
 }
 
@@ -127,6 +135,69 @@ describe("sandbox manager", () => {
         snapshot: "driver-base",
       }),
     )
+  })
+
+  test("ordinary ensure of a ready lease does not roll back to its latest checkpoint", async () => {
+    const store = createMemoryLeaseStore([
+      sandboxLease({
+        workspaceId: "ws_1",
+        status: "ready",
+        sandboxId: "sandbox_1",
+        url: "https://runtime.test/ws_1",
+        hostId: "host_1",
+        checkpoint: {
+          id: "checkpoint_1",
+          providerReference: "snapshot_old",
+          sourceEpoch: 1,
+          capturedAt: 1_000,
+          metadata: {
+            scope: "filesystem",
+            sourceBehavior: "preserved",
+            restoreMount: "new-resource",
+          },
+        },
+      }),
+    ])
+    const driver = fakeDriver({
+      metadata: {
+        ...fakeDriver().metadata,
+        hostStopBehavior: "terminates-host",
+        hostResumeBehavior: "replacement-host",
+        persistence: {
+          resume: "replacement-restore",
+          capture: "filesystem",
+          clone: false,
+          captureSource: "preserved",
+          retention: "provider-managed",
+          restoreMount: "new-resource",
+        },
+      },
+    })
+
+    await createSandboxManager({ leaseStore: store, driver })
+      .ensure("ws_1", { homeRegion: "us-east" })
+
+    expect(driver.ensureHost).toHaveBeenCalledWith(expect.objectContaining({
+      bootSource: { kind: "default" },
+    }))
+  })
+
+  test("stop and destroy retries are idempotent after their terminal state is stored", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver({
+      stop: vi.fn(async () => {}),
+      destroy: vi.fn(async () => {}),
+    })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    await manager.ensure("ws_stop", { homeRegion: "us-east" })
+    await manager.ensure("ws_destroy", { homeRegion: "us-east" })
+
+    expect(await manager.stop("ws_stop")).toEqual({ ok: true, status: "stopped" })
+    expect(await manager.stop("ws_stop")).toEqual({ ok: true, status: "stopped" })
+    expect(await manager.destroy("ws_destroy")).toEqual({ ok: true, status: "destroyed" })
+    expect(await manager.destroy("ws_destroy")).toEqual({ ok: true, status: "destroyed" })
+    expect(driver.stop).toHaveBeenCalledTimes(1)
+    expect(driver.destroy).toHaveBeenCalledTimes(1)
   })
 
   test("stale epoch writes are rejected by the lease store", async () => {

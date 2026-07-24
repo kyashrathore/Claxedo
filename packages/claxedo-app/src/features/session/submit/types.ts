@@ -171,7 +171,7 @@ export type ResolveSubmitDirectoryContext = {
     fallbackDirectory: SubmitDirectory | undefined,
     workspaceKind: string,
   ) => Promise<SubmitDirectory | undefined>
-  prepareCloudSessionDirectory: (directory: SubmitDirectory) => Promise<boolean>
+  prepareCloudSessionDirectory: (directory: SubmitDirectory) => Promise<boolean | SubmitDirectory | undefined>
   createLocalWorktree: (directory: SubmitDirectory | undefined) => Promise<SubmitDirectory | undefined>
   publishCloudHandoff: (status: string, message: string) => void
 }

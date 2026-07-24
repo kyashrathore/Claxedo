@@ -357,6 +357,9 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
               </div>
 
               <div class="flex justify-end gap-2 mt-6">
+                <span class="mr-auto self-center text-11-regular text-text-weak">
+                  Sessions in this workspace open in isolated Git worktrees by default.
+                </span>
                 <Button type="submit" disabled={(!repoUrl() && !repository()) || !provider()}>
                   Clone & Open
                 </Button>

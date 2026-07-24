@@ -14,11 +14,52 @@ import {
 } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { allowedOriginPatterns } from "../cors-origins"
+import {
+  sandboxLeaseEnv,
+  workspaceRuntimeDirectAuthEnv,
+  workspaceRuntimeTargetEnv,
+} from "./env"
 
 export type ClaxedoWorkspaceRuntimeBoot = {
   port: number
   hostname: string
   options: WorkspaceRuntimeServerOptions
+}
+
+export function claxedoWorkspaceRuntimeLaunch(input: {
+  workspaceId: string
+  hostId: string
+  sandboxId: string
+  leaseId: string
+  epoch: number
+  directory: string
+  port: number
+  credential: { token: string; expiresAt: number }
+  now?: number
+}) {
+  if (input.epoch < 1) throw new Error("workspace-runtime launch requires a positive lease epoch")
+  if (!input.credential.token.trim()) throw new Error("workspace-runtime launch requires a bootstrap credential")
+  if (input.credential.expiresAt <= (input.now ?? Date.now())) {
+    throw new Error("workspace-runtime bootstrap credential is expired")
+  }
+  return {
+    command: ["workspace-runtime"],
+    env: {
+      ...workspaceRuntimeTargetEnv({
+        workspaceId: input.workspaceId,
+        hostId: input.hostId,
+        directory: input.directory,
+        port: input.port,
+      }),
+      ...sandboxLeaseEnv({
+        leaseId: input.leaseId,
+        epoch: input.epoch,
+        sandboxId: input.sandboxId,
+      }),
+      ...workspaceRuntimeDirectAuthEnv({ token: input.credential.token }),
+      WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT: String(input.credential.expiresAt),
+    },
+  }
 }
 
 function text(env: NodeJS.ProcessEnv, key: string) {
@@ -98,7 +139,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // Claxedo keeps OpenCode compat ON unless its env flag disables it. The
     // env var is the wire format of this HOST decision across the process
     // boundary; the kit itself never reads it (option-only).
-    opencodeCompat: env.WORKSPACE_RUNTIME_DISABLE_OPENCODE_COMPAT !== "1",
+    opencodeCompat: env.WORKSPACE_RUNTIME_OPENCODE_COMPAT !== "0",
   }
   return { port, hostname, options }
 }

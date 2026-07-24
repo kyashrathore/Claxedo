@@ -6,6 +6,7 @@ import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "./pty/index"
 import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
+import { WorkspaceWorktreeManager } from "./worktree"
 import type { OpenCodeRequestFn, PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceHost } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
@@ -30,6 +31,8 @@ import {
 } from "./routes/workgraph-attempt-tools"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
+import { WorktreeRoutes } from "./routes/worktree"
+import { CheckpointRoutes } from "./routes/checkpoint"
 import {
   assertWorkspaceRuntimeExposure,
   createWorkspaceRuntimeExposureMiddleware,
@@ -41,6 +44,7 @@ import {
 } from "./exposure"
 import { runtimeEnvText } from "./env"
 import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
+import type { ProcessObserver } from "./managed-processes/process-observer"
 
 type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
@@ -65,6 +69,8 @@ export type WorkspaceRuntimeServiceExposure = {
 }
 
 export type WorkspaceRuntimeServerOptions = {
+  /** Optional local owner observer. Remote/relay compositions omit it. */
+  processObserver?: ProcessObserver
   relayHostAuth?: RelayHostAuthOptions
   hostTunnel?: WorkspaceRelayHostTunnelOptions
   configToken?: string
@@ -404,6 +410,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     isLoopbackHostname,
     env: process.env,
   })
+  if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
   const host = createWorkspaceHost({
     ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
     ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
@@ -413,7 +420,15 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   })
+  const worktrees = options.target
+      ? new WorkspaceWorktreeManager({
+        workspaceId: options.target.workspaceId,
+        sourceDirectory: options.target.directory,
+        ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+      })
+    : undefined
 
   const app = new Hono()
 
@@ -472,14 +487,35 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       return await relayHostAuth(c, next)
     })
   }
+  app.use("*", async (c, next) => {
+    if (c.req.path.startsWith(WorkspaceRuntimeRoutes.checkpoint) || ["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+      return await next()
+    }
+    const release = host.checkpoint.beginWrite()
+    if (!release) {
+      return c.json({
+        error: {
+          code: "workspace_checkpoint_frozen",
+          message: "Workspace writes are paused for a checkpoint",
+        },
+      }, 423)
+    }
+    try {
+      return await next()
+    } finally {
+      release()
+    }
+  })
   app.route("/", ConfigRoutes((snapshot) => host.apply(snapshot), {
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
+  if (worktrees) app.route(WorkspaceRuntimeRoutes.worktrees, WorktreeRoutes(worktrees))
+  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({ checkpoint: host.checkpoint, worktrees }))
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
-  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes())
+  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes(options.processObserver))
   app.route("/", RuntimeDocumentHydrationRoutes({
     trustedTransport: options.exposure?.kind === "relay",
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
@@ -561,8 +597,16 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const dispose = () => {
     if (disposed) return
     disposed = true
+    if (options.target && options.processObserver) {
+      options.processObserver.detachWorkspace(options.target.workspaceId)
+      if (options.target.directory !== options.target.workspaceId) {
+        options.processObserver.detachWorkspace(options.target.directory)
+      }
+      ProcessManager.bindProcessObserver(options.target.directory)
+    }
     workgraphConnectionTools.dispose()
     workgraphAttemptTools.dispose()
+    worktrees?.close()
     host.dispose()
   }
   return { app, host: { ...host, dispose }, dispose, injectWebSocket, upgradeWebSocket }

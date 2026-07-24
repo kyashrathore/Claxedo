@@ -63,6 +63,7 @@ import type {
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
+  AgentHarnessAdapterProcessOptions,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { extractAgents } from "./session"
@@ -95,13 +96,19 @@ import {
   sameAcpMcp,
 } from "./helpers"
 import { maybeAutoTitle } from "./title"
+import { codexAcpLaunch } from "./codex-config"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
+import {
+  observeAgentProcess,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 
 const log = Log.create({ service: "acp-adapter" })
 
 export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
-export type AcpHarnessAdapterOptions = {
+export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   binary: string
   harness?: AcpHarnessId
   args?: string[]
@@ -187,6 +194,10 @@ function stableKey(input: unknown) {
 
 function fingerprint(input: unknown) {
   return `acp:${createHash("sha256").update(stableKey(input)).digest("hex")}`
+}
+
+function executableBasename(input: string) {
+  return input.split(/[\\/]/).at(-1) || "agent"
 }
 
 function unrestorable(harness: AcpHarnessId, err: unknown) {
@@ -392,17 +403,87 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     })
   }
 
-  private make(dead: () => void = () => {}) {
+  private make(directory: string, role: "harness" | "probe", dead: () => void = () => {}) {
+    const launch = this.harnessId() === "codex"
+      ? codexAcpLaunch(this.commandArgs(), this.currentEnv)
+      : { args: this.commandArgs(), env: this.currentEnv }
+    const ownerId = `acp-${role}:${randomUUID()}`
+    const launchId = randomUUID()
     return new ACPProcess(
       root(),
       this.options.binary,
-      this.commandArgs(),
+      launch.args,
       this.currentModel,
       () => this.currentMcp,
       dead,
       this.options.createTransport ?? createStdioACPTransport,
-      () => this.currentEnv,
+      () => launch.env,
+      (transport) => this.observeProcess({
+        directory,
+        launchId,
+        ownerId,
+        role,
+        transport,
+      }),
     )
+  }
+
+  private observeProcess(input: {
+    directory: string
+    launchId: string
+    ownerId: string
+    role: "harness" | "probe"
+    transport: { pid?: number; kind: "stdio" | "streamable-http" | "websocket" }
+  }): AgentProcessObserverHandle {
+    const local = input.transport.kind === "stdio"
+    const direct = local && input.transport.pid !== undefined
+    const handles = [
+      observeAgentProcess(this.options.processObserver, {
+        ownerId: input.ownerId,
+        launchId: input.launchId,
+        harnessId: this.harnessId(),
+        access: "acp",
+        role: input.role,
+        label: `${this.harnessId()} ACP ${input.role}`,
+        locality: local ? "local-process" : "remote",
+        confidence: direct ? "direct" : local ? "inferred" : "not-process-backed",
+        capabilities: {
+          resourceMetrics: local ? "process" : "none",
+          ownerActions: false,
+        },
+        ...(input.transport.pid ? { pid: input.transport.pid } : {}),
+        directory: input.directory,
+        ...(local ? { executableBasename: executableBasename(this.options.binary) } : {}),
+        transport: input.transport.kind,
+      }),
+      ...this.currentMcp.map((server) => observeAgentProcess(this.options.processObserver, {
+        ownerId: `acp-mcp:${randomUUID()}`,
+        launchId: randomUUID(),
+        harnessId: this.harnessId(),
+        access: "acp",
+        role: "mcp" as const,
+        label: `MCP ${server.name}`,
+        locality: "command" in server ? "local-process" as const : "remote" as const,
+        confidence: "command" in server ? "inferred" as const : "not-process-backed" as const,
+        capabilities: {
+          resourceMetrics: "command" in server ? "process" as const : "none" as const,
+          ownerActions: false,
+        },
+        parentOwnerId: input.ownerId,
+        directory: input.directory,
+        mcpName: server.name,
+        transport: "command" in server ? "stdio" as const : "streamable-http" as const,
+        ...("command" in server ? { executableBasename: executableBasename(server.command) } : {}),
+      })),
+    ]
+    return {
+      update(event) {
+        handles.forEach((handle) => handle.update(event))
+      },
+      exit(event) {
+        handles.forEach((handle) => handle.exit(event))
+      },
+    }
   }
 
   private commandArgs() {
@@ -425,7 +506,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     if (entry.init) return entry.init
     const t0 = Date.now()
     entry.init = (async () => {
-      const proc = this.make(() => {
+      const proc = this.make(directory, "harness", () => {
         log.info("ACP process onDead callback: clearing shared process", {
           key,
           directory,
@@ -482,7 +563,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     if (this.probe.init) return this.probe.init
     const t0 = Date.now()
     this.probe.init = (async () => {
-      const proc = this.make(() => {
+      const proc = this.make(directory, "probe", () => {
         log.info("ACP probe process onDead callback: clearing probe process", {
           directory,
           harness: this.harnessId(),

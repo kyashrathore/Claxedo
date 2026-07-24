@@ -5,3 +5,7 @@ reports/
 # dev-server noise today. Track them again once we gate against a stable
 # (production-build) target.
 data/
+!data/
+data/*
+!data/diagnostics/
+!data/diagnostics/*.json

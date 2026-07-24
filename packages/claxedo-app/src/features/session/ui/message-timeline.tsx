@@ -104,7 +104,12 @@ import {
   captureTimelinePrependAnchor,
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
-import { createTimelineResizeAnchor, filterVirtualIndexes, scheduleConnectedMeasure } from "./timeline-virtualization"
+import {
+  createTimelineResizeAnchor,
+  filterVirtualIndexes,
+  scheduleConnectedMeasure,
+  TIMELINE_OVERSCAN,
+} from "./timeline-virtualization"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
@@ -403,7 +408,7 @@ export function MessageTimeline(props: {
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
-  onFirstTurnRecovery?: (kind: SessionErrorClass) => void
+  onFirstTurnRecovery?: (kind: SessionErrorClass, userMessageID: string) => unknown
   firstTurnRecovery?: boolean
 }) {
   let touchGesture: number | undefined
@@ -637,6 +642,7 @@ export function MessageTimeline(props: {
             props.firstTurnRecovery !== false && indexAccessor() === 0,
             (userMessageID) => turnFold.isFolded(userMessageID),
             settings.general.timelineFoldWhileRunning(),
+            info()?.lastTurn,
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -699,17 +705,12 @@ export function MessageTimeline(props: {
 
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const initialMeasurements = cached?.measurements
-  const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 50)
   const [initialRevealReady, setInitialRevealReady] = createSignal(!props.shouldAnchorBottom())
-  const prepareScrollOverscan = () => {
-    if (renderOverscan() < 50) setRenderOverscan(50)
-  }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
       prependLoading,
       hasScrollGesture: props.hasScrollGesture(),
     })
-    if (plan.prepareOverscan) prepareScrollOverscan()
     if (plan.clearPrependAnchor) clearPrependAnchor()
     return plan
   }
@@ -739,12 +740,12 @@ export function MessageTimeline(props: {
     anchorTo: "end",
     followOnAppend: true,
     scrollEndThreshold: 80,
-    overscan: 50,
+    overscan: TIMELINE_OVERSCAN,
     paddingEnd: 64,
     rangeExtractor: (range) => {
       const id = activeMessageID()
       const active = id ? timelineRows().findLastIndex((row) => "userMessageID" in row && row.userMessageID === id) : -1
-      const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
+      const indexes = defaultRangeExtractor({ ...range, overscan: TIMELINE_OVERSCAN })
       return filterVirtualIndexes(
         [...new Set([...resizeAnchor.pinnedIndexes(), ...indexes, ...(active < 0 ? [] : [active])])].sort(
           (a, b) => a - b,
@@ -818,15 +819,9 @@ export function MessageTimeline(props: {
   }
 
   onMount(() => {
-    const expand = () => {
-      const next = Math.min(50, renderOverscan() + 8)
-      setRenderOverscan(next)
-      if (next < 50) requestAnimationFrame(() => setTimeout(expand, 0))
-    }
     requestAnimationFrame(() => {
       if (props.shouldAnchorBottom()) virtualizer.scrollToEnd()
       scheduleInitialReveal()
-      if (renderOverscan() < 50) setTimeout(expand, 0)
     })
   })
 
@@ -1200,8 +1195,7 @@ export function MessageTimeline(props: {
   const turnInterrupted = (userMessageID: string) =>
     Timeline.turnInterrupted(
       turnAssistantMessages(userMessageID),
-      sessionStatus().type,
-      activeMessageID() === userMessageID,
+      info()?.lastTurn,
     )
 
   const assistantCopyPartID = (userMessageID: string) => {
@@ -1564,7 +1558,7 @@ export function MessageTimeline(props: {
                   <FirstTurnRecoveryCard
                     kind={kind()}
                     detail={errorRow().text}
-                    onAction={(value) => props.onFirstTurnRecovery?.(value)}
+                    onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageID)}
                   />
                 )}
               </Show>

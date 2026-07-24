@@ -142,18 +142,7 @@ export type BrowserWc = Pick<
 > & {
   debugger: BrowserDebugger
   session?: {
-    clearStorageData?: (opts?: {
-      storages?: Array<
-        | "cookies"
-        | "filesystem"
-        | "indexdb"
-        | "localstorage"
-        | "shadercache"
-        | "websql"
-        | "serviceworkers"
-        | "cachestorage"
-      >
-    }) => Promise<void>
+    clearStorageData?: WebContents["session"]["clearStorageData"]
   }
 }
 

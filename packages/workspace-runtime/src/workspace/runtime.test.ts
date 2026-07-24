@@ -22,6 +22,7 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagem
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { RuntimeStore } from "../store"
+import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 import type { AgentConfigOption, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import {
   AcpHarnessAdapter,
@@ -437,6 +438,33 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
+  test("checkpoint scrub excludes runtime-owned Codex credentials and resume re-injects them", async () => {
+    const home = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-checkpoint-auth-"))
+    tempDirs.push(home)
+    process.env.HOME = home
+    const app = new Hono()
+    const host = mountTestHost(app)
+
+    expect((await pushRuntimeConfig(app, {
+      version: 1,
+      runner: { type: "opencode" },
+      auth: { "codex-app-server": codexAuth() },
+      mcp: {},
+    })).status).toBe(200)
+
+    const target = path.join(home, ".codex", "auth.json")
+    expect(await fs.promises.readFile(target, "utf8")).toContain("access-token")
+
+    await host.checkpoint.freeze("drain")
+    await host.checkpoint.flush()
+    await host.checkpoint.scrub()
+    expect(await fs.promises.stat(target).then(() => true, () => false)).toBe(false)
+
+    await host.checkpoint.resume()
+    expect(await fs.promises.readFile(target, "utf8")).toContain("access-token")
+    host.dispose()
+  })
+
   test("uses injected initial harness instead of ambient harness env", () => {
     process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
     process.env.WORKSPACE_RUNTIME_ACP_BINARY = "ambient-binary"
@@ -524,8 +552,8 @@ describe("workspace runtime auth helpers", () => {
     expect(authCalls.at(-1)).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oauth-options" })
   })
 
-  test("harness config options returns static catalog for Codex ACP without probing the process", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-codex-catalog-"))
+  test("harness config options probes live Codex ACP session options", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-codex-live-"))
     tempDirs.push(dir)
     process.env.HOME = dir
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -565,9 +593,9 @@ describe("workspace runtime auth helpers", () => {
     const body = await res.json() as AgentConfigOption[]
 
     expect(res.status).toBe(200)
-    expect(probes).toBe(0)
-    expect(body[0]?.currentValue).toBe("gpt-5.5")
-    expect(body[0]?.selectOptions?.some((item) => item.id === "gpt-5.3-codex")).toBe(false)
+    expect(probes).toBe(1)
+    expect(body[0]?.currentValue).toBe("gpt-5.3-codex")
+    expect(body[0]?.options?.some((item) => item.value === "gpt-5.3-codex")).toBe(true)
   })
 
   test("runtime config apply serializes concurrent pushes", async () => {
@@ -2637,6 +2665,42 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     } finally {
       PiHarnessAdapter.prototype.listSessions = originalPiList
     }
+  })
+
+  test("adapts safe harness lifecycle records into the host process observer", async () => {
+    const events: ProcessObserverEvent[] = []
+    const observer = createProcessObserver({ sink: (event) => events.push(event) })
+    const runner = { id: "pi", access: "native" } as const
+    const entry = defaultWorkspaceHarnessRegistry().find((candidate) => candidate.match(runner))
+    if (!entry) throw new Error("Expected the Pi registry entry")
+    const adapter = entry.create({
+      runner,
+      options: { processObserver: observer },
+    })
+
+    const session = await adapter.createSession("/safe/workspace")
+    await adapter.deleteSession(session.id, "/safe/workspace")
+
+    const registered = events.find((event) => event.type === "registered")
+    expect(registered).toMatchObject({
+      type: "registered",
+      descriptor: {
+        kind: "harness",
+        role: "harness",
+        harnessId: "pi",
+        access: "local",
+        attributionConfidence: "direct",
+        directory: "/safe/workspace",
+        sessionId: session.id,
+      },
+      capabilities: {
+        stopGracefully: false,
+        killOwnedTree: false,
+      },
+    })
+    expect(events.some((event) => event.type === "exited")).toBeTrue()
+    adapter.dispose()
+    observer.dispose()
   })
 
   test("forwards the host Pi model backend to the built-in Pi adapter", async () => {

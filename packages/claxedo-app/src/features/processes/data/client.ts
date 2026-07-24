@@ -205,21 +205,6 @@ export function createProcessClient(input: Input) {
       return raw === undefined ? true : raw === true
     },
 
-    async diagnostics(init?: RequestInit): Promise<Process.DiagnosticSnapshot> {
-      const { res, raw } = await req("/diagnostics", { method: "GET", ...init })
-      if (!res.ok) throw new Error(detail(raw, res.status))
-      return Process.DiagnosticSnapshot.parse(raw)
-    },
-
-    async terminateDiagnostic(input: Process.DiagnosticTerminateInput) {
-      const { res, raw } = await req("/diagnostics/terminate", {
-        method: "POST",
-        body: JSON.stringify(input),
-      })
-      if (!res.ok) throw new Error(detail(raw, res.status))
-      return raw === undefined ? true : raw === true
-    },
-
     start,
 
     restart,

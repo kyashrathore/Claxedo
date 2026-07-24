@@ -1,8 +1,14 @@
 import { spawn, type ChildProcess } from "child_process"
+import { randomUUID } from "crypto"
 import { Log } from "../../log"
 import { toOpencodeConfig, type ResolvedMcpServer } from "../../mcp-resolver"
 import { workspaceDir } from "../../target"
 import { opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./env"
+import {
+  observeAgentProcess,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 
 const log = Log.create({ service: "opencode-adapter" })
 const IDLE_TIMEOUT_MS = (() => {
@@ -17,12 +23,14 @@ export class OpenCodeServerProcess {
   private spawnPromise: Promise<void> | null = null
   private idleTimer: ReturnType<typeof setTimeout> | null = null
   private shouldSpawn: boolean
+  private observation: AgentProcessObserverHandle | undefined
 
   constructor(
     opencodeUrl: string | undefined,
     private readonly input: {
       config: () => Record<string, ResolvedMcpServer>
       auth: () => Record<string, string>
+      processObserver?: AgentProcessObserver
     },
   ) {
     this.fixedUrl = opencodeUrl ?? ""
@@ -96,8 +104,10 @@ export class OpenCodeServerProcess {
     })
 
     this.proc = proc
+    this.observation = this.observeSpawnedProcess(proc, directory)
 
     proc.on("exit", (code, signal) => {
+      this.observation?.exit({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
       log.info("opencode process exited", { code, signal })
       if (this.proc === proc) {
         this.proc = null
@@ -108,6 +118,7 @@ export class OpenCodeServerProcess {
     })
 
     proc.on("error", (err) => {
+      this.observation?.exit({ reason: "error" })
       log.error("opencode spawn error", { err })
     })
 
@@ -142,6 +153,7 @@ export class OpenCodeServerProcess {
     })
 
     this.opencodeUrl = url
+    this.observation?.update({ lifecycle: "ready" })
     this.resetIdleTimer()
     log.info("opencode server started", { url })
   }
@@ -150,10 +162,81 @@ export class OpenCodeServerProcess {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null }
     if (this.proc) {
       log.info("Killing opencode process")
+      this.observation?.exit({ reason: "disposed" })
       try { this.proc.kill("SIGTERM") } catch {}
       this.proc = null
     }
+    this.observation = undefined
     this.opencodeUrl = this.fixedUrl
     this.spawnPromise = null
+  }
+
+  private observeSpawnedProcess(proc: ChildProcess, directory: string): AgentProcessObserverHandle {
+    return observeOpenCodeServerProcess({
+      observer: this.input.processObserver,
+      ...(proc.pid ? { pid: proc.pid } : {}),
+      directory,
+      config: this.input.config(),
+    })
+  }
+}
+
+export function observeOpenCodeServerProcess(input: {
+  observer?: AgentProcessObserver
+  pid?: number
+  directory: string
+  config?: Record<string, ResolvedMcpServer>
+}): AgentProcessObserverHandle {
+  const ownerId = `opencode-server:${randomUUID()}`
+  const handles = [
+    observeAgentProcess(input.observer, {
+      ownerId,
+      launchId: randomUUID(),
+      harnessId: "opencode",
+      access: "native",
+      role: "harness",
+      label: "OpenCode server",
+      locality: "local-process",
+      confidence: input.pid ? "direct" : "inferred",
+      capabilities: {
+        resourceMetrics: "process",
+        ownerActions: false,
+      },
+      ...(input.pid ? { pid: input.pid } : {}),
+      directory: input.directory,
+      executableBasename: "opencode",
+    }),
+    ...Object.values(input.config ?? {}).map((server) => observeAgentProcess(input.observer, {
+      ownerId: `opencode-mcp:${randomUUID()}`,
+      launchId: randomUUID(),
+      harnessId: "opencode",
+      access: "native",
+      role: "mcp" as const,
+      label: `MCP ${server.name}`,
+      locality: server.transport === "stdio" ? "local-process" as const : "remote" as const,
+      confidence: server.transport === "stdio" ? "inferred" as const : "not-process-backed" as const,
+      capabilities: {
+        resourceMetrics: server.transport === "stdio" ? "process" as const : "none" as const,
+        ownerActions: false,
+      },
+      parentOwnerId: ownerId,
+      directory: input.directory,
+      mcpName: server.name,
+      transport: server.transport === "stdio" ? "stdio" as const : "streamable-http" as const,
+      ...(server.transport === "stdio"
+        ? { executableBasename: server.command.split(/[\\/]/).at(-1) || "mcp" }
+        : {}),
+    })),
+  ]
+  let exited = false
+  return {
+    update(event) {
+      handles.forEach((handle) => handle.update(event))
+    },
+    exit(event) {
+      if (exited) return
+      exited = true
+      handles.forEach((handle) => handle.exit(event))
+    },
   }
 }

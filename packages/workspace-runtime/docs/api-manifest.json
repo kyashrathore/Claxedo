@@ -1,4 +1,5 @@
 {
+  "capabilityVersion": 2,
   "packageExports": [
     ".",
     "./client",
@@ -28,6 +29,8 @@
     "WorkGraphConnectionToolRoutes",
     "WorkspaceRuntimeRouteManifest",
     "WorkspaceRuntimeRoutes",
+    "WorkspaceWorktreeManager",
+    "createProcessObserver",
     "createWorkspaceHost",
     "createWorkspaceRuntimeApp",
     "createWorkspaceRuntimeJwtManagementAuth",
@@ -47,7 +50,8 @@
     "startWorkspaceRuntime",
     "waitForWorkspaceRuntimeServerPort",
     "workspaceRuntimeListenHostname",
-    "workspaceRuntimeRoute"
+    "workspaceRuntimeRoute",
+    "workspaceStorageRoot"
   ],
   "routePrefixes": [
     "/api/workgraph/attempt-binding",
@@ -56,6 +60,7 @@
     "/api/workgraph/tools",
     "/api/wr/health",
     "/api/wr/capabilities",
+    "/api/wr/checkpoint",
     "/api/wr/config",
     "/api/wr/harness-config-options",
     "/api/wr/pty",
@@ -67,6 +72,7 @@
     "/api/wr/diff",
     "/api/wr/git",
     "/api/wr/hook",
-    "/api/wr/session-env"
+    "/api/wr/session-env",
+    "/api/wr/worktrees"
   ]
 }

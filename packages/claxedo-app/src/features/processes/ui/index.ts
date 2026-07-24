@@ -1,8 +1,5 @@
 export { AddProcessDialog, type AddProcessDialogProps } from "./add-process-dialog"
-export {
-  DialogProcessDiagnostics,
-  type ProcessDiagnosticsSurface,
-} from "./dialog-process-diagnostics"
+export { DialogProcessDiagnostics } from "./dialog-process-diagnostics"
 export {
   ProcessPanePanel,
   type ProcessPanePanelProps,

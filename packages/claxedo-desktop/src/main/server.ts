@@ -1,12 +1,10 @@
 import { dialog } from "electron"
 
-import { getConfig, serve, type CommandChild, type Config } from "./cli"
+import type { Config } from "./cli"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
 import { store } from "./store"
 
 export type WslConfig = { enabled: boolean }
-
-export type HealthCheck = { wait: Promise<void> }
 
 export function getDefaultServerUrl(): string | null {
   const value = store.get(DEFAULT_SERVER_URL_KEY)
@@ -31,42 +29,8 @@ export function setWslConfig(config: WslConfig) {
   store.set(WSL_ENABLED_KEY, config.enabled)
 }
 
-export async function getSavedServerUrl(): Promise<string | null> {
-  const direct = getDefaultServerUrl()
-  if (direct) return direct
-
-  const config = await getConfig().catch(() => null)
-  if (!config) return null
-  return getServerUrlFromConfig(config)
-}
-
-export function spawnLocalServer(hostname: string, port: number, password: string) {
-  const { child, exit, events } = serve(hostname, port, password)
-
-  const wait = (async () => {
-    const url = `http://${hostname}:${port}`
-
-    const ready = async () => {
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const ok = await checkHealth(url, password)
-        if (ok) return
-      }
-    }
-
-    const terminated = async () => {
-      const payload = await exit
-      throw new Error(
-        `Sidecar terminated before becoming healthy (code=${payload.code ?? "unknown"} signal=${
-          payload.signal ?? "unknown"
-        })`,
-      )
-    }
-
-    await Promise.race([ready(), terminated()])
-  })()
-
-  return { child, health: { wait }, events }
+export function getSavedServerUrl(): string | null {
+  return getDefaultServerUrl()
 }
 
 export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
@@ -126,5 +90,3 @@ export function getServerUrlFromConfig(config: Config) {
   const host = server.hostname ? normalizeHostnameForUrl(server.hostname) : "127.0.0.1"
   return `http://${host}:${server.port}`
 }
-
-export type { CommandChild }

@@ -47,6 +47,27 @@ describe("process config file", () => {
     expect(configs.map((config) => config.id)).toEqual(["proc_cfg"])
   })
 
+  test("initializes process config and watcher only once", async () => {
+    await fs.mkdir(path.join(tmpDir, ".workspace-runtime"), { recursive: true })
+    await fs.writeFile(
+      path.join(tmpDir, ".workspace-runtime", "processes.jsonc"),
+      JSON.stringify({ processes: [] }),
+    )
+
+    const manager = await import("./manager")
+    await manager.initialize(tmpDir)
+    await Bun.sleep(50)
+    const schema = path.join(tmpDir, ".workspace-runtime", "processes.schema.json")
+    const first = (await fs.stat(schema)).mtimeMs
+
+    await Bun.sleep(50)
+    await manager.initialize(tmpDir)
+    await Bun.sleep(50)
+
+    expect((await fs.stat(schema)).mtimeMs).toBe(first)
+    await manager.dispose(tmpDir)
+  })
+
   test("migrates legacy .claxedo configs and persists generated ids", async () => {
     await fs.mkdir(path.join(tmpDir, ".claxedo"), { recursive: true })
     await fs.writeFile(

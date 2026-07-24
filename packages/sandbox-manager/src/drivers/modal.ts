@@ -8,6 +8,7 @@ import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
+import { sandboxDriverCatalog } from "../driver-catalog"
 
 type ModalAppLike = unknown
 type ModalImageLike = { imageId?: string }
@@ -205,6 +206,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      persistence: sandboxDriverCatalog.modal.metadata.persistence,
     },
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),

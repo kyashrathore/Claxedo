@@ -5,6 +5,8 @@ import { describe, expect, test } from "bun:test"
 import { OpenCodeHarnessAdapter, opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./index"
 import { dataDir } from "../../paths"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
+import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
+import { observeOpenCodeServerProcess } from "./process"
 
 describe("opencode adapter", () => {
   test("injects the claxedo opencode config dir into spawned env", () => {
@@ -59,6 +61,98 @@ describe("opencode adapter", () => {
     adapter.dispose()
 
     await expect(adapter.getServerUrl()).resolves.toBe("http://127.0.0.1:4096")
+  })
+
+  test("distinguishes injected and external OpenCode ownership without config secrets", async () => {
+    const sentinel = "opencode-observer-sentinel"
+    const descriptors: AgentProcessDescriptor[] = []
+    const processObserver: AgentProcessObserver = {
+      register(descriptor) {
+        descriptors.push(descriptor)
+        return { update: () => undefined, exit: () => undefined }
+      },
+    }
+    const config = {
+      mcp: {
+        local: {
+          name: "local",
+          source: "user",
+          transport: "stdio",
+          command: "node",
+          args: [sentinel],
+          env: { TOKEN: sentinel },
+        },
+        remote: {
+          name: "remote",
+          source: "user",
+          transport: "remote",
+          url: "https://mcp.example",
+          headers: { Authorization: sentinel },
+        },
+      },
+      auth: { TOKEN: sentinel },
+    }
+    const external = new OpenCodeHarnessAdapter("https://external.example", { processObserver })
+    const injected = new OpenCodeHarnessAdapter(undefined, {
+      processObserver,
+      request: async () => new Response("{}"),
+    })
+
+    await external.applyConfig(config)
+    await injected.applyConfig(config)
+
+    expect(descriptors.map((descriptor) => [descriptor.role, descriptor.locality, descriptor.confidence])).toEqual([
+      ["harness", "remote", "not-process-backed"],
+      ["harness", "in-process", "direct"],
+      ["mcp", "remote", "not-process-backed"],
+      ["mcp", "remote", "not-process-backed"],
+      ["mcp", "in-process", "inferred"],
+      ["mcp", "remote", "not-process-backed"],
+    ])
+    expect(JSON.stringify(descriptors)).not.toContain(sentinel)
+    external.dispose()
+    injected.dispose()
+  })
+
+  test("registers a spawned OpenCode PID and inferred stdio MCP child", () => {
+    const descriptors: AgentProcessDescriptor[] = []
+    const observer: AgentProcessObserver = {
+      register(descriptor) {
+        descriptors.push(descriptor)
+        return { update: () => undefined, exit: () => undefined }
+      },
+    }
+    const handle = observeOpenCodeServerProcess({
+      observer,
+      pid: 654,
+      directory: "/safe/workspace",
+      config: {
+        local: {
+          name: "local",
+          source: "user",
+          transport: "stdio",
+          command: "node",
+          args: [],
+          env: {},
+        },
+      },
+    })
+
+    expect(descriptors).toMatchObject([
+      {
+        harnessId: "opencode",
+        role: "harness",
+        pid: 654,
+        confidence: "direct",
+      },
+      {
+        harnessId: "opencode",
+        role: "mcp",
+        confidence: "inferred",
+        parentOwnerId: descriptors[0]?.ownerId,
+      },
+    ])
+    handle.exit({ reason: "disposed" })
   })
 
   test("reports OpenCode harness capabilities", () => {

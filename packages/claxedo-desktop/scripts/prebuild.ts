@@ -2,7 +2,7 @@
 /**
  * Pre-build script for Claxedo Electron desktop app.
  *
- * Rebuilds the sidecar binary, bundles server components,
+ * Rebuilds the installable CLI and embedded engine, bundles server components,
  * copies ACP binaries, and copies channel-specific icons —
  * so that `bun run build` + `bun run package:mac` produces
  * a fully up-to-date app.
@@ -10,8 +10,11 @@
 
 import { $ } from "bun"
 import * as fs from "fs"
+import { createRequire } from "node:module"
 import * as path from "path"
 
+import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { codexAcpTarget } from "./codex-acp-target"
 import { copyBinaryToSidecarFolder, copyIcons as copyChannelIcons, getCurrentSidecar, targetPlatformArch, windowsify } from "./utils"
 
 // ── Paths ──
@@ -50,12 +53,6 @@ function resolveBunPackage(pkgPrefix: string, subpath: string, localFallbackDir?
     if (fs.existsSync(direct)) return direct
   }
   return undefined
-}
-
-/** Copy a file and make it executable. */
-function copyExecutable(src: string, dest: string) {
-  fs.copyFileSync(src, dest)
-  fs.chmodSync(dest, 0o755)
 }
 
 // ── Icons ──
@@ -106,111 +103,118 @@ async function buildSidecar() {
   }
 }
 
-// ── node-embed artifact ──
-
-/**
- * The sidecar build (`buildSidecar`) runs `rm -rf dist` in packages/opencode,
- * which wipes the `opencode/node-embed` artifact (dist/node/node.js) that
- * claxedo-server imports. Regenerate it before bundling the server.
- */
-async function buildNodeEmbed() {
-  log("Building opencode/node-embed artifact...")
-  await $`bun run build:node`.cwd(OPENCODE_DIR).env(Bun.env)
-  log("node-embed built")
-}
-
 // ── claxedo-server ──
 
 async function bundleServer() {
-  const src = path.resolve(CLAXEDO_SERVER_DIR, "src/server.ts")
-  const dest = path.resolve(RESOURCES_DIR, "claxedo-server.js")
+  const src = path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts")
+  const dest = path.resolve(RESOURCES_DIR, "claxedo-server")
 
   if (!fs.existsSync(src)) {
     throw new Error(`claxedo-server source not found at ${src}`)
   }
+  log("Building workspace-runtime...")
+  await $`bun run build`.cwd(WS_RUNTIME_DIR)
+  log("Building SDK-next embedded OpenCode...")
+  await $`bun run build:node`.cwd(OPENCODE_DIR)
   log("Bundling claxedo-server...")
-  await $`bun build ${src} --outfile ${dest} --target=node --external better-sqlite3 --external node-pty --external jsonc-parser`
-  log("claxedo-server bundled")
+  const bundled = await bundleClaxedoServer(src, dest)
+  log(`claxedo-server bundled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB split)`)
 }
 
 // ── ACP binaries ──
 
 async function bundleClaudeAgentAcp() {
-  // Hoisting-proof lookup: a fresh CI install hoists this into the .bun
-  // store, not under workspace-runtime/node_modules.
-  const entry = resolveBunPackage(
-    "@zed-industries+claude-agent-acp@",
-    "@zed-industries/claude-agent-acp/dist/index.js",
-    WS_RUNTIME_DIR,
-  )
-  if (!entry) {
-    warn("claude-agent-acp not found, skipping")
-    return
+  const desktopPkg = await Bun.file(path.resolve(PACKAGE_DIR, "package.json")).json()
+  const version = desktopPkg.devDependencies?.["@agentclientprotocol/claude-agent-acp"]
+  if (!version) throw new Error("claxedo-desktop is missing @agentclientprotocol/claude-agent-acp")
+  const require = createRequire(path.resolve(PACKAGE_DIR, "package.json"))
+  const packagePath = require.resolve("@agentclientprotocol/claude-agent-acp/package.json")
+  const installed = await Bun.file(packagePath).json()
+  if (installed.version !== version) {
+    throw new Error(`claude-agent-acp version mismatch: expected ${version}, found ${installed.version}`)
   }
+  const entry = path.resolve(path.dirname(packagePath), "dist/index.js")
+  if (!fs.existsSync(entry)) throw new Error(`claude-agent-acp entry not found at ${entry}`)
 
   const dest = path.resolve(ACP_DIR, "claude-agent-acp")
   const tmpDir = path.resolve(ACP_DIR, ".claude-acp-tmp")
 
   log("Bundling claude-agent-acp...")
   await $`bun build ${entry} --outdir ${tmpDir} --target=node`
-  // Take only index.js; CLI vendor chunk is not needed for ACP mode
   let bundled = fs.readFileSync(path.join(tmpDir, "index.js"), "utf-8")
-  // Strip any existing shebang before adding ours (avoids duplicate shebang)
   bundled = bundled.replace(/^#!.*\n/, "")
-  fs.writeFileSync(dest, `#!/usr/bin/env node\n${bundled}`)
+  fs.writeFileSync(
+    dest,
+    `#!/usr/bin/env node
+if (Number.parseInt(process.versions.node, 10) < 22) {
+  console.error("Claude ACP requires Node.js 22 or newer. Install Node 22+ and restart Claxedo.")
+  process.exit(1)
+}
+${bundled}`,
+  )
   fs.chmodSync(dest, 0o755)
   fs.rmSync(tmpDir, { recursive: true, force: true })
   log("claude-agent-acp bundled")
 }
 
-function copyCodexAcp() {
+async function bundleCodexAcp() {
   const target = targetPlatformArch()
-  const pkgName = `codex-acp-${target.platform}-${target.arch}`
-  const resolveBin = () =>
-    resolveBunPackage(`@zed-industries+${pkgName}@`, `@zed-industries/${pkgName}/bin/codex-acp`, WS_RUNTIME_DIR)
+  const codexTarget = codexAcpTarget(target.platform, target.arch)
 
-  let binPath = resolveBin()
-  if (!binPath) {
-    // Fresh installs only fetch the host platform's optional variant (and a
-    // checkout that predates the devDependency has none). Pull every platform
-    // variant the same way opencode's build script does for its native deps.
-    const desktopPkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8"))
-    const version = desktopPkg.devDependencies?.["@zed-industries/codex-acp"]
-    if (version) {
-      log(`codex-acp ${target.platform}-${target.arch} not in store; installing all-platform variants...`)
-      const result = Bun.spawnSync(
-        ["bun", "install", `--os=*`, `--cpu=*`, `@zed-industries/codex-acp@${version}`],
-        { cwd: path.resolve(import.meta.dirname, ".."), stdout: "inherit", stderr: "inherit" },
-      )
-      if (result.exitCode === 0) binPath = resolveBin()
-    }
-  }
+  const desktopPkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8"))
+  const version = desktopPkg.devDependencies?.["@openai/codex"]
+  const resolveVendor = () =>
+    resolveBunPackage(
+      `@openai+codex@${version}-${target.platform}-${target.arch}`,
+      `@openai/codex/vendor/${codexTarget.triple}`,
+      WS_RUNTIME_DIR,
+    )
 
-  if (!binPath) {
-    warn(`codex-acp native binary not found for ${target.platform}-${target.arch}, skipping`)
-    return
+  const vendor = resolveVendor() ?? (() => {
+    if (!version) return
+    log(`Codex ${target.platform}-${target.arch} vendor not in store; installing all-platform variants...`)
+    const result = Bun.spawnSync(
+      ["bun", "install", `--os=*`, `--cpu=*`],
+      { cwd: PACKAGE_DIR, stdout: "inherit", stderr: "inherit" },
+    )
+    if (result.exitCode !== 0) return
+    return resolveVendor()
+  })()
+  if (!vendor) throw new Error(`Codex vendor not found for ${target.platform}/${target.arch}`)
+
+  fs.rmSync(path.resolve(ACP_DIR, "codex-acp"), { force: true })
+  fs.rmSync(path.resolve(ACP_DIR, "codex-acp.exe"), { force: true })
+  fs.rmSync(path.resolve(ACP_DIR, "codex-vendor"), { recursive: true, force: true })
+
+  const dest = path.resolve(ACP_DIR, target.platform === "win32" ? "codex-acp.exe" : "codex-acp")
+  log(`Bundling codex-acp for ${target.platform}-${target.arch}...`)
+  await $`bun build ${path.resolve(SCRIPT_DIR, "codex-acp-entry.ts")} --compile --target=${codexTarget.bun} --outfile ${dest}`
+
+  const vendorDest = path.resolve(ACP_DIR, "codex-vendor", codexTarget.triple)
+  fs.mkdirSync(path.dirname(vendorDest), { recursive: true })
+  fs.cpSync(vendor, vendorDest, { recursive: true })
+  if (target.platform !== "win32") {
+    fs.chmodSync(dest, 0o755)
+    fs.chmodSync(path.join(vendorDest, "bin", "codex"), 0o755)
   }
-  copyExecutable(binPath, path.resolve(ACP_DIR, "codex-acp"))
-  log("codex-acp binary copied")
+  log("codex-acp and Codex app-server vendor bundled")
 }
 
 async function copyAcpBinaries() {
   fs.mkdirSync(ACP_DIR, { recursive: true })
   await bundleClaudeAgentAcp()
-  copyCodexAcp()
+  await bundleCodexAcp()
 }
 
 // ── Main ──
 
-// buildSidecar wipes packages/opencode/dist (including the node-embed artifact),
-// so the sidecar → node-embed → server chain must run in sequence. Icon and ACP
-// copying are independent and run alongside it.
+// The installable CLI and desktop server share generated resources, so keep them in
+// sequence. Icon and ACP copying are independent and run alongside them.
 await Promise.all([
   copyIcons(),
   copyAcpBinaries(),
   (async () => {
     await buildSidecar()
-    await buildNodeEmbed()
     await bundleServer()
   })(),
 ])

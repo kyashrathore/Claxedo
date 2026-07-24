@@ -28,6 +28,20 @@ describe("markdown stream", () => {
     ])
   })
 
+  test("splits completed history into bounded prose and worker-rendered code blocks", () => {
+    expect(stream("before\n\n```ts\nconst x = 1\n```\n\nafter", false)).toEqual([
+      { raw: "before\n\n", src: "before\n\n", mode: "full" },
+      {
+        raw: "```ts\nconst x = 1\n```\n\n",
+        src: "const x = 1",
+        mode: "code",
+        language: "ts",
+        complete: true,
+      },
+      { raw: "after", src: "after", mode: "full" },
+    ])
+  })
+
   test("keeps a completed code fence in worker-rendered code mode when prose follows", () => {
     expect(stream("```ts\nconst x = 1\n```\n\nafter", true)).toEqual([
       { raw: "```ts\nconst x = 1\n```\n\n", src: "const x = 1", mode: "code", language: "ts", complete: true },
@@ -126,6 +140,18 @@ describe("markdown stream", () => {
     expect(
       canReusePendingBlock({ mode: "full", raw: "First\n\n" }, { mode: "full", raw: "# Inserted\n\n", src: "" }),
     ).toBe(false)
+    expect(
+      canReusePendingBlock(
+        { mode: "live", raw: "[README.md](/workspace/README.md)" },
+        { mode: "live", raw: "[README.md](/workspace/README.md) and more", src: "" },
+      ),
+    ).toBe(true)
+    expect(
+      canReusePendingBlock(
+        { mode: "live", raw: "[README.md](/workspace/README.md)" },
+        { mode: "full", raw: "[README.md](/workspace/README.md)\n\n", src: "" },
+      ),
+    ).toBe(true)
     expect(
       canReusePendingBlock({ mode: "code", raw: "```ts\none" }, { mode: "code", raw: "```ts\none two", src: "" }),
     ).toBe(true)

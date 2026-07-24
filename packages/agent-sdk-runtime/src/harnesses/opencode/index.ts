@@ -44,6 +44,12 @@ import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { createLegacyOpenCodeRuntimePublisher, drainEventStream, openEventStream } from "./events"
 import { opencodeAuthContent } from "./env"
 import { OpenCodeServerProcess } from "./process"
+import { randomUUID } from "crypto"
+import {
+  observeAgentProcess,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 export { opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./env"
 
 const log = Log.create({ service: "opencode-adapter" })
@@ -170,15 +176,45 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   // through it and `OpenCodeServerProcess` is never consulted — nothing spawns.
   // If both `request` and `opencodeUrl` are given, the injected handler wins.
   private injectedRequest: OpenCodeRequestFn | undefined
-  constructor(opencodeUrl?: string, input?: { headers?: HeadersInit; eventHub?: RuntimeEventHub; compat?: boolean; request?: OpenCodeRequestFn }) {
+  private transportObservation: AgentProcessObserverHandle | undefined
+  private mcpObservations: AgentProcessObserverHandle[] = []
+  private rootOwnerId: string | undefined
+  private processObserver: AgentProcessObserver | undefined
+  constructor(opencodeUrl?: string, input?: {
+    headers?: HeadersInit
+    eventHub?: RuntimeEventHub
+    compat?: boolean
+    request?: OpenCodeRequestFn
+    processObserver?: AgentProcessObserver
+  }) {
     this.compat = input?.compat ?? true
     this.base = new Headers(input?.headers)
     this.eventHub = input?.eventHub
     this.injectedRequest = input?.request
+    this.processObserver = input?.processObserver
     this.server = new OpenCodeServerProcess(opencodeUrl, {
       config: () => this.cfg,
       auth: () => this.auth,
+      processObserver: input?.processObserver,
     })
+    if (this.injectedRequest || opencodeUrl) {
+      this.rootOwnerId = `opencode-${this.injectedRequest ? "in-process" : "external"}:${randomUUID()}`
+      this.transportObservation = observeAgentProcess(input?.processObserver, {
+        ownerId: this.rootOwnerId,
+        launchId: randomUUID(),
+        harnessId: "opencode",
+        access: "native",
+        role: "harness",
+        label: this.injectedRequest ? "OpenCode in-process runtime" : "OpenCode external server",
+        locality: this.injectedRequest ? "in-process" : "remote",
+        confidence: this.injectedRequest ? "direct" : "not-process-backed",
+        capabilities: {
+          resourceMetrics: this.injectedRequest ? "shared-process" : "none",
+          ownerActions: false,
+        },
+      })
+      this.transportObservation.update({ lifecycle: "ready" })
+    }
   }
 
   // ── Server lifecycle ─────────────────────────────────────────────────────────
@@ -595,6 +631,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   applyConfig(config: Record<string, unknown>): Promise<void> {
     this.cfg = (config.mcp as Record<string, ResolvedMcpServer> | undefined) ?? {}
     this.auth = (config.auth as Record<string, string> | undefined) ?? {}
+    this.syncNonSpawnedMcpObservations()
     if (this.server.restartSpawnedProcess()) {
       log.info("applyConfig: restarting spawned opencode to apply config", {
         hasAuth: !!opencodeAuthContent(this.auth),
@@ -614,6 +651,37 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   }
 
   dispose(): void {
+    this.transportObservation?.exit({ reason: "disposed" })
+    this.mcpObservations.forEach((handle) => handle.exit({ reason: "disposed" }))
+    this.mcpObservations = []
     this.server.dispose()
+  }
+
+  private syncNonSpawnedMcpObservations() {
+    if (!this.rootOwnerId) return
+    this.mcpObservations.forEach((handle) => handle.exit({ reason: "disposed" }))
+    this.mcpObservations = Object.values(this.cfg).map((server) => observeAgentProcess(
+      this.processObserver,
+      {
+        ownerId: `opencode-mcp:${randomUUID()}`,
+        launchId: randomUUID(),
+        harnessId: "opencode",
+        access: "native",
+        role: "mcp",
+        label: `MCP ${server.name}`,
+        locality: server.transport === "stdio" && this.injectedRequest ? "in-process" : "remote",
+        confidence: server.transport === "stdio" && this.injectedRequest ? "inferred" : "not-process-backed",
+        capabilities: {
+          resourceMetrics: server.transport === "stdio" && this.injectedRequest ? "shared-process" : "none",
+          ownerActions: false,
+        },
+        parentOwnerId: this.rootOwnerId!,
+        mcpName: server.name,
+        transport: server.transport === "stdio" ? "stdio" : "streamable-http",
+        ...(server.transport === "stdio" && this.injectedRequest
+          ? { executableBasename: server.command.split(/[\\/]/).at(-1) || "mcp" }
+          : {}),
+      },
+    ))
   }
 }

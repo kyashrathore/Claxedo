@@ -21,6 +21,7 @@ export type RailWorkbenchShellProps = {
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   hasWorkspacePanelTarget: () => boolean
   onCloseSurface: (contentId: string) => void
+  onDiagnostics?: () => void
   onNewPage?: () => void
   onNewProject?: () => void
   onNewSession: () => void
@@ -50,6 +51,7 @@ export type RailWorkbenchShellProps = {
   workspacePanelNavigator: () => WorkspacePanelNavigator | null | undefined
   workspacePanelVisualOpen: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
+  mountWorkspacePanel?: boolean
 }
 
 export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
@@ -101,24 +103,27 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
         <RailWorkbenchCanvas
           state={props.state}
           emptyDraftDirectory={props.emptyDraftDirectory}
+          onDiagnostics={props.onDiagnostics}
           onNewProject={props.onNewProject}
         />
       </div>
-      <RailWorkspacePanelShell
-        state={props.state}
-        focusedPanelTarget={props.focusedPanelTarget}
-        hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
-        toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
-        toggleFocusedWorkspaceReview={props.toggleFocusedWorkspaceReview}
-        onRestingWidthChange={props.onWorkspacePanelWidthChange}
-        onPanelShellRef={props.onWorkspacePanelShellRef}
-        onToggleWorkspacePanelFullWidth={props.onToggleWorkspacePanelFullWidth}
-        visualOpen={props.workspacePanelVisualOpen}
-        workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}
-        workspacePanelFullWidth={props.workspacePanelFullWidth}
-        workspacePanelMode={props.workspacePanelMode}
-        workspacePanelNavigator={props.workspacePanelNavigator}
-      />
+      <Show when={props.mountWorkspacePanel !== false}>
+        <RailWorkspacePanelShell
+          state={props.state}
+          focusedPanelTarget={props.focusedPanelTarget}
+          hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
+          toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
+          toggleFocusedWorkspaceReview={props.toggleFocusedWorkspaceReview}
+          onRestingWidthChange={props.onWorkspacePanelWidthChange}
+          onPanelShellRef={props.onWorkspacePanelShellRef}
+          onToggleWorkspacePanelFullWidth={props.onToggleWorkspacePanelFullWidth}
+          visualOpen={props.workspacePanelVisualOpen}
+          workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}
+          workspacePanelFullWidth={props.workspacePanelFullWidth}
+          workspacePanelMode={props.workspacePanelMode}
+          workspacePanelNavigator={props.workspacePanelNavigator}
+        />
+      </Show>
 
       {/* Mount route content (DirectoryLayout + providers) without rendering it visually. */}
       <div class="hidden">{props.children}</div>

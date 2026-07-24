@@ -73,11 +73,16 @@ export function sandboxLeaseFromRow(lease: SandboxLeaseRow): SandboxLease {
     lastError: lease.last_error ?? undefined,
     lastHeartbeatAt: lease.last_heartbeat_at ?? undefined,
     lastActivityAt: lease.last_activity_at ?? undefined,
+    labels: lease.labels ?? undefined,
+    checkpoint: lease.checkpoint ?? undefined,
+    persistence: lease.persistence ?? undefined,
+    restore: lease.restore ?? undefined,
   }
 }
 
 export function sandboxLeaseStatus(status: SandboxLeaseRow["status"]): SandboxLease["status"] {
   if (status === "ready") return "ready"
+  if (status === "destroyed") return "destroyed"
   if (status === "stopped" || status === "stopping") return "stopped"
   if (status === "pending" || status === "acquiring" || status === "starting") return "acquiring"
   return "unavailable"
@@ -108,6 +113,10 @@ export function pendingSandboxLease(
     accel_base_image_id: null,
     accel_prepared_image_id: null,
     accel_snapshot_id: null,
+    labels: null,
+    checkpoint: null,
+    persistence: null,
+    restore: null,
     created_at: timestamp,
     updated_at: timestamp,
   }
@@ -225,6 +234,9 @@ export function recordSupervisorSandboxLeaseReady(input: {
     accel_base_image_id: prev?.accel_base_image_id ?? null,
     accel_prepared_image_id: prev?.accel_prepared_image_id ?? null,
     accel_snapshot_id: prev?.accel_snapshot_id ?? null,
+    checkpoint: prev?.checkpoint ?? null,
+    persistence: prev?.persistence ?? null,
+    restore: prev?.restore ?? null,
     created_at: prev?.created_at ?? ts,
     updated_at: ts,
   }

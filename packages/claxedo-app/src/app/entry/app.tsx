@@ -52,11 +52,9 @@ import { installSessionStatusTelemetryDevtools } from "../../features/session/st
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
 
-// Cold-launch perf: defer the query persister install (subscribe + JSON.parse
-// of the persisted blob) past first paint via requestIdleCallback. Queries
-// that race the restore simply cache-miss and refetch — the existing behavior
-// when the persisted cache is stale or missing — so deferring is safe.
-installQueryPersister({ deferToIdle: true })
+// Restore navigation data before the shell mounts so the sidebar can paint its
+// last-known session rows while the local server refresh runs in the background.
+installQueryPersister()
 // Rubric Q8: attach the polling-removal-gate devtools accessor at boot.
 // Self-gated by __CLAXEDO_DEBUG__ / CLAXEDO_DEBUG=1 — no-op in production.
 installSessionStatusTelemetryDevtools()
@@ -92,6 +90,7 @@ const preloadClaxedoAppShell = () => {
   })
   return claxedoAppShellLoad
 }
+void preloadClaxedoAppShell().catch(() => undefined)
 
 function ClaxedoAppShellHost(props: ParentProps) {
   const AppShell = claxedoAppShell()
@@ -149,6 +148,7 @@ declare global {
       perfEnabled?: boolean
       perfPath?: string | null
       perf?: DesktopPerf
+      startupIsolationStage?: string
     }
   }
 }

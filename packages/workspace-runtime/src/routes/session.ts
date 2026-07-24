@@ -20,7 +20,7 @@ import {
 import { workspaceRuntimeBus } from "../bus"
 import { withDir } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
-import { assertTarget, workspaceId } from "../target"
+import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
 
@@ -49,9 +49,13 @@ function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]
 
 function dir(c: {
   req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined }
-}): string {
+}, input?: { sessionId?: string }): string {
   try {
-    return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
+    const requested = c.req.query("directory") || c.req.header("x-opencode-directory")
+    if (!requested && input?.sessionId) {
+      return registeredWorkspaceDirectory(input.sessionId) ?? assertTarget(undefined)
+    }
+    return assertTarget(requested)
   } catch (err) {
     throw new HTTPException(400, { message: (err as Error).message })
   }
@@ -140,7 +144,7 @@ export function SessionRoutes(
           })
         }
       : undefined,
-    resolveDirectory: (c) => dir(c as never),
+    resolveDirectory: (c, input) => dir(c as never, input),
     beforeSessionOperation: (_c, input) => options?.beforeSessionOperation?.(input),
     listPermissions: options?.listPermissions
       ? (c, directory) => options.listPermissions!(c, requiredDirectory(directory))

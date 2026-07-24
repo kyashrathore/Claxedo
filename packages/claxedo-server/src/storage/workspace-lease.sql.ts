@@ -8,6 +8,11 @@
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
 import { eq } from "drizzle-orm"
 import { ClaxedoDB } from "./db"
+import type {
+  SandboxCheckpointReference,
+  SandboxPersistenceCapabilities,
+  SandboxRestoreStatus,
+} from "@claxedo/sandbox-manager"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 
 // ── Drizzle table definitions ──────────────────────────────────────────
@@ -35,6 +40,10 @@ export const ClaxedoWorkspaceLeaseTable = sqliteTable(
     accel_base_image_id: text(),
     accel_prepared_image_id: text(),
     accel_runtime_snapshot_id: text(),
+    labels: text(),
+    checkpoint: text(),
+    persistence_capabilities: text(),
+    restore_status: text(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),
   },
@@ -95,6 +104,12 @@ function rowToLease(row: typeof ClaxedoWorkspaceLeaseTable.$inferSelect): Sandbo
     accel_base_image_id: row.accel_base_image_id,
     accel_prepared_image_id: row.accel_prepared_image_id,
     accel_snapshot_id: row.accel_runtime_snapshot_id,
+    labels: row.labels ? JSON.parse(row.labels) as Record<string, string> : null,
+    checkpoint: row.checkpoint ? JSON.parse(row.checkpoint) as SandboxCheckpointReference : null,
+    persistence: row.persistence_capabilities
+      ? JSON.parse(row.persistence_capabilities) as SandboxPersistenceCapabilities
+      : null,
+    restore: row.restore_status ? JSON.parse(row.restore_status) as SandboxRestoreStatus : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
@@ -141,6 +156,10 @@ export function upsertLease(lease: SandboxLeaseRow): void {
         accel_base_image_id: lease.accel_base_image_id,
         accel_prepared_image_id: lease.accel_prepared_image_id,
         accel_runtime_snapshot_id: lease.accel_snapshot_id,
+        labels: lease.labels ? JSON.stringify(lease.labels) : null,
+        checkpoint: lease.checkpoint ? JSON.stringify(lease.checkpoint) : null,
+        persistence_capabilities: lease.persistence ? JSON.stringify(lease.persistence) : null,
+        restore_status: lease.restore ? JSON.stringify(lease.restore) : null,
         created_at: lease.created_at,
         updated_at: lease.updated_at,
       })
@@ -166,6 +185,10 @@ export function upsertLease(lease: SandboxLeaseRow): void {
           accel_base_image_id: lease.accel_base_image_id,
           accel_prepared_image_id: lease.accel_prepared_image_id,
           accel_runtime_snapshot_id: lease.accel_snapshot_id,
+          labels: lease.labels ? JSON.stringify(lease.labels) : null,
+          checkpoint: lease.checkpoint ? JSON.stringify(lease.checkpoint) : null,
+          persistence_capabilities: lease.persistence ? JSON.stringify(lease.persistence) : null,
+          restore_status: lease.restore ? JSON.stringify(lease.restore) : null,
           updated_at: lease.updated_at,
         },
       })

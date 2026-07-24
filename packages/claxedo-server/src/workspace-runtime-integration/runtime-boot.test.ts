@@ -1,9 +1,51 @@
 import { describe, expect, test } from "vitest"
 import { exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
-import { claxedoCorsOrigin, claxedoRuntimeRunnerFromEnv, claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
+import {
+  claxedoCorsOrigin,
+  claxedoRuntimeRunnerFromEnv,
+  claxedoWorkspaceRuntimeBootFromEnv,
+  claxedoWorkspaceRuntimeLaunch,
+} from "./runtime-boot"
 
 describe("claxedo workspace-runtime boot policy", () => {
+  test("launches the package bin with workspace-and-epoch scoped short-lived credentials", () => {
+    expect(claxedoWorkspaceRuntimeLaunch({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      sandboxId: "sandbox_1",
+      leaseId: "lease_1",
+      epoch: 7,
+      directory: "/workspace",
+      port: 2593,
+      credential: { token: "bootstrap-token", expiresAt: 20_000 },
+      now: 10_000,
+    })).toEqual({
+      command: ["workspace-runtime"],
+      env: expect.objectContaining({
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
+        WORKSPACE_RUNTIME_HOST_ID: "sandbox_1",
+        WORKSPACE_RUNTIME_LEASE_ID: "lease_1",
+        WORKSPACE_RUNTIME_EPOCH: "7",
+        WORKSPACE_RUNTIME_DIRECTORY: "/workspace",
+        WORKSPACE_RUNTIME_PORT: "2593",
+        WORKSPACE_RUNTIME_CONFIG_TOKEN: "bootstrap-token",
+        WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN: "bootstrap-token",
+        WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT: "20000",
+      }),
+    })
+    expect(() => claxedoWorkspaceRuntimeLaunch({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      sandboxId: "sandbox_1",
+      leaseId: "lease_1",
+      epoch: 7,
+      directory: "/workspace",
+      port: 2593,
+      credential: { token: "expired", expiresAt: 10_000 },
+      now: 10_000,
+    })).toThrow("expired")
+  })
   test("defaults: port 3002, loopback exposure, opencode native runner", async () => {
     const boot = await claxedoWorkspaceRuntimeBootFromEnv({
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
@@ -24,7 +66,7 @@ describe("claxedo workspace-runtime boot policy", () => {
     const boot = await claxedoWorkspaceRuntimeBootFromEnv({
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
       WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
-      WORKSPACE_RUNTIME_DISABLE_OPENCODE_COMPAT: "1",
+      WORKSPACE_RUNTIME_OPENCODE_COMPAT: "0",
     })
     expect(boot.options.opencodeCompat).toBe(false)
   })

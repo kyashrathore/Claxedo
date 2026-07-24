@@ -359,3 +359,39 @@ export async function prepareWorkspaceRuntime(input: {
     off?.()
   }
 }
+
+export async function prepareWorkspaceSessionWorktree(input: {
+  workspaceId: string
+  sessionId: string
+  directory?: string
+  baseUrl?: string
+  request?: typeof fetch
+  baseCommit?: string
+}) {
+  const transport = createTransport({
+    placement: {
+      workspaceId: input.workspaceId,
+      hosting: "workspace",
+      transport: centralTransportForServer(input.baseUrl) === "loopback" ? "loopback" : "workspace-relay",
+    },
+    serverUrl: input.baseUrl,
+    directory: input.directory ?? `workspace:${input.workspaceId}`,
+    request: input.request ?? authFetch,
+  })
+  const response = await transport.fetch("/api/wr/worktrees", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionId: input.sessionId,
+      ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
+    }),
+  })
+  if (!response.ok) throw new Error((await response.text()) || `Worktree admission failed: ${response.status}`)
+  const body = await response.json() as {
+    worktree?: { path?: string; branch?: string; baseCommit?: string }
+  }
+  if (!body.worktree?.path || !body.worktree.branch || !body.worktree.baseCommit) {
+    throw new Error("Worktree admission returned an invalid record")
+  }
+  return body.worktree
+}

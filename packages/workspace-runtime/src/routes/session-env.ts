@@ -5,6 +5,7 @@ import { spawn } from "child_process"
 import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import { buildSafeEnv } from "../pty/env"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import type { ProcessObserver } from "../managed-processes/process-observer"
 
 const EXEC_KILL_GRACE_MS = 250
 
@@ -267,7 +268,7 @@ function terminateExec(
   }, EXEC_KILL_GRACE_MS)
 }
 
-export function SessionEnvRoutes() {
+export function SessionEnvRoutes(processObserver?: ProcessObserver) {
   return new Hono()
     .onError((cause, c) => {
       if (isRequestBodyTooLarge(cause)) return c.json(requestBodyTooLargeBody(), 413)
@@ -294,6 +295,29 @@ export function SessionEnvRoutes() {
         },
         stdio: ["ignore", "pipe", "pipe"],
       })
+      const owner = child.pid && processObserver
+        ? processObserver.register(
+            {
+              ownerId: `session-shell:${crypto.randomUUID()}`,
+              ownerGeneration: crypto.randomUUID(),
+              launchId: crypto.randomUUID(),
+              kind: "session-shell",
+              role: "session-shell",
+              label: "Session tool shell",
+              pid: child.pid,
+              workspaceId: c.req.header("x-workspace-id") ?? base,
+              directory: cwd,
+              ...(stringValue(body.sessionId) ? { sessionId: stringValue(body.sessionId)! } : {}),
+              ...(stringValue(body.sessionId)
+                ? { parentOwnerId: `pi-session:${stringValue(body.sessionId)!}` }
+                : {}),
+            },
+            {
+              stopGracefully: async () => signalProcessGroup(child, "SIGTERM"),
+              killOwnedTree: async () => signalProcessGroup(child, "SIGKILL"),
+            },
+          )
+        : undefined
       const termination = {
         reason: undefined as "timeout" | "cancel" | undefined,
         sigkillTimer: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -316,6 +340,7 @@ export function SessionEnvRoutes() {
           })
           child.on("error", (cause) => {
             if (timer) clearTimeout(timer)
+            owner?.exit({ reason: "error" })
             if (streamClosed) return
             streamClosed = true
             writeNdjson(ctrl, { type: "error", error: cause.message })
@@ -324,6 +349,14 @@ export function SessionEnvRoutes() {
           child.on("close", (exitCode, signal) => {
             if (timer) clearTimeout(timer)
             if (!termination.reason && termination.sigkillTimer) clearTimeout(termination.sigkillTimer)
+            owner?.exit({
+              reason: termination.reason === "timeout"
+                ? "timeout"
+                : termination.reason === "cancel"
+                  ? "cancelled"
+                  : "exited",
+              ...(typeof exitCode === "number" ? { exitCode } : {}),
+            })
             if (streamClosed) return
             streamClosed = true
             writeNdjson(ctrl, {

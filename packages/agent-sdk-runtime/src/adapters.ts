@@ -4,6 +4,7 @@ export type {
   AgentHarnessAdapterCore,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
+  AgentHarnessAdapterProcessOptions,
   PermissionDecision,
   SupportsAbort,
   SupportsAgents,
@@ -44,7 +45,7 @@ export type {
   AcpRuntimeStore,
 } from "./harnesses/acp"
 export { ACP_RECOVER } from "./harnesses/acp/recovery"
-export { defaultAcpBinary } from "./harnesses/acp/default-binaries"
+export { bundledAcpBinary, defaultAcpBinary } from "./harnesses/acp/default-binaries"
 export { ClaudeHarnessAdapter } from "./harnesses/claude"
 export type { ClaudeHarnessAdapterOptions } from "./harnesses/claude"
 export { claudeAuthEnv, claudeAuthValue } from "./harnesses/claude/auth"

@@ -23,6 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 out/
+.artifacts/
 
 resources/opencode-cli*
 resources/claxedo-mcp*

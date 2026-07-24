@@ -14,3 +14,16 @@ export function claxedoMcpMode(env: Record<string, string | undefined> = process
 export function claxedoMcpReadOnly(env: Record<string, string | undefined> = process.env) {
   return claxedoMcpMode(env) === "read-only"
 }
+
+export type CloudWorkspaceLifecycleAction = "stop" | "restore" | "replace" | "cleanup" | "destroy"
+
+const APPROVAL_REQUIRED = new Set<CloudWorkspaceLifecycleAction>(["restore", "replace", "cleanup", "destroy"])
+
+export function cloudWorkspaceLifecycleApprovalRequired(action: CloudWorkspaceLifecycleAction) {
+  return APPROVAL_REQUIRED.has(action)
+}
+
+export function assertCloudWorkspaceLifecycleApproval(action: CloudWorkspaceLifecycleAction, approved: boolean | undefined) {
+  if (!cloudWorkspaceLifecycleApprovalRequired(action) || approved === true) return
+  throw new Error(`Explicit approval is required before cloud workspace ${action}`)
+}

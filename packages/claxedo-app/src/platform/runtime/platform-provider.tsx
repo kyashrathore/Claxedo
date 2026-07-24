@@ -1,4 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
 export type DesktopMenuAction =
@@ -69,6 +70,7 @@ export type Platform = {
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
   getAuthToken?(): Promise<string | null>
   runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void
+  processDiagnostics?: LocalDiagnostics.Capability
 }
 
 const platformContextInput = {

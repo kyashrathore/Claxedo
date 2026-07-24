@@ -92,7 +92,7 @@ describe("opencode-engine embedded mode", () => {
       opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`)),
     ).rejects.toBeInstanceOf(OpenCodeEngineUnavailableError)
 
-    // The error names the exact fix command and carries a stable code.
+    // The error remains actionable for an installed app and carries a stable code.
     let caught: OpenCodeEngineUnavailableError | undefined
     try {
       await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
@@ -100,7 +100,7 @@ describe("opencode-engine embedded mode", () => {
       caught = err as OpenCodeEngineUnavailableError
     }
     expect(caught?.code).toBe("opencode_engine_unavailable")
-    expect(caught?.message).toContain("bun run --cwd packages/opencode build:node")
+    expect(caught?.message).toContain("Reinstall or rebuild Claxedo")
   })
 
   test("serves requests through the injected embedded handler and drains only when loaded", async () => {

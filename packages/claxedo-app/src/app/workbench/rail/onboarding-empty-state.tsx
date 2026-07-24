@@ -36,6 +36,7 @@ export function OnboardingEmptyState(props: {
   projectDirectory?: string
   fallback?: JSX.Element | false
   overlay?: boolean
+  onDiagnostics?: () => void
   onNewProject?: () => void
 }) {
   const platform = usePlatform()
@@ -180,6 +181,13 @@ export function OnboardingEmptyState(props: {
             <h1 class="sr-only">No projects yet</h1>
             <span class="text-14-regular">No projects yet. Create one to get started.</span>
             <Button icon="plus-small" onClick={() => props.onNewProject?.()}>New Project</Button>
+            <Show when={props.onDiagnostics}>
+              {(onDiagnostics) => (
+                <Button data-testid="empty-diagnostics-trigger" variant="ghost" onClick={onDiagnostics()}>
+                  Diagnostics
+                </Button>
+              )}
+            </Show>
           </div>
         )}
       >
@@ -188,6 +196,18 @@ export function OnboardingEmptyState(props: {
             class="flex h-full items-center justify-center overflow-auto p-4"
             classList={{ "absolute inset-0 z-20 bg-background-base": props.overlay }}
           >
+          <Show when={props.onDiagnostics}>
+            {(onDiagnostics) => (
+              <Button
+                class="absolute bottom-4 right-4"
+                data-testid="empty-diagnostics-trigger"
+                variant="ghost"
+                onClick={onDiagnostics()}
+              >
+                Diagnostics
+              </Button>
+            )}
+          </Show>
           <SetupShell
             mode={view().mode}
             steps={view().steps}

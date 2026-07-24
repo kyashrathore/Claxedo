@@ -9,11 +9,12 @@ import {
   sandboxDriverIds,
   sandboxDriverId,
   sandboxDriverAuth,
+  validateSandboxPersistenceCapabilities,
 } from "./driver-catalog"
 
 describe("sandbox driver catalog", () => {
   test("owns every direct sandbox driver id", () => {
-    expect(sandboxDriverIds).toEqual(["daytona", "modal", "vercel", "cloudflare", "box", "docker"])
+    expect(sandboxDriverIds).toEqual(["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"])
     expect(Object.keys(sandboxDriverCatalog).sort()).toEqual([...sandboxDriverIds].sort())
     expect(isSandboxDriverID("daytona")).toBe(true)
     expect(isSandboxDriverID("fetch")).toBe(false)
@@ -21,8 +22,48 @@ describe("sandbox driver catalog", () => {
 
   test("describes where each driver can run without workerSafe/localOnly booleans", () => {
     expect(sandboxDriverCatalog.cloudflare.metadata.driverRunsIn).toEqual(["worker"])
+    expect(sandboxDriverCatalog.exe.metadata.driverRunsIn).toEqual(["worker", "node"])
     expect(sandboxDriverCatalog.daytona.metadata.driverRunsIn).toEqual(["worker", "node"])
     expect(sandboxDriverCatalog.docker.metadata.driverRunsIn).toEqual(["local"])
+  })
+
+  test("declares persistence semantics for every driver", () => {
+    expect(sandboxDriverCatalog.daytona.metadata.persistence).toEqual({
+      resume: "same-sandbox",
+      capture: "filesystem",
+      clone: false,
+      captureSource: "preserved",
+      retention: "provider-managed",
+      restoreMount: "new-resource",
+    })
+    expect(sandboxDriverCatalog.cloudflare.metadata.persistence).toEqual({
+      resume: "replacement-restore",
+      capture: "directories",
+      clone: false,
+      captureSource: "preserved",
+      retention: "provider-managed",
+      restoreMount: "copy-on-write",
+    })
+    expect(sandboxDriverCatalog.box.metadata.persistence.capture).toBe("none")
+    expect(sandboxDriverCatalog.docker.metadata.persistence.restoreMount).toBe("same-resource")
+    expect(sandboxDriverCatalog.exe.metadata.persistence.clone).toBe(true)
+    for (const driver of Object.values(sandboxDriverCatalog)) {
+      expect(validateSandboxPersistenceCapabilities(driver.metadata.persistence)).toEqual({ valid: true })
+    }
+  })
+
+  test("rejects capability combinations that cannot restore consistently", () => {
+    expect(validateSandboxPersistenceCapabilities({
+      resume: "replacement-restore",
+      capture: "none",
+      clone: false,
+      captureSource: "not-applicable",
+      retention: "not-applicable",
+      restoreMount: "not-applicable",
+    })).toEqual({
+      valid: false,
+      reason: "replacement restore requires a capture source",
+    })
   })
 
   test("keeps Docker local-only and loopback-only", () => {
@@ -39,6 +80,9 @@ describe("sandbox driver catalog", () => {
 
   test("parses config and environment auth without the legacy provider registry", () => {
     expect(sandboxDriverAuth({ auth: { daytona: { api_key: "dtn" } } }, "daytona")).toEqual({ api_key: "dtn" })
+    expect(sandboxDriverAuth(undefined, "exe", { EXE_DEV_API_TOKEN: "exe-token" })).toEqual({
+      api_token: "exe-token",
+    })
     expect(sandboxDriverAuth(undefined, "modal", {
       MODAL_TOKEN_ID: "id",
       MODAL_TOKEN_SECRET: "secret",

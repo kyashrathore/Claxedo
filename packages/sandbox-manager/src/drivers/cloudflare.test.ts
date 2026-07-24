@@ -187,4 +187,47 @@ describe("CloudflareSandboxDriver", () => {
     expect(calls[0].url).toBe("https://sbx.example.com/sandbox/claxedo-ws_1/touch-runtime")
     expect(calls[0].body).toEqual({ port: 2593 })
   })
+
+  test("captures declared directories and remounts a backup during replacement restore", async () => {
+    const { calls, fetch } = harness((call) => {
+      if (call.url.endsWith("/backup")) return { status: 200, json: { backupId: "backup-1" } }
+      return { status: 200, json: { ready: true, url: "https://r/" } }
+    })
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, workspaceDir: "/workspace" })
+
+    await expect(driver.snapshot!({
+      workspaceId: "ws_1",
+      sandboxId: "claxedo-ws_1",
+      url: "https://r/",
+      hostId: "claxedo-ws_1",
+    })).resolves.toEqual({ snapshotId: "backup-1" })
+    await driver.ensureHost({
+      ...createInput,
+      bootSource: { kind: "driver-snapshot", snapshotId: "backup-1" },
+    })
+
+    expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
+      directories: ["/workspace"],
+    })
+    expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.restore).toEqual({
+      backupId: "backup-1",
+      directories: ["/workspace"],
+    })
+  })
+
+  test("captures the workspace root recorded by ensure instead of the driver default", async () => {
+    const { calls, fetch } = harness((call) => {
+      if (call.url.endsWith("/backup")) return { status: 200, json: { backupId: "backup-repo" } }
+      return { status: 200, json: { ready: true, url: "https://r/" } }
+    })
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, workspaceDir: "/workspace" })
+    const target = await driver.ensureHost({ ...createInput, workspaceRoot: "/repo" })
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+
+    await driver.snapshot!(target)
+
+    expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
+      directories: ["/repo"],
+    })
+  })
 })

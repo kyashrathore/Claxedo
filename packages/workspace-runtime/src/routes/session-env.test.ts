@@ -5,6 +5,11 @@ import path from "path"
 import { Hono } from "hono"
 import { SessionEnvRoutes, SESSION_ENV_GREP_MAX_FILE_BYTES } from "./session-env"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import {
+  createProcessObserver,
+  type ProcessObserver,
+  type ProcessObserverEvent,
+} from "../managed-processes/process-observer"
 
 const prevDir = process.env.WORKSPACE_RUNTIME_DIRECTORY
 
@@ -14,9 +19,9 @@ async function temp() {
   return directory
 }
 
-function app() {
+function app(processObserver?: ProcessObserver) {
   const out = new Hono()
-  out.route("/api/wr/session-env", SessionEnvRoutes())
+  out.route("/api/wr/session-env", SessionEnvRoutes(processObserver))
   return out
 }
 
@@ -184,6 +189,36 @@ describe("SessionEnvRoutes", () => {
         },
       })
     }
+  })
+
+  test("attributes Pi SessionEnv children by session without retaining shell text", async () => {
+    const directory = await temp()
+    const sentinel = "session-env-observer-sentinel"
+    const events: ProcessObserverEvent[] = []
+    const observer = createProcessObserver({ sink: (event) => events.push(event) })
+    const response = await app(observer).request(url("/exec", directory), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        command: `printf ${sentinel}`,
+        sessionId: "session-safe",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    await response.text()
+    expect(events[0]).toMatchObject({
+      type: "registered",
+      descriptor: {
+        kind: "session-shell",
+        sessionId: "session-safe",
+        parentOwnerId: "pi-session:session-safe",
+        label: "Session tool shell",
+      },
+    })
+    expect(JSON.stringify(events)).not.toContain(sentinel)
+    expect(events.some((event) => event.type === "exited")).toBeTrue()
+    observer.dispose()
   })
 
   test("rejects oversized session-env write bodies", async () => {

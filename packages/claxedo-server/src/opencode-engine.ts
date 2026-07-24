@@ -7,9 +7,9 @@
  * composition root (startControlPlaneStack / startServer / main):
  *
  *   - "embedded" (DEFAULT when no external URL is configured): lazily boots the
- *     OpenCode engine in-process via its Bun-built node artifact
- *     (`opencode/node-embed`) and serves requests socketlessly through
- *     `Server.Default().app.fetch`. NOTHING listens on :4096.
+ *     OpenCode engine in-process through the SDK-next embedded host and serves
+ *     requests socketlessly through its single request handler. NOTHING listens
+ *     on :4096.
  *   - "external-url": an explicit opt-in. Rewrites the synthetic request origin
  *     (`http://opencode.internal`) onto the configured URL and calls `fetch`,
  *     applying opencodeHeaders — i.e. the historical passthrough behavior.
@@ -22,6 +22,12 @@
 import path from "path"
 import fs from "fs"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
+import {
+  createEmbeddedHost,
+  type ApplicationToolRegistration,
+  type EmbeddedHost,
+  type EmbeddedModule,
+} from "@opencode-ai/sdk-next/embedded"
 import { dataDir } from "./paths"
 import { opencodeHeaders } from "./opencode-auth"
 
@@ -42,7 +48,6 @@ type EngineConfig = { mode: "external-url"; url: string; headers?: HeadersInit }
 // composition root ever writes this.
 let config: EngineConfig = { mode: "embedded" }
 let applicationTools: (() => Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>>) | undefined
-let disposeApplicationTools: (() => Promise<void>) | undefined
 
 /**
  * Structured, actionable failure surfaced to consumers when the embedded engine
@@ -53,9 +58,7 @@ export class OpenCodeEngineUnavailableError extends Error {
   readonly code = "opencode_engine_unavailable"
   constructor(cause: unknown) {
     super(
-      "The embedded OpenCode engine failed to load. Build its node artifact first:\n" +
-        "  bun run --cwd packages/opencode build:node\n" +
-        "(run from the repo root). Original error: " +
+      "The SDK-next embedded OpenCode engine failed to load. Reinstall or rebuild Claxedo so its embedded engine artifact is included. Original error: " +
         (cause instanceof Error ? cause.message : String(cause)),
     )
     this.name = "OpenCodeEngineUnavailableError"
@@ -79,25 +82,12 @@ export function opencodeEngineMode(): OpenCodeEngineMode {
   return config.mode
 }
 
-export type OpenCodeApplicationToolRegistration = Readonly<{
-  description: string
-  inputSchema: Record<string, unknown>
-  outputSchema?: Record<string, unknown>
-  execute(
-    input: unknown,
-    context: Readonly<{
-      sessionID: string
-      agent: string
-      assistantMessageID: string
-      toolCallID: string
-    }>,
-  ): Promise<unknown>
-}>
+export type OpenCodeApplicationToolRegistration = ApplicationToolRegistration
 
 export function configureOpenCodeApplicationTools(
   factory: (() => Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>>) | undefined,
 ) {
-  if (loadedModule && factory)
+  if (loadedHost && factory)
     throw new Error("OpenCode application tools must be configured before the embedded engine starts")
   applicationTools = factory
 }
@@ -113,26 +103,23 @@ export function configureOpenCodeCompat(url: string) {
 
 // --- Embedded engine (lazy, memoized) ------------------------------------
 
-type EmbeddedHandler = (request: Request) => Promise<Response> | Response
-
 // Injectable import seam so tests can exercise the structured-failure path
 // without shipping a broken artifact. Production loads the real node artifact.
-type EmbedModule = typeof import("opencode/node-embed")
-let loader: () => Promise<EmbedModule> = () => import("opencode/node-embed")
+let loader: () => Promise<EmbeddedModule> = () => import("opencode/node-embed")
 
 /** TEST-ONLY: replace the engine module loader (structured-failure coverage). */
-export function __setOpenCodeEmbedLoaderForTests(next: (() => Promise<EmbedModule>) | undefined) {
+export function __setOpenCodeEmbedLoaderForTests(next: (() => Promise<EmbeddedModule>) | undefined) {
   loader = next ?? (() => import("opencode/node-embed"))
-  embeddedHandlerPromise = undefined
-  loadedModule = undefined
+  embeddedHostPromise = undefined
+  loadedHost = undefined
 }
 
-let embeddedHandlerPromise: Promise<EmbeddedHandler> | undefined
-let loadedModule: EmbedModule | undefined
+let embeddedHostPromise: Promise<EmbeddedHost> | undefined
+let loadedHost: EmbeddedHost | undefined
 let loggedFailure = false
 
-async function embeddedHandler(): Promise<EmbeddedHandler> {
-  embeddedHandlerPromise ??= (async () => {
+async function embeddedHost(): Promise<EmbeddedHost> {
+  embeddedHostPromise ??= (async () => {
     // The engine reads OPENCODE_DB (its own wire format) at import time via
     // core/src/flag/flag.ts. We MUST set it — an absolute path under Claxedo's
     // data dir — BEFORE importing the module so the engine's process-global
@@ -143,24 +130,24 @@ async function embeddedHandler(): Promise<EmbeddedHandler> {
     fs.mkdirSync(dbDir, { recursive: true })
     process.env.OPENCODE_DB = path.join(dbDir, "opencode.db")
     try {
-      const mod = await loader()
-      loadedModule = mod
-      if (applicationTools)
-        disposeApplicationTools = await mod.ApplicationToolRuntime.register(await applicationTools())
-      const handler = mod.Server.Default().app.fetch
-      return handler as EmbeddedHandler
+      const host = await createEmbeddedHost({
+        load: loader,
+        ...(applicationTools ? { applicationTools } : {}),
+      })
+      loadedHost = host
+      return host
     } catch (cause) {
       if (!loggedFailure) {
         loggedFailure = true
         console.error("[opencode-engine]", new OpenCodeEngineUnavailableError(cause).message)
       }
       // Reset so a later request (after the artifact is built) can retry.
-      embeddedHandlerPromise = undefined
-      loadedModule = undefined
+      embeddedHostPromise = undefined
+      loadedHost = undefined
       throw new OpenCodeEngineUnavailableError(cause)
     }
   })()
-  return embeddedHandlerPromise
+  return embeddedHostPromise
 }
 
 // --- URL-mode rewrite -----------------------------------------------------
@@ -191,8 +178,7 @@ export const opencodeRequest: OpenCodeRequestFn = async (request) => {
   if (config.mode === "external-url") {
     return fetch(rewriteToConfiguredUrl(request, config.url))
   }
-  const handler = await embeddedHandler()
-  return handler(request)
+  return (await embeddedHost()).fetch(request)
 }
 
 /**
@@ -200,15 +186,12 @@ export const opencodeRequest: OpenCodeRequestFn = async (request) => {
  * never loaded (nothing to dispose). Wired into shutdownControlPlaneRuntime.
  */
 export async function drainOpenCodeEngine(): Promise<void> {
-  if (!loadedModule) return
-  const module = loadedModule
-  const disposeTools = disposeApplicationTools
-  loadedModule = undefined
-  embeddedHandlerPromise = undefined
-  disposeApplicationTools = undefined
+  if (!loadedHost) return
+  const host = loadedHost
+  loadedHost = undefined
+  embeddedHostPromise = undefined
   try {
-    await disposeTools?.()
-    await module.InstanceRuntime.disposeAllInstances()
+    await host.dispose()
   } catch (err) {
     console.error("[opencode-engine] WARN  drain failed:", err)
   }

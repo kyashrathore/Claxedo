@@ -83,6 +83,65 @@ async function eventually(fn: () => void) {
 }
 
 describe("createCentralSessionRuntime", () => {
+  test("admits a cloud worktree before binding and reuses exact retry identity", async () => {
+    const svc = services()
+    let meta: Awaited<ReturnType<typeof svc.projectionStore.session_meta>>
+    const sessionMeta = svc.projectionStore.session_meta as ReturnType<typeof vi.fn>
+    const putSessionMeta = svc.projectionStore.put_session_meta as ReturnType<typeof vi.fn>
+    sessionMeta.mockImplementation(async () => meta)
+    putSessionMeta.mockImplementation(async (sessionID, input) => {
+      meta = {
+        sessionID,
+        host: "central",
+        workspaceID: input.workspaceID ?? undefined,
+        toolSandbox: input.toolSandbox ?? undefined,
+        title: input.title ?? undefined,
+        createdAt: 1,
+        updatedAt: 1,
+        tags: [],
+        attachments: [],
+      }
+    })
+    const placements: SessionEnvFactoryInput[] = []
+    const admitWorkspaceSession = vi.fn(async () => ({
+      directory: "/home/runtime/.claxedo/workspaces/ws-cloud/worktrees/session-cloud",
+      worktree: "claxedo/session/session-cloud",
+      baseCommit: "a".repeat(40),
+      leaseEpoch: 7,
+    }))
+    const runtime = createCentralSessionRuntime(svc, {
+      admitWorkspaceSession,
+      createEnv: async (input) => {
+        placements.push(input)
+        return createVirtualSessionEnv()
+      },
+    })
+    const input = {
+      sessionId: "session-cloud",
+      title: "Cloud",
+      workspaceId: "ws-cloud",
+      toolSandbox: { kind: "workspace-runtime" as const, workspaceId: "ws-cloud" },
+    }
+
+    await expect(runtime.createHybridSession(input)).resolves.toEqual({ id: "session-cloud" })
+    await expect(runtime.createHybridSession(input)).resolves.toEqual({ id: "session-cloud" })
+
+    expect(admitWorkspaceSession).toHaveBeenCalledWith({
+      sessionId: "session-cloud",
+      workspaceId: "ws-cloud",
+    })
+    expect(placements).toHaveLength(1)
+    expect(placements[0]?.toolSandbox).toEqual({
+      kind: "workspace-runtime",
+      workspaceId: "ws-cloud",
+      directory: "/home/runtime/.claxedo/workspaces/ws-cloud/worktrees/session-cloud",
+      worktree: "claxedo/session/session-cloud",
+      baseCommit: "a".repeat(40),
+      leaseEpoch: 7,
+    })
+    expect(meta?.toolSandbox).toEqual(placements[0]?.toolSandbox)
+  })
+
   test("rejects a malformed explicit deployment model instead of auto-selecting", async () => {
     const priorModel = process.env.CLAXEDO_PI_MODEL
     process.env.CLAXEDO_PI_MODEL = "anthropic"

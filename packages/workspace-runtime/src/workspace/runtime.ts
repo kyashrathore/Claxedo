@@ -18,7 +18,7 @@ import {
   type AgentQuestionRow,
   type SessionConfig,
   type SessionConfigUpdate,
-  sdkModelConfigOption,
+  type AgentProcessObserver,
 } from "@claxedo/agent-sdk-runtime"
 import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions"
 import {
@@ -47,6 +47,7 @@ import type { Context, Hono } from "hono"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
+import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore } from "../store"
 import { assertTarget, workspaceDir, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
@@ -95,6 +96,7 @@ export type WorkspaceRuntimeStore =
       input?: { directory?: string },
     ): SessionConfig | null | undefined
     recoverBusySessions?: () => unknown
+    flush?: () => void
     close?: () => void
   }
 
@@ -110,6 +112,8 @@ export type WorkspaceRuntimeStore =
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
 export type WorkspaceHostOptions = {
+  /** Optional, local-only lifecycle observer supplied by an embedding host. */
+  processObserver?: ProcessObserver
   opencodeUrl?: string
   /**
    * Injected in-process engine transport — a peer of `opencodeUrl`. When set,
@@ -515,10 +519,11 @@ export async function materializeCodexAuth(input: string | undefined) {
   const refresh = typeof row?.refresh_token === "string" ? row.refresh_token : typeof oauth?.refresh === "string" ? oauth.refresh : undefined
   const account = typeof row?.account_id === "string" ? row.account_id : typeof oauth?.account_id === "string" ? oauth.account_id : undefined
   if (!access || !refresh || !account) return
-  const dir = path.join(os.homedir(), ".codex")
+  const dir = path.join(process.env.HOME || os.homedir(), ".codex")
   await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 })
+  const target = path.join(dir, "auth.json")
   await fs.promises.writeFile(
-    path.join(dir, "auth.json"),
+    target,
     JSON.stringify({
       auth_mode: typeof value.auth_mode === "string" ? value.auth_mode : "chatgpt",
       OPENAI_API_KEY: null,
@@ -532,10 +537,11 @@ export async function materializeCodexAuth(input: string | undefined) {
     }, null, 2) + "\n",
     { mode: 0o600 },
   )
+  return target
 }
 
 async function materialize(auth: Record<string, string>) {
-  await materializeCodexAuth(codexAuthInput(auth))
+  return materializeCodexAuth(codexAuthInput(auth))
 }
 
 const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
@@ -613,6 +619,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
+          ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
         })
       },
     },
@@ -625,6 +632,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
+          ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
         })
       },
     },
@@ -633,6 +641,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       create: ({ options }) => new PiHarnessAdapter({
         ...(options.eventHub ? { eventHub: options.eventHub } : {}),
         ...(options.piModelBackend ? { modelBackend: options.piModelBackend } : {}),
+        ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
       }),
     },
     {
@@ -641,6 +650,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
         ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
         eventHub: options.eventHub,
+        ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
         // Adapter mechanism (upstream list/status proxying) stays on unless the
         // host explicitly opts out. The root compat ROUTE surface is separately
         // gated by `!== true` below. See WorkspaceHostOptions.opencodeCompat.
@@ -648,6 +658,38 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       }),
     },
   ]
+}
+
+function agentProcessObserver(observer: ProcessObserver): AgentProcessObserver {
+  return {
+    register(descriptor) {
+      const handle = observer.register({
+        ownerId: descriptor.ownerId,
+        ownerGeneration: descriptor.launchId,
+        launchId: descriptor.launchId,
+        kind: descriptor.role === "tool" ? "cli" : descriptor.role,
+        role: descriptor.role === "tool" ? "cli" : descriptor.role,
+        label: descriptor.label,
+        ...(descriptor.pid ? { pid: descriptor.pid } : {}),
+        ...(descriptor.parentOwnerId ? { parentOwnerId: descriptor.parentOwnerId } : {}),
+        ...(descriptor.workspaceId ? { workspaceId: descriptor.workspaceId } : {}),
+        ...(descriptor.directory ? { directory: descriptor.directory } : {}),
+        ...(descriptor.sessionId ? { sessionId: descriptor.sessionId } : {}),
+        harnessId: descriptor.harnessId,
+        access: descriptor.locality === "remote" ? "remote" : "local",
+        attributionConfidence: descriptor.confidence,
+      })
+      return {
+        update(event) {
+          handle.update({
+            lifecycle: event.lifecycle,
+            ...(event.pid ? { pid: event.pid } : {}),
+          })
+        },
+        exit: (event) => handle.exit(event),
+      }
+    },
+  }
 }
 
 function resolveHarnessRegistry(options: WorkspaceHostOptions): WorkspaceHarnessRegistry {
@@ -831,6 +873,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let currentMcp: Record<string, unknown> = {}
   let currentAuth: RuntimeAuth = {}
   let currentAuthRaw: Record<string, string> = {}
+  let materializedCodexAuthPath: string | undefined
   let applyQueue = Promise.resolve()
   const storeFactory = resolveStoreFactory(options)
   // Resolved once and reused: the registry must be stable for the host lifetime
@@ -842,6 +885,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const sessionAdapterRunners = new Map<string, RuntimeRunner>()
   const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, string>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
+  let checkpointState: "active" | "freezing" | "frozen" = "active"
+  let activeCheckpointWrites = 0
+  let reconciledCheckpointEpoch: number | undefined
+  const checkpointWriteWaiters = new Set<() => void>()
   const sessionToolPrompts = new Map<string, {
     harness?: string
     callbackUrl: string
@@ -1126,6 +1173,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }
 
   function createActiveTurnScope(input: { adapter: AgentHarnessAdapter; directory: string; sessionId: string }) {
+    if (checkpointState !== "active") throw new Error("workspace_checkpoint_frozen")
     let finish = () => {}
     const turn = {
       sessionId: input.sessionId,
@@ -1145,6 +1193,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         turns.delete(turn)
         turn.finish()
         if (turns.size === 0) activeTurns.delete(input.adapter)
+        notifyCheckpointWaiters()
       },
     }
   }
@@ -1162,6 +1211,42 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       drained,
       new Promise((resolve) => setTimeout(resolve, RUNNER_REPLACEMENT_DRAIN_TIMEOUT_MS)),
     ])
+  }
+
+  function activeTurnCount() {
+    return [...activeTurns.values()].reduce((count, turns) => count + turns.size, 0)
+  }
+
+  function checkpointDetail() {
+    return {
+      state: checkpointState,
+      activeWrites: activeCheckpointWrites,
+      activeTurns: activeTurnCount(),
+      ...(reconciledCheckpointEpoch === undefined ? {} : { reconciledEpoch: reconciledCheckpointEpoch }),
+    }
+  }
+
+  async function waitForCheckpointIdle() {
+    while (activeCheckpointWrites > 0 || activeTurnCount() > 0) {
+      await new Promise<void>((resolve) => checkpointWriteWaiters.add(resolve))
+    }
+  }
+
+  function notifyCheckpointWaiters() {
+    if (activeCheckpointWrites > 0 || activeTurnCount() > 0) return
+    for (const resolve of checkpointWriteWaiters) resolve()
+    checkpointWriteWaiters.clear()
+  }
+
+  async function freezeCheckpoint(policy: "drain" | "interrupt") {
+    if (checkpointState === "frozen") return checkpointDetail()
+    checkpointState = "freezing"
+    if (policy === "interrupt") {
+      await Promise.all([...activeTurns.keys()].map((next) => drainActiveTurns(next)))
+    }
+    await waitForCheckpointIdle()
+    checkpointState = "frozen"
+    return checkpointDetail()
   }
 
   function runnerHealth(): AgentHarnessAdapterHealth {
@@ -1216,7 +1301,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         harness: next.harness,
       }
       await persistRuntimeConfigApplyStatus({ directory, status: configApply, snapshot: next })
-      await materialize(next.auth)
+      const nextMaterializedCodexAuthPath = await materialize(next.auth)
+      if (materializedCodexAuthPath && materializedCodexAuthPath !== nextMaterializedCodexAuthPath) {
+        await fs.promises.rm(materializedCodexAuthPath, { force: true })
+      }
+      materializedCodexAuthPath = nextMaterializedCodexAuthPath
       // Do not materialize central slash commands pushed via
       // the runtime config push — the runner-host owns command discovery
       // and re-writing them at the workspace layer would clobber any
@@ -1299,9 +1388,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     mount(app: Hono, options: WorkspaceHostMountOptions) {
       assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
       if (options.core) {
-        mountWorkspaceCore(app, options.core.upgradeWebSocket, { eventHub, exposure: options.exposure })
+        mountWorkspaceCore(app, options.core.upgradeWebSocket, {
+          eventHub,
+          exposure: options.exposure,
+          processObserver: hostOptions.processObserver,
+        })
       } else {
-        if (options.pty) mountWorkspacePty(app, options.pty.upgradeWebSocket)
+        if (options.pty) mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver)
         if (options.process) mountWorkspaceProcess(app)
         if (options.agentHooks) mountWorkspaceAgentHooks(app)
       }
@@ -1323,12 +1416,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               message: "opencode model options are exposed through /provider, not harness config options",
             },
           }, 404)
-        }
-        // codex-acp's ACP adapter emits no config options, so it keeps the
-        // static catalog. Native SDK harnesses fall through to the adapter,
-        // which live-lists models (with the static catalog as its fallback).
-        if (targetRunner.id === "codex" && targetRunner.access === "acp") {
-          return c.json([sdkModelConfigOption(targetRunner.id)])
         }
         const adapter = await ensureSessionAdapter(targetRunner)
         const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
@@ -1663,6 +1750,54 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (!response.ok && response.status !== 404) {
         throw new Error(`Core Session tool cleanup failed: ${response.status} ${await response.text()}`)
       }
+    },
+    checkpoint: {
+      detail: checkpointDetail,
+      beginWrite() {
+        if (checkpointState !== "active") return
+        activeCheckpointWrites++
+        let finished = false
+        return () => {
+          if (finished) return
+          finished = true
+          activeCheckpointWrites--
+          notifyCheckpointWaiters()
+        }
+      },
+      freeze: freezeCheckpoint,
+      async flush() {
+        if (checkpointState !== "frozen") throw new Error("workspace_checkpoint_not_frozen")
+        await applyQueue
+        sessionConfigStore?.flush?.()
+      },
+      async scrub() {
+        if (checkpointState !== "frozen") throw new Error("workspace_checkpoint_not_frozen")
+        clear()
+        for (const next of sessionAdapters.values()) {
+          next.dispose()
+          activeTurns.delete(next)
+        }
+        sessionAdapters.clear()
+        sessionAdapterRunners.clear()
+        sessionRuntimes.clear()
+        if (materializedCodexAuthPath) {
+          await fs.promises.rm(materializedCodexAuthPath, { force: true })
+          materializedCodexAuthPath = undefined
+        }
+      },
+      async resume() {
+        materializedCodexAuthPath = await materialize(currentAuthRaw)
+        checkpointState = "active"
+        return checkpointDetail()
+      },
+      async restoreReconcile(input) {
+        if (!Number.isSafeInteger(input.epoch) || input.epoch < 1 || !input.checkpointId) {
+          throw new Error("workspace_checkpoint_reconcile_invalid")
+        }
+        reconciledCheckpointEpoch = input.epoch
+        checkpointState = "active"
+        return checkpointDetail()
+      },
     },
     dispose() {
       cleanupGlobalEventReplay()

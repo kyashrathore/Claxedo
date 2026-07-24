@@ -5,6 +5,7 @@ import { Pty } from "../pty/index"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { ProcessObserver } from "../managed-processes/process-observer"
 
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)
@@ -31,7 +32,7 @@ function requestPort(url: string) {
   }
 }
 
-export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
+export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket, processObserver?: ProcessObserver) {
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
@@ -70,15 +71,27 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
         throw err
       }
       const port = requestPort(c.req.url)
-      const info = await Pty.create({
-        ...input,
-        ...(cwd ? { cwd } : {}),
-        env: {
-          ...(input.env ?? {}),
-          ...(port ? { CLAXEDO_PORT: port } : {}),
-          ...(workspaceId ? { CLAXEDO_WORKSPACE_ID: workspaceId } : {}),
+      const info = await Pty.create(
+        {
+          ...input,
+          ...(cwd ? { cwd } : {}),
+          env: {
+            ...(input.env ?? {}),
+            ...(port ? { CLAXEDO_PORT: port } : {}),
+            ...(workspaceId ? { CLAXEDO_WORKSPACE_ID: workspaceId } : {}),
+          },
         },
-      })
+        processObserver
+          ? {
+              observer: processObserver,
+              kind: "pty",
+              ownerId: `pty:${crypto.randomUUID()}`,
+              workspaceId: workspaceId ?? cwd,
+              directory: cwd,
+              label: input.title ?? "Terminal",
+            }
+          : undefined,
+      )
       return c.json(info)
     })
     .get("/:ptyID", async (c) => {

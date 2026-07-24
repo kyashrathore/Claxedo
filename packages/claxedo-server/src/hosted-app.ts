@@ -36,6 +36,7 @@ import { allowedOriginPatterns } from "./cors-origins"
 import { JwksRoutes } from "./control-plane/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "./routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./routes/hosted-workspace"
+import { WorkspaceCheckpointRoutes } from "./routes/workspace-checkpoints"
 import { signedOrError } from "./routes/workspace-user-hosted"
 import { HostedDeviceAuthRoutes } from "./routes/hosted-device-auth"
 import { HostedShellRoutes } from "./routes/hosted-shell"
@@ -417,6 +418,9 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   )
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
+  app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
+    defaultHomeRegion: services.defaultHomeRegion,
+  }))
 
   app.all("/api/workgraph", forwardWorkGraph)
   app.all("/api/workgraph/*", forwardWorkGraph)

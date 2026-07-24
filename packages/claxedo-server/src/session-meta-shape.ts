@@ -81,7 +81,17 @@ export function toolSandbox(input: unknown): SessionToolSandbox | undefined {
     const workspaceId = txt(row.workspaceId) ?? txt(row.workspace_id)
     if (!workspaceId) return undefined
     const directory = txt(row.directory)
-    return { kind: "workspace-runtime", workspaceId, ...(directory ? { directory } : {}) }
+    const worktree = txt(row.worktree)
+    const baseCommit = txt(row.baseCommit) ?? txt(row.base_commit)
+    const leaseEpoch = num(row.leaseEpoch) ?? num(row.lease_epoch)
+    return {
+      kind: "workspace-runtime",
+      workspaceId,
+      ...(directory ? { directory } : {}),
+      ...(worktree ? { worktree } : {}),
+      ...(baseCommit ? { baseCommit } : {}),
+      ...(leaseEpoch !== undefined ? { leaseEpoch } : {}),
+    }
   }
   if (kind === "virtual") {
     const id = txt(row.id)
@@ -98,6 +108,9 @@ export function serializeToolSandbox(input: SessionToolSandbox | null | undefine
       kind: "workspace-runtime",
       workspaceId: input.workspaceId,
       ...(input.directory ? { directory: input.directory } : {}),
+      ...(input.worktree ? { worktree: input.worktree } : {}),
+      ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
+      ...(input.leaseEpoch !== undefined ? { leaseEpoch: input.leaseEpoch } : {}),
     })
   }
   return JSON.stringify({

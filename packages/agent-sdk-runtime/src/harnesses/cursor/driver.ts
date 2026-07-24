@@ -10,6 +10,7 @@ import type {
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
+import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
@@ -21,11 +22,16 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import {
+  observeAgentProcess,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 
 const CURSOR_PENDING_PREFIX = "cursor-sdk:"
 type CursorEntry = {
   directory: string
   agent: CursorSDKAgent
+  observation: AgentProcessObserverHandle
 }
 
 export function createCursorSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {
@@ -63,18 +69,25 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   async createAgentSession(input: { directory: string; title?: string; model: string }) {
     const { Agent } = await import("@cursor/sdk")
     const model = cursorSdkModel(input.model)
-    const agent = await Agent.create({
-      ...(model ? { model } : {}),
-      ...(input.title ? { name: input.title } : {}),
-      ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
-      ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
-      local: {
-        cwd: input.directory,
-      },
-    })
-    this.agents.set(agent.agentId, { directory: input.directory, agent })
-    this.processError = null
-    return agent.agentId
+    const observation = this.observeAgent(input.directory)
+    try {
+      const agent = await Agent.create({
+        ...(model ? { model } : {}),
+        ...(input.title ? { name: input.title } : {}),
+        ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
+        ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
+        local: {
+          cwd: input.directory,
+        },
+      })
+      observation.update({ lifecycle: "ready" })
+      this.agents.set(agent.agentId, { directory: input.directory, agent, observation })
+      this.processError = null
+      return agent.agentId
+    } catch (cause) {
+      observation.exit({ reason: "error" })
+      throw cause
+    }
   }
 
   createRuntime(threadId: string): AgentEventRuntime {
@@ -139,7 +152,9 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   deleteAgentSession(_sessionId: string, agentSessionId: string) {
-    this.agents.get(agentSessionId)?.agent.close()
+    const entry = this.agents.get(agentSessionId)
+    entry?.observation.exit({ reason: "disposed" })
+    entry?.agent.close()
     this.agents.delete(agentSessionId)
   }
 
@@ -153,7 +168,10 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   dispose() {
-    for (const item of this.agents.values()) item.agent.close()
+    for (const item of this.agents.values()) {
+      item.observation.exit({ reason: "disposed" })
+      item.agent.close()
+    }
     this.agents.clear()
   }
 
@@ -171,43 +189,127 @@ class CursorSdkDriver implements SdkRuntimeDriver {
    * so it's pinned ahead of the listed models to keep the default selectable.
    */
   private async fetchModels(): Promise<SdkModelEntry[]> {
-    const { Cursor } = await import("@cursor/sdk")
-    const listed = await Cursor.models.list(this.auth.cursor ? { apiKey: this.auth.cursor } : undefined)
-    const models: SdkModelEntry[] = listed.map((model) => ({
-      id: model.id,
-      name: model.displayName,
-      ...(model.description ? { description: model.description } : {}),
-    }))
-    if (models.length > 0 && !models.some((model) => model.id === "auto")) {
-      models.unshift({ id: "auto", name: "Auto", isDefault: true })
+    const observation = observeAgentProcess(this.host.processObserver, {
+      ownerId: `cursor-probe:${randomUUID()}`,
+      launchId: randomUUID(),
+      harnessId: "cursor",
+      access: "native",
+      role: "probe",
+      label: "Cursor model catalog probe",
+      locality: "remote",
+      confidence: "not-process-backed",
+      capabilities: {
+        resourceMetrics: "none",
+        ownerActions: false,
+      },
+    })
+    observation.update({ lifecycle: "ready" })
+    try {
+      const { Cursor } = await import("@cursor/sdk")
+      const listed = await Cursor.models.list(this.auth.cursor ? { apiKey: this.auth.cursor } : undefined)
+      const models: SdkModelEntry[] = listed.map((model) => ({
+        id: model.id,
+        name: model.displayName,
+        ...(model.description ? { description: model.description } : {}),
+      }))
+      if (models.length > 0 && !models.some((model) => model.id === "auto")) {
+        models.unshift({ id: "auto", name: "Auto", isDefault: true })
+      }
+      return models
+    } finally {
+      observation.exit({ reason: "disposed" })
     }
-    return models
   }
 
   private async ensureAgent(sessionId: string, agentSessionId: string, directory: string) {
     const existing = this.agents.get(agentSessionId)
     if (existing?.directory === directory) return existing.agent
+    existing?.observation.exit({ reason: "disposed" })
     existing?.agent.close()
     const { Agent } = await import("@cursor/sdk")
-    const agent = agentSessionId.startsWith(CURSOR_PENDING_PREFIX)
-      ? await Agent.create({
-          ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
-          local: {
-            cwd: directory,
-          },
-        })
-      : await Agent.resume(agentSessionId, {
-          ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
-          local: {
-            cwd: directory,
-          },
-        })
-    this.agents.set(agent.agentId, { directory, agent })
+    const observation = this.observeAgent(directory, sessionId)
+    let agent: CursorSDKAgent
+    try {
+      agent = agentSessionId.startsWith(CURSOR_PENDING_PREFIX)
+        ? await Agent.create({
+            ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
+            local: {
+              cwd: directory,
+            },
+          })
+        : await Agent.resume(agentSessionId, {
+            ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
+            local: {
+              cwd: directory,
+            },
+          })
+    } catch (cause) {
+      observation.exit({ reason: "error" })
+      throw cause
+    }
+    observation.update({ lifecycle: "ready" })
+    this.agents.set(agent.agentId, { directory, agent, observation })
     if (agent.agentId !== agentSessionId) {
       this.host.bindSession({ sessionId, directory, agentSessionId: agent.agentId })
     }
     this.processError = null
     return agent
+  }
+
+  private observeAgent(directory: string, sessionId?: string): AgentProcessObserverHandle {
+    const ownerId = `cursor-agent:${randomUUID()}`
+    const handles = [
+      observeAgentProcess(this.host.processObserver, {
+        ownerId,
+        launchId: randomUUID(),
+        harnessId: "cursor",
+        access: "native",
+        role: "harness",
+        label: "Cursor local agent",
+        locality: "local-process",
+        confidence: "inferred",
+        capabilities: {
+          resourceMetrics: "process",
+          ownerActions: false,
+        },
+        directory,
+        ...(sessionId ? { sessionId } : {}),
+        executableBasename: "cursor-agent",
+      }),
+      ...Object.values(this.currentMcp).map((server) => observeAgentProcess(this.host.processObserver, {
+        ownerId: `cursor-mcp:${randomUUID()}`,
+        launchId: randomUUID(),
+        harnessId: "cursor",
+        access: "native",
+        role: "mcp" as const,
+        label: `MCP ${server.name}`,
+        locality: server.transport === "stdio" ? "local-process" as const : "remote" as const,
+        confidence: server.transport === "stdio" ? "inferred" as const : "not-process-backed" as const,
+        capabilities: {
+          resourceMetrics: server.transport === "stdio" ? "process" as const : "none" as const,
+          ownerActions: false,
+        },
+        parentOwnerId: ownerId,
+        directory,
+        ...(sessionId ? { sessionId } : {}),
+        mcpName: server.name,
+        transport: server.transport === "stdio" ? "stdio" as const : "streamable-http" as const,
+        ...(server.transport === "stdio"
+          ? { executableBasename: server.command.split(/[\\/]/).at(-1) || "mcp" }
+          : {}),
+      })),
+    ]
+    let exited = false
+    return {
+      update(event) {
+        handles.forEach((handle) => handle.update(event))
+      },
+      exit(event) {
+        if (exited) return
+        exited = true
+        handles.forEach((handle) => handle.exit(event))
+      },
+    }
   }
 }
 

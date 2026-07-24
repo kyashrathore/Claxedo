@@ -24,6 +24,7 @@ import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { UPDATER_ENABLED } from "./updater"
 import { webviewZoom } from "./webview-zoom"
+import { isResizeObserverDeliveryError } from "./window-error"
 import "./styles.css"
 
 type Platform = AppPlatform & {
@@ -114,6 +115,10 @@ const showFatal = (label: string, payload: unknown) => {
 window.addEventListener(
   "error",
   (event) => {
+    if (isResizeObserverDeliveryError(event.message)) {
+      event.preventDefault()
+      return
+    }
     const payload = {
       message: event.message,
       filename: event.filename,
@@ -238,6 +243,7 @@ function bootstrapDesktop() {
       platform: "desktop",
       os,
       version: pkg.version,
+      processDiagnostics: desktopApi().processDiagnostics,
 
       async openDirectoryPickerDialog(opts) {
         const defaultPath = await wslHome()
@@ -380,8 +386,6 @@ function bootstrapDesktop() {
       setDisplayBackend: async (backend) => {
         await desktopApi().setDisplayBackend(backend)
       },
-
-      parseMarkdown: (markdown: string) => desktopApi().parseMarkdownCommand(markdown),
 
       webviewZoom,
 

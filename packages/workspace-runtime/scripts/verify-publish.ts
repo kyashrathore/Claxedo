@@ -3,6 +3,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { execFileSync } from "node:child_process"
 
 const root = path.resolve(import.meta.dirname, "..")
 const repoRoot = path.resolve(root, "..", "..")
@@ -10,6 +11,8 @@ const failures: string[] = []
 
 const pkg = readJson(path.join(root, "package.json")) as {
   name: string
+  version: string
+  bin?: Record<string, string>
   exports: Record<string, Record<string, string>>
   files?: string[]
   repository?: { url?: string }
@@ -69,6 +72,20 @@ for (const key of manifest.packageExports) {
 
 if (!pkg.files?.includes("docs/api-manifest.json")) {
   failures.push("package.json files must include docs/api-manifest.json")
+}
+
+if (pkg.bin?.["workspace-runtime"] !== "./dist/cli.mjs") {
+  failures.push("package.json must expose workspace-runtime at ./dist/cli.mjs")
+} else {
+  const cli = path.join(root, pkg.bin["workspace-runtime"])
+  if (!fs.existsSync(cli)) {
+    failures.push("workspace-runtime bin points at a missing file")
+  } else {
+    const major = Number(process.versions.node.split(".")[0])
+    if (major < 22) failures.push(`workspace-runtime publish verification requires Node.js 22+, got ${process.version}`)
+    const version = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" }).trim()
+    if (version !== pkg.version) failures.push(`workspace-runtime --version returned ${version}, expected ${pkg.version}`)
+  }
 }
 
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8")

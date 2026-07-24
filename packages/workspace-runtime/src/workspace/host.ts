@@ -36,6 +36,24 @@ export type WorkspaceHostMountOptions = {
   agentHooks?: boolean
 }
 
+export type WorkspaceCheckpointState = "active" | "freezing" | "frozen"
+export type WorkspaceCheckpointDrainPolicy = "drain" | "interrupt"
+
+export type WorkspaceCheckpointControl = {
+  detail: () => {
+    state: WorkspaceCheckpointState
+    activeWrites: number
+    activeTurns: number
+    reconciledEpoch?: number
+  }
+  beginWrite: () => (() => void) | undefined
+  freeze: (policy: WorkspaceCheckpointDrainPolicy) => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>
+  flush: () => Promise<void>
+  scrub: () => Promise<void>
+  resume: () => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>
+  restoreReconcile: (input: { epoch: number; checkpointId: string }) => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>
+}
+
 export type WorkspaceHost = {
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
@@ -56,5 +74,6 @@ export type WorkspaceHost = {
     tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; callbackUrl?: string }>
   }) => Promise<void>
   unregisterSessionTools: (sessionId: string) => Promise<void>
+  checkpoint: WorkspaceCheckpointControl
   dispose: () => void
 }

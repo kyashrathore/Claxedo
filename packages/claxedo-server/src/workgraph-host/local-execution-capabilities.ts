@@ -37,9 +37,9 @@ export function createLocalExecutionCapabilities(input: Readonly<{
   resolveRepositoryDirectory?: (directory: string) => Promise<string | undefined> | string | undefined
   /**
    * Live harness config options (the same payload `/api/wr/harness-config-options`
-   * serves the composer picker), used to populate SDK-harness model catalogs from
-   * the running harness instead of the static fallback catalog. Optional: absent
-   * or failing, the static catalog is served exactly as before.
+   * serves the composer picker), used to populate live model catalogs from the
+   * running harness instead of the static fallback catalog. Optional: absent or
+   * failing, the static catalog is served exactly as before.
    */
   harnessConfigOptions?: (harness: string) => Promise<unknown>
   now?: () => number
@@ -169,10 +169,9 @@ async function sdkProviders(harness: string, harnessConfigOptions?: (harness: st
   if (!identity || identity.id === "opencode" || identity.id === "pi") {
     throw new Error(`Unsupported SDK Session harness ${harness}`)
   }
-  // Native SDK harnesses live-list; ACP composer entries keep the static
-  // catalog (their live options come from per-session ACP probes, which are
-  // too heavy to spawn on every capabilities read).
-  const live = identity.access === "native" ? await liveHarnessModels(harness, harnessConfigOptions) : undefined
+  const live = identity.access === "native" || (identity.id === "codex" && identity.access === "acp")
+    ? await liveHarnessModels(harness, harnessConfigOptions)
+    : undefined
   const models = live ?? sdkModelOptions(identity.id)
   return {
     connected: [harness],
@@ -193,10 +192,18 @@ async function liveHarnessModels(harness: string, harnessConfigOptions?: (harnes
   if (!Array.isArray(options)) return
   const modelOption = options.find((option): option is Record<string, unknown> =>
     !!option && typeof option === "object" && (option as Record<string, unknown>).id === "model")
-  const selectOptions = modelOption && Array.isArray(modelOption.selectOptions) ? modelOption.selectOptions : undefined
-  const models = (selectOptions ?? []).flatMap((option) => {
+  const choices = modelOption && Array.isArray(modelOption.selectOptions)
+    ? modelOption.selectOptions
+    : modelOption && Array.isArray(modelOption.options)
+      ? modelOption.options
+      : []
+  const models = choices.flatMap((option) => {
     const row = option && typeof option === "object" ? option as Record<string, unknown> : undefined
-    const id = typeof row?.id === "string" && row.id ? row.id : undefined
+    const id = typeof row?.id === "string" && row.id
+      ? row.id
+      : typeof row?.value === "string" && row.value
+        ? row.value
+        : undefined
     if (!id) return []
     return [{
       id,

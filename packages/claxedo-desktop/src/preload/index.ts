@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
+import { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
+import { applyDiagnosticsSnapshotUpdate } from "../shared/diagnostics-snapshot-update"
 import type {
   BrowserBridge,
   BrowserConsoleEntry,
@@ -13,8 +15,20 @@ import type {
   BrowserStorageKey,
   ElectronAPI,
   InitStep,
+  ProcessDiagnosticsBridge,
   SqliteMigrationProgress,
 } from "./types"
+
+if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
+  let previous = performance.now()
+  const frame = (now: number) => {
+    const gap = Math.round(now - previous)
+    previous = now
+    if (gap >= 100) console.warn(`[startup-perf] renderer-loop gap=${String(gap)}ms`)
+    requestAnimationFrame(frame)
+  }
+  requestAnimationFrame(frame)
+}
 
 const browserBridge: BrowserBridge = {
   enabled: () => ipcRenderer.invoke("browser:enabled") as Promise<boolean>,
@@ -63,6 +77,55 @@ const browserBridge: BrowserBridge = {
     ipcRenderer.invoke("browser:clearStorage", paneId, storages) as Promise<BrowserResult>,
 }
 
+const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
+  getSnapshot: async () =>
+    LocalDiagnostics.RetainedSnapshot.parse(await ipcRenderer.invoke("process-diagnostics:get-snapshot")),
+  subscribe: (listener) => {
+    let current: LocalDiagnostics.RetainedSnapshot | undefined
+    let resyncing = false
+    const accept = (input: unknown) => {
+      const next = applyDiagnosticsSnapshotUpdate(current, input)
+      if (next) {
+        current = next
+        listener(next)
+        return
+      }
+      if (resyncing) return
+      resyncing = true
+      void ipcRenderer.invoke("process-diagnostics:get-snapshot")
+        .then((snapshot) => {
+          current = LocalDiagnostics.RetainedSnapshot.parse(snapshot)
+          listener(current)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          resyncing = false
+        })
+    }
+    const handler = (_: unknown, input: unknown) => {
+      accept(input)
+    }
+    ipcRenderer.on("process-diagnostics:snapshot", handler)
+    void ipcRenderer.invoke("process-diagnostics:subscribe")
+      .then(accept)
+      .catch(() => {
+        ipcRenderer.removeListener("process-diagnostics:snapshot", handler)
+      })
+    return () => {
+      ipcRenderer.removeListener("process-diagnostics:snapshot", handler)
+      void ipcRenderer.invoke("process-diagnostics:unsubscribe").catch(() => {})
+    }
+  },
+  stop: async (request) =>
+    LocalDiagnostics.ActionResult.parse(
+      await ipcRenderer.invoke("process-diagnostics:stop", LocalDiagnostics.StopRequest.parse(request)),
+    ),
+  kill: async (request) =>
+    LocalDiagnostics.ActionResult.parse(
+      await ipcRenderer.invoke("process-diagnostics:kill", LocalDiagnostics.KillRequest.parse(request)),
+    ),
+}
+
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   installCli: () => ipcRenderer.invoke("install-cli"),
@@ -79,7 +142,6 @@ const api: ElectronAPI = {
   setWslConfig: (config) => ipcRenderer.invoke("set-wsl-config", config),
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),
   setDisplayBackend: (backend) => ipcRenderer.invoke("set-display-backend", backend),
-  parseMarkdownCommand: (markdown) => ipcRenderer.invoke("parse-markdown", markdown),
   checkAppExists: (appName) => ipcRenderer.invoke("check-app-exists", appName),
   wslPath: (path, mode) => ipcRenderer.invoke("wsl-path", path, mode),
   resolveAppPath: (appName) => ipcRenderer.invoke("resolve-app-path", appName),
@@ -136,6 +198,7 @@ const api: ElectronAPI = {
   setStartAtLogin: (enabled) => ipcRenderer.invoke("set-start-at-login", enabled),
   setNativeTheme: (theme) => ipcRenderer.send("set-native-theme", theme),
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
+  processDiagnostics: processDiagnosticsBridge,
   browser: browserBridge,
 }
 

@@ -31,6 +31,7 @@ describe("query persister", () => {
     expect(queryPersistencePolicies.map((policy) => policy.id)).toEqual([
       "control-plane.cache",
       "shell.commands-cache",
+      "shell.session-list-cache",
       "directory.cache",
       "session.stable-head",
       "runtime.workspace-cache",
@@ -52,6 +53,7 @@ describe("query persister", () => {
     expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"], state: { status: "pending" } })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["controlPlane", "base", "projects"], state: { data: undefined } })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["shell", "base", "commands", "/tmp/ws"] })).toBe(true)
+    expect(shouldDehydrateQuery({ queryKey: ["shell", "base", "sessionList", { scope: "global" }] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["shell", "base", "projects"] })).toBe(false)
     expect(shouldDehydrateQuery({ queryKey: ["directory", "base", "project", "/tmp/ws"] })).toBe(true)
     expect(shouldDehydrateQuery({ queryKey: ["directory", "local", "sessionCache", "/tmp/ws"] })).toBe(false)

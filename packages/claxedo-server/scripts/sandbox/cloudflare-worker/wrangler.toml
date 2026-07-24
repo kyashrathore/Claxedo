@@ -35,6 +35,17 @@ name = "Sandbox"
 tag = "v1"
 new_sqlite_classes = ["Sandbox"]
 
+# Workspace checkpoints use the Sandbox SDK backup API. Provision this bucket
+# before deploy (`wrangler r2 bucket create claxedo-sandbox-backups`) and set
+# CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY as Worker
+# secrets so production containers can use presigned R2 URLs.
+[vars]
+BACKUP_BUCKET_NAME = "claxedo-sandbox-backups"
+
+[[r2_buckets]]
+binding = "BACKUP_BUCKET"
+bucket_name = "claxedo-sandbox-backups"
+
 # Egress credential broker (Cloudflare Worker-proxy pattern). Brokered secrets
 # are stored here keyed by sandbox id — never inside the container. Create the
 # namespace (`wrangler kv namespace create EGRESS_SECRETS`) and set the signing

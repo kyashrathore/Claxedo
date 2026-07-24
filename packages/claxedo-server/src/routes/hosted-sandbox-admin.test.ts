@@ -11,6 +11,14 @@ function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: false,
+        captureSource: "not-applicable",
+        retention: "not-applicable",
+        restoreMount: "not-applicable",
+      },
     },
     ensureHost: vi.fn(async (input) => ({
       sandboxId: `sandbox_${input.workspaceId}`,

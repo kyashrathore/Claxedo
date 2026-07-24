@@ -166,8 +166,6 @@ describe("ProcessRoutes logs", () => {
       new Request("http://localhost/proc_1/restart?directory=/tmp/other", { method: "POST" }),
       new Request("http://localhost/start-all?directory=/tmp/other", { method: "POST" }),
       new Request("http://localhost/stop-all?directory=/tmp/other", { method: "POST" }),
-      new Request("http://localhost/diagnostics?directory=/tmp/other"),
-      new Request("http://localhost/diagnostics/terminate?directory=/tmp/other", { method: "POST", body: "{}" }),
       new Request("http://localhost/port-map?directory=/tmp/other"),
     ]) {
       const res = await app.request(request)
@@ -179,6 +177,19 @@ describe("ProcessRoutes logs", () => {
         },
       })
     }
+  })
+
+  test("does not expose local diagnostics or PID termination over workspace HTTP", async () => {
+    const app = ProcessRoutes()
+    expect((await app.request("http://localhost/diagnostics")).status).toBe(404)
+    expect(
+      (
+        await app.request("http://localhost/diagnostics/terminate", {
+          method: "POST",
+          body: JSON.stringify({ pid: process.pid }),
+        })
+      ).status,
+    ).toBe(404)
   })
 
   test("rejects oversized process route bodies", async () => {

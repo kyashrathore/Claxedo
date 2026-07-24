@@ -65,10 +65,23 @@ export type ScenarioResult = {
   status: RunStatus
   failures: string[]
   warnings: string[]
+  diagnostics?: DiagnosticsOverheadEvidence
   attribution?: RunAttribution
   artifacts?: {
     video?: string
   }
+}
+
+export type DiagnosticsOverheadEvidence = {
+  retainedBytes: number
+  retainedProcesses: number
+  droppedTicks: number
+  maxSourceDurationMs: number
+  maxReconciliationDurationMs: number
+  collections: number
+  sampleCount: number
+  controlHeadline: FrameMetric
+  enabledHeadline: FrameMetric
 }
 
 // Regression budget: a ceiling on the headline worst-frame, auto-calibrated from

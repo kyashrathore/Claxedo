@@ -55,6 +55,7 @@ export {
 export type { SdkModelCatalog, SdkModelEntry, SdkModelId } from "./sdk-model-catalog"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
+export { bundledAcpBinary } from "./harnesses/acp/default-binaries"
 export type {
   AcpHarnessId,
   AgentHarnessAccess,
@@ -82,6 +83,20 @@ export {
   type SandboxRef,
 } from "./session-env"
 export { createVirtualSessionEnv } from "./virtual-session-env"
+export {
+  AGENT_PROCESS_ATTRIBUTION_SCENARIOS,
+  observeAgentProcess,
+  safeAgentProcessDescriptor,
+  type AgentProcessCapabilities,
+  type AgentProcessAttributionScenario,
+  type AgentProcessConfidence,
+  type AgentProcessDescriptor,
+  type AgentProcessLifecycle,
+  type AgentProcessLocality,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+  type AgentProcessRole,
+} from "./process-observer"
 
 export type PromptModel = {
   providerID: string

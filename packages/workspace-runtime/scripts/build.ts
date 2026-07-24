@@ -40,7 +40,7 @@ const EXTERNALS = [
   "@claxedo/workspace-relay-protocol",
   "@agentclientprotocol/sdk",
   "@agentclientprotocol/codex-acp",
-  "@zed-industries/claude-agent-acp",
+  "@agentclientprotocol/claude-agent-acp",
   "@hono/node-server",
   "@hono/node-ws",
   "better-sqlite3",
@@ -105,6 +105,17 @@ function bundleJS() {
       ],
     )
   }
+  run(
+    esbuild,
+    [
+      "src/cli.ts",
+      ...shared,
+      `--outfile=${path.join(DIST, "cli.mjs")}`,
+      ...cliExternals,
+      "--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);",
+    ],
+  )
+  fs.chmodSync(path.join(DIST, "cli.mjs"), 0o755)
 }
 
 function emitDeclarations() {

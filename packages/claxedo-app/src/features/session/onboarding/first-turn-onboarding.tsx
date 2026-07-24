@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/solid-query"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { loadAIConnectDialog, loadSelectProviderDialog, useFirstTurnFunnel, useSDK } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { usePrompt } from "@/features/session/providers/prompt"
+import { usePrompt, type Prompt } from "@/features/session/providers/prompt"
+import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
 import type { RuntimeDirectory } from "@/platform/runtime/agent/placement-table"
 import { StarterPromptChips } from "./starter-prompt-chips"
 import { createStarterPrompts } from "./starter-prompts"
@@ -31,7 +32,7 @@ export function createFirstTurnOnboarding(input: {
     if (!signals.data || !shouldShowStarterPrompts({ completedTurns: input.completedTurns(), sentTurns: input.sentTurns() })) return
     return createStarterPrompts(signals.data)
   })
-  let retry: (() => void) | undefined
+  let retry: PromptRetryAction | undefined
   const emitted = new Set<string>()
   createComputed(on(input.messages, (messages) => {
     const events = firstTurnFunnelEvents(messages, input.cloud())
@@ -41,7 +42,7 @@ export function createFirstTurnOnboarding(input: {
     events.forEach(funnel.emit)
   }, { defer: true }))
 
-  const recover = (kind: SessionErrorClass) => {
+  const recover = (kind: SessionErrorClass, failedPrompt?: Prompt) => {
     if (kind === "session") {
       // "Start a new session" — open a fresh sibling session in the same
       // workspace via the app's canonical new-session navigation. The lost
@@ -51,7 +52,9 @@ export function createFirstTurnOnboarding(input: {
     }
     if (kind === "credential") {
       void loadAIConnectDialog().then((module) => dialog.show(() => (
-        <module.DialogAIConnect onConnected={() => retry?.()} />
+        <module.DialogAIConnect onConnected={() => {
+          retry?.(failedPrompt)
+        }} />
       )))
       return
     }
@@ -67,10 +70,10 @@ export function createFirstTurnOnboarding(input: {
         return
       }
       local.model.set({ providerID: next.provider.id, modelID: next.id }, { recent: true })
-      queueMicrotask(() => retry?.())
+      queueMicrotask(() => retry?.(failedPrompt))
       return
     }
-    retry?.()
+    return retry?.(failedPrompt)
   }
 
   return {
@@ -81,7 +84,7 @@ export function createFirstTurnOnboarding(input: {
       />
     ),
     recover,
-    registerRetry(next?: () => void) {
+    registerRetry(next?: PromptRetryAction) {
       retry = next
     },
   }

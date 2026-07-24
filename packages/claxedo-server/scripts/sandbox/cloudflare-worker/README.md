@@ -118,3 +118,19 @@ Inside the sandbox, brokered egress uses:
 $CLAXEDO_EGRESS_TOKEN`, and `x-claxedo-egress-target: <absolute upstream URL>`.
 `CLAXEDO_EGRESS_HOSTS` lists the hosts that must be routed this way. The raw
 credential never appears in the container environment.
+
+## Workspace checkpoint storage
+
+The `backup` control action and replacement restore use Cloudflare Sandbox
+directory backups. Before deploying the Worker:
+
+```bash
+wrangler r2 bucket create claxedo-sandbox-backups
+wrangler secret put CLOUDFLARE_ACCOUNT_ID
+wrangler secret put R2_ACCESS_KEY_ID
+wrangler secret put R2_SECRET_ACCESS_KEY
+```
+
+The R2 token needs Object Read & Write access to the checkpoint bucket. The
+committed `wrangler.toml` binds that bucket as `BACKUP_BUCKET`; local
+`wrangler dev` uses the binding without production presigned-URL credentials.

@@ -18,51 +18,6 @@ const process = {
   ptyId: "pty_1",
 }
 
-const diagnostics = {
-  directory: "/workspace",
-  listening_ports: [],
-  server: {
-    pid: 1,
-    rss_kb: 1,
-    heap_used_kb: 1,
-    heap_total_kb: 1,
-    uptime_s: 1,
-  },
-  configs: [config],
-  processes: [process],
-  ptys: [],
-  os: [],
-  owners: [],
-  leaks: [],
-  summary: {
-    current: {
-      groups: 0,
-      rows: 0,
-      cpu_percent: 0,
-      rss_kb: 0,
-      hidden_children: 0,
-      problem_children: 0,
-    },
-    leaked: {
-      groups: 0,
-      rows: 0,
-      cpu_percent: 0,
-      rss_kb: 0,
-      hidden_children: 0,
-      problem_children: 0,
-    },
-    external: {
-      groups: 0,
-      rows: 0,
-      cpu_percent: 0,
-      rss_kb: 0,
-      hidden_children: 0,
-      problem_children: 0,
-    },
-  },
-  generated_at: 1,
-}
-
 function requestUrl(input: RequestInfo | URL) {
   if (input instanceof Request) return input.url
   if (input instanceof URL) return input.href
@@ -114,14 +69,6 @@ describe("process client relay transport", () => {
         return Response.json(true)
       }
 
-      if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/process/diagnostics") {
-        return Response.json(diagnostics)
-      }
-
-      if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/process/diagnostics/terminate") {
-        return Response.json(true)
-      }
-
       throw new Error(`Unexpected request: ${req.method} ${req.url}`)
     }) as typeof fetch
 
@@ -143,8 +90,6 @@ describe("process client relay transport", () => {
       await client.updateConfig("proc_1", { name: "dev", command: "bun dev" })
       await client.start("proc_1")
       await client.stop("proc_1")
-      await client.diagnostics()
-      await client.terminateDiagnostic({ process_id: "proc_1" })
       await client.deleteConfig("proc_1")
     } finally {
       globalThis.fetch = previous
@@ -157,8 +102,6 @@ describe("process client relay transport", () => {
       "PUT https://relay.example.test/workspaces/ws_1/api/wr/process/proc_1",
       "POST https://relay.example.test/workspaces/ws_1/api/wr/process/proc_1/start",
       "POST https://relay.example.test/workspaces/ws_1/api/wr/process/proc_1/stop",
-      "GET https://relay.example.test/workspaces/ws_1/api/wr/process/diagnostics",
-      "POST https://relay.example.test/workspaces/ws_1/api/wr/process/diagnostics/terminate",
       "DELETE https://relay.example.test/workspaces/ws_1/api/wr/process/proc_1",
     ])
     expect(calls.slice(1).every((call) => call.authorization === "Bearer rat_1")).toBe(true)

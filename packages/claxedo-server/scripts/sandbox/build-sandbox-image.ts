@@ -15,12 +15,13 @@ type Exec = (cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.Pr
 const IMAGE_REQUIRED_DEPENDENCIES = [
   "better-sqlite3",
   "node-pty",
-  "@zed-industries/claude-agent-acp",
+  "@agentclientprotocol/claude-agent-acp",
   "@agentclientprotocol/codex-acp",
 ]
 
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"
 export const OPENCODE_BINARY_FILENAME = "opencode"
+export const WORKSPACE_RUNTIME_VERSION_FILENAME = "workspace-runtime-version"
 
 function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   execFileSync(cmd, args, {
@@ -143,6 +144,15 @@ export function buildClaxedoWorkspacePackages(exec: Exec = defaultExec, readPack
   }
 }
 
+export function packWorkspaceRuntime(outDir: string, exec: Exec = defaultExec) {
+  const version = workspaceRuntimeVersion()
+  exec("npm", ["pack", "--pack-destination", outDir], { cwd: workspaceRuntimeRoot() })
+  const packageTarball = path.join(outDir, `claxedo-workspace-runtime-${version}.tgz`)
+  if (!fs.existsSync(packageTarball)) throw new Error(`workspace-runtime package did not emit ${packageTarball}`)
+  fs.writeFileSync(path.join(outDir, WORKSPACE_RUNTIME_VERSION_FILENAME), `${version}\n`)
+  return packageTarball
+}
+
 /**
  * Build the exact OpenCode server used by hosted workspaces.
  *
@@ -222,6 +232,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // checkout ships the current checkout — not stale local dist, not a missing
   // one. workspace-runtime is the last package built.
   buildClaxedoWorkspacePackages(exec)
+  const packageTarball = packWorkspaceRuntime(outDir, exec)
   const opencodeBinary = buildSandboxOpenCodeBinary(outDir, exec)
   await esbuildBuild(esbuildHostBundleOptions({
     entry: claxedoWorkspaceRuntimeEntry(),
@@ -242,6 +253,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // gets a distinct tag/snapshot name and actually reaches sandboxes.
   const buildId = createHash("sha256")
     .update(fs.readFileSync(bundlePath))
+    .update(fs.readFileSync(packageTarball))
     .update(fs.readFileSync(opencodeBinary))
     .update(packageJson)
     .digest("hex")
@@ -249,6 +261,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   return {
     bundle: bundlePath,
     packageJson: packageJsonPath,
+    packageTarball,
     opencodeBinary,
     buildId,
   }

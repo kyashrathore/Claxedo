@@ -47,6 +47,7 @@ import {
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
+import { DialogProcessDiagnostics } from "../features/processes/ui"
 import "./styles/ui-overrides.css"
 
 export type AppShellLayoutProps = ParentProps<{
@@ -150,6 +151,7 @@ export type AppShellLayoutProps = ParentProps<{
 }>
 
 function AppShellLayoutBody(props: AppShellLayoutProps) {
+  const isolationStage = window.__OPENCODE__?.startupIsolationStage
   const claxedoState = useClaxedoState()
   const command = useCommand()
   const platform = usePlatform()
@@ -266,6 +268,10 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const commitSidebarResize = () => {
     claxedoState.rail.setWidth(shellLayout.committedRailWidth())
   }
+  const openDiagnostics = () => {
+    dialog.show(() => <DialogProcessDiagnostics />)
+  }
+  const openLocalDiagnostics = platform.processDiagnostics ? openDiagnostics : undefined
   const handleSidebarHotZoneEnter = () => {
     if (sidebarPinned() || sidebarExpanded()) return
     // After a toggle-collapse the peek is muted until the pointer leaves the
@@ -329,6 +335,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onHelp={props.onHelp}
           onNewPage={props.onNewPage}
           onNewProject={props.onNewProject}
+          onDiagnostics={openLocalDiagnostics}
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
           onOpenMarketplace={props.onOpenMarketplace}
@@ -354,6 +361,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           trafficLightPad={chrome.trafficLightPad}
         />
         </nav>
+        {isolationStage === "sidebar" ? (
+          <main
+            data-testid="startup-isolation-sidebar"
+            class="flex flex-1 bg-background-stronger"
+          />
+        ) : (
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
           canUseDocuments={props.canUseDocuments}
@@ -364,6 +377,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onCloseSurface={workbenchController.closeSurface}
           onNewPage={props.onNewPage}
           onNewProject={props.onNewProject}
+          onDiagnostics={openLocalDiagnostics}
           onNewSession={workbenchController.createHeaderSession}
           onNewTerminal={workbenchController.createHeaderTerminal}
           onWorkspacePanelFloatingChromeRef={workbenchController.registerWorkspacePanelFloatingChrome}
@@ -391,14 +405,24 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           workspacePanelNavigator={workbenchController.workspacePanelNavigator}
           workspacePanelVisualOpen={workspacePanelOpen}
           workspacePanelWidth={workspacePanelWidth}
+          mountWorkspacePanel={isolationStage !== "timeline"}
         >
           {props.children}
         </RailWorkbenchShell>
+        )}
       </div>
     </div>
   )
 }
 
 export function AppShellLayout(props: AppShellLayoutProps) {
+  if (window.__OPENCODE__?.startupIsolationStage === "shell") {
+    return (
+      <div
+        data-testid="startup-isolation-shell"
+        class="size-full bg-background-base"
+      />
+    )
+  }
   return <AppShellLayoutBody {...props} />
 }

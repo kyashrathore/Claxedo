@@ -3,6 +3,8 @@ import fs from "fs/promises"
 import {
   createWorkspaceRuntimeApp,
   Pty,
+  type ProcessObserver,
+  type ProcessOwnerHandle,
   type WorkGraphAttemptOperationBroker,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
@@ -29,6 +31,7 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
    * `onSessionMetaEvent` callback. See `configureEmbeddedWorkspaceRuntime`.
    */
   sessionEvents?: OpencodeEventsHandle
+  diagnosticsOwner?: ProcessOwnerHandle
 }
 
 export type EmbeddedWorkspaceRuntimeConfigMode = "skip" | "sync"
@@ -49,6 +52,7 @@ let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
 let configuredPiModelBackend: PiModelBackendResolver | undefined
 let configuredWorkGraphAttemptBroker: WorkGraphAttemptOperationBroker | undefined
+let configuredProcessObserver: ProcessObserver | undefined
 // Host-supplied sink for a harness session's async auto-title (and any other
 // session.created/session.updated event). A harness session's title is
 // re-emitted asynchronously — e.g. a post-turn ACP auto-title
@@ -69,6 +73,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeCompat?: boolean
   piModelBackend?: PiModelBackendResolver
   workgraphAttemptBroker?: WorkGraphAttemptOperationBroker
+  processObserver?: ProcessObserver
   onSessionMetaEvent?: (event: OpencodeEvent) => void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
 }) {
@@ -76,6 +81,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOpencodeCompat = input.opencodeCompat ?? true
   configuredPiModelBackend = input.piModelBackend
   configuredWorkGraphAttemptBroker = input.workgraphAttemptBroker
+  configuredProcessObserver = input.processObserver
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
 }
@@ -93,6 +99,7 @@ function options(ws: Workspace, opencodeRequest: OpenCodeRequestFn): WorkspaceRu
     opencodeRequest,
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     ...(configuredWorkGraphAttemptBroker ? { workgraphAttemptBroker: configuredWorkGraphAttemptBroker } : {}),
+    ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
@@ -135,6 +142,7 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
 
 function disposeRuntime(runtime: EmbeddedRuntime) {
   runtime.sessionEvents?.close()
+  runtime.diagnosticsOwner?.exit({ reason: "disposed" })
   runtime.host.dispose()
 }
 
@@ -158,6 +166,21 @@ export async function ensureEmbeddedWorkspaceRuntime(
   const runtime: EmbeddedRuntime = {
     ...createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest)),
     workspace: ws,
+    ...(configuredProcessObserver
+      ? {
+          diagnosticsOwner: configuredProcessObserver.register({
+            ownerId: `runtime:${ws.id}`,
+            ownerGeneration: crypto.randomUUID(),
+            launchId: crypto.randomUUID(),
+            kind: "runtime",
+            role: "runtime",
+            label: ws.workspace_name || "Workspace runtime",
+            parentOwnerId: "owner-claxedo-server",
+            workspaceId: ws.id,
+            directory: ws.directory,
+          }),
+        }
+      : {}),
   }
   hosts.set(ws.id, runtime)
   if (configuredOnSessionMetaEvent) {
@@ -171,6 +194,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
     runtime.sessionEvents = sessionEvents
   }
   if (config === "sync") await configure(runtime)
+  runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)
   return runtime
 }

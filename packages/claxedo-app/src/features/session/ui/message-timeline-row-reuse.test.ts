@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
 import { Timeline, TimelineRow } from "./message-timeline.data"
 
 describe("timeline row reuse", () => {
@@ -78,10 +78,6 @@ describe("timeline row reuse", () => {
   })
 })
 
-// T8 / D2: `error?.name === "MessageAbortedError"` only ever fires for the opencode-native
-// harness. SDK-runtime harnesses (codex/claude/cursor/ACP) leave an aborted turn's last
-// assistant message unsettled instead (no time.completed, no error) — see
-// message-timeline.data.ts's sdkInterrupted derivation for the traced abort paths.
 describe("T8: interrupted-turn detection (D2)", () => {
   test("opencode-native MessageAbortedError still renders the interrupted divider, not an Error row", () => {
     const aborted = assistantMessage("msg_assistant", "msg_user", {})
@@ -96,11 +92,22 @@ describe("T8: interrupted-turn detection (D2)", () => {
     expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
   })
 
-  test("an SDK-runtime harness abort (no error, no completed time, turn no longer active) renders the interrupted divider, not an Error row", () => {
-    // No `error`, no `completed` — exactly what codex/claude/cursor/ACP leave behind on abort.
+  test("a canonical SDK-runtime cancellation renders the interrupted divider, not an Error row", () => {
     const unsettled = assistantMessage("msg_assistant", "msg_user", {})
 
-    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [unsettled], 0, false, "idle", false)
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [unsettled],
+      0,
+      false,
+      "idle",
+      false,
+      true,
+      () => undefined,
+      false,
+      { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
+    )
 
     expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
       expect.objectContaining({ label: "interrupted" }),
@@ -108,20 +115,30 @@ describe("T8: interrupted-turn detection (D2)", () => {
     expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
   })
 
-  test("an SDK-runtime abort on the currently-active turn (status flipped to idle) also renders the divider", () => {
+  test("an unsettled SDK message with no cancellation outcome does not render a false interruption", () => {
     const unsettled = assistantMessage("msg_assistant", "msg_user", {})
 
     const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [unsettled], 0, false, "idle", true)
 
-    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
-      expect.objectContaining({ label: "interrupted" }),
-    )
+    expect(rows.find((row) => row._tag === "TurnDivider")).toBeUndefined()
   })
 
-  test("a genuinely still-running turn (busy, unsettled) is not misclassified as interrupted", () => {
-    const running = assistantMessage("msg_assistant", "msg_user", {})
+  test("a completed turn with delayed message settlement does not render a false interruption", () => {
+    const unsettled = assistantMessage("msg_assistant", "msg_user", {})
 
-    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [running], 0, false, "busy", true)
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [unsettled],
+      0,
+      false,
+      "idle",
+      false,
+      true,
+      () => undefined,
+      false,
+      { status: "completed", completedAt: 45, assistantMessageId: "msg_assistant" },
+    )
 
     expect(rows.find((row) => row._tag === "TurnDivider")).toBeUndefined()
   })
@@ -145,20 +162,21 @@ describe("T8: interrupted-turn detection (D2)", () => {
     expect(rows.find((row) => row._tag === "TurnDivider")).toBeUndefined()
   })
 
-  test("the interrupted divider carries a duration derived from the unsettled message's last part activity", () => {
+  test("the interrupted divider carries the canonical cancellation duration", () => {
     const unsettled = assistantMessage("msg_assistant", "msg_user", {})
-    const parts: Part[] = [
-      { ...textPart("part_text", "msg_assistant", "partial output"), time: { start: 5, end: 45 } } as Part,
-    ]
 
     const rows = Timeline.constructMessageRows(
       userMessage("msg_user"),
-      (messageID) => (messageID === "msg_assistant" ? parts : []),
+      () => [],
       [unsettled],
       0,
       false,
       "idle",
       false,
+      true,
+      () => undefined,
+      false,
+      { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
     )
 
     const divider = rows.find((row) => row._tag === "TurnDivider")

@@ -8,6 +8,7 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
 const entries = [
   "src/command.ts",
+  "src/checkpoint-manager.ts",
   "src/constants.ts",
   "src/daytona-allow-list.ts",
   "src/defaults.ts",
@@ -17,6 +18,7 @@ const entries = [
   "src/drivers/cloudflare-egress.ts",
   "src/drivers/daytona.ts",
   "src/drivers/docker.ts",
+  "src/drivers/exe.ts",
   "src/drivers/fetch-bridge.ts",
   "src/drivers/modal.ts",
   "src/drivers/vercel.ts",

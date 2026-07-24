@@ -86,6 +86,9 @@ function toolSandboxFromMeta(meta: SessionMeta): SandboxRef {
       kind: "workspace-runtime",
       workspaceId: stored.workspaceId,
       ...(stored.directory ? { directory: stored.directory } : {}),
+      ...(stored.worktree ? { worktree: stored.worktree } : {}),
+      ...(stored.baseCommit ? { baseCommit: stored.baseCommit } : {}),
+      ...(stored.leaseEpoch !== undefined ? { leaseEpoch: stored.leaseEpoch } : {}),
     }
   }
   return { kind: "virtual", id: "central-pi" }
@@ -121,6 +124,11 @@ function messageRow(input: unknown): input is AgentMessageRow {
 type CentralSessionRuntimeOptions = {
   createEnv?: SessionEnvFactory
   turnCredentials?: ConnectionTurnCredentials
+  admitWorkspaceSession?: (input: {
+    sessionId: string
+    workspaceId: string
+    baseCommit?: string
+  }) => Promise<{ directory: string; worktree: string; baseCommit: string; leaseEpoch: number }>
 }
 
 /**
@@ -565,6 +573,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
   placementRoutes.route("/", routes as never)
 
   async function createHybridSession(input: {
+    sessionId?: string
     title?: string | null
     workspaceId?: string | null
     toolSandbox?: SandboxRef
@@ -579,11 +588,43 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       const invalid = validatePiPromptModel(input.model)
       if (invalid) throw new Error(invalid.message)
     }
-    const toolSandbox = virtualToolSandbox(input.toolSandbox)
+    const sessionId = input.sessionId ?? randomUUID()
+    const requestedToolSandbox = virtualToolSandbox(input.toolSandbox)
+    const admitted = requestedToolSandbox.kind === "workspace-runtime" && options.admitWorkspaceSession
+      ? await options.admitWorkspaceSession({
+          sessionId,
+          workspaceId: requestedToolSandbox.workspaceId,
+          ...(requestedToolSandbox.baseCommit ? { baseCommit: requestedToolSandbox.baseCommit } : {}),
+        })
+      : undefined
+    const toolSandbox = requestedToolSandbox.kind === "workspace-runtime" && admitted
+      ? {
+          ...requestedToolSandbox,
+          directory: admitted.directory,
+          worktree: admitted.worktree,
+          baseCommit: admitted.baseCommit,
+          leaseEpoch: admitted.leaseEpoch,
+        }
+      : requestedToolSandbox
     const workspaceId = input.workspaceId
       ?? (toolSandbox.kind === "workspace-runtime" ? toolSandbox.workspaceId : undefined)
+    const existing = input.sessionId
+      ? await services.projectionStore.session_meta(sessionId)
+      : undefined
+    if (existing) {
+      const stored = toolSandboxFromMeta(existing)
+      if (
+        existing.host !== "central"
+        || existing.workspaceID !== workspaceId
+        || stored.kind !== toolSandbox.kind
+        || (stored.kind === "workspace-runtime" && toolSandbox.kind === "workspace-runtime"
+          && (stored.workspaceId !== toolSandbox.workspaceId || stored.directory !== toolSandbox.directory))
+      ) throw new Error(`Session ${sessionId} already exists with different placement`)
+      await ensureCentralRuntimeSession(sessionId)
+      return { id: sessionId }
+    }
     const session = await adapter.bindSession({
-      id: randomUUID(),
+      id: sessionId,
       title: input.title ?? null,
       placement: {
         mode: "hybrid",
@@ -613,6 +654,9 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
           kind: "workspace-runtime" as const,
           workspaceId: toolSandbox.workspaceId,
           ...(toolSandbox.directory ? { directory: toolSandbox.directory } : {}),
+          ...(toolSandbox.worktree ? { worktree: toolSandbox.worktree } : {}),
+          ...(toolSandbox.baseCommit ? { baseCommit: toolSandbox.baseCommit } : {}),
+          ...(toolSandbox.leaseEpoch !== undefined ? { leaseEpoch: toolSandbox.leaseEpoch } : {}),
         }
       : null
     await services.projectionStore.put_session_meta(session.id, {

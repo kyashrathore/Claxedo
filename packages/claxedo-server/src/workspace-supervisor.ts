@@ -10,6 +10,8 @@ import {
   runtimeHasActiveWork,
 } from "./workspace-supervisor-config-sync"
 import {
+  captureSupervisorSandboxCheckpoint,
+  restoreSupervisorSandboxCheckpoint,
   startSandbox,
   stopSandbox,
   touchSandbox,
@@ -299,6 +301,16 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
     async snapshot() {
       return { ok: false, reason: "snapshot_unsupported" }
     },
+    async checkpoint(workspaceId, input) {
+      const ws = await getWorkspace(workspaceId)
+      if (!ws) throw new Error(`workspace not found: ${workspaceId}`)
+      return await captureSupervisorSandboxCheckpoint(runtimeState(ws), input)
+    },
+    async restore(workspaceId, input) {
+      const ws = await getWorkspace(workspaceId)
+      if (!ws) throw new Error(`workspace not found: ${workspaceId}`)
+      return await restoreSupervisorSandboxCheckpoint(runtimeState(ws), input)
+    },
     async stop(workspaceId) {
       await stopSupervisorSandbox(workspaceId, "sandbox_manager_stop")
       const lease = updateSupervisorSandboxLease(workspaceId, { status: "stopped" })
@@ -458,7 +470,13 @@ function scheduleStop(state: WorkspaceRuntimeState) {
         scheduleStop(state)
         return
       }
-      await stopSupervisorSandbox(state.ws.id, "idle")
+      await stopSupervisorSandbox(state.ws.id, "idle").catch((error) => {
+        log.warn("workspace-runtime idle checkpoint failed", {
+          workspaceId: state.ws.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        if (state.status === "ready") scheduleStop(state)
+      })
     })()
   }, IDLE_MS)
 }

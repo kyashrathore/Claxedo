@@ -24,6 +24,7 @@ export type WorkGraphSessionGateway = Readonly<{
       messageId?: string
       directory: string
       workspaceId?: string
+      baseCommit?: string
       title: string
       prompt: string
       profile: ResolvedGenerationProfile

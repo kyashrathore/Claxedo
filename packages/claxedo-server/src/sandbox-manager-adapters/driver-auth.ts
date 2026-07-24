@@ -48,6 +48,11 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
 }
 
 function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): SandboxDriverAuth[T] | undefined {
+  if (id === "exe") {
+    const api_token = clean(secret)
+    return (api_token ? { api_token } : undefined) as SandboxDriverAuth[T]
+  }
+
   if (id === "daytona") {
     const api_key = clean(secret)
     return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T]

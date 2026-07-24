@@ -16,6 +16,7 @@ import {
 import type { ControlPlaneServices } from "./control-plane/services"
 import { requireAuthority } from "./control-plane/authority"
 import type { ConnectionTurnCredentials } from "./connections-host/turn-credentials"
+import type { WorkspaceSessionAdmission } from "./workspace-runtime-integration/session-env"
 
 export { createCentralSessionRuntime } from "./central-session-runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./control-plane/auth"
@@ -26,6 +27,11 @@ export type CentralControlAppOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   createEnv?: SessionEnvFactory
+  admitWorkspaceSession?: (input: {
+    sessionId: string
+    workspaceId: string
+    baseCommit?: string
+  }) => Promise<WorkspaceSessionAdmission>
   turnCredentials?: ConnectionTurnCredentials
   beforeLocalSessionList?: () => Promise<void>
 }
@@ -112,6 +118,7 @@ async function centralRuntimeAccess(
 export function createCentralControlApp(services: ControlPlaneServices, options: CentralControlAppOptions = {}) {
   const runtime = createCentralSessionRuntime(services, {
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
+    ...(options.admitWorkspaceSession ? { admitWorkspaceSession: options.admitWorkspaceSession } : {}),
     ...(options.turnCredentials ? { turnCredentials: options.turnCredentials } : {}),
   })
   const app = new Hono()

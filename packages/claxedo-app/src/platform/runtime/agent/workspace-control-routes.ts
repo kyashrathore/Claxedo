@@ -42,6 +42,35 @@ export function controlWorkspaceUrl(input: { baseUrl?: string; workspaceId: stri
   return new URL(`/api/workspace/${encodeURIComponent(input.workspaceId)}`, controlPlaneBaseUrl(input.baseUrl)).toString()
 }
 
+export function workspaceCheckpointsUrl(input: { baseUrl?: string; workspaceId: string }) {
+  return new URL(
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}/checkpoints`,
+    controlPlaneBaseUrl(input.baseUrl),
+  ).toString()
+}
+
+export function workspaceCheckpointRestoreUrl(input: {
+  baseUrl?: string
+  workspaceId: string
+  checkpointId: string
+}) {
+  return new URL(
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}/checkpoints/${encodeURIComponent(input.checkpointId)}/restore`,
+    controlPlaneBaseUrl(input.baseUrl),
+  ).toString()
+}
+
+export function workspaceLifecycleUrl(input: {
+  baseUrl?: string
+  workspaceId: string
+  operation: "stop" | "replace" | "cleanup" | "destroy"
+}) {
+  return new URL(
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}/lifecycle/${input.operation}`,
+    controlPlaneBaseUrl(input.baseUrl),
+  ).toString()
+}
+
 export type ControlSessionSuffix = `/${string}`
 
 export function controlSessionListUrl(input: {

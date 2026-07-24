@@ -26,6 +26,7 @@ import type { DurableSessionLog } from "./durable-session-log"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
+import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "../region"
 import type { HostedDeviceAuthProvider } from "../routes/hosted-device-auth"
 import { createControlPlaneRelayProvider } from "../relay-provider"
@@ -123,10 +124,36 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
     })
   }
 
+  if (name === "exe") {
+    const apiToken = clean(env.EXE_DEV_API_TOKEN)
+    if (!apiToken) return
+    const runtimeEnv = {
+      ...(clean(env.CLAXEDO_RELAY_JWKS_URL)
+        ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: clean(env.CLAXEDO_RELAY_JWKS_URL)! }
+        : {}),
+      ...(clean(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)
+        ? { WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: clean(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)! }
+        : {}),
+      ...(clean(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
+        ? { WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: clean(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)! }
+        : {}),
+    }
+    return createExeSandboxDriver({
+      apiToken,
+      ...(clean(env.EXE_DEV_API_URL) ? { endpoint: clean(env.EXE_DEV_API_URL) } : {}),
+      ...(clean(env.CLAXEDO_SANDBOX_IMAGE) ? { image: clean(env.CLAXEDO_SANDBOX_IMAGE) } : {}),
+      runtimePort: workspaceRuntimePort(env),
+      ...(clean(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: clean(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
+      ...(clean(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: clean(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
+      ...(clean(env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
+      ...(Object.keys(runtimeEnv).length ? { env: () => runtimeEnv } : {}),
+    })
+  }
+
   if (name !== "fetch") {
     throw new HostedWorkerCompositionError(
       "hosted_sandbox_driver_unsupported",
-      `Hosted Worker sandbox driver must be one of cloudflare, daytona, or fetch; got ${name}`,
+      `Hosted Worker sandbox driver must be one of exe, cloudflare, daytona, or fetch; got ${name}`,
     )
   }
 
@@ -170,6 +197,7 @@ function defaultSandboxDriverName(env: HostedWorkerEnv) {
     clean(env.CLOUDFLARE_SANDBOX_WORKER_URL) &&
     (clean(env.CLOUDFLARE_SANDBOX_API_TOKEN) || clean(env.CLOUDFLARE_API_TOKEN))
   ) return "cloudflare"
+  if (clean(env.EXE_DEV_API_TOKEN)) return "exe"
   if (clean(env.DAYTONA_API_KEY) && clean(env.CLAXEDO_DAYTONA_SNAPSHOT)) {
     return "daytona"
   }

@@ -6,9 +6,12 @@ import {
   controlWorkspaceUrl,
   experimentalSandboxPath,
   workspaceCreateUrl,
+  workspaceCheckpointRestoreUrl,
+  workspaceCheckpointsUrl,
   workspaceDefaultProviderUrl,
   workspaceProviderAuthUrl,
   workspaceProvidersUrl,
+  workspaceLifecycleUrl,
   workspaceResolveUrl,
 } from "./workspace-control-routes"
 
@@ -66,6 +69,23 @@ describe("workspace control routes", () => {
       limit: 50,
       cursor: "cursor:1",
     }).toString()).toBe("https://control.example.test/api/control/session-list?scope=global&limit=50&projectId=proj_1&workspaceId=ws_1&directory=%2Frepo&groupBy=workspace&archived=archived&status=running%2Cidle&environment=prod&git=dirty%2Cclean&search=hello+world&cursor=cursor%3A1")
+  })
+
+  test("builds cloud workspace lifecycle routes with encoded identities", () => {
+    expect(workspaceCheckpointsUrl({
+      baseUrl: "https://control.example.test/",
+      workspaceId: "ws/custom",
+    })).toBe("https://control.example.test/api/workspace/ws%2Fcustom/checkpoints")
+    expect(workspaceCheckpointRestoreUrl({
+      baseUrl: "https://control.example.test/",
+      workspaceId: "ws/custom",
+      checkpointId: "cp/custom",
+    })).toBe("https://control.example.test/api/workspace/ws%2Fcustom/checkpoints/cp%2Fcustom/restore")
+    expect(workspaceLifecycleUrl({
+      baseUrl: "https://control.example.test/",
+      workspaceId: "ws/custom",
+      operation: "destroy",
+    })).toBe("https://control.example.test/api/workspace/ws%2Fcustom/lifecycle/destroy")
   })
 
   test("builds experimental sandbox path", () => {

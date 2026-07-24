@@ -6,6 +6,7 @@ import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
   OPENCODE_BINARY_FILENAME,
+  WORKSPACE_RUNTIME_VERSION_FILENAME,
   hostBundleDependencies,
   sandboxImageBuildArgs,
   validateBuildFlags,
@@ -62,7 +63,7 @@ describe("build-sandbox-image", () => {
         dependencies: {
           "better-sqlite3": "12.10.0",
           "node-pty": "1.1.0",
-          "@zed-industries/claude-agent-acp": "0.22.1",
+          "@agentclientprotocol/claude-agent-acp": "0.60.0",
           "@agentclientprotocol/codex-acp": "0.10.0",
           "@claxedo/agent-sdk-runtime": "0.5.1",
           hono: "4.12.12",
@@ -81,7 +82,7 @@ describe("build-sandbox-image", () => {
     expect(deps).toEqual({
       "better-sqlite3": "12.10.0",
       "node-pty": "1.1.0",
-      "@zed-industries/claude-agent-acp": "0.22.1",
+      "@agentclientprotocol/claude-agent-acp": "0.60.0",
       "@agentclientprotocol/codex-acp": "0.10.0",
       hono: "4.12.12",
       "just-bash": "3.0.1",
@@ -98,9 +99,11 @@ describe("build-sandbox-image", () => {
     expect(Object.keys(deps)).toEqual(expect.arrayContaining([
       "better-sqlite3",
       "node-pty",
-      "@zed-industries/claude-agent-acp",
+      "@agentclientprotocol/claude-agent-acp",
       "@agentclientprotocol/codex-acp",
     ]))
+    expect(deps["@agentclientprotocol/claude-agent-acp"]).toBe("0.60.0")
+    expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.215")
     expect(deps.zod).toBe("4.1.8")
   })
 
@@ -109,6 +112,12 @@ describe("build-sandbox-image", () => {
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("setsid env WORKSPACE_RUNTIME_PORT=2593"))).toBe(true)
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) =>
+      dockerfile.includes("npm install -g --min-release-age=2 --legacy-peer-deps /opt/workspace-runtime/claxedo-workspace-runtime-*.tgz")
+    )).toBe(true)
+    expect(dockerfiles.every((dockerfile) =>
+      dockerfile.includes(`test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/${WORKSPACE_RUNTIME_VERSION_FILENAME})"`)
+    )).toBe(true)
   })
 
   test("production images install and smoke the checkout's Session V2 OpenCode binary", () => {

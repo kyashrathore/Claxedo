@@ -10,6 +10,7 @@ import {
 import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentConfigOptionRow, PromptInput } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
+import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
@@ -25,6 +26,11 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { harnessSpawnEnv } from "../shared/spawn-env"
+import {
+  observeAgentProcess,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
@@ -118,6 +124,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
   private processError: string | null = null
+  private currentMcp: Record<string, ResolvedMcpServer> = {}
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly codexHome: string
   private readonly modelSource = createLiveModelSource({
@@ -148,6 +155,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.auth = {
       openai: sourceAuthValue(source),
     }
+    this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
   }
 
   async createAgentSession(input: { directory: string; model: string }) {
@@ -305,27 +313,48 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    * picker rows can share one) collapse to the first row.
    */
   private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
-    const proc = await this.ensureProcess(directory ?? process.cwd())
-    const models = new Map<string, SdkModelEntry>()
-    let cursor: string | undefined
-    do {
-      const result = record(await proc.request("model/list", cursor ? { cursor } : {})) ?? {}
-      const data = Array.isArray(result.data) ? result.data : []
-      for (const item of data) {
-        const row = record(item)
-        if (!row || row.hidden === true) continue
-        const id = text(row.model) ?? text(row.id)
-        if (!id || models.has(id)) continue
-        models.set(id, {
-          id,
-          name: text(row.displayName) ?? id,
-          ...(text(row.description) ? { description: text(row.description)! } : {}),
-          ...(row.isDefault === true ? { isDefault: true } : {}),
-        })
-      }
-      cursor = text(result.nextCursor)
-    } while (cursor)
-    return [...models.values()]
+    const cwd = directory ?? process.cwd()
+    const observation = observeAgentProcess(this.host.processObserver, {
+      ownerId: `codex-probe:${randomUUID()}`,
+      launchId: randomUUID(),
+      harnessId: "codex",
+      access: "native",
+      role: "probe",
+      label: "Codex model probe",
+      locality: "in-process",
+      confidence: "direct",
+      capabilities: {
+        resourceMetrics: "shared-process",
+        ownerActions: false,
+      },
+      directory: cwd,
+    })
+    observation.update({ lifecycle: "ready" })
+    try {
+      const proc = await this.ensureProcess(cwd)
+      const models = new Map<string, SdkModelEntry>()
+      let cursor: string | undefined
+      do {
+        const result = record(await proc.request("model/list", cursor ? { cursor } : {})) ?? {}
+        const data = Array.isArray(result.data) ? result.data : []
+        for (const item of data) {
+          const row = record(item)
+          if (!row || row.hidden === true) continue
+          const id = text(row.model) ?? text(row.id)
+          if (!id || models.has(id)) continue
+          models.set(id, {
+            id,
+            name: text(row.displayName) ?? id,
+            ...(text(row.description) ? { description: text(row.description)! } : {}),
+            ...(row.isDefault === true ? { isDefault: true } : {}),
+          })
+        }
+        cursor = text(result.nextCursor)
+      } while (cursor)
+      return [...models.values()]
+    } finally {
+      observation.exit({ reason: "disposed" })
+    }
   }
 
   failInteractiveState(err: Error) {
@@ -352,6 +381,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         ...(this.auth.openai ? { OPENAI_API_KEY: this.auth.openai } : {}),
       }),
       requestHandler: (message) => this.handleServerRequest(message),
+      processObserver: this.host.processObserver,
+      mcp: this.currentMcp,
       onClose: (err) => {
         if (this.process === started) this.process = null
         this.failInteractiveState(err)
@@ -477,6 +508,74 @@ export function codexSpawnEnv(input: Record<string, string | undefined>) {
   return harnessSpawnEnv(input)
 }
 
+function executableBasename(input: string) {
+  return input.split(/[\\/]/).at(-1) || "codex"
+}
+
+function compositeObservation(handles: AgentProcessObserverHandle[]): AgentProcessObserverHandle {
+  let exited = false
+  return {
+    update(event) {
+      handles.forEach((handle) => handle.update(event))
+    },
+    exit(event) {
+      if (exited) return
+      exited = true
+      handles.forEach((handle) => handle.exit(event))
+    },
+  }
+}
+
+export function observeCodexAppServerProcess(input: {
+  observer?: AgentProcessObserver
+  binary: string
+  directory: string
+  pid?: number
+  mcp?: Record<string, ResolvedMcpServer>
+}): AgentProcessObserverHandle {
+  const ownerId = `codex-app-server:${randomUUID()}`
+  return compositeObservation([
+    observeAgentProcess(input.observer, {
+      ownerId,
+      launchId: randomUUID(),
+      harnessId: "codex",
+      access: "native",
+      role: "harness",
+      label: "Codex app server",
+      locality: "local-process",
+      confidence: input.pid ? "direct" : "inferred",
+      capabilities: {
+        resourceMetrics: "process",
+        ownerActions: false,
+      },
+      ...(input.pid ? { pid: input.pid } : {}),
+      directory: input.directory,
+      executableBasename: executableBasename(input.binary),
+    }),
+    ...Object.values(input.mcp ?? {}).map((server) => observeAgentProcess(input.observer, {
+      ownerId: `codex-mcp:${randomUUID()}`,
+      launchId: randomUUID(),
+      harnessId: "codex",
+      access: "native",
+      role: "mcp" as const,
+      label: `MCP ${server.name}`,
+      locality: server.transport === "stdio" ? "local-process" as const : "remote" as const,
+      confidence: server.transport === "stdio" ? "inferred" as const : "not-process-backed" as const,
+      capabilities: {
+        resourceMetrics: server.transport === "stdio" ? "process" as const : "none" as const,
+        ownerActions: false,
+      },
+      parentOwnerId: ownerId,
+      directory: input.directory,
+      mcpName: server.name,
+      transport: server.transport === "stdio" ? "stdio" as const : "streamable-http" as const,
+      ...(server.transport === "stdio"
+        ? { executableBasename: executableBasename(server.command) }
+        : {}),
+    })),
+  ])
+}
+
 class CodexAppServerProcess {
   private proc: ChildProcess
   private buffer = ""
@@ -488,6 +587,8 @@ class CodexAppServerProcess {
   }>()
   private listeners = new Set<(message: JsonRecord) => void>()
   private stderrListeners = new Set<(message: string) => void>()
+  private observation: AgentProcessObserverHandle
+  private observationExited = false
 
   private constructor(
     private readonly binary: string,
@@ -495,11 +596,20 @@ class CodexAppServerProcess {
     private readonly env: NodeJS.ProcessEnv,
     private readonly requestHandler: (message: JsonRecord) => Promise<unknown>,
     private readonly onClose: (err: Error) => void,
+    processObserver?: AgentProcessObserver,
+    mcp: Record<string, ResolvedMcpServer> = {},
   ) {
     this.proc = spawn(binary, ["app-server", "--listen", "stdio://"], {
       cwd: directory,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+    })
+    this.observation = observeCodexAppServerProcess({
+      observer: processObserver,
+      binary,
+      directory,
+      ...(this.proc.pid ? { pid: this.proc.pid } : {}),
+      mcp,
     })
     this.proc.stdout?.setEncoding("utf8")
     this.proc.stderr?.setEncoding("utf8")
@@ -511,12 +621,14 @@ class CodexAppServerProcess {
     })
     this.proc.on("error", (cause) => {
       const err = cause instanceof Error ? cause : new Error(String(cause))
+      this.exitObservation({ reason: "error" })
       for (const item of this.pending.values()) item.reject(err)
       this.pending.clear()
       if (this.disposed) return
       this.onClose(err)
     })
     this.proc.on("exit", (code, signal) => {
+      this.exitObservation({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
       const err = new Error(`codex app-server exited (${signal ?? code ?? "unknown"})`)
       for (const item of this.pending.values()) item.reject(err)
       this.pending.clear()
@@ -531,17 +643,33 @@ class CodexAppServerProcess {
     env: NodeJS.ProcessEnv
     requestHandler: (message: JsonRecord) => Promise<unknown>
     onClose?: (err: Error) => void
+    processObserver?: AgentProcessObserver
+    mcp?: Record<string, ResolvedMcpServer>
   }) {
-    const proc = new CodexAppServerProcess(input.binary, input.directory, input.env, input.requestHandler, input.onClose ?? (() => {}))
-    await proc.request("initialize", {
-      clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
-      capabilities: {
-        experimentalApi: true,
-        requestAttestation: false,
-      },
-    })
-    proc.notify("initialized")
-    return proc
+    const proc = new CodexAppServerProcess(
+      input.binary,
+      input.directory,
+      input.env,
+      input.requestHandler,
+      input.onClose ?? (() => {}),
+      input.processObserver,
+      input.mcp,
+    )
+    try {
+      await proc.request("initialize", {
+        clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
+        capabilities: {
+          experimentalApi: true,
+          requestAttestation: false,
+        },
+      })
+      proc.notify("initialized")
+      proc.observation.update({ lifecycle: "ready" })
+      return proc
+    } catch (cause) {
+      proc.dispose()
+      throw cause
+    }
   }
 
   get alive() {
@@ -575,10 +703,18 @@ class CodexAppServerProcess {
   }
 
   dispose() {
+    if (this.disposed) return
     this.disposed = true
+    this.exitObservation({ reason: "disposed" })
     try {
       this.proc.kill("SIGTERM")
     } catch {}
+  }
+
+  private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {
+    if (this.observationExited) return
+    this.observationExited = true
+    this.observation.exit(input)
   }
 
   private write(message: JsonRecord) {

@@ -106,6 +106,23 @@ describe("agent config", () => {
     ).toBe(path.join(injected, "codex-acp"))
   })
 
+  test("resolves the packaged Codex ACP executable name on Windows", async () => {
+    const injected = path.join(root, "windows-acp")
+    await fs.mkdir(injected, { recursive: true })
+    await fs.writeFile(path.join(injected, "codex-acp.exe"), "")
+
+    expect(
+      processBinary(mod.defaultHarness(
+        {
+          mcp: {},
+          auth: {},
+          runner: { type: "codex-acp" },
+        },
+        { acpDir: injected, platform: "win32" },
+      )),
+    ).toBe(path.join(injected, "codex-acp.exe"))
+  })
+
   test("infers a cursor binary when cursor-acp is selected without an explicit path", () => {
     const runner = mod.defaultHarness({
       mcp: {},

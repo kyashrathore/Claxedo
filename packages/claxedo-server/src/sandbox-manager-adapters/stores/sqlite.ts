@@ -13,9 +13,10 @@ type StoredLeaseStatus =
   | "failed"
   | "stopping"
   | "stopped"
+  | "destroyed"
 
 function status(input: StoredLeaseStatus): SandboxLease["status"] {
-  if (input === "ready" || input === "stopped") return input
+  if (input === "ready" || input === "stopped" || input === "destroyed") return input
   if (input === "unhealthy" || input === "backoff" || input === "failed") return "unavailable"
   return "acquiring"
 }
@@ -25,7 +26,7 @@ type StoredLease = NonNullable<ReturnType<typeof getLease>>
 function storedStatus(input: SandboxLease): StoredLeaseStatus {
   if (input.status === "ready" || input.status === "stopped") return input.status
   if (input.status === "unavailable") return input.nextRetryAt === undefined ? "failed" : "backoff"
-  if (input.status === "destroyed") return "stopped"
+  if (input.status === "destroyed") return "destroyed"
   return "acquiring"
 }
 
@@ -47,6 +48,10 @@ function toSandboxLease(input: StoredLease): SandboxLease {
     lastError: input.last_error ?? undefined,
     lastHeartbeatAt: input.last_heartbeat_at ?? undefined,
     lastActivityAt: input.last_activity_at ?? undefined,
+    labels: input.labels ?? undefined,
+    checkpoint: input.checkpoint ?? undefined,
+    persistence: input.persistence ?? undefined,
+    restore: input.restore ?? undefined,
   }
 }
 
@@ -72,6 +77,10 @@ function write(input: SandboxLease, current?: StoredLease, options?: { lastHealt
     accel_base_image_id: current?.accel_base_image_id ?? null,
     accel_prepared_image_id: current?.accel_prepared_image_id ?? null,
     accel_snapshot_id: current?.accel_snapshot_id ?? null,
+    labels: input.labels ?? null,
+    checkpoint: input.checkpoint ?? null,
+    persistence: input.persistence ?? null,
+    restore: input.restore ?? null,
     created_at: input.createdAt,
     updated_at: input.updatedAt,
   })
@@ -109,6 +118,9 @@ export function createSqliteLeaseStore(): SandboxLeaseStore {
           lastHeartbeatAt: resumable ? currentLease.lastHeartbeatAt : undefined,
           lastActivityAt: resumable ? currentLease.lastActivityAt : undefined,
           labels: resumable ? currentLease.labels : undefined,
+          checkpoint: currentLease?.checkpoint,
+          persistence: currentLease?.persistence,
+          restore: currentLease?.restore,
         }
         write(next, current)
         return { acquired: true, lease: next }

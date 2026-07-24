@@ -97,6 +97,7 @@ import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "@/features/se
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
+import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
 import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
 import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
@@ -732,7 +733,6 @@ export default function SessionPage() {
 
   let inputRef!: HTMLDivElement
   let promptDock: HTMLDivElement | undefined
-  let dockHeight = 0
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
   let scrollMark = 0
@@ -1136,26 +1136,14 @@ export default function SessionPage() {
     ),
   )
 
-  createResizeObserver(
-    () => promptDock,
-    ({ height }) => {
-      const next = Math.ceil(height)
-      if (next === dockHeight) return
-
-      const el = scroller
-      const delta = next - dockHeight
-      const stick = el
-        ? !autoScroll.userScrolled() || el.scrollHeight - el.clientHeight - el.scrollTop < 10 + Math.max(0, delta)
-        : false
-
-      dockHeight = next
-
-      if (stick) scrollToEnd()
-
-      if (el) scheduleScrollState(el)
-      scheduleHistoryFill()
-    },
-  )
+  const promptDockResize = createPromptDockResizeHandler({
+    scroller: () => scroller,
+    userScrolled: autoScroll.userScrolled,
+    scrollToEnd: () => scrollToEnd(),
+    scheduleScrollState,
+    scheduleHistoryFill,
+  })
+  createResizeObserver(() => promptDock, ({ height }) => promptDockResize.resize(height))
 
   const draft = (id: string) =>
     extractPromptFromParts(conversation().parts[id] ?? [], {
@@ -1322,6 +1310,7 @@ export default function SessionPage() {
     document.removeEventListener("keydown", handleKeyDown)
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
     if (historyFillFrame !== undefined) cancelAnimationFrame(historyFillFrame)
+    promptDockResize.dispose()
   })
 
   return (
@@ -1435,7 +1424,8 @@ export default function SessionPage() {
                           captureHistoryAnchor = handlers.capture
                           restoreHistoryAnchor = handlers.restore
                         }}
-                        onFirstTurnRecovery={firstTurnOnboarding.recover}
+                        onFirstTurnRecovery={(kind, userMessageID) =>
+                          firstTurnOnboarding.recover(kind, draft(userMessageID))}
                         firstTurnRecovery={!directorySessions().some((session) => session.id !== sessionID() && session.lastTurn)}
                       />
                     )}

@@ -8,8 +8,9 @@ thing that matters to how the app feels: **are we holding the frame rate?**
 - Floor: **60hz** — no flow may sustain frames slower than 16.67ms.
 
 There is no deterministic/fabricated mode and no upstream comparison. Every number
-comes from a real browser driving the real app. One `.webm` video is recorded for
-every flow run.
+comes from a real browser driving the real app. Set `CLAXEDO_PERF_RECORD_VIDEO=1`
+for non-gating visual recordings; release measurements leave capture off so video
+encoding cannot distort frame evidence.
 
 ## Quick start
 
@@ -22,6 +23,17 @@ bun run run:headed      # watch it drive the app
 bun run report          # re-render the last run's markdown (add --debug for subs)
 bun run test            # unit tests (pure frame/gate logic, no browser)
 ```
+
+Every release flow runs in four isolated browser contexts using an ABBA order:
+disabled, enabled, enabled, disabled. The suite keeps two benchmark Chromium
+processes alive: one executes each flow control→enabled and the other executes
+enabled→control. This gives each side one early and one late run so warm/cold
+position cannot be mistaken for profiler overhead, while avoiding heavyweight
+browser-process churn between flows. Finished pages are closed before the next
+flow. Enabled runs start the production diagnostics profiler against that
+browser's real process tree. The gate compares conservative merged
+p95/worst-frame evidence and also requires real retained process samples from
+both profiler runs.
 
 Run a single flow:
 
@@ -56,9 +68,13 @@ interaction runs, then reports:
 - 🔴 **<60hz** (fail) — `p95 > 16.67ms`, or more than 2 frames below 60hz, or the
   worst frame regressed past the stored budget.
 
-A `warn` does not fail CI; a `fail` does. The 8.33/16.67 thresholds are physical
-and fixed — only the per-flow worst-frame regression budget is stored
-(`data/budgets/<flow>.json`, auto-calibrated from the first accepted run).
+A `warn` does not fail CI; a `fail` does. In the paired diagnostics gate, a stored
+budget fails only when the disabled control satisfies it and diagnostics causes
+the enabled run to cross it. A control that already exceeds the stored budget is
+reported as a base-app warning with both measurements, rather than attributed to
+diagnostics. The 8.33/16.67 thresholds are physical and fixed — only the per-flow
+worst-frame regression budget is stored (`data/budgets/<flow>.json`,
+auto-calibrated from the first accepted run).
 
 ## Flows
 

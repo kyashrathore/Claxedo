@@ -34,6 +34,7 @@ import type {
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
+  AgentHarnessAdapterProcessOptions,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
@@ -42,11 +43,12 @@ import type { AgentRuntimeStore } from "../shared/runtime-store"
 import { hasConcreteSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
+import type { AgentProcessObserver } from "../../process-observer"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStore
 
-export type SdkRuntimeAdapterOptions = {
+export type SdkRuntimeAdapterOptions = AgentHarnessAdapterProcessOptions & {
   driver: SdkRuntimeDriverFactory
   binary?: string
   storeRoot?: string
@@ -81,6 +83,7 @@ export type SdkRuntimeDriverHost = {
   lifecycle: () => SessionTurnLifecycle<ActiveTurn>
   pendingPermissions: Map<string, PendingPermission>
   pendingQuestions: Map<string, PendingQuestion>
+  processObserver?: AgentProcessObserver
   bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
 }
 export type SdkRuntimeTurnInput = {
@@ -165,6 +168,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       lifecycle: () => this.lifecycle(),
       pendingPermissions: this.pendingPermissions,
       pendingQuestions: this.pendingQuestions,
+      processObserver: options.processObserver,
       bindSession: (input) => this.store.bindSession(input),
     })
   }

@@ -1,4 +1,9 @@
 import type { SandboxDriverID } from "./driver-catalog"
+import type {
+  SandboxCheckpointReference,
+  SandboxPersistenceCapabilities,
+  SandboxRestoreStatus,
+} from "./index"
 
 export type SandboxLeaseRowStatus =
   | "pending"
@@ -9,6 +14,7 @@ export type SandboxLeaseRowStatus =
   | "backoff"
   | "stopping"
   | "stopped"
+  | "destroyed"
   | "failed"
 
 export type SandboxComputeClass = "small" | "medium" | "large" | "gpu"
@@ -34,6 +40,10 @@ export type SandboxLeaseRow = {
   accel_base_image_id: string | null
   accel_prepared_image_id: string | null
   accel_snapshot_id: string | null
+  labels?: Record<string, string> | null
+  checkpoint: SandboxCheckpointReference | null
+  persistence: SandboxPersistenceCapabilities | null
+  restore: SandboxRestoreStatus | null
   created_at: number
   updated_at: number
 }

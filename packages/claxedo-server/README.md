@@ -30,7 +30,8 @@ bundle-first: `scripts/sandbox/build-sandbox-image.ts` esbuilds the host
 entrypoint into a single artifact under `.build/`, both Dockerfiles `COPY
 .build/` and symlink the bundle to `/usr/local/bin/workspace-runtime` (so the
 sandbox-manager drivers' `ensureHost` command is unchanged), and ACP bins are
-installed directly from `@zed-industries/*`. An `npm publish` of
+installed directly from `@agentclientprotocol/claude-agent-acp` and
+`@agentclientprotocol/codex-acp`. An `npm publish` of
 `@claxedo/workspace-runtime` no longer gates image builds; image/snapshot
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).

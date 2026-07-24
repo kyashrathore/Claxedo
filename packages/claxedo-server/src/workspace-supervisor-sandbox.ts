@@ -1,6 +1,12 @@
 import { randomUUID } from "crypto"
 import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "./agent-config"
-import { createSandboxManager, type SandboxBootSource, type SandboxEnsureResult } from "@claxedo/sandbox-manager"
+import {
+  createSandboxManager,
+  type SandboxBootSource,
+  type SandboxCheckpointRuntime,
+  type SandboxEnsureResult,
+  type SandboxManager,
+} from "@claxedo/sandbox-manager"
 import { createBoxSandboxDriver } from "@claxedo/sandbox-manager/drivers/box"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
@@ -26,7 +32,12 @@ import { listPolicies } from "./network/policy"
 import { resolveSandboxNetworkPolicy } from "./network/resolve"
 import { insertSnapshot } from "./storage/prepared-image.sql"
 import { updateWorkspace } from "./workspace-store"
-import { configToken } from "./workspace-supervisor-control-token"
+import {
+  configToken,
+  configTokenHeaders,
+  stateConfigToken,
+  supervisorBackplaneHeaders,
+} from "./workspace-supervisor-control-token"
 import { pushRuntimeConfig } from "./workspace-supervisor-config-sync"
 import {
   createSupervisorSandboxLeaseStore,
@@ -161,10 +172,21 @@ export async function stopSandbox(state: WorkspaceRuntimeState, reason: string) 
   }
   const keepSandbox = sandboxDriverPlacement(driverId).canPauseAndRestartSameResource
   const manager = await createSupervisorSandboxManager(state, driverId)
-  const snapshot = await manager.snapshot(state.ws.id).catch((err) => ({
-    ok: false as const,
-    reason: err instanceof Error ? err.message : String(err),
-  }))
+  const canonical = lease?.status === "ready"
+    && lease.persistence
+    && lease.persistence.capture !== "none"
+    && lease.checkpoint?.sourceEpoch !== lease.epoch
+    ? await manager.checkpoint(state.ws.id, {
+        runtime: checkpointRuntime(state),
+        policy: reason === "idle" || reason === "shutdown" ? "interrupt" : "drain",
+      })
+    : undefined
+  const snapshot = canonical || lease?.checkpoint?.sourceEpoch === lease?.epoch
+    ? { ok: false as const, reason: "canonical_checkpoint_current" }
+    : await manager.snapshot(state.ws.id).catch((err) => ({
+        ok: false as const,
+        reason: err instanceof Error ? err.message : String(err),
+      }))
   if (snapshot.ok) {
     const lease = updateSupervisorSandboxLease(state.ws.id, {
       accel_snapshot_id: snapshot.snapshotId,
@@ -201,6 +223,31 @@ export async function stopSandbox(state: WorkspaceRuntimeState, reason: string) 
     })
   }
   return { keepSandbox }
+}
+
+function checkpointRuntime(state: WorkspaceRuntimeState): SandboxCheckpointRuntime {
+  const request = async (path: string, body?: unknown) => {
+    if (!state.url) throw new Error("workspace_checkpoint_target_missing")
+    const response = await fetch(`${state.url}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...configTokenHeaders(stateConfigToken(state)),
+        ...await supervisorBackplaneHeaders(state),
+      },
+      body: JSON.stringify(body ?? {}),
+      signal: AbortSignal.timeout(45_000),
+    })
+    if (response.ok) return
+    throw new Error(await response.text() || `workspace checkpoint request failed: ${response.status}`)
+  }
+  return {
+    freeze: async (policy) => await request("/api/wr/checkpoint/freeze", { policy }),
+    flush: async () => await request("/api/wr/checkpoint/flush"),
+    scrub: async () => await request("/api/wr/checkpoint/scrub"),
+    resume: async () => await request("/api/wr/checkpoint/resume"),
+    reconcile: async (body) => await request("/api/wr/checkpoint/restore-reconcile", body),
+  }
 }
 
 export async function touchSandbox(state: WorkspaceRuntimeState) {
@@ -327,6 +374,24 @@ async function createSupervisorSandboxManager(state: WorkspaceRuntimeState, driv
     driver,
     retryDelayMs: (retryCount) => runtimeBackoffMs(retryCount),
   })
+}
+
+export async function captureSupervisorSandboxCheckpoint(
+  state: WorkspaceRuntimeState,
+  input: Parameters<SandboxManager["checkpoint"]>[1],
+) {
+  const driverId = sandboxDriverId(state)
+  if (!driverId) throw new Error("workspace_checkpoint_driver_missing")
+  return await (await createSupervisorSandboxManager(state, driverId)).checkpoint(state.ws.id, input)
+}
+
+export async function restoreSupervisorSandboxCheckpoint(
+  state: WorkspaceRuntimeState,
+  input: Parameters<SandboxManager["restore"]>[1],
+) {
+  const driverId = sandboxDriverId(state)
+  if (!driverId) throw new Error("workspace_restore_driver_missing")
+  return await (await createSupervisorSandboxManager(state, driverId)).restore(state.ws.id, input)
 }
 
 async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
@@ -463,7 +528,7 @@ function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriver
     // wire: runtime-boot.ts decodes this into the opencodeCompat option. The
     // kit itself never reads ambient env — this is the ONLY writer.
     ...(process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT === "1"
-      ? { WORKSPACE_RUNTIME_DISABLE_OPENCODE_COMPAT: "1" }
+      ? { WORKSPACE_RUNTIME_OPENCODE_COMPAT: "0" }
       : {}),
     ...(lease
       ? sandboxLeaseEnv({

@@ -22,6 +22,7 @@ export type RailSidebarShellProps = {
   onArchiveSession?: (session: SessionItem) => boolean | Promise<boolean>
   onDeleteSession?: (session: SessionItem) => void
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
+  onDiagnostics?: () => void
   onHelp?: () => void
   onNewPage?: () => void
   onNewProject?: () => void
@@ -175,6 +176,7 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
             onDeleteSession={props.onDeleteSession}
             onArchiveSession={props.onArchiveSession}
             onDeleteWorkspace={props.onDeleteWorkspace}
+            onDiagnostics={props.onDiagnostics}
             onRemoveProject={props.onRemoveProject}
             onNewProject={() => {
               props.onNewProject?.()

@@ -13,10 +13,15 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
+import {
+  registerProcessDiagnosticsIpc,
+  type DiagnosticsIpcRouter,
+} from "./diagnostics/ipc"
+import type { Profiler } from "./diagnostics/profiler"
 import { getStore } from "./store"
 
 type Deps = {
-  killSidecar: () => void
+  killSidecar: () => Promise<void>
   installCli: () => Promise<string>
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServerUrl: () => Promise<string | null> | string | null
@@ -25,7 +30,6 @@ type Deps = {
   setWslConfig: (config: WslConfig) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
   setDisplayBackend: (backend: string | null) => Promise<void> | void
-  parseMarkdown: (markdown: string) => Promise<string> | string
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
   resolveAppPath: (appName: string) => Promise<string | null>
@@ -37,6 +41,15 @@ type Deps = {
   setStartAtLogin: (enabled: boolean) => void
   /** Optional; only provided when the browser-tab feature flag is set. */
   browser?: BrowserRegistry
+  processDiagnostics: {
+    profiler: Profiler
+    isAllowedUrl(url: string): boolean
+    confirmAction(input: {
+      webContents: import("./diagnostics/ipc").DiagnosticsWebContents
+      action: "stop" | "kill"
+      ownerLabel: string
+    }): Promise<boolean>
+  }
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -56,7 +69,6 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) =>
     deps.setDisplayBackend(backend),
   )
-  ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, markdown: string) => deps.parseMarkdown(markdown))
   ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
   ipcMain.handle("wsl-path", (_event: IpcMainInvokeEvent, path: string, mode: "windows" | "linux" | null) =>
     deps.wslPath(path, mode),
@@ -204,6 +216,7 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   registerBrowserIpcHandlers(deps.browser)
+  return registerProcessDiagnosticsIpc(ipcMain as unknown as DiagnosticsIpcRouter, deps.processDiagnostics)
 }
 
 function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {

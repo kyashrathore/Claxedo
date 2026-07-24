@@ -1,13 +1,14 @@
-import { randomUUID } from "node:crypto"
 import { EventEmitter } from "node:events"
-import { existsSync, mkdirSync } from "node:fs"
+import { spawn } from "node:child_process"
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs"
+import { rm } from "node:fs/promises"
 import { createServer } from "node:net"
-import { homedir } from "node:os"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
-import type { Event } from "electron"
-import { app, type BrowserWindow, dialog } from "electron"
+import type { Event, MessageBoxOptions } from "electron"
+import { app, BrowserWindow, dialog, utilityProcess } from "electron"
 import pkg from "electron-updater"
+import treeKill from "tree-kill"
 
 const APP_NAMES: Record<string, string> = {
   dev: "Claxedo Dev",
@@ -19,26 +20,35 @@ const APP_IDS: Record<string, string> = {
   beta: "ai.claxedo.desktop.beta",
   prod: "ai.claxedo.desktop",
 }
-app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "Claxedo Dev")
+app.setName(IS_PACKAGED ? APP_NAMES[CHANNEL] : "Claxedo Dev")
 app.setPath(
   "userData",
   process.env.CLAXEDO_DESKTOP_USER_DATA_DIR ??
-    join(app.getPath("appData"), app.isPackaged ? APP_IDS[CHANNEL] : "ai.claxedo.desktop.dev"),
+    join(app.getPath("appData"), IS_PACKAGED ? APP_IDS[CHANNEL] : "ai.claxedo.desktop.dev"),
 )
 const { autoUpdater } = pkg
 
-import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
+import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
 import { ensureAgentPath } from "./agent-path"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { resolveSystemClaude } from "./claude-executable"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
-import type { CommandChild } from "./cli"
-import { installCli, syncCli } from "./cli"
-import { CHANNEL, UPDATER_ENABLED } from "./constants"
-import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress, wireFullscreenEvents } from "./ipc"
+import {
+  cleanupStaleSidecar,
+  configureSidecarProcessObserver,
+  installCli,
+  syncCli,
+} from "./cli"
+import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
+import type { DiagnosticsWebContents } from "./diagnostics/ipc"
+import { createElectronSource } from "./diagnostics/electron-source"
+import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
+import { createProfiler } from "./diagnostics/profiler"
+import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
+import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
+import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { initLogging } from "./logging"
-import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
   checkHealth,
@@ -48,31 +58,29 @@ import {
   getWslConfig,
   setDefaultServerUrl,
   setWslConfig,
-  spawnLocalServer,
 } from "./server"
-import { createLoadingWindow, createMainWindow, setDockIcon } from "./windows"
+import {
+  createLoadingWindow,
+  createMainWindow,
+  isTrustedMainRendererUrl,
+  loadMainWindow,
+  setDockIcon,
+} from "./windows"
 import { createStartAtLogin } from "./start-at-login"
+import {
+  matchesDiagnosticsBinding,
+  parseDiagnosticsTransportMessage,
+} from "../shared/diagnostics-transport"
 
 type ServerConnection =
   | { variant: "existing"; url: string }
-  | {
-      variant: "cli"
-      url: string
-      password: null | string
-      health: {
-        wait: Promise<void>
-      }
-      events: any
-    }
+  | { variant: "embedded"; url: string }
 
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
 
 let mainWindow: BrowserWindow | null = null
-const loadingWindow: BrowserWindow | null = null
-let sidecar: CommandChild | null = null
-let claxedoServerHandle: { close: () => void } | null = null
-let local: { url: string; password: string } | null = null
+let claxedoServerHandle: { close: () => Promise<void> } | null = null
 let quitting = false
 const loadingComplete = defer<void>()
 
@@ -85,23 +93,116 @@ const pendingDeepLinks: string[] = []
 const serverReady = defer<ServerReadyData>()
 const logger = initLogging()
 const startAtLogin = createStartAtLogin(app)
+const electronDiagnosticsSource = createElectronSource({
+  process,
+  isReady: () => app.isReady(),
+  getAppMetrics: () => app.getAppMetrics(),
+  getWindows: () => BrowserWindow.getAllWindows(),
+})
+const diagnosticsSource = createProcessMetricsSource({
+  electron: electronDiagnosticsSource,
+  workerPath: join(import.meta.dirname, "process-metrics-worker.js"),
+  wsl: createWslSource({
+    enabled: process.platform === "win32" && getWslConfig().enabled,
+    ...(process.platform === "win32" ? { collect: createWindowsWslCollector() } : {}),
+  }),
+})
+const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
+configureSidecarProcessObserver({
+  register(input) {
+    const registeredAt = Date.now()
+    const ownerGeneration = crypto.randomUUID()
+    const launchId = crypto.randomUUID()
+    const ownerId = "owner-opencode-sidecar"
+    diagnosticsProfiler.recordOwnerEvent({
+      type: "owner-registered",
+      at: registeredAt,
+      binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
+      descriptor: {
+        ownerId,
+        ownerGeneration,
+        ownerOperationId: crypto.randomUUID(),
+        launchId,
+        kind: "sidecar",
+        role: "sidecar",
+        label: "OpenCode sidecar",
+        pid: input.pid,
+        capabilities: { stopGracefully: true, killOwnedTree: true },
+      },
+    }, async (request) => {
+      await (request.action === "stop" ? input.stopGracefully() : input.killOwnedTree())
+      return "completed"
+    })
+    let active = true
+    let unregisterWslRoot: (() => void) | undefined
+    return {
+      wslRoot(root) {
+        unregisterWslRoot?.()
+        unregisterWslRoot = diagnosticsSource.registerWslRoot?.({
+          ...root,
+          ownerId,
+          label: "OpenCode sidecar",
+          launchId,
+          ownerKind: "sidecar",
+          role: "sidecar",
+        })
+        diagnosticsProfiler.requestSample("lifecycle")
+      },
+      exit(event) {
+        if (!active) return
+        active = false
+        unregisterWslRoot?.()
+        diagnosticsProfiler.recordOwnerEvent({
+          type: "owner-exited",
+          at: Date.now(),
+          binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
+          ownerId,
+          ownerGeneration,
+          reason: event.reason,
+          ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+          observedLifetimeMs: Math.max(0, Date.now() - registeredAt),
+        })
+      },
+    }
+  },
+})
+const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
 logger.log("app starting", {
   version: app.getVersion(),
-  packaged: app.isPackaged,
+  packaged: IS_PACKAGED,
 })
+watchProcessMainLoopPerformance()
 
 setupApp()
+
+function watchProcessMainLoopPerformance() {
+  if (!process.env.CLAXEDO_PERF_READY_SELECTOR) return
+
+  const intervalMs = 16
+  let previous = performance.now()
+  setInterval(() => {
+    const now = performance.now()
+    const gap = Math.round(now - previous - intervalMs)
+    previous = now
+    if (gap < 100) return
+    logger.warn(`[startup-perf] main-loop gap=${String(gap)}ms`)
+  }, intervalMs).unref()
+}
 
 function setupApp() {
   ensureLoopbackNoProxy()
   ensureAgentPath()
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+  if (!IS_PACKAGED) app.commandLine.appendSwitch("disable-http-cache")
+  process.once("SIGINT", () => app.quit())
+  process.once("SIGTERM", () => app.quit())
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return
   }
+  cleanupLegacyDevCaches()
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("claxedo://"))
@@ -126,6 +227,7 @@ function setupApp() {
   })
 
   void app.whenReady().then(async () => {
+    diagnosticsProfiler.requestSample("lifecycle")
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
@@ -156,26 +258,27 @@ function setInitStep(step: InitStep) {
 const MAIN_DIR = import.meta.dirname
 
 function getClaxedoServerPath(): string {
-  return app.isPackaged
-    ? join(MAIN_DIR, "claxedo-server.js")
-    : join(MAIN_DIR, "../../resources/claxedo-server.js")
+  return IS_PACKAGED
+    ? join(MAIN_DIR, "claxedo-server/index.js")
+    : join(MAIN_DIR, "../../resources/claxedo-server/index.js")
 }
 
-async function startClaxedoServer(opencodeUrl: string, opencodePassword?: string | null): Promise<{ url: string }> {
-  const claxedoPort = await getFreePort()
+async function startClaxedoServer(): Promise<{ url: string }> {
+  const claxedoPort = await getFreePort(Number(process.env.CLAXEDO_SERVER_PORT ?? 3001))
   const serverPath = getClaxedoServerPath()
-  logger.log("starting claxedo-server", { serverPath, claxedoPort, opencodeUrl })
+  logger.log("starting claxedo-server with embedded OpenCode", { serverPath, claxedoPort })
 
   if (!existsSync(serverPath)) {
-    logger.warn("claxedo-server.js not found, skipping", { serverPath })
-    return { url: opencodeUrl }
+    throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
   }
 
-  const acpDir = app.isPackaged
+  const acpDir = IS_PACKAGED
     ? join(process.resourcesPath, "acp")
     : join(MAIN_DIR, "../../resources/acp")
 
-  if (existsSync(acpDir)) {
+  // Development resolves the workspace's live ACP package dependencies. Only
+  // packaged builds need the copied, self-contained adapter resources.
+  if (IS_PACKAGED && existsSync(acpDir)) {
     process.env.CLAXEDO_ACP_DIR = acpDir
   }
 
@@ -191,26 +294,8 @@ async function startClaxedoServer(opencodeUrl: string, opencodePassword?: string
 
   // The embedded claxedo-server hard-requires CLAXEDO_WORKGRAPH_REPOSITORY to be
   // an absolute directory at composition (server.ts) — unset, startServer throws
-  // and the whole claxedo-server dies, leaving the renderer on the bare opencode
-  // sidecar (which does not serve /api/claxedo/*), i.e. a "Could not reach" white
-  // screen. There is no single project repo on desktop, so default WorkGraph to a
-  // stable dir under userData; it only needs to exist for the server to boot.
-  if (!process.env.CLAXEDO_WORKGRAPH_REPOSITORY?.trim()) {
-    const workgraphDir = join(app.getPath("userData"), "workgraph")
-    try {
-      mkdirSync(workgraphDir, { recursive: true })
-      process.env.CLAXEDO_WORKGRAPH_REPOSITORY = workgraphDir
-    } catch (err) {
-      logger.warn("failed to prepare WorkGraph repository directory", { workgraphDir, error: String(err) })
-    }
-  }
-
-  // The embedded claxedo-server hard-requires CLAXEDO_WORKGRAPH_REPOSITORY to be
-  // an absolute directory at composition (server.ts) — unset, startServer throws
-  // and the whole claxedo-server dies, leaving the renderer on the bare opencode
-  // sidecar (which does not serve /api/claxedo/*), i.e. a "Could not reach" white
-  // screen. There is no single project repo on desktop, so default WorkGraph to a
-  // stable dir under userData; it only needs to exist for the server to boot.
+  // and the whole utility process dies. There is no single project repo on
+  // desktop, so default WorkGraph to a stable dir under userData.
   if (!process.env.CLAXEDO_WORKGRAPH_REPOSITORY?.trim()) {
     const workgraphDir = join(app.getPath("userData"), "workgraph")
     try {
@@ -222,8 +307,90 @@ async function startClaxedoServer(opencodeUrl: string, opencodePassword?: string
   }
 
   try {
-    const module = await import(pathToFileURL(serverPath).href)
-    claxedoServerHandle = module.startServer(claxedoPort, opencodeUrl, opencodePassword)
+    const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
+    const serverGeneration = `server-generation-${crypto.randomUUID()}`
+    const child = utilityProcess.fork(serverPath, [], {
+      execArgv: ["--expose-gc"],
+      stdio: "inherit",
+      serviceName: "Claxedo Server",
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        ),
+        CLAXEDO_CHILD_PORT: String(claxedoPort),
+        CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
+        CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
+        CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
+      },
+    })
+    let ownerBridge: ReturnType<typeof createOwnerOperationBridge> | undefined
+    const connectOwnerBridge = () => {
+      if (!child.pid || ownerBridge) return
+      ownerBridge = createOwnerOperationBridge({
+          binding: {
+            pid: child.pid,
+            launchId: serverLaunchId,
+            generation: serverGeneration,
+          },
+          send: (message) => {
+            child.postMessage(message)
+            return true
+          },
+        })
+    }
+    child.on("spawn", connectOwnerBridge)
+    child.on("message", (input) => {
+      connectOwnerBridge()
+      if (!child.pid || !ownerBridge) return
+      const binding = {
+        pid: child.pid,
+        launchId: serverLaunchId,
+        generation: serverGeneration,
+      }
+      if (ownerBridge.onMessage(input)) return
+      const parsed = parseDiagnosticsTransportMessage(input)
+      if (!parsed.success || !matchesDiagnosticsBinding(parsed.data.binding, binding)) return
+      if (
+        parsed.data.type !== "owner-registered" &&
+        parsed.data.type !== "owner-updated" &&
+        parsed.data.type !== "owner-exited"
+      ) return
+      diagnosticsProfiler.recordOwnerEvent(
+        parsed.data,
+        parsed.data.type === "owner-registered"
+          ? ownerBridge.operationFor(parsed.data.descriptor)
+          : undefined,
+      )
+    })
+    connectOwnerBridge()
+    diagnosticsProfiler.registerUtilityProcess(child, {
+      launchId: serverLaunchId,
+      ownerId: "owner-claxedo-server",
+      ownerKind: "server",
+      role: "server",
+      label: "Claxedo server",
+    })
+    const exited = defer<number>()
+    const handle = {
+      close: async () => {
+        if (!child.pid) return
+        child.kill()
+        const stopped = await Promise.race([
+          exited.promise.then(() => true),
+          delay(2_000).then(() => false),
+        ])
+        if (stopped) return
+        if (child.pid) await killProcessTree(child.pid, "SIGKILL")
+        await Promise.race([exited.promise, delay(500)])
+      },
+    }
+    claxedoServerHandle = handle
+    child.once("exit", (code) => {
+      ownerBridge?.dispose()
+      exited.resolve(code)
+      if (claxedoServerHandle === handle) claxedoServerHandle = null
+      if (!quitting && code !== 0) logger.error("claxedo-server utility process exited", { code })
+    })
 
     const claxedoUrl = `http://127.0.0.1:${claxedoPort}`
     for (let i = 0; i < 50; i++) {
@@ -232,150 +399,116 @@ async function startClaxedoServer(opencodeUrl: string, opencodePassword?: string
         const res = await fetch(`${claxedoUrl}/api/claxedo/health`, { signal: AbortSignal.timeout(1000) })
         if (res.ok) {
           logger.log("claxedo-server healthy", { url: claxedoUrl })
+          diagnosticsProfiler.recordLifecycle({
+            event: "server-ready",
+            ownerId: "owner-claxedo-server",
+          })
           return { url: claxedoUrl }
         }
       } catch {}
     }
 
-    logger.warn("claxedo-server health check timed out, falling back to opencode")
-    return { url: opencodeUrl }
+    logger.warn("embedded server readiness check failed")
+    await handle.close()
+    throw new Error("The embedded Claxedo server did not become healthy in time.")
   } catch (err) {
     logger.error("claxedo-server failed to start", { error: String(err) })
-    return { url: opencodeUrl }
+    throw err
   }
 }
 
 async function setupServerConnection(): Promise<ServerConnection> {
-  if (!app.isPackaged) {
+  if (!IS_PACKAGED) {
     const candidates = [process.env.CLAXEDO_SERVER_URL, "http://127.0.0.1:3001"].filter(Boolean) as string[]
     const results = await Promise.all(candidates.map(async (url) => ({ url, ok: await checkHealth(url) })))
     const hit = results.find((r) => r.ok)
     if (hit) {
       logger.log("dev: using claxedo-server", { url: hit.url })
-      local = null
-      serverReady.resolve({ url: hit.url, password: null })
       return { variant: "existing", url: hit.url }
     }
-    logger.log("dev: claxedo-server not found, falling back to sidecar")
+    logger.log("dev: claxedo-server not found, starting the embedded server")
   }
 
   const customUrl = await getSavedServerUrl()
 
   if (customUrl && (await checkHealthOrAskRetry(customUrl))) {
-    local = null
-    serverReady.resolve({ url: customUrl, password: null })
     return { variant: "existing", url: customUrl }
   }
 
-  const port = await getSidecarPort()
-  const hostname = "127.0.0.1"
-  const localUrl = `http://${hostname}:${port}`
-
-  if (await checkHealth(localUrl)) {
-    local = null
-    serverReady.resolve({ url: localUrl, password: null })
-    return { variant: "existing", url: localUrl }
-  }
-
-  const password = randomUUID()
-  const { child, health, events } = spawnLocalServer(hostname, port, password)
-  sidecar = child
-  local = { url: localUrl, password }
-
-  return {
-    variant: "cli",
-    url: localUrl,
-    password,
-    health,
-    events,
-  }
+  return { variant: "embedded", ...(await startClaxedoServer()) }
 }
 
 async function initialize() {
+  await cleanupStaleSidecar()
   const needsMigration = !sqliteFileExists()
-  const sqliteDone = needsMigration ? defer<void>() : undefined
 
   const loadingTask = (async () => {
-    logger.log("setting up server connection")
-    const serverConnection = await setupServerConnection()
-    logger.log("server connection ready", {
-      variant: serverConnection.variant,
-      url: serverConnection.url,
-    })
-
-    if (serverConnection.variant === "cli") {
-      const { events, health } = serverConnection
-
-      // Register sqlite listener BEFORE awaiting to avoid deadlock
-      events.on("sqlite", (progress: SqliteMigrationProgress) => {
-        setInitStep({ phase: "sqlite_waiting" })
-        if (loadingWindow) sendSqliteMigrationProgress(loadingWindow, progress)
-        if (mainWindow) sendSqliteMigrationProgress(mainWindow, progress)
-        if (progress.type === "Done") sqliteDone?.resolve()
+    try {
+      logger.log("setting up server connection")
+      const serverConnection = await setupServerConnection()
+      logger.log("server connection ready", {
+        variant: serverConnection.variant,
+        url: serverConnection.url,
       })
 
       logger.log("server connection started")
-
-      // Server becoming healthy also means migration is complete (or wasn't needed)
-      const healthDone = health.wait.then(
-        async () => {
-          sqliteDone?.resolve()
-          // Start claxedo-server on top of the healthy opencode sidecar
-          const { url: claxedoUrl } = await startClaxedoServer(serverConnection.url, serverConnection.password)
-          serverReady.resolve({
-            url: claxedoUrl,
-            password: serverConnection.password,
-          })
-        },
-        (err) => {
-          sqliteDone?.reject(err instanceof Error ? err : new Error(String(err)))
-          throw err
-        },
-      )
-
-      if (needsMigration) await sqliteDone?.promise
-      await healthDone
-    } else {
-      logger.log("server connection started")
       serverReady.resolve({ url: serverConnection.url, password: null })
-    }
 
-    logger.log("loading task finished")
+      logger.log("loading task finished")
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause))
+      serverReady.reject(error)
+      throw error
+    }
   })()
 
   const globals = {
     updaterEnabled: UPDATER_ENABLED,
     wsl: getWslConfig().enabled,
     deepLinks: pendingDeepLinks,
+    ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 
-  const loadingWindow = await (async () => {
-    if (needsMigration) {
-      const loadingWindow = createLoadingWindow(globals)
-      await delay(1000)
-      return loadingWindow
-    } else {
-      logger.log("showing main window without loading window")
-      mainWindow = createMainWindow(globals)
-      wireFullscreenEvents(mainWindow)
-      wireMenu()
-    }
-  })()
-
-  await loadingTask
-  setInitStep({ phase: "done" })
-
-  if (loadingWindow) {
-    await loadingComplete.promise
-  }
-
-  if (!mainWindow) {
-    mainWindow = createMainWindow(globals)
+  // Keep renderer compilation out of the embedded-server startup window.
+  // A deferred, native-backed window stays responsive without booting another
+  // renderer; migrations retain the progress UI because they can take longer.
+  const startupWindow = needsMigration ? createLoadingWindow(globals) : undefined
+  if (startupWindow) {
+    await delay(1000)
+  } else {
+    logger.log("showing deferred main window")
+    mainWindow = createMainWindow(globals, { deferLoad: true })
+    registerDiagnosticsWindow(mainWindow)
     wireFullscreenEvents(mainWindow)
     wireMenu()
   }
 
-  loadingWindow?.close()
+  try {
+    await loadingTask
+  } catch (error) {
+    logger.error("embedded server initialization failed", { error: String(error) })
+    setInitStep({ phase: "done" })
+    showMainWindow(globals)
+    startupWindow?.close()
+    return
+  }
+  setInitStep({ phase: "done" })
+
+  if (startupWindow) await loadingComplete.promise
+
+  showMainWindow(globals)
+  startupWindow?.close()
+}
+
+function showMainWindow(globals: Parameters<typeof createMainWindow>[0]) {
+  if (mainWindow) {
+    loadMainWindow(mainWindow)
+    return
+  }
+  mainWindow = createMainWindow(globals)
+  registerDiagnosticsWindow(mainWindow)
+  wireFullscreenEvents(mainWindow)
+  wireMenu()
 }
 
 function wireMenu() {
@@ -396,8 +529,8 @@ function wireMenu() {
   })
 }
 
-registerIpcHandlers({
-  killSidecar: () => killSidecar(),
+const diagnosticsIpc = registerIpcHandlers({
+  killSidecar: () => stopLocalServer(),
   installCli: async () => installCli(),
   awaitInitialization: async (sendStep) => {
     sendStep(initStep)
@@ -418,7 +551,6 @@ registerIpcHandlers({
   setWslConfig: (config: WslConfig) => setWslConfig(config),
   getDisplayBackend: async () => null,
   setDisplayBackend: async () => undefined,
-  parseMarkdown: async (markdown) => parseMarkdown(markdown),
   checkAppExists: async (appName) => checkAppExists(appName),
   wslPath: async (path, mode) => wslPath(path, mode),
   resolveAppPath: async (appName) => resolveAppPath(appName),
@@ -429,26 +561,49 @@ registerIpcHandlers({
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
   browser: browserRegistry,
+  processDiagnostics: {
+    profiler: diagnosticsProfiler,
+    isAllowedUrl: isTrustedMainRendererUrl,
+    async confirmAction(input) {
+      if (process.env.CLAXEDO_DIAGNOSTICS_PACKAGED_SMOKE === "1") return true
+      const owner = BrowserWindow.fromWebContents(
+        input.webContents as Parameters<typeof BrowserWindow.fromWebContents>[0],
+      )
+      const destructive = input.action === "kill"
+      const options: MessageBoxOptions = {
+        type: destructive ? "warning" : "question",
+        title: destructive ? "Kill local process?" : "Stop local process?",
+        message: `${destructive ? "Kill" : "Stop"} ${input.ownerLabel}?`,
+        detail: destructive
+          ? "Kill ends the owned process tree immediately. Unsaved work in that process may be lost."
+          : "Stop asks the registered owner to shut down gracefully. It does not escalate to Kill.",
+        buttons: [destructive ? "Kill" : "Stop", "Cancel"],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      }
+      const result = owner
+        ? await dialog.showMessageBox(owner, options)
+        : await dialog.showMessageBox(options)
+      return result.response === 0
+    },
+  },
 })
 
 if (browserTabSetup) {
   logger.log("browser-tab feature enabled", { partition: browserTabSetup.partition })
 }
 
-function killSidecar() {
-  if (!sidecar) return
-  sidecar.kill()
-  sidecar = null
-  local = null
+async function stopLocalServer() {
+  if (!claxedoServerHandle) return
+  const handle = claxedoServerHandle
+  claxedoServerHandle = null
+  await handle.close()
 }
 
 async function shutdown() {
-  await disposeSidecar()
-  killSidecar()
-  if (claxedoServerHandle) {
-    claxedoServerHandle.close()
-    claxedoServerHandle = null
-  }
+  diagnosticsSmokeFixtures.dispose()
+  await stopLocalServer()
   if (browserBridgePromise) {
     try {
       const bridge = await browserBridgePromise
@@ -457,22 +612,128 @@ async function shutdown() {
       logger.warn("failed to close browser bridge on shutdown", { error: err })
     }
   }
+  diagnosticsIpc.dispose()
+  diagnosticsProfiler.dispose()
 }
 
-async function disposeSidecar() {
-  if (!sidecar || !local) return
-  const headers = new Headers()
-  const auth = Buffer.from(`opencode:${local.password}`).toString("base64")
-  headers.set("authorization", `Basic ${auth}`)
-  try {
-    await fetch(new URL("/global/dispose", local.url), {
-      method: "POST",
-      headers,
-      signal: AbortSignal.timeout(1500),
-    })
-  } catch (err) {
-    logger.warn("failed to dispose sidecar before quit", { error: err })
+function createPackagedDiagnosticsFixtures() {
+  if (process.env.CLAXEDO_DIAGNOSTICS_PACKAGED_SMOKE !== "1") {
+    return { dispose() {} }
   }
+  const fixtures = [
+    {
+      ownerId: "diagnostics-packaged-stop",
+      label: "Diagnostics growing CLI fixture",
+      action: "stop" as const,
+      script: "const held=[];setInterval(()=>held.push(Buffer.alloc(262144)),100)",
+    },
+    {
+      ownerId: "diagnostics-packaged-kill",
+      label: "Diagnostics kill CLI fixture",
+      action: "kill" as const,
+      script: "setInterval(()=>{},1000)",
+    },
+  ].map((fixture) => {
+    const child = spawn(process.execPath, ["-e", fixture.script], {
+      cwd: tmpdir(),
+      env: {
+        ELECTRON_RUN_AS_NODE: "1",
+        PATH: process.env.PATH ?? "",
+      },
+      stdio: "ignore",
+      windowsHide: true,
+    })
+    if (!child.pid) throw new Error("Could not start packaged diagnostics fixture")
+    const registeredAt = Date.now()
+    const descriptor = {
+      ownerId: fixture.ownerId,
+      ownerGeneration: crypto.randomUUID(),
+      ownerOperationId: crypto.randomUUID(),
+      launchId: crypto.randomUUID(),
+      kind: "cli" as const,
+      role: "cli" as const,
+      label: fixture.label,
+      pid: child.pid,
+      capabilities: {
+        stopGracefully: fixture.action === "stop",
+        killOwnedTree: fixture.action === "kill",
+      },
+    }
+    diagnosticsProfiler.recordOwnerEvent({
+      type: "owner-registered",
+      at: registeredAt,
+      binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
+      descriptor,
+    }, async (request) => {
+      if (request.action !== fixture.action) return "operation-unavailable"
+      await killProcessTree(child.pid!, request.action === "stop" ? "SIGTERM" : "SIGKILL")
+      return "completed"
+    })
+    let active = true
+    child.once("exit", (code) => {
+      if (!active) return
+      active = false
+      diagnosticsProfiler.recordOwnerEvent({
+        type: "owner-exited",
+        at: Date.now(),
+        binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
+        ownerId: descriptor.ownerId,
+        ownerGeneration: descriptor.ownerGeneration,
+        reason: "exited",
+        ...(code === null ? {} : { exitCode: code }),
+        observedLifetimeMs: Math.max(0, Date.now() - registeredAt),
+      })
+    })
+    return child
+  })
+  const churn = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+    cwd: tmpdir(),
+    env: { ELECTRON_RUN_AS_NODE: "1", PATH: process.env.PATH ?? "" },
+    stdio: "ignore",
+    windowsHide: true,
+  })
+  const churnGeneration = crypto.randomUUID()
+  diagnosticsProfiler.recordOwnerEvent({
+    type: "owner-registered",
+    at: Date.now(),
+    binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
+    descriptor: {
+      ownerId: "diagnostics-packaged-churn",
+      ownerGeneration: churnGeneration,
+      ownerOperationId: crypto.randomUUID(),
+      launchId: crypto.randomUUID(),
+      kind: "cli",
+      role: "cli",
+      label: "Diagnostics sub-cadence CLI fixture",
+      capabilities: { stopGracefully: false, killOwnedTree: false },
+    },
+  })
+  diagnosticsProfiler.recordOwnerEvent({
+    type: "owner-exited",
+    at: Date.now(),
+    binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
+    ownerId: "diagnostics-packaged-churn",
+    ownerGeneration: churnGeneration,
+    reason: "exited",
+    observedLifetimeMs: 0,
+  })
+  churn.kill()
+  return {
+    dispose() {
+      fixtures.forEach((child) => {
+        if (child.exitCode === null) child.kill()
+      })
+      if (churn.exitCode === null) churn.kill()
+    },
+  }
+}
+
+function registerDiagnosticsWindow(window: BrowserWindow) {
+  diagnosticsIpc.registerWebContents(window.webContents as unknown as DiagnosticsWebContents)
+  diagnosticsProfiler.requestSample("lifecycle")
+  window.once("ready-to-show", () => diagnosticsProfiler.markInteractive())
+  window.once("closed", () => diagnosticsProfiler.requestSample("lifecycle"))
+  window.webContents.on("render-process-gone", () => diagnosticsProfiler.requestSample("lifecycle"))
 }
 
 function ensureLoopbackNoProxy() {
@@ -495,11 +756,11 @@ function ensureLoopbackNoProxy() {
   upsert("no_proxy")
 }
 
-async function getFreePort() {
-  return new Promise<number>((resolve, reject) => {
+async function getFreePort(preferred: number) {
+  const listen = (port: number) => new Promise<number>((resolve, reject) => {
     const server = createServer()
-    server.on("error", reject)
-    server.listen(0, "127.0.0.1", () => {
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", () => {
       const address = server.address()
       if (typeof address !== "object" || !address) {
         server.close()
@@ -509,36 +770,44 @@ async function getFreePort() {
       const port = address.port
       server.close(() => resolve(port))
     })
+  })
+  return listen(preferred).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE") return listen(0)
+    throw error
   })
 }
 
-async function getSidecarPort() {
-  const fromEnv = process.env.OPENCODE_PORT
-  if (fromEnv) {
-    const parsed = Number.parseInt(fromEnv, 10)
-    if (!Number.isNaN(parsed)) return parsed
-  }
-
-  return await new Promise<number>((resolve, reject) => {
-    const server = createServer()
-    server.on("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      if (typeof address !== "object" || !address) {
-        server.close()
-        reject(new Error("Failed to get port"))
-        return
-      }
-      const port = address.port
-      server.close(() => resolve(port))
+function cleanupLegacyDevCaches() {
+  if (IS_PACKAGED) return
+  const marker = join(app.getPath("userData"), ".legacy-cache-cleaned-v1")
+  if (existsSync(marker)) return
+  const stale = ["Cache", "Code Cache"].flatMap((name) => {
+    const source = join(app.getPath("userData"), name)
+    if (!existsSync(source)) return []
+    const target = join(app.getPath("userData"), `.stale-${name.replaceAll(" ", "-")}-${String(process.pid)}`)
+    try {
+      renameSync(source, target)
+      return [target]
+    } catch (error) {
+      logger.warn("failed to detach legacy development cache", { source, error: String(error) })
+      return []
+    }
+  })
+  stale.forEach((target) => {
+    void rm(target, { recursive: true, force: true }).catch((error) => {
+      logger.warn("failed to remove legacy development cache", { target, error: String(error) })
     })
   })
+  try {
+    writeFileSync(marker, "")
+  } catch (error) {
+    logger.warn("failed to record legacy development cache cleanup", { marker, error: String(error) })
+  }
 }
 
 function sqliteFileExists() {
-  const xdg = process.env.XDG_DATA_HOME
-  const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share")
-  return existsSync(join(base, "opencode", "opencode.db"))
+  const base = process.env.CLAXEDO_DATA_DIR?.trim() || join(app.getPath("home"), ".claxedo")
+  return existsSync(join(base, "opencode-engine", "opencode.db"))
 }
 
 function setupAutoUpdater() {
@@ -597,7 +866,7 @@ async function checkUpdate() {
 
 async function installUpdate() {
   if (!updateReady) return
-  killSidecar()
+  await stopLocalServer()
   autoUpdater.quitAndInstall()
 }
 
@@ -646,6 +915,12 @@ async function checkForUpdates(alertOnFail: boolean) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function killProcessTree(pid: number, signal: "SIGTERM" | "SIGKILL") {
+  return new Promise<void>((resolve) => {
+    treeKill(pid, signal, () => resolve())
+  })
 }
 
 function defer<T>() {

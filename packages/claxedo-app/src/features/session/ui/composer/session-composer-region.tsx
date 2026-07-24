@@ -22,6 +22,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "@/features/session/composer/mode"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -91,7 +92,7 @@ export function SessionComposerRegion(props: {
   status?: () => SessionStatus
   activeTurn?: () => boolean
   beforeInput?: JSX.Element
-  registerRetry?: (retry?: () => void) => void
+  registerRetry?: (retry?: PromptRetryAction) => void
 }) {
   const navigate = useNavigate()
   const layout = useLayout()

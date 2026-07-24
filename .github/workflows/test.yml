@@ -21,6 +21,88 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  diagnostics:
+    name: local diagnostics release gate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Build diagnostics package dependencies
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Build desktop diagnostics
+        working-directory: packages/claxedo-desktop
+        run: bun run build
+
+      - name: Verify exact diagnostics dependencies
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_VERIFY_ADVISORIES: "1"
+        run: bun run verify:diagnostics-dependencies
+
+      - name: Verify diagnostics privacy boundary
+        working-directory: packages/claxedo-desktop
+        run: bun run verify:diagnostics-privacy
+
+      - name: Run diagnostics contract and safety suite
+        working-directory: packages/claxedo-desktop
+        run: bun run test:diagnostics-release
+
+      - name: Run rendered diagnostics task evaluator
+        working-directory: packages/claxedo-app
+        run: bun run test:diagnostics-release
+
+      - name: Run diagnostics performance gates
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun test
+
+      - name: Build real app performance target
+        working-directory: packages/claxedo-app
+        run: bun run build
+
+      - name: Install performance browser
+        working-directory: packages/claxedo-app/perf-harness
+        run: bunx playwright install chromium
+
+      - name: Run paired disabled and profiler-enabled app flows
+        working-directory: packages/claxedo-app/perf-harness
+        env:
+          CLAXEDO_PERF_APP_SCRIPT: serve
+        run: bun run run:all
+
+      - name: Run real-child diagnostics overhead smoke
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-linux.json
+        run: |
+          mkdir -p .artifacts
+          bun run smoke:diagnostics
+
+      - name: Upload diagnostics evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: diagnostics-source-linux-${{ github.run_attempt }}
+          path: packages/claxedo-desktop/.artifacts/diagnostics-source-linux.json
+          if-no-files-found: error
+          retention-days: 14
+
   unit:
     name: unit (${{ matrix.settings.name }})
     strategy:

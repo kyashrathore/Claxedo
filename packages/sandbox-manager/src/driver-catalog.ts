@@ -1,12 +1,15 @@
-import type { SandboxDriverMetadata } from "./index"
+import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./index"
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
 
-export const sandboxDriverIds = ["daytona", "modal", "vercel", "cloudflare", "box", "docker"] as const
+export const sandboxDriverIds = ["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"] as const
 
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
 export type SandboxDriverAuth = {
+  exe?: {
+    api_token?: string
+  }
   daytona?: {
     api_key?: string
   }
@@ -43,7 +46,29 @@ export type SandboxDriverCatalogEntry = {
   credentialFields: Array<{ key: string; label: string; secret?: boolean }>
 }
 
+export { validateSandboxPersistenceCapabilities }
+
 export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogEntry> = {
+  exe: {
+    id: "exe",
+    label: "exe.dev",
+    credentialFields: [{ key: "api_token", label: "API Token", secret: true }],
+    metadata: {
+      driverRunsIn: ["worker", "node"],
+      hostStopBehavior: "not-supported",
+      hostResumeBehavior: "same-host",
+      targetAccess: "relay",
+      secretBrokering: "none",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: true,
+        captureSource: "not-applicable",
+        retention: "provider-managed",
+        restoreMount: "same-resource",
+      },
+    },
+  },
   daytona: {
     id: "daytona",
     label: "Daytona",
@@ -53,6 +78,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "filesystem",
+        clone: false,
+        captureSource: "preserved",
+        retention: "provider-managed",
+        restoreMount: "new-resource",
+      },
     },
   },
   modal: {
@@ -67,6 +100,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "filesystem",
+        clone: false,
+        captureSource: "preserved",
+        retention: "provider-managed",
+        restoreMount: "new-resource",
+      },
     },
   },
   vercel: {
@@ -82,6 +123,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "filesystem",
+        clone: false,
+        captureSource: "stopped",
+        retention: "explicit",
+        restoreMount: "new-resource",
+      },
     },
   },
   cloudflare: {
@@ -96,6 +145,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "proxy",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "directories",
+        clone: false,
+        captureSource: "preserved",
+        retention: "provider-managed",
+        restoreMount: "copy-on-write",
+      },
     },
   },
   box: {
@@ -107,6 +164,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: false,
+        captureSource: "not-applicable",
+        retention: "provider-managed",
+        restoreMount: "same-resource",
+      },
     },
   },
   docker: {
@@ -118,6 +183,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
       targetAccess: "loopback",
       secretBrokering: "none",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "same-resource",
+        clone: false,
+        captureSource: "preserved",
+        retention: "provider-managed",
+        restoreMount: "same-resource",
+      },
     },
   },
 }
@@ -143,6 +216,7 @@ export function sandboxDriverAuth<T extends SandboxDriverID>(
   env: SandboxDriverEnv = process.env,
 ): SandboxDriverAuth[T] | undefined {
   if (id === "daytona") return authDaytona(cfg) as SandboxDriverAuth[T]
+  if (id === "exe") return authExe(cfg, env) as SandboxDriverAuth[T]
   if (id === "modal") return authModal(cfg, env) as SandboxDriverAuth[T]
   if (id === "vercel") return authVercel(cfg, env) as SandboxDriverAuth[T]
   if (id === "cloudflare") return authCloudflare(cfg, env) as SandboxDriverAuth[T]
@@ -209,6 +283,11 @@ function dockerSandboxDefault(env: SandboxDriverEnv) {
 function authDaytona(cfg?: SandboxDriverConfig) {
   const api_key = clean(cfg?.auth?.daytona?.api_key)
   return api_key ? { api_key } : undefined
+}
+
+function authExe(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
+  const api_token = clean(cfg?.auth?.exe?.api_token) ?? clean(env.EXE_DEV_API_TOKEN)
+  return api_token ? { api_token } : undefined
 }
 
 function authModal(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {

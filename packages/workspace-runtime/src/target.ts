@@ -11,6 +11,7 @@ export type WorkspaceTarget = {
 }
 
 const targetStorage = new AsyncLocalStorage<WorkspaceTarget>()
+const registered = new Map<string, Map<string, string>>()
 
 export class WorkspaceTargetError extends Error {
   constructor(message: string) {
@@ -52,7 +53,28 @@ export function assertTarget(requested: string | undefined, env: NodeJS.ProcessE
   if (!requested) return dir
   if (requested.trim() === `workspace:${workspaceId(env)}`) return dir
   if (clean(requested) === dir) return dir
+  if ([...(registered.get(workspaceId(env))?.values() ?? [])].includes(clean(requested))) return clean(requested)
   throw new WorkspaceTargetError(`workspace-runtime is pinned to ${dir}`)
+}
+
+export function registerWorkspaceDirectory(input: {
+  workspaceId: string
+  sessionId: string
+  directory: string
+}) {
+  const directories = registered.get(input.workspaceId) ?? new Map<string, string>()
+  directories.set(input.sessionId, clean(input.directory))
+  registered.set(input.workspaceId, directories)
+}
+
+export function unregisterWorkspaceDirectory(input: { workspaceId: string; sessionId: string }) {
+  const directories = registered.get(input.workspaceId)
+  directories?.delete(input.sessionId)
+  if (directories?.size === 0) registered.delete(input.workspaceId)
+}
+
+export function registeredWorkspaceDirectory(sessionId: string, env: NodeJS.ProcessEnv = process.env) {
+  return registered.get(workspaceId(env))?.get(sessionId)
 }
 
 export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T {

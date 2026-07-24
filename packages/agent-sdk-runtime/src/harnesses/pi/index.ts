@@ -23,7 +23,11 @@ import {
   type SessionConfig,
   type SessionConfigUpdate,
 } from "../../index"
-import type { AbortResult, AgentHarnessAdapter } from "../../adapter-contract"
+import type {
+  AbortResult,
+  AgentHarnessAdapter,
+  AgentHarnessAdapterProcessOptions,
+} from "../../adapter-contract"
 import { createVirtualSessionEnv } from "../../virtual-session-env"
 import type { RunStore, SessionEnv, SessionEnvFactory, SessionEnvFactoryInput } from "../../session-env"
 import { createMemoryRunStore } from "../../session-env"
@@ -39,6 +43,11 @@ import {
   sessionEnvBashTool,
   type PiModelBackendResolver,
 } from "./model-backend"
+import {
+  observeAgentProcess,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 
 type PiSession = {
   id: string
@@ -58,9 +67,11 @@ type PiSession = {
   agent?: Agent
   /** Backend extra tools captured at Agent creation; preserved across placement swaps. */
   agentExtraTools?: AgentTool[]
+  processOwnerId: string
+  processObservation: AgentProcessObserverHandle
 }
 
-export type PiAdapterOptions = {
+export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createEnv?: SessionEnvFactory
   defaultPlacement?: PiSessionPlacement | ((input: {
     sessionId: string
@@ -159,6 +170,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   private eventHub: RuntimeEventHub | undefined
   private permissionTimeoutMs: number
   private modelBackend: PiModelBackendResolver | undefined
+  private processObserver: AgentProcessObserver | undefined
 
   constructor(options: PiAdapterOptions = {}) {
     this.createEnv = options.createEnv ?? (() => createVirtualSessionEnv())
@@ -167,6 +179,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     this.eventHub = options.eventHub
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? 5 * 60 * 1000
     this.modelBackend = options.modelBackend
+    this.processObserver = options.processObserver
   }
 
   /** Resolve the exact selected model and (re)build the session's live Agent. */
@@ -234,16 +247,47 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       return { id: existing.id }
     }
     const now = Date.now()
+    const placement = await this.sessionEnvInput(input)
+    const processOwnerId = `pi-session:${input.id}`
+    const processObservation = observeAgentProcess(this.processObserver, {
+      ownerId: processOwnerId,
+      launchId: randomUUID(),
+      harnessId: "pi",
+      access: "native",
+      role: "harness",
+      label: "Pi in-process model runtime",
+      locality: "in-process",
+      confidence: "direct",
+      capabilities: {
+        resourceMetrics: "shared-process",
+        ownerActions: false,
+      },
+      ...(placement.workspaceId ? { workspaceId: placement.workspaceId } : {}),
+      ...(placement.directory ? { directory: placement.directory } : input.directory ? { directory: input.directory } : {}),
+      sessionId: input.id,
+    })
+    processObservation.update({ lifecycle: "ready" })
     this.sessions.set(input.id, {
       id: input.id,
       title: input.title ?? null,
       created: now,
       updated: now,
-      env: await this.createEnv(await this.sessionEnvInput(input)),
+      env: observePiSessionEnv(
+        await this.createEnv(placement),
+        {
+          ownerId: processOwnerId,
+          sessionId: input.id,
+          ...(placement.workspaceId ? { workspaceId: placement.workspaceId } : {}),
+          ...(placement.directory ? { directory: placement.directory } : input.directory ? { directory: input.directory } : {}),
+        },
+        this.processObserver,
+      ),
       config: defaultConfig(),
       messages: [],
       permissions: new Map(),
       permissionSeq: 0,
+      processOwnerId,
+      processObservation,
     })
     return { id: input.id }
   }
@@ -300,6 +344,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   async deleteSession(id: string, _directory: RuntimeDirectory) {
     const session = this.sessions.get(id)
     await session?.env.dispose?.()
+    session?.processObservation.exit({ reason: "disposed" })
     this.sessions.delete(id)
   }
 
@@ -313,7 +358,17 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     const session = this.sessions.get(id)
     if (!session) throw new Error(`Session ${id} not found`)
     if (session.active) throw new Error("Session has an active turn; placement can only change while idle")
-    const nextEnv = await this.createEnv(await this.sessionEnvInput({ id, placement }))
+    const envInput = await this.sessionEnvInput({ id, placement })
+    const nextEnv = observePiSessionEnv(
+      await this.createEnv(envInput),
+      {
+        ownerId: session.processOwnerId,
+        sessionId: id,
+        ...(envInput.workspaceId ? { workspaceId: envInput.workspaceId } : {}),
+        ...(envInput.directory ? { directory: envInput.directory } : {}),
+      },
+      this.processObserver,
+    )
     const previous = session.env
     session.env = nextEnv
     if (session.agent) {
@@ -563,7 +618,55 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   dispose() {
-    for (const session of this.sessions.values()) void session.env.dispose?.()
+    for (const session of this.sessions.values()) {
+      session.processObservation.exit({ reason: "disposed" })
+      void session.env.dispose?.()
+    }
     this.sessions.clear()
+  }
+}
+
+function observePiSessionEnv(
+  env: SessionEnv,
+  input: {
+    ownerId: string
+    sessionId: string
+    workspaceId?: string
+    directory?: string
+  },
+  observer?: AgentProcessObserver,
+): SessionEnv {
+  return {
+    ...env,
+    async exec(command, options) {
+      const handle = observeAgentProcess(observer, {
+        ownerId: `pi-tool:${randomUUID()}`,
+        launchId: randomUUID(),
+        harnessId: "pi",
+        access: "native",
+        role: "tool",
+        label: "Pi SessionEnv command",
+        locality: env.kind === "workspace-runtime" ? "local-process" : "in-process",
+        confidence: env.kind === "workspace-runtime" ? "inferred" : "direct",
+        capabilities: {
+          resourceMetrics: env.kind === "workspace-runtime" ? "process" : "shared-process",
+          ownerActions: false,
+        },
+        parentOwnerId: input.ownerId,
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.directory ? { directory: input.directory } : {}),
+        sessionId: input.sessionId,
+      })
+      try {
+        const result = await env.exec(command, options)
+        handle.exit({ reason: "exited", exitCode: result.exitCode })
+        return result
+      } catch (cause) {
+        handle.exit({
+          reason: options?.signal?.aborted ? "cancelled" : "error",
+        })
+        throw cause
+      }
+    },
   }
 }

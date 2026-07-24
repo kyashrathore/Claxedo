@@ -189,9 +189,14 @@ export function resolveWorkspaceSubmitPlan(input: ResolveWorkspaceSubmitPlanInpu
   }
 
   if (isRemoteWorkspaceKind(input.workspaceKind)) {
+    const defaultRemoteDirectory = input.worktreeSelection === "create"
+      ? Object.entries(projectWorkspaces(input.projects, sessionDirectory)).find(
+          ([, item]) => item.kind === input.workspaceKind && (item.workspace_name ?? item.workspaceName) === "main",
+        )?.[0]
+      : undefined
     const selectedDirectory = input.worktreeSelection === "main" && input.runtimeWorkspaceRef?.(input.projectDirectory)
       ? input.projectDirectory
-      : selectedWorktreeDirectory({
+      : defaultRemoteDirectory ?? selectedWorktreeDirectory({
           worktreeSelection: input.worktreeSelection,
           projectDirectory: input.projectDirectory,
           fallbackDirectory: input.fallbackDirectory,

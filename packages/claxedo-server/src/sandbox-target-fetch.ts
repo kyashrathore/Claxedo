@@ -12,6 +12,8 @@ export type SandboxFetchOptions = {
   subject?: string
   orgId?: string
   role?: RelayTokenInput["role"]
+  /** Inspect an already-ready runtime without waking or reprovisioning it. */
+  resume?: boolean
 }
 
 export async function sandboxFetch(
@@ -70,12 +72,15 @@ async function sandboxTarget(ws: Workspace, options: SandboxFetchOptions) {
   if (!options.sandboxManager) {
     throw new Error(`sandbox manager unavailable: ${ws.id}`)
   }
-  const target = await options.sandboxManager.ensure(ws.id, { homeRegion: options.defaultHomeRegion ?? "us-east" })
+  const target = options.resume === false
+    ? await options.sandboxManager.target(ws.id)
+    : await options.sandboxManager.ensure(ws.id, { homeRegion: options.defaultHomeRegion ?? "us-east" })
   if (target.status === "ready") return target
   if (target.status === "provisioning") {
     throw new Error(`sandbox provisioning; retry after ${target.retryAfterMs}ms`)
   }
-  throw new Error(target.error ?? `sandbox unavailable: ${ws.id}`)
+  const reason = "reason" in target ? target.reason : target.error
+  throw new Error(reason ?? `sandbox unavailable: ${ws.id}`)
 }
 
 function sandboxPath(path: string) {

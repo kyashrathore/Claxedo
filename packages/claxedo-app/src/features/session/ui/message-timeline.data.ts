@@ -3,6 +3,7 @@ import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } 
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
 import { Data, Equal } from "effect"
 import { sessionRecoveryClass, type SessionErrorClass } from "../onboarding/first-turn-recovery"
+import type { SessionTurnOutcome } from "../data/session-types"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -191,6 +192,7 @@ export namespace Timeline {
     firstTurnRecovery = index === 0,
     isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
     foldWhileRunning = false,
+    lastTurn?: SessionTurnOutcome,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -199,33 +201,17 @@ export namespace Timeline {
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
-    // The opencode-native harness stamps AbortedError on abort; this remains a valid signal
-    // for it (packages/core/src/v1/session.ts AbortedError → schema "MessageAbortedError").
+    // OpenCode-native aborts are durable on the message itself. SDK-runtime aborts are
+    // durable on the Session turn outcome, which must match the exact assistant message.
+    // Missing completion metadata is not an abort signal: normal turns can be observed
+    // between the idle event and their message completion checkpoint.
     const nativeInterruptedIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
-    // D2: SDK-runtime harnesses (codex/claude/cursor/ACP — all driven through
-    // agent-event-runtime's per-harness adapters) never stamp MessageAbortedError; every
-    // error there hardcodes name:"UnknownError", so that branch can never fire for them.
-    // Tracing the abort path (translateStopReason "cancelled" in the ACP adapter,
-    // completionEvents "cancelled"/"interrupted" in the codex adapter, resultEvents
-    // "interrupted" in the claude adapter, and the "cancelled" result status in the cursor
-    // adapter) shows all four converge on the same signal: they emit only
-    // `{type: "session-status", status: "idle"}` and skip the `finish` runtime event — the
-    // one that stamps `time.completed` on the assistant message. So an aborted turn there
-    // simply stops without ever settling its last assistant message (no completed time, no
-    // error). Every other terminal path (a clean finish or a real failure) always settles
-    // it one way or the other, so "turn is no longer live, and its last assistant message
-    // never settled" is a reliable, harness-agnostic signal for these families.
-    // (Pi is the exception: its adapter's catch-all always stamps completed+UnknownError on
-    // any thrown exception, abort included, so it has no distinguishable signal here and
-    // keeps falling through to the generic Error row below.)
-    const turnStillRunning = isActive && (status === "busy" || status === "retry")
-    const sdkInterrupted =
-      nativeInterruptedIndex === -1 &&
-      !turnStillRunning &&
-      !!lastAssistantMessage &&
-      !assistantMessageSettled(lastAssistantMessage)
+    const sdkInterruptedIndex =
+      nativeInterruptedIndex === -1 && lastTurn?.status === "cancelled" && lastTurn.assistantMessageId
+        ? assistantMessages.findIndex((message) => message.id === lastTurn.assistantMessageId)
+        : -1
     const interruptedMessageIndex =
-      nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterrupted ? assistantMessages.length - 1 : -1
+      nativeInterruptedIndex !== -1 ? nativeInterruptedIndex : sdkInterruptedIndex
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error
     const settled = assistantMessages.some(assistantMessageSettled)
@@ -290,14 +276,14 @@ export namespace Timeline {
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
-    // sdkInterrupted turns never get a completed time (see above), so "You stopped after
-    // {duration}" falls back to the latest timestamp visible on the unsettled message's own
-    // parts (last streamed text/reasoning chunk, last tool state) — the closest thing to
-    // "when it stopped" that the data actually carries.
+    // SDK cancellation carries the canonical completion timestamp. Native aborts may not,
+    // so fall back to the latest activity recorded on the interrupted message's parts.
     const interruptedActivityTime =
-      sdkInterrupted && lastAssistantMessage
-        ? lastKnownPartActivity(getMessageParts(lastAssistantMessage.id))
-        : undefined
+      sdkInterruptedIndex !== -1
+        ? lastTurn?.completedAt
+        : interrupted && lastAssistantMessage
+          ? lastKnownPartActivity(getMessageParts(lastAssistantMessage.id))
+          : undefined
     const endTimes =
       interruptedActivityTime !== undefined ? [...completedTimes, interruptedActivityTime] : completedTimes
     const createdTime = userMessage.time?.created
@@ -518,22 +504,13 @@ export namespace Timeline {
     return end - userMessage.time.created
   }
 
-  // Only the opencode-native harness stamps MessageAbortedError on abort. SDK-runtime
-  // harnesses (codex/claude/cursor/ACP) emit no error and skip the finish event — the turn
-  // just goes idle with its last assistant message unsettled (no completed time, no
-  // error), so that is the abort signal for them. Pi's adapter always settles the message
-  // (completed + UnknownError) on any failure, abort included, so it never trips the
-  // unsettled branch.
   export function turnInterrupted(
     assistantMessages: AssistantMessage[],
-    status: SessionStatus["type"],
-    isActive: boolean,
+    lastTurn?: SessionTurnOutcome,
   ) {
     if (assistantMessages.some((m) => m.error?.name === "MessageAbortedError")) return true
-    const last = assistantMessages[assistantMessages.length - 1]
-    if (!last) return false
-    const turnStillRunning = isActive && (status === "busy" || status === "retry")
-    return !turnStillRunning && !assistantMessageSettled(last)
+    if (lastTurn?.status !== "cancelled" || !lastTurn.assistantMessageId) return false
+    return assistantMessages.some((message) => message.id === lastTurn.assistantMessageId)
   }
 }
 
@@ -565,9 +542,7 @@ export function assistantMessageSettled(message: AssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error
 }
 
-// Best-effort "when did this stop" timestamp for a message that never got a completed
-// time (an sdkInterrupted turn — see constructMessageRows). Scans the message's own parts
-// for the latest start/end timestamp any part actually recorded.
+// Best-effort stop timestamp for native aborts whose message has no completed time.
 function lastKnownPartActivity(parts: Part[]): number | undefined {
   const times = parts.flatMap((part): number[] => {
     if (part.type === "text" || part.type === "reasoning") {

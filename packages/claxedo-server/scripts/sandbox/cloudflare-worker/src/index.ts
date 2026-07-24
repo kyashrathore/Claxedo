@@ -93,6 +93,8 @@ interface SandboxOperations {
 interface ManagedSandbox {
   ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number): Promise<boolean>
   workspaceRuntimeReady(port: number): Promise<boolean>
+  createBackup(options: { dir: string }): Promise<{ id: string; dir: string }>
+  restoreBackup(backup: { id: string; dir: string }): Promise<void>
 }
 
 function roundedMs(value: number) {
@@ -138,6 +140,16 @@ async function runtimeReady(process: SandboxProcess, port: number, timeout = RUN
 async function runtimeProcess(sandbox: SandboxOperations) {
   return bounded(sandbox.listProcesses(), "workspace-runtime process lookup")
     .then((processes) => processes.find((process) => process.id === RUNTIME_PROCESS_ID) ?? null)
+}
+
+async function stopRuntimeProcess(sandbox: SandboxOperations) {
+  const existing = await runtimeProcess(sandbox)
+  if (!existing) return
+  const status = await bounded(existing.getStatus(), "workspace-runtime process status")
+  if (["starting", "running"].includes(status)) {
+    await bounded(existing.kill(), "workspace-runtime process kill")
+  }
+  await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
 }
 
 async function ensureRuntimeProcess(
@@ -278,6 +290,10 @@ export default {
           const port: number = typeof body.port === "number" ? body.port : WORKSPACE_RUNTIME_PORT
           const command: string = typeof body.command === "string" ? body.command : ""
           if (!command) return json({ error: "ensure-runtime requires `command`" }, 400)
+          const restore = directoryRestore(body.restore)
+          if (body.restore !== undefined && !restore) {
+            return json({ error: "ensure-runtime restore requires one absolute directory and a backupId" }, 400)
+          }
 
           // Brokered secrets: store the raw values in KV (out of the container)
           // and give the container only the proxy URL + a short-lived JWT +
@@ -298,6 +314,13 @@ export default {
               signingSecret: env.EGRESS_SIGNING_SECRET,
             })
           }
+          if (restore) {
+            // Cloudflare backup mounts are ephemeral and restoring over an
+            // active writer is unsafe. Stop the old runtime before mounting
+            // the requested backup, then boot against the restored directory.
+            await stopRuntimeProcess(sandbox as unknown as SandboxOperations)
+            await sandbox.restoreBackup({ id: restore.backupId, dir: restore.directory })
+          }
           // Runtime bring-up is a Durable Object RPC with a per-sandbox
           // single-flight promise. Catalog refreshes and execution retries can
           // overlap, but they must join one process launch rather than cancel
@@ -314,15 +337,37 @@ export default {
           return json({ ok: true, ready: await sandbox.workspaceRuntimeReady(port) })
         }
 
+        case "backup": {
+          const directory = singleDirectory(body.directories)
+          if (!directory) return json({ error: "backup requires exactly one absolute directory" }, 400)
+          const backup = await sandbox.createBackup({ dir: directory })
+          return json({ backupId: backup.id, directory: backup.dir })
+        }
+
       default:
         return json({ error: `unknown action: ${action}` }, 404)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err))
       return json({
-        error: err.message || String(err),
-        stack: err.stack,
-        name: err.name,
+        error: error.message,
+        name: error.name,
       }, 500)
     }
   },
+}
+
+function singleDirectory(input: unknown) {
+  if (!Array.isArray(input) || input.length !== 1 || typeof input[0] !== "string") return
+  const directory = input[0]
+  if (!directory.startsWith("/") || directory.split("/").includes("..")) return
+  return directory
+}
+
+function directoryRestore(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  const restore = input as Record<string, unknown>
+  const directory = singleDirectory(restore.directories)
+  if (!directory || typeof restore.backupId !== "string" || !restore.backupId) return
+  return { backupId: restore.backupId, directory }
 }

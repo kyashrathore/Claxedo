@@ -1,5 +1,6 @@
 import {
   appendWorkspaceRuntimeLog,
+  prepareWorkspaceSessionWorktree,
   prepareUserHostedRuntime,
   prepareWorkspaceRuntime,
 } from "@/platform/runtime/cloud/workspace-runtime-store"
@@ -55,6 +56,7 @@ export type SubmitDirectoryProvisionInput = {
   }
   readonly prepareUserHostedRuntime?: PrepareUserHostedRuntime
   readonly prepareWorkspaceRuntime?: PrepareWorkspaceRuntime
+  readonly prepareWorkspaceSessionWorktree?: typeof prepareWorkspaceSessionWorktree
 }
 
 export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvisionInput) {
@@ -272,6 +274,22 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
       err: result.message ?? input.text.requestFailed,
     })
     return false
+  }
+  if (input.draftId && result.workspace?.workspaceId) {
+    const worktree = await (input.prepareWorkspaceSessionWorktree ?? prepareWorkspaceSessionWorktree)({
+      workspaceId: result.workspace.workspaceId,
+      sessionId: input.draftId,
+      directory: input.directory,
+      request: input.request,
+    }).catch((error) => {
+      publish({
+        status: "error",
+        err: input.errorMessage(error),
+      })
+      return undefined
+    })
+    if (!worktree) return false
+    return worktree.path
   }
   return true
 }

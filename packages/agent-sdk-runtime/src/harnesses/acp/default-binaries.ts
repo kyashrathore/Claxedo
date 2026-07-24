@@ -6,7 +6,7 @@ import path from "node:path"
 // that spawns them), not of workspace-runtime — hosts composing a runtime get
 // them transitively, and image builds collect the pins from here.
 const ACP_BIN_PACKAGES: Record<string, string> = {
-  "claude-agent-acp": "@zed-industries/claude-agent-acp",
+  "claude-agent-acp": "@agentclientprotocol/claude-agent-acp",
   "codex-acp": "@agentclientprotocol/codex-acp",
 }
 
@@ -22,8 +22,8 @@ export function defaultAcpBinary(name: string): string {
   // agent-config resolver honors, so both spawn paths agree on the binary.
   const acpDir = process.env.CLAXEDO_ACP_DIR
   if (acpDir) {
-    const candidate = path.join(acpDir, name)
-    if (fs.existsSync(candidate)) return candidate
+    const bundled = bundledAcpBinary(acpDir, name)
+    if (bundled) return bundled
   }
   const pkgName = ACP_BIN_PACKAGES[name]
   if (!pkgName) return name
@@ -37,4 +37,9 @@ export function defaultAcpBinary(name: string): string {
     // Resolution can fail in bundled or unusual layouts; PATH covers it.
   }
   return name
+}
+
+export function bundledAcpBinary(acpDir: string, name: string, platform = process.platform) {
+  const names = platform === "win32" ? [`${name}.exe`, name] : [name]
+  return names.map((candidate) => path.join(acpDir, candidate)).find((candidate) => fs.existsSync(candidate))
 }

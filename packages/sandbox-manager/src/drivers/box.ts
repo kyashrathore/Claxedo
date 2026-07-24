@@ -8,6 +8,7 @@ import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
+import { sandboxDriverCatalog } from "../driver-catalog"
 
 // Box by ASCII (https://box.ascii.dev) exposes persistent Linux microVMs over a
 // small REST API. Unlike Daytona/Modal/Vercel, a Box boots a *fixed* base image
@@ -322,6 +323,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      persistence: sandboxDriverCatalog.box.metadata.persistence,
     },
     ensureHost,
     resumeHost,

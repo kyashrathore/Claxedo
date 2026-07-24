@@ -41,6 +41,9 @@ function lease(input: Partial<SandboxLeaseRow> & { workspace_id: string }): Sand
     accel_base_image_id: input.accel_base_image_id ?? null,
     accel_prepared_image_id: input.accel_prepared_image_id ?? null,
     accel_snapshot_id: input.accel_snapshot_id ?? null,
+    checkpoint: input.checkpoint ?? null,
+    persistence: input.persistence ?? null,
+    restore: input.restore ?? null,
     created_at: input.created_at ?? 1,
     updated_at: input.updated_at ?? 1,
   }
@@ -115,7 +118,15 @@ describe("host primitives package surface", () => {
           driverRunsIn: ["node"],
           hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
           targetAccess: "relay",
-      secretBrokering: "none",
+          secretBrokering: "none",
+          persistence: {
+            resume: "same-sandbox",
+            capture: "none",
+            clone: false,
+            captureSource: "not-applicable",
+            retention: "not-applicable",
+            restoreMount: "not-applicable",
+          },
         },
         ensureHost: vi.fn(async () => ({
           sandboxId: "sandbox_1",

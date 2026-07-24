@@ -112,6 +112,17 @@ describe("composer workspace resolver", () => {
     })).toEqual({ status: "prepare-remote-workspace", directory: "ws_cloud_main" })
   })
 
+  test("cloud new-worktree selection reuses the selected workspace", () => {
+    expect(resolveWorkspaceSubmitPlan({
+      isNewSession: true,
+      projectDirectory: "/repo/main",
+      defaultDirectory: "/default",
+      worktreeSelection: "create",
+      workspaceKind: "cloud",
+      projects,
+    })).toEqual({ status: "prepare-remote-workspace", directory: "ws_cloud_main" })
+  })
+
   test("cloud workspace id routes keep the routed workspace instead of project main", () => {
     expect(resolveWorkspaceSubmitPlan({
       isNewSession: true,

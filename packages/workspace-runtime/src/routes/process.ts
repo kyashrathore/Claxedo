@@ -10,7 +10,6 @@ import { lazy } from "../lazy"
 import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
-import { collectDiagnostics, terminateDiagnostic } from "../managed-processes/diagnostics"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { assertTarget, WorkspaceTargetError } from "../target"
 
@@ -88,8 +87,7 @@ function processLogs(c: Context, directory: string, deps: CreateProcessRoutesDep
 async function init(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }) {
   const directory = dir(c)
   bind(c, directory)
-  await ProcessManager.loadConfig(directory)
-  ProcessManager.watchConfig(directory)
+  await ProcessManager.initialize(directory)
   return directory
 }
 
@@ -195,50 +193,6 @@ export const ProcessRoutes = lazy(() =>
     .post("/stop-all", async (c) => {
       const directory = await init(c)
       await ProcessManager.stopAll(directory)
-      return c.json(true)
-    })
-    .get("/diagnostics", async (c) => {
-      const directory = await init(c)
-      const snapshot = await collectDiagnostics({
-        directory,
-        workspaceId: c.req.header("x-workspace-id") || undefined,
-        configs: ProcessManager.configs(directory),
-        processes: ProcessManager.list(directory),
-        ptys: Pty.listDetailed(),
-      })
-      return c.json(snapshot)
-    })
-    .post("/diagnostics/terminate", async (c) => {
-      const directory = await init(c)
-      const body = await boundedJsonBody<Record<string, unknown>>(c, {})
-      const parsed = Process.DiagnosticTerminateInput.safeParse(body)
-      if (!parsed.success) {
-        return c.json(
-          errorBody("process_diagnostic_invalid_body", "Invalid process diagnostic request body", parsed.error.flatten()),
-          400,
-        )
-      }
-      const input = parsed.data
-      if (input.process_id) {
-        await ProcessManager.stop(directory, input.process_id, input.signal)
-        return c.json(true)
-      }
-      if (input.pty_id) {
-        await Pty.remove(input.pty_id)
-        return c.json(true)
-      }
-      await terminateDiagnostic(
-        input,
-        input.group_key
-          ? await collectDiagnostics({
-              directory,
-              workspaceId: c.req.header("x-workspace-id") || undefined,
-              configs: ProcessManager.configs(directory),
-              processes: ProcessManager.list(directory),
-              ptys: Pty.listDetailed(),
-            })
-          : undefined,
-      )
       return c.json(true)
     })
     .get("/port-map", async (c) => {

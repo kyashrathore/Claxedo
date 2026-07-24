@@ -26,6 +26,13 @@ export function createElectronRenderer(mode: string): UserConfig {
     worker: {
       format: "es",
     },
+    optimizeDeps: {
+      // The Markdown highlighter is first reached from a web worker after a
+      // session mounts. If Vite discovers it at that point, dependency
+      // optimization invalidates the worker's WASM URL and reloads the whole
+      // renderer in the middle of hydration.
+      include: ["@opencode-ai/session-ui > @shikijs/stream"],
+    },
     build: {
       rollupOptions: {
         input: {

@@ -1,6 +1,6 @@
 import { defineConfig } from "electron-vite"
 import { builtinModules, createRequire } from "node:module"
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
 const configRequire = createRequire(import.meta.url)
@@ -23,20 +23,47 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [
         {
+          name: "encode-reviewed-windows-cim-worker",
+          enforce: "pre",
+          resolveId(source, importer) {
+            if (!source.endsWith("?encoded") || !importer) return
+            return `\0windows-cim-encoded:${path.resolve(path.dirname(importer), source.slice(0, -"?encoded".length))}`
+          },
+          load(id) {
+            const prefix = "\0windows-cim-encoded:"
+            if (!id.startsWith(prefix)) return
+            const script = readFileSync(id.slice(prefix.length), "utf8").replace(/\r?\n/g, "\r\n")
+            return `export default ${JSON.stringify(Buffer.from(script, "utf16le").toString("base64"))}`
+          },
+        },
+        {
           name: "copy-claxedo-server",
           closeBundle() {
-            const src = path.join(desktopDir, "resources/claxedo-server.js")
-            const dest = path.join(desktopDir, "out/main/claxedo-server.js")
+            if (mode === "development") return
+            const src = path.join(desktopDir, "resources/claxedo-server")
+            const dest = path.join(desktopDir, "out/main/claxedo-server")
             if (existsSync(src)) {
-              copyFileSync(src, dest)
-              console.log("[vite] Copied claxedo-server.js to out/main/")
+              rmSync(dest, { recursive: true, force: true })
+              rmSync(path.join(desktopDir, "out/main/claxedo-server.js"), { force: true })
+              cpSync(src, dest, { recursive: true })
+              console.log("[vite] Copied split claxedo-server bundle to out/main/")
             }
           },
         },
       ],
       build: {
+        externalizeDeps: {
+          // Main-process diagnostics also imports the shared runtime schema.
+          // Electron cannot execute the workspace package's TypeScript
+          // namespace when electron-vite leaves that import external.
+          exclude: ["@claxedo/app"],
+        },
         rollupOptions: {
-          input: { index: "src/main/index.ts" },
+          external: ["@vscode/windows-process-tree"],
+          input: {
+            index: "src/main/index.ts",
+            "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",
+          },
         },
       },
     },
@@ -94,6 +121,12 @@ export default defineConfig(({ mode }) => {
         },
       ],
       build: {
+        externalizeDeps: {
+          // The preload imports a runtime schema from this workspace package.
+          // Externalizing its TypeScript source makes Electron's Node loader
+          // reject namespace syntax before the desktop API can be exposed.
+          exclude: ["@claxedo/app"],
+        },
         rollupOptions: {
           external: (id) => {
             if (id === "electron") return true

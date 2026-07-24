@@ -78,7 +78,9 @@ export async function resolveSubmitDirectory(
     )
     if (!cloudDirectory) return
     sessionDirectory = cloudDirectory
-    if (!(await input.prepareCloudSessionDirectory(sessionDirectory))) return
+    const prepared = await input.prepareCloudSessionDirectory(sessionDirectory)
+    if (!prepared) return
+    if (typeof prepared === "string") sessionDirectory = prepared
     input.publishCloudHandoff("loading_models", "Runtime ready. Loading models.")
   } else if (input.worktreeSelection === "create") {
     const localDirectory = await input.createLocalWorktree(input.projectDirectory ?? input.fallbackDirectory)

@@ -1,6 +1,8 @@
 import type { WorkspaceProfile } from "./profile"
 
 export type WorkspaceCapabilities = {
+  /** Version of this capability document and its route-family boundary. */
+  api_version: 2
   /** Compatibility profile for the current runtime surface. Always `workspace`. */
   profile: WorkspaceProfile
   /** Whether the workspace harness (the central harness-host process)
@@ -17,6 +19,8 @@ export type WorkspaceCapabilities = {
   pty: boolean
   /** Managed process APIs are available for long-running workspace services like dev servers. */
   process: boolean
+  /** Local hosts can publish redacted process-owner lifecycle events to an embedding desktop. */
+  process_observer: true
   /** Standalone git diff APIs are available for comparing workspace changes. */
   diff: boolean
   /** Runtime config push is supported via `/api/wr/config`. */
@@ -46,6 +50,7 @@ export type WorkspaceRpc = {
 
 export function workspaceCapabilities(enabled: boolean): WorkspaceCapabilities {
   return {
+    api_version: 2,
     profile: "workspace",
     workspace_harness_enabled: enabled,
     session_host: enabled,
@@ -53,6 +58,7 @@ export function workspaceCapabilities(enabled: boolean): WorkspaceCapabilities {
     command: enabled,
     pty: true,
     process: true,
+    process_observer: true,
     diff: true,
     config: true,
     mcp: enabled,

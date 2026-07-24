@@ -10,6 +10,7 @@ import { workspaceRuntimeVersion } from "../runtime-version"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { RUNTIME_DIR } from "../defaults"
+import { sandboxDriverCatalog } from "../driver-catalog"
 
 type VercelSnapshotLike = { snapshotId: string }
 type VercelCommandLike = {
@@ -362,6 +363,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      persistence: sandboxDriverCatalog.vercel.metadata.persistence,
     },
     ensureHost,
     resumeHost: (input) => ensureHost(input.ensure),

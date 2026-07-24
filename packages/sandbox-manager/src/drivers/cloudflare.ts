@@ -22,6 +22,7 @@
 // Relay Host Token (carried on `Authorization`) is forwarded untouched to the
 // runtime, which enforces it — the proxy route is intentionally not behind the
 // Worker's admin API_TOKEN gate (that gate still protects control actions).
+import { sandboxDriverCatalog } from "../driver-catalog"
 import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
@@ -70,6 +71,7 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 // self-configures from the injected WORKSPACE_RUNTIME_* env.
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_TIMEOUT_MS = 45_000
+const WORKSPACE_DIRECTORY_LABEL = "claxedo.workspaceDirectory"
 
 function cleanUrl(input: string) {
   return input.replace(/\/+$/, "")
@@ -170,6 +172,9 @@ export function createCloudflareSandboxDriver(
         env: await bootEnv(input, hostId),
         port: runtimePort,
         command: runtimeCommand,
+        ...(input.bootSource?.kind === "driver-snapshot"
+          ? { restore: { backupId: input.bootSource.snapshotId, directories: [workspaceDirectory(input)] } }
+          : {}),
         ...(egress ? { egress } : {}),
       },
     ).catch((error) => {
@@ -192,7 +197,10 @@ export function createCloudflareSandboxDriver(
         id: "cloudflare",
         resourceId: sandboxId,
       },
-      labels: input.labels,
+      labels: {
+        ...input.labels,
+        [WORKSPACE_DIRECTORY_LABEL]: workspaceDirectory(input),
+      },
     }
     return targetOut
   }
@@ -206,6 +214,7 @@ export function createCloudflareSandboxDriver(
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "proxy",
+      persistence: sandboxDriverCatalog.cloudflare.metadata.persistence,
     },
 
     ensureHost,
@@ -225,6 +234,19 @@ export function createCloudflareSandboxDriver(
       if (status >= 400 && status !== 404) {
         throw new Error(`Cloudflare destroy failed (${status}) for ${target.sandboxId}`)
       }
+    },
+
+    async snapshot(target) {
+      const directory = target.labels?.[WORKSPACE_DIRECTORY_LABEL] ?? workspaceDir
+      const { status, data } = await call<{ backupId?: string; error?: string }>(
+        target.sandboxId,
+        "backup",
+        { directories: [directory] },
+      )
+      if (status >= 400 || !data.backupId) {
+        throw new Error(`Cloudflare backup failed (${status}): ${data.error ?? "no backup id"}`)
+      }
+      return { snapshotId: data.backupId }
     },
   }
 }

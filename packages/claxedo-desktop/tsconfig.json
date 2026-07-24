@@ -19,6 +19,7 @@
     "paths": {
       "#terminal-backend": ["../claxedo-app/src/features/terminal/core/backend/xterm"],
       "@claxedo/app": ["../claxedo-app/src/app/entry/index.tsx"],
+      "@claxedo/app/process-diagnostics-contract": ["../claxedo-app/src/features/processes/data/local-diagnostics.ts"],
       "@claxedo/*": ["../claxedo-app/src/*"],
       "@/*": ["../claxedo-app/src/*"]
     }

@@ -61,6 +61,8 @@ function db(store: RuntimeStore) {
       exec(sql: string): unknown
       prepare(sql: string): {
         run(...params: unknown[]): unknown
+        get(...params: unknown[]): unknown
+        all(...params: unknown[]): unknown[]
       }
     }
   }).db
@@ -366,6 +368,29 @@ describe("RuntimeStore", () => {
     next.close()
   })
 
+  it("reopens checkpointed projections without resetting or replaying durable history", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    db(first).exec(`
+      CREATE TRIGGER reject_session_projection_reset
+      BEFORE DELETE ON session
+      BEGIN
+        SELECT RAISE(ABORT, 'checkpointed projections must not be reset');
+      END
+    `)
+    first.close()
+
+    const next = new RuntimeStore(root)
+    assert.equal(next.getAgentSessionId("s1"), "a1")
+    next.close()
+  })
+
   it("imports legacy JSONL once and replays from the SQLite journal", () => {
     const root = tmp()
     fs.mkdirSync(path.join(root, "sessions"), { recursive: true })
@@ -468,6 +493,56 @@ describe("RuntimeStore", () => {
     assert.equal(msgs[1]?.parts[0]?.type, "text")
     assert.equal(msgs[1]?.parts[0]?.text, "world")
     assert.deepEqual(next.getTodos("s1"), [{ content: "Ship", status: "pending", priority: "high" }])
+  })
+
+  it("retains only the latest full snapshot for each message part", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "general",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    for (const text of ["first", "second", "latest"]) {
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messagePartUpdated({
+          id: "streaming-part",
+          sessionID: "s1",
+          messageID: "m1",
+          type: "text",
+          text,
+        }),
+      })
+    }
+
+    const snapshots = db(store).prepare(`
+      SELECT payload_json
+      FROM runtime_journal
+      WHERE session_id = ?
+        AND type = 'message.part.updated'
+        AND part_id = ?
+      ORDER BY seq ASC
+    `).all("s1", "streaming-part") as Array<{ payload_json: string }>
+    assert.equal(snapshots.length, 1)
+    assert.equal(JSON.parse(snapshots[0]!.payload_json).properties.part.text, "latest")
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    const messages = reopened.getMessages("s1") as Array<{ parts: Array<{ id: string; text?: string }> }>
+    assert.equal(messages[1]?.parts.find((part) => part.id === "streaming-part")?.text, "latest")
+    reopened.close()
   })
 
   it("rolls back failed session deletes and successful deletes survive replay", () => {
@@ -953,8 +1028,9 @@ describe("RuntimeStore", () => {
     )
 
     const rows = journal(root, "s1")
-    assert.equal(rows.at(-2)?.type, "message.completed")
-    assert.equal(rows.at(-1)?.type, "session.idle")
+    assert.equal(rows.at(-3)?.type, "message.completed")
+    assert.equal(rows.at(-2)?.type, "session.idle")
+    assert.equal(rows.at(-1)?.type, "turn.finish")
 
     const replayed = new RuntimeStore(root)
     assert.equal((replayed.getSession("s1") as { status?: string } | null)?.status, "idle")
@@ -1005,6 +1081,53 @@ describe("RuntimeStore", () => {
     )
   })
 
+  it("finishTurn durably preserves a cancelled outcome", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "build",
+      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+
+    store.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      outcome: { status: "cancelled", completedAt: 123, reason: "abort" },
+    })
+
+    assert.deepEqual(
+      (store.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn,
+      { status: "cancelled", completedAt: 123, reason: "abort", assistantMessageId: "m1" },
+    )
+    store.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      outcome: { status: "completed", completedAt: 124 },
+    })
+    assert.deepEqual(
+      (store.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn,
+      { status: "cancelled", completedAt: 123, reason: "abort", assistantMessageId: "m1" },
+    )
+    assert.equal(journal(root, "s1").filter((row) => row.type === "turn.finish").length, 1)
+
+    const replayed = new RuntimeStore(root)
+    assert.deepEqual(
+      (replayed.getSession("s1") as { lastTurn?: unknown } | null)?.lastTurn,
+      { status: "cancelled", completedAt: 123, reason: "abort", assistantMessageId: "m1" },
+    )
+  })
+
   it("finishTurn records failed turns on the assistant message", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
@@ -1039,8 +1162,9 @@ describe("RuntimeStore", () => {
     )
 
     const rows = journal(root, "s1")
-    assert.equal(rows.at(-2)?.type, "message.updated")
-    assert.equal(rows.at(-1)?.type, "session.error")
+    assert.equal(rows.at(-3)?.type, "message.updated")
+    assert.equal(rows.at(-2)?.type, "session.error")
+    assert.equal(rows.at(-1)?.type, "turn.finish")
 
     const replayed = new RuntimeStore(root)
     const replayedAssistant = replayed.getMessages("s1")[1]?.info as { error?: { data?: { message?: string; firstTurnErrorClass?: string } } }

@@ -1,6 +1,15 @@
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi } from "convex/server"
-import type { SandboxLeaseAcquireInput, SandboxLeaseAcquireResult, SandboxLeasePatch, SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
+import type {
+  SandboxCheckpointReference,
+  SandboxLeaseAcquireInput,
+  SandboxLeaseAcquireResult,
+  SandboxLeasePatch,
+  SandboxLeaseStore,
+  SandboxLease,
+  SandboxPersistenceCapabilities,
+  SandboxRestoreStatus,
+} from "@claxedo/sandbox-manager"
 
 type ConvexExecutor = {
   query: (fn: unknown, args: Record<string, unknown>) => Promise<unknown>
@@ -25,6 +34,9 @@ type ConvexSandboxLease = {
   last_heartbeat_at?: number
   last_activity_at?: number
   labels?: Record<string, string>
+  checkpoint?: SandboxCheckpointReference
+  persistence_capabilities?: SandboxPersistenceCapabilities
+  restore_status?: SandboxRestoreStatus
 }
 
 const convexLeaseFunctions = (anyApi as unknown as Record<string, {
@@ -63,6 +75,9 @@ function lease(row: ConvexSandboxLease): SandboxLease {
     lastHeartbeatAt: row.last_heartbeat_at,
     lastActivityAt: row.last_activity_at,
     labels: row.labels,
+    checkpoint: row.checkpoint,
+    persistence: row.persistence_capabilities,
+    restore: row.restore_status,
   }
 }
 
@@ -81,6 +96,9 @@ function patch(input: SandboxLeasePatch) {
     ...(input.nextRetryAt === undefined ? {} : { next_retry_at: input.nextRetryAt }),
     ...(input.lastError === undefined ? {} : { last_error: input.lastError }),
     ...(input.labels === undefined ? {} : { labels: input.labels }),
+    ...(input.checkpoint === undefined ? {} : { checkpoint: input.checkpoint }),
+    ...(input.persistence === undefined ? {} : { persistence_capabilities: input.persistence }),
+    ...(input.restore === undefined ? {} : { restore_status: input.restore }),
   }
 }
 

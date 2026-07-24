@@ -33,6 +33,7 @@ type RailWorkbenchState = {
 export function RailWorkbenchCanvas(props: {
   state: RailWorkbenchState
   emptyDraftDirectory: Accessor<string | undefined>
+  onDiagnostics?: () => void
   onNewProject?: () => void
 }) {
   const onboardingOverlayDirectory = createMemo(() => {
@@ -57,8 +58,8 @@ export function RailWorkbenchCanvas(props: {
           <Show
             when={props.emptyDraftDirectory()}
             fallback={ONBOARDING_V1
-              ? <OnboardingEmptyState onNewProject={props.onNewProject} />
-              : <LegacyEmptyState onNewProject={props.onNewProject} />}
+              ? <OnboardingEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />
+              : <LegacyEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />}
           >
             {(workspaceDir) => (
               <EmptyDraftSessionComposer
@@ -81,6 +82,7 @@ export function RailWorkbenchCanvas(props: {
             projectDirectory={projectDirectory()}
             overlay
             fallback={false}
+            onDiagnostics={props.onDiagnostics}
             onNewProject={props.onNewProject}
           />
         )}
@@ -89,12 +91,19 @@ export function RailWorkbenchCanvas(props: {
   )
 }
 
-function LegacyEmptyState(props: { onNewProject?: () => void }) {
+function LegacyEmptyState(props: { onDiagnostics?: () => void; onNewProject?: () => void }) {
   return (
     <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
       <h1 class="sr-only">No projects yet</h1>
       <span class="text-14-regular">No projects yet. Create one to get started.</span>
       <Button icon="plus-small" onClick={props.onNewProject}>New Project</Button>
+      <Show when={props.onDiagnostics}>
+        {(onDiagnostics) => (
+          <Button data-testid="empty-diagnostics-trigger" variant="ghost" onClick={onDiagnostics()}>
+            Diagnostics
+          </Button>
+        )}
+      </Show>
     </div>
   )
 }

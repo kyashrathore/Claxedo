@@ -26,7 +26,14 @@ export * as ProcessManager from "./managed-processes/manager"
 export { createProcessClient } from "./managed-processes/client"
 export { findFreePort } from "./managed-processes/port-picker"
 export { setupAgentHooks } from "./agent-hooks"
-export { workspaceDir, workspaceId, assertTarget } from "./target"
+export {
+  workspaceDir,
+  workspaceId,
+  assertTarget,
+  registeredWorkspaceDirectory,
+} from "./target"
+export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"
+export type { WorkspaceWorktreeRecord } from "./store"
 export type {
   AgentRuntimeEvent,
   AgentRuntimeStreamEvent,

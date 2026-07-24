@@ -18,10 +18,10 @@ import z from "zod/v3"
 import { zodToJsonSchema } from "zod-to-json-schema"
 import { buildSafeEnv } from "../pty/env"
 import { runGit } from "../git"
-import { collectDiagnostics } from "./diagnostics"
 import * as PortLease from "./port-lease"
 import { Process } from "./schema"
 import { findFreePort, findPidOnPort, tryPort } from "./port-picker"
+import type { ProcessObserver } from "./process-observer"
 
 // -- Global port registry (cross-workspace, outside per-directory state) ------
 // Maps assigned port → workspace info so port conflict detection can tell the
@@ -76,6 +76,8 @@ interface State {
   restartTimers: Map<string, ReturnType<typeof setTimeout>>
   watcher: FSWatcher | undefined
   debounceTimer: ReturnType<typeof setTimeout> | undefined
+  initializing: Promise<void> | undefined
+  initialized: boolean
   dispose: (() => void) | undefined
   disposed: boolean
 }
@@ -88,6 +90,7 @@ interface WorkspaceBinding {
 }
 
 const workspaceMap = new Map<string, WorkspaceBinding>()
+const processObserverMap = new Map<string, ProcessObserver>()
 
 function getState(directory: string): State {
   const key = real(directory)
@@ -100,6 +103,8 @@ function getState(directory: string): State {
       restartTimers: new Map(),
       watcher: undefined,
       debounceTimer: undefined,
+      initializing: undefined,
+      initialized: false,
       dispose: undefined,
       disposed: false,
     })
@@ -122,6 +127,15 @@ export function bindWorkspace(directory: string, workspaceId?: string, workspace
     id: workspaceId,
     name: workspaceName ?? prev?.name,
   })
+}
+
+export function bindProcessObserver(directory: string, observer?: ProcessObserver) {
+  const key = real(directory)
+  if (observer) {
+    processObserverMap.set(key, observer)
+    return
+  }
+  processObserverMap.delete(key)
 }
 
 function title(directory: string): string {
@@ -586,6 +600,28 @@ export async function saveConfig(directory: string, configs: Process.ProcessConf
 
   workspaceRuntimeBus.publish({ type: "process.config.changed", directory: real(directory), configs })
   log.info("saved process configs", { count: configs.length })
+  if (s.initialized && !s.watcher) watchConfig(directory)
+}
+
+/**
+ * Initialize config state and its watcher once for a workspace.
+ */
+export async function initialize(directory: string): Promise<void> {
+  const s = getState(directory)
+  if (s.initialized) return
+  if (s.initializing) return s.initializing
+
+  s.initializing = (async () => {
+    await loadConfig(directory)
+    watchConfig(directory)
+    s.initialized = true
+  })()
+
+  try {
+    await s.initializing
+  } finally {
+    s.initializing = undefined
+  }
 }
 
 /**
@@ -594,12 +630,7 @@ export async function saveConfig(directory: string, configs: Process.ProcessConf
 export function watchConfig(directory: string): void {
   const s = getState(directory)
 
-  if (s.watcher) {
-    try {
-      s.watcher.close()
-    } catch {}
-    s.watcher = undefined
-  }
+  if (s.watcher) return
 
   const dirPath = path.dirname(cfgPath(directory))
   const filename = path.basename(cfgPath(directory))
@@ -857,28 +888,6 @@ async function gone(ptyId: string, ms: number) {
   })
 }
 
-async function reap(rows: Process.DiagnosticOsProcess[]) {
-  if (rows.length === 0) return
-  const groups = [...new Set(rows.flatMap((row) => (row.pgid > 0 ? [row.pgid] : [])))]
-  const ids = [...new Set(rows.map((row) => row.pid).filter((pid) => Number.isFinite(pid) && pid > 0))]
-  if (process.platform !== "win32") {
-    for (const pgid of groups) {
-      try {
-        process.kill(-pgid, "SIGKILL")
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException | undefined)?.code !== "ESRCH") throw err
-      }
-    }
-  }
-  for (const id of ids) {
-    try {
-      process.kill(id, "SIGKILL")
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException | undefined)?.code !== "ESRCH") throw err
-    }
-  }
-}
-
 function scrub(directory: string, configId: string, nextStatus?: Process.Status) {
   const s = getState(directory)
   const prev = s.processes.get(configId)
@@ -911,30 +920,6 @@ export async function reconcileRuntime(directory: string, ids?: string[]): Promi
   const s = getState(directory)
   const pick = ids ?? Array.from(s.configs.keys())
   if (pick.length === 0) return
-
-  const snap = await collectDiagnostics({
-    directory: workspace(directory),
-    configs: configs(directory),
-    processes: list(directory),
-    ptys: Pty.listDetailed(),
-  }).catch(() => undefined)
-
-  if (snap) {
-    const rows = snap.os.filter((row) => {
-      return row.process_id !== undefined && pick.includes(row.process_id) && row.workspace_id === workspace(directory)
-    })
-    const stale = rows.filter((row) => {
-      const proc = s.processes.get(row.process_id!)
-      if (!proc?.ptyId) return true
-      const info = Pty.get(proc.ptyId)
-      if (!info) return true
-      return !["running", "starting", "restarting"].includes(proc.status)
-    })
-    if (stale.length > 0) {
-      await reap(stale)
-      await new Promise((r) => setTimeout(r, 250))
-    }
-  }
 
   for (const configId of pick) {
     const proc = s.processes.get(configId)
@@ -1096,15 +1081,32 @@ async function startOnce(
       }
     }
 
-    const info = await Pty.create({
-      command: shell,
-      args: [],
-      cwd,
-      title: config.name,
-      initialCommand: fullCommand + "; printf '\\033]777;process-exit;%d\\007' $?",
-      env,
-      managed: true,
-    })
+    const processObserver = processObserverMap.get(real(directory))
+    const info = await Pty.create(
+      {
+        command: shell,
+        args: [],
+        cwd,
+        title: config.name,
+        initialCommand: fullCommand + "; printf '\\033]777;process-exit;%d\\007' $?",
+        env,
+        managed: true,
+      },
+      processObserver
+        ? {
+            observer: processObserver,
+            kind: "managed-process",
+            ownerId: `managed-process:${crypto.randomUUID()}`,
+            workspaceId: workspace(directory),
+            directory: real(directory),
+            label: config.name,
+            operations: {
+              stopGracefully: async () => stop(directory, configId),
+              killOwnedTree: async () => stop(directory, configId, "SIGKILL"),
+            },
+          }
+        : undefined,
+    )
     ptyId = info.id
 
     if (s.disposed) {
@@ -1589,6 +1591,7 @@ export async function dispose(directory: string): Promise<void> {
   s.dispose?.()
   s.processes.clear()
   s.configs.clear()
+  processObserverMap.delete(real(directory))
   stateMap.delete(real(directory))
 }
 

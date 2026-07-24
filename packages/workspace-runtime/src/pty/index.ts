@@ -32,6 +32,12 @@ import { sendWebSocketWithBackpressure } from "./websocket-backpressure"
 import { workspaceRuntimeBus, type PtyInfo } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
+import type {
+  ProcessObserver,
+  ProcessOwnerHandle,
+  ProcessOwnerKind,
+  ProcessOwnerOperations,
+} from "../managed-processes/process-observer"
 
 async function getSpawn() {
   await ensureSpawnHelper()
@@ -240,6 +246,7 @@ export namespace Pty {
     addrInUse: boolean
     orphanTimer: ReturnType<typeof setTimeout> | undefined
     interruptTimer: ReturnType<typeof setTimeout> | undefined
+    owner?: ProcessOwnerHandle
   }
 
   function clearInterrupt(session: ActiveSession) {
@@ -339,7 +346,19 @@ export namespace Pty {
     return session.buffer.slice(-cap)
   }
 
-  export async function create(input: CreateInput) {
+  export async function create(
+    input: CreateInput,
+    observation?: {
+      observer: ProcessObserver
+      kind: Extract<ProcessOwnerKind, "pty" | "managed-process">
+      ownerId: string
+      workspaceId: string
+      directory: string
+      label: string
+      sessionId?: string
+      operations?: ProcessOwnerOperations
+    },
+  ) {
     const createStart = performance.now()
     const id = "pty_" + crypto.randomUUID().replace(/-/g, "")
     const command =
@@ -440,6 +459,24 @@ export namespace Pty {
       status: "running",
       pid: ptyProcess.pid,
     } as const
+    const owner = observation?.observer.register(
+      {
+        ownerId: observation.ownerId,
+        ownerGeneration: crypto.randomUUID(),
+        launchId: crypto.randomUUID(),
+        kind: observation.kind,
+        role: observation.kind,
+        label: observation.label,
+        pid: info.pid,
+        workspaceId: observation.workspaceId,
+        directory: observation.directory,
+        ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
+      },
+      observation.operations ?? {
+        stopGracefully: async () => remove(info.id),
+        killOwnedTree: async () => killProcessTree(info.pid),
+      },
+    )
 
     const previousPtyId = input.env?.previousPtyId
     if (previousPtyId) {
@@ -510,6 +547,7 @@ export namespace Pty {
       addrInUse: false,
       orphanTimer: undefined,
       interruptTimer: undefined,
+      ...(owner ? { owner } : {}),
     }
     sessions.set(id, session)
     ptyProcess.onData((data) => {
@@ -588,6 +626,7 @@ export namespace Pty {
       const tail = snapshot(id, 16_384)
       workspaceRuntimeBus.publish({ type: "pty.exited", id, exitCode, tail })
       workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "exit", exitCode, tail })
+      session.owner?.exit({ reason: "exited", exitCode })
       await cleanupSession(id, session, "exit")
     })
     workspaceRuntimeBus.publish({ type: "pty.created", info })
@@ -616,6 +655,7 @@ export namespace Pty {
     if (!session) return
     log.info("removing session", { id })
     await cleanupSession(id, session, "remove")
+    session.owner?.exit({ reason: "disposed" })
     workspaceRuntimeBus.publish({ type: "pty.deleted", id })
   }
 

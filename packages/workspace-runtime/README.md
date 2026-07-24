@@ -49,8 +49,9 @@ for the other four exposure/deployment options, and
 This package ships the runtime **primitives** (host wiring, adapters,
 PTY/process/file/git/event surfaces, config apply behavior, exposure/relay
 contracts). It deliberately ships **no bin**: runnable hosts are composed by
-downstream packages. The ACP adapter binaries (`@zed-industries/*`) live with
-the code that spawns them (`@claxedo/agent-sdk-runtime`), not here.
+downstream packages. The ACP adapter binaries
+(`@agentclientprotocol/claude-agent-acp` and `@agentclientprotocol/codex-acp`)
+live with the code that spawns them (`@claxedo/agent-sdk-runtime`), not here.
 
 The kit ships env **parsers** (`workspaceRelayRuntimeOptionsFromEnv`,
 `relayHostAuthFromEnv`, `managementAuthFromEnv`, `hostTunnelFromEnv`,
@@ -110,8 +111,8 @@ Root runtime value exports:
 `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WorkGraphAttemptToolRoutes`,
 `WorkGraphConnectionOperationRequestSchema`,
 `WorkGraphConnectionOperationResponseSchema`, `WorkGraphConnectionToolRoutes`,
-`WorkspaceRuntimeRouteManifest`,
-`WorkspaceRuntimeRoutes`, `createWorkspaceHost`,
+`WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
+`WorkspaceRuntimeRoutes`, `createProcessObserver`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
 `isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
@@ -121,7 +122,7 @@ Root runtime value exports:
 `flushRuntimeDocument`, `forgetRuntimeDocuments`,
 `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
 `waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`, and
-`workspaceRuntimeRoute`.
+`workspaceRuntimeRoute`, and `workspaceStorageRoot`.
 
 Relay host helpers are intentionally exposed from
 `@claxedo/workspace-runtime/relay`, not the package root:
@@ -140,6 +141,7 @@ boundary.
 | --- | --- | --- |
 | `GET  /api/wr/health` | [`server.ts`](src/server.ts) | none; minimal liveness and exposure boundary metadata only |
 | `GET  /api/wr/capabilities` | [`server.ts`](src/server.ts) | exposure-dependent runtime auth |
+| `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
 | `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth |
 | `GET  /api/wr/events`, `GET /api/wr/runtime-events` | [`routes/runtime-events.ts`](src/routes/runtime-events.ts), [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth |
@@ -151,9 +153,15 @@ boundary.
 | `*    /api/workgraph/tools`, `* /api/workgraph/connection-binding` | [`routes/workgraph-connection-tools.ts`](src/routes/workgraph-connection-tools.ts) | exposure-dependent runtime auth |
 | `*    /api/workgraph/attempt-tools`, `* /api/workgraph/attempt-binding` | [`routes/workgraph-attempt-tools.ts`](src/routes/workgraph-attempt-tools.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/session-env/*` | session-env routes (mounted by the host) | exposure-dependent runtime auth |
+| `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |
 | `*    /lsp`, `*    /vcs`, `*    /global/event` | compatibility routes mounted by host | implicit |
+
+The capability response is versioned with `api_version: 2`. It advertises
+`process_observer: true` for the public, redacted owner-event API used by an
+embedding desktop. Local CPU/RSS diagnostics are delivered by the desktop IPC
+capability; the runtime HTTP surface remains the workspace execution boundary.
 
 ## Event contract
 
@@ -485,7 +493,7 @@ contract.
 | `WORKSPACE_RUNTIME_DIRECTORY`, `WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID` | Runtime target identity. |
 | `WORKSPACE_RUNTIME_RUNNER`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |
-| (removed) `WORKSPACE_RUNTIME_DISABLE_OPENCODE_COMPAT` | The kit no longer reads this. OpenCode compatibility is the three-state host option `opencodeCompat` (default `undefined` = adapter mechanism on, compat route surface off; `true` = both on; `false` = full kill switch); Claxedo decodes its `CLAXEDO_DISABLE_OPENCODE_COMPAT`/runtime env flags into that option host-side. |
+| `WORKSPACE_RUNTIME_OPENCODE_COMPAT` | Set to `0` by the host to disable the OpenCode compatibility adapter and routes. The executable translates this process-boundary setting into the `opencodeCompat` host option. |
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
 | `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |
 | `WORKSPACE_RUNTIME_DATA_DIR`, `WORKSPACE_RUNTIME_STATE_DIR`, `WORKSPACE_RUNTIME_STORE_DIR`, `WORKSPACE_RUNTIME_PTY_HISTORY_DIR` | Neutral runtime-owned storage locations. Defaults are under `~/.workspace-runtime`. |

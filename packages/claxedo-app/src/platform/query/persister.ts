@@ -70,6 +70,14 @@ export const queryPersistencePolicies = [
     matches: (queryKey: readonly unknown[]) => queryKey[0] === "shell" && queryKey[2] === "commands",
   },
   {
+    id: "shell.session-list-cache",
+    owner: "session navigation list query",
+    scope: "recent session rows rendered in the sidebar",
+    reason: "The sidebar paints its last-known rows immediately while a local refresh runs in the background.",
+    deletionCondition: "Delete when the session inventory owner provides an equally fast durable sidebar snapshot.",
+    matches: (queryKey: readonly unknown[]) => queryKey[0] === "shell" && queryKey[2] === "sessionList",
+  },
+  {
     id: "directory.cache",
     owner: "shared/query directory fetchers and GlobalSync bridge",
     scope: "directory metadata, config, path, VCS, and icon cache",

@@ -123,7 +123,12 @@ export function createClaxedoClient(options: ClaxedoClientOptions): {
   }
 }
 
-export function startServer(port?: number, opencodeUrl?: string, opencodePassword?: string | null): unknown
+export function startServer(
+  port?: number,
+  opencodeUrl?: string,
+  opencodePassword?: string | null,
+  options?: { processObserver?: import("@claxedo/workspace-runtime").ProcessObserver },
+): unknown
 export function betterAuthAdapter(input: {
   issuer: string
   audience?: string

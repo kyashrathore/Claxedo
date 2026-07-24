@@ -289,6 +289,38 @@ describe("WorkGraph execution capability composition", () => {
     }
   })
 
+  test("uses live Codex ACP model options for execution capabilities", async () => {
+    const directory = await gitRepository()
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        repositoryDirectory: directory,
+        harness: async () => "codex-acp",
+        harnessConfigOptions: async (harness) => harness === "codex-acp" ? [{
+          id: "model",
+          currentValue: "gpt-5.6-sol",
+          options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
+        }] : [],
+        opencodeRequest: async (request) => {
+          const pathname = new URL(request.url).pathname
+          return Response.json(
+            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+          )
+        },
+      })
+
+      const result = await capabilities.read(context, {})
+      expect(result.models.filter((model) => model.harnessId === "codex-acp")).toEqual([{
+        harnessId: "codex-acp",
+        providerId: "codex-acp",
+        modelId: "gpt-5.6-sol",
+        label: "GPT-5.6-Sol",
+        efforts: ["low", "medium", "high"],
+      }])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("advertises only connected organization-owned team Connections available to execution", async () => {
     const directory = await gitRepository()
     const partitions: unknown[] = []

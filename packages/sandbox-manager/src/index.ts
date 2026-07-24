@@ -1,10 +1,80 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import type { SandboxDriverID } from "./driver-catalog"
+import {
+  captureSandboxCheckpoint,
+  restoreSandboxCheckpoint,
+  type SandboxCheckpointCaptureInput,
+  type SandboxCheckpointRestoreInput,
+  type SandboxCheckpointResult,
+} from "./checkpoint-manager"
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
+export * from "./checkpoint-manager"
 
 export type SandboxRegion = string
 export type SandboxDriverId = SandboxDriverID | "fetch"
+
+export type SandboxCaptureScope = "none" | "same-resource" | "filesystem" | "directories"
+export type SandboxCaptureSourceBehavior = "not-applicable" | "preserved" | "stopped" | "deleted"
+export type SandboxRestoreMountBehavior = "not-applicable" | "same-resource" | "copy-on-write" | "new-resource"
+
+export type SandboxPersistenceCapabilities = {
+  resume: "same-sandbox" | "replacement-restore"
+  capture: SandboxCaptureScope
+  clone: boolean
+  captureSource: SandboxCaptureSourceBehavior
+  retention: "not-applicable" | "provider-managed" | "explicit"
+  restoreMount: SandboxRestoreMountBehavior
+}
+
+export function validateSandboxPersistenceCapabilities(input: SandboxPersistenceCapabilities) {
+  if (input.resume === "replacement-restore" && input.capture === "none") {
+    return { valid: false as const, reason: "replacement restore requires a capture source" }
+  }
+  if (input.capture === "none" && input.captureSource !== "not-applicable") {
+    return { valid: false as const, reason: "capture source behavior requires capture support" }
+  }
+  if (input.capture !== "none" && input.captureSource === "not-applicable") {
+    return { valid: false as const, reason: "capture support requires source behavior" }
+  }
+  if (input.capture === "same-resource" && input.restoreMount !== "same-resource") {
+    return { valid: false as const, reason: "same-resource capture requires same-resource restore" }
+  }
+  if (input.restoreMount === "copy-on-write" && input.capture !== "directories") {
+    return { valid: false as const, reason: "copy-on-write restore requires directory capture" }
+  }
+  return { valid: true as const }
+}
+
+export type SandboxCheckpointReference = {
+  id: string
+  providerReference: string
+  sourceEpoch: number
+  capturedAt: number
+  metadata: {
+    scope: Exclude<SandboxCaptureScope, "none">
+    sourceBehavior: Exclude<SandboxCaptureSourceBehavior, "not-applicable">
+    retentionExpiresAt?: number
+    restoreMount: Exclude<SandboxRestoreMountBehavior, "not-applicable">
+  }
+}
+
+type SandboxRestoreIdentity = {
+  checkpointId: string
+  sourceEpoch: number
+}
+
+export type SandboxRestoreStatus =
+  | (SandboxRestoreIdentity & { state: "pending"; requestedAt: number })
+  | (SandboxRestoreIdentity & { state: "restoring"; requestedAt: number; startedAt: number })
+  | (SandboxRestoreIdentity & { state: "ready"; requestedAt: number; startedAt: number; completedAt: number })
+  | (SandboxRestoreIdentity & {
+      state: "failed"
+      requestedAt: number
+      startedAt?: number
+      failedAt: number
+      error: string
+    })
 
 export type SandboxDriverMetadata = {
   /** Where the sandbox driver code can execute. This is not sandbox infrastructure. */
@@ -38,6 +108,7 @@ export type SandboxDriverMetadata = {
    * that is not yet wired and therefore also fails closed.
    */
   secretBrokering: "native" | "proxy" | "none"
+  persistence: SandboxPersistenceCapabilities
 }
 
 /**
@@ -95,6 +166,9 @@ export type SandboxLease = {
   lastHeartbeatAt?: number
   lastActivityAt?: number
   labels?: Record<string, string>
+  checkpoint?: SandboxCheckpointReference
+  persistence?: SandboxPersistenceCapabilities
+  restore?: SandboxRestoreStatus
 }
 
 export type SandboxLeaseAcquireInput = {
@@ -126,6 +200,12 @@ export type SandboxLeasePatch = Partial<
   nextRetryAt?: number | null
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
   lastError?: string | null
+  /** `null` clears the stored value; `undefined` leaves it unchanged. */
+  checkpoint?: SandboxCheckpointReference | null
+  /** `null` clears the stored value; `undefined` leaves it unchanged. */
+  persistence?: SandboxPersistenceCapabilities | null
+  /** `null` clears the stored value; `undefined` leaves it unchanged. */
+  restore?: SandboxRestoreStatus | null
 }
 
 /**
@@ -146,6 +226,9 @@ export function applySandboxLeasePatch(current: SandboxLease, patch: SandboxLeas
     ...(patch.labels === undefined ? {} : { labels: patch.labels }),
     ...(patch.nextRetryAt === undefined ? {} : { nextRetryAt: patch.nextRetryAt ?? undefined }),
     ...(patch.lastError === undefined ? {} : { lastError: patch.lastError ?? undefined }),
+    ...(patch.checkpoint === undefined ? {} : { checkpoint: patch.checkpoint ?? undefined }),
+    ...(patch.persistence === undefined ? {} : { persistence: patch.persistence ?? undefined }),
+    ...(patch.restore === undefined ? {} : { restore: patch.restore ?? undefined }),
     updatedAt,
   }
 }
@@ -213,6 +296,7 @@ export type SandboxTarget = {
 }
 
 export type SandboxSnapshotResult = { snapshotId: string }
+export type SandboxCommandResult = { stdout: string; stderr: string; exitCode: number }
 
 // A driver places and manages the sandbox process. It is deliberately
 // not a sandbox remote-control API; files, PTYs, sessions, and agent work go
@@ -233,6 +317,9 @@ export type SandboxDriver = {
   stop?: (target: SandboxTarget) => Promise<void>
   destroy?: (target: SandboxTarget) => Promise<void>
   snapshot?: (target: SandboxTarget) => Promise<SandboxSnapshotResult>
+  inspect?: (target: SandboxTarget) => Promise<SandboxTarget | undefined>
+  exec?: (target: SandboxTarget, command: string) => Promise<SandboxCommandResult>
+  clone?: (target: SandboxTarget, input: { name: string }) => Promise<SandboxTarget>
 }
 
 export type SandboxManager = {
@@ -242,6 +329,8 @@ export type SandboxManager = {
   target: (workspaceId: string) => Promise<SandboxTargetResult>
   touch: (workspaceId: string) => Promise<SandboxTouchResult>
   snapshot: (workspaceId: string) => Promise<SandboxSnapshotManagerResult>
+  checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
+  restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
   stop: (workspaceId: string) => Promise<SandboxMutationResult>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
@@ -345,7 +434,14 @@ function ensureHostInput(input: {
     homeRegion: input.homeRegion,
     epoch: input.lease.epoch,
     labels,
-    bootSource: input.managerInput?.bootSource ?? { kind: "default" },
+    bootSource: input.managerInput?.bootSource
+      ?? (
+        input.lease.checkpoint
+        && input.lease.status !== "ready"
+        && input.driver.metadata.persistence.resume === "replacement-restore"
+          ? { kind: "driver-snapshot", snapshotId: input.lease.checkpoint.providerReference }
+          : { kind: "default" }
+      ),
     workspaceRoot: input.managerInput?.workspaceRoot ?? "/workspace",
     runtimeCwd: input.managerInput?.runtimeCwd,
     workspaceRuntimePort: input.managerInput?.workspaceRuntimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT,
@@ -362,6 +458,8 @@ function ensureHostInput(input: {
 }
 
 export function createSandboxManager(options: SandboxManagerOptions): SandboxManager {
+  const persistence = validateSandboxPersistenceCapabilities(options.driver.metadata.persistence)
+  if (!persistence.valid) throw new Error(`Invalid sandbox persistence capabilities: ${persistence.reason}`)
   const staleAfterMs = options.staleAfterMs ?? 60_000
   const retryAfterMs = options.retryAfterMs ?? 2_000
   const now = options.now ?? Date.now
@@ -369,6 +467,26 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     options.retryDelayMs ?? ((retryCount) => Math.min(60_000, 1_000 * 2 ** Math.max(0, retryCount - 1)))
   const maxRetryCount = options.maxRetryCount ?? Number.POSITIVE_INFINITY
   const retryCapCooldownMs = options.retryCapCooldownMs ?? 10 * 60_000
+  const lifecycleOperations = new Map<string, {
+    kind: "checkpoint" | "restore" | "stop" | "destroy"
+    promise: Promise<unknown>
+  }>()
+
+  function lifecycle<T>(
+    workspaceId: string,
+    kind: "checkpoint" | "restore" | "stop" | "destroy",
+    run: () => Promise<T>,
+  ) {
+    const current = lifecycleOperations.get(workspaceId)
+    if (current?.kind === kind) return current.promise as Promise<T>
+    const operation = (current?.promise.catch(() => undefined) ?? Promise.resolve()).then(run)
+    lifecycleOperations.set(workspaceId, { kind, promise: operation })
+    return operation.finally(() => {
+      if (lifecycleOperations.get(workspaceId)?.promise === operation) {
+        lifecycleOperations.delete(workspaceId)
+      }
+    })
+  }
 
   async function leaseTarget(lease: SandboxLease): Promise<SandboxTargetResult> {
     if (lease.status !== "ready" || !lease.sandboxId || !lease.url || !lease.hostId) {
@@ -448,6 +566,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         nextRetryAt: null,
         lastError: null,
         labels: target.labels ?? ensure.labels,
+        persistence: options.driver.metadata.persistence,
       })
       const resolved = await leaseTarget(updated ?? lease)
       if (resolved.status === "ready") return resolved
@@ -575,23 +694,50 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       if (!options.driver.snapshot) return { ok: false, reason: "snapshot_unsupported" }
       return { ok: true, ...(await options.driver.snapshot(target)) }
     },
+    async checkpoint(workspaceId, input) {
+      return await lifecycle(workspaceId, "checkpoint", () => captureSandboxCheckpoint({
+        workspaceId,
+        request: input,
+        leaseStore: options.leaseStore,
+        target: (id) => this.target(id),
+        snapshot: (id) => this.snapshot(id),
+        now,
+      }))
+    },
+    async restore(workspaceId, input) {
+      return await lifecycle(workspaceId, "restore", () => restoreSandboxCheckpoint({
+        workspaceId,
+        request: input,
+        leaseStore: options.leaseStore,
+        ensure: (id, next) => this.ensure(id, next),
+        now,
+      }))
+    },
     async stop(workspaceId) {
-      const target = await this.target(workspaceId)
-      if (target.status !== "ready") return { ok: false, reason: target.reason }
-      if (options.driver.metadata.hostStopBehavior !== "not-supported") {
-        await (options.driver.suspend ?? options.driver.stop)?.(target)
-      } else {
-        await options.driver.stop?.(target)
-      }
-      await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
-      return { ok: true, status: "stopped" }
+      return await lifecycle(workspaceId, "stop", async () => {
+        const lease = await options.leaseStore.get(workspaceId)
+        if (lease?.status === "stopped") return { ok: true as const, status: "stopped" as const }
+        const target = await this.target(workspaceId)
+        if (target.status !== "ready") return { ok: false as const, reason: target.reason }
+        if (options.driver.metadata.hostStopBehavior !== "not-supported") {
+          await (options.driver.suspend ?? options.driver.stop)?.(target)
+        } else {
+          await options.driver.stop?.(target)
+        }
+        await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
+        return { ok: true as const, status: "stopped" as const }
+      })
     },
     async destroy(workspaceId) {
-      const target = await this.target(workspaceId)
-      if (target.status !== "ready") return { ok: false, reason: target.reason }
-      await options.driver.destroy?.(target)
-      await options.leaseStore.update(workspaceId, target.epoch, { status: "destroyed" })
-      return { ok: true, status: "destroyed" }
+      return await lifecycle(workspaceId, "destroy", async () => {
+        const lease = await options.leaseStore.get(workspaceId)
+        if (lease?.status === "destroyed") return { ok: true as const, status: "destroyed" as const }
+        const target = await this.target(workspaceId)
+        if (target.status !== "ready") return { ok: false as const, reason: target.reason }
+        await options.driver.destroy?.(target)
+        await options.leaseStore.update(workspaceId, target.epoch, { status: "destroyed" })
+        return { ok: true as const, status: "destroyed" as const }
+      })
     },
     async release(workspaceId) {
       const lease = await options.leaseStore.get(workspaceId)

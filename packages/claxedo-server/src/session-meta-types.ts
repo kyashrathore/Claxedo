@@ -14,7 +14,14 @@ export type SessionAttachment = {
  */
 export type SessionToolSandbox =
   | { kind: "virtual"; id?: string }
-  | { kind: "workspace-runtime"; workspaceId: string; directory?: string }
+  | {
+      kind: "workspace-runtime"
+      workspaceId: string
+      directory?: string
+      worktree?: string
+      baseCommit?: string
+      leaseEpoch?: number
+    }
 
 export type SessionMeta = {
   sessionRef?: string

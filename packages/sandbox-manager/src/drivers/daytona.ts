@@ -9,6 +9,7 @@ import { formatDaytonaAllowList } from "../daytona-allow-list"
 import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
+import { sandboxDriverCatalog } from "../driver-catalog"
 
 export type DaytonaSandboxLike = {
   id: string
@@ -30,6 +31,7 @@ export type DaytonaSandboxLike = {
   start: (timeout?: number) => Promise<void>
   stop: (timeout?: number) => Promise<void>
   delete: (timeout?: number) => Promise<void>
+  _experimental_createSnapshot?: (name: string, timeout?: number) => Promise<void>
 }
 
 export type DaytonaClientLike = {
@@ -300,6 +302,7 @@ export function createDaytonaSandboxDriver(
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      persistence: sandboxDriverCatalog.daytona.metadata.persistence,
     },
 
     ensureHost,
@@ -336,6 +339,16 @@ export function createDaytonaSandboxDriver(
             ?? (err as { status?: number }).status
           if (status !== 404) throw err
         })
+    },
+
+    async snapshot(target) {
+      const sandbox = await sandboxById(target.sandboxId)
+      if (!sandbox._experimental_createSnapshot) {
+        throw new Error("Daytona sandbox client does not support filesystem snapshots")
+      }
+      const snapshotId = `claxedo-${target.workspaceId ?? target.sandboxId}-${Date.now()}`
+      await sandbox._experimental_createSnapshot(snapshotId, operationTimeout)
+      return { snapshotId }
     },
   }
 }

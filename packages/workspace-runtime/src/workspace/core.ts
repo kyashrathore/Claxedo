@@ -10,11 +10,12 @@ import { GitSourceRoutes } from "../routes/git-source"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
+import type { ProcessObserver } from "../managed-processes/process-observer"
 
 type Socket = Parameters<typeof PtyRoutes>[0]
 
-export function mountWorkspacePty(app: Hono, upgradeWebSocket: Socket) {
-  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket))
+export function mountWorkspacePty(app: Hono, upgradeWebSocket: Socket, processObserver?: ProcessObserver) {
+  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver))
 }
 
 export function mountWorkspaceAgentHooks(app: Hono) {
@@ -42,10 +43,14 @@ export function mountWorkspaceFiles(app: Hono) {
 export function mountWorkspaceCore(
   app: Hono,
   upgradeWebSocket: Socket,
-  options: { eventHub: RuntimeEventHub; exposure: WorkspaceRuntimeExposure },
+  options: {
+    eventHub: RuntimeEventHub
+    exposure: WorkspaceRuntimeExposure
+    processObserver?: ProcessObserver
+  },
 ) {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
-  mountWorkspacePty(app, upgradeWebSocket)
+  mountWorkspacePty(app, upgradeWebSocket, options.processObserver)
   mountWorkspaceAgentHooks(app)
   mountWorkspaceEvents(app, options)
   mountWorkspaceProcess(app)

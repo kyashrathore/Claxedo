@@ -4,6 +4,7 @@ import {
 } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
+import { spawn } from "child_process"
 import {
   query,
   type CanUseTool,
@@ -11,6 +12,8 @@ import {
   type PermissionResult,
   type PermissionUpdate,
   type Query,
+  type SpawnOptions,
+  type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
@@ -29,6 +32,11 @@ import {
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { requireClaudeExecutable } from "./executable"
 import { harnessSpawnEnv } from "../shared/spawn-env"
+import {
+  observeAgentProcess,
+  type AgentProcessObserver,
+  type AgentProcessObserverHandle,
+} from "../../process-observer"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 const MODEL_LIST_TIMEOUT_MS = 30_000
@@ -135,6 +143,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           ...claudeAuthEnv(this.auth.anthropic),
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
         }),
+        spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
+          options,
+          observer: this.host.processObserver,
+          role: "harness",
+          sessionId: input.sessionId,
+          mcp: this.currentMcp,
+        }),
       },
     })
     this.host.lifecycle().set(input.sessionId, {
@@ -188,6 +203,12 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           ...claudeAuthEnv(this.auth.anthropic),
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
         }),
+        spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
+          options,
+          observer: this.host.processObserver,
+          role: "probe",
+          mcp: this.currentMcp,
+        }),
       },
     })
     try {
@@ -207,6 +228,82 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       abort.abort()
     }
   }
+}
+
+export function spawnObservedClaudeCodeProcess(input: {
+  options: SpawnOptions
+  observer?: AgentProcessObserver
+  role: "harness" | "probe"
+  sessionId?: string
+  mcp?: Record<string, ResolvedMcpServer>
+  spawnProcess?: typeof spawn
+}): SpawnedProcess {
+  const proc = (input.spawnProcess ?? spawn)(
+    input.options.command,
+    input.options.args,
+    {
+      ...(input.options.cwd ? { cwd: input.options.cwd } : {}),
+      env: input.options.env,
+      signal: input.options.signal,
+      stdio: ["pipe", "pipe", "inherit"],
+    },
+  )
+  const ownerId = `claude-${input.role}:${randomUUID()}`
+  const handles = [
+    observeAgentProcess(input.observer, {
+      ownerId,
+      launchId: randomUUID(),
+      harnessId: "claude",
+      access: "native",
+      role: input.role,
+      label: input.role === "probe" ? "Claude model probe" : "Claude Code",
+      locality: "local-process",
+      confidence: proc.pid ? "direct" : "inferred",
+      capabilities: {
+        resourceMetrics: "process",
+        ownerActions: false,
+      },
+      ...(proc.pid ? { pid: proc.pid } : {}),
+      ...(input.options.cwd ? { directory: input.options.cwd } : {}),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      executableBasename: input.options.command.split(/[\\/]/).at(-1) || "claude",
+    }),
+    ...Object.values(input.mcp ?? {}).map((server) => observeAgentProcess(input.observer, {
+      ownerId: `claude-mcp:${randomUUID()}`,
+      launchId: randomUUID(),
+      harnessId: "claude",
+      access: "native",
+      role: "mcp" as const,
+      label: `MCP ${server.name}`,
+      locality: server.transport === "stdio" ? "local-process" as const : "remote" as const,
+      confidence: server.transport === "stdio" ? "inferred" as const : "not-process-backed" as const,
+      capabilities: {
+        resourceMetrics: server.transport === "stdio" ? "process" as const : "none" as const,
+        ownerActions: false,
+      },
+      parentOwnerId: ownerId,
+      ...(input.options.cwd ? { directory: input.options.cwd } : {}),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      mcpName: server.name,
+      transport: server.transport === "stdio" ? "stdio" as const : "streamable-http" as const,
+      ...(server.transport === "stdio"
+        ? { executableBasename: server.command.split(/[\\/]/).at(-1) || "mcp" }
+        : {}),
+    })),
+  ]
+  let exited = false
+  const exit = (event: Parameters<AgentProcessObserverHandle["exit"]>[0]) => {
+    if (exited) return
+    exited = true
+    handles.forEach((handle) => handle.exit(event))
+  }
+  proc.once("exit", (code) => exit({
+    reason: "exited",
+    ...(code !== null ? { exitCode: code } : {}),
+  }))
+  proc.once("error", () => exit({ reason: "error" }))
+  handles.forEach((handle) => handle.update({ lifecycle: "ready" }))
+  return proc
 }
 
 export function claudeSpawnEnv(input: Record<string, string | undefined>) {

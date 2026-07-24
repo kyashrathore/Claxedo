@@ -4,6 +4,7 @@ import type { StreamFn } from "@mariozechner/pi-agent-core"
 import { PiHarnessAdapter } from "./index"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createVirtualSessionEnv, type PromptInput, type SessionEnvFactoryInput } from "../../index"
+import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 
 function prompt(input: Partial<PromptInput> = {}): PromptInput {
   return {
@@ -51,6 +52,36 @@ describe("PiHarnessAdapter", () => {
       { info: { id: "user-1", role: "user" }, parts: [{ text: "exec: printf hi > note.txt && cat note.txt" }] },
       { info: { id: "assistant-1", role: "assistant" }, parts: [{ text: "hi" }] },
     ])
+  })
+
+  test("attributes in-process model and SessionEnv command lifecycles without shell text", async () => {
+    const sentinel = "pi-observer-sentinel"
+    const descriptors: AgentProcessDescriptor[] = []
+    const exits: unknown[] = []
+    const processObserver: AgentProcessObserver = {
+      register(descriptor) {
+        descriptors.push(descriptor)
+        return {
+          update: () => undefined,
+          exit: (event) => exits.push(event),
+        }
+      },
+    }
+    const adapter = new PiHarnessAdapter({ processObserver })
+    const session = await adapter.createSession("/safe/workspace")
+
+    await collect(adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: `exec: printf ${sentinel}` }],
+    }), "/safe/workspace"))
+    await adapter.deleteSession(session.id, "/safe/workspace")
+
+    expect(descriptors.map((descriptor) => [descriptor.role, descriptor.locality])).toEqual([
+      ["harness", "in-process"],
+      ["tool", "in-process"],
+    ])
+    expect(descriptors[1]?.parentOwnerId).toBe(descriptors[0]?.ownerId)
+    expect(JSON.stringify(descriptors)).not.toContain(sentinel)
+    expect(exits).toHaveLength(2)
   })
 
   test("late-binds the session environment with explicit placement", async () => {

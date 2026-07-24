@@ -67,6 +67,47 @@ describe("sandboxFetch", () => {
     expect(headers.get("accept-encoding")).toBe("identity")
   })
 
+  test("can inspect a ready target without waking it through ensure", async () => {
+    const sandboxManager = {
+      ensure: vi.fn(),
+      target: vi.fn(async () => ({
+        status: "ready" as const,
+        workspaceId: "ws_1",
+        sandboxId: "sb_1",
+        hostId: "host_1",
+        url: "https://runtime-manager.test/base/",
+        epoch: 1,
+        homeRegion: "us-east" as const,
+      })),
+    }
+    const relayProvider = {
+      mintRuntimeAccessToken: vi.fn(async () => ({ token: "relay-runtime-token", expiresAt: 123, jti: "jti_1" })),
+      getRelayEndpoint: vi.fn(async () => "https://relay.example.test"),
+    }
+    globalThis.fetch = vi.fn(async () => Response.json({ worktrees: [] })) as never
+
+    await sandboxFetch(
+      {
+        id: "ws_1",
+        org_id: "org_1",
+        kind: "cloud",
+        directory: "/workspace",
+        created_at: 1,
+        updated_at: 1,
+      } as Workspace,
+      "/api/wr/worktrees",
+      undefined,
+      {
+        sandboxManager: sandboxManager as never,
+        relayProvider: relayProvider as never,
+        resume: false,
+      },
+    )
+
+    expect(sandboxManager.target).toHaveBeenCalledWith("ws_1")
+    expect(sandboxManager.ensure).not.toHaveBeenCalled()
+  })
+
   test("fails closed for cloud workspace requests without a SandboxManager", async () => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })) as never
 

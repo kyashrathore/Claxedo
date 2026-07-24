@@ -20,6 +20,7 @@ import { Log } from "./log"
 import { dataDir } from "./paths"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-manager/driver-catalog"
 import {
+  bundledAcpBinary,
   harnessKey,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
@@ -111,6 +112,7 @@ export interface CommandItem {
 export type HarnessType = AgentHarnessId
 export type AgentConfigOptions = {
   acpDir?: string
+  platform?: NodeJS.Platform
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -143,8 +145,8 @@ function acpBinary(id: AcpHarnessId, options: AgentConfigOptions = agentConfigOp
   if (path.isAbsolute(name) || name.includes(path.sep)) return name
   // In packaged Electron app, CLAXEDO_ACP_DIR points to the resources/acp directory
   if (options.acpDir) {
-    const candidate = path.join(options.acpDir, name)
-    if (fs.existsSync(candidate)) return candidate
+    const bundled = bundledAcpBinary(options.acpDir, name, options.platform)
+    if (bundled) return bundled
   }
   return path.resolve(import.meta.dirname, "../../workspace-runtime/node_modules/.bin", name)
 }

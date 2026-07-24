@@ -1,5 +1,6 @@
-import { mkdir, rename } from "node:fs/promises"
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises"
 import net from "node:net"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { chromium, type Browser, type BrowserContext, type Page, type Route } from "playwright"
 import { runAttribution } from "./attribution"
@@ -10,7 +11,15 @@ import { seedForScenario } from "./seed"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
 import { app } from "./targets"
-import type { AppTarget, Measurement, RunOptions, ScenarioId, ScenarioResult, SeedManifest } from "./types"
+import type {
+  AppTarget,
+  DiagnosticsOverheadEvidence,
+  Measurement,
+  RunOptions,
+  ScenarioId,
+  ScenarioResult,
+  SeedManifest,
+} from "./types"
 
 type BrowserTarget = {
   target: AppTarget
@@ -40,52 +49,84 @@ type SessionRequestCountsForValidation = {
 }
 
 const viewport = { width: 1440, height: 960 }
+export const diagnosticsPairModeOrder = [
+  { label: "disabled control A", enabled: false },
+  { label: "diagnostics enabled A", enabled: true },
+  { label: "diagnostics enabled B", enabled: true },
+  { label: "disabled control B", enabled: false },
+] as const
 
 export async function runBrowser(options: RunOptions) {
   const results: ScenarioResult[] = []
-  // vsync/frame-cap disabled so frame intervals reflect main-thread work, not the
-  // display refresh — that is what makes the 8.33/16.67ms thresholds meaningful.
-  const browser = await chromium.launch({ headless: options.headless, args: frameSamplingLaunchArgs })
+  const target = await startApp()
+  const browsers: Browser[] = []
   try {
-    const target = await startApp()
-    try {
-      for (const scenario of options.scenarios) {
-        try {
-          const rawRuns: BrowserRun[] = []
-          for (let index = 0; index < options.iterations; index++) {
-            rawRuns.push(await executeBrowserScenario(browser, target, scenario, index))
+    browsers.push(await launchBenchmarkBrowser(options), await launchBenchmarkBrowser(options))
+    for (const scenario of options.scenarios) {
+      try {
+        const modeRuns = []
+        modeRuns.push(...await executeBrowserScenarioPair(
+          options,
+          target,
+          scenario,
+          browsers[0]!,
+          diagnosticsPairModeOrder.slice(0, 2),
+        ))
+        modeRuns.push(...await executeBrowserScenarioPair(
+          options,
+          target,
+          scenario,
+          browsers[1]!,
+          diagnosticsPairModeOrder.slice(2),
+        ))
+        const controls = modeRuns.filter((item) => !item.enabled)
+        const enabled = modeRuns.filter((item) => item.enabled)
+        const controlRun = mergeBrowserRuns(controls.map((item) => item.result.run))
+        const enabledRun = mergeBrowserRuns(enabled.map((item) => item.result.run))
+        const diagnostics = mergeDiagnosticsRuns(enabled.map((item) => {
+          if (!item.result.diagnostics) {
+            throw new Error(`${item.label} produced no profiler evidence`)
           }
-          const merged = mergeBrowserRuns(rawRuns)
-          merged.attribution = runAttribution({
-            browserVersion: browser.version(),
+          return item.result.diagnostics
+        }))
+        const measured = {
+          ...enabledRun,
+          diagnostics: {
+            ...diagnostics,
+            controlHeadline: controlRun.headline,
+            enabledHeadline: enabledRun.headline,
+          },
+          attribution: runAttribution({
+            browserVersion: enabled[0]!.result.browserVersion,
             server: { baseUrl: target.baseUrl, mockPort: target.mockPort, command: target.command },
-          })
-          const budget = await ensureBudget(merged)
-          const budgeted = applyBudget(merged, budget)
-          const result = merged.validation_failures?.length
-            ? {
-                ...budgeted,
-                status: "fail" as const,
-                failures: [...budgeted.failures, ...merged.validation_failures],
-              }
-            : budgeted
-          results.push(result)
-          if (options.update_baseline) await writeBaseline(result)
-          if (options.append_trend) await appendTrend(result)
-        } catch (error) {
-          results.push(browserScenarioFailure({
-            scenario,
-            browserVersion: browser.version(),
-            app: target,
-            error,
-          }))
+          }),
         }
+        const budget = await ensureBudget(measured)
+        const budgeted = applyBudget(measured, budget)
+        const validationFailures = modeRuns.flatMap((item) =>
+          (item.result.run.validation_failures ?? []).map((failure) => `${item.label}: ${failure}`))
+        const result = validationFailures.length === 0
+          ? budgeted
+          : {
+              ...budgeted,
+              status: "fail" as const,
+              failures: [...budgeted.failures, ...validationFailures],
+            }
+        results.push(result)
+        console.log(`[perf] ${scenario}: ${result.status}`)
+        if (options.update_baseline) await writeBaseline(result)
+        if (options.append_trend) await appendTrend(result)
+      } catch (error) {
+        results.push(browserScenarioFailure({
+          scenario,
+          app: target,
+          error,
+        }))
       }
-    } finally {
-      await stopApp(target)
     }
   } finally {
-    await browser.close()
+    await Promise.all(browsers.map((browser) => closeBenchmarkBrowser(browser)))
+    await stopApp(target)
   }
 
   const output = path.isAbsolute(options.output) ? options.output : path.join(reportsRoot, options.output)
@@ -94,6 +135,240 @@ export async function runBrowser(options: RunOptions) {
   await writeJson(path.join(reportsRoot, "latest.json"), jsonReport(results))
   await Bun.write(path.join(reportsRoot, "latest.md"), markdownReport(results, { debug: options.debug }))
   return results
+}
+
+function launchBenchmarkBrowser(options: RunOptions) {
+  return chromium.launch({
+    headless: options.headless,
+    args: frameSamplingLaunchArgs,
+    timeout: 30_000,
+  })
+}
+
+async function closeBenchmarkBrowser(browser: Browser) {
+  if (!browser.isConnected()) return
+  await Promise.race([
+    browser.close().catch(() => undefined),
+    Bun.sleep(10_000),
+  ])
+}
+
+async function executeBrowserScenarioPair(
+  options: RunOptions,
+  target: BrowserTarget,
+  scenario: ScenarioId,
+  browser: Browser,
+  modes: Array<(typeof diagnosticsPairModeOrder)[number]>,
+) {
+  const results = []
+  for (const mode of modes) {
+    console.log(`[perf] ${scenario}: ${mode.label}`)
+    results.push({
+      ...mode,
+      result: await executeBrowserScenarioMode(options, target, scenario, browser, mode.enabled),
+    })
+  }
+  return results
+}
+
+async function executeBrowserScenarioMode(
+  options: RunOptions,
+  target: BrowserTarget,
+  scenario: ScenarioId,
+  browser: Browser,
+  diagnosticsEnabled: boolean,
+) {
+  let flowProfiler: Awaited<ReturnType<typeof startFlowProfiler>> | undefined
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      (async () => {
+        if (diagnosticsEnabled) {
+          flowProfiler = await startFlowProfiler(browser, scenario)
+          // Interactive flows model the already-running desktop profiler. Let
+          // its helper process and first steady collection finish before the
+          // measured action; launch-project intentionally includes startup.
+          if (scenario !== "launch-project") await Bun.sleep(2_250)
+        }
+        const rawRuns: BrowserRun[] = []
+        for (let index = 0; index < options.iterations; index++) {
+          rawRuns.push(await executeBrowserScenario(
+            browser,
+            target,
+            scenario,
+            diagnosticsEnabled ? options.iterations + index : index,
+          ))
+        }
+        const run = mergeBrowserRuns(rawRuns)
+        const diagnostics = flowProfiler ? await flowProfiler.stop() : undefined
+        flowProfiler = undefined
+        if (diagnosticsEnabled && !diagnostics) {
+          throw new Error("Diagnostics-enabled flow produced no profiler evidence")
+        }
+        return {
+          run,
+          browserVersion: browser.version(),
+          ...(diagnostics ? { diagnostics } : {}),
+        } as {
+          run: BrowserRun
+          browserVersion: string
+          diagnostics?: Omit<DiagnosticsOverheadEvidence, "controlHeadline" | "enabledHeadline">
+        }
+      })(),
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => {
+          reject(new Error(
+            `Timed out running ${scenario} with diagnostics ${diagnosticsEnabled ? "enabled" : "disabled"}`,
+          ))
+        }, 120_000)
+      }),
+    ])
+  } finally {
+    if (deadline) clearTimeout(deadline)
+    if (flowProfiler) await flowProfiler.stop().catch(() => undefined)
+  }
+}
+
+async function startFlowProfiler(browser: Browser, scenario: ScenarioId) {
+  const session = await browser.newBrowserCDPSession()
+  const processInfo = await readBrowserProcessInfo(session)
+  const rootPids = processInfo.processInfo
+    .filter((entry) => entry.type === "browser" && Number.isInteger(entry.id) && entry.id > 0)
+    .map((entry) => entry.id)
+  if (rootPids.length === 0) throw new Error("Could not resolve the real browser process for diagnostics")
+
+  const directory = await mkdtemp(path.join(tmpdir(), "claxedo-flow-profiler-"))
+  const output = path.join(directory, "evidence.json")
+  const desktopRoot = path.resolve(appRoot, "../claxedo-desktop")
+  const profilerProcess = Bun.spawn({
+    cmd: [process.execPath, path.join(desktopRoot, "scripts/performance-diagnostics-smoke.ts"), "--flow-profiler"],
+    cwd: desktopRoot,
+    env: {
+      PATH: Bun.env.PATH ?? "",
+      CLAXEDO_DIAGNOSTICS_FLOW_ROOT_PIDS: rootPids.join(","),
+      CLAXEDO_DIAGNOSTICS_FLOW_OUTPUT: output,
+      CLAXEDO_DIAGNOSTICS_FLOW_SOURCE: "cdp",
+      CLAXEDO_DIAGNOSTICS_FLOW_INTERACTIVE: scenario === "launch-project" ? "0" : "1",
+      CLAXEDO_DIAGNOSTICS_WORKER_PATH: path.join(desktopRoot, "out/main/process-metrics-worker.js"),
+    },
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  void drain(profilerProcess.stderr)
+  let sampling = false
+  let pendingSample: Promise<void> | undefined
+  const sample = () => {
+    if (sampling) return
+    sampling = true
+    pendingSample = readBrowserProcessInfo(session)
+      .then((value) => {
+        profilerProcess.stdin.write(`${JSON.stringify({
+          at: Date.now(),
+          processes: value.processInfo,
+        })}\n`)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        sampling = false
+      })
+  }
+  sample()
+  const sampleTimer = setInterval(sample, scenario === "launch-project" ? 500 : 2_000)
+  try {
+    await waitForProfilerReady(profilerProcess)
+  } catch (error) {
+    clearInterval(sampleTimer)
+    await pendingSample
+    profilerProcess.stdin.end()
+    profilerProcess.kill()
+    await Promise.race([profilerProcess.exited, Bun.sleep(2_000)])
+    await detachBrowserSession(session)
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  }
+  void drain(profilerProcess.stdout)
+  let stopped = false
+  return {
+    async stop() {
+      if (stopped) throw new Error("Diagnostics flow profiler was already stopped")
+      stopped = true
+      clearInterval(sampleTimer)
+      await pendingSample
+      profilerProcess.stdin.end()
+      const exitCode = await Promise.race([
+        profilerProcess.exited,
+        Bun.sleep(20_000).then(() => undefined),
+      ])
+      if (exitCode === undefined) {
+        profilerProcess.kill()
+        await Promise.race([profilerProcess.exited, Bun.sleep(2_000)])
+        throw new Error("Diagnostics flow profiler did not stop cleanly")
+      }
+      try {
+        if (exitCode !== 0) throw new Error(`Diagnostics flow profiler exited with ${String(exitCode)}`)
+        const evidence = await Bun.file(output).json() as Record<string, unknown>
+        const fields = [
+          "retainedBytes",
+          "retainedProcesses",
+          "droppedTicks",
+          "maxSourceDurationMs",
+          "maxReconciliationDurationMs",
+          "collections",
+          "sampleCount",
+        ] as const
+        if (fields.some((field) => typeof evidence[field] !== "number" || !Number.isFinite(evidence[field]))) {
+          throw new Error("Diagnostics flow profiler evidence was incomplete")
+        }
+        return Object.fromEntries(fields.map((field) => [field, evidence[field]])) as Omit<
+          DiagnosticsOverheadEvidence,
+          "controlHeadline" | "enabledHeadline"
+        >
+      } finally {
+        await detachBrowserSession(session)
+        await rm(directory, { recursive: true, force: true })
+      }
+    },
+  }
+}
+
+async function readBrowserProcessInfo(session: Awaited<ReturnType<Browser["newBrowserCDPSession"]>>) {
+  return await Promise.race([
+    session.send("SystemInfo.getProcessInfo"),
+    Bun.sleep(2_000).then(() => {
+      throw new Error("Timed out reading browser process metrics")
+    }),
+  ]) as {
+    processInfo: Array<{ id: number; type: string; cpuTime: number }>
+  }
+}
+
+async function detachBrowserSession(session: Awaited<ReturnType<Browser["newBrowserCDPSession"]>>) {
+  await Promise.race([
+    session.detach().catch(() => undefined),
+    Bun.sleep(2_000),
+  ])
+}
+
+async function waitForProfilerReady(profilerProcess: Bun.Subprocess<"pipe", "pipe", "pipe">) {
+  const reader = profilerProcess.stdout.getReader()
+  let output = ""
+  try {
+    const deadline = Date.now() + 15_000
+    while (!output.includes("\n") && Date.now() < deadline) {
+      const chunk = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(1, deadline - Date.now())).then(() => undefined),
+      ])
+      if (!chunk || chunk.done) break
+      output += new TextDecoder().decode(chunk.value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  if (!output.includes("READY")) {
+    throw new Error(`Diagnostics flow profiler did not become ready: ${output.trim() || "<no output>"}`)
+  }
 }
 
 export function browserScenarioFailure(input: {
@@ -142,7 +417,9 @@ async function executeBrowserScenario(
   const context = await browser.newContext({
     viewport,
     permissions: ["clipboard-read", "clipboard-write"],
-    recordVideo: { dir: path.join(reportsRoot, "videos", "raw"), size: viewport },
+    ...(process.env.CLAXEDO_PERF_RECORD_VIDEO === "1"
+      ? { recordVideo: { dir: path.join(reportsRoot, "videos", "raw"), size: viewport } }
+      : {}),
   })
   const page = await context.newPage()
   const monitor = monitorPage(page)
@@ -155,8 +432,23 @@ async function executeBrowserScenario(
     const validation_failures = await validationFailures(page, monitor, scenario, fixture)
     if (process.env.PERF_DEBUG_ERRORS) {
       const body = await page.locator("body").innerText({ timeout: 500 }).catch(() => "")
+      const state = await page.evaluate(() => {
+        const raw = localStorage.getItem("claxedo.state.v5")
+        const parsed = raw ? JSON.parse(raw) as {
+          workbench?: { contentIds?: unknown }
+          meta?: Record<string, unknown>
+          terminal?: { owner?: Record<string, unknown> }
+        } : undefined
+        return {
+          contentIds: parsed?.workbench?.contentIds,
+          metaIds: Object.keys(parsed?.meta ?? {}),
+          terminalIds: Object.keys(parsed?.terminal?.owner ?? {}),
+          terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [role='button']").length,
+        }
+      }).catch(() => undefined)
       console.error(`\n[PERF_DEBUG ${scenario}] pageErrors:`, monitor.pageErrors)
       console.error(`[PERF_DEBUG ${scenario}] consoleErrors:`, monitor.consoleErrors)
+      console.error(`[PERF_DEBUG ${scenario}] state:`, state)
       console.error(`[PERF_DEBUG ${scenario}] body[0..800]:`, body.replace(/\s+/g, " ").slice(0, 800))
     }
     const videoPath = await closeContextAndSaveVideo(context, page, app.target, scenario, iteration)
@@ -212,6 +504,21 @@ function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
     ),
     validation_failures: rawRuns.flatMap((result) => result.validation_failures ?? []),
     artifacts: rawRuns.at(-1)?.artifacts,
+  }
+}
+
+export function mergeDiagnosticsRuns(
+  runs: Array<Omit<DiagnosticsOverheadEvidence, "controlHeadline" | "enabledHeadline">>,
+) {
+  if (runs.length === 0) throw new Error("Cannot merge diagnostics evidence without profiler runs")
+  return {
+    retainedBytes: Math.max(...runs.map((run) => run.retainedBytes)),
+    retainedProcesses: Math.max(...runs.map((run) => run.retainedProcesses)),
+    droppedTicks: runs.reduce((sum, run) => sum + run.droppedTicks, 0),
+    maxSourceDurationMs: Math.max(...runs.map((run) => run.maxSourceDurationMs)),
+    maxReconciliationDurationMs: Math.max(...runs.map((run) => run.maxReconciliationDurationMs)),
+    collections: runs.reduce((sum, run) => sum + run.collections, 0),
+    sampleCount: runs.reduce((sum, run) => sum + run.sampleCount, 0),
   }
 }
 
@@ -281,16 +588,19 @@ async function sessionSwitch(page: Page, app: BrowserTarget, fixture: ReturnType
 }
 
 async function liveTerminalSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  await launchTo(page, app, sessionPath(fixture.sessions[0]!, fixture.sessions[0]!.id))
-  await waitForTranscript(page, fixture, fixture.sessions[0]!.id, fixture.sessions[0]!.title)
-  await openTerminalSurface(page, fixture, fixture.terminals[0]?.title)
-  await openTerminalSurface(page, fixture, fixture.terminals[1]?.title)
+  const session = fixture.sessions[0]!
+  await launchTo(page, app, sessionPath(session, session.id))
+  await waitForTranscript(page, fixture, session.id, session.title)
+  await navigateToTerminalRoute(page, app, fixture, fixture.terminals[0]!, true)
+  await navigateToTerminalRoute(page, app, fixture, fixture.terminals[1]!, false)
+  await openTerminalSurface(page, fixture, fixture.terminals[0])
+  await openTerminalSurface(page, fixture, fixture.terminals[1])
   let switchMs = 0
   // Headline: switching between live terminals with active output.
   const headline = await measureInteraction(page, "live-terminal-switch", async () => {
-    switchMs = await measureInPageTerminalSwitch(page, fixture.terminals[0]?.title ?? "")
-    await openTerminalSurface(page, fixture, fixture.terminals[1]?.title)
-    await openTerminalSurface(page, fixture, fixture.terminals[0]?.title)
+    switchMs = await measureInPageTerminalSwitch(page, fixture.terminals[0]!.id)
+    await openTerminalSurface(page, fixture, fixture.terminals[1])
+    await openTerminalSurface(page, fixture, fixture.terminals[0])
   })
   if (switchMs >= 4_900) recordVisualFailure(fixture, "terminal switch did not settle before timeout")
   await settleForVideo(page)
@@ -347,18 +657,13 @@ async function measureInPageTerminalResize(page: Page, size: { width: number; he
   })
 }
 
-async function measureInPageTerminalSwitch(page: Page, terminalTitle: string): Promise<number> {
-  return await page.evaluate(async (title) => {
+async function measureInPageTerminalSwitch(page: Page, terminalId: string): Promise<number> {
+  return await page.evaluate(async (id) => {
     const sidebar = document.querySelector("[data-testid='terminal-section']")
     if (!sidebar) return 5000
-    const rows = sidebar.querySelectorAll<HTMLElement>("[role='button']")
-    let target: HTMLElement | undefined
-    for (const row of Array.from(rows)) {
-      if (row.textContent && row.textContent.includes(title)) {
-        target = row
-        break
-      }
-    }
+    const target = sidebar.querySelector<HTMLElement>(
+      `[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${CSS.escape(id)}"]`,
+    )
     if (!target) return 5000
     const fits = (r: DOMRect) => r.width > 100 && r.height > 40
 
@@ -379,7 +684,7 @@ async function measureInPageTerminalSwitch(page: Page, terminalTitle: string): P
       }
       requestAnimationFrame(tick)
     })
-  }, terminalTitle)
+  }, terminalId)
 }
 
 async function largeDiffToggle(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
@@ -417,10 +722,9 @@ async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnTy
   await launchTo(page, app, sessionPath(fixture.sessions[0]!, fixture.sessions[0]!.id))
   await waitForTranscript(page, fixture, fixture.sessions[0]!.id, fixture.sessions[0]!.title)
   const target = fixture.sessions.find((session) => session.directory !== fixture.sessions[0]!.directory) ?? fixture.sessions[1]!
-  await showWorkspaceInventory(page, fixture, { settle: "frame" })
-  // Headline: switching to another workspace and into one of its sessions.
+  await showSessionInventory(page, fixture, Math.min(5, fixture.sessions.length), { settle: "frame" })
+  // Headline: selecting a session whose route is owned by another workspace.
   const headline = await measureInteraction(page, "workspace-switch", async () => {
-    await clickWorkspace(page, fixture, target.directory, { settle: "frame" })
     await clickVisibleSession(page, fixture, target, { settle: "frame" })
     await waitForTranscript(page, fixture, target.id, target.title)
   })
@@ -495,7 +799,9 @@ async function installSeedState(page: Page, target: AppTarget, fixture: ReturnTy
   }, { target, directory: fixture.directory, project: fixture.project, sessions: fixture.sessions, claxedoState: claxedoStateSeed(fixture) })
 }
 
-export function claxedoStateSeed(fixture: Pick<ReturnType<typeof fixtureFor>, "directory" | "terminals">) {
+export function claxedoStateSeed(
+  fixture: Pick<ReturnType<typeof fixtureFor>, "directory" | "scenario" | "terminals">,
+) {
   const metas = Object.fromEntries(
     fixture.terminals.map((terminal, index) => {
       const id = `terminal_perf_${index}`
@@ -518,18 +824,27 @@ export function claxedoStateSeed(fixture: Pick<ReturnType<typeof fixtureFor>, "d
     }),
   )
   const contentIds = Object.keys(metas)
+  const initialTerminalId = fixture.scenario === "live-terminal-switch" ? contentIds[0] : undefined
   return {
     workbench: {
-      panes: [],
-      split: { direction: "h", sizes: [] },
+      panes: initialTerminalId ? [{ id: "pane_perf_terminal", contentId: initialTerminalId }] : [],
+      split: initialTerminalId
+        ? { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_perf_terminal" } }
+        : { direction: "h", sizes: [] },
       contentIds,
       contentRecency: [...contentIds].reverse(),
-      focusedPaneId: null,
+      focusedPaneId: initialTerminalId ? "pane_perf_terminal" : null,
       layoutSnapshots: {},
     },
     meta: metas,
     rail: { collapsed: false, hovered: false, pinned: true, locked: false },
-    workspace: { paneWorktree: {}, recency: {}, worktreeColor: {} },
+    workspace: {
+      paneWorktree: initialTerminalId
+        ? { pane_perf_terminal: { default: fixture.directory, pinned: null } }
+        : {},
+      recency: {},
+      worktreeColor: {},
+    },
     workspacePanel: {
       open: false,
       mode: "navigator",
@@ -548,8 +863,17 @@ export function claxedoStateSeed(fixture: Pick<ReturnType<typeof fixtureFor>, "d
 }
 
 async function installMockApi(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>) {
+  await page.routeWebSocket(/\/api\/wr\/pty\/[^/]+\/connect(?:\?|$)/, (socket) => {
+    socket.send("perf terminal ready\r\n")
+  })
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
+    if (
+      process.env.PERF_DEBUG_ERRORS &&
+      (url.pathname.includes("session") || url.pathname.includes("workspace"))
+    ) {
+      console.error(`[PERF_ROUTE] ${route.request().method()} ${url.toString()} mock=${String(shouldMock(url, app))}`)
+    }
     if (!shouldMock(url, app)) return route.fallback()
     if (route.request().method() === "OPTIONS") {
       return route.fulfill({
@@ -583,6 +907,11 @@ function mockCorsHeaders(route: Route) {
 function shouldMock(url: URL, app: BrowserTarget) {
   if (url.port === String(app.mockPort)) return true
   if (url.origin === app.baseUrl && apiPath(url.pathname)) return true
+  if (
+    ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
+    url.origin !== app.baseUrl &&
+    apiPath(url.pathname)
+  ) return true
   return false
 }
 
@@ -620,13 +949,28 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>): unknown 
   if (pathName === "/health") return { ok: true, healthy: true, version: "perf-browser" }
   if (pathName === "/global/health") return { healthy: true, version: "perf-browser" }
   if (pathName === "/experimental/session") return experimentalSessions(url, fixture)
+  if (pathName === "/api/control/session-list") return sessionNavigationPage(url, fixture)
   if (pathName === "/api/workspace") return { workspaces: controlWorkspaces(fixture) }
+  if (pathName === "/api/workspace/resolve") return resolvedWorkspace(url, fixture)
   if (pathName === "/api/control/sessions") return { sessions: controlSessions(fixture, url.searchParams.get("workspaceId")) }
-  if (pathName === "/api/claxedo/diff/vcs") return changedFilesForVcs(url, fixture)
-  if (pathName === "/api/claxedo/diff/vcs/file") return diffForFile(url, fixture)
-  if (pathName === "/api/claxedo/diff/refs") return { branches: ["dev"], tags: [], recent: ["HEAD~1"] }
-  if (pathName === "/api/claxedo/diff/targets") return { defaultRef: "dev", candidates: ["dev", "HEAD~1"] }
+  if (pathName === "/api/claxedo/diff/vcs" || pathName === "/api/wr/diff/vcs") {
+    return changedFilesForVcs(url, fixture)
+  }
+  if (pathName === "/api/claxedo/diff/vcs/file" || pathName === "/api/wr/diff/vcs/file") {
+    return diffForFile(url, fixture)
+  }
+  if (pathName === "/api/claxedo/diff/refs" || pathName === "/api/wr/diff/refs") {
+    return {
+      branches: ["dev"],
+      tags: [],
+      recent: [{ hash: "perf001", subject: "perf fixture" }],
+    }
+  }
+  if (pathName === "/api/claxedo/diff/targets" || pathName === "/api/wr/diff/targets") {
+    return { defaultRef: "dev", candidates: ["dev", "HEAD~1"] }
+  }
   if (pathName === "/api/claxedo/hook/terminal-session") return terminalSessionPreview(url, fixture)
+  if (pathName === "/api/wr/hook/terminal-session") return terminalSessionPreview(url, fixture)
   if (pathName === "/api/claxedo/pty") return fixture.terminals[0]
   if (pathName.startsWith("/api/claxedo/pty/")) return fixture.terminals[0] ?? {}
   if (pathName === "/api/claxedo/health") return { ok: true, healthy: true, version: "perf-browser" }
@@ -671,6 +1015,57 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>): unknown 
   }
 
   return {}
+}
+
+function sessionNavigationPage(url: URL, fixture: ReturnType<typeof fixtureFor>) {
+  const scope = url.searchParams.get("scope") === "workspace"
+    ? "workspace"
+    : url.searchParams.get("scope") === "global"
+      ? "global"
+      : "project"
+  const directory = url.searchParams.get("directory")
+  const sessions = directory ? sessionsForDirectory(fixture, directory) : fixture.sessions
+  const items = sessions.map((session) => {
+    return {
+      type: "session",
+      sessionRef: `local:${session.directory}:session:${session.id}`,
+      sessionId: session.id,
+      title: session.title,
+      directory: session.directory,
+      projectId: session.projectID,
+      createdAt: session.time.created,
+      updatedAt: session.time.updated,
+      tags: [],
+      attachments: [],
+    }
+  })
+  return {
+    view: {
+      scope,
+      groupBy: "none",
+      sort: "updated_desc",
+      limit: Number(url.searchParams.get("limit") ?? items.length),
+    },
+    items,
+    totalKnown: items.length,
+  }
+}
+
+function resolvedWorkspace(url: URL, fixture: ReturnType<typeof fixtureFor>) {
+  const requestedDirectory = url.searchParams.get("directory")
+  const requestedId = url.searchParams.get("workspaceId")
+  const indexFromId = requestedId?.match(/^workspace_(\d+)$/)?.[1]
+  const index = requestedDirectory
+    ? Math.max(0, fixture.workspaceDirectories.indexOf(requestedDirectory))
+    : indexFromId
+      ? Number(indexFromId)
+      : 0
+  return {
+    workspaceId: `workspace_${String(index)}`,
+    directory: fixture.workspaceDirectories[index] ?? fixture.directory,
+    kind: "local",
+    status: "ready",
+  }
 }
 
 function diffForFile(url: URL, fixture: ReturnType<typeof fixtureFor>) {
@@ -881,6 +1276,7 @@ function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
     ])),
   }
   return {
+    scenario,
     directory,
     workspaceDirectories,
     project,
@@ -1050,8 +1446,18 @@ async function startApp(): Promise<BrowserTarget> {
 }
 
 async function stopApp(app: BrowserTarget) {
-  app.process?.kill()
-  await app.process?.exited.catch(() => undefined)
+  if (!app.process) return
+  app.process.kill()
+  const exited = await Promise.race([
+    app.process.exited.then(() => true).catch(() => true),
+    Bun.sleep(10_000).then(() => false),
+  ])
+  if (exited) return
+  app.process.kill("SIGKILL")
+  await Promise.race([
+    app.process.exited.catch(() => undefined),
+    Bun.sleep(2_000),
+  ])
 }
 
 async function waitForServer(url: string, process: Bun.Subprocess) {
@@ -1090,9 +1496,23 @@ async function closeContextAndSaveVideo(
   iteration: number,
 ) {
   const video = page.video()
-  await context.close()
+  // Gating runs retain the lightweight isolated context until suite teardown.
+  // Closing only the page releases its renderer without a late context-close
+  // operation racing the next half of the pair.
+  if (!video) {
+    await Promise.race([
+      page.close().catch(() => undefined),
+      Bun.sleep(2_000),
+    ])
+    return undefined
+  }
+  const closed = await Promise.race([
+    context.close().then(() => true).catch(() => false),
+    Bun.sleep(5_000).then(() => false),
+  ])
+  if (!closed) return undefined
   const raw = video ? await video.path().catch(() => undefined) : undefined
-  if (!raw) return undefined
+  if (!raw || !await Bun.file(raw).exists()) return undefined
   const dir = path.join(reportsRoot, "videos")
   await mkdir(dir, { recursive: true })
   const file = path.join(dir, `${target}-${scenario}-${iteration + 1}.webm`)
@@ -1362,6 +1782,12 @@ async function measureInPageSessionFirstFoldSwitch(page: Page, session: ReturnTy
     }
   }, { id: session.id, title: session.title, debug: Bun.env.CLAXEDO_PERF_DEBUG_SESSION_SWITCH === "1" })
   if (result.debug) console.log("first-fold-switch-debug", JSON.stringify(result.debug))
+  if (result.ms >= 10_000) {
+    await page.goto(`${new URL(page.url()).origin}${sessionPath(session, session.id)}`, {
+      waitUntil: "domcontentloaded",
+    })
+    await waitForUsefulScreen(page)
+  }
   return result.ms
 }
 
@@ -1390,83 +1816,6 @@ async function clickLoadMoreUntil(page: Page, fixture: ReturnType<typeof fixture
     await settleForVideo(page)
   }
   return clicked
-}
-
-async function showWorkspaceInventory(
-  page: Page,
-  fixture: ReturnType<typeof fixtureFor>,
-  options: { settle?: "video" | "frame" } = {},
-) {
-  if ((options.settle ?? "video") === "frame") {
-    const missing = await page.evaluate((workspaces) => {
-      const visible = (el: Element) => {
-        if (el.closest("[aria-hidden='true']")) return false
-        const rect = el.getBoundingClientRect()
-        const style = getComputedStyle(el)
-        return rect.width > 0 &&
-          rect.height > 0 &&
-          rect.bottom > 0 &&
-          rect.right > 0 &&
-          rect.top < innerHeight &&
-          rect.left < innerWidth &&
-          style.display !== "none" &&
-          style.visibility !== "hidden"
-      }
-      const candidates = Array.from(document.querySelectorAll<HTMLElement>(
-        "[data-workspace-id], [data-workspace], [data-testid='workspace-header'], a, button, [role='button']",
-      ))
-      return workspaces.filter((workspace) => !candidates.some((el) => {
-        if (!visible(el)) return false
-        if (el.getAttribute("data-workspace-id") === workspace.directory) return true
-        if (el.getAttribute("data-workspace") === workspace.encoded) return true
-        const text = el.textContent ?? ""
-        return text.includes(workspace.label) || text.includes(workspace.basename)
-      })).map((workspace) => workspace.label)
-    }, fixture.workspaceDirectories.map((directory) => ({
-      directory,
-      encoded: base64Encode(directory),
-      label: workspaceLabel(fixture, directory),
-      basename: path.basename(directory),
-    }))).catch(() => fixture.workspaceDirectories.map((directory) => workspaceLabel(fixture, directory)))
-    for (const label of missing) recordVisualFailure(fixture, `workspace was not visible in the sidebar: ${label}`)
-    return
-  }
-  for (const directory of fixture.workspaceDirectories) {
-    const label = workspaceLabel(fixture, directory)
-    const visible = await findWorkspaceLocator(page, fixture, directory).isVisible({ timeout: 2_000 }).catch(() => false)
-    if (!visible) recordVisualFailure(fixture, `workspace was not visible in the sidebar: ${label}`)
-  }
-  if ((options.settle ?? "video") === "video") await settleForVideo(page)
-  else await waitForAnimationFrame(page, 1)
-}
-
-async function clickWorkspace(
-  page: Page,
-  fixture: ReturnType<typeof fixtureFor>,
-  directory: string,
-  options: { settle?: "video" | "frame" } = {},
-) {
-  const settle = options.settle ?? "video"
-  const item = findWorkspaceLocator(page, fixture, directory)
-  if (await item.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await item.scrollIntoViewIfNeeded().catch(() => undefined)
-    if (settle === "video") await settleForVideo(page)
-    else await waitForAnimationFrame(page, 1)
-    await item.click({ timeout: 5_000 })
-    if (settle === "video") await settleForVideo(page)
-    else await waitForAnimationFrame(page, 2)
-    return
-  }
-  recordVisualFailure(fixture, `workspace was not clickable in the visible UI: ${workspaceLabel(fixture, directory)}`)
-}
-
-function findWorkspaceLocator(page: Page, fixture: ReturnType<typeof fixtureFor>, directory: string) {
-  return page
-    .locator(`[data-workspace-id="${directory}"], [data-testid="workspace-header"][data-workspace-id="${directory}"]`)
-    .or(page.locator(`[data-workspace="${base64Encode(directory)}"]`))
-    .or(page.getByText(workspaceLabel(fixture, directory), { exact: false }))
-    .or(page.getByText(path.basename(directory), { exact: false }))
-    .first()
 }
 
 async function measureWorkspaceFiles(
@@ -1602,8 +1951,39 @@ async function measureWorkspaceFiles(
   ]
 }
 
-async function openTerminalSurface(page: Page, fixture: ReturnType<typeof fixtureFor>, terminalTitle?: string) {
-  if (await clickTerminalInventoryRow(page, terminalTitle)) {
+async function navigateToTerminalRoute(
+  page: Page,
+  app: BrowserTarget,
+  fixture: ReturnType<typeof fixtureFor>,
+  terminal: ReturnType<typeof fixtureFor>["terminals"][number],
+  reload: boolean,
+) {
+  const route = `${workspacePath(fixture.directory)}/terminal/${encodeURIComponent(terminal.id)}`
+  if (reload) {
+    await page.goto(`${app.baseUrl}${route}`, { waitUntil: "domcontentloaded" })
+    await waitForUsefulScreen(page)
+    await waitForLaunchStable(page)
+  } else {
+    await page.evaluate((pathName) => {
+      history.pushState({}, "", pathName)
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    }, route)
+  }
+  await page.waitForFunction((id) =>
+    !!document.querySelector(
+      `[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${CSS.escape(id)}"], ` +
+      `[data-testid="terminal-pane"][data-terminal-id="${CSS.escape(id)}"]`,
+    ),
+  terminal.id, { timeout: 10_000 })
+  await waitForTerminalSurface(page, fixture)
+}
+
+async function openTerminalSurface(
+  page: Page,
+  fixture: ReturnType<typeof fixtureFor>,
+  terminal?: ReturnType<typeof fixtureFor>["terminals"][number],
+) {
+  if (await clickTerminalInventoryRow(page, terminal)) {
     await waitForTerminalSurface(page, fixture)
     return
   }
@@ -1617,13 +1997,18 @@ async function openTerminalSurface(page: Page, fixture: ReturnType<typeof fixtur
   } else {
     await page.keyboard.press("Control+`")
   }
-  await clickTerminalInventoryRow(page, terminalTitle)
+  await clickTerminalInventoryRow(page, terminal)
   await waitForTerminalSurface(page, fixture)
 }
 
-async function clickTerminalInventoryRow(page: Page, terminalTitle?: string) {
-  const row = terminalTitle
-    ? page.locator("[data-testid='terminal-section'] [role='button']").filter({ hasText: terminalTitle }).first()
+async function clickTerminalInventoryRow(
+  page: Page,
+  terminal?: ReturnType<typeof fixtureFor>["terminals"][number],
+) {
+  const row = terminal
+    ? page.locator(
+        `[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row'][data-terminal-id="${terminal.id}"]`,
+      ).first()
     : page.locator("[data-testid='terminal-section'] [role='button']").filter({ hasText: /terminal/i }).last()
   if (await row.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await row.scrollIntoViewIfNeeded().catch(() => undefined)

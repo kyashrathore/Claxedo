@@ -41,6 +41,9 @@ const ALL_PLATFORM_SUFFIXES = [
 const foreignPlatformExcludes = ALL_PLATFORM_SUFFIXES.filter((suffix) => suffix !== targetOsArch).map(
   (suffix) => `!**/node_modules/**/*-${suffix}/**`,
 )
+const windowsProcessTreeFiles = targetOsArch.startsWith("win32-")
+  ? []
+  : ["!**/node_modules/@vscode/windows-process-tree/**"]
 
 const getBase = (): Configuration => ({
   artifactName: "claxedo-desktop-${os}-${arch}.${ext}",
@@ -61,8 +64,10 @@ const getBase = (): Configuration => ({
     // (target included) instead of shipping it dead in the app.
     "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
     ...foreignPlatformExcludes,
+    ...windowsProcessTreeFiles,
   ],
   asarUnpack: [
+    ...(targetOsArch.startsWith("win32-") ? ["**/node_modules/@vscode/windows-process-tree/**"] : []),
     "**/node_modules/better-sqlite3/**",
     "**/node_modules/node-pty/**",
   ],

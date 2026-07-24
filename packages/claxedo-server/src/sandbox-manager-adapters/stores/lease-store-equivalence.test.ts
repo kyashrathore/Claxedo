@@ -123,6 +123,10 @@ function sqliteLease(input: Partial<Parameters<typeof upsertLease>[0]> & { works
     accel_base_image_id: input.accel_base_image_id ?? null,
     accel_prepared_image_id: input.accel_prepared_image_id ?? null,
     accel_snapshot_id: input.accel_snapshot_id ?? null,
+    labels: input.labels ?? null,
+    checkpoint: input.checkpoint ?? null,
+    persistence: input.persistence ?? null,
+    restore: input.restore ?? null,
     created_at: input.created_at ?? 1_000,
     updated_at: input.updated_at ?? 1_000,
   }
@@ -147,6 +151,10 @@ function project(lease: SandboxLease | undefined) {
     lastError: lease.lastError,
     lastHeartbeatAt: lease.lastHeartbeatAt,
     lastActivityAt: lease.lastActivityAt,
+    labels: lease.labels,
+    checkpoint: lease.checkpoint,
+    persistence: lease.persistence,
+    restore: lease.restore,
   }
 }
 
@@ -181,6 +189,7 @@ async function runScenario(store: SandboxLeaseStore) {
     lastError: null,
     lastHeartbeatAt: 12_000,
     lastActivityAt: 12_000,
+    labels: { image: "runtime:test", runtimeVersion: "0.6.0" },
   })
   const final = await store.get("ws_eq")
   return {
@@ -266,6 +275,55 @@ async function runStoppedResumeScenario(store: SandboxLeaseStore) {
   }
 }
 
+async function runPersistenceScenario(store: SandboxLeaseStore) {
+  const persistence = {
+    resume: "replacement-restore",
+    capture: "filesystem",
+    clone: false,
+    captureSource: "preserved",
+    retention: "explicit",
+    restoreMount: "new-resource",
+  } as const
+  const checkpoint = {
+    id: "checkpoint_1",
+    providerReference: "provider_snapshot_1",
+    sourceEpoch: 4,
+    capturedAt: 10_000,
+    metadata: {
+      scope: "filesystem",
+      sourceBehavior: "preserved",
+      retentionExpiresAt: 90_000,
+      restoreMount: "new-resource",
+    },
+  } as const
+  const restore = {
+    state: "pending",
+    checkpointId: checkpoint.id,
+    sourceEpoch: checkpoint.sourceEpoch,
+    requestedAt: 11_000,
+  } as const
+  const acquired = await store.acquire("ws_persistence", {
+    homeRegion: "us-east",
+    driver: "test-driver",
+    staleAfterMs: 60_000,
+    now: 1_000,
+  })
+  await store.update("ws_persistence", acquired.lease.epoch, {
+    status: "ready",
+    checkpoint,
+    persistence,
+    restore,
+  })
+  await store.update("ws_persistence", acquired.lease.epoch, { status: "unavailable" })
+  const reacquired = await store.acquire("ws_persistence", {
+    homeRegion: "us-east",
+    driver: "test-driver",
+    staleAfterMs: 60_000,
+    now: 70_000,
+  })
+  return project(reacquired.lease)
+}
+
 describe("lease store SandboxLeasePatch equivalence", () => {
   test("memory, sqlite, and convex drivers keep on absent and clear on null identically", async () => {
     const memory = await runScenario(createMemoryLeaseStore())
@@ -285,6 +343,7 @@ describe("lease store SandboxLeasePatch equivalence", () => {
       status: "ready",
       sandboxId: "sandbox_eq",
       retryCount: 0,
+      labels: { image: "runtime:test", runtimeVersion: "0.6.0" },
     })
     expect(memory.final?.nextRetryAt).toBeUndefined()
     expect(memory.final?.lastError).toBeUndefined()
@@ -344,6 +403,37 @@ describe("lease store SandboxLeasePatch equivalence", () => {
       expect(projection?.lastError).toBeUndefined()
     }
 
+    expect(sqlite).toEqual(memory)
+    expect(convex).toEqual(memory)
+  })
+
+  test("checkpoint and persistence state survive replacement epoch acquisition identically", async () => {
+    const memory = await runPersistenceScenario(createMemoryLeaseStore())
+    const sqlite = await runPersistenceScenario(createSqliteLeaseStore())
+    const convex = await runPersistenceScenario(createConvexBackedStore())
+
+    expect(memory).toMatchObject({
+      epoch: 2,
+      status: "acquiring",
+      checkpoint: {
+        id: "checkpoint_1",
+        providerReference: "provider_snapshot_1",
+        sourceEpoch: 4,
+        metadata: {
+          scope: "filesystem",
+          retentionExpiresAt: 90_000,
+        },
+      },
+      persistence: {
+        resume: "replacement-restore",
+        capture: "filesystem",
+      },
+      restore: {
+        state: "pending",
+        checkpointId: "checkpoint_1",
+        sourceEpoch: 4,
+      },
+    })
     expect(sqlite).toEqual(memory)
     expect(convex).toEqual(memory)
   })
@@ -422,5 +512,22 @@ describe("lease store SandboxLeasePatch equivalence", () => {
       last_error: "driver disabled",
       last_health_failure_at: expect.any(Number),
     })
+  })
+
+  test("memory, sqlite, and convex preserve the destroyed terminal state", async () => {
+    const stores = [createMemoryLeaseStore(), createSqliteLeaseStore(), createConvexBackedStore()]
+    const states = await Promise.all(stores.map(async (store, index) => {
+      const workspaceId = `ws_destroyed_${index}`
+      const acquired = await store.acquire(workspaceId, {
+        homeRegion: "us-east",
+        driver: "test-driver",
+        staleAfterMs: 60_000,
+        now: 1_000,
+      })
+      await store.update(workspaceId, acquired.lease.epoch, { status: "destroyed" })
+      return (await store.get(workspaceId))?.status
+    }))
+
+    expect(states).toEqual(["destroyed", "destroyed", "destroyed"])
   })
 })

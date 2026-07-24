@@ -12,6 +12,7 @@ import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
+import { sandboxDriverCatalog } from "../driver-catalog"
 
 type SandboxEnv = Record<string, string | undefined>
 
@@ -320,6 +321,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
       targetAccess: "loopback",
       secretBrokering: "none",
+      persistence: sandboxDriverCatalog.docker.metadata.persistence,
     },
     ensureHost,
     resumeHost,

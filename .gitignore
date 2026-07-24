@@ -80,6 +80,7 @@ packages/claxedo-app/e2e/playwright/test-results/
 
 # Electron build outputs
 packages/claxedo-desktop/resources/acp/
+packages/claxedo-desktop/resources/claxedo-server/
 packages/claxedo-desktop/resources/claxedo-server.js
 packages/claxedo-desktop/resources/opencode-cli
 

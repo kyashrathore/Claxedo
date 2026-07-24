@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { chmodSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import readline from "node:readline"
@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url"
 import { app } from "electron"
 import treeKill from "tree-kill"
 
-import { WSL_ENABLED_KEY } from "./constants"
+import { IS_PACKAGED, WSL_ENABLED_KEY } from "./constants"
+import { registerOwnedSidecar } from "./diagnostics/sidecar-owner"
 import { store } from "./store"
 
 const CLI_INSTALL_DIR = ".opencode/bin"
@@ -34,15 +35,13 @@ export type CommandEvent =
 
 export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { type: "Done" }
 
-export type CommandChild = {
-  kill: () => void
-}
-
 const root = dirname(fileURLToPath(import.meta.url))
+export { configureSidecarProcessObserver } from "./diagnostics/sidecar-owner"
+export type { SidecarProcessObserver } from "./diagnostics/sidecar-owner"
 
 export function getSidecarPath() {
   const suffix = process.platform === "win32" ? ".exe" : ""
-  const path = app.isPackaged
+  const path = IS_PACKAGED
     ? join(process.resourcesPath, `opencode-cli${suffix}`)
     : join(root, "../../resources", `opencode-cli${suffix}`)
   return path
@@ -100,7 +99,7 @@ export async function installCli(): Promise<string> {
 }
 
 export function syncCli() {
-  if (!app.isPackaged) return
+  if (!IS_PACKAGED) return
   const installPath = getCliInstallPath()
   if (!installPath) return
 
@@ -118,17 +117,11 @@ export function syncCli() {
   void installCli().catch(() => undefined)
 }
 
-export function serve(hostname: string, port: number, password: string) {
-  const args = `--print-logs --log-level WARN serve --hostname ${hostname} --port ${port}`
-  const env = {
-    OPENCODE_SERVER_USERNAME: "opencode",
-    OPENCODE_SERVER_PASSWORD: password,
-  }
-
-  return spawnCommand(args, env)
-}
-
-export function spawnCommand(args: string, extraEnv: Record<string, string>) {
+export function spawnCommand(
+  args: string,
+  extraEnv: Record<string, string>,
+  options: { owned?: boolean } = {},
+) {
   const base = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   )
@@ -138,6 +131,12 @@ export function spawnCommand(args: string, extraEnv: Record<string, string>) {
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",
     XDG_STATE_HOME: app.getPath("userData"),
+    ...(options.owned
+      ? { BUN_OPTIONS: [base.BUN_OPTIONS, "--smol"].filter(Boolean).join(" ") }
+      : {}),
+    ...(options.owned && process.platform === "win32" && isWslEnabled()
+      ? { CLAXEDO_DIAGNOSTICS_WSL_HANDSHAKE: crypto.randomUUID() }
+      : {}),
     ...extraEnv,
   }
 
@@ -148,15 +147,40 @@ export function spawnCommand(args: string, extraEnv: Record<string, string>) {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   })
+  if (options.owned && child.pid) recordSidecarOwner(child.pid)
 
   const events = new EventEmitter()
+  let exited = false
+  let stopping: Promise<void> | undefined
+  const stop = (signal: "SIGTERM" | "SIGKILL") => {
+    if (!child.pid || exited) return Promise.resolve()
+    return killTree(child.pid, signal)
+  }
+  const owner =
+    options.owned && child.pid
+      ? registerOwnedSidecar({
+          pid: child.pid,
+          stopGracefully: () => stop("SIGTERM"),
+          killOwnedTree: () => stop("SIGKILL"),
+        })
+      : undefined
   const exit = new Promise<TerminatedPayload>((resolve) => {
     child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+      exited = true
+      if (options.owned && child.pid) clearSidecarOwner(child.pid)
+      owner?.exit({
+        reason: "exited",
+        ...(typeof code === "number" ? { exitCode: code } : {}),
+      })
       resolve({ code: code ?? null, signal: null })
     })
     child.on("error", (error: Error) => {
+      exited = true
+      if (options.owned && child.pid) clearSidecarOwner(child.pid)
+      owner?.exit({ reason: "error" })
       console.error(`[cli] Process error: ${error.message}`)
       events.emit("error", error.message)
+      resolve({ code: null, signal: null })
     })
   })
 
@@ -173,6 +197,14 @@ export function spawnCommand(args: string, extraEnv: Record<string, string>) {
   if (stderr) {
     readline.createInterface({ input: stderr }).on("line", (line: string) => {
       if (handleSqliteProgress(events, line)) return
+      const wslRoot = parseWslDiagnosticsHandshake(
+        line,
+        envs.CLAXEDO_DIAGNOSTICS_WSL_HANDSHAKE,
+      )
+      if (wslRoot) {
+        owner?.wslRoot?.(wslRoot)
+        return
+      }
       events.emit("stderr", `${line}\n`)
     })
   }
@@ -182,11 +214,86 @@ export function spawnCommand(args: string, extraEnv: Record<string, string>) {
   })
 
   const kill = () => {
-    if (!child.pid) return
-    treeKill(child.pid)
+    if (stopping) return stopping
+    if (!child.pid || exited) return Promise.resolve()
+    stopping = (async () => {
+      await killTree(child.pid!, "SIGTERM")
+      const stopped = await Promise.race([
+        exit.then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 2_000)),
+      ])
+      if (stopped) return
+      await killTree(child.pid!, "SIGKILL")
+      await Promise.race([
+        exit.then(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 500)),
+      ])
+    })()
+    return stopping
   }
 
   return { events, child: { kill }, exit }
+}
+
+export async function cleanupStaleSidecar() {
+  const owner = readSidecarOwner()
+  if (!owner) return
+  if (!sidecarCommandMatches(owner)) {
+    clearSidecarOwner(owner.pid)
+    return
+  }
+  await killTree(owner.pid, "SIGTERM")
+  clearSidecarOwner(owner.pid)
+}
+
+function killTree(pid: number, signal: "SIGTERM" | "SIGKILL") {
+  return new Promise<void>((resolve) => {
+    treeKill(pid, signal, (error) => {
+      if (error && (error as NodeJS.ErrnoException).code !== "ESRCH") {
+        console.warn(`[cli] Failed to ${signal} sidecar process tree ${pid}: ${error.message}`)
+      }
+      resolve()
+    })
+  })
+}
+
+function sidecarOwnerFile() {
+  return join(app.getPath("userData"), "sidecar-owner.json")
+}
+
+function recordSidecarOwner(pid: number) {
+  mkdirSync(app.getPath("userData"), { recursive: true })
+  writeFileSync(sidecarOwnerFile(), JSON.stringify({ pid, executable: getSidecarPath() }))
+}
+
+function readSidecarOwner() {
+  try {
+    const value = JSON.parse(readFileSync(sidecarOwnerFile(), "utf8")) as {
+      pid?: unknown
+      executable?: unknown
+    }
+    if (typeof value.pid !== "number" || typeof value.executable !== "string") return
+    return { pid: value.pid, executable: value.executable }
+  } catch {
+    return
+  }
+}
+
+function clearSidecarOwner(pid: number) {
+  if (readSidecarOwner()?.pid !== pid) return
+  try {
+    unlinkSync(sidecarOwnerFile())
+  } catch {}
+}
+
+function sidecarCommandMatches(owner: { pid: number; executable: string }) {
+  if (process.platform === "win32") return false
+  try {
+    return execFileSync("ps", ["-p", String(owner.pid), "-o", "command="], { encoding: "utf8" })
+      .includes(owner.executable)
+  } catch {
+    return false
+  }
 }
 
 function handleSqliteProgress(events: EventEmitter, line: string) {
@@ -213,6 +320,7 @@ function buildCommand(args: string, env: Record<string, string>) {
       'if [ ! -x "$BIN" ]; then',
       `  curl -fsSL https://opencode.ai/install | bash -s -- --version ${shellEscape(version)} --no-modify-path`,
       "fi",
+      `printf '__CLAXEDO_DIAGNOSTICS_WSL__ %s %s %s\\n' ${shellEscape(env.CLAXEDO_DIAGNOSTICS_WSL_HANDSHAKE ?? "")} "$$" "$(awk '{print $22}' /proc/$$/stat)" >&2`,
       `${envPrefix(env)} exec "$BIN" ${args}`,
     ].join("\n")
 
@@ -228,6 +336,15 @@ function buildCommand(args: string, env: Record<string, string>) {
   const shell = process.env.SHELL || "/bin/sh"
   const line = shell.endsWith("/nu") ? `^\"${sidecar}\" ${args}` : `exec \"${sidecar}\" ${args}`
   return { cmd: shell, cmdArgs: ["-l", "-c", line] }
+}
+
+export function parseWslDiagnosticsHandshake(line: string, expected?: string) {
+  if (!expected) return
+  const match = /^__CLAXEDO_DIAGNOSTICS_WSL__ ([A-Za-z0-9-]{1,256}) ([1-9]\d*) ([1-9]\d*)$/.exec(line)
+  if (!match || match[1] !== expected) return
+  const pid = Number(match[2])
+  if (!Number.isSafeInteger(pid)) return
+  return { handshakeId: match[1], pid, startTicks: match[3]! }
 }
 
 function envPrefix(env: Record<string, string>) {

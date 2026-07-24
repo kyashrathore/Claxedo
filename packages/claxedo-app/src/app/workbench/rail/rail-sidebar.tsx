@@ -21,13 +21,12 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useLanguage, usePlatform, useServer } from "@claxedo/app"
+import { useLanguage, useServer } from "@claxedo/app"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePermission } from "@/features/session/providers/permission"
 import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { DialogEditProject } from "../../../features/workspaces/ui/dialog-edit-project"
-import { DialogProcessDiagnostics } from "@/features/processes/ui"
 import { UsageLimitsPanel } from "../controls/usage-limits-popover"
 import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { getFilename } from "@/lib/path"
@@ -171,6 +170,7 @@ export type RailSidebarProps = {
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
   onDeleteSession?: (session: SessionItem) => void
   onArchiveSession?: (session: SessionItem) => boolean | Promise<boolean>
+  onDiagnostics?: () => void
   onSettings?: () => void
   onHelp?: () => void
   onOpenMarketplace?: () => void
@@ -423,7 +423,6 @@ function replaceSessionUrl(session: Row) {
 export function RailSidebar(props: RailSidebarProps) {
   const claxedoState = useClaxedoState()
   const language = useLanguage()
-  const platform = usePlatform()
 
   const openWorkspacePanel = (directory: string) => {
     claxedoState.workspacePanel.open("review", {
@@ -1294,30 +1293,6 @@ export function RailSidebar(props: RailSidebarProps) {
     ids.forEach((id) => {
       void terminal?.close(id)
     })
-  }
-
-  const openDiagnostics = () => {
-    dialog.show(() => (
-      <DialogProcessDiagnostics
-        directory={activeDirectory()}
-        request={platform.fetch}
-        surfaces={() => claxedoState.meta.all().map((item) => ({
-          id: item.id,
-          type: item.type,
-          terminalId: item.terminalId,
-          sessionId: item.sessionId,
-          directory: item.directory,
-          title: item.content?.title,
-          paneId: claxedoState.wb.selectors.contentPane(item.id) ?? undefined,
-        }))}
-        focusSurface={(paneId, surfaceId) => {
-          claxedoState.wb.split.focus(paneId)
-          claxedoState.layout.showContent(surfaceId)
-        }}
-        openTerminal={(directory, terminalId, title) =>
-          claxedoState.layout.openTerminal(directory, terminalId, title)}
-      />
-    ))
   }
 
   onMount(() => {
@@ -2568,7 +2543,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <RailAccountMenu
               railWidth={width()}
               onRailLockChange={handleRailMenuOpenChange}
-              onDiagnostics={openDiagnostics}
+              onDiagnostics={props.onDiagnostics}
               onSettings={props.onSettings}
               onHelp={props.onHelp}
               utilities={() => <><FilterMenu /><UsageLimitsMenu /></>}

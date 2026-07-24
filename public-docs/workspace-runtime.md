@@ -196,6 +196,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | --- | --- |
 | `GET /api/wr/health` | Runtime health, active harness, workspace id, process counts, capabilities. |
 | `GET /api/wr/capabilities` | Runtime capability manifest. |
+| `/api/wr/checkpoint/*` | Freeze, flush, scrub, resume, and restore reconciliation for consistent provider capture. |
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |
 | `GET /api/wr/harness-config-options` | Probe harness config options for non-OpenCode harnesses. |
 | `/api/wr/events` | Process-global compatibility event stream. |
@@ -208,6 +209,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/process/*` | Managed process config, lifecycle, diagnostics, port map, logs. |
 | `/api/wr/hook/*` | Agent hook routes. |
 | `/api/wr/session-env/*` | Session environment descriptors for tools-only central sessions. |
+| `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
 | `/api/workgraph/tools`, `/api/workgraph/connection-binding` | WorkGraph connection tool invocation and binding routes. |
 | `/api/workgraph/attempt-tools`, `/api/workgraph/attempt-binding` | WorkGraph attempt tool invocation and binding routes. |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |

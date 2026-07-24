@@ -20,6 +20,7 @@ import { Log } from "../../log"
 import { blocks, extractAgents, init, merge, resume, sync, type ACPState } from "./session"
 import { IDLE_TIMEOUT_MS, promptTimeoutMs, watch } from "./helpers"
 import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
+import type { AgentProcessObserverHandle } from "../../process-observer"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -58,6 +59,9 @@ export class ACPProcess {
   private exitWaiters: Array<(err: Error) => void> = []
   private deadNotified = false
   private disposed = false
+  private observation: AgentProcessObserverHandle | undefined
+  private observationExited = false
+  private observationExit: { reason: "exited" | "error" | "disposed"; exitCode?: number } | undefined
 
   constructor(
     readonly directory: string,
@@ -68,6 +72,10 @@ export class ACPProcess {
     private readonly onDead: () => void,
     createTransport: ACPTransportFactory,
     private readonly env: () => ACPTransportEnv,
+    observe?: (input: {
+      pid?: number
+      kind: ACPTransport["kind"]
+    }) => AgentProcessObserverHandle,
   ) {
     this.transport = createTransport({
       directory,
@@ -82,15 +90,22 @@ export class ACPProcess {
       },
       onExit: (code, signal) => {
         log.info("ACP transport exited", { code, signal, directory, kind: this.transport?.kind })
+        this.exitObservation({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
         this.failExitWaiters(new Error(this.exitMessage(code, signal)))
         this.notifyDead()
       },
       onError: (err) => {
         log.error("ACP transport error", { err, binary, directory, kind: this.transport?.kind })
+        this.exitObservation({ reason: "error" })
         this.failExitWaiters(err)
         this.notifyDead()
       },
     })
+    this.observation = observe?.({
+      ...(this.transport.pid ? { pid: this.transport.pid } : {}),
+      kind: this.transport.kind,
+    })
+    if (this.observationExit) this.observation?.exit(this.observationExit)
     log.info("ACP transport created", this.transport.metadata)
 
     this.connection = client({ name: "claxedo-workspace-runtime" })
@@ -228,6 +243,7 @@ export class ACPProcess {
       this.waitForExit(),
     ])
     this.caps = result.agentCapabilities ?? null
+    this.observation?.update({ lifecycle: "ready" })
     log.info("ACP initialize: handshake complete", { directory: this.directory, ms: Date.now() - t0 })
   }
 
@@ -486,11 +502,20 @@ export class ACPProcess {
   }
 
   dispose() {
+    if (this.disposed) return
     this.disposed = true
+    this.exitObservation({ reason: "disposed" })
     if (this.idleTimer) clearTimeout(this.idleTimer)
     log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind })
     this.connection.close()
     this.transport.dispose()
+  }
+
+  private exitObservation(input: { reason: "exited" | "error" | "disposed"; exitCode?: number }) {
+    if (this.observationExited) return
+    this.observationExited = true
+    this.observationExit = input
+    this.observation?.exit(input)
   }
 
   get alive(): boolean {

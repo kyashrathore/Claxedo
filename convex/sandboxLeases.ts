@@ -23,6 +23,9 @@ const leasePatch = v.object({
   last_heartbeat_at: v.optional(v.number()),
   last_activity_at: v.optional(v.number()),
   labels: v.optional(v.any()),
+  checkpoint: v.optional(v.union(v.any(), v.null())),
+  persistence_capabilities: v.optional(v.union(v.any(), v.null())),
+  restore_status: v.optional(v.union(v.any(), v.null())),
 })
 
 function optionalString(row: Record<string, unknown>, key: string) {
@@ -38,10 +41,18 @@ function optionalLabels(row: Record<string, unknown>) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : undefined
 }
 
+function optionalObject(row: Record<string, unknown>, key: string) {
+  const value = row[key]
+  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined
+}
+
 function canonicalLeaseDocument(row: Record<string, unknown>) {
   const resourceId = optionalString(row, "driver_resource_id")
   const url = optionalString(row, "runtime_url") ?? optionalString(row, "url")
   const labels = optionalLabels(row)
+  const checkpoint = optionalObject(row, "checkpoint")
+  const persistence = optionalObject(row, "persistence_capabilities")
+  const restore = optionalObject(row, "restore_status")
   return {
     workspace_id: optionalString(row, "workspace_id") ?? "",
     home_region: optionalString(row, "home_region") ?? "us-east",
@@ -58,6 +69,9 @@ function canonicalLeaseDocument(row: Record<string, unknown>) {
     ...(optionalNumber(row, "last_heartbeat_at") === undefined ? {} : { last_heartbeat_at: optionalNumber(row, "last_heartbeat_at") }),
     ...(optionalNumber(row, "last_activity_at") === undefined ? {} : { last_activity_at: optionalNumber(row, "last_activity_at") }),
     ...(labels ? { labels } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
+    ...(persistence ? { persistence_capabilities: persistence } : {}),
+    ...(restore ? { restore_status: restore } : {}),
     created_at: optionalNumber(row, "created_at") ?? Date.now(),
     updated_at: optionalNumber(row, "updated_at") ?? Date.now(),
   }
@@ -133,6 +147,9 @@ export const acquire = serviceMutation({
       last_heartbeat_at: resumable ? current.last_heartbeat_at : undefined,
       last_activity_at: resumable ? current.last_activity_at : undefined,
       labels: resumable ? current.labels : undefined,
+      checkpoint: current?.checkpoint,
+      persistence_capabilities: current?.persistence_capabilities,
+      restore_status: current?.restore_status,
       created_at: current?.created_at ?? now,
       updated_at: now,
     }
@@ -158,7 +175,15 @@ export const update = serviceMutation({
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
       .first()
     if (!current || current.epoch !== args.expected_epoch) return null
-    const { next_retry_at, last_error, url, ...rest } = args.patch
+    const {
+      next_retry_at,
+      last_error,
+      url,
+      checkpoint,
+      persistence_capabilities,
+      restore_status,
+      ...rest
+    } = args.patch
     const next: Record<string, unknown> = {
       ...rest,
       updated_at: Date.now(),
@@ -166,6 +191,11 @@ export const update = serviceMutation({
     if (url !== undefined) next.runtime_url = url
     if (next_retry_at !== undefined) next.next_retry_at = next_retry_at === null ? undefined : next_retry_at
     if (last_error !== undefined) next.last_error = last_error === null ? undefined : last_error
+    if (checkpoint !== undefined) next.checkpoint = checkpoint === null ? undefined : checkpoint
+    if (persistence_capabilities !== undefined) {
+      next.persistence_capabilities = persistence_capabilities === null ? undefined : persistence_capabilities
+    }
+    if (restore_status !== undefined) next.restore_status = restore_status === null ? undefined : restore_status
     const lease = canonicalLeaseDocument({ ...current, ...next })
     await ctx.db.replace(current._id, lease)
     return normalizeLease({ _id: current._id, ...lease })

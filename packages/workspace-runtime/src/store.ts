@@ -5,7 +5,14 @@ import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { ACP_RECOVER } from "@claxedo/agent-sdk-runtime/adapters"
 import { firstTurnErrorData, normalizeAgentHarnessTransport, normalizeHarnessIdentity }
   from "@claxedo/agent-sdk-runtime"
-import type { AgentMessageRow, HarnessConnection, SessionConfig, SessionConfigUpdate, SessionHarness } from "@claxedo/agent-sdk-runtime"
+import type {
+  AgentMessageRow,
+  AgentTurnOutcome,
+  HarnessConnection,
+  SessionConfig,
+  SessionConfigUpdate,
+  SessionHarness,
+} from "@claxedo/agent-sdk-runtime"
 import {
   type CompatEvent,
   buildAssistantMessage,
@@ -47,6 +54,12 @@ type Turn = {
   format?: UserMessage["format"]
   system?: string
   variant?: string
+}
+
+type TurnFinish = {
+  type: "turn.finish"
+  assistantMessageId: string
+  outcome: AgentTurnOutcome
 }
 
 type SessionInterrupted = {
@@ -113,6 +126,7 @@ type ConfigUpdate = {
 type Control =
   | Bind
   | Turn
+  | TurnFinish
   | SessionInterrupted
   | LegacyProcessLost
   | SessionUpdate
@@ -157,6 +171,18 @@ export type RuntimeStoreTurnStartOutput = {
   createdAt: number
   agentSessionId?: string
   events: CompatEvent[]
+}
+
+export type WorkspaceWorktreeRecord = {
+  workspaceId: string
+  sessionId: string
+  branch: string
+  baseCommit: string
+  path: string
+  state: "creating" | "active" | "repairing" | "failed"
+  createdAt: number
+  updatedAt: number
+  lastActivityAt: number
 }
 
 const requireDatabase = createRequire(import.meta.url)
@@ -410,6 +436,11 @@ export class RuntimeStore {
     this.db.close?.()
   }
 
+  flush() {
+    if (this.closed) throw new Error("Runtime store is closed")
+    this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+  }
+
   private migrate() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_journal (
@@ -423,6 +454,7 @@ export class RuntimeStore {
         turn_id TEXT,
         user_message_id TEXT,
         assistant_message_id TEXT,
+        part_id TEXT,
         payload_json TEXT NOT NULL,
         source_json TEXT,
         PRIMARY KEY (session_id, seq)
@@ -431,6 +463,16 @@ export class RuntimeStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS runtime_journal_session_created_idx
       ON runtime_journal (session_id, created_at, seq)
+    `)
+    try {
+      this.db.exec("ALTER TABLE runtime_journal ADD COLUMN part_id TEXT")
+    } catch {
+      // column already exists
+    }
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS runtime_journal_part_snapshot_idx
+      ON runtime_journal (session_id, part_id, seq)
+      WHERE kind = 'event' AND type = 'message.part.updated' AND part_id IS NOT NULL
     `)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (
@@ -528,6 +570,23 @@ export class RuntimeStore {
         session_id TEXT PRIMARY KEY,
         deleted_at INTEGER NOT NULL
       )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_worktree (
+        session_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        base_commit TEXT NOT NULL,
+        path TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_activity_at INTEGER NOT NULL
+      )
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS workspace_worktree_workspace_activity_idx
+      ON workspace_worktree (workspace_id, last_activity_at DESC)
     `)
     // Migration: add archived_at column for existing databases
     try {
@@ -630,30 +689,51 @@ export class RuntimeStore {
   }
 
   private replay() {
-    this.reset()
-    const rows = this.db
+    const sessions = this.db
       .prepare(`
-        SELECT
-          session_id,
-          seq,
-          kind,
-          type,
-          created_at,
-          provider_session_id,
-          process_key,
-          turn_id,
-          user_message_id,
-          assistant_message_id,
-          payload_json,
-          source_json
-        FROM runtime_journal
-        ORDER BY session_id ASC, seq ASC
+        SELECT journal.session_id, COALESCE(checkpoint.last_seq, 0) AS last_seq, journal.max_seq
+        FROM (
+          SELECT session_id, MAX(seq) AS max_seq
+          FROM runtime_journal
+          GROUP BY session_id
+        ) AS journal
+        LEFT JOIN journal_checkpoint AS checkpoint ON checkpoint.session_id = journal.session_id
+        WHERE journal.max_seq > COALESCE(checkpoint.last_seq, 0)
+        ORDER BY journal.session_id ASC
       `)
-      .all() as RuntimeJournalRow[]
-    for (const row of rows) {
-      const parsed = this.parseJournalRow(row)
-      if (!parsed) continue
-      this.project(parsed)
+      .all() as Array<{ session_id: string; last_seq: number; max_seq: number }>
+    for (const session of sessions) {
+      let cursor = session.last_seq
+      while (cursor < session.max_seq) {
+        const rows = this.db
+          .prepare(`
+            SELECT
+              session_id,
+              seq,
+              kind,
+              type,
+              created_at,
+              provider_session_id,
+              process_key,
+              turn_id,
+              user_message_id,
+              assistant_message_id,
+              payload_json,
+              source_json
+            FROM runtime_journal
+            WHERE session_id = ? AND seq > ?
+            ORDER BY seq ASC
+            LIMIT 100
+          `)
+          .all(session.session_id, cursor) as RuntimeJournalRow[]
+        if (rows.length === 0) break
+        for (const row of rows) {
+          cursor = row.seq
+          const parsed = this.parseJournalRow(row)
+          if (!parsed) continue
+          this.project(parsed)
+        }
+      }
     }
   }
 
@@ -718,6 +798,81 @@ export class RuntimeStore {
 
   recoverBusySessions() {
     this.normalizeRecoveringTools()
+  }
+
+  putWorktree(record: WorkspaceWorktreeRecord) {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO workspace_worktree (
+        session_id,
+        workspace_id,
+        branch,
+        base_commit,
+        path,
+        state,
+        created_at,
+        updated_at,
+        last_activity_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.sessionId,
+      record.workspaceId,
+      record.branch,
+      record.baseCommit,
+      record.path,
+      record.state,
+      record.createdAt,
+      record.updatedAt,
+      record.lastActivityAt,
+    )
+  }
+
+  getWorktree(sessionId: string): WorkspaceWorktreeRecord | undefined {
+    const row = this.db.prepare(`
+      SELECT
+        workspace_id,
+        session_id,
+        branch,
+        base_commit,
+        path,
+        state,
+        created_at,
+        updated_at,
+        last_activity_at
+      FROM workspace_worktree
+      WHERE session_id = ?
+    `).get(sessionId) as {
+      workspace_id: string
+      session_id: string
+      branch: string
+      base_commit: string
+      path: string
+      state: WorkspaceWorktreeRecord["state"]
+      created_at: number
+      updated_at: number
+      last_activity_at: number
+    } | undefined
+    if (!row) return
+    return {
+      workspaceId: row.workspace_id,
+      sessionId: row.session_id,
+      branch: row.branch,
+      baseCommit: row.base_commit,
+      path: row.path,
+      state: row.state,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      lastActivityAt: row.last_activity_at,
+    }
+  }
+
+  listWorktrees(workspaceId: string): WorkspaceWorktreeRecord[] {
+    return (this.db.prepare(`
+      SELECT session_id
+      FROM workspace_worktree
+      WHERE workspace_id = ?
+      ORDER BY last_activity_at DESC, session_id ASC
+    `).all(workspaceId) as Array<{ session_id: string }>)
+      .map((row) => this.getWorktree(row.session_id)!)
   }
 
   private importJsonlJournals() {
@@ -828,19 +983,33 @@ export class RuntimeStore {
 
   private insertRuntimeJournal(row: Row, seq = this.next(row.sessionId), options: { ignoreDuplicate?: boolean } = {}) {
     const type = row.kind === "control" ? row.control.type : row.payload.type
+    const partId = row.kind === "event" && row.payload.type === "message.part.updated"
+      ? row.payload.properties.part.id
+      : null
     const processKey = row.kind === "control" && row.control.type === "session.bind"
       ? row.control.ownerKey ?? row.control.processKey ?? null
       : null
-    const turnId = row.kind === "control" && row.control.type === "turn.start"
+    const turnId = row.kind === "control" && (row.control.type === "turn.start" || row.control.type === "turn.finish")
       ? row.control.assistantMessageId
       : null
     const userMessageId = row.kind === "control" && row.control.type === "turn.start"
       ? row.control.userMessageId ?? null
       : null
-    const assistantMessageId = row.kind === "control" && row.control.type === "turn.start"
-      ? row.control.assistantMessageId
-      : null
+    const assistantMessageId =
+      row.kind === "control" && (row.control.type === "turn.start" || row.control.type === "turn.finish")
+        ? row.control.assistantMessageId
+        : null
     this.transaction(() => {
+      if (partId && !options.ignoreDuplicate) {
+        this.db.prepare(`
+          DELETE FROM runtime_journal
+          WHERE session_id = ?
+            AND kind = 'event'
+            AND type = 'message.part.updated'
+            AND part_id = ?
+            AND seq < ?
+        `).run(row.sessionId, partId, seq)
+      }
       this.db.prepare(`
         INSERT ${options.ignoreDuplicate ? "OR IGNORE " : ""}INTO runtime_journal (
           session_id,
@@ -853,9 +1022,10 @@ export class RuntimeStore {
           turn_id,
           user_message_id,
           assistant_message_id,
+          part_id,
           payload_json,
           source_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         row.sessionId,
         seq,
@@ -867,6 +1037,7 @@ export class RuntimeStore {
         turnId,
         userMessageId,
         assistantMessageId,
+        partId,
         JSON.stringify(row.kind === "control" ? row.control : row.payload),
         row.kind === "event" && row.source ? JSON.stringify(row.source) : null,
       )
@@ -1138,6 +1309,7 @@ export class RuntimeStore {
       })
       return
     }
+    if (control.type === "turn.finish") return
     if (control.type === "config.update") {
       this.applyConfigUpdate(row.sessionId, control.patch, row.ts, control.directory)
       return
@@ -1570,7 +1742,7 @@ export class RuntimeStore {
   finishTurn(input: {
     sessionId: string
     assistantMessageId?: string
-    outcome: { status: "completed" | "failed" | "cancelled"; completedAt?: number; error?: string; reason?: string }
+    outcome: AgentTurnOutcome
   }) {
     const active = this.db
       .prepare(`
@@ -1589,6 +1761,7 @@ export class RuntimeStore {
       } | null
     if (!active?.assistant_message_id) return
     if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return
+    if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return
 
     if (input.outcome.status === "failed") {
       const control = JSON.parse(active.payload_json) as Partial<Turn>
@@ -1604,7 +1777,7 @@ export class RuntimeStore {
           model: control.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
           directory: session?.directory ?? "",
           created: active.created_at,
-          completed: input.outcome.completedAt ?? Date.now(),
+          completed: input.outcome.completedAt,
           error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
           ...(control.variant ? { variant: control.variant } : {}),
         })),
@@ -1614,20 +1787,30 @@ export class RuntimeStore {
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
         payload: sessionError(input.outcome.error ?? "turn failed", input.sessionId),
       })
-      return
+    } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
+      this.appendEvent({
+        sessionId: input.sessionId,
+        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
+        payload: messageCompleted(input.sessionId, active.assistant_message_id),
+      })
+      this.appendEvent({
+        sessionId: input.sessionId,
+        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
+        payload: sessionIdle(input.sessionId),
+      })
     }
 
-    if (this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) return
-
-    this.appendEvent({
+    this.commit({
+      seq: this.next(input.sessionId),
+      ts: input.outcome.completedAt,
       sessionId: input.sessionId,
       ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-      payload: messageCompleted(input.sessionId, active.assistant_message_id),
-    })
-    this.appendEvent({
-      sessionId: input.sessionId,
-      ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
-      payload: sessionIdle(input.sessionId),
+      kind: "control",
+      control: {
+        type: "turn.finish",
+        assistantMessageId: active.assistant_message_id,
+        outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
+      },
     })
   }
 
@@ -1640,6 +1823,20 @@ export class RuntimeStore {
           AND kind = 'event'
           AND type = 'message.completed'
           AND json_extract(payload_json, '$.properties.messageID') = ?
+        LIMIT 1
+      `)
+      .get(sessionId, messageId)
+  }
+
+  private hasTurnFinished(sessionId: string, messageId: string) {
+    return !!this.db
+      .prepare(`
+        SELECT 1
+        FROM runtime_journal
+        WHERE session_id = ?
+          AND kind = 'control'
+          AND type = 'turn.finish'
+          AND assistant_message_id = ?
         LIMIT 1
       `)
       .get(sessionId, messageId)
@@ -1703,13 +1900,19 @@ export class RuntimeStore {
         SELECT seq, type, created_at, payload_json
         FROM runtime_journal
         WHERE session_id = ?
-          AND kind = 'event'
-          AND type IN ('message.completed', 'session.error')
+          AND (
+            (kind = 'control' AND type = 'turn.finish')
+            OR (kind = 'event' AND type IN ('message.completed', 'session.error'))
+          )
         ORDER BY seq DESC
         LIMIT 1
       `)
       .get(sessionId) as { seq: number; type: string; created_at: number; payload_json: string } | null
     if (!row) return
+    if (row.type === "turn.finish") {
+      const control = JSON.parse(row.payload_json) as TurnFinish
+      return control.outcome
+    }
     const payload = JSON.parse(row.payload_json) as { properties?: Record<string, unknown> }
     if (row.type === "message.completed") {
       const assistantMessageId = typeof payload.properties?.messageID === "string" ? payload.properties.messageID : undefined

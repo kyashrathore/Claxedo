@@ -54,6 +54,7 @@ export function createNewSessionWorkspaceState(input: {
     options,
     currentWorktree,
     creatingWorkspace: input.selectedWorktree === CREATE_WORKTREE || (input.workspaceKind === "cloud" && options.length === 0),
+    createSessionWorktree: input.workspaceKind === "cloud" || input.selectedWorktree === CREATE_WORKTREE,
     directoryFor,
     kindFor,
   }

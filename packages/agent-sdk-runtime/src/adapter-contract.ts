@@ -1,6 +1,7 @@
 import type { CompatEvent } from "./compat-events"
 import type { StatusChunk } from "./status"
 import type { AdapterCapability, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
+import type { AgentProcessObserver } from "./process-observer"
 import type {
   AgentAgent,
   AgentCommand,
@@ -32,6 +33,11 @@ export type AgentHarnessAdapterHealth = {
 }
 
 export type PermissionDecision = "allow_once" | "allow_always" | "deny" | "reject_always"
+
+export type AgentHarnessAdapterProcessOptions = {
+  /** Optional local diagnostics sink. Observation never changes harness behavior. */
+  processObserver?: AgentProcessObserver
+}
 
 export type AgentInteractionResult = {
   events: CompatEvent[]

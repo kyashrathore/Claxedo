@@ -105,6 +105,14 @@ export function createFetchBridgeSandboxDriver(options: FetchBridgeSandboxDriver
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: false,
+        captureSource: "not-applicable",
+        retention: "not-applicable",
+        restoreMount: "not-applicable",
+      },
     },
     ensureHost,
     async list() {

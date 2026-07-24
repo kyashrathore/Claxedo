@@ -31,6 +31,7 @@ import { claxedoMcpReadOnly } from "./tool-policy"
 import { registerWorkGraphTools } from "./workgraph-tools"
 import { registerDocumentTools } from "./documents-tools"
 import { runDocumentsCli } from "./documents-cli"
+import { registerCloudWorkspaceTools } from "./cloud-workspace-tools"
 
 const clean = (value: unknown) => {
   if (typeof value !== "string") return ""
@@ -233,6 +234,12 @@ registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "jso
   directory: DEFAULT_DIR,
   sessionId: DEFAULT_SESSION_ID,
 })
+
+registerCloudWorkspaceTools(
+  registerTool,
+  (path, init) => httpRequest(path, init, "json", undefined, "owner"),
+  READ_ONLY,
+)
 
 if (!READ_ONLY) {
   registerTool(

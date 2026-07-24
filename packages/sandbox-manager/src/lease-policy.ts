@@ -1,5 +1,5 @@
 import type { SandboxLeaseRow } from "./lease-types"
-import type { SandboxDriverID } from "./driver-catalog"
+import { sandboxDriverCatalog, type SandboxDriverID } from "./driver-catalog"
 
 export type SandboxDecision =
   | { action: "skip"; reason: string }
@@ -33,53 +33,20 @@ export const DEFAULT_WORKSPACE_HOST_DECISION_CONFIG: SandboxDecisionConfig = {
   healthTimeoutMs: 60_000,
 }
 
-const DRIVER_PLACEMENT: Record<SandboxDriverID, SandboxDriverPlacement> = {
-  daytona: {
-    canPauseAndRestartSameResource: true,
-    canCreateFilesystemSnapshot: false,
-    canStartFromPreparedImage: true,
-    canStopExplicitly: true,
-    hasHealthProbe: true,
-  },
-  modal: {
-    canPauseAndRestartSameResource: false,
-    canCreateFilesystemSnapshot: true,
-    canStartFromPreparedImage: true,
-    canStopExplicitly: true,
-    hasHealthProbe: true,
-  },
-  vercel: {
-    canPauseAndRestartSameResource: false,
-    canCreateFilesystemSnapshot: true,
-    canStartFromPreparedImage: false,
-    canStopExplicitly: true,
-    hasHealthProbe: true,
-  },
-  cloudflare: {
-    canPauseAndRestartSameResource: false,
-    canCreateFilesystemSnapshot: true,
-    canStartFromPreparedImage: false,
-    canStopExplicitly: false,
-    hasHealthProbe: true,
-  },
-  box: {
-    canPauseAndRestartSameResource: true,
-    canCreateFilesystemSnapshot: false,
-    canStartFromPreparedImage: true,
-    canStopExplicitly: true,
-    hasHealthProbe: true,
-  },
-  docker: {
-    canPauseAndRestartSameResource: true,
-    canCreateFilesystemSnapshot: false,
-    canStartFromPreparedImage: true,
-    canStopExplicitly: true,
-    hasHealthProbe: true,
-  },
-}
-
 export function sandboxDriverPlacement(driver: SandboxDriverID): SandboxDriverPlacement {
-  return DRIVER_PLACEMENT[driver]
+  const metadata = sandboxDriverCatalog[driver].metadata
+  return {
+    canPauseAndRestartSameResource: metadata.persistence.resume === "same-sandbox",
+    canCreateFilesystemSnapshot: metadata.persistence.capture === "filesystem"
+      || metadata.persistence.capture === "directories",
+    canStartFromPreparedImage: driver === "exe"
+      || driver === "daytona"
+      || driver === "modal"
+      || driver === "box"
+      || driver === "docker",
+    canStopExplicitly: metadata.hostStopBehavior !== "not-supported",
+    hasHealthProbe: true,
+  }
 }
 
 export function decideSandboxStart(

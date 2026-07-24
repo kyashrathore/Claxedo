@@ -82,6 +82,52 @@ describe("prompt input submit UI state", () => {
     })
   })
 
+  test("a newly mounted session composer can retry a prompt restored from the transcript", async () => {
+    await createRoot(async (dispose) => {
+      let promptValue: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
+      const [resetKey, setResetKey] = createSignal("session-after-navigation")
+      let registeredRetry: ((prompt?: Prompt) => void) | undefined
+      const rawPrompts: Prompt[] = []
+      createPromptInputSubmitRetry({
+        resetKey,
+        rawHandleSubmit: () => {
+          rawPrompts.push(promptValue)
+        },
+        roleSubmitBlocked: () => false,
+        prompt: {
+          current: () => promptValue,
+          set: (next) => {
+            promptValue = next
+          },
+        },
+        imageCount: () => 0,
+        commentCount: () => 0,
+        mode: () => "normal",
+        setMode: () => undefined,
+        promptLength: (prompt) =>
+          prompt.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+        clearBoot: () => undefined,
+        registerRetry: (next) => {
+          registeredRetry = next
+        },
+      })
+
+      registeredRetry?.([{ type: "text", content: "failed first turn", start: 0, end: 17 }])
+
+      expect(rawPrompts).toEqual([
+        [{ type: "text", content: "failed first turn", start: 0, end: 17 }],
+      ])
+
+      setResetKey("same-composer-new-scope")
+      await Promise.resolve()
+      registeredRetry?.([{ type: "text", content: "retry after scope reset", start: 0, end: 23 }])
+      expect(rawPrompts[1]).toEqual([
+        { type: "text", content: "retry after scope reset", start: 0, end: 23 },
+      ])
+      dispose()
+    })
+  })
+
   test("role-blocked submits prevent default and skip the raw pipeline", async () => {
     await createRoot(async (dispose) => {
       let rawCalls = 0

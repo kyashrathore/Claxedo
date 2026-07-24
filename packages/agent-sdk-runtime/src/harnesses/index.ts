@@ -12,13 +12,18 @@ import { CodexHarnessAdapter } from "./codex"
 import { CursorHarnessAdapter } from "./cursor"
 import { OpenCodeHarnessAdapter } from "./opencode"
 import { PiHarnessAdapter } from "./pi"
+import type { AgentProcessObserver } from "../process-observer"
 
-type NativeFactoryOptions = {
+type ProcessObservedFactoryOptions = {
+  processObserver?: AgentProcessObserver
+}
+
+type NativeFactoryOptions = ProcessObservedFactoryOptions & {
   access?: "native"
   binary?: string
 }
 
-type AcpFactoryOptions = {
+type AcpFactoryOptions = ProcessObservedFactoryOptions & {
   access: "acp"
   binary?: string
   args?: string[]
@@ -34,7 +39,7 @@ type OpenCodeFactoryOptions = NativeFactoryOptions & {
   headers?: HeadersInit
 }
 type PiSessionPlacement = Omit<SessionEnvFactoryInput, "sessionId">
-type PiFactoryOptions = {
+type PiFactoryOptions = ProcessObservedFactoryOptions & {
   access?: "native"
   createEnv?: SessionEnvFactory
   defaultPlacement?: PiSessionPlacement | ((input: {
@@ -55,6 +60,7 @@ export function claude(options: ClaudeFactoryOptions = {}): AgentHarnessFactory 
       store: context.store,
       eventHub: context.eventHub,
       ...(options.binary ? { binary: options.binary } : {}),
+      ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     })
   })
 }
@@ -66,6 +72,7 @@ export function codex(options: CodexFactoryOptions = {}): AgentHarnessFactory {
       store: context.store,
       eventHub: context.eventHub,
       ...(options.binary ? { binary: options.binary } : {}),
+      ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     })
   })
 }
@@ -77,6 +84,7 @@ export function cursor(options: CursorFactoryOptions = {}): AgentHarnessFactory 
       store: context.store,
       eventHub: context.eventHub,
       ...(options.binary ? { binary: options.binary } : {}),
+      ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     })
   })
 }
@@ -85,6 +93,7 @@ export function opencode(options: OpenCodeFactoryOptions = {}): AgentHarnessFact
   return factory("opencode", "native", (context) => new OpenCodeHarnessAdapter(options.url, {
     eventHub: context.eventHub,
     ...(options.headers ? { headers: options.headers } : {}),
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))
 }
 
@@ -108,6 +117,7 @@ function acp(id: AcpHarnessId, options: AcpFactoryOptions, context: AgentHarness
     ...(options.args ? { args: options.args } : {}),
     ...(options.env ? { env: options.env } : {}),
     ...(options.createTransport ? { createTransport: options.createTransport as ConstructorParameters<typeof AcpHarnessAdapter>[0]["createTransport"] } : {}),
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   })
 }
 

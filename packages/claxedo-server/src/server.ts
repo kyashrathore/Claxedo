@@ -11,6 +11,7 @@ import { serveStatic } from "@hono/node-server/serve-static"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { z } from "zod"
 import { setupAgentHooks } from "@claxedo/workspace-runtime/host"
+import type { ProcessObserver } from "@claxedo/workspace-runtime"
 import { capture, initPostHog, shutdownPostHog } from "./posthog"
 import { initNodeObservability } from "./observability/node"
 import { reportError } from "./observability/report"
@@ -87,6 +88,7 @@ import { LivingAppsRoutes } from "./routes/living-apps"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "./relay-provider"
 import { sandboxFetch } from "./sandbox-target-fetch"
+import { WorkspaceCheckpointRoutes } from "./routes/workspace-checkpoints"
 import {
   ensureWorkspace,
   getWorkspaceByDirectory,
@@ -98,7 +100,10 @@ import {
 import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels-control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
-import { createClaxedoSessionEnvFactory } from "./workspace-runtime-integration/session-env"
+import {
+  createClaxedoSessionEnvFactory,
+  prepareWorkspaceRuntimeSession,
+} from "./workspace-runtime-integration/session-env"
 import {
   createLocalEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
@@ -119,6 +124,7 @@ import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorksp
 import { StreamIDSchema, masterAttemptId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphAttemptOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "./session-meta"
+import { ClaxedoDB } from "./storage/db"
 import { RemoteAccessRoutes } from "./routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "./routes/workspace-local-host"
@@ -273,6 +279,16 @@ export function createApp(
     // creation: virtual (in-memory) by default, or a workspace runtime via
     // /api/wr/session-env/* when toolSandbox.kind === "workspace-runtime".
     createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),
+    admitWorkspaceSession: async (input) => {
+      const workspace = await resolveWorkspace({ workspaceId: input.workspaceId })
+      if (!workspace) throw new Error(`workspace not found: ${input.workspaceId}`)
+      return prepareWorkspaceRuntimeSession({
+        workspace,
+        sessionId: input.sessionId,
+        ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
+        fetchOptions: runtimeProxyOptions,
+      })
+    },
     turnCredentials,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
   })
@@ -541,6 +557,11 @@ export function createApp(
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost)))
+  app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
+    loopbackRelayUrl: services.relay.relayUrl,
+    defaultHomeRegion: services.defaultHomeRegion,
+    allowUnsignedLocal: true,
+  }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/", centralControl.app)
   app.route(
@@ -618,6 +639,7 @@ export type ControlPlaneStackOptions = {
   port?: number
   opencodeUrl?: string
   opencodePassword?: string | null
+  processObserver?: ProcessObserver
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -675,6 +697,10 @@ export function createDefaultLocalControlPlaneServices() {
   }
   const sandboxManager = createWorkspaceSupervisorSandboxManager()
   const centralStore = createSqliteCentralStore({ mode: getSessionWriteMode })
+  // The health endpoint means the central projection is ready to serve. Open
+  // SQLite here so the renderer's first session-list request does not pay for
+  // migrations, repair checks, WAL checkpointing, and statement preparation.
+  ClaxedoDB.raw()
   const authority = authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority()
   return createControlPlaneServices(
     {
@@ -839,6 +865,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     opencodeRequest,
     opencodeCompat,
     piModelBackend: centralModelBackend().modelBackend,
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     workgraphAttemptBroker: async (request, signal) => {
       if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Attempt operation was cancelled")
       const binding = localWorkGraphAttempts.get(request.identity.sessionId)
@@ -915,9 +942,17 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createApp(services, {
     onOpencodeAccess: () => upstreamEvents?.start(),
-    beforeLocalSessionList: () => {
-      localSessionProjectionReady ??= refreshLocalSessionProjection()
-      return localSessionProjectionReady
+    beforeLocalSessionList: async () => {
+      if (localSessionProjectionReady) return
+      localSessionProjectionReady = new Promise((resolve) => {
+        setTimeout(() => {
+          void refreshLocalSessionProjection()
+            .catch((error) => {
+              console.warn("[claxedo-server] local session projection refresh failed", error)
+            })
+            .finally(resolve)
+        }, 250).unref()
+      })
     },
   })
   const workgraphRuntimes = new Map<
@@ -1354,7 +1389,12 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   return server
 }
 
-export function startServer(port = 3001, opencodeUrl?: string, opencodePassword?: string | null) {
+export function startServer(
+  port = 3001,
+  opencodeUrl?: string,
+  opencodePassword?: string | null,
+  options: { processObserver?: ProcessObserver } = {},
+) {
   // `undefined` opencodeUrl => embedded engine (the default local composition).
   // An explicit URL is the external-URL opt-in.
   return startControlPlaneStack({
@@ -1362,5 +1402,6 @@ export function startServer(port = 3001, opencodeUrl?: string, opencodePassword?
     port,
     ...(opencodeUrl ? { opencodeUrl } : {}),
     opencodePassword,
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   })
 }

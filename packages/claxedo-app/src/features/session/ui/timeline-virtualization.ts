@@ -1,5 +1,7 @@
 import type { Virtualizer } from "@tanstack/solid-virtual"
 
+export const TIMELINE_OVERSCAN = 3
+
 export function filterVirtualIndexes(indexes: number[], count: number) {
   return indexes.filter((index) => index >= 0 && index < count)
 }

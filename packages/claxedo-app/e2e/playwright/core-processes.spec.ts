@@ -83,11 +83,8 @@
  *     disabled until name+command non-empty), and in edit mode a "Delete" button that
  *     flips the footer to an inline confirm ("Are you sure you want to delete this
  *     process?", "Cancel" / `[data-testid="process-confirm-delete"]`).
- *   Diagnostics dialog (`dialog-process-diagnostics.tsx`, title "Process Diagnostics",
- *     opened from the sidebar account menu's "Diagnostics" item): health
- *     status line, 4-cell metrics strip (Active/Stale/External/Runtime), Overview tab
- *     (Active workloads / Stale / Other servers group lists, each row with
- *     Open/Stop/Kill actions) and Processes tab (filterable OS-process table).
+ *   Local performance diagnostics are supplied only by the desktop capability
+ *     and are covered by the desktop diagnostics suite.
  *
  * BEHAVIORS —
  *   1. The Processes navigator opens from the toolbar toggle; with zero configs it
@@ -138,10 +135,7 @@
  *  16. After create+start, a full page reload re-fetches from the backend and renders
  *      the same configs/processes — the client-side reload-recovery path that backs
  *      `.claxedo/processes.jsonc` persistence.
- *  17. The Diagnostics dialog opens from the sidebar, shows Overview/Processes tabs and
- *      a health/metrics strip, lists a running managed process under "Active
- *      workloads", and its Stop/Kill actions call the terminate endpoint and reconcile
- *      (re-`GET diagnostics`) afterward.
+ *  17. Diagnostics is absent from the hosted web platform.
  *  18. Mutation controls (Add / Start / Stop / Restart / Start-all / Edit) are present
  *      for a normal local workspace, where `canMutateProcesses()` is unconditionally
  *      true (see STATE MODEL) — the read-only/viewer-hides-controls half of this
@@ -292,7 +286,7 @@ async function fakePtyWebSocket(page: Page) {
 
 // ---------------------------------------------------------------------------
 // Process mock — hand-rolled because `installMockRuntime` does not cover
-// `/api/wr/process*` (process/diagnostics management is a distinct claxedo-server
+// `/api/wr/process*` (process management is a distinct claxedo-server
 // surface from the session/chat routes that helper mocks). Route shapes verified
 // against `src/process/client.ts` (`processPath`) and validated against the zod
 // schemas in `src/process/process.ts` that the client parses responses with.
@@ -341,7 +335,6 @@ type ProcessMockHandle = {
     stop: number
     restart: number
     startBodies: Array<Record<string, unknown> | undefined>
-    terminate: number
   }
   configs: () => MockConfig[]
   process: (configId: string) => MockManaged | undefined
@@ -369,7 +362,6 @@ async function installProcessMock(page: Page, opts: { directory?: string } = {})
     stop: 0,
     restart: 0,
     startBodies: [],
-    terminate: 0,
   }
 
   function isApi(route: Route) {
@@ -437,30 +429,6 @@ async function installProcessMock(page: Page, opts: { directory?: string } = {})
     const pathname = url.pathname
     const method = route.request().method()
     if (!pathname.startsWith("/api/wr/process")) return route.fallback()
-
-    // Diagnostics ------------------------------------------------------
-    if (pathname === "/api/wr/process/diagnostics/terminate" && method === "POST") {
-      requests.terminate += 1
-      let body: { pid?: number; process_id?: string; group_key?: string } = {}
-      try {
-        body = route.request().postDataJSON()
-      } catch {
-        body = {}
-      }
-      if (body.process_id) {
-        const proc = processes.get(body.process_id)
-        if (proc) {
-          proc.status = "stopped"
-          proc.ptyId = undefined
-          proc.exitCode = 0
-          proc.exitedAt = Date.now()
-        }
-      }
-      return json(route, true)
-    }
-    if (pathname === "/api/wr/process/diagnostics" && method === "GET") {
-      return json(route, buildDiagnostics())
-    }
 
     // start-all / stop-all ---------------------------------------------
     if (pathname === "/api/wr/process/start-all" && method === "POST") {
@@ -562,82 +530,6 @@ async function installProcessMock(page: Page, opts: { directory?: string } = {})
     }
 
     return route.fallback()
-  }
-
-  function buildDiagnostics() {
-    const now = Date.now()
-    const osRows: unknown[] = []
-    const owners: unknown[] = []
-    let pidSeed = 61000
-    for (const config of configs) {
-      const proc = processes.get(config.id)
-      if (!proc || (proc.status !== "running" && proc.status !== "starting" && proc.status !== "restarting")) continue
-      const pid = pidSeed++
-      const row = {
-        pid,
-        ppid: 1,
-        pgid: pid,
-        state: "S",
-        cpu_percent: 0.4,
-        rss_kb: 20480,
-        elapsed: "0:42",
-        kind: "process",
-        command: config.command,
-        command_short: config.command,
-        process_id: config.id,
-        port: proc.assignedPort,
-        status: "active",
-        reasons: [],
-        depth: 0,
-        current: true,
-        leaked: false,
-        hidden_by_default: false,
-      }
-      osRows.push(row)
-      owners.push({
-        key: `managed:${config.id}`,
-        kind: "managed_process",
-        title: config.name,
-        status: "active",
-        cpu_percent: 0.4,
-        rss_kb: 20480,
-        ports: proc.assignedPort ? [proc.assignedPort] : [],
-        pid,
-        process_id: config.id,
-        current: true,
-        leaked: false,
-        hidden_children: 0,
-        problem_children: 0,
-        children: [row],
-      })
-    }
-    return {
-      directory,
-      listening_ports: owners.flatMap((g) => (g as { ports: number[] }).ports),
-      server: { pid: 900, rss_kb: 51200, heap_used_kb: 10240, heap_total_kb: 20480, uptime_s: 120 },
-      configs,
-      processes: [...processes.values()],
-      ptys: [...processes.values()]
-        .filter((p) => p.ptyId)
-        .map((p) => ({
-          id: p.ptyId!,
-          title: configs.find((c) => c.id === p.configId)?.name ?? p.configId,
-          command: configs.find((c) => c.id === p.configId)?.command ?? "",
-          args: [],
-          cwd: directory,
-          status: "running" as const,
-          pid: pidSeed++,
-        })),
-      os: osRows,
-      owners,
-      leaks: [],
-      summary: {
-        current: { groups: owners.length, rows: osRows.length, cpu_percent: 0.4 * owners.length, rss_kb: 20480 * owners.length, hidden_children: 0, problem_children: 0 },
-        leaked: { groups: 0, rows: 0, cpu_percent: 0, rss_kb: 0, hidden_children: 0, problem_children: 0 },
-        external: { groups: 0, rows: 0, cpu_percent: 0, rss_kb: 0, hidden_children: 0, problem_children: 0 },
-      },
-      generated_at: now,
-    }
   }
 
   await page.route("**/api/wr/process**", handler)
@@ -1398,13 +1290,16 @@ test.describe("core processes @core", () => {
     async () => {},
   )
 
-  // Diagnostics is desktop-only (owner decision): the sidebar account menu's
-  // "Diagnostics" item is gated by `<Show when={usePlatform().platform === "desktop"}>`
-  // (rail-account-menu.tsx). This web harness always runs the "web" platform, so the
-  // item is intentionally absent here — assert that web-negative contract directly.
-  test("Diagnostics is absent from the account menu on the web platform — behavior 17", async ({ page }) => {
+  // This web harness has no desktop diagnostics capability. Assert both entry points:
+  // the zero-project recovery surface and the account menu after a project is loaded.
+  test("Diagnostics is absent from the web platform — behavior 17", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installProcessMock(page, { directory: DIR })
+    await page.addInitScript(() => localStorage.clear())
+    await page.goto("/")
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId("empty-diagnostics-trigger")).toHaveCount(0)
+
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 

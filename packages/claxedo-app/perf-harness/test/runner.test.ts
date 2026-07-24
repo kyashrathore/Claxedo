@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test"
-import { browserScenarioFailure, changedFilesForVcs, claxedoStateSeed, missingSessionMessageRequest } from "../src/browser-runner"
+import {
+  browserScenarioFailure,
+  changedFilesForVcs,
+  claxedoStateSeed,
+  diagnosticsPairModeOrder,
+  mergeDiagnosticsRuns,
+  missingSessionMessageRequest,
+} from "../src/browser-runner"
 import { scenarioIds } from "../src/cli-options"
 import { FRAME_120HZ_MS, FRAME_60HZ_MS, frameVerdict, mergeFrameMetrics, type FrameMetric } from "../src/frame-sampler"
-import { applyBudget, gateHeadline } from "../src/report"
+import { applyBudget, gateDiagnostics, gateHeadline, gatePairedHeadline } from "../src/report"
 
 function frame(overrides: Partial<FrameMetric>): FrameMetric {
   return {
@@ -83,6 +90,119 @@ test("a worst-frame regression past the budget fails even when smooth", () => {
   expect(result.failures.some((failure) => failure.includes("regressed past budget"))).toBe(true)
 })
 
+test("diagnostics evidence requires retained samples from a real process tree", () => {
+  expect(gateDiagnostics({
+    retainedBytes: 1_024,
+    retainedProcesses: 2,
+    droppedTicks: 0,
+    maxSourceDurationMs: 5,
+    maxReconciliationDurationMs: 20,
+    collections: 2,
+    sampleCount: 2,
+    controlHeadline: frame({ label: "session-switch" }),
+    enabledHeadline: frame({ label: "session-switch" }),
+  })).toEqual({ failures: [], warnings: [] })
+  expect(gateDiagnostics({
+    retainedBytes: 20 * 1024 * 1024 + 1,
+    retainedProcesses: 0,
+    droppedTicks: 2,
+    maxSourceDurationMs: 5,
+    maxReconciliationDurationMs: 20,
+    collections: 0,
+    sampleCount: 0,
+    controlHeadline: frame({ label: "control" }),
+    enabledHeadline: frame({ label: "enabled" }),
+  })).toEqual({
+    failures: [
+      expect.stringContaining("retained bytes"),
+      expect.stringContaining("no real process samples"),
+      expect.stringContaining("labels did not match"),
+    ],
+    warnings: [expect.stringContaining("dropped 2")],
+  })
+})
+
+test("paired diagnostics gate compares a fresh enabled run to its disabled control", () => {
+  expect(gatePairedHeadline(
+    frame({ p95FrameMs: 80, worstFrameMs: 90 }),
+    frame({ p95FrameMs: 81, worstFrameMs: 94 }),
+    { scenario: "session-switch", worst_frame_ms: 100 },
+  ).failures).toEqual([])
+  expect(gatePairedHeadline(
+    frame({ p95FrameMs: 10, worstFrameMs: 20 }),
+    frame({ p95FrameMs: 15, worstFrameMs: 30 }),
+    { scenario: "session-switch", worst_frame_ms: 100 },
+  ).failures).toEqual([
+    expect.stringContaining("moved p95"),
+    expect.stringContaining("moved worst"),
+  ])
+})
+
+test("paired diagnostics gate only attributes a stored-budget crossing to diagnostics", () => {
+  expect(gatePairedHeadline(
+    frame({ worstFrameMs: 110 }),
+    frame({ worstFrameMs: 120 }),
+    { scenario: "session-switch", worst_frame_ms: 115 },
+  ).failures).toContainEqual(expect.stringContaining("moved worst frame past budget"))
+
+  const alreadyRegressed = gatePairedHeadline(
+    frame({ worstFrameMs: 160 }),
+    frame({ worstFrameMs: 158 }),
+    { scenario: "session-switch", worst_frame_ms: 115 },
+  )
+  expect(alreadyRegressed.failures).toEqual([])
+  expect(alreadyRegressed.warnings).toContainEqual(expect.stringContaining("disabled control already exceeds"))
+})
+
+test("paired diagnostics gate reports base frame failures without a one-frame cliff", () => {
+  const baseFailure = gatePairedHeadline(
+    frame({ framesOver1667: 3 }),
+    frame({ framesOver1667: 3 }),
+    { scenario: "session-switch" },
+  )
+  expect(baseFailure.failures).toEqual([])
+  expect(baseFailure.warnings).toContainEqual(expect.stringContaining("disabled control base-app gate"))
+
+  const diagnosticsCrossing = gatePairedHeadline(
+    frame({ framesOver1667: 2 }),
+    frame({ framesOver1667: 3 }),
+    { scenario: "session-switch" },
+  )
+  expect(diagnosticsCrossing.failures).toEqual([])
+})
+
+test("diagnostics pairs counterbalance fresh-browser order and merge conservative evidence", () => {
+  expect(diagnosticsPairModeOrder.map((mode) => mode.enabled)).toEqual([false, true, true, false])
+  expect(mergeDiagnosticsRuns([
+    {
+      retainedBytes: 100,
+      retainedProcesses: 2,
+      droppedTicks: 1,
+      maxSourceDurationMs: 3,
+      maxReconciliationDurationMs: 4,
+      collections: 2,
+      sampleCount: 5,
+    },
+    {
+      retainedBytes: 90,
+      retainedProcesses: 3,
+      droppedTicks: 2,
+      maxSourceDurationMs: 6,
+      maxReconciliationDurationMs: 5,
+      collections: 4,
+      sampleCount: 7,
+    },
+  ])).toEqual({
+    retainedBytes: 100,
+    retainedProcesses: 3,
+    droppedTicks: 3,
+    maxSourceDurationMs: 6,
+    maxReconciliationDurationMs: 5,
+    collections: 6,
+    sampleCount: 12,
+  })
+})
+
 test("browser large-diff summary fixture strips full patch payloads", () => {
   const fixture = {
     changedFiles: [{
@@ -106,6 +226,7 @@ test("browser large-diff summary fixture strips full patch payloads", () => {
 test("browser seed exposes live terminals in the Claxedo sidebar inventory", () => {
   const state = claxedoStateSeed({
     directory: "/tmp/claxedo-perf/live-terminal-switch",
+    scenario: "live-terminal-switch",
     terminals: [
       { id: "pty_live_1", title: "Terminal 1" },
       { id: "pty_live_2", title: "Terminal 2" },
@@ -113,6 +234,7 @@ test("browser seed exposes live terminals in the Claxedo sidebar inventory", () 
   })
 
   expect(state.workbench.contentIds).toEqual(["terminal_perf_0", "terminal_perf_1"])
+  expect(state.workbench.panes).toEqual([{ id: "pane_perf_terminal", contentId: "terminal_perf_0" }])
   expect(state.meta.terminal_perf_0?.terminalId).toBe("pty_live_1")
   expect(state.meta.terminal_perf_0?.content?.title).toBe("Terminal 1")
   expect(state.terminal.owner.pty_live_1).toBe("terminal_perf_0")

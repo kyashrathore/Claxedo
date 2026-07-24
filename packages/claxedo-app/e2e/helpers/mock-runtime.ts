@@ -86,6 +86,7 @@ export type MockPart = { id: string; sessionID: string; messageID: string; type:
 export type MockMessageRow = { info: MockMessageInfo; parts: MockPart[] }
 
 export type PromptBody = {
+  sessionID?: string
   messageID?: string
   /** The assistant message id driveTurn replies with for this prompt (`${userID}_r`). */
   assistantID: string
@@ -1369,6 +1370,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // synthetic id here silently disables that entire path for every spec.
     const assistantID = `${userID}_r`
     requests.promptBodies.push({
+      sessionID: decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-2) ?? ""),
       messageID: body?.messageID,
       assistantID,
       text,

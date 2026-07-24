@@ -12,6 +12,34 @@ describe("sandbox driver selection", () => {
     expect(driver?.id).toBe("cloudflare")
   })
 
+  test("composes the Worker-safe exe.dev driver with bearer auth and same-VM persistence", async () => {
+    const calls: Array<{ authorization: string | null; command: string }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url, init) => {
+      calls.push({
+        authorization: new Headers(init?.headers).get("authorization"),
+        command: String(init?.body ?? ""),
+      })
+      return Response.json({ vms: [] })
+    }) as typeof fetch
+    try {
+      const driver = sandboxDriver({
+        CLAXEDO_SANDBOX_DRIVER: "exe",
+        EXE_DEV_API_TOKEN: "exe-token",
+      })
+      expect(driver?.id).toBe("exe")
+      expect(driver?.metadata.driverRunsIn).toEqual(["worker", "node"])
+      expect(driver?.metadata.persistence).toMatchObject({ resume: "same-sandbox", clone: true })
+      await driver?.list?.()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+    expect(calls).toEqual([{
+      authorization: "Bearer exe-token",
+      command: "ls claxedo-ws-*",
+    }])
+  })
+
   test("composes Cloudflare with a dedicated sandbox bearer independent of deployment credentials", () => {
     const driver = sandboxDriver({
       CLAXEDO_SANDBOX_DRIVER: "cloudflare",
@@ -42,6 +70,7 @@ describe("sandbox driver selection", () => {
       DAYTONA_API_KEY: "dtn-key",
       CLAXEDO_DAYTONA_SNAPSHOT: "claxedo/runtime:latest",
     })?.id).toBe("daytona")
+    expect(sandboxDriver({ EXE_DEV_API_TOKEN: "exe-token" })?.id).toBe("exe")
   })
 
   test("explicit driver selection wins over native auto-detection", () => {
@@ -108,7 +137,7 @@ describe("sandbox driver selection", () => {
           CLAXEDO_SANDBOX_DRIVER: driver,
           CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.test",
         }),
-      ).toThrow("cloudflare, daytona, or fetch")
+      ).toThrow("exe, cloudflare, daytona, or fetch")
     }
   })
 

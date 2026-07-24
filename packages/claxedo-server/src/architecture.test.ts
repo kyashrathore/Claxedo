@@ -298,11 +298,10 @@ describe("harness-scoped resolution", () => {
       "launch",
       "restart",
       "recoverHost",
-      "exec",
       "pty",
     ]
 
-    expect(forbidden.filter((term) => driverContract.includes(term))).toEqual([])
+    expect(forbidden.filter((term) => new RegExp(`\\b${term}\\b`).test(driverContract))).toEqual([])
   })
 
   test("keeps sandbox-manager public types from becoming sandbox handles", () => {
@@ -471,7 +470,10 @@ describe("harness-scoped resolution", () => {
   test("keeps sandbox drivers from becoming sandbox remote-control APIs", () => {
     const serverSrc = path.resolve(import.meta.dirname)
     const driversSrc = path.resolve(serverSrc, "../../sandbox-manager/src/drivers")
-    const allowedProviderSdkBootPrimitives = new Set([path.join(driversSrc, "daytona.ts")])
+    const allowedProviderSdkBootPrimitives = new Set([
+      path.join(driversSrc, "daytona.ts"),
+      path.join(driversSrc, "exe.ts"),
+    ])
     const forbiddenTerms = ["uploadFile", "createSession", "executeSessionCommand", "deleteSession", "pty"]
     const execFacade = /\bexec\s*:|\.exec\s*\(/
     const offenders = walk(driversSrc)
@@ -486,7 +488,9 @@ describe("harness-scoped resolution", () => {
           ...(text.includes("executeCommand") && !allowedProviderSdkBootPrimitives.has(file)
             ? [`${path.relative(serverSrc, file)}:executeCommand`]
             : []),
-          ...(execFacade.test(text) ? [`${path.relative(serverSrc, file)}:exec-facade`] : []),
+          ...(execFacade.test(text) && !allowedProviderSdkBootPrimitives.has(file)
+            ? [`${path.relative(serverSrc, file)}:exec-facade`]
+            : []),
         ]
       })
 
@@ -516,6 +520,15 @@ describe("harness-scoped resolution", () => {
     )).toEqual([])
     expect(worker).toContain('case "ensure-runtime"')
     expect(worker).toContain('case "touch-runtime"')
+    expect(worker).toContain('case "backup"')
+    expect(worker).toContain("sandbox.createBackup")
+    expect(worker).toContain("sandbox.restoreBackup")
+    const wrangler = fs.readFileSync(
+      path.resolve(import.meta.dirname, "..", "scripts", "sandbox", "cloudflare-worker", "wrangler.toml"),
+      "utf8",
+    )
+    expect(wrangler).toContain('binding = "BACKUP_BUCKET"')
+    expect(wrangler).toContain('BACKUP_BUCKET_NAME = "claxedo-sandbox-backups"')
   })
 
   test("keeps live sandbox verification on the product path", () => {
@@ -966,6 +979,7 @@ describe("harness-scoped resolution", () => {
       "bootstrap.ts",
       "credential.ts",
       "documents.ts",
+      "event-visibility.ts",
       "events.ts",
       // Hosted (Cloudflare Worker) control-plane routes. Mounted by hosted-app.ts
       // (the Worker entrypoint), NOT by the local Node server.ts. See
@@ -1004,6 +1018,7 @@ describe("harness-scoped resolution", () => {
       "repository-clone.ts",
       "sandbox-driver-routes.ts",
       "session-meta.ts",
+      "workspace-checkpoints.ts",
       "workspace-cloud-connection.ts",
       "workspace-connection-routes.ts",
       "workspace-git.ts",

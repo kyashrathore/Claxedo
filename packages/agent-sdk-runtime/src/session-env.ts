@@ -46,7 +46,14 @@ export type SandboxRef =
   | { kind: "virtual"; id?: string }
   // Tools-only placement: the session stays central; exec/file side effects run
   // inside the selected workspace runtime via /api/wr/session-env/*.
-  | { kind: "workspace-runtime"; workspaceId: string; directory?: string }
+  | {
+      kind: "workspace-runtime"
+      workspaceId: string
+      directory?: string
+      worktree?: string
+      baseCommit?: string
+      leaseEpoch?: number
+    }
 
 export type SessionEnvFactoryInput = {
   sessionId: string

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
+import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 import { generateAITitle } from "./title"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 
@@ -421,8 +422,71 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ])
   })
 
-  test("passes the selected model to Codex ACP process args", () => {
-    const calls: unknown[] = []
+  test("registers direct ACP harness, probe, and MCP lifecycles without launch secrets", () => {
+    const sentinel = "acp-observer-sentinel"
+    const descriptors: AgentProcessDescriptor[] = []
+    const exits: unknown[] = []
+    const processObserver: AgentProcessObserver = {
+      register(descriptor) {
+        descriptors.push(descriptor)
+        return {
+          update: () => undefined,
+          exit: (event) => exits.push(event),
+        }
+      },
+    }
+    const createTransport = () => ({
+      kind: "stdio" as const,
+      stream: {
+        readable: new ReadableStream(),
+        writable: new WritableStream(),
+      },
+      metadata: {},
+      pid: 456,
+      alive: true,
+      dispose() {},
+    })
+    const item = new AcpHarnessAdapter({
+      binary: "/safe/bin/codex-acp",
+      harness: "codex",
+      args: ["--token", sentinel],
+      env: { TOKEN: sentinel },
+      store: {} as AcpRuntimeStore,
+      createTransport,
+      processObserver,
+    }) as AcpHarnessAdapter & {
+      currentMcp: Array<{
+        name: string
+        command: string
+        args: string[]
+        env: Array<{ name: string; value: string }>
+      }>
+      make: (directory: string, role: "harness" | "probe") => { dispose(): void }
+    }
+    item.currentMcp = [{
+      name: "safe-mcp",
+      command: "node",
+      args: [sentinel],
+      env: [{ name: "TOKEN", value: sentinel }],
+    }]
+
+    const harness = item.make("/work", "harness")
+    const probe = item.make("/work", "probe")
+
+    expect(descriptors.map((descriptor) => [descriptor.role, descriptor.pid, descriptor.parentOwnerId])).toEqual([
+      ["harness", 456, undefined],
+      ["mcp", undefined, descriptors[0]!.ownerId],
+      ["probe", 456, undefined],
+      ["mcp", undefined, descriptors[2]!.ownerId],
+    ])
+    expect(JSON.stringify(descriptors)).not.toContain(sentinel)
+    harness.dispose()
+    probe.dispose()
+    expect(exits).toHaveLength(4)
+  })
+
+  test("passes the selected model to Codex ACP through CODEX_CONFIG", () => {
+    const calls: Array<{ args: string[]; env: Record<string, string | undefined> }> = []
     const transport: ACPTransport = {
       kind: "streamable-http",
       stream: {
@@ -439,7 +503,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       args: ["-c", "service_tier=\"fast\""],
       store: {} as AcpRuntimeStore,
       createTransport(input) {
-        calls.push(input.args)
+        calls.push({ args: input.args, env: input.env })
         return transport
       },
     })
@@ -447,11 +511,15 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.setModel("gpt-5.5")
     ;(item as unknown as { make: () => unknown }).make()
 
-    expect(calls).toEqual([["-c", "service_tier=\"fast\"", "-c", "model=\"gpt-5.5\""]])
+    expect(calls[0]?.args).toEqual([])
+    expect(JSON.parse(calls[0]?.env.CODEX_CONFIG ?? "{}")).toEqual({
+      service_tier: "fast",
+      model: "gpt-5.5",
+    })
   })
 
-  test("session config model patch updates Codex ACP process args", async () => {
-    const calls: unknown[] = []
+  test("session config model patch updates Codex ACP CODEX_CONFIG", async () => {
+    const calls: Array<{ args: string[]; env: Record<string, string | undefined> }> = []
     const transport: ACPTransport = {
       kind: "streamable-http",
       stream: {
@@ -480,7 +548,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         },
       } as AcpRuntimeStore,
       createTransport(input) {
-        calls.push(input.args)
+        calls.push({ args: input.args, env: input.env })
         return transport
       },
     })
@@ -490,7 +558,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }, "/work")
     ;(item as unknown as { make: () => unknown }).make()
 
-    expect(calls).toEqual([["-c", "service_tier=\"fast\"", "-c", "model=\"gpt-5.5\""]])
+    expect(calls[0]?.args).toEqual([])
+    expect(JSON.parse(calls[0]?.env.CODEX_CONFIG ?? "{}")).toEqual({
+      service_tier: "fast",
+      model: "gpt-5.5",
+    })
   })
 
   test("sendMessage applies the prompt model before process lookup", async () => {

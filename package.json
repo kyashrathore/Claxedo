@@ -23,7 +23,8 @@
     "examples:smoke:local": "bun ./script/smoke-local-examples.ts",
     "examples:smoke:extension-client": "bun ./script/smoke-extension-client-example.ts",
     "examples:smoke:runtime-only-host": "bun ./script/smoke-runtime-only-host.ts",
-    "agent-extensions:smoke-package": "bun ./script/smoke-agent-extensions-package.ts"
+    "agent-extensions:smoke-package": "bun ./script/smoke-agent-extensions-package.ts",
+    "diagnostics:verify": "bun --cwd packages/claxedo-desktop run test:diagnostics-release && bun --cwd packages/claxedo-app run test:diagnostics-release && bun --cwd packages/claxedo-app/perf-harness test"
   },
   "workspaces": {
     "packages": [
@@ -131,6 +132,7 @@
     "printWidth": 120
   },
   "trustedDependencies": [
+    "@vscode/windows-process-tree",
     "better-sqlite3",
     "esbuild",
     "node-pty",

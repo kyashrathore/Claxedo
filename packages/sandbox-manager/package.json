@@ -44,6 +44,13 @@
       "import": "./dist/constants.mjs",
       "default": "./dist/constants.mjs"
     },
+    "./checkpoint-manager": {
+      "types": "./dist/checkpoint-manager.d.ts",
+      "bun": "./dist/checkpoint-manager.mjs",
+      "development": "./dist/checkpoint-manager.mjs",
+      "import": "./dist/checkpoint-manager.mjs",
+      "default": "./dist/checkpoint-manager.mjs"
+    },
     "./defaults": {
       "types": "./dist/defaults.d.ts",
       "bun": "./dist/defaults.mjs",
@@ -64,6 +71,13 @@
       "development": "./dist/drivers/box.mjs",
       "import": "./dist/drivers/box.mjs",
       "default": "./dist/drivers/box.mjs"
+    },
+    "./drivers/exe": {
+      "types": "./dist/drivers/exe.d.ts",
+      "bun": "./dist/drivers/exe.mjs",
+      "development": "./dist/drivers/exe.mjs",
+      "import": "./dist/drivers/exe.mjs",
+      "default": "./dist/drivers/exe.mjs"
     },
     "./drivers/cloudflare": {
       "types": "./dist/drivers/cloudflare.d.ts",
