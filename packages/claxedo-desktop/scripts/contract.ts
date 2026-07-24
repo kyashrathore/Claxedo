@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { resolveChannel, windowsify, type Channel } from "./utils"
+import { resolveChannel, type Channel } from "./utils"
 
 export type Spec = {
   file: string
@@ -161,10 +161,8 @@ export function spec(root = ROOT): Spec {
       "resources/icons/128x128@2x.png",
       "resources/icons/icon.icns",
       "resources/icons/icon.ico",
-      windowsify("resources/opencode-cli"),
       "resources/acp/claude-agent-acp",
-      windowsify("resources/acp/codex-acp"),
-      "resources/acp/codex-vendor",
+      "resources/acp/codex-acp",
     ],
     match: [["out/main/claxedo-server/index.js", "resources/claxedo-server/index.js"]],
   }

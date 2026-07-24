@@ -128,7 +128,6 @@ const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
-  installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)
     ipcRenderer.on("init-step", handler)

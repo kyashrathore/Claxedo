@@ -1,6 +1,5 @@
 import { dialog } from "electron"
 
-import type { Config } from "./cli"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
 import { store } from "./store"
 
@@ -77,16 +76,4 @@ export async function checkHealthOrAskRetry(url: string): Promise<boolean> {
   }
 }
 
-export function normalizeHostnameForUrl(hostname: string) {
-  if (hostname === "0.0.0.0") return "127.0.0.1"
-  if (hostname === "::") return "[::1]"
-  if (hostname.includes(":") && !hostname.startsWith("[")) return `[${hostname}]`
-  return hostname
-}
 
-export function getServerUrlFromConfig(config: Config) {
-  const server = config.server
-  if (!server?.port) return null
-  const host = server.hostname ? normalizeHostnameForUrl(server.hostname) : "127.0.0.1"
-  return `http://${host}:${server.port}`
-}

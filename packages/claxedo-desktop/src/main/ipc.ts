@@ -22,7 +22,6 @@ import { getStore } from "./store"
 
 type Deps = {
   killSidecar: () => Promise<void>
-  installCli: () => Promise<string>
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
@@ -54,7 +53,6 @@ type Deps = {
 
 export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
-  ipcMain.handle("install-cli", () => deps.installCli())
   ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {
     const send = (step: InitStep) => event.sender.send("init-step", step)
     return deps.awaitInitialization(send)

@@ -3,6 +3,7 @@
 import * as path from "node:path"
 
 import { verify } from "./contract"
+import { verifyPackageContents } from "./verify-package-contents"
 
 const root = path.resolve(import.meta.dir, "..")
 const args = Bun.argv.slice(2)
@@ -43,4 +44,13 @@ const proc = Bun.spawn({
   stderr: "inherit",
 })
 
-process.exit(await proc.exited)
+const code = await proc.exited
+if (code !== 0) process.exit(code)
+
+const { failures } = verifyPackageContents(root)
+if (failures.length > 0) {
+  console.error(`[package] packaging invariant violated:\n${failures.join("\n")}`)
+  process.exit(1)
+}
+console.log("[package] packaging invariant holds (bundled output + native modules only)")
+process.exit(0)

@@ -52,14 +52,11 @@ export default defineConfig(({ mode }) => {
         },
       ],
       build: {
-        externalizeDeps: {
-          // Main-process diagnostics also imports the shared runtime schema.
-          // Electron cannot execute the workspace package's TypeScript
-          // namespace when electron-vite leaves that import external.
-          exclude: ["@claxedo/app"],
-        },
+        // Bundle every dependency into the main process. Only native modules
+        // stay external — they ship as the app's sole node_modules content.
+        externalizeDeps: false,
         rollupOptions: {
-          external: ["@vscode/windows-process-tree"],
+          external: ["better-sqlite3", "node-pty", "@lydell/node-pty", "@vscode/windows-process-tree"],
           input: {
             index: "src/main/index.ts",
             "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",
@@ -121,12 +118,9 @@ export default defineConfig(({ mode }) => {
         },
       ],
       build: {
-        externalizeDeps: {
-          // The preload imports a runtime schema from this workspace package.
-          // Externalizing its TypeScript source makes Electron's Node loader
-          // reject namespace syntax before the desktop API can be exposed.
-          exclude: ["@claxedo/app"],
-        },
+        // Fully self-contained preload: inline every dependency; only
+        // electron and node builtins stay external (see external fn below).
+        externalizeDeps: false,
         rollupOptions: {
           external: (id) => {
             if (id === "electron") return true

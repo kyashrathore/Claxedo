@@ -11,7 +11,7 @@ import { createRequire } from "node:module"
 import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
-import { copyBinaryToSidecarFolder, copyIcons, copyWorkspaceRuntimeTemplates, getCurrentSidecar, windowsify } from "./utils"
+import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
@@ -110,42 +110,6 @@ async function patchDevBundleMetadata() {
   // Bump mtime so LaunchServices re-reads the bundle metadata.
   await $`touch ${appPath}`.quiet().catch(() => {})
   console.log(`[predev] Patched dev Electron bundle metadata → Claxedo Dev`)
-}
-
-// Build patched opencode sidecar
-const sidecarConfig = getCurrentSidecar()
-const binaryPath = windowsify(path.resolve(OPENCODE_DIR, `dist/${sidecarConfig.ocBinary}/bin/opencode`))
-const existingBinary = windowsify(path.resolve(PACKAGE_DIR, "resources/opencode-cli"))
-const models = Bun.env.MODELS_DEV_API_JSON ?? path.join("test", "tool", "fixtures", "models-api.json")
-const rebuildSidecar = outputIsStale(existingBinary, [
-  path.resolve(OPENCODE_DIR, "package.json"),
-  path.resolve(OPENCODE_DIR, "script"),
-  path.resolve(OPENCODE_DIR, "src"),
-])
-
-if (rebuildSidecar) {
-  console.log(`[predev] Building patched OpenCode sidecar...`)
-  try {
-    // Claxedo ships its own Electron renderer, so skip embedding upstream's
-    // web UI in the sidecar — its source (packages/app) was removed in the fork.
-    await (sidecarConfig.ocBinary.includes("-baseline")
-      ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
-      : $`bun run build --single --skip-install --skip-embed-web-ui`
-    ).cwd(OPENCODE_DIR).env({
-      ...Bun.env,
-      MODELS_DEV_API_JSON: models,
-    })
-
-    await copyBinaryToSidecarFolder(binaryPath)
-  } catch (e) {
-    if (fs.existsSync(existingBinary)) {
-      console.warn(`[predev] Sidecar build failed, using existing binary from resources/opencode-cli`)
-    } else {
-      throw e
-    }
-  }
-} else {
-  console.log(`[predev] Patched OpenCode sidecar is current`)
 }
 
 // Bundle claxedo-server so dev mode doesn't rely on a stale prebuild artifact

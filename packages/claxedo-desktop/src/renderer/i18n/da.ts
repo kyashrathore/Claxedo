@@ -1,6 +1,5 @@
 export const dict = {
   "desktop.menu.checkForUpdates": "Tjek for opdateringer...",
-  "desktop.menu.installCli": "Installer CLI...",
   "desktop.menu.reloadWebview": "Genindlæs Webview",
   "desktop.menu.restart": "Genstart",
 
@@ -19,12 +18,6 @@ export const dict = {
     "Version {{version}} af Claxedo er blevet downloadet. Vil du installere den og genstarte?",
   "desktop.updater.installFailed.title": "Opdatering mislykkedes",
   "desktop.updater.installFailed.message": "Kunne ikke installere opdateringen",
-
-  "desktop.cli.installed.title": "CLI installeret",
-  "desktop.cli.installed.message":
-    "CLI installeret i {{path}}\n\nGenstart din terminal for at bruge 'opencode'-kommandoen.",
-  "desktop.cli.failed.title": "Installation mislykkedes",
-  "desktop.cli.failed.message": "Kunne ikke installere CLI: {{error}}",
 
   "desktop.error.serverStartFailed.title": "Claxedo kunne ikke starte",
   "desktop.error.serverStartFailed.description":

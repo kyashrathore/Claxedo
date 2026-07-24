@@ -144,7 +144,6 @@
     "@cursor/sdk": "1.0.23",
     "@mariozechner/pi-agent-core": "0.73.1",
     "@mariozechner/pi-ai": "0.73.1",
-    "@openai/codex": "0.144.4",
     "@opencode-ai/sdk": "1.17.18",
     "@sinclair/typebox": "^0.34.41",
     "just-bash": "3.0.1",

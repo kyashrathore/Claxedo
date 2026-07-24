@@ -225,7 +225,10 @@ describe("process metrics source", () => {
     expect(desktop.optionalDependencies).toEqual({ "@vscode/windows-process-tree": "0.8.0" })
     expect(root.trustedDependencies).toContain("@vscode/windows-process-tree")
     expect(builder).toContain('targetOsArch.startsWith("win32-")')
-    expect(builder).toContain("!**/node_modules/@vscode/windows-process-tree/**")
+    // Only Windows includes the native probe; every platform ships nothing
+    // beyond the declared native set.
+    expect(builder).toContain('...(targetOsArch.startsWith("win32-") ? ["@vscode/windows-process-tree"] : [])')
+    expect(builder).toContain("!**/node_modules/**")
     expect(main).toContain('workerPath: join(import.meta.dirname, "process-metrics-worker.js")')
   })
 

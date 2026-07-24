@@ -1,6 +1,5 @@
 export const dict = {
   "desktop.menu.checkForUpdates": "Verificar atualizações...",
-  "desktop.menu.installCli": "Instalar CLI...",
   "desktop.menu.reloadWebview": "Recarregar Webview",
   "desktop.menu.restart": "Reiniciar",
 
@@ -19,11 +18,6 @@ export const dict = {
     "A versão {{version}} do Claxedo foi baixada. Você gostaria de instalá-la e reiniciar?",
   "desktop.updater.installFailed.title": "Falha na atualização",
   "desktop.updater.installFailed.message": "Falha ao instalar a atualização",
-
-  "desktop.cli.installed.title": "CLI instalada",
-  "desktop.cli.installed.message": "CLI instalada em {{path}}\n\nReinicie seu terminal para usar o comando 'opencode'.",
-  "desktop.cli.failed.title": "Falha na instalação",
-  "desktop.cli.failed.message": "Falha ao instalar a CLI: {{error}}",
 
   "desktop.error.serverStartFailed.title": "Falha ao iniciar o Claxedo",
   "desktop.error.serverStartFailed.description":

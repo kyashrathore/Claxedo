@@ -34,12 +34,6 @@ import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { resolveSystemClaude } from "./claude-executable"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
-import {
-  cleanupStaleSidecar,
-  configureSidecarProcessObserver,
-  installCli,
-  syncCli,
-} from "./cli"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
@@ -108,64 +102,6 @@ const diagnosticsSource = createProcessMetricsSource({
   }),
 })
 const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
-configureSidecarProcessObserver({
-  register(input) {
-    const registeredAt = Date.now()
-    const ownerGeneration = crypto.randomUUID()
-    const launchId = crypto.randomUUID()
-    const ownerId = "owner-opencode-sidecar"
-    diagnosticsProfiler.recordOwnerEvent({
-      type: "owner-registered",
-      at: registeredAt,
-      binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
-      descriptor: {
-        ownerId,
-        ownerGeneration,
-        ownerOperationId: crypto.randomUUID(),
-        launchId,
-        kind: "sidecar",
-        role: "sidecar",
-        label: "OpenCode sidecar",
-        pid: input.pid,
-        capabilities: { stopGracefully: true, killOwnedTree: true },
-      },
-    }, async (request) => {
-      await (request.action === "stop" ? input.stopGracefully() : input.killOwnedTree())
-      return "completed"
-    })
-    let active = true
-    let unregisterWslRoot: (() => void) | undefined
-    return {
-      wslRoot(root) {
-        unregisterWslRoot?.()
-        unregisterWslRoot = diagnosticsSource.registerWslRoot?.({
-          ...root,
-          ownerId,
-          label: "OpenCode sidecar",
-          launchId,
-          ownerKind: "sidecar",
-          role: "sidecar",
-        })
-        diagnosticsProfiler.requestSample("lifecycle")
-      },
-      exit(event) {
-        if (!active) return
-        active = false
-        unregisterWslRoot?.()
-        diagnosticsProfiler.recordOwnerEvent({
-          type: "owner-exited",
-          at: Date.now(),
-          binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
-          ownerId,
-          ownerGeneration,
-          reason: event.reason,
-          ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
-          observedLifetimeMs: Math.max(0, Date.now() - registeredAt),
-        })
-      },
-    }
-  },
-})
 const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
 logger.log("app starting", {
@@ -231,7 +167,6 @@ function setupApp() {
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
-    syncCli()
     await initialize()
   })
 }
@@ -439,7 +374,6 @@ async function setupServerConnection(): Promise<ServerConnection> {
 }
 
 async function initialize() {
-  await cleanupStaleSidecar()
   const needsMigration = !sqliteFileExists()
 
   const loadingTask = (async () => {
@@ -515,9 +449,6 @@ function wireMenu() {
   if (!mainWindow) return
   createMenu({
     trigger: (id) => mainWindow && sendMenuCommand(mainWindow, id),
-    installCli: () => {
-      void installCli()
-    },
     checkForUpdates: () => {
       void checkForUpdates(true)
     },
@@ -531,7 +462,6 @@ function wireMenu() {
 
 const diagnosticsIpc = registerIpcHandlers({
   killSidecar: () => stopLocalServer(),
-  installCli: async () => installCli(),
   awaitInitialization: async (sendStep) => {
     sendStep(initStep)
     const listener = (step: InitStep) => sendStep(step)

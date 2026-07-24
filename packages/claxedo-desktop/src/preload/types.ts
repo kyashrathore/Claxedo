@@ -140,7 +140,6 @@ export type ProcessDiagnosticsBridge = LocalDiagnostics.Capability
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
-  installCli: () => Promise<string>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServer: () => Promise<string | null>
   setDefaultServer: (url: string | null) => Promise<void>

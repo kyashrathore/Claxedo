@@ -1,12 +1,12 @@
 import * as fs from "node:fs"
+import { createRequire } from "node:module"
 import * as path from "node:path"
 
-const EXTERNAL = [
-  "@lydell/node-pty",
-  "better-sqlite3",
-  "jsonc-parser",
-  "node-pty",
-]
+// Native modules cannot be bundled — they ship as the app's only node_modules
+// content (see electron-builder.config.ts). Everything else is inlined.
+const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "node-pty"]
+
+const require = createRequire(import.meta.url)
 
 export async function bundleClaxedoServer(source: string, destination: string) {
   const pending = `${destination}.pending-${process.pid}`
@@ -27,6 +27,20 @@ export async function bundleClaxedoServer(source: string, destination: string) {
       chunk: "chunks/[name]-[hash].[ext]",
     },
     external: EXTERNAL,
+    plugins: [
+      {
+        name: "jsonc-parser-esm",
+        setup(build) {
+          // jsonc-parser's default entry is UMD: Bun cannot see the relative
+          // requires hidden inside the UMD factory closure, and they leak as
+          // runtime requires that resolve nowhere in a bundled app. The ESM
+          // entry is statically analyzable and inlines cleanly.
+          build.onResolve({ filter: /^jsonc-parser$/ }, () => ({
+            path: require.resolve("jsonc-parser/lib/esm/main.js"),
+          }))
+        },
+      },
+    ],
   })
 
   if (!result.success) {

@@ -1,13 +1,5 @@
-import path from "node:path"
-
-import { codexAcpTarget } from "./codex-acp-target"
-
-process.env.CODEX_PATH ??= path.join(
-  path.dirname(process.execPath),
-  "codex-vendor",
-  codexAcpTarget(process.platform, process.arch).triple,
-  "bin",
-  process.platform === "win32" ? "codex.exe" : "codex",
-)
-
+// The adapter spawns `codex` from PATH (CODEX_PATH unset): the user's system
+// install, mirroring how the Claude harnesses resolve `claude`. The desktop
+// main prepends standard install dirs to PATH (agent-path.ts) so GUI launches
+// still find it.
 await import("@agentclientprotocol/codex-acp")
