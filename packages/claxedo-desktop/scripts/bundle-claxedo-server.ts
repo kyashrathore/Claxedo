@@ -4,7 +4,7 @@ import * as path from "node:path"
 
 // Native modules cannot be bundled — they ship as the app's only node_modules
 // content (see electron-builder.config.ts). Everything else is inlined.
-const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "node-pty"]
+const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "node-pty", "opencode/node-embed"]
 
 const require = createRequire(import.meta.url)
 
