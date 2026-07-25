@@ -471,7 +471,9 @@ unnecessary; take the second version.
 | W6 restore honesty | **done** | `mountCols` measured post-fit and unknown-safe; recreated PTYs skip the live-TUI paths |
 | W7a identity | **done** | `TERM_PROGRAM=vscode` + version; host emulator markers no longer leak; coupling test |
 | W7b wheel fidelity | **not done** | see below — deliberately deferred, not forgotten |
-| W8 restored separator | **done, not live-verified** | see the disk-history finding below |
+| W8 restored separator | **done** | cold-restore path covered end to end by `history-restore.test.ts` |
+| Replay sanitization | **done** (not in the original plan) | found live — see below |
+| Dev-server port isolation | **done** (not in the original plan) | found while auditing verification — see below |
 | W9 parked runtimes / pty-daemon | deferred by design | |
 
 **Two decisions taken during implementation, both recorded in code:**
@@ -499,17 +501,59 @@ line number, compare stock vs. handler vs. a native terminal. Everything else
 here was verifiable from the outside; this one is not, so it is better left
 undone than landed blind.
 
-**The server's disk-history seed path appears inert.** W8's separator is
-triggered by a session created with `previousPtyId` whose `history.snapshot()`
-returned content. In live testing no `pty-history` directory existed anywhere
-the runtime would write one, so `restored` is always empty and the separator
-can never fire. That implies cold-restore history today comes ENTIRELY from the
-renderer's localStorage buffer snapshot, and the server-side history +
-`renameHistory` + seed machinery — which exists and is wired — never actually
-runs. Worth confirming and fixing separately; it also means the F3 history
-truncation fixes are currently protecting a path with no data in it.
+~~**The server's disk-history seed path appears inert.**~~ **RETRACTED — this was
+wrong.** The `find /` that produced it was silently blocked. The directory
+exists at `~/.workspace-runtime/state/pty-history` (bucketed by base64url cwd),
+is written per real session, and the rename-onto-the-new-id fires — observed
+carrying a 12KB Claude session across a restart. `history-restore.test.ts` now
+covers the whole path.
 
-**Evidence level: test and build only, except where stated.** Every DoD below calls for a live
+### Three history bugs found by running it for real
+
+None of these were visible from unit tests; all three came from running a real
+Claude Code session, killing the server, and looking at what came back.
+
+1. **A replay is a recording, not live output.** Replaying the transcript re-ran
+   the program's terminal QUERIES, so the reattaching terminal answered a
+   question asked minutes earlier — into a pty where a shell was now reading,
+   which echoed the reply (`ESC P > | xterm.js(6.1.0-beta.289) ESC \` next to
+   the prompt). It also re-ran the program's MODE SETS, re-arming mouse tracking
+   for a program that had exited. On one run this landed *inside* the prompt
+   line and corrupted the command being typed. Fixed by `replay-sanitize.ts`,
+   deliberately duplicated: there are TWO independent replay paths (the PTY host
+   replaying `session.buffer`, and the renderer replaying its own localStorage
+   snapshot without touching the server) and fixing one left the other intact.
+2. **A client with no local copy asked for the live tail.** `cursorPlan`'s
+   `tailOnReload` requested the tail exactly when the server's buffer was the
+   only copy of the scrollback — PTY alive with a full session behind it,
+   terminal blank.
+3. The renderer's snapshot was trimmed with a raw `slice`, so a restored buffer
+   could begin mid-escape. Now uses the same safe-boundary trim as the server.
+
+### The dev server silently belonged to another checkout
+
+`setupServerConnection` reuses a healthy `:3001` in dev (deliberate — you can
+run `claxedo-server` separately), but the probe hardcoded 3001 while
+`startClaxedoServer` honoured `CLAXEDO_SERVER_PORT`. There was therefore no way
+to run an isolated dev server, and two checkouts both defaulted to the same
+port: whichever app started second attached to the FIRST one's server, and to
+its workspace-runtime code.
+
+This silently invalidated four verification runs — a renderer change appeared to
+work while the server half of the same change never executed. Fixed by deriving
+the probe from the same env var. **Anyone verifying server-side terminal work
+must run `CLAXEDO_SERVER_PORT=<free port> bun run dev:desktop` and confirm the
+log says `variant: 'embedded'`.**
+
+**W7b remains deferred by owner decision (2026-07-25).** Not forgotten, not
+blocked — it is the one package whose only tell is a scroll *rate*, where both
+failure modes look like "scrolling works". Pick it up with the measurement
+protocol above, not by feel.
+
+**Evidence level.** W1–W6, W7a, W8 and the three history bugs are live-verified
+in the desktop app, the final run against an isolated embedded server with real
+Claude Code v2.1.220 (authenticated, probe string answered, server killed and
+confirmed down, full session restored with a clean seam). W7b is unimplemented. Every DoD below calls for a live
 desktop repro and none has had one. Test deltas: workspace-runtime 350→390
 pass, claxedo-app terminal 979→1016 pass, zero new failures (the pre-existing
 21 fail / 19 errors in workspace-runtime and 1 fail / 1 error in claxedo-app are
