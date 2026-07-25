@@ -51,4 +51,48 @@ describe("global event shell projector", () => {
       ["p3", "Three"],
     ])
   })
+
+  test("ignores an engine project.updated that would duplicate a worktree the control plane owns", () => {
+    // The embedded engine reports the same worktree under a hashed id. Inserting
+    // it leaves two projects for one directory, and its payload has no name and
+    // no workspaces — worktree-keyed consumers then render the basename with no
+    // sessions.
+    const worktree = "/Users/me/opencode"
+    const projects = [
+      { id: "ws-uuid", worktree, name: "Claxedo", workspaces: { "ws-uuid": {} } } as Project,
+    ]
+
+    applyGlobalProjectEvent({
+      event: {
+        type: "project.updated",
+        properties: { id: "ee9452087e23bf5d5c78b90f6ae74ef692a26b68", worktree, vcs: "git" },
+      },
+      project: projects,
+      refresh: () => {
+        throw new Error("refresh should not run")
+      },
+      setGlobalProject: () => {
+        throw new Error("duplicate worktree should not be inserted")
+      },
+    })
+
+    expect(projects.map((item) => item.id)).toEqual(["ws-uuid"])
+  })
+
+  test("still inserts a project whose worktree is not represented yet", () => {
+    let projects = [{ id: "a", worktree: "/w/a" } as Project]
+
+    applyGlobalProjectEvent({
+      event: { type: "project.updated", properties: { id: "b", worktree: "/w/b" } as Project },
+      project: projects,
+      refresh: () => {
+        throw new Error("refresh should not run")
+      },
+      setGlobalProject: (next) => {
+        projects = typeof next === "function" ? next(projects) : next
+      },
+    })
+
+    expect(projects.map((item) => item.id)).toEqual(["a", "b"])
+  })
 })

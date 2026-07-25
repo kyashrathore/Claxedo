@@ -2907,24 +2907,46 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(
       /type PromptProviderProps = \{[\s\S]*directory\?: Accessor<string> \| string[\s\S]*sessionId\?: Accessor<string \| undefined> \| string/,
     )
-    // WP-B6: the bounded prompt-session cache (Map + entry struct + LRU
-    // eviction) was extracted into the shared live-resource-cache module.
-    // prompt.tsx now wires the LRU factory around createRoot(createPromptSession),
-    // and must not re-inline the Map/entry it used to own.
-    expect(text).toMatch(/import \{ createLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/)
-    expect(text).toMatch(/const promptCache = createLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/)
+    // WP-B6: the bounded prompt-session cache (Map + entry struct + eviction)
+    // was extracted into the shared live-resource-cache module. prompt.tsx wires
+    // the factory around createRoot(createPromptSession) and must not re-inline
+    // the Map/entry it used to own.
+    //
+    // The factory is the REF-COUNTED LRU, not the plain LRU: eviction disposes
+    // the scope's reactive root, and `session()` is memoized on the provider's
+    // props, so a plain LRU can dispose a scope a mounted composer is still
+    // subscribed to (same object handed back, memos unsubscribed — the draft
+    // silently stops updating). The pin on the currently-resolved scope is what
+    // rules that out, so `acquire` and its paired release are both pinned here.
     expect(text).toMatch(
-      /promptCache\.load\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/,
+      /import \{ createRefCountedLruResourceCache \} from "@\/platform\/sync\/live-resource-cache"/,
     )
+    expect(text).not.toMatch(/createLruResourceCache</)
+    expect(text).toMatch(
+      /const promptCache = createRefCountedLruResourceCache<PromptSession>\(MAX_PROMPT_SESSIONS\)/,
+    )
+    expect(text).toMatch(
+      /promptCache\.acquire\(key, \(\) =>[\s\S]*createRoot\([\s\S]*createPromptSession\(server\.url, dir, id\)/,
+    )
+    // Every acquire is paired. The mounted scope releases through the memo's own
+    // onCleanup (which runs both before a recompute and on teardown); a scoped
+    // set/reset borrows its target and releases in a `finally` so a throwing
+    // writer cannot leak a pin — a leaked pin makes the entry immortal, which is
+    // a worse bug than the eviction the pin exists to prevent.
+    expect(text).toMatch(/onCleanup\(handle\.release\)/)
+    expect(text).toMatch(/try \{[\s\S]*return use\(handle\.value\)[\s\S]*\} finally \{[\s\S]*handle\.release\(\)/)
     expect(text).not.toMatch(/new Map<string, PromptCacheEntry>/)
     expect(text).not.toMatch(/export const promptCache/)
-    // Same invariant, new home: the disposable-resource struct and the
-    // dispose-on-eviction LRU rule now live in the extracted module.
+    // Same invariant, new home: the disposable-resource struct, the
+    // dispose-on-eviction rule, and the skip-the-pinned rule live in the
+    // extracted module.
     expect(cacheModule).toMatch(
       /export type DisposableResource<T> = \{[\s\S]*value: T[\s\S]*dispose: \(\) => void[\s\S]*\}/,
     )
     expect(cacheModule).toMatch(/export function createLruResourceCache<T>\(max: number\)/)
     expect(cacheModule).toMatch(/cache\.get\(oldest\)\?\.dispose\(\)/)
+    expect(cacheModule).toMatch(/export function createRefCountedLruResourceCache<T>\(max: number\)/)
+    expect(cacheModule).toMatch(/if \(entry\.refs > 0\) continue/)
     // Rubric C4: directory-layout is a pure pass-through; PromptProvider
     // mounts only through Workbench's DirectoryScope (per pane) and the
     // review workspace, never through the route subtree.
