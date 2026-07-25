@@ -467,11 +467,11 @@ unnecessary; take the second version.
 | W2 xterm bump | **done** | beta.289 / webgl beta.288, ligatures held at 220; `bun run build` verified |
 | W3 font-settle | **done** | `fonts.load(spec)` + timeout + swallow |
 | W4 parser-idle gate | **done** | every fit routed through it |
-| W5 mode truth | **half** | reclaimer + repeating prompt marker done; the server-side headless-xterm **live mode tracker** replacing the stale client snapshot is NOT done |
+| W5 mode truth | **done** | reclaimer + repeating prompt marker + server-side headless-xterm live mode tracker; `filterModeSequences` and the persisted `modeSequences` field deleted |
 | W6 restore honesty | **done** | `mountCols` measured post-fit and unknown-safe; recreated PTYs skip the live-TUI paths |
 | W7a identity | **done** | `TERM_PROGRAM=vscode` + version; host emulator markers no longer leak; coupling test |
-| W7b wheel fidelity | **not done** | must ship coupled with flipping the identity to kitty |
-| W8 restored separator | **not done** | |
+| W7b wheel fidelity | **not done** | see below — deliberately deferred, not forgotten |
+| W8 restored separator | **done, not live-verified** | see the disk-history finding below |
 | W9 parked runtimes / pty-daemon | deferred by design | |
 
 **Two decisions taken during implementation, both recorded in code:**
@@ -486,7 +486,30 @@ unnecessary; take the second version.
    until `reset`) reachable; the reclaimer now exists to handle it, so enabling
    it is a follow-up rather than a blocker.
 
-**Evidence level: test and build only.** Every DoD below calls for a live
+### Two things that came out of implementation, both needing follow-up
+
+**W7b is deliberately not done.** It is the one package that cannot be landed
+safely without measurement: the wheel handler and the `TERM_PROGRAM` identity
+are a coupled pair (`identity.test.ts` enforces it), and shipping the handler
+means flipping the identity to `kitty` in the same change. Get the pairing
+wrong in either direction and agent-TUI scrolling silently becomes ~1/3 speed
+or ~3x speed — a regression no unit test catches. It needs a live measurement
+protocol, e.g. `less` over a numbered file: fix a notch count, read the landed
+line number, compare stock vs. handler vs. a native terminal. Everything else
+here was verifiable from the outside; this one is not, so it is better left
+undone than landed blind.
+
+**The server's disk-history seed path appears inert.** W8's separator is
+triggered by a session created with `previousPtyId` whose `history.snapshot()`
+returned content. In live testing no `pty-history` directory existed anywhere
+the runtime would write one, so `restored` is always empty and the separator
+can never fire. That implies cold-restore history today comes ENTIRELY from the
+renderer's localStorage buffer snapshot, and the server-side history +
+`renameHistory` + seed machinery — which exists and is wired — never actually
+runs. Worth confirming and fixing separately; it also means the F3 history
+truncation fixes are currently protecting a path with no data in it.
+
+**Evidence level: test and build only, except where stated.** Every DoD below calls for a live
 desktop repro and none has had one. Test deltas: workspace-runtime 350→390
 pass, claxedo-app terminal 979→1016 pass, zero new failures (the pre-existing
 21 fail / 19 errors in workspace-runtime and 1 fail / 1 error in claxedo-app are
