@@ -13,7 +13,7 @@ import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
-import { createDiskHistory, renameHistory } from "./history-disk"
+import { cleanupOrphanedHistory, createDiskHistory, renameHistory } from "./history-disk"
 import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"
 import { osc7 as osc7Parser } from "./osc7"
 import { oscProcessExit } from "./osc-process-exit"
@@ -74,15 +74,41 @@ async function ensureSetup(port: number) {
 export namespace Pty {
   const log = Log.create({ service: "pty" })
 
+  /**
+   * ## Per-session memory contract
+   *
+   * Everything a live PTY holds in RAM is bounded here. Total server-side
+   * terminal memory is therefore (sessions × the sum below), and the session
+   * count is itself bounded by orphan reaping (see `orphanTimeoutMs`).
+   *
+   *   BUFFER_LIMIT          2 MB code units  — the replay buffer, ~2–4 MB heap
+   *   QUEUE_HIGH_WATERMARK  1 MB             — pending writes to a slow pty
+   *   modeTracker                            — headless xterm, scrollback: 0
+   *
+   * History is NOT in this list: it lives only on disk (see history-disk.ts).
+   * It used to be mirrored in RAM at HISTORY_LIMIT — 16 MB per terminal, for
+   * data that was already durable and read at most once per session lifetime.
+   */
   const BUFFER_LIMIT = 1024 * 1024 * 2
   const WEBSOCKET_BUFFERED_AMOUNT_MAX = (() => {
     const raw = Number(process.env.OPENCODE_PTY_WS_BUFFERED_AMOUNT_MAX)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024
     return Math.floor(raw)
   })()
+  /** DISK cap per transcript. Not a memory cost — nothing mirrors it in RAM. */
   const HISTORY_LIMIT = (() => {
     const raw = Number(process.env.OPENCODE_PTY_HISTORY_LIMIT)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024 * 16
+    return Math.floor(raw)
+  })()
+  /**
+   * How long a transcript stays restorable after its last write. Past this,
+   * no session can still name it via `previousPtyId`, so it is only occupying
+   * disk. Swept once per process — see `sweepStaleHistoryOnce`.
+   */
+  const HISTORY_RETENTION_MS = (() => {
+    const raw = Number(process.env.OPENCODE_PTY_HISTORY_RETENTION_MS)
+    if (!Number.isFinite(raw) || raw <= 0) return 7 * 24 * 60 * 60 * 1000
     return Math.floor(raw)
   })()
   const BUFFER_CHUNK = 64 * 1024
@@ -346,6 +372,31 @@ export namespace Pty {
 
   const sessions = new Map<string, ActiveSession>()
 
+  /**
+   * Sweep transcripts nothing can restore from any more.
+   *
+   * `cleanupOrphanedHistory` existed but was never called, so buckets grew
+   * without bound — one project directory was found holding 314 log files. A
+   * history file is only reachable by a session naming its id via
+   * `previousPtyId`, which happens on the next attach after a loss; past the
+   * retention window nothing ever will.
+   *
+   * Runs once, lazily, on the first session created in this process: it needs
+   * no scheduler, cannot delay startup, and a runtime that never opens a
+   * terminal never pays for it. Failures are swallowed — a full disk or a
+   * permission error must not stop a terminal from opening.
+   */
+  let historySweepStarted = false
+  function sweepStaleHistoryOnce() {
+    if (historySweepStarted) return
+    historySweepStarted = true
+    void cleanupOrphanedHistory(undefined, HISTORY_RETENTION_MS)
+      .then((result) => {
+        if (result?.removed) log.info("swept stale pty history", { removed: result.removed })
+      })
+      .catch(() => {})
+  }
+
   export function list() {
     return Array.from(sessions.values()).map((s) => s.info)
   }
@@ -529,6 +580,8 @@ export namespace Pty {
 
     const t4 = performance.now()
     const history = await createDiskHistory({ directory: cwd, id, limit: HISTORY_LIMIT })
+    // Fire-and-forget, once per process, after the first terminal exists.
+    sweepStaleHistoryOnce()
     const diskHistoryMs = performance.now() - t4
 
     const totalMs = performance.now() - createStart
@@ -544,7 +597,10 @@ export namespace Pty {
       hasClaxedoPort: !!claxedoPort,
     })
 
-    const restored = previousPtyId ? history.snapshot() : ""
+    // Read from disk (async — the history is no longer mirrored in RAM). Capped
+    // at BUFFER_LIMIT because that is what `session.buffer` can hold; seeding
+    // more would only be trimmed straight back off.
+    const restored = previousPtyId ? await history.snapshot(BUFFER_LIMIT) : ""
     const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
     let initialCommandSent = false
     let initialCommandTimer: ReturnType<typeof setTimeout> | undefined

@@ -25,77 +25,239 @@
  * Applied to the replay only. The LIVE stream keeps its queries and mode sets —
  * those are a running program talking to its terminal, and must go through.
  *
+ * ## Why a hand-rolled scanner rather than regexes
+ *
+ * This runs on the attach hot path over a buffer that can reach the replay cap
+ * (megabytes for a TUI transcript). The original implementation was eight
+ * sequential `String.replace` passes, each allocating a fresh copy of the whole
+ * buffer when it matched — roughly eight full-size intermediates per attach.
+ * A single left-to-right scan that copies only the KEPT runs allocates once,
+ * and for the common case (nothing to strip) returns the input unchanged with
+ * no copy at all.
+ *
  * DUPLICATED, deliberately, from workspace-runtime's `pty/replay-sanitize.ts`.
  * There are TWO independent replay paths and each must sanitize its own:
  *   - the PTY host replays `session.buffer` to a reattaching socket;
  *   - the renderer replays its OWN localStorage snapshot on mount, which never
  *     goes near the server.
  * The app cannot import from the runtime package's internals, and a shared
- * package for ~90 lines of regex is not worth the coupling. `replay-sanitize.test.ts`
+ * package for ~200 lines is not worth the coupling. The behavioural test suite
  * is duplicated alongside it so the two cannot drift silently.
  */
 
-/**
- * Sequences that provoke a reply from the terminal.
- *
- * Kept deliberately narrow — each entry is a query with a known answer-back,
- * not merely an uncommon sequence. Anything not listed passes through, because
- * a false positive here silently corrupts a restored screen.
- */
-const QUERY_PATTERNS: RegExp[] = [
-  // Primary/secondary/tertiary Device Attributes: CSI c, CSI > c, CSI = c
-  /\x1b\[[>=]?[0-9;]*c/g,
-  // Device Status Report / cursor position: CSI n, CSI ? n  (CSI 6n = CPR)
-  /\x1b\[\??[0-9;]*n/g,
-  // XTVERSION: CSI > q  — note CSI ... q is also DECSCUSR (cursor style), so
-  // only the `>` private form is a query.
-  /\x1b\[>[0-9;]*q/g,
-  // DECRQM (request mode): CSI ? Ps $ p
-  /\x1b\[\??[0-9;]*\$p/g,
-  // XTGETTCAP and other DCS requests: DCS + q ... ST
-  /\x1bP\+q[^\x1b\x07]*(?:\x1b\\|\x07)/g,
-  // OSC colour queries end with `?` before the terminator: OSC 10;? ST
-  /\x1b\][0-9]+;\?(?:\x1b\\|\x07)/g,
-]
+const ESC = 0x1b
+const BEL = 0x07
 
 /**
- * Mode sets the live preamble owns. Mouse tracking (9, 1000–1003), mouse
- * encodings (1005/1006/1015/1016), focus reporting (1004), bracketed paste
- * (2004), application cursor/keypad (1, 66), and the kitty keyboard protocol.
+ * DECSET/DECRST private modes owned by the live preamble. Keyed on the FIRST
+ * parameter, matching how programs actually emit them (`CSI ? 1002 ; 1006 h`).
  *
- * Alternate-screen toggles (47/1047/1049) are stripped too: which buffer a
- * restore lands in is decided by the restore logic, and a stray toggle from the
- * transcript would either hide the restored scrollback or strand the terminal
- * in a buffer nothing is drawing to.
+ *   1     application cursor keys      66    application keypad
+ *   9     X10 mouse                    1000–1003 mouse tracking levels
+ *   1004  focus reporting              1005/1006/1015/1016 mouse encodings
+ *   2004  bracketed paste              47/1047/1049 alternate screen
+ *
+ * Alternate screen is included because which buffer a restore lands in is the
+ * restore logic's decision; a stray toggle from the transcript would either
+ * hide the restored scrollback or strand the terminal in an unpainted buffer.
  */
-const MODE_PATTERNS: RegExp[] = [
-  // DECSET/DECRST for the private modes listed above. Matches a whole
-  // parameter list so `CSI ? 1002 ; 1006 h` goes as one.
-  /\x1b\[\?(?:9|10\d\d|1015|1016|2004|1|66|47)(?:;[0-9]+)*[hl]/g,
-  // Kitty keyboard protocol: CSI > flags u, CSI = flags ; mode u, CSI < n u
-  /\x1b\[[><=][0-9;]*u/g,
-]
+function isPreambleOwnedMode(param: number): boolean {
+  if (param === 1 || param === 9 || param === 47 || param === 66) return true
+  if (param === 2004 || param === 1015 || param === 1016) return true
+  // 1000–1099 covers the tracking levels, encodings, focus reporting, and the
+  // 1047/1049 alt-screen forms in one range.
+  return param >= 1000 && param <= 1099
+}
+
+/** Result of examining one escape sequence. */
+type Scanned = {
+  /** Index just past the sequence, or -1 when it is incomplete. */
+  end: number
+  /** True when the sequence must not reach a reattaching terminal. */
+  drop: boolean
+}
+
+/**
+ * Parse the CSI starting at `start` (the ESC). Shape:
+ *   ESC [ <private 0x3C–0x3F> <params 0x30–0x3B> <intermediates 0x20–0x2F> <final 0x40–0x7E>
+ */
+function scanCsi(data: string, start: number): Scanned {
+  let i = start + 2
+  const len = data.length
+
+  let prefix = 0
+  if (i < len) {
+    const code = data.charCodeAt(i)
+    if (code >= 0x3c && code <= 0x3f) {
+      prefix = code
+      i += 1
+    }
+  }
+
+  const paramStart = i
+  while (i < len) {
+    const code = data.charCodeAt(i)
+    if (code >= 0x30 && code <= 0x3b) i += 1
+    else break
+  }
+  const paramEnd = i
+
+  let intermediate = 0
+  while (i < len) {
+    const code = data.charCodeAt(i)
+    if (code >= 0x20 && code <= 0x2f) {
+      // Only the last intermediate matters for the sequences we classify.
+      intermediate = code
+      i += 1
+    } else break
+  }
+
+  if (i >= len) return { end: -1, drop: false }
+  const final = data.charCodeAt(i)
+  if (final < 0x40 || final > 0x7e) {
+    // Not a well-formed CSI; treat the ESC as literal text and move on.
+    return { end: start + 1, drop: false }
+  }
+  const end = i + 1
+
+  const isPrivate = prefix !== 0
+  const q = prefix === 0x3f // '?'
+  const gt = prefix === 0x3e // '>'
+  const lt = prefix === 0x3c // '<'
+  const eq = prefix === 0x3d // '='
+
+  // --- queries: the terminal answers these ---------------------------------
+  // Device Attributes — CSI c / CSI > c / CSI = c
+  if (final === 0x63 /* c */) return { end, drop: true }
+  // Device Status Report / cursor position — CSI n / CSI ? n
+  if (final === 0x6e /* n */ && (prefix === 0 || q)) return { end, drop: true }
+  // XTVERSION — CSI > q. Bare `CSI Ps SP q` is DECSCUSR (cursor style), keep it.
+  if (final === 0x71 /* q */ && gt) return { end, drop: true }
+  // DECRQM — CSI ? Ps $ p
+  if (final === 0x70 /* p */ && intermediate === 0x24 /* $ */) return { end, drop: true }
+
+  // --- kitty keyboard protocol: CSI > u / CSI = u / CSI < u ----------------
+  if (final === 0x75 /* u */ && (gt || lt || eq)) return { end, drop: true }
+
+  // --- DECSET/DECRST for preamble-owned modes ------------------------------
+  if ((final === 0x68 /* h */ || final === 0x6c /* l */) && q) {
+    let first = 0
+    let sawDigit = false
+    for (let p = paramStart; p < paramEnd; p += 1) {
+      const code = data.charCodeAt(p)
+      if (code === 0x3b /* ; */) break
+      first = first * 10 + (code - 0x30)
+      sawDigit = true
+    }
+    if (sawDigit && isPreambleOwnedMode(first)) return { end, drop: true }
+  }
+
+  void isPrivate
+  return { end, drop: false }
+}
+
+/**
+ * Parse a string-terminated sequence (OSC / DCS / APC / PM / SOS) starting at
+ * the ESC. Terminated by BEL or ST (`ESC \`).
+ */
+function scanStringSequence(data: string, start: number, introducer: number): Scanned {
+  const len = data.length
+  let i = start + 2
+  let terminatorEnd = -1
+  while (i < len) {
+    const code = data.charCodeAt(i)
+    if (code === BEL) {
+      terminatorEnd = i + 1
+      break
+    }
+    if (code === ESC && i + 1 < len && data.charCodeAt(i + 1) === 0x5c /* \ */) {
+      terminatorEnd = i + 2
+      break
+    }
+    i += 1
+  }
+  if (terminatorEnd === -1) return { end: -1, drop: false }
+
+  const body = data.slice(start + 2, i)
+
+  // DCS `+q…` — XTGETTCAP, answered by the terminal.
+  if (introducer === 0x50 /* P */ && body.startsWith("+q")) {
+    return { end: terminatorEnd, drop: true }
+  }
+
+  // OSC colour QUERY — `OSC <num> ; ?`. The SET form carries a value and stays.
+  if (introducer === 0x5d /* ] */) {
+    const semi = body.indexOf(";")
+    if (semi > 0 && body.length === semi + 2 && body.charCodeAt(semi + 1) === 0x3f /* ? */) {
+      let numeric = true
+      for (let p = 0; p < semi; p += 1) {
+        const code = body.charCodeAt(p)
+        if (code < 0x30 || code > 0x39) {
+          numeric = false
+          break
+        }
+      }
+      if (numeric) return { end: terminatorEnd, drop: true }
+    }
+  }
+
+  return { end: terminatorEnd, drop: false }
+}
 
 /**
  * Strip reply-provoking queries and stale mode sets from a buffer that is about
  * to be replayed to a reattaching terminal.
  *
- * Pure and allocation-light: returns the input unchanged when there is nothing
- * to strip, which is the common case for a plain shell.
+ * Single pass; returns the input by reference when nothing needed stripping.
  */
 export function sanitizeReplay(data: string): string {
   if (!data) return data
-  // Fast path: no ESC at all means nothing to strip.
-  if (!data.includes("\x1b")) return data
 
-  let out = data
-  for (const pattern of QUERY_PATTERNS) {
-    pattern.lastIndex = 0
-    out = out.replace(pattern, "")
+  let search = data.indexOf("\x1b")
+  if (search === -1) return data
+
+  let kept: string[] | null = null
+  let copiedTo = 0
+  let i = search
+
+  while (i < data.length) {
+    if (data.charCodeAt(i) !== ESC) {
+      i += 1
+      continue
+    }
+
+    const next = i + 1 < data.length ? data.charCodeAt(i + 1) : -1
+    let scanned: Scanned
+    if (next === 0x5b /* [ */) {
+      scanned = scanCsi(data, i)
+    } else if (
+      next === 0x5d /* ] */ ||
+      next === 0x50 /* P */ ||
+      next === 0x5f /* _ */ ||
+      next === 0x5e /* ^ */ ||
+      next === 0x58 /* X */
+    ) {
+      scanned = scanStringSequence(data, i, next)
+    } else {
+      // Two-byte escape (ESC c, ESC =, ESC 7, …) or a trailing lone ESC.
+      scanned = { end: next === -1 ? -1 : i + 2, drop: false }
+    }
+
+    if (scanned.end === -1) {
+      // Incomplete at the end of the buffer — keep the fragment verbatim.
+      break
+    }
+
+    if (scanned.drop) {
+      if (!kept) kept = []
+      if (i > copiedTo) kept.push(data.slice(copiedTo, i))
+      copiedTo = scanned.end
+    }
+    i = scanned.end
   }
-  for (const pattern of MODE_PATTERNS) {
-    pattern.lastIndex = 0
-    out = out.replace(pattern, "")
-  }
-  return out
+
+  if (!kept) return data
+  if (copiedTo < data.length) kept.push(data.slice(copiedTo))
+  void search
+  return kept.join("")
 }
