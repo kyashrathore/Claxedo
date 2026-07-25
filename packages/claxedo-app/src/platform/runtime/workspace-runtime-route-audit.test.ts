@@ -2550,7 +2550,8 @@ describe("workspace runtime route audit", () => {
     )
     expect(text).toMatch(/const parentConversation = createMemo/)
     expect(text).toMatch(/agentListQuery/)
-    expect(text).toMatch(/configQuery/)
+    // No configQuery: the timeline's only config read gated the session-share
+    // menu, which Claxedo does not ship. `sync.data.config` stays banned below.
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
     expect(text).toMatch(/sessionSync\?\.syncSession\?\.\(id\)/)
     expect(text).not.toMatch(/\buseSync\b/)
@@ -3530,9 +3531,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/registeredConversationUserMessages\(args\.sessionId\(\)\) as UserMessage\[\]/)
     expect(text).toMatch(/conversation\(\)\.parts\[message\.id\]/)
     expect(text).toMatch(/directorySessionCacheQueryOptions\(\{ directory: args\.directory\(\) \}\)\.queryKey/)
-    expect(text).toMatch(
-      /configQuery\(\{[\s\S]*baseUrl: sdk\.url,[\s\S]*directory: args\.directory\(\),[\s\S]*client: sdk\.client/,
-    )
+    // The hook's only config read was the share-command gate, and Claxedo ships
+    // no session-share command, so it no longer reads config at all — the point
+    // of the original assertion (never reach for sync.data.config) is kept below.
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.session\.get/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -3544,7 +3545,6 @@ describe("workspace runtime route audit", () => {
     const text = await upstreamAppText("features/session/ui/message-timeline.tsx")
 
     expect(text).toMatch(/directoryAgentsQuery\(sdk\.url, sdk\.directory, sdk\.client\)/)
-    expect(text).toMatch(/directoryConfigQuery\(sdk\.url, sdk\.directory\)/)
     expect(text).toMatch(/directorySessionCacheQuery\(sdk\.directory\)/)
     expect(text).toMatch(/sessionStatusQuery\(sessionID\(\), sdk\.client\)/)
     expect(text).toMatch(/const directorySessionRows = createMemo/)
@@ -3556,7 +3556,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/parentConversation\(\)\?\.parts\[msgId\] \?\? emptyParts/)
     expect(text).toMatch(/messageAgentColor\(sessionMessages\(\), directoryAgentsQueryResult\.data \?\? \[\]\)/)
     expect(text).toMatch(/sessionSync\?\.syncSession\?\.\(id\)/)
-    expect(text).toMatch(/directoryConfigQueryResult\.data\?\.share !== "disabled"/)
+    // Both config reads here existed only to gate the session-share menu, which
+    // Claxedo does not ship — the timeline no longer reads directory config at
+    // all. `not.toMatch(/sync\.data\.config/)` below still pins the projection.
     expect(text).toMatch(/updateDirectorySession\(sdk\.directory, input\.id/)
     expect(text).toMatch(/removeDirectorySessionTree\(sdk\.directory, sessionID\)/)
     expect(text).not.toMatch(/\buseSync\b/)

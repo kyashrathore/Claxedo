@@ -24,21 +24,18 @@ fi
 # Keep claxedo bin first without duplicating entries
 {{PATH_PREPEND}}
 hash -r 2>/dev/null || true
-# One-shot shell-ready marker for terminal readiness detection.
+# Shell-ready marker, emitted on EVERY prompt.
 # Uses PROMPT_COMMAND so it fires AFTER direnv and other hooks complete.
+#
+# It has two consumers, and the second is why this no longer removes itself:
+#   1. terminal readiness — the server sends a queued initial command on the
+#      first marker (idempotent, so later ones are free);
+#   2. leaked-input-mode reclaim — the renderer treats each marker as "the
+#      shell owns the foreground again" and disarms mouse/focus/kitty modes a
+#      TUI left armed when it was killed without restoring them. That check is
+#      only correct if the marker arrives at every prompt, not just the first.
 _claxedo_shell_ready() {
   printf '\033]777;claxedo-shell-ready\007'
-  if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
-    local -a _new=()
-    for _cmd in "${PROMPT_COMMAND[@]}"; do
-      [[ "$_cmd" != "_claxedo_shell_ready" ]] && _new+=("$_cmd")
-    done
-    PROMPT_COMMAND=("${_new[@]}")
-  else
-    PROMPT_COMMAND="${_claxedo_orig_prompt_cmd}"
-    unset _claxedo_orig_prompt_cmd
-  fi
-  unset -f _claxedo_shell_ready
 }
 if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
   PROMPT_COMMAND=("${PROMPT_COMMAND[@]}" "_claxedo_shell_ready")

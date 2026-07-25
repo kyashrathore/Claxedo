@@ -12,6 +12,19 @@ export type LocalPTY = {
   scrollY?: number
   cursor?: number
   initialCommand?: string
+  /**
+   * Set when this entry points at a PTY the server just created to replace a
+   * lost one (the `clone()` recovery after WS close 1008, e.g. after an app
+   * restart killed the sidecar). The shell behind it is brand new: no TUI is
+   * running, so the mount MUST NOT take the paths that exist to make a live
+   * TUI redraw — the clear-screen on socket open, the mouse/focus mode
+   * rehydrate, or the forced SIGWINCH toggle. Clearing the screen here would
+   * wipe the scrollback we just restored, which is the "flashes history then
+   * goes blank" report.
+   *
+   * Consumed once by the next mount, which clears it.
+   */
+  recreated?: boolean
 }
 
 function titleNum(title: string) {

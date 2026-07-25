@@ -13,8 +13,8 @@ import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
-import { createDiskHistory, renameHistory } from "./history-disk"
-import { containsClearScrollbackSequence, extractContentAfterClear } from "./escape-filter"
+import { cleanupOrphanedHistory, createDiskHistory, renameHistory } from "./history-disk"
+import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"
 import { osc7 as osc7Parser } from "./osc7"
 import { oscProcessExit } from "./osc-process-exit"
 import { buildSafeEnv, getLocale } from "./env"
@@ -29,6 +29,13 @@ import {
 } from "./write-queue"
 import { decodeInput } from "./decode-input"
 import { sendWebSocketWithBackpressure } from "./websocket-backpressure"
+import { safeChunkEnd, safeStartIndex } from "./safe-slice"
+import { createMarkerScanner } from "./marker-scan"
+import { SHELL_READY_MARKER } from "./shell-ready"
+import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
+import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
+import { createModeTracker, type ModeTracker } from "./mode-tracker"
+import { sanitizeReplay } from "./replay-sanitize"
 import { workspaceRuntimeBus, type PtyInfo } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
@@ -67,15 +74,41 @@ async function ensureSetup(port: number) {
 export namespace Pty {
   const log = Log.create({ service: "pty" })
 
+  /**
+   * ## Per-session memory contract
+   *
+   * Everything a live PTY holds in RAM is bounded here. Total server-side
+   * terminal memory is therefore (sessions × the sum below), and the session
+   * count is itself bounded by orphan reaping (see `orphanTimeoutMs`).
+   *
+   *   BUFFER_LIMIT          2 MB code units  — the replay buffer, ~2–4 MB heap
+   *   QUEUE_HIGH_WATERMARK  1 MB             — pending writes to a slow pty
+   *   modeTracker                            — headless xterm, scrollback: 0
+   *
+   * History is NOT in this list: it lives only on disk (see history-disk.ts).
+   * It used to be mirrored in RAM at HISTORY_LIMIT — 16 MB per terminal, for
+   * data that was already durable and read at most once per session lifetime.
+   */
   const BUFFER_LIMIT = 1024 * 1024 * 2
   const WEBSOCKET_BUFFERED_AMOUNT_MAX = (() => {
     const raw = Number(process.env.OPENCODE_PTY_WS_BUFFERED_AMOUNT_MAX)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024
     return Math.floor(raw)
   })()
+  /** DISK cap per transcript. Not a memory cost — nothing mirrors it in RAM. */
   const HISTORY_LIMIT = (() => {
     const raw = Number(process.env.OPENCODE_PTY_HISTORY_LIMIT)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024 * 16
+    return Math.floor(raw)
+  })()
+  /**
+   * How long a transcript stays restorable after its last write. Past this,
+   * no session can still name it via `previousPtyId`, so it is only occupying
+   * disk. Swept once per process — see `sweepStaleHistoryOnce`.
+   */
+  const HISTORY_RETENTION_MS = (() => {
+    const raw = Number(process.env.OPENCODE_PTY_HISTORY_RETENTION_MS)
+    if (!Number.isFinite(raw) || raw <= 0) return 7 * 24 * 60 * 60 * 1000
     return Math.floor(raw)
   })()
   const BUFFER_CHUNK = 64 * 1024
@@ -127,12 +160,21 @@ export namespace Pty {
   function safeReplay(ws: WSContext, replay: string) {
     if (!replay) return true
     try {
-      for (let i = 0; i < replay.length; i += BUFFER_CHUNK) {
-        if (!sendWebSocketWithBackpressure(ws, replay.slice(i, i + BUFFER_CHUNK), {
+      let i = 0
+      while (i < replay.length) {
+        // A fixed-stride slice can end between the halves of a surrogate pair,
+        // which makes the outgoing text frame invalid UTF-8. Escapes split
+        // across sends are fine — xterm reassembles them across writes.
+        const end = safeChunkEnd(replay, Math.min(replay.length, i + BUFFER_CHUNK))
+        // Degenerate guard: a pair straddling the very first boundary would
+        // otherwise pin `end` at `i` and spin forever.
+        const stop = end > i ? end : Math.min(replay.length, i + BUFFER_CHUNK)
+        if (!sendWebSocketWithBackpressure(ws, replay.slice(i, stop), {
           maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX,
         })) {
           return false
         }
+        i = stop
       }
       return true
     } catch {
@@ -228,6 +270,20 @@ export namespace Pty {
     buffer: string
     bufferCursor: number
     cursor: number
+    /**
+     * This session replaced a lost PTY and its buffer was seeded from disk
+     * history, so the first client to attach should be shown a separator
+     * between the restored content and the fresh shell. Consumed by the first
+     * SUCCESSFUL replay (see connect) — a send that fails leaves it set so the
+     * next attach still marks the seam.
+     */
+    restoredNoticePending: boolean
+    /**
+     * Headless emulator mirroring this PTY's output, so a reattaching renderer
+     * can be resynced to the modes the RUNNING program actually has set rather
+     * than to a snapshot the renderer guessed earlier. See mode-tracker.ts.
+     */
+    modeTracker: ModeTracker
     history: Awaited<ReturnType<typeof createDiskHistory>>
     osc7: string
     processExitBuf: string
@@ -269,6 +325,9 @@ export namespace Pty {
     if (session.removed) return
 
     clearInterrupt(session)
+    // Release the headless emulator on BOTH paths — it holds a parser and a
+    // screen buffer per session, so leaking one per terminal adds up.
+    session.modeTracker.dispose()
 
     if (session.orphanTimer) {
       clearTimeout(session.orphanTimer)
@@ -312,6 +371,31 @@ export namespace Pty {
   }
 
   const sessions = new Map<string, ActiveSession>()
+
+  /**
+   * Sweep transcripts nothing can restore from any more.
+   *
+   * `cleanupOrphanedHistory` existed but was never called, so buckets grew
+   * without bound — one project directory was found holding 314 log files. A
+   * history file is only reachable by a session naming its id via
+   * `previousPtyId`, which happens on the next attach after a loss; past the
+   * retention window nothing ever will.
+   *
+   * Runs once, lazily, on the first session created in this process: it needs
+   * no scheduler, cannot delay startup, and a runtime that never opens a
+   * terminal never pays for it. Failures are swallowed — a full disk or a
+   * permission error must not stop a terminal from opening.
+   */
+  let historySweepStarted = false
+  function sweepStaleHistoryOnce() {
+    if (historySweepStarted) return
+    historySweepStarted = true
+    void cleanupOrphanedHistory(undefined, HISTORY_RETENTION_MS)
+      .then((result) => {
+        if (result?.removed) log.info("swept stale pty history", { removed: result.removed })
+      })
+      .catch(() => {})
+  }
 
   export function list() {
     return Array.from(sessions.values()).map((s) => s.info)
@@ -396,6 +480,13 @@ export namespace Pty {
       ...buildSafeEnv(inputEnv, { customPrefix: "CLAXEDO" }),
       ...shellEnv.env,
       TERM: "xterm-256color",
+      // Describe OUR terminal, not whatever launched the desktop app. These
+      // come after the allowlist spread so they override the inherited values
+      // — a TUI seeing the host's `Apple_Terminal` tunes for the wrong
+      // terminal. See identity.ts for why this value is `vscode` and what it
+      // is coupled to.
+      TERM_PROGRAM: TERMINAL_TERM_PROGRAM,
+      TERM_PROGRAM_VERSION: TERMINAL_TERM_PROGRAM_VERSION,
       OPENCODE_TERMINAL: "1",
       COLORFGBG: "15;0",
     } as Record<string, string>
@@ -489,6 +580,8 @@ export namespace Pty {
 
     const t4 = performance.now()
     const history = await createDiskHistory({ directory: cwd, id, limit: HISTORY_LIMIT })
+    // Fire-and-forget, once per process, after the first terminal exists.
+    sweepStaleHistoryOnce()
     const diskHistoryMs = performance.now() - t4
 
     const totalMs = performance.now() - createStart
@@ -504,10 +597,17 @@ export namespace Pty {
       hasClaxedoPort: !!claxedoPort,
     })
 
-    const restored = previousPtyId ? history.snapshot() : ""
+    // Read from disk (async — the history is no longer mirrored in RAM). Capped
+    // at BUFFER_LIMIT because that is what `session.buffer` can hold; seeding
+    // more would only be trimmed straight back off.
+    const restored = previousPtyId ? await history.snapshot(BUFFER_LIMIT) : ""
     const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
     let initialCommandSent = false
     let initialCommandTimer: ReturnType<typeof setTimeout> | undefined
+    // Per-session, because the carry is stream state.
+    const shellReadyScanner = createMarkerScanner(SHELL_READY_MARKER)
+    const clearScrollbackScanner = createMarkerScanner(CLEAR_SCROLLBACK)
+    let clearScrollbackCarry = ""
     const sendInitialCommand = (reason: string) => {
       if (!initialCommand || initialCommandSent) return
       initialCommandSent = true
@@ -529,6 +629,17 @@ export namespace Pty {
       buffer: restored,
       bufferCursor: 0,
       cursor: restored.length,
+      // Deliberately NOT concatenated into `buffer`: the buffer is bounded by
+      // BUFFER_LIMIT and trimmed from the head, so a burst of output before any
+      // client attached would evict the notice first — exactly the seam we want
+      // to mark. Kept as session state and prepended at replay time instead,
+      // which makes it immune to trimming by construction.
+      restoredNoticePending: shouldMarkRestored({ previousPtyId, restoredLength: restored.length }),
+      // node-pty's own default geometry; the client's first resize on attach
+      // brings both the pty and this emulator to the real size. Geometry only
+      // affects where the emulator wraps, not which modes it records, so a
+      // brief mismatch cannot corrupt the preamble.
+      modeTracker: createModeTracker(80, 24),
       history,
       osc7: "",
       processExitBuf: "",
@@ -561,7 +672,10 @@ export namespace Pty {
         })
       }
 
-      if (initialCommand && data.includes("claxedo-shell-ready")) {
+      // Chunk-safe: a plain `data.includes(...)` missed the marker whenever a
+      // PTY read boundary fell inside it, and the initial command then waited
+      // out the 1200ms fallback timer instead of firing at the prompt.
+      if (initialCommand && shellReadyScanner.scan(data)) {
         if (initialCommandTimer) clearTimeout(initialCommandTimer)
         initialCommandTimer = setTimeout(() => sendInitialCommand("shell-ready"), 10)
       }
@@ -590,13 +704,23 @@ export namespace Pty {
         workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "command-exit", exitCode: exitParsed.exitCode })
       }
 
+      // Mirror into the headless emulator BEFORE broadcasting, so a client that
+      // attaches in the same tick gets a preamble that already includes
+      // whatever this chunk just set.
+      session.modeTracker.feed(data)
+
       safeBroadcast(session, data)
 
       session.buffer += data
       if (session.buffer.length > BUFFER_LIMIT) {
-        const excess = session.buffer.length - BUFFER_LIMIT
-        session.buffer = session.buffer.slice(excess)
-        session.bufferCursor += excess
+        // Cut on a safe boundary: a raw `slice(excess)` can land inside an
+        // escape sequence, and the replay then starts mid-CSI — xterm prints
+        // the parameter bytes as literal junk at the top of the scrollback.
+        // `bufferCursor` advances by the ACTUAL cut so the invariant
+        // `bufferCursor + buffer.length === cursor` still holds for connect().
+        const cut = safeStartIndex(session.buffer, session.buffer.length - BUFFER_LIMIT)
+        session.buffer = session.buffer.slice(cut)
+        session.bufferCursor += cut
       }
       if (session.managed && busy(data)) {
         session.addrInUse = true
@@ -604,9 +728,14 @@ export namespace Pty {
       }
 
       const filtered = (() => {
-        if (!containsClearScrollbackSequence(data)) return data
+        // Chunk-safe: the scanner carries a tail so an ED3 split across two PTY
+        // reads still clears history. `carry` gives extractContentAfterClear
+        // the same view so it can strip the tail of a straddling sequence.
+        const carry = clearScrollbackCarry
+        clearScrollbackCarry = data.slice(Math.max(0, data.length - (CLEAR_SCROLLBACK.length - 1)))
+        if (!clearScrollbackScanner.scan(data)) return data
         void session.history.clear()
-        return extractContentAfterClear(data)
+        return extractContentAfterClear(data, carry)
       })()
       if (filtered) session.history.append(filtered)
     })
@@ -643,6 +772,7 @@ export namespace Pty {
       if (!session.ready) {
         enqueueWrite(session, { type: "resize", cols: input.size.cols, rows: input.size.rows })
       } else {
+        session.modeTracker.resize(input.size.cols, input.size.rows)
         session.process.resize(input.size.cols, input.size.rows)
       }
     }
@@ -672,6 +802,7 @@ export namespace Pty {
         enqueueWrite(session, { type: "resize", cols, rows })
         return
       }
+      session.modeTracker.resize(cols, rows)
       session.process.resize(cols, rows)
     }
   }
@@ -714,15 +845,35 @@ export namespace Pty {
       if (from >= end) return ""
       const offset = Math.max(0, from - start)
       if (offset >= session.buffer.length) return ""
-      return session.buffer.slice(offset)
+      // A replay is a RECORDING. Queries in it would make the reattaching
+      // terminal answer a program that asked minutes ago — and if that program
+      // has exited, the shell now reading the pty echoes the reply as typed
+      // input. Mode sets in it would re-arm mouse/focus/kitty for a program
+      // that may be gone. Modes come from the live preamble below instead.
+      return sanitizeReplay(session.buffer.slice(offset))
     })()
 
-    if (!safeReplay(ws, data)) {
+    // Append the seam marker AFTER the restored content and before the fresh
+    // shell's first output, so it reads as a rule between the two. Only for a
+    // client that is actually receiving the restored buffer: a reconnect asking
+    // for the live tail (`cursor === -1`) has already seen it, or wants only
+    // what is new, and would get the rule stranded at the bottom.
+    // Mode preamble FIRST, from live emulator state. Mode-setting escapes are
+    // emitted once at program startup and broadcast away rather than buffered,
+    // so a fresh xterm needs them re-asserted on every attach — even when the
+    // replay itself is empty (a live-tail reconnect to a running TUI).
+    const preamble = session.modeTracker.buildPreamble()
+    const showNotice = session.restoredNoticePending && data.length > 0
+    const body = showNotice ? data + SESSION_RESTORED_NOTICE : data
+    if (!safeReplay(ws, preamble + body)) {
       session.subscribers.delete(ws)
       workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "error", message: "replay_send_failed" })
       ws.close()
       return
     }
+    // Consumed only now — a failed send above returns early and leaves the flag
+    // set, so the next attach still marks the seam.
+    if (showNotice) session.restoredNoticePending = false
 
     if (!sendWebSocketWithBackpressure(ws, meta(end), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })) {
       session.subscribers.delete(ws)

@@ -7,7 +7,6 @@ import {
 import type { ConversationChatHandle } from "../conversation/opencode-conversation"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions } from "../data/sync/queries"
-import { configQuery } from "../data/query/directory"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { composerFocus } from "../composer/ui/composer-focus"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
@@ -437,58 +436,21 @@ describe("upstream contract", async () => {
     expect(byId.get("session.redo")?.disabled).toBe(false)
   })
 
-  test("exposes upstream share and unshare commands", () => {
+  // Claxedo drops upstream's session sharing: no `session.share`/`session.unshare`
+  // command, and therefore no `/share` row in the composer's slash popover (which
+  // lists every non-disabled command option carrying a `slash` trigger). A shared
+  // session URL on the info record must not resurrect either one.
+  test("registers no session share or unshare command", () => {
     setSessionInfo({ id: "session-1", share: { url: "https://share.test/session-1" } })
 
-    const byId = new Map(collectCommands().map((command) => [command.id, command]))
+    const commands = collectCommands()
+    const byId = new Map(commands.map((command) => [command.id, command]))
 
-    expect(byId.get("session.share")?.disabled).toBe(false)
-    expect(byId.get("session.share")?.title).toBe("session.share.copy.copyLink")
-    expect(byId.get("session.unshare")?.disabled).toBe(false)
-  })
-
-  test("share command publishes through the Claxedo global session client with directory scope", async () => {
-    const byId = new Map(collectCommands().map((command) => [command.id, command]))
-
-    await byId.get("session.share")?.onSelect()
-
-    expect(sdkCalls.share).toEqual([{ sessionID: "session-1", directory: "/repo" }])
-  })
-
-  test("unshare command is disabled until the session has a share URL", () => {
-    let byId = new Map(collectCommands().map((command) => [command.id, command]))
-    expect(byId.get("session.unshare")?.disabled).toBe(true)
-
-    setSessionInfo({ id: "session-1", share: { url: "https://share.test/session-1" } })
-    byId = new Map(collectCommands().map((command) => [command.id, command]))
-
-    expect(byId.get("session.unshare")?.disabled).toBe(false)
-  })
-
-  test("unshare command unpublishes through the Claxedo global session client with directory scope", async () => {
-    setSessionInfo({ id: "session-1", share: { url: "https://share.test/session-1" } })
-    const byId = new Map(collectCommands().map((command) => [command.id, command]))
-
-    await byId.get("session.unshare")?.onSelect()
-
-    expect(sdkCalls.unshare).toEqual([{ sessionID: "session-1", directory: "/repo" }])
-  })
-
-  test("share commands are disabled when config disables sharing", () => {
-    queryClient.setQueryData(configQuery({
-      baseUrl: "http://localhost:4096",
-      directory: "/repo",
-      client: {
-        config: {
-          get: async () => ({ data: { share: "disabled" } }),
-        },
-      },
-    }).queryKey, { share: "disabled" })
-    setSessionInfo({ id: "session-1", share: { url: "https://share.test/session-1" } })
-    const byId = new Map(collectCommands().map((command) => [command.id, command]))
-
-    expect(byId.get("session.share")?.disabled).toBe(true)
-    expect(byId.get("session.unshare")?.disabled).toBe(true)
+    expect(byId.has("session.share")).toBe(false)
+    expect(byId.has("session.unshare")).toBe(false)
+    expect(commands.filter((command) => command.slash === "share" || command.slash === "unshare")).toEqual([])
+    expect(sdkCalls.share).toEqual([])
+    expect(sdkCalls.unshare).toEqual([])
   })
 
   test("restores undo prompt from registered chat parts", async () => {

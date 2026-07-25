@@ -121,16 +121,49 @@ describe("buildSafeEnv", () => {
     expect(result.PROCESSOR_ARCHITECTURE).toBeDefined()
   })
 
-  test("Windows: allows Windows Terminal vars", () => {
+  test("drops the host terminal's identity markers", () => {
+    // We announce our own identity (pty/identity.ts). Leaking the host
+    // emulator's markers makes a TUI detect kitty/iTerm/Windows Terminal and
+    // enable behaviour our xterm does not implement — and makes it vary by
+    // whichever terminal happened to launch the desktop app.
     const result = buildSafeEnv(
       {
         WT_SESSION: "{guid}",
         WT_PROFILE_ID: "{profile-guid}",
+        KITTY_PID: "1234",
+        ITERM_SESSION_ID: "w0t0p0",
+        ITERM_PROFILE: "Default",
+        TERM_SESSION_ID: "abc",
+        WEZTERM_EXECUTABLE: "/usr/bin/wezterm",
+        WEZTERM_CONFIG_DIR: "/home/me/.wezterm",
+        ALACRITTY_SOCKET: "/tmp/alacritty.sock",
+        GHOSTTY_RESOURCES_DIR: "/opt/ghostty",
+        TERM_PROGRAM: "Apple_Terminal",
+        TERM_PROGRAM_VERSION: "455",
       },
       { platform: "win32" },
     )
-    expect(result.WT_SESSION).toBe("{guid}")
-    expect(result.WT_PROFILE_ID).toBe("{profile-guid}")
+    for (const key of [
+      "WT_SESSION",
+      "WT_PROFILE_ID",
+      "KITTY_PID",
+      "ITERM_SESSION_ID",
+      "ITERM_PROFILE",
+      "TERM_SESSION_ID",
+      "WEZTERM_EXECUTABLE",
+      "WEZTERM_CONFIG_DIR",
+      "ALACRITTY_SOCKET",
+      "GHOSTTY_RESOURCES_DIR",
+      "TERM_PROGRAM",
+      "TERM_PROGRAM_VERSION",
+    ]) {
+      expect(result[key]).toBeUndefined()
+    }
+  })
+
+  test("keeps COLORTERM, which describes capability rather than identity", () => {
+    const result = buildSafeEnv({ COLORTERM: "truecolor" }, { platform: "darwin" })
+    expect(result.COLORTERM).toBe("truecolor")
   })
 
   test("non-Windows: does not use case-insensitive matching", () => {

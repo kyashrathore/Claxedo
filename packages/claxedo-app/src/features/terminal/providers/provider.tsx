@@ -500,6 +500,10 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
           id: clone.id,
           title: clone.title ?? pty.title,
           cwd: clone.cwd ?? pty.cwd,
+          // The replacement shell is brand new — no TUI is running behind it.
+          // The mount reads this to skip the live-TUI redraw paths that would
+          // otherwise clear the screen we are about to restore into.
+          recreated: true,
         })
         if (active) {
           setStore("active", clone.id)

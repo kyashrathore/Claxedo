@@ -144,7 +144,22 @@ Grouped by severity. Everything below is read out of the two trees, not inferred
 These three are the most likely cause of visible garbage, and none of them were
 in revision 1 of this plan.
 
-#### F1. UTF-8 is decoded per-frame with no streaming → mojibake on chunk boundaries
+#### F1. UTF-8 is decoded per-frame with no streaming — **LATENT, not live** (corrected 2026-07-25)
+
+**Correction after implementation-time verification.** This was originally filed
+as the primary cause of visible garbage. It is not. Our server sends PTY output
+as WebSocket **text** frames (`safeBroadcast`/`safeReplay` pass JS strings to
+`ws.send`), so the browser delivers them as `string` and the decode branch is
+never reached. The relay preserves the distinction — `encodedFrame` tags
+`binary: false` for strings and `decodedFrame` returns `body.toString("utf8")` —
+so a relayed workspace behaves the same. Only the 0x00-prefixed meta frame is
+binary.
+
+The defect below is therefore a **latent hazard**, not a live corruption: the
+branch is wrong, and it is a trap for anyone migrating the path to bytes (W9 or
+a future relay change). Keep the fix; drop the severity.
+
+Original analysis retained:
 [terminal.tsx:844](packages/claxedo-app/src/features/terminal/ui/terminal.tsx:844)
 creates `new TextDecoder()` and
 [terminal.tsx:1012](packages/claxedo-app/src/features/terminal/ui/terminal.tsx:1012)
@@ -166,7 +181,34 @@ Superset's transport carries this comment verbatim:
 **Fix:** feed bytes into xterm directly. Failing that, `{ stream: true }`. The
 byte path is strictly better and removes F2's re-encode entirely.
 
-#### F2. Replay cursor is counted in two different units
+#### F2. Replay cursor is counted in two different units — **CONFIRMED LIVE**
+
+Verified end to end at implementation time. The failure is silent output loss on
+every reconnect after any non-ASCII output:
+
+1. On attach the server sends a meta frame carrying its own cursor; the client
+   adopts it ([terminal.tsx:1004](packages/claxedo-app/src/features/terminal/ui/terminal.tsx:1004)),
+   so both sides start correct.
+2. The client then advances that cursor by **UTF-8 byte length** per chunk while
+   the server advances by **UTF-16 code units**. UTF-8 bytes ≥ UTF-16 units for
+   all non-ASCII, so the client's cursor drifts strictly *ahead*.
+3. On reconnect the client sends its live cursor
+   ([terminal.tsx:866](packages/claxedo-app/src/features/terminal/ui/terminal.tsx:866)),
+   the server evaluates `from >= end` → **`return ""`** — the output produced
+   while disconnected is dropped, with no error.
+4. The drifted cursor is also persisted into the snapshot
+   ([terminal.tsx:301](packages/claxedo-app/src/features/terminal/ui/terminal.tsx:301)),
+   so it feeds `cursorPlan` on the next mount and can start a replay at a wrong
+   offset — which is how F2 feeds F3.
+
+**Fix shape (chosen).** The cursor is an *index into the server's UTF-16 string
+buffer* — that is the only coherent reading, since `connect()` uses it as a
+`String.slice` offset. So the client must count the same way: `data.length`, not
+`encoder.encode(data).byteLength`. One-line client change, no protocol or
+buffer-format change, exact agreement because the client receives the identical
+string the server sent.
+
+Original analysis:
 - **Server** ([pty/index.ts:569](packages/workspace-runtime/src/pty/index.ts:569)):
   `session.cursor += data.length` where `data` is a **JS string** from
   `node-pty.onData` → UTF-16 code units.
@@ -417,6 +459,106 @@ unnecessary; take the second version.
 
 ---
 
+## Implementation status (worktree `terminal-fidelity`, 2026-07-25)
+
+| WP | Status | Notes |
+|---|---|---|
+| W1 data path | **done** | F2 confirmed live and fixed; F3 fixed at all 3 cut sites + `safeReplay`; F1 downgraded to latent and hardened; marker + ED3 chunk-boundary gaps closed |
+| W2 xterm bump | **done** | beta.289 / webgl beta.288, ligatures held at 220; `bun run build` verified |
+| W3 font-settle | **done** | `fonts.load(spec)` + timeout + swallow |
+| W4 parser-idle gate | **done** | every fit routed through it |
+| W5 mode truth | **done** | reclaimer + repeating prompt marker + server-side headless-xterm live mode tracker; `filterModeSequences` and the persisted `modeSequences` field deleted |
+| W6 restore honesty | **done** | `mountCols` measured post-fit and unknown-safe; recreated PTYs skip the live-TUI paths |
+| W7a identity | **done** | `TERM_PROGRAM=vscode` + version; host emulator markers no longer leak; coupling test |
+| W7b wheel fidelity | **not done** | see below — deliberately deferred, not forgotten |
+| W8 restored separator | **done** | cold-restore path covered end to end by `history-restore.test.ts` |
+| Replay sanitization | **done** (not in the original plan) | found live — see below |
+| Dev-server port isolation | **done** (not in the original plan) | found while auditing verification — see below |
+| W9 parked runtimes / pty-daemon | deferred by design | |
+
+**Two decisions taken during implementation, both recorded in code:**
+
+1. **Identity is `vscode`, not `kitty`.** The reference uses `kitty`, but only
+   because it ships a full-fidelity wheel handler. We use xterm's stock damped
+   wheel handling, and a kitty-class claim without that handler makes agent TUIs
+   disable their own multiplier and scroll at ~1/3 speed. `identity.test.ts`
+   enforces the pairing in both directions, so W7b must flip both together.
+2. **`vtExtensions.kittyKeyboard` stays off** until the reclaimer has live
+   verification. Advertising the protocol makes its leak (unusable keyboard
+   until `reset`) reachable; the reclaimer now exists to handle it, so enabling
+   it is a follow-up rather than a blocker.
+
+### Two things that came out of implementation, both needing follow-up
+
+**W7b is deliberately not done.** It is the one package that cannot be landed
+safely without measurement: the wheel handler and the `TERM_PROGRAM` identity
+are a coupled pair (`identity.test.ts` enforces it), and shipping the handler
+means flipping the identity to `kitty` in the same change. Get the pairing
+wrong in either direction and agent-TUI scrolling silently becomes ~1/3 speed
+or ~3x speed — a regression no unit test catches. It needs a live measurement
+protocol, e.g. `less` over a numbered file: fix a notch count, read the landed
+line number, compare stock vs. handler vs. a native terminal. Everything else
+here was verifiable from the outside; this one is not, so it is better left
+undone than landed blind.
+
+~~**The server's disk-history seed path appears inert.**~~ **RETRACTED — this was
+wrong.** The `find /` that produced it was silently blocked. The directory
+exists at `~/.workspace-runtime/state/pty-history` (bucketed by base64url cwd),
+is written per real session, and the rename-onto-the-new-id fires — observed
+carrying a 12KB Claude session across a restart. `history-restore.test.ts` now
+covers the whole path.
+
+### Three history bugs found by running it for real
+
+None of these were visible from unit tests; all three came from running a real
+Claude Code session, killing the server, and looking at what came back.
+
+1. **A replay is a recording, not live output.** Replaying the transcript re-ran
+   the program's terminal QUERIES, so the reattaching terminal answered a
+   question asked minutes earlier — into a pty where a shell was now reading,
+   which echoed the reply (`ESC P > | xterm.js(6.1.0-beta.289) ESC \` next to
+   the prompt). It also re-ran the program's MODE SETS, re-arming mouse tracking
+   for a program that had exited. On one run this landed *inside* the prompt
+   line and corrupted the command being typed. Fixed by `replay-sanitize.ts`,
+   deliberately duplicated: there are TWO independent replay paths (the PTY host
+   replaying `session.buffer`, and the renderer replaying its own localStorage
+   snapshot without touching the server) and fixing one left the other intact.
+2. **A client with no local copy asked for the live tail.** `cursorPlan`'s
+   `tailOnReload` requested the tail exactly when the server's buffer was the
+   only copy of the scrollback — PTY alive with a full session behind it,
+   terminal blank.
+3. The renderer's snapshot was trimmed with a raw `slice`, so a restored buffer
+   could begin mid-escape. Now uses the same safe-boundary trim as the server.
+
+### The dev server silently belonged to another checkout
+
+`setupServerConnection` reuses a healthy `:3001` in dev (deliberate — you can
+run `claxedo-server` separately), but the probe hardcoded 3001 while
+`startClaxedoServer` honoured `CLAXEDO_SERVER_PORT`. There was therefore no way
+to run an isolated dev server, and two checkouts both defaulted to the same
+port: whichever app started second attached to the FIRST one's server, and to
+its workspace-runtime code.
+
+This silently invalidated four verification runs — a renderer change appeared to
+work while the server half of the same change never executed. Fixed by deriving
+the probe from the same env var. **Anyone verifying server-side terminal work
+must run `CLAXEDO_SERVER_PORT=<free port> bun run dev:desktop` and confirm the
+log says `variant: 'embedded'`.**
+
+**W7b remains deferred by owner decision (2026-07-25).** Not forgotten, not
+blocked — it is the one package whose only tell is a scroll *rate*, where both
+failure modes look like "scrolling works". Pick it up with the measurement
+protocol above, not by feel.
+
+**Evidence level.** W1–W6, W7a, W8 and the three history bugs are live-verified
+in the desktop app, the final run against an isolated embedded server with real
+Claude Code v2.1.220 (authenticated, probe string answered, server killed and
+confirmed down, full session restored with a clean seam). W7b is unimplemented. Every DoD below calls for a live
+desktop repro and none has had one. Test deltas: workspace-runtime 350→390
+pass, claxedo-app terminal 979→1016 pass, zero new failures (the pre-existing
+21 fail / 19 errors in workspace-runtime and 1 fail / 1 error in claxedo-app are
+identical with these changes stashed). `tsgo -b` clean in both packages.
+
 ## Work packages
 
 ### W1 — Byte-clean data path *(F1, F2, F3)*
@@ -504,7 +646,62 @@ Two independent architectural moves:
   descriptor per spawn on macOS — they pin `1.2.0-beta.14` and run the daemon
   under Electron's bundled Node.
 
-**Not scheduled.** Decide after W1–W8.
+**DECIDED 2026-07-25 (owner): stay with the current architecture.** Neither the
+PTY daemon nor a detached server is being built. Recorded here with the analysis
+so it does not get relitigated from scratch.
+
+#### What actually happens today, verified
+
+A PTY does NOT survive the app. Tested empirically rather than reasoned: spawn a
+PTY, run a long-lived foreground process, `kill -9` the PTY owner — the child is
+gone within 3 seconds. The mechanism is *not* an explicit kill (`Pty.dispose()`
+is never called in production, and the server has no SIGTERM handler that reaps
+PTYs). When the pty MASTER fd closes, the kernel sends SIGHUP to the slave's
+foreground process group, and the shell takes its children with it. So programs
+get SIGHUP, never SIGTERM — no chance to save state.
+
+A second, independent killer: the 60s orphan timer reaps a session 60 seconds
+after its last WebSocket subscriber disconnects. So even a surviving server
+loses the PTY if you reopen slowly.
+
+#### Do not delete the watchdog
+
+`scripts/claxedo-server-startup.ts` is a deliberate dead-man's switch, not
+cruft. The server probes its parent PID every 250ms (`process.kill(pid, 0)`) and
+SIGTERMs itself on ESRCH; `claxedoServerStartup` refuses to boot at all without
+`CLAXEDO_DESKTOP_PARENT_PID`. It discriminates ESRCH from EPERM (EPERM means the
+process EXISTS) and `unref()`s its timer — someone thought about this.
+
+It exists because an Electron `utilityProcess` survives a SIGKILLed parent as an
+orphan, and an orphaned claxedo-server would hold the port, the data-dir
+ownership lock, the PTYs, and serve stale code. That is exactly the failure that
+cost half a verification round in this session.
+
+#### If PTY survival ever becomes a real complaint
+
+Cheapest first, and only then:
+
+1. **Raise the 60s orphan timer.** Config change, no architecture. Buys "quit and
+   reopen within N minutes". Does not survive a real quit or a reboot.
+2. **Detached claxedo-server.** Sized at ~1.5–2 weeks, not 2 days. The Electron
+   coupling is only 73 lines (`claxedo-server-entry.ts` + `claxedo-server-startup.ts`)
+   and the portable core already ships to Fly/Docker, so the mechanical part is
+   ~2 days. The rest is what makes it shippable: a version handshake (a new app
+   finding an old server is the dominant risk), moving the diagnostics transport
+   off `process.parentPort` (otherwise `processObserver` is silently never passed
+   and the whole Diagnostics attribution layer degrades with no error), plus
+   supervision, idle shutdown, and Quit Completely. Framed honestly this is not
+   "delete the watchdog" — it is replacing one orphan-prevention mechanism with
+   four.
+3. **PTY daemon.** Larger, and protects terminals from *our server* rather than
+   from the app. Note it also breaks the mode tracker differently: the tracker
+   lives in the server, so a server restart yields a live TUI with an EMPTY
+   tracker — the preamble says "no modes set" while the program believes
+   otherwise. Superset has the same shape; adoption builds a fresh tracker.
+
+What softens all of this: the transcript now restores correctly, and for Claude
+Code specifically `claude --continue` recovers the conversation. What is left
+unprotected is long-running builds, dev servers, and migrations.
 
 ---
 
