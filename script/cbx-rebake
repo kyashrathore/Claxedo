@@ -31,8 +31,22 @@ sudo -n apt-get update -qq && sudo -n apt-get upgrade -y -qq >/dev/null
 sudo -n ln -sf /usr/local/bin/bun /usr/local/bin/bunx
 printf "#!/bin/sh\nexec bunx \"\$@\"\n" | sudo -n tee /usr/local/bin/npx >/dev/null
 sudo -n chmod +x /usr/local/bin/npx
-# tests assume umask 022 (box default 002 breaks opencode permission tests)
-grep -q "umask 022" ~/.bashrc || echo "umask 022" >> ~/.bashrc
+# tests assume umask 022 (box default 002 breaks opencode permission tests:
+# tool.write > file permissions > sets file permissions when writing sensitive data).
+#
+# NOT ~/.bashrc — that was the previous approach and it never worked. Ubuntu ships
+# bashrc with `case $- in *i*) ;; *) return;; esac` at the TOP, so a non-interactive
+# shell returns before reaching an appended line. `crabbox run -- bash -c` is
+# non-interactive, and `bash -lc` reaches bashrc via ~/.profile and hits the same
+# early return — verified 2026-07-25 on image 412360550: umask was 0002 in BOTH.
+#
+# pam_umask applies to the sshd session itself, before any shell rc runs, so it
+# covers every invocation shape.
+sudo -n sed -i "s/^UMASK.*/UMASK 022/" /etc/login.defs
+grep -q "pam_umask" /etc/pam.d/sshd || printf "session optional pam_umask.so umask=022\n" | sudo -n tee -a /etc/pam.d/sshd >/dev/null
+# Belt and braces for shells that bypass PAM: BASH_ENV is read by NON-interactive bash.
+printf "umask 022\n" | sudo -n tee /etc/crabbox-bashenv.sh >/dev/null
+grep -q "BASH_ENV" /etc/environment || printf "BASH_ENV=/etc/crabbox-bashenv.sh\n" | sudo -n tee -a /etc/environment >/dev/null
 # playwright lacks an ubuntu26.04 build; spoof 24.04 so install works
 grep -q "VERSION_ID=\"26.04\"" /etc/os-release && sudo -n sed -i.bak "s/VERSION_ID=\"26.04\"/VERSION_ID=\"24.04\"/" /etc/os-release || true
 bun install --frozen-lockfile >/dev/null
