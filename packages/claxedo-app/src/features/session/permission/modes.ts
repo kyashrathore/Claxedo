@@ -262,6 +262,42 @@ function autoDelivery(harness: HarnessId): { delivery: PermissionModeDelivery; c
 }
 
 /**
+ * The delivery that WITHDRAWS what Auto granted.
+ *
+ * Required, not optional. Turning Auto on writes grants into the engine's own
+ * persisted ruleset, so turning it off has to withdraw them — otherwise the switch
+ * is one-way and the engine stays permissive after the user has visibly disabled it.
+ * That is a security regression, not a missing nicety, and it is invisible from the
+ * UI because the switch would read "off" while the rules still say allow.
+ *
+ * Withdrawal works BECAUSE the handler merges rather than replaces: the incoming
+ * rules land after the existing ones, and `Permission.evaluate` takes the last match,
+ * so a later `ask` beats an earlier `allow`. There is no endpoint that deletes rules,
+ * so this is the only way to revoke.
+ *
+ * Every key Auto granted is re-asked EXPLICITLY rather than relying on `*` alone.
+ * `*` would in fact suffice by the same last-match rule, but naming each key makes
+ * the withdrawal legible in the stored ruleset and independent of how `*` is matched.
+ */
+export function claxedoAutoRevoke(harness: HarnessId): PermissionModeDelivery | undefined {
+  const mechanism = PERMISSION_MECHANISMS[harness]
+  if (mechanism.kind !== "opencode-session-ruleset") return undefined
+  const ask = (keys: readonly string[]) =>
+    keys.map((permission) => ({ permission, pattern: "*", action: "ask" as const }))
+  return {
+    kind: "opencode-session-ruleset",
+    ruleset: [
+      { permission: "*", pattern: "*", action: "ask" },
+      ...ask(SAFE_READ_PERMISSIONS),
+      ...ask(INTERACTIVE_PERMISSIONS),
+      ...ask(IN_PROJECT_WRITE_PERMISSIONS),
+      ...ask(DANGER_GATED_PERMISSIONS),
+    ],
+    appliesFrom: "next-turn",
+  }
+}
+
+/**
  * Claxedo's single built-in mode, resolved for a harness.
  *
  * A function rather than a constant because the DELIVERY differs per harness even

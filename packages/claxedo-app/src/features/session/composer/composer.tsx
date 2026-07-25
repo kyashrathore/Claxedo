@@ -52,6 +52,8 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { PROMPT_EXAMPLES } from "./examples"
 import { composerModeSnapshot } from "./mode-snapshot"
 import { createComposerHarnessMode } from "./harness-mode-helpers"
+import { showToast } from "@opencode-ai/ui/toast"
+import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
@@ -486,6 +488,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     permission,
     sessionId: resolvedSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
+    harness: () => currentHarnessType(scope()),
+    // Turning the switch on writes the grants into opencode's OWN persisted
+    // ruleset, so the engine stops asking rather than Claxedo answering the same
+    // prompts forever — and the grant survives Claxedo being closed. Turning it off
+    // withdraws them. Deliberately NOT `config.update`: that handler disposes the
+    // engine instance on every call, which would abort the running turn.
+    deliver: ({ delivery, sessionID }) => applyPermissionMode({ delivery, sessionID, client: sdk.client }),
+    // The local switch has already flipped, so a failed write must be visible.
+    // Silence here would mean the user believes the engine was told something it
+    // never received — and on the disabling side, that grants are withdrawn when
+    // they are still live.
+    onDeliveryError: ({ error, enabling }) => {
+      const detail = error instanceof Error ? error.message : String(error)
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: enabling
+          ? `Claxedo will answer these prompts, but opencode was not told to allow them: ${detail}`
+          : `opencode may still allow these until the next successful change: ${detail}`,
+      })
+    },
   })
   // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
   // derivation plus the two intent actions that resolve an actionable block.
