@@ -56,7 +56,7 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
   /**
    * Open the `@`/`/` popover from outside the editor (the `+` menu's "Context" /
    * "Commands" entries). No trigger character is inserted: both lists populate
-   * on an EMPTY query (`popover-controller.ts#promptAtOptions`), so priming the
+   * on an EMPTY query (`prompt-options.ts#promptAtOptions`), so priming the
    * filter to "" is all that stands between a menu click and a full list.
    *
    * `closeDocumentPicker()` first because the `@` list swaps to documents while

@@ -8,7 +8,7 @@ import {
   promptAtOptions,
   promptDocumentOptions,
   promptSlashCommands,
-} from "./popover-controller"
+} from "./prompt-options"
 
 describe("prompt popover controller", () => {
   test("builds at-options as agents, recent files, then searched files", async () => {

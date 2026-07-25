@@ -32,7 +32,7 @@ export function planModeAgents(names: readonly string[]) {
  * menu teach the keyboard path instead of duplicating it.
  *
  * Commands/Context deliberately do NOT insert a `/` or `@` character: both
- * lists populate on an empty query (`popover-controller.ts#promptAtOptions`),
+ * lists populate on an empty query (`prompt-options.ts#promptAtOptions`),
  * so opening the surface is the whole action and the editor stays clean.
  * (On the flagged CONTROLLER engine — `composer/v2/engine-contract.ts` — the two
  * entries dispatch upstream's `commands.open`/`context.open` instead, which DO
@@ -40,7 +40,7 @@ export function planModeAgents(names: readonly string[]) {
  *
  * The standalone "Documents" entry upstream has no equivalent of is gone: the
  * `documents.open` row is the first entry of the Commands popover
- * (`popover-controller.ts#promptSlashCommands`), so Commands -> Documents
+ * (`prompt-options.ts#promptSlashCommands`), so Commands -> Documents
  * reaches the same picker.
  *
  * `data-action="prompt-attach"` deliberately stays on the "Images and files"

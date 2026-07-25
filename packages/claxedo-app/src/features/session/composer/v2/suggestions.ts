@@ -6,7 +6,7 @@
 // deliberately lossless in the direction that matters: the suggestion `id` IS
 // `promptAtOptionKey(option)` / `command.id`, so the controller's `activeID` and
 // our frame's `atActive`/`slashActive` are the same string with no lookup table.
-import { promptAtOptionKey } from "@/features/session/composer/ui/popover-controller"
+import { promptAtOptionKey } from "@/features/session/composer/ui/prompt-options"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import type { ComposerDocumentOption } from "@/features/session/composer/document-picker-controller"
 import type { PromptInputV2Suggestion } from "@/ui/session-kit"

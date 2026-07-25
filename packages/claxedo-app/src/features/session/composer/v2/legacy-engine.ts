@@ -14,7 +14,8 @@ import { createPromptInputKeyDown } from "@/features/session/composer/ui/editor-
 import { createPromptHistoryController } from "@/features/session/composer/ui/history-controller"
 import { promptLength, type PromptHistoryEntry } from "@/features/session/composer/ui/history"
 import { promptCaretState } from "@/features/session/composer/ui/lifecycle"
-import { createPromptPopoverController, promptAtOptionKey } from "@/features/session/composer/ui/popover-controller"
+import { createPromptPopoverController } from "@/features/session/composer/ui/popover-controller"
+import { promptAtOptionKey } from "@/features/session/composer/ui/prompt-options"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import type { ComposerEngine, ComposerEngineBuildInput } from "@/features/session/composer/v2/engine-contract"
 

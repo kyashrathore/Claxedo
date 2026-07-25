@@ -26,7 +26,7 @@ import {
   promptAtOptionKey,
   promptDocumentOptions,
   promptSlashCommands,
-} from "@/features/session/composer/ui/popover-controller"
+} from "@/features/session/composer/ui/prompt-options"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import { moveBeforeZeroWidthSentinel } from "@/features/session/composer/ui/editor-keymap"
 import { createPromptHistoryController } from "@/features/session/composer/ui/history-controller"
