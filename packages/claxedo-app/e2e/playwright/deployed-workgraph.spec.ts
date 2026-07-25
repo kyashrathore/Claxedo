@@ -4,6 +4,14 @@
  * This test talks to the deployed app and control plane without intercepting a
  * product route. The only request instrumentation installed by Clerk's official
  * helper targets the Clerk Frontend API to attach a short-lived testing token.
+ *
+ * LANE — intentionally carries NO `CLAXEDO_E2E_SUITE` tag, because it is not part of
+ * `playwright.config.ts` at all: that config `testIgnore`s this file, and this spec is
+ * owned by `playwright.deployed.config.ts` (`testMatch: "deployed-workgraph.spec.ts"`),
+ * run by `test:e2e:deployed-workgraph` from the `deploy-claxedo-app` workflow AFTER a
+ * deploy. It requires a live deployment plus real Clerk credentials (`CLAXEDO_APP_URL`,
+ * `CLERK_SECRET_KEY`, the `WORKGRAPH_SMOKE_*` fixtures) and so can never run in the PR
+ * lane. `src/architecture/e2e-suite-tags.guard.test.ts` exempts this one file by name.
  */
 import { clerk, clerkSetup } from "@clerk/testing/playwright"
 import { expect, test, type Page, type Response } from "@playwright/test"

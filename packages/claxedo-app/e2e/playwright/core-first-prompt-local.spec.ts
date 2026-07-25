@@ -34,9 +34,13 @@
  *   `[data-slot="session-turn-thinking"]` — the busy/"Thinking" placeholder row.
  *   `[data-testid="empty-draft-session-composer"]` — the workbench-empty draft
  *     composer, rendered only when a fallback directory exists
- *     (`src/claxedo-ui/layouts/rail-workbench-canvas.tsx`); its absence, together with
- *     the "No projects yet. Create one to get started." copy, is the zero-workspace
- *     onboarding state.
+ *     (`src/app/workbench/rail/rail-workbench-canvas.tsx`); its absence is the
+ *     zero-workspace state. That state has TWO settled surfaces: the "No projects
+ *     yet. Create one to get started." onboarding placeholder on routes that own no
+ *     workbench content (e.g. `/`), and `[data-testid="central-session-content"]`
+ *     ("No workspace backing", `src/features/session/ui/content/session-content.tsx`)
+ *     on routes that DO own one (e.g. `/s/new`, whose unresolvable session id the
+ *     route intent settles into a central session content). Neither offers a composer.
  *
  * BEHAVIORS —
  *   1. Opening a fresh local worktree route renders a draft composer the user can type
@@ -50,9 +54,14 @@
  *      (`POST /session` + `POST /session/:id/prompt_async`) settles — i.e., typing and
  *      submitting renders the user's own text without waiting on the network.
  *   5. With zero projects ever registered (no directory resolvable anywhere, not even
- *      as a fallback), the workbench renders the "No projects yet" onboarding
- *      placeholder instead of any composer, and creates zero sessions: submission is
- *      impossible, not merely rejected. (The code-level reactive guard is
+ *      as a fallback), no route offers a composer and zero sessions are created:
+ *      submission is impossible, not merely rejected. A route that owns no workbench
+ *      content (`/`) settles on the "No projects yet" onboarding placeholder; the
+ *      directory-less draft route (`/s/new`) settles on the central "No workspace
+ *      backing" surface. Each surface is asserted on the route where it is the
+ *      SETTLED render — the placeholder is only transiently reachable on `/s/new`
+ *      (it survives just until the session inventory loads), so asserting it there
+ *      passes only on a slow runner. (The code-level reactive guard is
  *      `resolveSubmitDirectory`'s `showMissingWorkspace()` toast in
  *      `src/session/submit/resolve.ts`, gated on `draftId && !projectDirectory`; every
  *      composer surface this app can currently render — including the
@@ -188,16 +197,20 @@ test.describe("core first prompt (local) @core", () => {
     // No project ever registered (seedNoProjects clears localStorage entirely) and
     // the mock's bootstrap/project endpoints are overridden below to report zero
     // projects. This is the one app state where NO fallback directory exists at
-    // all (`emptyDraftDirectory()` in `src/claxedo-ui/layouts/rail-workbench-
-    // canvas.tsx` is undefined), so the workbench renders its "No projects yet"
-    // onboarding placeholder instead of `EmptyDraftSessionComposer` — no composer
-    // is offered, so `resolveSubmitDirectory`'s `draftId && !projectDirectory`
-    // guard (`src/session/submit/resolve.ts`) can never even be reached: this
-    // spec proves the STRONGER, observable contract (zero compose surface, zero
-    // session creation) that guard exists to protect. Every OTHER draft surface
-    // in this app (including `EmptyDraftSessionComposer` itself) always carries
-    // at least a fallback directory, which is why that reactive toast is not
-    // independently e2e-reachable — see SPEC BEHAVIORS #5.
+    // all (`emptyDraftDirectory()` in `src/app/workbench/rail/rail-workbench-
+    // canvas.tsx` is undefined), so no surface can render `EmptyDraftSessionComposer`
+    // — no composer is offered, so `resolveSubmitDirectory`'s
+    // `draftId && !projectDirectory` guard (`src/session/submit/resolve.ts`) can
+    // never even be reached: this spec proves the STRONGER, observable contract
+    // (zero compose surface, zero session creation) that guard exists to protect.
+    // Every OTHER draft surface in this app (including `EmptyDraftSessionComposer`
+    // itself) always carries at least a fallback directory, which is why that
+    // reactive toast is not independently e2e-reachable — see SPEC BEHAVIORS #5.
+    //
+    // The zero-workspace state has TWO settled surfaces depending on whether the
+    // route owns a workbench content, and each is asserted where it is stable —
+    // see the inline (a)/(b) notes below. Asserting the (a) surface on the (b)
+    // route is exactly the race this test used to lose.
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/bootstrap**", (route) =>
       route.fulfill({
@@ -221,13 +234,45 @@ test.describe("core first prompt (local) @core", () => {
     })
 
     await seedNoProjects(page)
+
+    // (a) Shell root — the workbench-empty path. No route surface is owned here
+    // (`routeOwnsInitialSurface("/")` is false in `src/app/workbench/state/
+    // provider.tsx`, and `receive()` in `route-intent.ts` returns immediately when
+    // the intent carries neither a workspaceId nor a sessionId), so the workbench
+    // never gains a content and `renderEmpty` is the SETTLED render — the "No
+    // projects yet" onboarding placeholder, permanently, not for one frame.
+    await page.goto("/")
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+    // Positive precondition for the two negative assertions below: the onboarding
+    // placeholder's own New Project affordance is painted, so "no composer" is a
+    // statement about a rendered surface rather than about an unpainted app.
+    await expect(page.getByRole("button", { name: "New Project" }).first()).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
+    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+
+    // (b) The directory-less draft route itself. `/s/new` DOES own a route
+    // surface, so once the session inventory reports `loaded` the route intent
+    // resolves the (unresolvable) session id to a central session content
+    // (`state.layout.openCentralSession` in `route-intent.ts`), and
+    // `SessionContent` renders its "No workspace backing" surface
+    // (`src/features/session/ui/content/session-content.tsx` — the only
+    // `central-session-content` testid in the app). That surface is the SETTLED
+    // state of this route; the workbench-empty placeholder from (a) is only
+    // reachable here in the sub-second window before the inventory loads, which is
+    // why asserting it on this route is a race (it survives only on a slow runner).
+    // We therefore gate on the settled surface and assert the real contract:
+    // whichever zero-workspace surface renders, it offers no compose affordance.
     await page.goto("/s/new")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-
-    await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+    const centralSurface = page.getByTestId("central-session-content")
+    await expect(centralSurface, "directory-less route never settled").toBeVisible({ timeout: 30_000 })
+    await expect(centralSurface).toHaveText("No workspace backing")
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+    await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)
 
     expect(mock.requests.createSessionCount).toBe(0)
     expect(mock.requests.promptCount).toBe(0)

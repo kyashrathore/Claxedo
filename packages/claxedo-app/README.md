@@ -108,6 +108,24 @@ bun run test:e2e:core       # CLAXEDO_E2E_SUITE=core playwright test
 bun run test:e2e:mobile     # --project=mobile (375×812 core flows)
 ```
 
+**Suite lanes.** `CLAXEDO_E2E_SUITE` selects specs *by tag* — a spec that carries
+no lane tag is selected by no lane and silently never runs. The registry lives in
+`playwright.config.ts` (`suiteGrep`); an unknown suite name throws rather than
+falling through to "run everything".
+
+| suite | tag | what it is |
+| --- | --- | --- |
+| `core` (**default**) | `@core` | Tier M — every route mocked, zero real network. The lane CI watches, sharded 12-way on every PR. |
+| `live` | `@live` | Tier L — real `claxedo-server`, real agent binaries, real credentials. Not in CI (no credentials there). |
+| `marketing` | `@marketing` | Screenshot capture tool; writes PNGs into `claxedo-web/public/screenshots`. Never in CI. |
+| `all` | — | No filter, including lanes CI cannot run. |
+
+`@workgraph-real` and the `@documents-*-canary` tags are sub-selectors *within* a
+lane, not lanes: `test:e2e:core:base` carves `@workgraph-real` out of the sharded
+lane with `--grep-invert`, and the separate `e2e (workgraph-real)` CI job runs it.
+`src/architecture/e2e-suite-tags.guard.test.ts` fails if any spec carries no lane
+tag, or carries an unregistered one (a `@cores` typo).
+
 **Operational contract** (learned the hard way — the config and plan docs
 enforce it):
 

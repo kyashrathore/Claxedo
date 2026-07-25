@@ -4,7 +4,42 @@ const port = Number(process.env.PLAYWRIGHT_PORT ?? 4455)
 process.env.PLAYWRIGHT_PORT ??= String(port)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`
 const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
-const suite = process.env.CLAXEDO_E2E_SUITE ?? "happy"
+// SUITE LANE REGISTRY — the single source of truth for `CLAXEDO_E2E_SUITE`.
+// A spec is only ever executed by a lane whose tag it carries, so a spec with no
+// recognised lane tag runs in NO lane and nobody notices: that is exactly how
+// `a11y-sweep.spec.ts` sat tagged `@happy` (a dead pre-consolidation lane that no
+// script and no CI job selected) and went silently unexecuted. Keep this object the
+// ONLY place suite names are decided, and keep it in sync with the lane-tag list in
+// `src/architecture/e2e-suite-tags.guard.test.ts`, which fails if any spec under
+// `e2e/playwright/` carries none of these tags.
+//   core      — Tier M (`installMockRuntime`, zero real network, per e2e/INVARIANTS.md
+//               rule 6). The lane CI actually watches: `test:e2e:core:base`, sharded
+//               12-way on every PR. This is the default, so a bare `test:e2e` runs
+//               the watched lane instead of nothing.
+//   live      — Tier L (`live-*.spec.ts`): real claxedo-server / real agent binaries /
+//               real credentials. Deliberately NOT in CI — no credentials there.
+//   marketing — `marketing-screenshots.spec.ts`, a capture tool that writes PNGs into
+//               `packages/claxedo-web/public/screenshots`. Never in CI: it rewrites
+//               committed assets.
+//   all       — no tag filter; includes the lanes CI cannot run. Local/nightly only.
+// `@workgraph-real` is not a lane of its own: it is a sub-selector inside `core`,
+// carved out of the sharded lane by `test:e2e:core:base`'s `--grep-invert` and run by
+// the separate `e2e (workgraph-real)` CI job. Same for the `@documents-*-canary` tags.
+const suiteGrep = {
+  core: /@core/,
+  live: /@live/,
+  marketing: /@marketing/,
+  all: undefined,
+} satisfies Record<string, RegExp | undefined>
+const suite = process.env.CLAXEDO_E2E_SUITE ?? "core"
+if (!(suite in suiteGrep)) {
+  // Fail loudly rather than fall through to "no grep = run everything": a typo'd
+  // suite name silently running Tier L against no backend is worse than a crash.
+  throw new Error(
+    `CLAXEDO_E2E_SUITE="${suite}" is not a known suite. Known suites: ${Object.keys(suiteGrep).join(", ")}.`,
+  )
+}
+const grep = suiteGrep[suite as keyof typeof suiteGrep]
 // PLAYWRIGHT_VIDEO=0 is an explicit off-switch: the old `|| suite === "core"`
 // override recorded video for every core test regardless, ballooning CI shard
 // artifacts (and slowing every local run) with videos of passing tests.
@@ -14,7 +49,6 @@ const video =
     : process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core"
       ? "on"
       : "retain-on-failure"
-const grep = suite === "happy" ? /@happy/ : suite === "core" ? /@core/ : undefined
 const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 // CLAXEDO_E2E_PREBUILT=1 serves a production build via `vite preview` instead

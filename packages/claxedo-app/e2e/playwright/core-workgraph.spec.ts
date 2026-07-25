@@ -5,6 +5,14 @@
  * WorkGraph HTTP router. Playwright never intercepts a route, and fixture setup
  * uses only public commands plus the same source-planning background
  * runtimes used by the product.
+ *
+ * LANE — tagged `@core @workgraph-real`. The extra `@workgraph-real` tag is how this
+ * file is deliberately carved OUT of the 12-way sharded core lane:
+ * `test:e2e:core:base` passes `--grep-invert @workgraph-real`, and this spec instead
+ * runs as its own `e2e (workgraph-real)` CI job via `test:e2e:workgraph`. Reason: it
+ * boots a real WorkGraph API and needs an app build with a baked
+ * `VITE_CLAXEDO_SERVER_URL`, so it cannot share a shard's app build. It is still
+ * `@core` — the workgraph job selects it with `CLAXEDO_E2E_SUITE=core`.
  */
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 import { AxeBuilder } from "@axe-core/playwright"

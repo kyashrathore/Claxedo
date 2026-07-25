@@ -1,3 +1,14 @@
+/**
+ * SPEC: deterministic marketing captures (capture tool, NOT a regression test)
+ *
+ * LANE — `@marketing`, deliberately outside the `@core` CI lane and outside `@live`.
+ * This file is a screenshot generator: it writes PNGs straight into
+ * `packages/claxedo-web/public/screenshots`, i.e. it mutates committed source-tree
+ * assets. Running it in CI would rewrite those assets on every shard, and running it in
+ * a shard would race the other shards writing the same paths. Run it on purpose, when
+ * the marketing captures need refreshing: `bun run test:e2e:marketing`. It asserts only
+ * enough (via the shared turn oracle) to prove the captured surfaces really rendered.
+ */
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import path from "node:path"
 import { installMockRuntime } from "../helpers/mock-runtime"

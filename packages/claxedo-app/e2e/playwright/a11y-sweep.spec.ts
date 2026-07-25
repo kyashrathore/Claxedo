@@ -231,7 +231,13 @@ async function assertMatchesBaseline(page: Page, surface: string) {
   ).toEqual([])
 }
 
-test.describe("a11y sweep @happy", () => {
+// `@core`, not `@happy`: this is a Tier M spec (every route mocked via
+// `installMockRuntime`, zero real network — e2e/INVARIANTS.md rule 6) and its whole
+// purpose is to be a CI regression net. It was tagged `@happy`, a dead
+// pre-consolidation lane that no npm script and no CI job selects, so the sweep never
+// once ran in the lane it was written to guard. See the suite lane registry in
+// `playwright.config.ts`.
+test.describe("a11y sweep @core", () => {
   test("home (zero-project empty state) has no new axe violations — behavior 1", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await mockEmptyBootstrap(page)

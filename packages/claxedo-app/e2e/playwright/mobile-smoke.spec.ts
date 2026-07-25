@@ -323,7 +323,14 @@ async function touchLongPressDragTo(
   return touch
 }
 
-test.describe("mobile smoke @happy", () => {
+// `@core`, not `@happy`: this spec exists because "none of this is guarded by CI" (see
+// PURPOSE above), and `@happy` is a dead pre-consolidation lane no CI job selects — so
+// under `CLAXEDO_E2E_SUITE=core` the `mobile` Playwright project resolved to ZERO tests
+// and the guard guarded nothing. It is Tier M (every route mocked, zero real network),
+// 5 tests, so it belongs in the watched lane. The `mobile` project's `testMatch` still
+// confines it to iPhone-13 emulation; the chromium project `testIgnore`s `mobile-*`, so
+// it never also runs at desktop viewport. See the lane registry in `playwright.config.ts`.
+test.describe("mobile smoke @core", () => {
   test("mobile sidebar drawer opens via the opener and scrim-closes — behavior 1", async ({ page }) => {
     // WP-C3 §3.1 flipped this from dead code: `openMobileSidebar`
     // (rail-shell-chrome-state.ts) is now a real setter, reachable on a phone via

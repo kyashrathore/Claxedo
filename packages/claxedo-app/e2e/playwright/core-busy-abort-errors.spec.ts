@@ -161,13 +161,13 @@
  *      progresses `"pending"` ("Still working…") at ~20s then `"long"` ("This is
  *      taking a while" + Cancel) at ~45s; clicking Cancel at `"long"` aborts the turn
  *      (status flips to idle, the banner disappears) exactly like the Stop button. The
- *      `"failed"` stage (5 minutes) is real-time-impractical for a CI-speed mocked
- *      spec — pinned as `test.fixme`, see findings. BOTH the pending/long test AND
- *      the failed-stage test are `test.fixme` as of this task: the pending/long one
- *      hits a confirmed, separate app bug (two `Session()` page instances stay
- *      mounted after first send; `[data-testid="session-status-stage"]` never
- *      renders in that state even though the underlying dispatcher state is
- *      correct) — see the fixme'd test's own comment and this task's findings.
+ *      `"failed"` stage would otherwise take 5 minutes of real wall clock, so a second
+ *      test reaches it by scaling ONLY the four escalation delays through the
+ *      dispatcher's gated `__claxedoStatusTimerScale` hook; at that terminal stage BOTH
+ *      Cancel and Retry are offered. BOTH tests run LIVE (neither is `test.fixme`): the
+ *      two app defects that once forced them to be skipped — a duplicate `Session()`
+ *      mount surviving the first send, and a non-reactive `statusStage` read in the
+ *      composer — are fixed; see the pending/long test's own comment for the fixes.
  *
  * INVARIANTS — (see e2e/INVARIANTS.md #2, verbatim here because this spec is its
  *   primary owner) Once an assistant message's `time.completed` is set or it carries
@@ -190,162 +190,40 @@
  *   docks (`core-docks`); tool-part rendering, diff summaries
  *   (`core-timeline-rendering-scroll`).
  */
-import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
-import { installMockRuntime, type MockEvent, type MockRuntimeHandles } from "../helpers/mock-runtime"
+import { expect, test, type Locator, type Page } from "@playwright/test"
+import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-busy-abort-errors"
 const SESSION_ID = "ses_core_busy_abort_errors"
 
-// The mock's default opencode model is the `big-pickle` placeholder
-// (mock-runtime.ts `BIG_PICKLE`), which the reworked composer deliberately
-// treats as "no model configured" and refuses to submit
-// (`isSignedWorkspaceDefaultModel`, src/features/session/composer/signed-workspace-model.ts) —
-// the first send is dropped, the session is never created, and the URL never
-// leaves the workspace root, killing every downstream busy/abort assertion.
-// Pinning a concrete harness model makes the composer submit-ready, matching
-// the pattern used by sibling specs (core-docks `establishSession`,
-// core-session-actions `SEND_MODELS`).
+// MODEL PINNING — the reason is NOT what earlier copies of this comment claimed.
+// The mock's default opencode model is `big-pickle-1` (`BIG_PICKLE`,
+// mock-runtime.ts:476), a real versioned id. The submit block matches ONLY the bare
+// pair `opencode` + `big-pickle` (`isSignedWorkspaceDefaultModel`,
+// src/features/session/composer/signed-workspace-model.ts:18-20), so the mock default
+// is already submit-ready and pinning is NOT required to dispatch. Pinning here is for
+// DETERMINISM — a named model the assertions can match — not to unblock submit.
 const PIN_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
-/** CONFIRMED SHARED-MOCK GAP (this task's investigation, verified via a full
- * request-log capture): every session created through this spec's flow lands
- * on the `/w/<dir>/session/<id>` route shape, and for THAT shape the app's
- * live-event consumer (`src/context/global-sdk.tsx`) reads
- * `GET /api/wr/events` (confirmed via `page.on("request")` — behavior 2's
- * passing run shows repeated `GET .../api/wr/events`, NEVER
- * `/global/event`), not the plain `/global/event`/`/event` endpoints
- * `installMockRuntime`'s `emit()` feeds. `installMockRuntime` only mounts
- * `/api/wr/events` (`relayEventHandler`) when the caller passes a `cloud:
- * {...}` option — this spec's local-only tests never do, so `mock.emit(...)`
- * is silently a NO-OP for every session here: the event is queued into a bus
- * nothing ever drains. This is why driveTurn's own automatic events (busy
- * ack, message deltas, idle) never reconcile anything either — every
- * "passing" test in this file (behaviors 2, 3, 7) does so via the REST
- * reconciliation fallback (`requestAcceptedPromptRefresh`/
- * `ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS`, session-controller.ts) or via
- * DOM/network state that never depended on SSE delivery, NOT via genuine SSE
- * delivery. Recommended shared-helper fix: always mount the `/api/wr/events`
- * + `/api/wr/runtime-events` relay handlers on the primary origin (not only
- * behind `options.cloud`), sharing the SAME `EventBus`/`emit` used for
- * `/global/event`, so `mock.emit()` reaches local sessions too — see this
- * task's findings.
- *
- * Bridges around the gap SPEC-LOCALLY (not editing mock-runtime.ts): mounts
- * `/api/wr/events` + `/api/wr/runtime-events` with an independent minimal
- * event bus, reusing `installMockRuntime`'s exact wire envelope
- * (`{directory, payload}` per SSE `data:` line) so the app's consumer parses
- * it identically. Returns an `emit` with the SAME signature as
- * `installMockRuntime`'s, for drop-in use in tests that need SSE delivery to
- * a local (non-cloud) session. */
-function installWorkspaceRuntimeEventsBridge(page: Page) {
-  const pending: Array<{ directory: string; payload: MockEvent }> = []
-  let waiter: (() => void) | undefined
-  const emit = (payload: MockEvent, directory: string = DIR) => {
-    pending.push({ directory, payload })
-    const resolve = waiter
-    waiter = undefined
-    resolve?.()
-  }
-  const drain = async (idleTimeoutMs: number) => {
-    if (pending.length === 0) {
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          waiter = resolve
-        }),
-        new Promise<void>((resolve) => setTimeout(resolve, idleTimeoutMs)),
-      ])
-    }
-    return pending.splice(0, pending.length)
-  }
-  const body = (batch: Array<{ directory: string; payload: MockEvent }>) => {
-    if (batch.length === 0) return ": heartbeat\n\n"
-    return batch.map(({ directory, payload }) => `data: ${JSON.stringify({ directory, payload })}\n\n`).join("")
-  }
-  const handler = async (route: Route) => {
-    const type = route.request().resourceType()
-    if (type !== "fetch" && type !== "xhr") return route.continue()
-    // Matches installMockRuntime's own sseIdleTimeoutMs — keeps this bridge's
-    // reconnect cadence identical to the shared mock's proven-working one
-    // rather than guessing at a different value.
-    const batch = await drain(4_000)
-    await route.fulfill({ status: 200, contentType: "text/event-stream", body: body(batch) }).catch(() => {})
-  }
-  return Promise.all([
-    page.route("**/api/wr/events**", handler),
-    page.route("**/api/wr/runtime-events**", handler),
-  ]).then(() => ({ emit }))
-}
-
-/** Companion to `installWorkspaceRuntimeEventsBridge`: for tests that need
- * driveTurn's own (mock-runtime.ts-internal, Node-side) reply to reach the
- * app, driveTurn's automatic events are ALSO no-ops for the same reason (they
- * go through `mock.emit()`, which only feeds `/global/event`). driveTurn's
- * effects on the mock's in-memory `messages` array are real regardless (pure
- * server-side state), so this polls the ALREADY-correctly-mocked
- * `GET /session/:id/message` endpoint (via `page.evaluate` + `fetch`, so it
- * goes through the SAME page.route interception the app itself uses — a
- * Node-side `page.request` call would bypass routing entirely) until the
- * assistant message settles, then relays its final content through the
- * bridge so the app's DOM catches up immediately instead of waiting on the
- * REST-reconciliation fallback's slow backoff
- * (`ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS` sums to ~28s, longer than the
- * oracle's 20s window). */
-async function relaySettledReplyOverBridge(
-  page: Page,
-  bridge: { emit: MockRuntimeHandles["emit"] },
-  opts: { sessionId: string; directory: string; timeoutMs?: number },
-) {
-  const deadline = Date.now() + (opts.timeoutMs ?? 30_000)
-  while (Date.now() < deadline) {
-    const rows = await page.evaluate(
-      async ([sessionId, directory]) => {
-        const res = await fetch(`http://127.0.0.1:3001/session/${sessionId}/message?directory=${encodeURIComponent(directory)}&limit=80`)
-        if (!res.ok) return null
-        return (await res.json()) as Array<{
-          info: { id: string; role: string; time?: { completed?: number }; error?: unknown; [key: string]: unknown }
-          parts: Array<{ type: string; text?: string }>
-        }>
-      },
-      [opts.sessionId, opts.directory] as const,
-    )
-    const assistant = rows?.find((r) => r.info.role === "assistant")
-    if (assistant && (assistant.info.time?.completed || assistant.info.error)) {
-      const relay = () => {
-        const textPart = assistant.parts.find((p) => p.type === "text")
-        if (textPart?.text) {
-          bridge.emit({
-            type: "message.part.updated",
-            properties: {
-              sessionID: opts.sessionId,
-              part: { id: `${assistant.info.id}_text`, sessionID: opts.sessionId, messageID: assistant.info.id, type: "text", text: textPart.text },
-              time: Date.now(),
-            },
-          })
-        }
-        bridge.emit({
-          type: "message.updated",
-          properties: { sessionID: opts.sessionId, info: assistant.info as never },
-        })
-        bridge.emit({ type: "session.idle", properties: { sessionID: opts.sessionId } })
-      }
-      // Re-emit a few times over ~2.5s instead of once: a single emission
-      // can land mid- a reconnect-backoff window on the bridge's SSE
-      // endpoint (see installWorkspaceRuntimeEventsBridge) and be delayed
-      // well past this call's return; repeating a few times is cheap
-      // (idempotent — the app converges to the same final state) and makes
-      // eventual delivery, not a lucky single delivery, the thing this
-      // relies on.
-      relay()
-      for (let i = 0; i < 4; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 600))
-        relay()
-      }
-      return
-    }
-    await new Promise((resolve) => setTimeout(resolve, 400))
-  }
-}
+// SSE DELIVERY — no spec-local bridge exists (or is needed) here. A previous revision
+// of this file carried one, justified by a "CONFIRMED SHARED-MOCK GAP" claiming
+// `installMockRuntime` only mounts `/api/wr/events` behind its `cloud: {...}` option and
+// that `mock.emit()` was therefore a silent no-op for this spec's local sessions. That
+// claim is FALSE against the current helper: mock-runtime.ts mounts
+// `**/api/wr/events**` and `**/api/wr/runtime-events**` UNCONDITIONALLY on the primary
+// origin (mock-runtime.ts:1191-1192), fed by the shared `FanoutBus` that `emit()` writes
+// to; the `if (cloud)` block only begins at mock-runtime.ts:1637 and adds the
+// relay-origin/workspace-prefixed copies on top. `/w/<dir>/session/<id>` is exactly the
+// route shape that channel serves.
+//
+// The bridge was actively HARMFUL: it registered its own `**/api/wr/events**` handler
+// AFTER `installMockRuntime`, and Playwright resolves routes last-registered-first, so it
+// SHADOWED the working shared channel. driveTurn's real events (busy ack → message
+// deltas → completed → idle) could then never reach the app, which is what forced the
+// companion `relaySettledReplyOverBridge` Node-side re-emit workaround. Both are gone;
+// behaviors 1, 4 and 6 now exercise genuine SSE-driven completion through the shared
+// mock, matching e2e/INVARIANTS.md authoring rule #1 ("shared helpers only").
 
 const SELECTORS_retry = {
   banner: '[data-slot="session-turn-retry"]',
@@ -387,62 +265,62 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
   return input
 }
 
-/** Not covered by the shared mock (mock-runtime.ts has no `/session/*​/abort` route) —
- * registered locally per e2e/INVARIANTS.md authoring rule #1's spirit (extend, don't
- * hand-roll a parallel mock) would mean editing the shared helper, which this task's
- * ground rules forbid; this is a spec-local addition of a route the shared mock is
- * simply missing. See findings. */
-async function registerAbortRoute(page: Page) {
-  const state = { count: 0 }
+/** Still not covered by the shared mock: mock-runtime.ts has no `POST /session/:id/abort`
+ * route at all (its only `abort` occurrences are the `abort: true` capability flags at
+ * :1517 and :1805), so this is a spec-local addition of a genuinely missing route rather
+ * than a parallel re-implementation of one the helper already owns.
+ *
+ * `hold: true` records the request but never fulfills it until `release()` is called.
+ * That is what makes behavior 3's headline claim FALSIFIABLE instead of decorative: with
+ * an immediately-200 route there is no window in which "the network has not responded
+ * yet", so an assertion made after the click proves nothing about optimism. With the
+ * response held open, the submit control can only return to ready via the client-side
+ * optimistic write in `createPromptAbort`
+ * (`src/features/session/composer/ui/submit-abort.ts` — `setPromptSessionStatus({status:
+ * idle, source: "server"})` runs BEFORE `client.session.abort()` is even called). */
+async function registerAbortRoute(page: Page, options: { hold?: boolean } = {}) {
+  let releaseGate = () => {}
+  const gate = options.hold
+    ? new Promise<void>((resolve) => {
+        releaseGate = resolve
+      })
+    : undefined
+  const state = { count: 0, release: () => releaseGate() }
   await page.route("**/session/*/abort**", async (route) => {
     const type = route.request().resourceType()
     if (type !== "fetch" && type !== "xhr") return route.continue()
     state.count += 1
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    if (gate) await gate
+    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" }).catch(() => {})
   })
   return state
 }
 
-/** Neutralizes the shared mock's bulk `/session/status` route. This is a verified,
- * reproducible SHARED-MOCK BUG (confirmed via captured trace network logs from a real
- * failing run, then isolated in a minimal standalone Playwright repro — not a
- * load-flake guess), not an app defect: `installMockRuntime` registers
- * `page.route("**​/session/status", ...)` (mock-runtime.ts, bulk status handler,
- * intending to answer `{[SESSION_ID]:{type:"idle"}}`) — but Playwright's glob
- * matching treats a pattern with no trailing wildcard as requiring the URL to END at
- * that literal segment. The real app ALWAYS calls this endpoint with a query string
- * (`/session/status?directory=...` or `...&harness=opencode`, confirmed in this
- * spec's own captured trace.zip), which that pattern never matches. The request falls
- * through to installMockRuntime's LATER-registered, more-permissive catch-all
- * `page.route("**​/session/*", ...)` (matches "status" as if it were a session ID)
- * instead, which returns a full `sessionRow()` object — NOT a `Record<string,
- * SessionStatus>` map. The app's `fetchSessionMeta`/`syncSessionMeta`
- * (`src/session/store/session-controller.ts:339-397,413-437`) then reads
- * `server = status[sessionID]` from that wrong shape, gets `undefined`, and
- * `mergeBusySessionStatus` (`src/session/store/session-store.ts:7-14`) — whose "keep
- * local busy" guard additionally never fires here because `syncSessionMeta`'s
- * `activeEvidence` (`isSessionTurnActive({permissions, questions})`, no `status`
- * passed) doesn't consider local busy state either — falls through to
- * `syncSessionMeta`'s `?? idleSessionStatus` fallback (session-controller.ts:396),
- * forcibly dispatching `session.status: idle` (source "server") almost immediately
- * after every send, regardless of the turn's real state. This is why EVERY test in
- * this file that checked the submit control's `stop` icon shortly after send failed
- * identically (`Received: "arrow-up"`, polled the full 15s) whether the turn was
- * naturally progressing (behaviors 1/4/6) or artificially silenced via
- * `silencePromptAsync` (behaviors 3/5). The correct shared-mock fix is changing
- * mock-runtime.ts's pattern to `"**​/session/status**"` (matches the query string) —
- * see this task's findings. `mock-runtime.ts` may not be edited in this pooled phase,
- * so this is applied spec-locally: registered AFTER installMockRuntime with the
- * CORRECT glob (trailing `**`) so it actually intercepts the request (verified by the
- * same standalone repro) and never resolves it, starving every reconciliation path
- * that flows through this endpoint for the scenarios that need busy state to survive
- * more than a few milliseconds past send. */
+/** Starves the bulk `/session/status` endpoint for the scenarios that need an optimistic
+ * busy status to outlive the first-fold hydrate.
+ *
+ * This is NOT a workaround for a mock bug. A previous revision of this comment asserted a
+ * "verified, reproducible SHARED-MOCK BUG" — that `installMockRuntime` registered
+ * `page.route("**​/session/status", ...)` without a trailing wildcard, so the app's
+ * `?directory=…` request fell through to the `**​/session/*` catch-all and got a session
+ * row instead of a status map. That is FALSE against the current helper:
+ * mock-runtime.ts:1425 already registers `"**​/session/status**"`, with its own comment
+ * explaining that exact fix, and answers `{[SESSION_ID]: {type: "idle"}}` correctly.
+ *
+ * The reason to starve it is simpler and is a property of the SCENARIO, not a defect:
+ * that correct `idle` answer is itself a server-source reconciliation.
+ * `syncSessionMeta` (`src/features/session/store/session-controller.ts:333-397`) reads
+ * `status[sessionID]` and dispatches `session.status` from it (falling back to
+ * `idleSessionStatus`, :390), so as soon as the hydrate resolves the turn is declared
+ * idle regardless of how busy it really is. Tests that must OBSERVE busy state
+ * (behaviors 1/3/4/5/6) or that simulate a server which never answers anything
+ * (behavior 8) therefore leave this route unresolved; tests that only care about the
+ * settled end state (behaviors 2/7) do not register it at all. */
 async function neutralizeStatusPoll(page: Page) {
   await page.route("**/session/status**", () => {
-    // Intentionally never fulfilled/continued — any resolved response (even the
-    // mock's intended `{[SESSION_ID]:{type:"idle"}}}`, which — per the bug above —
-    // never actually gets served anyway) is itself a premature reconciliation. See
-    // the comment above for the full mechanism.
+    // Intentionally never fulfilled/continued — any resolved response, including the
+    // mock's correct `{[SESSION_ID]:{type:"idle"}}`, is a premature reconciliation for
+    // these scenarios. See the comment above.
   })
 }
 
@@ -520,37 +398,15 @@ async function waitForDispatchReceived(promptState: { count: number }) {
   await expect.poll(() => promptState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
 }
 
-/** Spec-local mitigation for a genuine wall-clock race documented in
- * `e2e/INVARIANTS.md` and this file's own comments (a "shared pooled box"
- * that can run this suite alongside sibling load): `session-status-
- * dispatcher.ts`'s escalation ladder arms real `setTimeout`s the instant an
- * optimistic non-idle status is set and only clears them on the NEXT
- * server-source `session.status` write (session-status-dispatcher.ts:74-98).
- * The mock's own automatic busy ack would normally provide that clear within
- * ~`timings.busy` ms of send, but — per `installWorkspaceRuntimeEventsBridge`'s
- * doc comment — `mock.emit()` never reaches a local session's live-event
- * consumer at all, so NEITHER driveTurn's automatic ack NOR a naive manual
- * `mock.emit()` would ever clear these timers; this MUST go through the
- * bridge. Periodically re-emitting a server-source status event — busy, or
- * (for behavior 6) the same retry status the test just asserted — repeatedly
- * clears the escalation timers per the dispatcher's own documented contract,
- * without changing anything the test observes. */
-function keepSessionStatusAlive(
-  bridge: { emit: MockRuntimeHandles["emit"] },
-  status: { type: "busy" } | { type: "retry"; attempt: number; message: string; next: number },
-  intervalMs = 5_000,
-) {
-  const tick = () => bridge.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status } })
-  // Fire once immediately, not just on the first interval tick: if the test's
-  // own setup (send + DOM-poll assertions) already ate a large chunk of the
-  // 20s pending budget under contention before this helper is even called,
-  // waiting a further `intervalMs` for the first clear could itself lose the
-  // race. An immediate tick establishes the clear as early as this helper is
-  // invoked; the interval only needs to cover the REMAINING budget.
-  tick()
-  const timer = setInterval(tick, intervalMs)
-  return () => clearInterval(timer)
-}
+// ESCALATION-LADDER KEEP-ALIVE — deliberately absent. A previous revision periodically
+// re-emitted a server-source `session.status` to keep the escalation timers
+// (`schedulePromptSessionStatusTimeouts`, pending@20s) from firing during long busy
+// windows, because the shadowing SSE bridge meant driveTurn's own busy ack never reached
+// the app. With the bridge gone that ack IS delivered (~`timings.busy` ms after dispatch)
+// and clears the timer chain per the dispatcher's own contract — the timers only re-arm
+// on a fresh OPTIMISTIC non-idle write, i.e. on the next send. Re-adding a keep-alive
+// would also fight the oracle's "submit control back to ready" layer, since a late tick
+// can re-assert busy after `session.idle` has already landed.
 
 test.describe("core busy / abort / errors @core", () => {
   // This shared box runs several sibling e2e suites concurrently; page loads and
@@ -564,20 +420,17 @@ test.describe("core busy / abort / errors @core", () => {
       dir: DIR,
       sessionId: SESSION_ID,
       harnessModels: PIN_MODELS,
-      // delta bumped from 1200ms: on this pooled box, the Thinking-visible assertion
-      // below can itself take many seconds to resolve under sibling-suite contention,
-      // and driveTurn's own timers run on real (Node-side) wall-clock time regardless
-      // of how slow the browser is — a short delta let the turn complete for real
-      // (genuine session.idle) before the "stop" icon assertion ever got a turn to
-      // run, which is not a load-flake to retry around but an assertion-ordering gap
-      // this test needs a wide enough busy window to not hit.
-      timingsMs: { busy: 60, pending: 150, delta: 15_000, completed: 300, idle: 150 },
+      // A wide `delta` sizes the REAL busy window (driveTurn's own timers run on
+      // Node-side wall clock regardless of how slow the browser is): busy state ends
+      // when the first assistant content lands, at roughly `busy + pending + delta/2`,
+      // so 12s leaves ~6s for the Thinking-row/"stop"-icon assertions to resolve under
+      // sibling-suite contention while still letting the whole turn settle well inside
+      // the oracle's own 20s window.
+      timingsMs: { busy: 60, pending: 150, delta: 12_000, completed: 300, idle: 150 },
     })
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
-    // See neutralizeStatusPoll's doc comment: without this, the shared mock's bulk
-    // /session/status route (mismatched glob, falls through to a different handler)
-    // reconciles this turn to idle almost immediately after send, well before this
-    // test's "stop" icon assertion below runs.
+    // See neutralizeStatusPoll's doc comment: without this the mock's (correct)
+    // `/session/status` idle answer reconciles this turn moments after send, well
+    // before this test's "stop" icon assertion below runs.
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
@@ -585,25 +438,15 @@ test.describe("core busy / abort / errors @core", () => {
     const promptText = "busy abort errors turn one thinking"
     await sendPrompt(page, input, promptText)
 
-    // See keepSessionStatusAlive's doc comment: this turn is deliberately held
-    // busy for ~15s to observe the stop icon, which is long enough for the
-    // escalation ladder's "pending" stage (20s) to win a race against real
-    // machine contention. Started immediately after send.
-    const stopKeepAlive = keepSessionStatusAlive(bridge, { type: "busy" })
-    try {
-      await expect(page.locator(SELECTORS.thinkingRow), "Thinking row never appeared while busy").toBeVisible({
-        timeout: 20_000,
-      })
-      await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    await expect(page.locator(SELECTORS.thinkingRow), "Thinking row never appeared while busy").toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
 
-      // See relaySettledReplyOverBridge's doc comment: driveTurn's own SSE
-      // delivery is a no-op for this session shape, so relay its (real,
-      // Node-side, in-memory) completion through the bridge once it settles.
-      void relaySettledReplyOverBridge(page, bridge, { sessionId: SESSION_ID, directory: DIR })
-      await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
-    } finally {
-      stopKeepAlive()
-    }
+    // Genuine SSE-driven completion: driveTurn's busy ack, message deltas, completed
+    // and idle events all arrive over installMockRuntime's `/api/wr/events` channel —
+    // no spec-local relay, no REST-reconciliation fallback standing in for it.
+    await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
     await expect(page.locator(SELECTORS.thinkingRow)).toHaveCount(0)
     expect(mock.requests.promptCount).toBe(1)
   })
@@ -635,7 +478,10 @@ test.describe("core busy / abort / errors @core", () => {
   test("Stop click aborts the turn and status reconciles optimistically before the network responds — behavior 3", async ({
     page,
   }) => {
-    const abortState = await registerAbortRoute(page)
+    // `hold: true` — the abort response is withheld until `release()` below, so the
+    // "BEFORE the network responds" half of this behavior is actually under test rather
+    // than assumed (see registerAbortRoute's doc comment).
+    const abortState = await registerAbortRoute(page, { hold: true })
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     // Registered AFTER installMockRuntime: Playwright resolves the most-recently-added
     // matching route first, so this must come after the shared mock's own
@@ -661,11 +507,21 @@ test.describe("core busy / abort / errors @core", () => {
 
     await submitIcon(page).click()
 
-    // Behavior 3: status flips to ready IMMEDIATELY (client-optimistic, before the
-    // network abort call resolves) — a deterministic DOM-state wait, not a sleep.
-    await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    // Order matters, and is the whole point of behavior 3: first prove the abort request
+    // has genuinely reached the network (count incremented) — its response is still being
+    // held open by the route's gate — and only THEN assert the submit control is back to
+    // ready. Inside that window the only thing that could have moved the control is the
+    // client-optimistic `session.status: idle` write, never the round trip.
     await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+    await expect(
+      submitIcon(page),
+      "submit control did not return to ready while the abort response was still held open",
+    ).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
     expect(promptState.count).toBe(1)
+
+    // Let the held response resolve so the page tears down cleanly and the abort's own
+    // follow-up reconciliation is not left permanently pending.
+    abortState.release()
   })
 
   test("an aborted assistant message renders an Interrupted divider at its position — behavior 5", async ({ page }) => {
@@ -747,20 +603,14 @@ test.describe("core busy / abort / errors @core", () => {
       dir: DIR,
       sessionId: SESSION_ID,
       harnessModels: PIN_MODELS,
-      // delta kept short: with `keepSessionStatusAlive` (via the bridge)
-      // holding the busy/"stop" icon deterministically for as long as this
-      // test needs it, driveTurn's own (Node-side, mock-runtime-internal)
-      // completion timing no longer needs to outlast the test's own probe
-      // steps — driveTurn's automatic events are inert for this session
-      // shape anyway (see installWorkspaceRuntimeEventsBridge's doc
-      // comment), so nothing observes them until
-      // `relaySettledReplyOverBridge` explicitly relays the final content.
-      // Keeping delta short instead just gives that relay less to wait for,
-      // comfortably inside the oracle's 20s window measured from when it is
-      // called (near the END of this test, after both "stop" icon checks).
-      timingsMs: { busy: 60, pending: 150, delta: 1_500, completed: 300, idle: 150 },
+      // This test has the longest probe sequence in the file (two "stop" icon checks
+      // separated by the blank-Enter probe and its request-count assertions), and the
+      // busy window it needs is REAL now that driveTurn's events are delivered: busy
+      // survives until the first assistant content lands, at ~`busy + pending + delta/2`
+      // = ~8s here, with the whole turn settling ~16.5s after dispatch — still inside the
+      // oracle's 20s window measured from its call site near the END of this test.
+      timingsMs: { busy: 60, pending: 150, delta: 16_000, completed: 300, idle: 150 },
     })
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     // See neutralizeStatusPoll's doc comment.
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)
@@ -768,11 +618,6 @@ test.describe("core busy / abort / errors @core", () => {
 
     const promptText = "enter on blank composer must not abort"
     await sendPrompt(page, input, promptText)
-    // See keepSessionStatusAlive's doc comment (behavior 1's test): this turn
-    // is deliberately held busy for ~20s to allow the double "stop" icon
-    // check, wide enough for the escalation ladder to win a contention race.
-    // Started immediately after send for the same reason as behavior 1.
-    const stopKeepAlive = keepSessionStatusAlive(bridge, { type: "busy" })
     await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible({ timeout: 20_000 })
     await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
     // See waitForDispatchReceived's doc comment (behavior 3's test): the
@@ -796,14 +641,9 @@ test.describe("core busy / abort / errors @core", () => {
     expect(abortState.count, "Enter-on-blank must not call session.abort").toBe(0)
     await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
 
-    // The turn was never disturbed: it completes normally afterward (oracle).
-    // See relaySettledReplyOverBridge's doc comment (behavior 1's test).
-    try {
-      void relaySettledReplyOverBridge(page, bridge, { sessionId: SESSION_ID, directory: DIR })
-      await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
-    } finally {
-      stopKeepAlive()
-    }
+    // The turn was never disturbed: it completes normally afterward (oracle), driven by
+    // driveTurn's own SSE events over the shared mock's `/api/wr/events` channel.
+    await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
   })
 
   test("a retry/ACP-recovery status renders the retry banner, then the turn recovers and completes — behavior 6", async ({
@@ -813,13 +653,16 @@ test.describe("core busy / abort / errors @core", () => {
       dir: DIR,
       sessionId: SESSION_ID,
       harnessModels: PIN_MODELS,
-      // delta bumped from 1500ms — see behavior 1's test for why: the manually
-      // emitted retry event below must land on the turn while it is still active
-      // (not yet naturally settled), which needs a busy window that survives
-      // contention-induced lag before this test gets around to emitting it.
-      timingsMs: { busy: 60, pending: 150, delta: 15_000, completed: 300, idle: 150 },
+      // `pending` sizes the window in which the injected retry status is the whole
+      // truth: driveTurn only creates the assistant message row after `busy + pending`,
+      // and once that row carries content the app's own REST reconciliation dispatches
+      // `session.status: idle` (source "server") — `conversationHasAssistantMessage` →
+      // `dispatchSessionStatusEvent(idle)`, session-controller.ts:795-797. Asserting the
+      // banner inside the pre-assistant-row stretch keeps the injected status and the
+      // mocked server's state consistent with each other; `delta` is then short so the
+      // turn still settles well inside the oracle's own 20s window.
+      timingsMs: { busy: 60, pending: 5_000, delta: 2_000, completed: 300, idle: 150 },
     })
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     // See neutralizeStatusPoll's doc comment.
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)
@@ -835,36 +678,37 @@ test.describe("core busy / abort / errors @core", () => {
       message: "Reconnecting to the ACP client",
       next: Date.now() + 2_000,
     }
-    // See installWorkspaceRuntimeEventsBridge's doc comment: `mock.emit()` is
-    // a no-op for this session's route shape.
-    bridge.emit({
-      type: "session.status",
-      properties: { sessionID: SESSION_ID, status: retryStatus },
-    })
-    // See keepSessionStatusAlive's doc comment (behavior 1's test). Behavior 6
-    // additionally re-emits the SAME retry status (not busy) so the
-    // escalation ladder's "pending" stage — which would otherwise overwrite
-    // this exact message with its own synthetic retry text — never gets a
-    // chance to win the race under contention. Started IMMEDIATELY after the
-    // manual emit above (not after the assertions below) — the "pending"
-    // stage can fire before the very first content-check assertion gets a
-    // turn to run under contention, so the keep-alive must already be
-    // ticking by the time these checks start polling, not after.
-    const retryKeepAlive = keepSessionStatusAlive(bridge, retryStatus)
+    // `mock.emit()` reaches this local session over installMockRuntime's
+    // unconditionally-mounted `/api/wr/events` channel — the same path driveTurn's own
+    // events take, and the same path behavior 5's abort event uses.
+    //
+    // It is emitted on a poll rather than once, and the reason is measured, not guessed:
+    // an instrumented run showed the FIRST emit issued immediately after the Thinking row
+    // appears is never applied (banner absent, status still plain busy, for 2.5s), while a
+    // re-emit 2s later is applied within 500ms and then persists indefinitely. The window
+    // right after session creation is when the app's SSE consumer is re-establishing its
+    // `/api/wr/events` connection across the draft→session navigation, so a frame emitted
+    // into it can be dropped. That is a delivery property of the shared mock + consumer
+    // handshake, NOT app behavior and NOT what this behavior asserts — so the fix is to
+    // make delivery eventual rather than lucky. The poll stops emitting the moment the
+    // banner exists, and nothing re-emits during the oracle below, so this can never mask
+    // the oracle's "submit control back to ready" layer.
+    const retryBanner = page.locator(SELECTORS_retry.banner)
+    await expect
+      .poll(
+        async () => {
+          mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: retryStatus } })
+          return await retryBanner.count()
+        },
+        { timeout: 20_000, intervals: [500], message: "retry banner never rendered on status:retry" },
+      )
+      .toBeGreaterThan(0)
+    await expect(retryBanner).toBeVisible()
+    await expect(page.locator(SELECTORS_retry.message)).toContainText("Reconnecting to the ACP client")
 
-    try {
-      const retryBanner = page.locator(SELECTORS_retry.banner)
-      await expect(retryBanner, "retry banner never rendered on status:retry").toBeVisible({ timeout: 20_000 })
-      await expect(page.locator(SELECTORS_retry.message)).toContainText("Reconnecting to the ACP client")
-
-      // The turn still recovers and completes normally — oracle proves it end
-      // to end. See relaySettledReplyOverBridge's doc comment (behavior 1's
-      // test).
-      void relaySettledReplyOverBridge(page, bridge, { sessionId: SESSION_ID, directory: DIR })
-      await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
-    } finally {
-      retryKeepAlive()
-    }
+    // The turn still recovers and completes normally — the oracle proves it end to end,
+    // driven by driveTurn's real completion events rather than a spec-local relay.
+    await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
     expect(mock.requests.promptCount).toBe(1)
   })
 
@@ -1011,7 +855,18 @@ test.describe("core busy / abort / errors @core", () => {
       const STATUS_TIMER_SCALE = 0.02 // redispatch 160ms · pending 400ms · long 900ms · failed 6s
       await page.addInitScript((scale: number) => {
         ;(window as typeof window & { __claxedoStatusTimerScale?: number }).__claxedoStatusTimerScale = scale
+        ;(window as unknown as { __dbgStatus?: boolean }).__dbgStatus = true
       }, STATUS_TIMER_SCALE)
+      // DEBUG-TEMP
+      const dbgLogs: string[] = []
+      page.on("console", (m) => {
+        const t = m.text()
+        if (t.startsWith("DBGSTATUS")) dbgLogs.push(t)
+      })
+      if (process.env.DBG_THROTTLE) {
+        const cdp = await page.context().newCDPSession(page)
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.DBG_THROTTLE) })
+      }
 
       test.setTimeout(120_000)
       const abortState = await registerAbortRoute(page)
@@ -1055,19 +910,35 @@ test.describe("core busy / abort / errors @core", () => {
       // so on a slow runner the intermediate stages can already have elapsed before
       // these checks run. "failed" is stable (rank 4, never advances) until Cancel, so
       // this is deterministic regardless of runner speed.
-      await expect(stage, "escalation banner never appeared").toBeVisible({ timeout: 30_000 })
-      await expect(stage).toHaveAttribute("data-stage", "failed", { timeout: 30_000 })
+      try {
+        await expect(stage, "escalation banner never appeared").toBeVisible({ timeout: 30_000 })
+        await expect(stage).toHaveAttribute("data-stage", "failed", { timeout: 30_000 })
+      } catch (e) {
+        throw new Error(`${(e as Error).message}\n\nDBGLOGS:\n${dbgLogs.join("\n")}`)
+      }
       await expect(stage).toContainText("unresponsive")
 
       // At the terminal stage BOTH controls are offered: Cancel to abort the stuck
       // run and Retry to re-run the last prompt.
       await expect(page.locator('[data-action="session-status-cancel"]')).toBeVisible()
-      await expect(page.locator('[data-action="session-status-retry"]')).toBeVisible()
+      try {
+        await expect(page.locator('[data-action="session-status-retry"]')).toBeVisible()
+      } catch (e) {
+        const probe = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-component]")]
+            .map((el) => el.getAttribute("data-component"))
+            .filter((v) => v && v.includes("composer")),
+        )
+        throw new Error(
+          `${(e as Error).message}\n\nDBGCOMPOSER: ${JSON.stringify(probe)}\nURL=${page.url()}\nDBGLOGS:\n${dbgLogs.join("\n")}`,
+        )
+      }
 
       await page.locator('[data-action="session-status-cancel"]').click()
       await expect(stage, "escalation banner did not clear after Cancel").toHaveCount(0, { timeout: 15_000 })
       await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
       await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+      if (process.env.DBG === "1") throw new Error("DBGDUMP\n" + dbgLogs.filter((l) => l.includes("RESETKEY") || l.includes("SUBMIT")).join("\n"))
     },
   )
 })
