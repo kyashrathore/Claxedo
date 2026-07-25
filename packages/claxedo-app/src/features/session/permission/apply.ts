@@ -43,6 +43,33 @@ export type PermissionModeApplied =
   | { kind: "not-wired"; delivery: PermissionModeDelivery["kind"] }
 
 /**
+ * Whether selecting a mode with this delivery would actually reach the harness.
+ *
+ * The picker needs this, and it MUST come from the same module as
+ * `applyPermissionMode` or the two drift: a mode offered as selectable whose
+ * delivery is unimplemented reads as applied while nothing was ever sent. That is
+ * the precise failure `not-wired` exists to make visible, and it would be
+ * reintroduced by a picker that lists everything.
+ *
+ * `claxedo-auto-answer` counts as deliverable: nothing is sent, but the mode IS in
+ * effect — Claxedo answers the prompts itself.
+ *
+ * Pinned against `applyPermissionMode` by a test that walks every delivery kind, so
+ * implementing one without flipping this here fails.
+ */
+export function permissionModeDeliverable(kind: PermissionModeDelivery["kind"]) {
+  switch (kind) {
+    case "opencode-session-ruleset":
+    case "claxedo-auto-answer":
+      return true
+    case "acp-set-session-mode":
+    case "claude-sdk-permission-mode":
+    case "codex-approval-policy":
+      return false
+  }
+}
+
+/**
  * Deliver a permission mode to the harness.
  *
  * Only the opencode path is implemented. It writes a SESSION-scoped ruleset via

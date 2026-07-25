@@ -64,6 +64,7 @@ import { createComposerEngine } from "./v2/engine"
 import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
 import { createComposerAutoAccept } from "./auto-accept"
+import { createComposerPermissionMode } from "./permission-mode"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
 const idleSessionStatus = { type: "idle" as const }
 export const PromptInput: Component<PromptInputProps> = (props) => {
@@ -484,11 +485,43 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     sessionParams.surfaceId?.() ?? "",
     toolbarState.currentVariant() ?? "default",
   ].join("\n"))
+  /**
+   * The harness for permission purposes, and the ONLY accessor either permission
+   * control may use.
+   *
+   * `currentHarnessType` cannot be trusted to assert "this is opencode": on a
+   * session-mode composer it returns `composerHarnessId(mode)`, which DEFAULTS to
+   * "opencode" whenever the SessionRef carries no harness — true for a local
+   * claude-acp session, whose toolbar meanwhile reads "claude-acp" from the harness
+   * selection controller. Believing the default meant writing an opencode permission
+   * ruleset to a session that is not running opencode. Caught by
+   * core-permission-ruleset-delivery.spec.ts.
+   *
+   * So an "opencode" answer is only accepted when NO source claims a harness session.
+   * `toolbarHarnessMode` is that union — it is the one predicate that consults the
+   * selection controller. Every other answer passes through untouched, because those
+   * are affirmative rather than defaulted.
+   *
+   * Returning undefined means "no native policy to push", which degrades to Claxedo
+   * answering locally — the safe direction.
+   */
+  const permissionHarness = () => {
+    // The selection controller is the only source that knows a LOCAL harness
+    // session's real id, so it wins when it has an answer.
+    const selected = harnessSelectionController?.read(scope()).harness
+    if (selected) return selected
+    const id = currentHarnessType(scope())
+    // Without that, an "opencode" answer is only believable when no other source
+    // claims a harness session — it is otherwise just the default.
+    if (id === "opencode" && toolbarHarnessMode(scope())) return undefined
+    return id
+  }
+
   const autoAccept = createComposerAutoAccept({
     permission,
     sessionId: resolvedSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
-    harness: () => currentHarnessType(scope()),
+    harness: permissionHarness,
     // Turning the switch on writes the grants into opencode's OWN persisted
     // ruleset, so the engine stops asking rather than Claxedo answering the same
     // prompts forever — and the grant survives Claxedo being closed. Turning it off
@@ -510,6 +543,37 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       })
     },
   })
+  // The permission-mode picker. Replaces the binary "Approve for me" switch: it is a
+  // superset, because Claxedo's Manual mode IS the switch's off state, expressed as a
+  // mode. Selection lives in the same per-scope store the switch used, so a session's
+  // existing preference carries over rather than resetting.
+  const permissionMode = createComposerPermissionMode({
+    harness: permissionHarness,
+    // The selection IS the auto-accept boolean, not a parallel store. Claxedo offers
+    // exactly two selectable modes today — Auto and Manual — and they are precisely
+    // this switch's on and off, so deriving avoids a second source of truth that
+    // could disagree with the one the permission provider already persists per scope.
+    // A session's existing preference therefore carries straight over.
+    //
+    // WHEN HARNESS MODES BECOME DELIVERABLE this stops being sufficient: a boolean
+    // cannot hold "Claude: plan". At that point the selection needs real per-scope
+    // storage, and `permissionModeDeliverable` returning true for a harness delivery
+    // is the signal that the day has come.
+    selection: () => (autoAccept.active() ? { kind: "claxedo-auto" } : { kind: "claxedo-manual" }),
+    onSelectionChange: (next) => {
+      const wantAuto = next.kind === "claxedo-auto"
+      // Guard against a redundant toggle: selecting the mode already in effect must
+      // not flip the switch to its opposite.
+      if (wantAuto === autoAccept.active()) return
+      autoAccept.toggle()
+    },
+    sessionId: resolvedSessionId,
+    // No `deliver` here ON PURPOSE. `autoAccept.toggle` already performs exactly the
+    // right write for both modes — the Auto ruleset when enabling, the withdrawal
+    // ruleset when disabling — and routing the picker through it keeps ONE writer.
+    // Passing a deliverer here as well would issue two PATCHes per selection.
+  })
+
   // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
   // derivation plus the two intent actions that resolve an actionable block.
   const { roleSubmitBlocked, submitBlock, submitInertBlocked, openAIConnect, openModelPicker } =
@@ -650,8 +714,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       openContext={() => engine.openPopover("at")}
       enterShellMode={() => engine.enterMode("shell")}
       approveEnabled={() => props.canPrompt?.() ?? true}
-      approveActive={autoAccept.active}
-      onToggleApprove={autoAccept.toggle}
+      permissionGroups={permissionMode.groups}
+      permissionCurrent={permissionMode.current}
+      onPermissionSelect={permissionMode.select}
       harnessController={() => harnessSelectionController}
       harnessDirectory={harnessDirectory}
       harnessSessionId={harnessSessionId}

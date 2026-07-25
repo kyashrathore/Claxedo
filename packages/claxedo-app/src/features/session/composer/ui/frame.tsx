@@ -21,6 +21,8 @@ import type { SubmitBlock } from "@/features/session/composer/submit-block-reaso
 import { PromptToolbarControls } from "@/features/session/composer/ui/toolbar-controls"
 import type { SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
+import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
+import type { PermissionModeOption } from "@/features/session/permission/modes"
 
 type PromptInputMode = "normal" | "shell"
 type PromptDraggingType = "image" | "@mention" | null
@@ -76,8 +78,9 @@ export const PromptInputFrame: Component<{
   openContext: VoidFunction
   enterShellMode: VoidFunction
   approveEnabled: Accessor<boolean>
-  approveActive: Accessor<boolean>
-  onToggleApprove: VoidFunction
+  permissionGroups: Accessor<PermissionModeGroups | undefined>
+  permissionCurrent: Accessor<PermissionModeOption | undefined>
+  onPermissionSelect: (option: PermissionModeOption) => void
   harnessController: Accessor<HarnessSelectionController | undefined>
   harnessDirectory: Accessor<string | undefined>
   harnessSessionId: Accessor<string | undefined>
@@ -306,9 +309,10 @@ export const PromptInputFrame: Component<{
           planModeTitle={props.t("prompt.action.planMode")}
           agentGroupTitle={props.t("prompt.action.agentGroup")}
           approveEnabled={props.approveEnabled}
-          approveActive={props.approveActive}
+          permissionGroups={props.permissionGroups}
+          permissionCurrent={props.permissionCurrent}
+          onPermissionSelect={props.onPermissionSelect}
           approveTitle={props.t("prompt.action.approveForMe")}
-          onToggleApprove={props.onToggleApprove}
           mode={props.mode}
           harnessPending={props.harnessPending}
           harnessController={props.harnessController}

@@ -3,7 +3,9 @@ import { HARNESS_IDS, type HarnessId } from "@/platform/identity/session-ref"
 import { PERMISSION_MECHANISMS } from "./mechanisms"
 import {
   claxedoAutoMode,
+  claxedoManualMode,
   CLAXEDO_AUTO_ID,
+  CLAXEDO_MANUAL_ID,
   DANGER_GATED_PERMISSIONS,
   DEFAULT_PERMISSION_SELECTION,
   findPermissionModeOption,
@@ -16,15 +18,31 @@ import {
 
 const ACP_HARNESSES: HarnessId[] = ["claude-acp", "codex-acp", "cursor-acp"]
 
-describe("Claxedo's one built-in mode", () => {
+describe("Claxedo's built-in modes", () => {
   test("Auto is the default selection", () => {
     expect(DEFAULT_PERMISSION_SELECTION).toEqual({ kind: "claxedo-auto" })
   })
 
-  test("Auto is offered on EVERY harness — it is the one mode Claxedo implements itself", () => {
+  // Both Claxedo selections resolve on every harness. Covered here, against the pure
+  // resolver, rather than through the composer controller: there `current` is a memo,
+  // and an unobserved memo never recomputes, so the assertion could not fail.
+  test("both Claxedo selections resolve to their own mode, on every harness", () => {
+    for (const harness of HARNESS_IDS) {
+      expect(findPermissionModeOption({ selection: { kind: "claxedo-auto" }, harness })?.id, harness).toBe(
+        CLAXEDO_AUTO_ID,
+      )
+      expect(findPermissionModeOption({ selection: { kind: "claxedo-manual" }, harness })?.id, harness).toBe(
+        CLAXEDO_MANUAL_ID,
+      )
+    }
+  })
+
+  test("Auto and Manual are offered on EVERY harness — Claxedo implements both itself", () => {
     for (const harness of HARNESS_IDS) {
       const options = permissionModeOptions({ harness, advertisedModes: [] })
-      expect(options.claxedo).toEqual([claxedoAutoMode(harness)])
+      // Auto first (the default), Manual second (the way back from it). Both are
+      // Claxedo's own, so both appear on every harness regardless of what it offers.
+      expect(options.claxedo).toEqual([claxedoAutoMode(harness), claxedoManualMode(harness)])
       expect(options.claxedo[0]!.id).toBe(CLAXEDO_AUTO_ID)
       expect(options.claxedo[0]!.name).toBe("Auto")
     }

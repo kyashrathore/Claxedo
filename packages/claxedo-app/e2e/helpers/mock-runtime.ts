@@ -135,6 +135,32 @@ export type SessionCreateRequest = {
 
 export type ConfigPatchBody = { body: unknown }
 
+/**
+ * One `PATCH /session/:sessionID` — the SESSION ROW route, distinct from
+ * `PATCH /session/:sessionID/config` (recorded as `configPatchBodies`).
+ *
+ * Two different features write here and nothing else does: renaming/archiving a
+ * session (`{ title }` / `{ time: { archived } }`, `session-actions.tsx` +
+ * `message-timeline.tsx`) and delivering an opencode permission ruleset
+ * (`{ permission }`, `src/features/session/permission/apply.ts`). Recording the whole
+ * body plus a pre-narrowed `permission` lets a spec assert on the ruleset without
+ * re-deriving the shape, and lets a NEGATIVE spec ("this harness must not write") assert
+ * on `length === 0` rather than on a count that a title rename could also move.
+ */
+export type SessionUpdateBody = {
+  /** Path segment, decoded — `PATCH /session/<id>`. */
+  sessionID: string
+  /** The raw body; `{}` when the client sent none or sent unparseable JSON. */
+  body: Record<string, unknown>
+  /**
+   * `body.permission` when it is an array of rule-shaped objects, else `undefined`.
+   * Pre-narrowed rather than cast at the assertion site so a body that carries
+   * `permission` in the WRONG shape (an object map, the pre-5fd3a5b9 design) reads as
+   * absent here instead of type-asserting its way into a passing test.
+   */
+  permission: { permission: string; pattern: string; action: string }[] | undefined
+}
+
 export type MockRuntimeRequests = {
   console: string[]
   failed: string[]
@@ -162,6 +188,8 @@ export type MockRuntimeRequests = {
   slashCount: number
   configPatchCount: number
   configPatchBodies: ConfigPatchBody[]
+  /** One entry per `PATCH /session/:sessionID` (the session ROW), in order. */
+  sessionUpdateBodies: SessionUpdateBody[]
   harnessOptionsCount: number
   harnessPostCount: number
   /**
@@ -579,6 +607,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     slashCount: 0,
     configPatchCount: 0,
     configPatchBodies: [],
+    sessionUpdateBodies: [],
     harnessOptionsCount: 0,
     harnessPostCount: 0,
     harnessGetCount: 0,
@@ -1666,7 +1695,33 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/session/*", (r) => {
     if (!api(r)) return r.continue()
-    if (!new URL(r.request().url()).pathname.match(/^\/session\/[^/]+$/)) return r.fallback()
+    const pathname = new URL(r.request().url()).pathname
+    if (!pathname.match(/^\/session\/[^/]+$/)) return r.fallback()
+    // CONTRACT: `PATCH /session/:id` answers with the normalized session row, same as
+    // the GET (`c.json(normalizeSession(session, directory))`, workspace-runtime
+    // `routes/session-core.ts:546`) — so the shared `sessionRow()` fixture below is the
+    // right response for both verbs and only the RECORDING differs.
+    if (r.request().method() === "PATCH") {
+      let raw: unknown
+      try {
+        raw = r.request().postDataJSON()
+      } catch {
+        raw = undefined
+      }
+      const body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+      const rules = body.permission
+      const isRule = (value: unknown): value is { permission: string; pattern: string; action: string } =>
+        !!value
+        && typeof value === "object"
+        && typeof (value as { permission?: unknown }).permission === "string"
+        && typeof (value as { pattern?: unknown }).pattern === "string"
+        && typeof (value as { action?: unknown }).action === "string"
+      requests.sessionUpdateBodies.push({
+        sessionID: decodeURIComponent(pathname.split("/").at(-1) ?? ""),
+        body,
+        permission: Array.isArray(rules) && rules.length > 0 && rules.every(isRule) ? rules : undefined,
+      })
+    }
     return json(r, sessionRow(textOf(messages[0]?.parts) || ""))
   })
 

@@ -8,7 +8,7 @@ import {
 } from "@/features/session/permission/mechanisms"
 
 /**
- * Permission modes: ONE Claxedo-owned mode, plus whatever the selected harness
+ * Permission modes: TWO Claxedo-owned modes, plus whatever the selected harness
  * itself offers.
  *
  * This replaced an earlier design that invented five abstract modes
@@ -19,10 +19,13 @@ import {
  * really a guess resolved at runtime. Offering five modes everywhere meant
  * claiming capabilities that did not exist.
  *
- * So: Claxedo ships exactly one mode of its own — Auto — which it implements
- * itself and can therefore honour on every harness. Everything else in the picker
- * comes from the harness, in the harness's OWN words, and is empty (with a
- * reason) when the harness has nothing to offer. Nothing is invented.
+ * So: Claxedo ships modes of its own only where it implements them itself and can
+ * therefore honour them on every harness — Auto, and Manual as the way back from
+ * it. Manual exists because this picker replaced a binary switch whose OFF state
+ * was a real capability; without it the picker would be strictly less capable than
+ * the toggle it replaced. Everything else comes from the harness, in the harness's
+ * OWN words, and is empty (with a reason) when the harness has nothing to offer.
+ * Nothing is invented.
  */
 
 /**
@@ -76,11 +79,18 @@ export type AdvertisedPermissionMode = {
 /** What the user picked. */
 export type PermissionSelection =
   | { kind: "claxedo-auto" }
+  /**
+   * Ask before everything. A distinct variant rather than a `claxedo` kind carrying
+   * an id, because Claxedo's own modes are a CLOSED set of two — Auto and its
+   * inverse — so an exhaustive union is checkable where a string id would not be.
+   * Harness modes keep the id form precisely because theirs is open.
+   */
+  | { kind: "claxedo-manual" }
   | { kind: "harness"; modeId: string }
 
 export const CLAXEDO_AUTO_ID = "claxedo-auto"
 
-/** Auto is the default, and the only mode Claxedo implements itself. */
+/** Auto is the default; Manual is its inverse. */
 export const DEFAULT_PERMISSION_SELECTION: PermissionSelection = { kind: "claxedo-auto" }
 
 /** The concrete call Claxedo makes for a given option. */
@@ -297,8 +307,41 @@ export function claxedoAutoRevoke(harness: HarnessId): PermissionModeDelivery | 
   }
 }
 
+/** Manual's stable id, the counterpart to `CLAXEDO_AUTO_ID`. */
+export const CLAXEDO_MANUAL_ID = "claxedo-manual"
+
 /**
- * Claxedo's single built-in mode, resolved for a harness.
+ * Ask before everything — the mode that says "I want to see each tool call".
+ *
+ * Exists because the picker replaced a binary switch, and the switch's OFF state was
+ * a real capability: without Manual there is no way back from Auto, and a picker
+ * whose only Claxedo option is Auto is strictly less capable than the toggle it
+ * replaced.
+ *
+ * Delivery per harness, and both branches are exact rather than approximate:
+ *   - opencode: the withdrawal ruleset, which is the same write Auto's counterpart
+ *     performs — every permission back to `ask`, catch-all first. Because the engine
+ *     merges and takes the LAST match, this genuinely revokes earlier grants rather
+ *     than sitting behind them.
+ *   - everything else: `claxedo-auto-answer` with an EMPTY answer list, which is
+ *     literally "Claxedo answers nothing" and needs no new delivery kind. Modelling
+ *     it as an absence would have meant a mode with no delivery, which the picker
+ *     would then have to render as unselectable.
+ */
+export function claxedoManualMode(harness: HarnessId): PermissionModeOption {
+  const revoke = claxedoAutoRevoke(harness)
+  return {
+    id: CLAXEDO_MANUAL_ID,
+    name: "Manual",
+    description: "Ask before every tool call",
+    origin: "claxedo",
+    delivery: revoke ?? { kind: "claxedo-auto-answer", autoAnswer: [], respondWith: "once" },
+    ...(revoke ? { caveat: "Applies from your next message; the turn already running keeps its current rules" } : {}),
+  }
+}
+
+/**
+ * Claxedo's built-in Auto mode, resolved for a harness.
  *
  * A function rather than a constant because the DELIVERY differs per harness even
  * though the intent does not — see `autoDelivery`.
@@ -487,7 +530,12 @@ export function permissionModeOptions(input: {
   harness: HarnessId
   advertisedModes?: readonly AdvertisedPermissionMode[]
 }): { claxedo: readonly PermissionModeOption[]; harness: HarnessPermissionModes } {
-  return { claxedo: [claxedoAutoMode(input.harness)], harness: harnessPermissionModes(input) }
+  // Auto first because it is the default; Manual second because it is the way back
+  // from it. Both are Claxedo's own, so they appear on every harness.
+  return {
+    claxedo: [claxedoAutoMode(input.harness), claxedoManualMode(input.harness)],
+    harness: harnessPermissionModes(input),
+  }
 }
 
 /** Resolve a selection to the option it refers to, or undefined if it is stale. */
@@ -498,6 +546,7 @@ export function findPermissionModeOption(input: {
 }): PermissionModeOption | undefined {
   const selection = input.selection
   if (selection.kind === "claxedo-auto") return claxedoAutoMode(input.harness)
+  if (selection.kind === "claxedo-manual") return claxedoManualMode(input.harness)
   // Bound to a local before the callback: TypeScript discards narrowing on a
   // property access once it is read inside a closure.
   const modeId = selection.modeId

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applyPermissionMode, type SessionPermissionWriter } from "./apply"
+import { applyPermissionMode, permissionModeDeliverable, type SessionPermissionWriter } from "./apply"
 import { claxedoAutoMode, type PermissionModeDelivery } from "./modes"
 
 type Call = {
@@ -127,6 +127,46 @@ describe("applyPermissionMode — the other deliveries", () => {
         client,
       })
       expect(result.kind, harness).toBe("not-wired")
+    }
+  })
+})
+
+describe("permissionModeDeliverable stays pinned to applyPermissionMode", () => {
+  // The drift guard. A picker asks `permissionModeDeliverable` whether an option is
+  // selectable; `applyPermissionMode` decides what actually happens. If someone
+  // implements a delivery and forgets to flip the predicate, the mode stays greyed
+  // out for no reason. If someone flips the predicate without implementing the
+  // delivery, the picker offers a mode that silently does nothing — the exact
+  // failure `not-wired` exists to expose. Walk every kind and require agreement.
+  const ALL: PermissionModeDelivery[] = [
+    claxedoAutoMode("opencode").delivery,
+    claxedoAutoMode("pi").delivery,
+    { kind: "acp-set-session-mode", modeId: "plan" },
+    { kind: "claude-sdk-permission-mode", permissionMode: "auto" },
+    { kind: "codex-approval-policy", approvalPolicy: "on-request", sandbox: "workspace-write" },
+  ]
+
+  test("every delivery kind is covered by this table", () => {
+    const kinds = new Set(ALL.map((delivery) => delivery.kind))
+    // If a new delivery kind is added, this fails until it is listed above — which
+    // is what stops the guard silently covering less than it claims.
+    expect(kinds).toEqual(
+      new Set([
+        "opencode-session-ruleset",
+        "claxedo-auto-answer",
+        "acp-set-session-mode",
+        "claude-sdk-permission-mode",
+        "codex-approval-policy",
+      ]),
+    )
+  })
+
+  test("deliverable exactly when applyPermissionMode does not report not-wired", async () => {
+    const client: SessionPermissionWriter = { session: { update: async () => ({}) } }
+    for (const delivery of ALL) {
+      const result = await applyPermissionMode({ delivery, sessionID: "ses_1", client })
+      const actuallyDelivered = result.kind !== "not-wired"
+      expect(permissionModeDeliverable(delivery.kind), delivery.kind).toBe(actuallyDelivered)
     }
   })
 })

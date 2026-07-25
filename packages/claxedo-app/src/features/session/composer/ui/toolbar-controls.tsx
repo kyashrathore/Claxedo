@@ -4,9 +4,11 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"
-import { PromptApproveControl } from "@/features/session/composer/ui/approve-control"
+import { PromptPermissionControl } from "@/features/session/composer/ui/permission-control"
 import { PromptModelControl } from "@/features/session/composer/ui/model-control"
 import { openCodeDraftLabels } from "@/features/session/composer/open-code-draft-default"
+import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
+import type { PermissionModeOption } from "@/features/session/permission/modes"
 
 /**
  * The composer's bottom row. Two clusters instead of one left-aligned strip:
@@ -32,9 +34,10 @@ export function PromptToolbarControls(props: {
   planModeTitle: string
   agentGroupTitle: string
   approveEnabled: Accessor<boolean>
-  approveActive: Accessor<boolean>
   approveTitle: string
-  onToggleApprove: VoidFunction
+  permissionGroups: Accessor<PermissionModeGroups | undefined>
+  permissionCurrent: Accessor<PermissionModeOption | undefined>
+  onPermissionSelect: (option: PermissionModeOption) => void
   mode: Accessor<"normal" | "shell">
   harnessPending: Accessor<boolean>
   harnessController: Accessor<HarnessSelectionController | undefined>
@@ -95,13 +98,14 @@ export function PromptToolbarControls(props: {
         agentGroupLabel={props.agentGroupTitle}
         planModeLabel={props.planModeTitle}
       />
-      <PromptApproveControl
+      <PromptPermissionControl
         enabled={props.approveEnabled}
-        active={props.approveActive}
         disabled={addDisabled}
         style={props.attachStyle}
+        groups={props.permissionGroups}
+        current={props.permissionCurrent}
         label={props.approveTitle}
-        onToggle={props.onToggleApprove}
+        onSelect={props.onPermissionSelect}
       />
       <div class="ml-auto flex min-w-0 items-center gap-1">
         <Show when={props.harnessController()}>
