@@ -23,7 +23,7 @@
  *     it is dead code; the actually-rendered rename/archive/delete UI lives entirely in
  *     `message-timeline.tsx`. This spec drives the real, rendered path only.
  *   - **Editing** is transient component state (`title` store in `message-timeline.tsx`,
- *     ~line 713): `{draft, editing, menuOpen, pendingRename, pendingShare}`. It resets to
+ *     ~line 713): `{draft, editing, menuOpen, pendingRename}`. It resets to
  *     closed whenever `sessionKey()` changes (session switch) — nothing here survives
  *     navigation or reload by design.
  *   - **Fork** creates a brand-new, independent session via `POST /session/{id}/fork`
@@ -108,8 +108,8 @@
  *     entirely for a child session. NOTE: the sidebar's own workspace-level menu trigger
  *     has aria-label "More options for main" — an exact-name match is required to avoid a
  *     Playwright strict-mode collision with that unrelated button.
- *   Kebab menu items (Kobalte `role="menuitem"`): "Rename", "Archive", "Delete" (plus
- *     "Share" when sharing is enabled — spec 6/8 territory, not this spec's).
+ *   Kebab menu items (Kobalte `role="menuitem"`): "Rename", "Archive", "Delete". There is no
+ *     "Share" item — Claxedo ships no session sharing, so nothing gates on config `share`.
  *   `[data-component="session-prompt-dock"]` → `[data-component="session-revert-dock"]`
  *     (`session-revert-dock.tsx`) — collapsed by default (`store.collapsed`), toggled by
  *     its own row or the `chevron-down` icon button (`aria-label` = "Expand"/"Collapse

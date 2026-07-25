@@ -12,7 +12,6 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import { usePermission } from "@/features/session/providers/permission"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useSDK } from "@/features/session/app-ports"
-import { useGlobalSDK } from "@/features/session/app-ports"
 import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
 import { DialogSelectModel, type PickerState } from "@/features/session/ui/model/select-model"
 import { DialogSelectMcp } from "@/features/session/ui/dialogs/select-mcp"
@@ -21,7 +20,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@/lib/array"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
-import type { Config, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 const canAddSelectionContext = (input: {
   active?: string
   pathFromTab: (tab: string) => string | undefined
@@ -41,7 +40,6 @@ import {
 } from "../conversation/conversation-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
-import { configQuery } from "../data/query/directory"
 import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
@@ -76,7 +74,6 @@ export const useSessionCommands = (args: SessionCommandContext) => {
   const permission = usePermission()
   const prompt = usePrompt()
   const sdk = useSDK()
-  const globalSDK = useGlobalSDK()
   const layout = useLayout()
   let claxedoState: ReturnType<typeof useClaxedoState> | undefined
   try {
@@ -131,14 +128,6 @@ export const useSessionCommands = (args: SessionCommandContext) => {
     return userMessages().filter((m) => m.id < revert)
   })
   const supports = (name: keyof SessionTransportCapabilities) => args.capabilities?.()[name] !== false
-  const shareDisabled = () =>
-    queryClient.getQueryData<Config>(
-      configQuery({
-        baseUrl: sdk.url,
-        directory: args.directory(),
-        client: sdk.client,
-      }).queryKey,
-    )?.share === "disabled"
 
   const selectionPreview = (path: string, selection: FileSelection) => {
     const content = file.get(path)?.content?.content
@@ -481,115 +470,12 @@ export const useSessionCommands = (args: SessionCommandContext) => {
     }),
   ])
 
-  const writeClipboard = async (value: string) => {
-    const body = typeof document === "undefined" ? undefined : document.body
-    if (body && typeof document.execCommand === "function") {
-      const textarea = document.createElement("textarea")
-      textarea.value = value
-      textarea.setAttribute("readonly", "")
-      textarea.style.position = "fixed"
-      textarea.style.opacity = "0"
-      textarea.style.pointerEvents = "none"
-      body.appendChild(textarea)
-      textarea.select()
-      const copied = document.execCommand("copy")
-      body.removeChild(textarea)
-      if (copied) return true
-    }
-
-    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-    if (!clipboard?.writeText) return false
-    return clipboard.writeText(value).then(
-      () => true,
-      () => false,
-    )
-  }
-
-  const copyShare = async (url: string, existing: boolean) => {
-    if (!(await writeClipboard(url))) {
-      showToast({
-        title: language.t("toast.session.share.copyFailed.title"),
-        variant: "error",
-      })
-      return
-    }
-
-    showToast({
-      title: existing ? language.t("session.share.copy.copied") : language.t("toast.session.share.success.title"),
-      description: language.t("toast.session.share.success.description"),
-      variant: "success",
-    })
-  }
-
-  const share = async () => {
-    const sessionID = args.sessionId()
-    if (!sessionID) return
-    if (shareDisabled()) return
-
-    const existing = info()?.share?.url
-    if (existing) {
-      await copyShare(existing, true)
-      return
-    }
-
-    const url = await globalSDK.client.session
-      .share({ sessionID, directory: args.directory() })
-      .then((res) => res.data?.share?.url)
-      .catch(() => undefined)
-    if (!url) {
-      showToast({
-        title: language.t("toast.session.share.failed.title"),
-        description: language.t("toast.session.share.failed.description"),
-        variant: "error",
-      })
-      return
-    }
-
-    await copyShare(url, false)
-  }
-
-  const unshare = async () => {
-    const sessionID = args.sessionId()
-    if (!sessionID) return
-    if (shareDisabled()) return
-
-    await globalSDK.client.session
-      .unshare({ sessionID, directory: args.directory() })
-      .then(() =>
-        showToast({
-          title: language.t("toast.session.unshare.success.title"),
-          description: language.t("toast.session.unshare.success.description"),
-          variant: "success",
-        }),
-      )
-      .catch(() =>
-        showToast({
-          title: language.t("toast.session.unshare.failed.title"),
-          description: language.t("toast.session.unshare.failed.description"),
-          variant: "error",
-        }),
-      )
-  }
-
+  // Claxedo has no session-share command: upstream's `/share` and `/unshare`
+  // published a session to a hosted share URL, a surface this product does not
+  // ship. They are deliberately absent from the registry — anything that makes
+  // them reappear in the command palette or the composer's `/` popover is a
+  // regression, not a feature.
   const sessionActionCommands = createMemo(() => [
-    sessionCommand({
-      id: "session.share",
-      title: info()?.share?.url ? language.t("session.share.copy.copyLink") : language.t("command.session.share"),
-      description: info()?.share?.url
-        ? language.t("toast.session.share.success.description")
-        : language.t("command.session.share.description"),
-      slash: "share",
-      disabled: !args.sessionId() || shareDisabled(),
-      onSelect: share,
-    }),
-    sessionCommand({
-      id: "session.unshare",
-      title: language.t("command.session.unshare"),
-      description: language.t("command.session.unshare.description"),
-      slash: "unshare",
-      disabled: !args.sessionId() || !info()?.share?.url || shareDisabled(),
-      onSelect: unshare,
-    }),
     sessionCommand({
       id: "session.undo",
       title: language.t("command.session.undo"),
