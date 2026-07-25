@@ -14,8 +14,10 @@
 // What stays ours (and therefore keeps all eight §3 capabilities working):
 //   - the contenteditable DOM (`v2/editor-bridge.ts` + `editor-serialization.ts`)
 //   - submit, submit-block derivation, boot state, harness/model/permission rows
-//   - attachments (so no `attachments` config is handed to the controller, which
-//     is also why upstream's untyped `sourcePath` never enters our draft)
+//   - attachments (so no `attachments` config is handed to the controller, and
+//     upstream's attachment writer never runs on this path; its `sourcePath` is
+//     declared on both sides and does round-trip the draft — see
+//     `ImageAttachmentPart` in `providers/prompt.tsx`)
 //   - document mentions (the picker stays a Claxedo surface on the `@` list)
 import { batch, createEffect, createMemo, createSignal } from "solid-js"
 import { createPromptInputV2Controller, type PromptInputV2Suggestion } from "@/ui/session-kit"
