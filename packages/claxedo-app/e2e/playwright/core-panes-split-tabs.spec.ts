@@ -176,27 +176,40 @@
  *      — see INVARIANTS #2 — this test pins the OBSERVABLE outcome).
  *   6. `mod+w` on the LAST remaining pane, on the desktop platform, opens the "Quit
  *      Claxedo?" confirmation dialog instead of closing anything. NOT reachable from
- *      this spec's web target (`test.fixme`, see HARNESS NOTES).
- *   7. `mod+\\` / `mod+shift+\\` (the Workbench's own built-in split shortcuts) are a
- *      PERMANENT no-op in this app because the only call site always passes the
- *      focused pane's OWN content id, which the reducer's self-drop guard rejects —
- *      a real, confirmed dead keyboard shortcut (`test.fixme`, see HARNESS NOTES /
- *      INVARIANTS #1).
+ *      this spec's web target: the scenario was DELETED (docs/e2e-decisions.md #37,
+ *      2026-07-20) rather than `test.fixme`d — see HARNESS NOTES.
+ *   7. `mod+\\` / `mod+shift+\\` (the Workbench's own built-in split shortcuts)
+ *      split the focused pane by revealing the most-recently-used HIDDEN
+ *      surface (`wb.selectors.mruHiddenContent()`) in a new pane on its right/
+ *      bottom edge; with no hidden surface to reveal the chord is a no-op.
+ *      LIVE, not `test.fixme`: the pre-WP-B2 handler passed the focused pane's
+ *      OWN content id, which the reducer's self-drop guard always rejected
+ *      (making the chord dead); `workbench.tsx`'s keyboard-split branch now
+ *      passes the MRU hidden content id instead — see INVARIANTS #1.
  *   8. `mod+tab` / `mod+shift+tab` move focus to the next/previous entry in
  *      most-recently-used order (`contentRecency`), not tab-strip left-to-right
  *      order.
  *   9. `mod+<N>` focuses the Nth-most-recently-used open surface.
  *   10. The compact switcher's tab DOM order stays stable (creation order) across
  *      focus changes, independent of the MRU order behaviors 8/9 use internally.
- *   11. A background (unfocused) tab whose session is busy shows an amber
- *      `[data-switcher-status="working"]` dot; the dot disappears once that tab is
- *      focused. NOT independently verifiable past the FIRST post-open status
- *      transition — real app bug, `test.fixme`, see the fixme's comment for the
- *      confirmed repro (query cache correctly updates, switcher DOM does not).
+ *   11. A background (unfocused) tab whose session is busy shows a
+ *      `[data-switcher-status="working"]` dot, and ONLY that tab — the focused
+ *      draft tab keeps its identity label (idle renders no dot at all,
+ *      `StatusDot` returns null). The dot keeps tracking every LATER status
+ *      write while the tab stays unfocused (working → done on the second,
+ *      `idle` write) rather than freezing on the first transition — the
+ *      `enabled:false` + external-query-cache-write reactivity gap in
+ *      `useRailHeaderSurfaces`'s `switcherItems` memo was FIXED, so this is a
+ *      LIVE test, not a `test.fixme`. NOTE: the working dot is STATUS-driven
+ *      (`sessionSurfaceStatus`: permission > working > done > idle), so
+ *      focusing a still-busy tab does NOT clear it; only the unseen `done`
+ *      badge is focus-cleared (behavior 12).
  *   12. A background tab whose turn completes while unfocused shows a
- *      `[data-switcher-status="done"]` dot; the dot disappears once that tab is
- *      focused (`nextUnseenDone`'s `focused → false` branch). Same confirmed
- *      real app bug as behavior 11 (`test.fixme`).
+ *      `[data-switcher-status="done"]` dot; that badge — and only that badge —
+ *      disappears once the tab is focused (`nextUnseenDone`'s `focused → false`
+ *      branch drops the `unseenDone` entry, so `sessionSurfaceStatus` falls
+ *      through to `idle` and `StatusDot` renders nothing). LIVE, same fix as
+ *      behavior 11.
  *   13. Navigating away from a 2-pane split to a third single-pane surface, then
  *      back to one of the split's original tabs, restores the exact split (both
  *      panes, same content) via the saved `layoutSnapshots` entry.
@@ -210,10 +223,11 @@
  *   15. An empty workbench (zero open tabs, a fallback directory available)
  *      auto-opens a draft session composer; explicitly closing that tab's own X
  *      button suppresses the next auto-open for a beat (no instant replacement).
- *      NOT OBSERVABLE — `test.fixme`, real app bug confirmed via 10ms-granularity
- *      in-browser polling: the suppression never engages, a new draft replaces
- *      the closed one within ~100ms with no empty state ever appearing (see the
- *      fixme's comment).
+ *      OBSERVABLE and LIVE (no `test.fixme`): `blockNextAutoOpen()`'s 2000ms
+ *      window holds, proven by 40 in-page samples at 40ms granularity (~1.6s)
+ *      showing zero `[data-workbench-content]` panes and a continuously
+ *      present `[data-testid="empty"]` state — Playwright round-trips alone are
+ *      too coarse to catch a ~100ms replacement, hence the in-page sampler.
  *   16. Header `New Session` / `New Claude Terminal` / `New Codex Terminal` buttons
  *      each open the corresponding surface as the active pane.
  *   17. `mod+shift+p` (and `mod+p`) open the command palette; typing a query and
@@ -229,7 +243,10 @@
  *      bounding box non-empty even when collapsed, and Playwright's
  *      visibility check ignores `opacity` entirely — verified live
  *      (`not.toBeVisible()` never resolves; computed width settles at
- *      "1px", not "0px"). Assert `data-open` + computed `opacity` instead.
+ *      "1px", not "0px"). Assert `data-open` + computed `opacity` + the
+ *      dispatched inline `width` instead — and assert them on BOTH halves of
+ *      the toggle: `toBeVisible()` on the re-expand half is vacuous (it is
+ *      equally true while collapsed), so a one-way toggle would pass it.
  *   19. Two panes resolving the SAME relay-backed `workspaceId` share ONE ref-counted
  *      connection (`refs` reaches 2); closing one, with nothing left to
  *      backfill its pane (see INVARIANTS #4/#5), decrements `refs` without
@@ -238,12 +255,15 @@
  *      absent/undefined).
  *
  * INVARIANTS —
- *   1. `wb.split.split()`'s self-drop guard means the ONLY way this app's UI
- *      actually creates a NEW split from a single pane is drag-and-drop (a
- *      genuinely different content id dropped onto an existing pane's edge); the
- *      Workbench's own keyboard shortcuts for the same purpose are dead code (see
- *      behavior 7). Any future spec asserting "press mod+\\ to split" is testing a
- *      shortcut that cannot fire.
+ *   1. `wb.split.split()`'s self-drop guard is still absolute — a split whose
+ *      `contentId` equals the target pane's own content is a no-op — so every
+ *      UI path that creates a NEW split must feed it a genuinely DIFFERENT
+ *      content id. Two paths do: drag-and-drop (a switcher tab dropped onto an
+ *      existing pane's edge) and, since WP-B2, `mod+\\` / `mod+shift+\\`, which
+ *      pass `wb.selectors.mruHiddenContent()` (behavior 7). The corollary is
+ *      unchanged in spirit: a spec that presses `mod+\\` with NO hidden surface
+ *      available is testing a chord that cannot fire — the shortcut reveals a
+ *      backgrounded surface, it never duplicates the focused one.
  *   2. `mod+w` is independently registered in THREE places — the Workbench's own
  *      `window` keydown listener (`layout/keyboard.ts`, always active, calls
  *      `wb.split.close`), the command-palette's `"claxedo.pane.close"` command
@@ -256,11 +276,13 @@
  *   3. Completed assistant content is never hidden by stale busy state (INVARIANTS.md
  *      #2) — not directly exercised here (that is spec 5's territory), but the
  *      background-tab "working"/"done" dot transition (behaviors 11/12) is the
- *      switcher-level analogue of the same settle signal. Both are currently
- *      `test.fixme` — a confirmed real app bug independent of this invariant
- *      (`useRailHeaderSurfaces`'s `switcherItems` memo stops reacting to
- *      query-cache writes for a backgrounded tab after its first transition;
- *      see either fixme's comment).
+ *      switcher-level analogue of the same settle signal. Both are LIVE,
+ *      non-fixme tests: the old reactivity gap (`useRailHeaderSurfaces`'s
+ *      `switcherItems` memo not reacting to external query-cache writes for a
+ *      backgrounded tab after its first transition) is fixed, and behavior 11
+ *      pins exactly that second write. The only remaining `test.fixme` in this
+ *      file is behavior 14 (split-survives-reload), for the harness reason
+ *      documented on the fixme itself.
  *   4. `WorkspaceGate`'s connection acquire/release (`workspace-gate.tsx`) is tied
  *      to COMPONENT MOUNT, not pane binding — `wb.split.close(paneId, {
  *      destroyContent: false})` (the pane-chrome X button) never unmounts the
@@ -731,31 +753,60 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     expect(after).toEqual(before)
   })
 
-  test("a busy background tab flips its switcher status dot to working and then to done as it settles — behavior 11", async ({ page }) => {
+  test("a busy background tab shows the working dot on that tab alone, and keeps tracking later status writes — behavior 11", async ({ page }) => {
     const { mock, sessionDotStatus } = await establishBackgroundedSession(page)
 
-    // A busy turn on the backgrounded tab surfaces the amber working dot.
+    // NOTE (measured, not assumed): the tab does NOT start dotless here. The
+    // establishing turn's settle races the "New Session" click that
+    // backgrounds it, so the unseen-done effect frequently observes
+    // `previousActive:true, active:false, focused:false` and arms a "done"
+    // badge before this body runs (asserting "none" here fails with
+    // "done"). The transitions below are therefore pinned as explicit
+    // state CHANGES away from that starting badge, not as "a dot appeared".
+
+    // A busy turn on the backgrounded tab surfaces the working dot...
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("working")
+    // ...on THAT tab only. The other (focused) tab is an unsent draft, whose
+    // `sessionId` is the `"new"` sentinel — `surfaceStatusForMeta` short-
+    // circuits it to "idle" — so the whole strip holds exactly one dot. This is
+    // what separates a per-surface status from a global "something is busy"
+    // indicator.
+    await expect(page.locator('[data-testid="compact-switcher-tab"] [data-switcher-status]')).toHaveCount(1)
 
     // Settling to idle while still unfocused must be reflected too: the switcher
     // has to react to the SECOND external status write (the enabled:false +
     // external-write reactivity gap this fix closes), not freeze on the first —
-    // the working dot flips to the done badge.
+    // the working dot flips to the done badge. (Focus is NOT what clears the
+    // working dot — see behavior 12 for the only focus-cleared state.)
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("done")
   })
 
-  test("a background tab shows a done dot after busy settles to idle while unfocused — behavior 12", async ({ page }) => {
-    const { mock, sessionDotStatus } = await establishBackgroundedSession(page)
+  test("a background tab's done badge disappears once that tab is focused — behavior 12", async ({ page }) => {
+    const { mock, sessionTab, sessionDotStatus } = await establishBackgroundedSession(page)
 
-    // Drive a busy -> idle turn entirely while the tab is unfocused. The dot
-    // must track BOTH writes — working on busy, then the done badge on the
-    // second (idle) write — rather than freezing on working.
+    // Drive a busy -> idle turn entirely while the tab is unfocused, arming the
+    // unseen-done badge (`nextUnseenDone`'s `previousActive && !active` branch).
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("working")
     mock.emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "idle" } } })
     await expect.poll(sessionDotStatus, { timeout: 15_000 }).toBe("done")
+
+    // Focusing that tab is what CLEARS it: `nextUnseenDone`'s `focused → false`
+    // branch drops the `unseenDone` entry, `sessionSurfaceStatus` falls through
+    // to "idle", and `StatusDot` renders nothing — the dot element leaves the
+    // DOM entirely (not merely a colour change), and the identity label comes
+    // back in its place.
+    const titleButton = sessionTab.locator('[data-testid="switcher-title-button"]')
+    await titleButton.click()
+    await expect(titleButton).toHaveAttribute("aria-current", "page", { timeout: 10_000 })
+    // Absence is asserted by element COUNT, never by polling the status reader:
+    // `sessionDotStatus` calls `locator.getAttribute`, which waits (no action
+    // timeout is configured) for an element that is now gone, so a "none"
+    // poll would hang to the test timeout instead of passing.
+    await expect(sessionTab.locator("[data-switcher-status]")).toHaveCount(0, { timeout: 15_000 })
+    await expect(sessionTab.locator("[data-switcher-compact-label]")).toHaveCount(1)
   })
 
   test("switching away from a split and back restores it via the saved snapshot — behavior 13", async ({ page }) => {
@@ -774,8 +825,18 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
 
     await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
     await expect(visiblePaneContents(page)).toHaveCount(2, { timeout: 10_000 })
-    await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible()
-    await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible()
+    // Scope both content assertions to slots that still hold a pane. The third
+    // (Codex) terminal stays MOUNTED as a background tab — `Workbench`'s
+    // "always" mountPolicy — so a bare `[data-testid="terminal-pane"]` matches
+    // TWO elements here and dies on strict mode. Asserting exactly one PANED
+    // terminal plus exactly one PANED draft is also the stronger claim: the
+    // restored split holds those two surfaces and nothing else.
+    const panedDraft = page.locator('[data-workbench-content][data-pane-id] [data-testid="session-content"][data-session-id="new"]')
+    const panedTerminal = page.locator('[data-workbench-content][data-pane-id] [data-testid="terminal-pane"]')
+    await expect(panedDraft).toHaveCount(1, { timeout: 10_000 })
+    await expect(panedTerminal).toHaveCount(1, { timeout: 10_000 })
+    await expect(panedDraft).toBeVisible()
+    await expect(panedTerminal).toBeVisible()
   })
 
   test.fixme(
@@ -879,15 +940,29 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await unpinSidebarForSwitcher(page)
     await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 20_000 })
 
+    // "as the ACTIVE pane" is the claim, so read the terminal that is actually
+    // bound to a pane. A bare `[data-testid="terminal-pane"]` cannot express it:
+    // the first terminal stays mounted as a background tab once the second one
+    // replaces it, so the bare locator matches two nodes and dies on strict
+    // mode. The paned-slot scope also lets the second click be pinned as a
+    // CHANGE of terminal id rather than "some terminal is on screen".
+    const activeTerminal = page.locator('[data-workbench-content][data-pane-id] [data-testid="terminal-pane"]')
     await page.getByRole("button", { name: "New Claude Terminal", exact: true }).first().click()
-    await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible({ timeout: 20_000 })
+    await expect(activeTerminal).toHaveCount(1, { timeout: 20_000 })
+    await expect(activeTerminal).toBeVisible()
+    const claudeTerminalId = await activeTerminal.getAttribute("data-terminal-id")
 
     await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
-    await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible({ timeout: 20_000 })
+    await expect(activeTerminal).toHaveCount(1, { timeout: 20_000 })
+    await expect
+      .poll(() => activeTerminal.getAttribute("data-terminal-id"), { timeout: 20_000 })
+      .not.toBe(claudeTerminalId)
+    await expect(activeTerminal).toBeVisible()
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
 
     await page.getByRole("button", { name: "New Session", exact: true }).first().click()
-    await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-workbench-content][data-pane-id] [data-testid="session-content"][data-session-id="new"]'))
+      .toBeVisible({ timeout: 10_000 })
   })
 
   test("mod+shift+p opens the command palette and dispatches a selected command — behavior 17", async ({ page }) => {
@@ -945,13 +1020,23 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // (collapsed computed width stays "1px", so `not.toBeVisible()` never
     // resolves). `data-open` + computed `opacity` are the real, unambiguous
     // collapse signals.
+    const navWidth = () => nav.evaluate((el) => parseFloat((el as HTMLElement).style.width) || 0)
+
     await page.keyboard.press(`${mod}+b`)
     await expect(nav).toHaveAttribute("data-open", "false", { timeout: 10_000 })
     await expect(nav).toHaveCSS("opacity", "0", { timeout: 10_000 })
     await expect(nav).toHaveCount(1)
+    await expect.poll(navWidth, { timeout: 10_000 }).toBe(0)
 
+    // Re-expand: asserted with the SAME discriminating oracle as the collapse
+    // half, inverted. `toBeVisible()` is NOT usable here — per the note above it
+    // stays true in BOTH states (1px border box, opacity ignored), so a
+    // one-way toggle would pass it. `data-open` + opacity + the dispatched
+    // inline width are what actually distinguish expanded from collapsed.
     await page.keyboard.press(`${mod}+b`)
-    await expect(nav).toBeVisible({ timeout: 10_000 })
+    await expect(nav).toHaveAttribute("data-open", "true", { timeout: 10_000 })
+    await expect(nav).toHaveCSS("opacity", "1", { timeout: 10_000 })
+    await expect.poll(navWidth, { timeout: 10_000 }).toBeGreaterThan(0)
   })
 
   // Un-pinned 2026-07-11 (WP-B5). The prior "second surface never increments

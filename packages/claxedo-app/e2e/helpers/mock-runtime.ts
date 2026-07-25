@@ -210,6 +210,14 @@ export type MockRuntimeOptions = {
   harnessReadiness?: HarnessReadiness
   harnessReadinessError?: string
   /**
+   * Extra session ids to report as `idle` from `GET /session/status`, alongside the
+   * mock's own `sessionId`. Specs that render rows from their OWN fixture ids (rather
+   * than the one modelled session) need this — without it those rows have no status
+   * entry at all, which is what blocks `core-sidebar-tree`'s behavior-4 status-dot
+   * test. Ids not listed here are deliberately ABSENT from the map, not idle.
+   */
+  statusSessionIds?: string[]
+  /**
    * Number of `POST /api/claxedo/agent-config/harness` calls that should still report
    * "applying" before flipping to the final `harnessReadiness` — models the
    * "Connecting" pill / composer-fade-while-polling window.
@@ -275,6 +283,15 @@ export type MockRuntimeHandles = {
   requests: MockRuntimeRequests
   /** Manually inject an event onto the global SSE stream (permission/question/todo/etc). */
   emit: (payload: MockEvent, directory?: string) => void
+  /**
+   * `emit` for an IDEMPOTENT STATE frame that must survive the app's
+   * `/api/wr/events` consumer being mid-reconnect — notably across the
+   * draft→session navigation, where a plain `emit` is deterministically dropped
+   * (measured 5/5; see the `emitDurable` implementation comment). Safe only for
+   * frames that can be applied twice with the same result (`session.status`,
+   * `session.idle`); NEVER for accumulating frames like `message.part.delta`.
+   */
+  emitDurable: (payload: MockEvent, directory?: string) => void
   /**
    * Manually inject an event onto the global SSE stream WITHOUT the
    * `{directory, payload}` envelope `emit()` always wraps events in. Real
@@ -596,7 +613,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") {
-      requests.console.push(`${message.type()}: ${message.text()}`)
+      // The originating URL is appended because `message.text()` alone is not
+      // origin-attributable, which forced `core-boot-deep-links-home`'s behavior-1
+      // filter to drop EVERY "Failed to load resource" line from ANY origin just to
+      // silence one known-noisy one. Consumers match by prefix (`startsWith
+      // ("pageerror:")`) or substring, so the suffix is additive — but it now lets a
+      // filter say "from this origin" instead of "anywhere".
+      const url = message.location().url
+      requests.console.push(`${message.type()}: ${message.text()}${url ? ` @ ${url}` : ""}`)
     }
   })
   page.on("pageerror", (error) => requests.console.push(`pageerror: ${error.message}`))
@@ -615,9 +639,34 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // must broadcast flat frames to all of them, not queue them to one.
   const FLAT_WR_REPLAY_WINDOW_MS = 6_000
   const flatWrReplay: Array<{ payload: MockEvent; until: number }> = []
+  /** Wrapped-frame counterpart of `flatWrReplay`; fed only by `emitDurable`. */
+  const wrappedWrReplay: Array<{ payload: MockEvent; directory: string; until: number }> = []
   const emitFlat = (payload: MockEvent) => {
     flatWrReplay.push({ payload, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
     fanout.emitFlat(payload)
+  }
+
+  /**
+   * `emit` for a frame that must survive the consumer being mid-reconnect.
+   *
+   * MEASURED (core-busy-abort-errors behavior 6, 5/5 deterministic): a wrapped
+   * `session.status` frame emitted immediately after the draft→session navigation is
+   * NEVER applied — the app's `/api/wr/events` consumer is between connections across
+   * that transition, so the frame lands in the log but the reader that would have
+   * drained it is gone. The identical frame re-emitted ~2s later applies within 500ms
+   * and sticks. Specs worked around it by polling and re-emitting.
+   *
+   * This mirrors `flatWrReplay` for WRAPPED frames — but it is deliberately OPT-IN
+   * rather than applied to every `emit`, because replay copies carry no `id:` line and
+   * therefore do not advance a reader's cursor: a reader can legitimately see the same
+   * frame twice. That is harmless for STATE frames (`session.status`, `session.idle` —
+   * applying "busy" twice is identical to applying it once) and actively CORRUPTING
+   * for accumulating ones (`message.part.delta` would double the text). Only pass
+   * idempotent state frames here; use plain `emit` for everything else.
+   */
+  const emitDurable = (payload: MockEvent, directory: string = DIR) => {
+    wrappedWrReplay.push({ payload, directory, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
+    fanout.emit(directory, payload)
   }
 
   // Seed the "connected" handshake so the very first /global/event connection resolves
@@ -1174,13 +1223,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     const now = Date.now()
     const replays = flatWrReplay.filter((entry) => entry.until > now)
+    const wrappedReplays = wrappedWrReplay.filter((entry) => entry.until > now)
     // Log-delivered flat copies are dropped in favor of the replay list so a
     // reader does not see the same frame twice in one body. Replay frames
     // deliberately carry NO `id:` line — they must not advance an
     // id-tracking reader's cursor.
     const body =
       sseBody(batch.filter((entry) => !entry.flat)) +
-      replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("")
+      replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("") +
+      // Same no-`id:` rule as the flat replays above: these must not advance an
+      // id-tracking reader's cursor. See `emitDurable` for why this is opt-in.
+      wrappedReplays
+        .map((entry) => `data: ${JSON.stringify({ directory: entry.directory, payload: entry.payload })}\n\n`)
+        .join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
   const wrRuntimeEventsHandler = async (route: Route) => {
@@ -1422,7 +1477,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // and a bare "**/session/status" pattern never matches a query string — requests
   // then fall through to the **/session/** catch-all and get a session row instead
   // of a status map, corrupting busy/idle logic in every consumer spec.
-  await page.route("**/session/status**", (r) => (api(r) ? json(r, { [SESSION_ID]: { type: "idle" } }) : r.continue()))
+  // The map covers SESSION_ID plus any ids the spec declares via
+  // `statusSessionIds`. It used to be hardcoded to SESSION_ID alone, which meant a
+  // spec whose rows use its own fixture ids (e.g. `core-sidebar-tree`'s `ses_status_*`)
+  // got NO status entry for them — the reason that spec's behavior-4 status-dot test
+  // is still `test.fixme`. Unknown ids stay absent rather than defaulting to idle, so
+  // a spec cannot accidentally assert against a status the server never reported.
+  await page.route("**/session/status**", (r) =>
+    api(r)
+      ? json(
+          r,
+          Object.fromEntries(
+            [SESSION_ID, ...(options.statusSessionIds ?? [])].map((id) => [id, { type: "idle" }]),
+          ),
+        )
+      : r.continue(),
+  )
 
   const handleSessionList = async (route: Route) => {
     if (!api(route)) return route.continue()
@@ -1890,6 +1960,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   return {
     requests,
     emit,
+    emitDurable,
     emitFlat,
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
   }

@@ -51,9 +51,16 @@
  *   `[data-slash-id=…]` — a builtin/custom command row inside the `/` popover
  *     (`slash-popover.tsx`); `@` popover rows have no stable testid, only text content
  *     (`@<agent-name>` or a file path).
- *   `[data-action="prompt-attach"]` — the attach (paperclip/plus) button; disabled outside
- *     normal mode. A hidden `<input type="file" multiple>` sibling receives the native
- *     file-picker selection.
+ *   `[data-action="prompt-add"]` — the `+` trigger; opens the FLAT action menu
+ *     (`add-menu.tsx`: "Images and files" ⌘U / "Commands" / / "Context" @ / "Shell
+ *     command" !) and is `disabled` outside normal mode / while `harnessPending()`.
+ *   `[data-action="prompt-commands"]` / `[data-action="prompt-context"]` — the menu items
+ *     that open the `/` and `@` popovers on an EMPTY query without typing a trigger
+ *     character (`editor-actions.ts#openPopover`).
+ *   `[data-action="prompt-attach"]` — "Images and files", the menu ITEM inside that menu
+ *     that opens the native file chooser (it is no longer the `+` button itself). A hidden
+ *     `<input type="file" multiple>` sibling receives the file-picker selection. Use
+ *     `openAttachPicker()` below rather than clicking it directly.
  *   `[data-action="prompt-submit"]` — send/stop/shell-send button; `data-icon` is `"stop"`
  *     while busy, `"arrow-undo-down"` in shell mode, else `"arrow-up"` (INVARIANTS.md #4).
  *   Image attachment chips (`image-attachments.tsx`): `img[alt=<filename>]` thumbnail
@@ -107,8 +114,9 @@
  *   18. A prompt with only image attachments (no text) is a valid, submittable turn —
  *       oracle-proven.
  *   19. Context chips linked to a code-review comment (`item.comment` truthy) are hidden
- *       while shell mode is active (`composer.tsx`'s `contextItems` memo). UNREACHABLE in
- *       this spec's scope — see the `test.fixme` below for why.
+ *       while shell mode is active (`composer.tsx`'s `contextItems` memo). NOT COVERED
+ *       here: the test was deleted (not fixme'd) per docs/e2e-decisions.md #15 — see the
+ *       standing comment where it used to live, below behavior 18's test.
  *   20. Composer draft text, an inline pill, and an image attachment together survive a
  *       full page reload.
  *   21. A composer draft survives navigating away to a different workspace and back.
@@ -156,15 +164,13 @@ import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 const DIR = "/tmp/e2e-core-composer-modes"
 const SESSION_ID = "ses_core_composer_modes"
 
-// The mock's default opencode model is the `big-pickle` placeholder
-// (mock-runtime.ts `BIG_PICKLE`), which the reworked composer deliberately
-// treats as "no model configured" and refuses to submit
-// (`isSignedWorkspaceDefaultModel`, src/features/session/composer/signed-workspace-model.ts).
-// Any behavior that actually DISPATCHES (a shell command or a prompt) must pin
-// a concrete harness model so the composer is submit-ready — matching sibling
-// specs (core-docks `establishSession`, core-session-actions `SEND_MODELS`).
-// Behaviors that never dispatch (mode toggles, popovers, draft persistence,
-// attachment add/remove) leave the default untouched.
+// MODEL PINNING — the reason is NOT what earlier copies of this comment claimed.
+// The mock's default opencode model is `big-pickle-1` (`BIG_PICKLE`,
+// mock-runtime.ts:476), a real versioned id. The submit block matches ONLY the bare
+// pair `opencode` + `big-pickle` (`isSignedWorkspaceDefaultModel`,
+// src/features/session/composer/signed-workspace-model.ts:18-20), so the mock default
+// is already submit-ready and pinning is NOT required to dispatch. Pinning here is for
+// DETERMINISM — a named model the assertions can match — not to unblock submit.
 const PIN_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
 // A minimal valid 1x1 transparent PNG, inlined so this spec needs no fixture files.
@@ -260,6 +266,21 @@ function unsupportedFile(name = "mystery.dat") {
   // `files.ts#textBytes`, and the type/extension are both unrecognized, so
   // `attachmentMime` resolves to `undefined` — the "unsupported attachment" path.
   return { name, mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 0, 5, 6, 7, 0, 9]) }
+}
+
+/**
+ * Opens the file chooser the way a user now has to: `+` opens the flat action
+ * menu, "Images and files" inside it opens the native picker. The filechooser
+ * listener is registered BEFORE the click that triggers it, then awaited, so the
+ * event can never be missed between the two.
+ */
+async function openAttachPicker(page: Page) {
+  const chooserPromise = page.waitForEvent("filechooser")
+  await page.locator('[data-action="prompt-add"]').last().click()
+  const attachItem = page.locator('[data-action="prompt-attach"]')
+  await expect(attachItem).toBeVisible({ timeout: 10_000 })
+  await attachItem.click()
+  return await chooserPromise
 }
 
 test.describe("core composer modes @core", () => {
@@ -401,33 +422,15 @@ test.describe("core composer modes @core", () => {
     await expect(editor).not.toHaveClass(/font-mono/)
   })
 
-  // Behavior 8, submit-control half: confirmed real app gap, reproduced deterministically
-  // across 3 isolated runs (never flaky, never masked by load) — for a FRESH DRAFT's
-  // first-ever submit (this test's exact setup, `openDraftPrompt`), the submit control's
-  // busy/"stop" indicator never reflects the in-flight turn once the composer swaps from
-  // the "new session" widget to the real-session composer. Traced to source:
-  //   - `src/pages/session/composer/session-composer-region.tsx`'s `<PromptInput>`
-  //     invocation (around line 301) never passes `status`/`activeTurn` props.
-  //   - `src/session-client/composer/composer.tsx:323` — `status = createMemo(() =>
-  //     props.status?.() ?? idleSessionStatus)` — silently falls back to idle when the
-  //     caller omits `status`, which SessionComposerRegion always does.
-  //   - `src/session-client/composer/prompt-input-props.ts:48-51` — the props are
-  //     documented as "Defaults to idle for embedded contexts", but
-  //     SessionComposerRegion is the PRIMARY session composer, not an embedded context.
-  //   - Contrast: `src/pages/session.tsx` DOES wire `status={sessionController.status}`
-  //     `activeTurn={sessionController.activeTurn}` into the OTHER `<PromptInput>` call
-  //     site used only for the pre-creation "new session" draft widget (around line
-  //     1488) — confirming the omission on the SessionComposerRegion path is a gap, not
-  //     an intentional design (the two call sites are inconsistent for no documented
-  //     reason).
-  // A spec-local `page.route("**/session/status", ...)` override reflecting the mocked
-  // turn's real busy state was tried as a workaround (in case this was merely a
-  // `mock-runtime.ts` gap in its static `/session/status` REST stub feeding
-  // `session-controller.ts`'s `activeStatusPoll` reconciliation) and made no difference —
-  // the route was never even hit, which is further evidence the busy signal never
-  // reaches this composer instance via ANY path, not just the REST-poll path. INVARIANTS.md
-  // #4 ("submit control is the single source of truth for busy") is violated for this
-  // specific fresh-draft-creates-a-session transition. See this file's returned findings.
+  // Behavior 8 pins the Escape-cascade's abort step. Its submit-control half — the
+  // "stop" icon on a FRESH DRAFT's first-ever submit, i.e. after the composer swaps from
+  // the "new session" widget to the real-session composer — was once a genuine wiring
+  // gap: `SessionComposerRegion`'s `<PromptInput>` invocation never forwarded
+  // `status`/`activeTurn`, so `composer.tsx`'s `status` memo silently fell back to
+  // `idleSessionStatus` and the control never showed busy. That gap is FIXED —
+  // `src/features/session/ui/composer/session-composer-region.tsx:337-338` now passes
+  // both props through — so the `data-icon="stop"` assertion below is a live check of
+  // INVARIANTS.md #5, not a documented-broken one. Do not weaken it back.
   test(
     "Escape aborts an in-flight turn when not in shell mode and no popover is open — behavior 8",
     async ({ page }) => {
@@ -511,30 +514,17 @@ test.describe("core composer modes @core", () => {
     await expectAssistantReplyVisible(page, /^ack 1: @reviewer please take a look/)
   })
 
-  // Behavior 11: REAL BUG, source-verified — the sent (optimistic) user message never
-  // highlights an inline agent mention because the raw-OpenCode-Part <-> chat-UIMessage-
-  // Part projection pipeline in `src/shell/chat/opencode-conversation.ts` has no case for
-  // `type === "agent"` parts in either direction:
-  //   - `opencodePartToChatParts` (opencode-conversation.ts:217-265) has branches for
-  //     "text", "reasoning", "file", "tool" only; an "agent" part falls through to the
-  //     final `return []` (line 264) and is silently dropped the moment
-  //     `addRegisteredConversationMessage`/`opencodeMessageToChatMessage`
-  //     (opencode-conversation.ts:110-123, 204-215) projects the optimistic send's raw
-  //     parts (built by `build-request-parts.ts:120-131`, which DOES construct a proper
-  //     `{type:"agent", name, source:{value,start,end}}` part) into the `UIMessage` the
-  //     timeline actually renders from.
-  //   - The reverse mapping, `chatPartToOpencodePart` (opencode-conversation.ts:325-369),
-  //     has no "agent" case either, so even a round trip through
-  //     `opencodeConversationProjection` (used by `getMsgParts` in
-  //     `message-timeline.tsx:428`) could never reconstruct it.
-  // Consumer-side, `UserMessageDisplay`/`HighlightedText`
-  // (`packages/session-ui/src/components/message-part.tsx:1201,1350-1385`) is fully wired
-  // to read `props.parts.filter(p => p.type === "agent")` and render
-  // `[data-highlight="agent"]` spans — the rendering half of behavior 11 is implemented
-  // and correct; only the upstream part-type conversion is missing. Confirmed empirically:
-  // the sent user row's `data-highlight` span never appears (element never found within
-  // 15s) even though the pill inserts correctly (behavior 10) and the same mention text
-  // reaches the server payload verbatim.
+  // Behavior 11 was once documented here as a real, source-verified bug: the
+  // raw-OpenCode-Part ⇄ chat-UIMessage-Part projection had no `type === "agent"` case in
+  // either direction, so an inline agent mention was silently dropped before the timeline
+  // ever saw it and `[data-highlight="agent"]` never rendered. That is FIXED — the
+  // projection now carries agent parts BOTH ways as a custom-typed MessagePart:
+  // `opencodePartToChatParts` (src/features/session/conversation/opencode-conversation.ts:320-327)
+  // and `chatPartToOpencodePart` (same file, :446-456). The consumer half
+  // (`UserMessageDisplay`/`HighlightedText` in
+  // `packages/session-ui/src/components/message-part.tsx`) was always correct. The
+  // highlight assertion below therefore runs live against the OPTIMISTIC message, exactly
+  // as behavior 11 states — do not weaken it back to a presence-only check.
   test(
     "the sent (optimistic) user message highlights an inline agent mention — behavior 11",
     async ({ page }) => {
@@ -567,9 +557,7 @@ test.describe("core composer modes @core", () => {
     await seedProjects(page, [DIR])
     const editor = await openDraftPrompt(page, DIR)
 
-    const chooserPromise = page.waitForEvent("filechooser")
-    await page.locator('[data-action="prompt-attach"]').last().click()
-    const chooser = await chooserPromise
+    const chooser = await openAttachPicker(page)
     await chooser.setFiles(pngFile("attach-me.png"))
 
     const thumbnail = page.locator('img[alt="attach-me.png"]')
@@ -645,9 +633,7 @@ test.describe("core composer modes @core", () => {
     await seedProjects(page, [DIR])
     await openDraftPrompt(page, DIR)
 
-    const chooserPromise = page.waitForEvent("filechooser")
-    await page.locator('[data-action="prompt-attach"]').last().click()
-    const chooser = await chooserPromise
+    const chooser = await openAttachPicker(page)
     await chooser.setFiles(unsupportedFile())
 
     await expect(page.getByText("Unsupported attachment")).toBeVisible({ timeout: 10_000 })
@@ -662,9 +648,7 @@ test.describe("core composer modes @core", () => {
     await openDraftPrompt(page, DIR)
     const submit = page.locator(SELECTORS.submitControl).last()
 
-    const chooserPromise = page.waitForEvent("filechooser")
-    await page.locator('[data-action="prompt-attach"]').last().click()
-    const chooser = await chooserPromise
+    const chooser = await openAttachPicker(page)
     await chooser.setFiles(pngFile("only-image.png"))
     await expect(page.locator('img[alt="only-image.png"]')).toBeVisible({ timeout: 10_000 })
 
@@ -708,9 +692,7 @@ test.describe("core composer modes @core", () => {
     await page.keyboard.press("Enter")
     await page.keyboard.type("remember this draft")
 
-    const chooserPromise = page.waitForEvent("filechooser")
-    await page.locator('[data-action="prompt-attach"]').last().click()
-    const chooser = await chooserPromise
+    const chooser = await openAttachPicker(page)
     await chooser.setFiles(pngFile("draft-image.png"))
     await expect(page.locator('img[alt="draft-image.png"]')).toBeVisible({ timeout: 10_000 })
 

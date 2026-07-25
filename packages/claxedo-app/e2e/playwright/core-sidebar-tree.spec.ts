@@ -68,8 +68,10 @@
  *     (`src/claxedo-ui/state/persistence.ts:27`).
  *   - **Mobile drawer** open/closed is a plain `createSignal(false)` in
  *     `useRailShellChromeState` (`rail-shell-chrome-state.ts:18`) with no
- *     persistence. See BEHAVIORS #14 / OUT OF SCOPE — this signal's setter is
- *     never invoked with `true` anywhere in the app today.
+ *     persistence. Its `openMobileSidebar`/`toggleMobileSidebar` setters ARE
+ *     wired (WP-C3 §3.1): `app-shell-layout.tsx` passes them down and the
+ *     `md:hidden` opener button in `rail-sidebar-shell.tsx` toggles the drawer.
+ *     See BEHAVIORS #14.
  *
  * ANATOMY —
  *   `[data-testid="rail-sidebar"]` — tree root.
@@ -111,9 +113,16 @@
  *
  * BEHAVIORS —
  *   1. In `Group by: Workspace` mode, clicking a `workspace-header`'s body
- *      selects/opens that workspace (expands the section, marks it active);
- *      clicking its disclosure caret only toggles open/closed and does not
- *      select or navigate.
+ *      expands that section AND opens the workspace review side panel for that
+ *      worktree (`openWorkspacePanel(section.workspaceDir)` →
+ *      `workspacePanel.open("review", {workspaceDir})`, observable as
+ *      `[data-testid="workspace-panel-shell"]`'s `data-state-open="true"` /
+ *      `data-state-mode="review"` / `data-state-workspace-dir=<dir>`). It does
+ *      NOT navigate the main route and there is no `data-active` marker on this
+ *      header — route-level workspace selection is the OUTER
+ *      `workspace-project-header`'s job (behavior 2's mechanism). Clicking the
+ *      inner header's disclosure caret only toggles open/closed and does not
+ *      select, open the panel, or navigate.
  *   2. In `Group by: Project` mode (default), clicking a `project-header`'s
  *      body selects the project's primary workspace and expands it; its
  *      disclosure caret only toggles collapse/expand.
@@ -154,14 +163,17 @@
  *       (clamped to [220,520]px); the committed width survives a reload.
  *   13. The `sidebar-toggle` button pins+expands an unpinned/collapsed sidebar
  *       and unpins+collapses a pinned one.
- *   14. OUT OF SCOPE / KNOWN BUG — the mobile drawer's open path is dead code
- *       today: `setMobileSidebarOpen(true)` (`rail-shell-chrome-state.ts:18`)
- *       is never called anywhere in the app, and even the "close on session
- *       select" wiring is separately dead (`onSessionSelect` is declared as a
- *       `RailSidebar` prop, `rail-sidebar.tsx:212`, but never invoked from
- *       within the component, so `RailSidebarShell`'s `closeMobileSidebar()`
- *       wrapper around it — `rail-sidebar-shell.tsx:139-142` — never fires).
- *       See the `test.fixme` below.
+ *   14. On a mobile viewport the rail is an off-canvas drawer: the `md:hidden`
+ *       `[data-testid="mobile-sidebar-opener"]` button opens it
+ *       (`openMobileSidebar`, `rail-shell-chrome-state.ts`) and flips its own
+ *       `aria-expanded`; a `[data-testid="mobile-sidebar-scrim"]` appears only
+ *       while open and closes the drawer when tapped; picking a session row
+ *       closes the drawer AND activates the row (`RailSidebar.activateSession`
+ *       invokes `onSessionSelect`, which `RailSidebarShell` wraps with
+ *       `closeMobileSidebar()` — the row's own navigation stays owned by
+ *       `activateSession`, the shell wrapper only dismisses the drawer).
+ *       LIVE since WP-C3 §3.1 wired the open path end to end — the previous
+ *       "dead code / `test.fixme`" note here was stale.
  *   15. A session created with a NON-opencode harness (e.g. Codex via ACP)
  *       becomes visible in the tree once its `session.lifecycle` "created"
  *       event reaches the client, the same way an opencode-native session's
@@ -192,6 +204,15 @@
  *       (`applySessionInventoryLifecycle`) surfaces the new row. The actual
  *       transport fix is pinned server-side by
  *       `packages/claxedo-server/src/routes/opencode-compat-events.test.ts`.
+ *   16. The rail's account footer (`[data-testid="rail-account-trigger"]`) is
+ *       keyboard-operable and focus-restoring: Enter opens the menu
+ *       (`aria-expanded="true"`) exposing View options / Usage limits /
+ *       Settings / Help (Diagnostics is env-gated — see the test's comment);
+ *       ArrowRight opens the focused item's submenu and moves focus into it;
+ *       Escape closes the submenu and returns focus to its parent item, and a
+ *       final Escape closes the menu and returns focus to the trigger with
+ *       `aria-expanded="false"`. The View-options submenu this exposes is the
+ *       entry point behaviors 7/8 drive.
  *
  * INVARIANTS — disclosure-caret clicks never trigger the header body's select
  *   action and vice versa (both stopPropagation the other's handler); a
@@ -215,8 +236,8 @@
  *   `permission`/`question` sub-state of the status dot (it depends on a
  *   ~10s-freshness-gated background poll rather than direct SSE dispatch —
  *   see STATE MODEL — and is not exercised here to keep the suite fast; the
- *   idle→working→done cycle it shares a code path with IS covered); mobile
- *   drawer open/scrim/close-on-select (dead code today, see BEHAVIORS #14).
+ *   idle→working→done cycle it shares a code path with IS covered). The mobile
+ *   drawer is IN scope and covered by BEHAVIORS #14.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
@@ -538,26 +559,44 @@ test.describe("core sidebar tree @core", () => {
     const caret = header.locator('[role="button"][aria-label*="workspace"]')
     await expect(caret).toHaveAttribute("aria-expanded", "true")
 
+    // The workspace review panel is the observable effect of the BODY click
+    // below, so pin its closed starting state first — otherwise the post-click
+    // assertion could not tell "the click opened it" from "it was already open".
+    const panel = page.locator('[data-testid="workspace-panel-shell"]')
+    await expect(panel).toHaveAttribute("data-state-open", "false")
+
     const draftUrl = page.url()
     await caret.click()
     await expect(caret).toHaveAttribute("aria-expanded", "false")
     expect(page.url()).toBe(draftUrl)
+    // The caret's `stopPropagation()` means it never reaches the header body's
+    // handler: no navigation (above) and no panel either.
+    await expect(panel).toHaveAttribute("data-state-open", "false")
 
     // Header body click: re-opens the section (proof it does something the
     // caret-only click above didn't undo on its own) and targets the
     // workspace panel at this directory. Unlike project-header,
-    // workspace-header's body click (rail-sidebar.tsx:2073-2077,
-    // `openWorkspacePanel`) opens the review side panel for this specific
-    // worktree — it does not navigate the main route to a `/session` URL;
-    // that's `workspace-project-header`'s (the outer, project-level header)
-    // job via `onWorkspaceSelect`. Click at x=60 (not x=200): the header
-    // row is only ~250px wide and HeaderActions (New session/terminal/
-    // Claude/Codex/kebab, opacity-0 at rest but still hit-testable) sit
-    // past x~110 — x=200 lands on "New Codex terminal", not the header body.
+    // workspace-header's body click (`openWorkspacePanel` in
+    // src/app/workbench/rail/rail-sidebar.tsx) opens the review side panel for
+    // this specific worktree — it does not navigate the main route to a
+    // `/session` URL; that's `workspace-project-header`'s (the outer,
+    // project-level header) job via `onWorkspaceSelect`. Click at x=60 (not
+    // x=200): the header row is only ~250px wide and HeaderActions (New
+    // session/terminal/Claude/Codex/kebab, opacity-0 at rest but still
+    // hit-testable) sit past x~110 — x=200 lands on "New Codex terminal", not
+    // the header body.
     await header.click({ position: { x: 60, y: 8 } })
     await expect(caret).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 })
     await expect(page).toHaveURL(draftUrl)
-    await expect(header).toHaveAttribute("data-workspace-id", DIR)
+    // The click's actual selection effect. `toHaveAttribute("data-workspace-id",
+    // DIR)` on the header itself would be a tautology — that attribute is the
+    // element's static identity, true before any click ever happened — so pin
+    // the panel state the click produced instead: open, in review mode, aimed
+    // at THIS worktree. (`workspace-header` carries no `data-active` marker;
+    // route-level selection belongs to the outer project header, behavior 2.)
+    await expect(panel).toHaveAttribute("data-state-open", "true", { timeout: 15_000 })
+    await expect(panel).toHaveAttribute("data-state-mode", "review")
+    await expect(panel).toHaveAttribute("data-state-workspace-dir", DIR)
   })
 
   test("hover reveals header actions and the session-row archive button — behavior 3", async ({ page }) => {
@@ -605,28 +644,28 @@ test.describe("core sidebar tree @core", () => {
   test.fixme(
     "status dot moves working -> done as session.status/session.idle SSE land — behavior 4 (shared-helper gap)",
     async () => {
-      // SHARED-HELPER GAP, not a real app bug: `installMockRuntime`'s
-      // `mock.emit()` (`e2e/helpers/mock-runtime.ts`) queues events onto an
-      // `EventBus` drained by a mock of `/global/event`
-      // (mock-runtime.ts:547-548). The CURRENT app does not fetch that route
-      // at all — its "central" cross-session/background live-event stream is
-      // `/api/wr/events` (`src/providers/claxedo-events.tsx:188-191`,
-      // `claxedoEventStreamTargets`). `installMockRuntime` only mocks
-      // `/api/wr/events` under the relay origin when `options.cloud` is set
-      // (mock-runtime.ts:826); the default local-mode path is never
-      // intercepted, so it always fails and retries
-      // (`[claxedo-events] stream failed (transient, retrying)`, visible in
-      // every spec's console noise). Confirmed by a minimal Playwright
-      // repro: after `mock.emit()`, zero `/global/event` requests are ever
-      // made — only repeated failing `/api/wr/events` ones — and the row
-      // never gains a `data-sidebar-status` attribute. Per this spec's
-      // STATE MODEL, `session.status`/`session.idle` for a background
-      // (unfocused) row are delivered ONLY by this push stream, with no
-      // polling fallback (unlike `permission`/`question`, which do poll) —
-      // so this scenario cannot pass until `installMockRuntime` also mocks
-      // the default, non-relay `/api/wr/events` route. That's a shared-file
+      // SHARED-HELPER GAP, not a real app bug — but NOTE the original reason
+      // recorded here ("`installMockRuntime` only mocks `/api/wr/events` under
+      // the relay origin when `options.cloud` is set, so the local-mode stream
+      // is never intercepted") is STALE and has been removed: mock-runtime.ts
+      // now registers `**/api/wr/events**` unconditionally on the primary
+      // origin (`wrEventsHandler`, alongside the flat-frame replay window),
+      // and `emit()` fans out to that channel. Behavior 15's live test below
+      // proves events do reach the client in local mode.
+      //
+      // What still blocks THIS scenario, verified by reading the helper (not
+      // by a fresh live repro): the sidebar row's status is reconciled against
+      // `client.session.status()`, and `installMockRuntime`'s
+      // `**/session/status**` route answers a fixed map containing ONLY the
+      // one modelled session id (`{ [SESSION_ID]: { type: "idle" } }`), while
+      // the rows this spec renders are `installSessionTreeFixtures` ids
+      // (`ses_status_*`). Any status read for a fixture row therefore resolves
+      // to "no entry" -> idle and clobbers a pushed busy state, so the
+      // working -> done transition cannot be pinned without teaching the
+      // shared mock to model per-row session status. That is a shared-file
       // change forbidden in this pooled run; filed as a finding for a
-      // follow-up session with exclusive access to mock-runtime.ts.
+      // follow-up session with exclusive access to mock-runtime.ts. Re-attempt
+      // the scenario then rather than assuming it is still blocked.
     },
   )
 
@@ -730,7 +769,7 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(() => fixtures.sessionListRequests.some((q) => q.includes("archived=all")), { timeout: 10_000 }).toBe(true)
   })
 
-  test("account footer exposes utilities and restores focus across nested panels", async ({ page }) => {
+  test("account footer exposes utilities and restores focus across nested panels — behavior 16", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "account" }) })
     await seedProject(page, { dir: DIR })
@@ -933,9 +972,11 @@ test.describe("core sidebar tree @core", () => {
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
 
-    // Only the part of behavior 13 that isn't blocked by the width bug below:
-    // the toggle button (docked-only per rail-sidebar.tsx:2548, `Show when={docked()}`)
-    // disappears once clicked, proving the underlying `docked` state did flip.
+    // The `docked`-state half of behavior 13, isolated from the width half the
+    // sibling test below owns (which pins the full 260 -> 0 -> 260 transition —
+    // there is no outstanding width bug; that note was stale). The toggle
+    // button is rendered only while docked (`Show when={docked()}` in
+    // rail-sidebar.tsx), so it disappearing on click IS the state flip.
     const toggle = page.locator('[data-testid="sidebar-toggle"]')
     await expect(toggle).toBeVisible()
     await toggle.click()

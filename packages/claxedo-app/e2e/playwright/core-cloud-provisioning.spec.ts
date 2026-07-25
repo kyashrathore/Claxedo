@@ -73,12 +73,17 @@
  *     toast (`@opencode-ai/ui/toast`), title is the literal string
  *     `"Failed to create cloud workspace"` (hardcoded in `submit-directory.ts`, not
  *     translated) for BOTH failure shapes.
- *   `role="group" aria-label="Workspace environment"` (local/cloud toggle) and
- *     `role="group" aria-label="Workspace source"` (Select/"Create new") — the
- *     composer's new-session workspace picker (`session-new-design-view.tsx`); clicking
+ *   The composer's new-session workspace picker (`session-new-design-view.tsx`) — the
+ *     Local/Cloud environment control, currently mid-redesign and therefore present in
+ *     TWO shapes that `selectCloudEnvironment` (below) drives interchangeably: the
+ *     committed `role="group" aria-label="Workspace environment"` segmented control
+ *     (paired with `role="group" aria-label="Workspace source"`, both sharing
+ *     `data-slot="workspace-segmented-control"`), and the in-flight `SessionContextRow`
+ *     chip (`[data-slot="context-chip-environment"]` popover trigger over
+ *     `[data-slot="list-item"][data-key="local"|"cloud"]` rows). Either way, picking
  *     "cloud" on a project with zero existing cloud workspaces auto-selects "Create new"
- *     (`creatingWorkspace` in `session-new-workspace-options.ts`), showing "New cloud
- *     sandbox".
+ *     (`creatingWorkspace` in `session-new-workspace-options.ts`), showing
+ *     "New cloud sandbox".
  *
  * BEHAVIORS —
  *   1. Landing on a cloud workspace whose runtime is not yet ready renders the 4-step
@@ -99,12 +104,13 @@
  *      or succeeding with `200` but a body missing `workspaceId` — shows the
  *      "Failed to create cloud workspace" toast, never opens the pipeline overlay
  *      (`gate.open`/`onCloudStartup` is never invoked on this path), creates zero
- *      sessions, and leaves the composer's typed text untouched. REAL BUG (confirmed,
- *      not hypothesized — see the `test.fixme` below): the rejected/thrown shape fires
- *      this toast TWICE (`submit-directory.ts:125-137` — the `.catch()` handler shows
- *      one toast and returns `undefined` instead of returning out of the function, so
- *      the following `!createdWorkspace?.workspaceId` check fires a second, less
- *      informative one); the 200-missing-fields shape correctly fires exactly one.
+ *      sessions, and leaves the composer's typed text untouched. Both shapes fire
+ *      EXACTLY ONE toast: `resolveCloudSessionDirectory` in
+ *      `src/features/session/composer/ui/submit-directory.ts` sets a `creationRejected`
+ *      flag inside its `.catch()` and returns on it, so a thrown create no longer falls
+ *      through into the `!createdWorkspace?.workspaceId` branch and double-toasts. (The
+ *      double-toast was a real bug; it is fixed, and the count assertion in the
+ *      "request rejected" test is the regression guard.)
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
  *   e2e/INVARIANTS.md, exercised via the oracle in behavior 3/4); harness ownership (#1)
@@ -123,7 +129,7 @@
  *   (`core-cloud-offline-roles`, spec 13); user-hosted's 3-step connect pipeline
  *   (`core-user-hosted-workspace`, spec 14).
  */
-import { expect, test, type Page, type Route } from "@playwright/test"
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
@@ -152,6 +158,84 @@ function slug(value: string) {
 
 function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+// The empty-draft composer's Local/Cloud environment picker exists in TWO
+// shapes right now, and this spec has to run against both:
+//
+//   "segmented" (committed `dev`) — `session-new-design-view.tsx` renders a
+//     `role="group" aria-label="Workspace environment"` segmented control
+//     (`data-slot="workspace-segmented-control"`) holding two `aria-pressed`
+//     buttons whose accessible names are "Local workspace"/"Cloud workspace"
+//     and whose text is the bare kind. NOTE the same `data-slot` is ALSO used
+//     by the sibling "Workspace source" group, so the group must be addressed
+//     by its role+aria-label, never by that slot alone.
+//   "chip" (in-flight, uncommitted `session-context-row.tsx` redesign) — the
+//     picker becomes a `SessionContextRow` chip: a Kobalte `Popover` whose
+//     trigger carries `data-slot="context-chip-environment"` and a STATIC
+//     `aria-label="Workspace environment"` (so it is a BUTTON with that name,
+//     never a group), over `@opencode-ai/ui` `List` rows keyed by `data-key`
+//     with no ARIA listbox/option roles — hence the structural selectors,
+//     matching how core-harness-ownership-cloud.spec.ts drives the same row.
+//
+// TODO(cleanup): DELETE the "segmented" branch — and collapse
+// `resolveEnvironmentPicker` back into a plain locator — once
+// `src/features/session/ui/components/session-context-row.tsx` is committed and
+// the segmented control is gone from `dev`. This dual-shape support is a
+// deliberately temporary bridge, not a permanent contract.
+type EnvironmentPicker =
+  | { readonly shape: "segmented"; readonly group: Locator }
+  | { readonly shape: "chip"; readonly trigger: Locator }
+
+// Requires EXACTLY ONE shape to be present. Two shapes at once, or zero, throws
+// with both counts — a silent fall-through to the other branch would let this
+// spec "pass" against a picker that never rendered at all, which is precisely
+// the failure mode (a 120s timeout on a deleted `role="group"`) that this
+// helper exists to make legible.
+async function resolveEnvironmentPicker(page: Page): Promise<EnvironmentPicker> {
+  const group = page.getByRole("group", { name: "Workspace environment" }).filter({ visible: true })
+  const trigger = page.locator('[data-slot="context-chip-environment"]').filter({ visible: true })
+  const deadline = Date.now() + 20_000
+  let seen = "not polled"
+  for (;;) {
+    const [segmented, chip] = await Promise.all([group.count(), trigger.count()])
+    if (segmented === 1 && chip === 0) return { shape: "segmented", group }
+    if (chip === 1 && segmented === 0) return { shape: "chip", trigger }
+    seen = `segmented=${segmented}, chip=${chip}`
+    if (Date.now() >= deadline) break
+    await page.waitForTimeout(250)
+  }
+  throw new Error(
+    `Workspace environment picker: expected EXACTLY ONE supported shape, found ${seen}. ` +
+      `Looked for the legacy segmented control (role="group" aria-label="Workspace environment") ` +
+      `and the context-chip trigger ([data-slot="context-chip-environment"]). ` +
+      `If the picker was redesigned again, teach selectCloudEnvironment the new shape — ` +
+      `do not relax this gate.`,
+  )
+}
+
+// Switch the empty-draft composer's workspace environment to "cloud". In BOTH
+// shapes the human-readable "Cloud" label is asserted as a FACT (on the button
+// / on the row), never used as the match condition, and the switch is proven to
+// have TAKEN EFFECT afterwards — via `aria-pressed="true"` on the segmented
+// button, or via the popover trigger's own label flipping to "Cloud" (a trigger
+// carries no pressed state).
+async function selectCloudEnvironment(page: Page) {
+  const picker = await resolveEnvironmentPicker(page)
+  if (picker.shape === "segmented") {
+    const cloud = picker.group.getByRole("button", { name: "cloud" })
+    await expect(cloud).toHaveCount(1, { timeout: 20_000 })
+    await expect(cloud).toContainText(/cloud/i)
+    await cloud.click()
+    await expect(cloud).toHaveAttribute("aria-pressed", "true", { timeout: 10_000 })
+    return
+  }
+  await picker.trigger.click()
+  const row = page.locator('[data-slot="list-item"][data-key="cloud"]').filter({ visible: true })
+  await expect(row).toHaveCount(1, { timeout: 20_000 })
+  await expect(row).toContainText("Cloud")
+  await row.click()
+  await expect(picker.trigger).toContainText("Cloud", { timeout: 10_000 })
 }
 
 function api(route: Route) {
@@ -660,12 +744,12 @@ test.describe("core cloud provisioning @core", () => {
     await expect(viewAfterReload).not.toContainText(STEP_SUMMARY.cloning)
   })
 
-  // Fixed in Wave 2 (WP-B4): `resolveCloudSessionDirectory`
-  // (src/components/prompt-input/submit-directory.ts) now sets a
+  // `resolveCloudSessionDirectory`
+  // (src/features/session/composer/ui/submit-directory.ts) sets a
   // `creationRejected` flag inside the `.catch()` and `return`s immediately
   // afterward, so a rejected cloud-create fires exactly one toast instead of
-  // falling through to the second `!createdWorkspace?.workspaceId` toast.
-  // Flipped from test.fixme; awaiting leader gate run.
+  // falling through to the second `!createdWorkspace?.workspaceId` toast. The
+  // toast-COUNT assertion below is that fix's regression guard.
   test(
     "cloud workspace create failure (request rejected) shows a toast, opens no pipeline, creates no session, and preserves composer text — behavior 6",
     async ({ page }) => {
@@ -692,9 +776,7 @@ test.describe("core cloud provisioning @core", () => {
       await page.waitForLoadState("domcontentloaded")
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-      const environment = page.getByRole("group", { name: "Workspace environment" })
-      await environment.getByRole("button", { name: "cloud" }).click()
-      await expect(environment.getByRole("button", { name: "cloud" })).toHaveAttribute("aria-pressed", "true")
+      await selectCloudEnvironment(page)
       await expect(page.getByText("New cloud sandbox", { exact: true })).toBeVisible({ timeout: 10_000 })
 
       const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -756,8 +838,7 @@ test.describe("core cloud provisioning @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    const environment = page.getByRole("group", { name: "Workspace environment" })
-    await environment.getByRole("button", { name: "cloud" }).click()
+    await selectCloudEnvironment(page)
     await expect(page.getByText("New cloud sandbox", { exact: true })).toBeVisible({ timeout: 10_000 })
 
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()

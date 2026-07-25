@@ -97,16 +97,16 @@
  *      manager: `start` transitions a pre-configured process to `running` (real PID/PTY),
  *      `stop` transitions it back; the config is real, persisted, per-directory JSON at
  *      `.workspace-runtime/processes.jsonc`.
- *   5. [REAL APP BUG — `test.fixme`] The `process` tool's `add`/`update`/`remove` actions
- *      request the WRONG backend path. `handleProcess` (`process-handler.ts`) posts to the
- *      literal path `"/process"` (line 275) / `` `/process/${id}` `` (lines 299, 311) for
- *      add/update/remove, but the real `claxedo-server` only exposes process CRUD at
- *      `/api/wr/process` (confirmed live: `POST /process` on a real running server 404s;
- *      `POST /api/wr/process` — the SAME path `list`/`start`/`stop`/`restart` correctly
- *      use via `PROCESS_PATH` in `server.ts:43` — succeeds). Every `action: "add"` /
- *      `"update"` / `"remove"` call therefore always fails against a real backend. This
- *      spec's own live run reproduced it directly. See HARNESS NOTES for why the unit
- *      test suite never caught this.
+ *   5. [FIXED — was a real bug, no longer covered here] The `process` tool's
+ *      `add`/`update`/`remove` actions used to request the bare path `"/process"` /
+ *      `` `/process/${id}` `` instead of `/api/wr/process`, so every such call 404'd
+ *      against a real backend. Fixed in commit `e26b79b98c`: `handleProcess`
+ *      (`process-handler.ts`) now routes all three through the same `PROCESS_PATH`
+ *      constant that `list`/`start`/`stop`/`restart` already used, matching the real
+ *      routes at `packages/workspace-runtime/src/routes/process.ts:111` (POST), `:120`
+ *      (PUT), `:133` (DELETE). Regression coverage now lives in the owning package
+ *      (`packages/claxedo-mcp/src/process-handler.test.ts:290,367,400`), which previously
+ *      asserted the WRONG path and hid the bug.
  *   6. `get_logs` returns the real PTY tail of a running process (non-empty, and growing
  *      over real elapsed time) — proven structurally rather than by exact stdout-text
  *      match; see HARNESS NOTES for why an exact-text match is unreliable in this
@@ -134,14 +134,19 @@
  *      MCP result, and its scratch "Log Summary" session is deleted (fire-and-forget
  *      `DELETE /session/:id` in a `finally`) shortly after the call returns, regardless of
  *      whether the underlying model turn succeeded or errored.
- *  10b. [REAL APP BUG — `test.fixme`] When the underlying model turn errors (this
- *      environment's ambient default model reliably does — see HARNESS NOTES),
- *      `summarize_logs` does NOT surface the intended legible `LLM error: ...` message; it
- *      crashes with a raw, unrelated `SyntaxError` text instead, root-caused live via a
- *      byte-level HTTP proxy: `httpRequest()` (`server.ts:66-67`) JSON-parses every
- *      `mode:"json"` response BEFORE checking `res.ok`, and `summarize_logs`'s empty-reply
- *      fallback (`server.ts:637-645`) calls `GET /session/:id/message/:messageId`, a route
- *      that does not exist on the real server (confirmed live: 404, plain-text body).
+ *  10b. [FIXED — was a real bug, no longer covered here] When the underlying model turn
+ *      errored, `summarize_logs` surfaced a raw, unrelated `SyntaxError` instead of the
+ *      intended legible `LLM error: ...` message. Two compounding defects, both fixed:
+ *      (a) `httpRequest()` JSON-parsed every `mode:"json"` response BEFORE checking
+ *      `res.ok` — fixed in `52d52c2143`; `server.ts` now checks `if (!res.ok)` first and
+ *      parses the error body through `parseHttpErrorBody()`, which wraps `JSON.parse` in
+ *      try/catch, so a plain-text `404 Not Found` body can no longer throw. (b) The
+ *      empty-reply fallback called `GET /session/:id/message/:messageId`, a route the
+ *      workspace-runtime does not serve — fixed in `e26b79b98c`; the logic moved to
+ *      `resolveResponseText()` (`packages/claxedo-mcp/src/message-text.ts`), which
+ *      re-fetches the real list route `GET /session/:id/message`
+ *      (`packages/workspace-runtime/src/routes/session-core.ts:628`) and matches by id.
+ *      Regression coverage lives in `packages/claxedo-mcp/src/message-text.test.ts`.
  *  11. `CLAXEDO_MCP_READ_ONLY=1` hides `process`, `spawn_session`, `summarize_logs`,
  *      `browser_evaluate_js`, `browser_navigate` from `tools/list`, while `get_logs`,
  *      `session_messages`, `browser_list_tabs`, `browser_get_console_logs`,
@@ -156,8 +161,7 @@
  * INVARIANTS — an unowned/pre-existing entry is never silently overwritten (shared with
  *   `live-agent-extensions-materialization.spec.ts`'s own invariant; not re-tested here,
  *   this file only exercises the first-party vs. non-first-party rewrite gate). No
- *   `waitForTimeout` is used as the sole guard of a negative — "add/update/remove 404"
- *   (behavior 5) is proven by an HTTP status code, not a timing guess; "no scratch session
+ *   `waitForTimeout` is used as the sole guard of a negative — "no scratch session
  *   lingers" (behavior 10) is proven by a polled `GET /session` list, not a fixed sleep.
  *
  * HARNESS NOTES —
@@ -192,11 +196,13 @@
  *     `.workspace-runtime/processes.jsonc`, keeping `.claxedo/processes.jsonc` (and
  *     `.opencode/processes.jsonc`) only as a one-time migration source. This spec asserts
  *     the CURRENT real path — documentation drift, not an app bug.
- *   - Behavior 5's unit-test blind spot: `packages/claxedo-mcp/src/process-handler.test.ts`
- *     stubs its own fake `http()` and asserts `httpCall.path === "/process"` (lines
- *     290-291, 367-368, 400-401) — the WRONG path is literally what the unit test expects,
- *     so it stays green while the real server 404s. Exactly the class of bug this Tier L
- *     effort exists to catch (mocked assertions enshrining the bug they should catch).
+ *   - Behavior 5's unit-test blind spot [RESOLVED]: `packages/claxedo-mcp/src/
+ *     process-handler.test.ts` used to stub its own fake `http()` and assert
+ *     `httpCall.path === "/process"` — the WRONG path was literally what the unit test
+ *     expected, so it stayed green while the real server 404'd. Exactly the class of bug
+ *     this Tier L effort exists to catch (mocked assertions enshrining the bug they should
+ *     catch). Both the app path and the unit test were corrected in `e26b79b98c`; the test
+ *     now asserts `/api/wr/process` (lines 290, 367, 400).
  *   - Behavior 6's exact-text limitation: a managed process's PTY in this environment runs
  *     inside a full interactive login shell with a themed prompt (visible ANSI OSC/CSI
  *     sequences, a styled multi-segment prompt, live-redrawn clock) rather than the bare
@@ -544,22 +550,13 @@ test.describe("live claxedo-mcp tools @live", () => {
       }
     })
 
-    test.fixme(
-      "[REAL APP BUG] process tool add/update/remove request the wrong backend path and 404 against a real server — behavior 5",
-      async () => {
-        // packages/claxedo-mcp/src/process-handler.ts:275 (`action: "add"`),
-        // :299 (`action: "update"`), :311 (`action: "remove"`) all POST/PUT/DELETE to the
-        // literal bare path "/process" / `/process/${id}` instead of the real backend's
-        // actual route, "/api/wr/process" (the same PROCESS_PATH constant list/start/stop/
-        // restart correctly use — server.ts:43). Reproduced live: POST /process directly
-        // against a real running claxedo-server 404s; POST /api/wr/process with the exact
-        // same body succeeds (201). Confirmed this is not a fluke of this environment: the
-        // package's own unit test (process-handler.test.ts:290-291,367-368,400-401) stubs
-        // its fake http() and asserts the WRONG path is what gets called, so the bug is
-        // invisible to CI. This is a real product bug, not a test gap — a fix belongs in
-        // process-handler.ts's add/update/remove cases, not in this spec.
-      },
-    )
+    // Behavior 5 (process tool add/update/remove path correctness) was a real bug — the
+    // three cases POSTed/PUT/DELETEd to a bare "/process" instead of "/api/wr/process".
+    // Fixed in commit e26b79b98c; packages/claxedo-mcp/src/process-handler.ts now routes
+    // all three through the PROCESS_PATH constant, matching the real routes registered at
+    // packages/workspace-runtime/src/routes/process.ts:111 (POST), :120 (PUT), :133
+    // (DELETE). Regression coverage lives in the owning package —
+    // packages/claxedo-mcp/src/process-handler.test.ts:290,367,400 — so no live test here.
 
     test("get_logs returns a real, growing PTY tail for a running process — behavior 6", async () => {
       const dir = await makeWorkspace("get-logs")
@@ -736,39 +733,24 @@ test.describe("live claxedo-mcp tools @live", () => {
       }
     })
 
-    test.fixme(
-      "[REAL APP BUG] summarize_logs never surfaces a raw JSON-parse crash for a failed/empty model reply — behavior 10b",
-      async () => {
-        // REAL APP BUG, root-caused live against this repo's real running claxedo-server
-        // (a local HTTP proxy inserted between claxedo-mcp and the backend captured the
-        // exact byte stream) — not a test gap. Two compounding defects in
-        // packages/claxedo-mcp/src/server.ts:
-        //   1. httpRequest() (server.ts:66-67) unconditionally JSON.parses the response
-        //      body for mode:"json" BEFORE checking res.ok, so any non-OK response with a
-        //      non-JSON body (plain text, HTML) throws a raw, unrelated
-        //      SyntaxError instead of reaching the graceful `catch` branch that would
-        //      otherwise surface a legible message.
-        //   2. summarize_logs's fallback path (server.ts:637-645), reached whenever the
-        //      first message response has no text part (e.g. the model turn itself
-        //      errored — verified live: this ambient environment's default agent/model
-        //      resolves to "anthropic/claude-sonnet-4-6", which its own provider catalog
-        //      rejects with "Model not found: ..."), calls
-        //      `GET /session/:id/message/:messageId` — a route that does not exist on the
-        //      real server (confirmed live: 404, plain-text body "404 Not Found", not
-        //      JSON).
-        //   Combined: JSON.parse("404 Not Found") consumes the valid JSON number literal
-        //   "404" (3 chars), skips the following whitespace, then throws exactly
-        //   `Unexpected non-whitespace character after JSON at position 4` on the "N" of
-        //   "Not" — which summarize_logs's own catch-all reports as "Failed to summarize
-        //   logs: Unexpected non-whitespace character after JSON at position 4 (line 1
-        //   column 5)" instead of the intended, legible "LLM error: Model not found: ..."
-        //   message. Reproduced deterministically, in isolation (no other interference),
-        //   against this repo's real running server. A fix belongs in httpRequest()
-        //   (check res.ok before JSON.parse, or wrap the parse in try/catch) and/or in
-        //   removing the dead fallback call to a route that does not exist — not in this
-        //   spec.
-      },
-    )
+    // Behavior 10b (summarize_logs surfacing a raw JSON-parse crash instead of a legible
+    // "LLM error: ..." message) was a real bug with two halves, both now fixed:
+    //   1. httpRequest() JSON.parse'd the body before checking res.ok. Fixed in commit
+    //      52d52c2143 — packages/claxedo-mcp/src/server.ts now checks `if (!res.ok)`
+    //      before parsing and routes the body through parseHttpErrorBody(), which wraps
+    //      JSON.parse in try/catch, so a plain-text "404 Not Found" body can no longer
+    //      throw a raw SyntaxError.
+    //   2. The fallback called `GET /session/:id/message/:messageId`, a route the
+    //      workspace-runtime does not serve. Fixed in commit e26b79b98c — the logic moved
+    //      to resolveResponseText() in packages/claxedo-mcp/src/message-text.ts, which
+    //      re-fetches the list route `GET /session/:id/message` (real, registered at
+    //      packages/workspace-runtime/src/routes/session-core.ts:628) and finds the
+    //      message by id. With the fallback returning empty for an errored model turn,
+    //      summarize_logs now reaches its intended `LLM error: <message>` branch.
+    // Regression coverage lives in the owning package —
+    // packages/claxedo-mcp/src/message-text.test.ts ("resolveResponseText") — so no live
+    // test here. The res.ok-before-parse half has no direct unit test because
+    // httpRequest() is not exported and server.ts connects a stdio transport on import.
 
     test("CLAXEDO_MCP_READ_ONLY=1 hides mutating tools from tools/list — behavior 11", async () => {
       const dir = await makeWorkspace("read-only")

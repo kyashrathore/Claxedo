@@ -232,15 +232,13 @@ import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 const DIR = "/tmp/e2e-core-session-actions"
 const PROJECT_ID = "proj_core_session_actions"
 const PROJECT_NAME = "core-session-actions"
-// A concrete, serving model. The mock's DEFAULT harness model is the
-// `big-pickle` placeholder (`SIGNED_WORKSPACE_DEFAULT_MODEL`), which the composer
-// now deliberately treats as "no model configured" and refuses to submit with
-// (`src/features/session/composer/signed-workspace-model.ts` — "has no serving
-// path and must never make the composer submit-ready"; gate in
-// `submit-block-wiring.ts`'s `needsModelSelection`). Every scenario in this spec
-// acts on a session that only exists after a successful first send, so each
-// `installMockRuntime` that precedes `sendFirstPrompt` must advertise a real
-// model — exactly as the sibling `core-first-prompt-local` send test does.
+// A concrete, serving model — for DETERMINISM, not to unblock submit.
+// This comment used to claim the mock's default IS the blocked placeholder. It is
+// not: the mock advertises `big-pickle-1` (`BIG_PICKLE`, mock-runtime.ts:476), while
+// `isSignedWorkspaceDefaultModel` (src/features/session/composer/
+// signed-workspace-model.ts:18-20) matches ONLY the bare pair `opencode` +
+// `big-pickle`. The mock default is therefore already submit-ready. Pinning gives the
+// assertions a named model to match, which is why sibling specs pin too.
 const SEND_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
 function slug(value: string) {

@@ -13,7 +13,7 @@
  * `src/components/prompt-input/submit-transport.ts#saveSessionConfig`), the
  * "nothing is selected" submit gate (`src/session/submit/resolve.ts
  * #resolveSubmittedConfig`), and the Settings→Models visibility toggle
- * (`src/components/settings-models.tsx`, `src/context/models.tsx`) that filters what the
+ * (`src/features/settings/ui/models.tsx`, `src/features/session/providers/models.tsx`) that filters what the
  * composer's model list shows. ACP/harness-owned model pickers (`AgentHarnessSelector`)
  * are `core-harness-ownership-local`'s territory, not this spec's.
  *
@@ -24,7 +24,7 @@
  *     keyed by session id once a session exists (`saved.session[sessionId]`). Before a
  *     session exists (a fresh draft), `store.draft` holds the pick IN MEMORY ONLY — it
  *     does NOT survive reload by itself. What DOES survive reload for a fresh draft is
- *     the MODEL CATALOG's global "recent" list (`useModels()`, `src/context/models.tsx`,
+ *     the MODEL CATALOG's global "recent" list (`useModels()`, `src/features/session/providers/models.tsx`,
  *     persisted at localStorage key `opencode.global.dat:model` under `.recent`): picking
  *     a model calls `model.set(item, {recent:true})`, which pushes it onto
  *     `models.recent.list()`; on the next load, `currentModelKey()`'s fallback chain
@@ -33,7 +33,7 @@
  *     active model even though the draft's own scope is empty.
  *   - Model VISIBILITY (Settings→Models) lives in `useModels()`'s `store.user` (also
  *     `opencode.global.dat:model`, the `.user` array of `{providerID,modelID,visibility}`
- *     rows), read by `models.visible()` (`src/context/models.tsx:115`): an explicit
+ *     rows), read by `models.visible()` (`src/features/session/providers/models.tsx:118`): an explicit
  *     "hide"/"show" wins; otherwise a model released within ~6 months defaults visible
  *     ("latest"), otherwise a model with a KNOWN release date older than that defaults
  *     HIDDEN, otherwise (unknown/invalid date) defaults visible. This is a single GLOBAL
@@ -65,14 +65,21 @@
  *     any other same-titled dialog.
  *   `[data-slot="list-item"]` (inside the model popover's `List`) — one row per
  *     visible+matching model; text = model name.
- *   `[data-action="prompt-agent"]` — the plain agent `Select` trigger
- *     (`[data-slot="select-select-trigger"]`); only rendered when NOT harness mode AND
- *     `agentNames().length > 0` (`shouldShowPromptAgentSelector`,
- *     `src/components/prompt-input/selector-visibility.ts`); its `disabled` prop is wired
- *     to `harnessPending()` (composer.tsx passes `props.harnessPending` straight through
- *     `PromptToolbarControls`) — see HARNESS NOTES for why this can never actually render
- *     disabled in the current wiring.
- *   `[data-action="prompt-model-variant"]` — variant `Select` trigger; rendered only when
+ *   `[data-action="prompt-add"]` — the `+` trigger (`add-menu.tsx`); `disabled` while
+ *     `harnessPending()` or outside normal mode.
+ *   `[data-action="prompt-agent"]` — an agent RADIO ITEM inside the `+` menu, one per
+ *     agent, carrying `data-checked` on the current one. Rendered when NOT harness mode
+ *     AND `agentNames().length > 0` (`shouldShowPromptAgentSelector`,
+ *     `src/components/prompt-input/selector-visibility.ts`) AND the agent list is not
+ *     exactly build+plan — that pair collapses into the single
+ *     `[data-action="prompt-plan-mode"]` checkbox instead (`planModeAgents()`). Both sit
+ *     BELOW a separator, under the four flat action entries the menu now leads with.
+ *     There is no inline agent trigger any more, so the current agent is only
+ *     observable by reopening the menu and reading `data-checked`.
+ *   `[data-action="prompt-model-variant"]` — the effort/variant `Select` trigger. It now
+ *     sits flush against `[data-action="prompt-model"]` so the two read as one control
+ *     (`model-control.tsx`), and owns the pair's single chevron; it is still its own
+ *     trigger with its own `[data-slot="select-select-item"]` options. Rendered only when
  *     `!harnessMode && variants().length > 1`, where `variants = ["default",
  *     ...currentModel.variants keys]` (`toolbar-state.ts:75`).
  *   `[data-slot="select-select-item"]` / `[data-slot="select-select-item-label"]` — agent
@@ -87,7 +94,7 @@
  *     (`language.t("settings.tab.models" is actually "settings.models.title")`);
  *     `SettingsModels` renders one row per model with a `role="switch"` control whose
  *     accessible name is the model's display name (`<Switch hideLabel>{item.name}</
- *     Switch>`, `src/components/settings-models.tsx`).
+ *     Switch>`, `src/features/settings/ui/models.tsx:114-122`).
  *
  * BEHAVIORS —
  *   1. Selecting a paid model before the first send is reflected in that send's
@@ -238,11 +245,11 @@ function paidProviderBody() {
           "big-pickle-1": {
             id: "big-pickle-1",
             name: "Big Pickle",
-            // See the `family` comment on the anthropic models below — a
-            // provider's single model with an omitted `family` is ALSO
-            // excluded from `latestSet` by the remeda `groupBy` bug (an
-            // undefined-returning callback drops even a lone item), so this
-            // needs a `family` too or Big Pickle silently defaults hidden.
+            // See the `family` comment on the anthropic models below. `family` is
+            // optional on the real schema, and since the fix cited there each model
+            // without one falls back to its own id as the group key, so this could be
+            // omitted — it is kept because real catalogs carry it and the fixture should
+            // look like production data.
             family: "big-pickle",
             release_date: "2026-06-15",
             attachment: true,
@@ -265,29 +272,33 @@ function paidProviderBody() {
             name: "Sonnet 4.6",
             // family disambiguates each model within a provider for the
             // catalog's "latest per family" auto-visibility computation
-            // (`src/context/models.tsx`'s `latest` memo groups
-            // available models by `(provider.id, family)` via remeda's
-            // `groupBy`). REAL BUG found while diagnosing this spec:
-            // remeda's `groupBy` callback returning `undefined` EXCLUDES
-            // the item from every group instead of bucketing it under an
-            // "undefined" group (see `groupBy.d.ts`'s documented contract
-            // — "allows the callback to return `undefined` in order to
-            // exclude the item from being added to any group"). Since
-            // `family` is optional on the real model schema
-            // (`packages/core/src/models-dev.ts:50`), any provider with
-            // TWO OR MORE models that both omit `family` has ALL of them
-            // silently dropped from `latestSet` — not deduped to one
-            // survivor as the code intends, but eliminated entirely —
-            // which then defaults them to HIDDEN (any model with a valid,
-            // non-"latest" release_date is hidden by
-            // `models.tsx`'s `visible()`). This is why an earlier version
-            // of this fixture (family omitted, matching the shared
-            // mock-runtime.ts fixtures) rendered "No model results" for
-            // every paid-provider test. Setting realistic distinct
-            // `family` values per model here (as real catalogs — models.dev
-            // — do for well-known model lines) sidesteps the bug the way
-            // production data would; the underlying defect is reported
-            // separately, not fixed here (out of scope for this spec).
+            // (`src/features/session/providers/models.tsx`'s `latest` memo,
+            // lines 60-88, groups available models by `(provider.id, family)`
+            // via remeda's `groupBy`).
+            //
+            // HISTORY — FIXED IN THE APP, no longer a live bug (re-verified
+            // 2026-07-25). This fixture was originally written around a real
+            // defect: remeda's `groupBy` callback returning `undefined`
+            // EXCLUDES the item from every group instead of bucketing it under
+            // an "undefined" group (see `groupBy.d.ts`'s documented contract —
+            // "allows the callback to return `undefined` in order to exclude
+            // the item from being added to any group"). Since `family` is
+            // optional on the real model schema
+            // (`packages/core/src/models-dev.ts:50` — still `Schema.optional`),
+            // every model that omitted it silently vanished from `latestSet`
+            // and then defaulted to HIDDEN (a model with a valid, non-"latest"
+            // release_date is hidden by `models.tsx`'s `visible()`) — which is
+            // why an early version of this fixture rendered "No model results"
+            // for every paid-provider test. The app now keys the inner group by
+            // `x.family ?? x.id` (`models.tsx:77`), so an absent `family` no
+            // longer drops the model; the fix has its own source-level
+            // regression guard plus a remeda-contract reproduction in
+            // `src/features/session/providers/models.test.ts`.
+            //
+            // The distinct `family` values are therefore no longer load-bearing
+            // for visibility — they stay because real catalogs (models.dev) set
+            // them for well-known model lines, so the fixture matches production
+            // shape rather than exercising the fallback path by accident.
             family: "claude-sonnet",
             release_date: "2026-06-01",
             attachment: true,
@@ -337,12 +348,15 @@ function paidProviderBody() {
  * real ModelSelectorPopover (not DialogSelectModelUnpaid) renders. Registered AFTER
  * installMockRuntime so it wins (Playwright matches most-recently-registered first).
  *
- * REAL BUG worth noting for the shared helper: `bootstrap.ts#fetchProvider` issues a
+ * STILL LIVE (re-verified 2026-07-25 at its current path) — worth noting for the shared
+ * helper: `bootstrap.ts#fetchProvider` issues a
  * SEPARATE directory-scoped refetch to `/provider?harness=<type>` (query string) after
  * the initial bootstrap-seeded provider data lands, and unconditionally overwrites the
  * query cache with whatever that returns (`setProviderQuery` only preserves the
  * existing cache when the NEW payload is empty, not when it merely differs) — see
- * `src/shell/data/bootstrap.ts:370-378`. `mock-runtime.ts` and earlier versions of this
+ * `src/app/boot/data/bootstrap.ts:369-415` (`setProviderQuery` at :375-384; the
+ * empty-only guard is the explicit `if (empty) { … return }` at :376-382).
+ * `mock-runtime.ts` and earlier versions of this
  * fixture used the bare glob "star-star-slash-provider" (no trailing wildcard), which
  * does NOT match a URL carrying a query string (verified empirically: Playwright's
  * glob-to-regex anchors the pattern's end), so that refetch silently fell through to
@@ -566,16 +580,26 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
 
-    const agentTrigger = page.locator('[data-action="prompt-agent"]').last()
-    await expect(agentTrigger).toBeVisible({ timeout: 15_000 })
-    await expect(agentTrigger).not.toBeDisabled()
-    await expect(agentTrigger).toContainText(/build/i)
+    // The agent picker is no longer an inline chip: it is a radio group inside the
+    // `+` menu (add-menu.tsx). The fixture's agents are build+review, which is NOT
+    // the build+plan pair `planModeAgents()` collapses into a "Plan mode" checkbox,
+    // so the explicit radio group is what renders here.
+    const addTrigger = page.locator('[data-action="prompt-add"]').last()
+    await expect(addTrigger).toBeVisible({ timeout: 15_000 })
+    await expect(addTrigger).not.toBeDisabled()
 
-    await agentTrigger.click()
-    const reviewOption = page.locator('[data-slot="select-select-item"]', { hasText: /^review$/i }).first()
+    await addTrigger.click()
+    const agentItems = page.locator('[data-action="prompt-agent"]')
+    await expect(agentItems.filter({ hasText: /^build$/i })).toHaveAttribute("data-checked", "", { timeout: 10_000 })
+    const reviewOption = agentItems.filter({ hasText: /^review$/i }).first()
     await expect(reviewOption).toBeVisible({ timeout: 10_000 })
     await reviewOption.click()
-    await expect(agentTrigger).toContainText(/review/i, { timeout: 10_000 })
+
+    // Reopen to confirm the pick stuck: the checked indicator is the only place the
+    // current agent is visible now that the trigger is a bare `+`.
+    await addTrigger.click()
+    await expect(agentItems.filter({ hasText: /^review$/i })).toHaveAttribute("data-checked", "", { timeout: 10_000 })
+    await page.keyboard.press("Escape")
 
     const promptText = "which agent handled this"
     await input.click()
@@ -685,7 +709,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await openDraftPrompt(page, DIR)
 
     // Haiku 3 has an old (2020) release date and no explicit visibility row yet, so it
-    // defaults HIDDEN (src/context/models.tsx:115-124) — absent from the popover list.
+    // defaults HIDDEN (src/features/session/providers/models.tsx:118-131) — absent from the popover list.
     await openModelPopover(page)
     await expect(page.locator('[data-slot="list-item"]', { hasText: "Haiku 3 (legacy)" })).toHaveCount(0)
     await page.keyboard.press("Escape")

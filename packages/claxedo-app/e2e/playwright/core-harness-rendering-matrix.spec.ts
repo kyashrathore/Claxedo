@@ -33,19 +33,29 @@
  * `e2e/helpers/mock-runtime.ts`'s `emit` handle) and assert the DOM.
  *
  * ANATOMY (packages/session-ui/src/components/message-part.tsx unless noted) —
- *   `PART_MAPPING["text"|"reasoning"|"tool"|"compaction"]` — the only 4 registered
- *     part-type components. `renderable(part)` (line ~718) hides a part entirely
- *     unless it is a non-empty text/reasoning, an unhidden tool, OR
- *     `PART_MAPPING[part.type]` exists — `file`/`patch`/`agent`/`step-*` part types
- *     have NO registered component (`registerPartComponent` is defined but has ZERO
- *     call sites in this repo — verified by
- *     `grep -rn registerPartComponent packages/session-ui/src`), so they are silently
- *     dropped from the assistant timeline today (see BEHAVIORS #6 / OUT OF SCOPE).
+ *   `PART_MAPPING["text"|"reasoning"|"tool"|"compaction"|"file"]` — the 5 registered
+ *     part-type components (message-part.tsx:1813,1924,1929,2041,2077 — each assigns the
+ *     map directly; the exported `registerPartComponent` helper at :1020 still has ZERO
+ *     call sites, verified by `grep -rn registerPartComponent`). CORRECTED (2026-07-25):
+ *     this entry used to list only 4 and call `file` an unrendered gap — `file` was
+ *     registered (and added to `message-timeline.data.ts:539`'s `renderableParts` set) as
+ *     part of the same remediation the ADDENDUM below describes, and BEHAVIORS #6 is now
+ *     a positive test. `renderable(part)` (message-part.tsx:791) hides a part entirely
+ *     unless it is a non-empty text, a reasoning part with summaries ON, an unhidden
+ *     tool, OR `PART_MAPPING[part.type]` exists — so `patch`/`agent`/`step-*` part types
+ *     (still unregistered) remain silently dropped from the assistant timeline.
  *   `[data-component="text-part"]` / `[data-component="reasoning-part"]` — text and
- *     reasoning parts; reasoning is gated by `showReasoningSummaries` (default `true`,
- *     line ~331,725 — this app has ZERO call sites setting it to `false`, verified by
- *     `grep -rn showReasoningSummaries packages/claxedo-app/src`, so only the
- *     always-visible default path is reachable/testable here).
+ *     reasoning parts; reasoning is gated by `showReasoningSummaries`. CORRECTED
+ *     (2026-07-25): session-ui's own PROP default is `true`
+ *     (`session-turn.tsx:331`, `message-part.tsx:791` — `?? true`), but claxedo-app never
+ *     lets that default apply: `message-timeline.tsx:634,1492` always passes
+ *     `settings.general.showReasoningSummaries()`, whose default is `false`
+ *     (`src/platform/settings/provider.tsx:120`). Reasoning summaries are therefore
+ *     OPT-IN, and the reachable default path in this app is the HIDDEN one — the exact
+ *     opposite of what this ANATOMY entry used to claim. A test that wants a reasoning
+ *     part on screen must flip the setting on first; `enableReasoningSummaries()` below
+ *     does it through the real settings UI (the setting is reactive, so already-streamed
+ *     reasoning parts appear as soon as the dialog closes).
  *   `[data-component="tool-part-wrapper"]` — wraps every tool part; entirely absent
  *     (not just hidden) while `part.tool === "question"` and
  *     `state.status` is `"pending"`/`"running"` (`hideQuestion`, line ~1494).
@@ -89,9 +99,18 @@
  *     one — see OUT OF SCOPE).
  *
  * BEHAVIORS —
- *   1. Text parts (paced markdown) render per harness, verbatim content.
- *   2. Reasoning parts render (gated by `showReasoningSummaries`, default true; no
- *      false-path is reachable in this app today — see ANATOMY).
+ *   1. Text parts (paced markdown) render per harness, verbatim content, and a
+ *      `message.part.updated(text:"")` + N x `message.part.delta` sequence ACCUMULATES
+ *      into exactly the concatenated text — once, with no re-appended prefix.
+ *      SCOPE CORRECTION (2026-07-25): several tests label this "cumulative-snapshot
+ *      dedup". It is not — see the FIXTURE-PRE-BAKING note under HARNESS NOTES. The
+ *      snapshot->delta conversion happens UPSTREAM in the adapter; the committed
+ *      fixtures already carry post-dedup INCREMENTAL deltas, so what the replay proves is
+ *      the client's delta accumulation, not the dedup itself.
+ *   2. Reasoning parts render once `settings.general.showReasoningSummaries` is turned
+ *      ON. That setting DEFAULTS TO FALSE in this app (provider.tsx:120), so the
+ *      out-of-the-box path is the hidden one; the test flips it through the real settings
+ *      UI before asserting the `[data-component="reasoning-part"]` renderer — see ANATOMY.
  *   3. Each registered ToolRegistry renderer (read, list, glob, grep, webfetch,
  *      websearch, task, bash, edit, write, apply_patch, skill) renders via its
  *      dedicated component for a part carrying that exact `tool` string.
@@ -104,8 +123,13 @@
  *      running: same as pending visually for most tools; completed: detail visible;
  *      error: `ToolErrorCard` instead of the tool body).
  *   6. `file`-type parts (image/audio data-url, resource links) on ASSISTANT messages
- *      have NO renderer in this app today — REAL GAP, not exercised as a pass (see
- *      OUT OF SCOPE / findings).
+ *      reach `FilePartDisplay` (`PART_MAPPING["file"]`, message-part.tsx:2077): an image
+ *      renders an inline `img[data-slot="file-part-image"]`, audio an
+ *      `audio[data-slot="file-part-audio"]`, and anything else a resource-link row
+ *      (`a[data-slot="file-part-link"]` + `[data-slot="file-part-link-name"]`).
+ *      CORRECTED (2026-07-25): this entry used to read "NO renderer in this app today —
+ *      REAL GAP, not exercised as a pass". That gap was closed (see the ADDENDUM); the
+ *      test below is a positive assertion, not an absence assertion.
  *   7. A `compaction`-type part renders `MessageDivider` inline in the assistant
  *      timeline.
  *   8. A `session.diff` SSE event is consumed into a separate diff query cache
@@ -125,14 +149,38 @@
  *      (`src/pages/session/composer/session-permission-dock.tsx`,
  *      `[data-slot="permission-header-title"]`) — NEVER a `[data-component=
  *      "tool-part-wrapper"]` row.
- *  13. Cursor ACP's cumulative full-text snapshot chunks (`"A"` then `"A1"`) render
- *      the final text exactly once, without a duplicated prefix.
+ *  13. Cursor ACP's cumulative full-text snapshot chunks (raw `"A"` then `"A1"`,
+ *      `generate-harness-fixtures.ts:317-318`) are de-duplicated by the ACP adapter into
+ *      incremental deltas (`'A'`, `'1'`) BEFORE they ever reach this app — the committed
+ *      `cursor-acp.json` carries the deltas, not the snapshots (inspect it: two
+ *      `message.part.delta` envelopes). What the replay proves is therefore the CLIENT
+ *      half: those deltas accumulate to `"A1"` exactly once, with no `"AA1"`. The dedup
+ *      itself is an `agent-event-runtime` concern and is covered by that package's own
+ *      tests — see the FIXTURE-PRE-BAKING note under HARNESS NOTES.
  *  14. Cursor ACP's `"Error: RetriableError: WritableIterable is closed"` transport
- *      tail is swallowed — zero visible/DOM effect from that chunk.
+ *      tail is swallowed. CORRECTED (2026-07-25): the swallow happens UPSTREAM, in
+ *      `isCursorWritableIterableTail`
+ *      (`packages/agent-event-runtime/src/harnesses/acp/translate-session-update.ts:152,
+ *      216-223`, which returns `null` for that exact chunk) — NOT in this app, which
+ *      faithfully renders whatever parts it is handed. The generator DOES feed the raw
+ *      chunk through the real adapter (`generate-harness-fixtures.ts:324`), so the
+ *      discriminating evidence is that the TRANSLATED trace this spec replays contains no
+ *      trace of the sentinel at all. The test asserts that on the loaded trace; the old
+ *      `expect(page.getByText("WritableIterable is closed")).toHaveCount(0)` was VACUOUS
+ *      (the string is absent from the fixture, so it also passed on a blank page). It is
+ *      kept only as a corollary.
  *  15. Claude ACP's `Task` tool and Cursor ACP's `Task: Subagent task` tool render the
  *      dedicated `task` component with a child-session-linked, clickable trigger.
  *  16. Per-client tool NAME normalization: Cursor/Claude/Codex ACP's `"Terminal"`
- *      title -> `bash`. A companion, source-verified FINDING (not a failure — pinned
+ *      title -> `bash`. SCOPE CORRECTION (2026-07-25): that mapping is performed
+ *      UPSTREAM by `harnesses/acp/registry.ts`, and the committed ACP fixtures already
+ *      carry the NORMALIZED names (`cursor-acp.json`/`claude-acp.json` contain
+ *      `part.tool: "bash"`, `"read"`, `"task"`; `codex-acp.json` contains `"edit"` — no
+ *      `"Terminal"`/`"Read File"`/`"Update TODOs"` string survives into the fixture).
+ *      What the replay proves is the OTHER half — that a part carrying the canonical
+ *      lowercase name reaches the matching dedicated ToolRegistry renderer — not the
+ *      normalization step. See the FIXTURE-PRE-BAKING note under HARNESS NOTES.
+ *      A companion, source-verified FINDING (not a failure — pinned
  *      as real, documented behavior): Codex ACP's `apply_patch` tool_call resolves to
  *      the generic `edit` renderer, not the dedicated `apply_patch` one, because
  *      `harnesses/acp/state.ts`'s `pick()` unconditionally overwrites
@@ -146,13 +194,73 @@
  * INVARIANTS — inherits `e2e/INVARIANTS.md` #1 (harness ownership — not this spec's
  *   concern, see OUT OF SCOPE) and #2 (completed content never hidden by stale busy —
  *   every scenario here injects parts onto an ALREADY-settled assistant message, so
- *   this invariant is implicitly exercised on every send). Spec-local invariant: the
+ *   this invariant is implicitly exercised on every send).
+ *
+ *   DECLARED DEVIATION from `e2e/INVARIANTS.md` "Authoring rules" #2 (per that file's
+ *   "a spec that needs to violate one must say so explicitly in its own SPEC block's
+ *   INVARIANTS section, with a reason", INVARIANTS.md:60-61) — added 2026-07-25, because
+ *   this deviation was previously undeclared:
+ *     Rule #2 bans `page.locator('[data-slot="session-turn-assistant-content"]')
+ *     .getByText(...)` as a substitute for the `expectAssistantReplyVisible` oracle. This
+ *     spec DOES use that shape (via `assistantContent()` =
+ *     `SELECTORS.assistantContentVisible`, the oracle module's own exported selector)
+ *     for essentially every fixture assertion below.
+ *     WHY THE ORACLE DOES NOT APPLY: `expectAssistantReplyVisible(page, text)`
+ *     (`e2e/helpers/turn-oracle.ts:153`) is a REPLY-TEXT oracle. It asserts that a
+ *     *turn-level assistant reply* is visible, and its whole point is catching the class
+ *     of bug where a reply never renders. Nothing this spec asserts is a reply: the
+ *     subjects are per-PART renderer outputs — a tool subtitle
+ *     (`[data-slot="basic-tool-tool-subtitle"]`), a shell command value, a filename slot,
+ *     a task card, a reasoning accordion's body, a compaction divider, the ABSENCE of a
+ *     `todowrite` row. The oracle has no vocabulary for any of these, and routing them
+ *     through it would either assert the wrong thing or require widening the shared
+ *     helper (a change this spec's phase forbids).
+ *     WHAT THIS SPEC STILL OWES THE ORACLE: the one genuine assistant REPLY in each
+ *     scenario — the priming turn's `ack 1: <prompt>` — IS asserted through
+ *     `expectAssistantReplyVisible` (`primeHarness`, line ~532 below), so the
+ *     "reply never rendered" failure mode the rule exists to catch is still covered
+ *     before any part-level assertion runs. Part-level assertions are additionally
+ *     scoped to `assistantContentVisible` (the `:not([aria-hidden="true"])` variant), so
+ *     they cannot pass against an aria-hidden/offscreen duplicate row.
+ *     REMEDIATION PATH (not taken here): extend `turn-oracle.ts` with a part-level
+ *     oracle (e.g. `expectAssistantPartVisible(page, {slot, text})`) and migrate this
+ *     spec onto it — a shared-helper change, out of scope for this pass.
+ *
+ *   Spec-local invariant: the
  *   rendering matrix is a pure function of `part.type`/`part.tool`/`state.status` —
  *   it must not depend on which harness produced the part once the part has reached
  *   the client store (this is what makes one shared PART_MAPPING/ToolRegistry safe
  *   across 8 harness families).
  *
- * HARNESS NOTES — ACP families (claude-acp/codex-acp/cursor-acp) route every tool_call
+ * HARNESS NOTES —
+ *   FIXTURE PRE-BAKING (added 2026-07-25; the single most important limit on what this
+ *   spec can prove). This spec replays TRANSLATED envelopes — the output of the real
+ *   adapter + `opencode-compat` projection, as committed under
+ *   `e2e/fixtures/harness-traces/`. Every transformation that happens INSIDE that
+ *   translation is therefore already applied in the committed JSON, and replaying it
+ *   cannot re-prove it. Concretely, verified by inspecting the fixture files:
+ *     - SNAPSHOT DEDUP (behaviors 1/13): the raw inputs in `generate-harness-fixtures.ts`
+ *       are cumulative snapshots (`"A"`/`"A1"` at :317-318; `"Hel"`/`"Hello there"` at
+ *       :350-351; `"Building the "`/`"Building the feature now."` at :155,160). The
+ *       committed fixtures contain the POST-dedup INCREMENTAL deltas (`'A'`+`'1'`,
+ *       `'Hel'`+`'lo there'`, `'Building the '`+`'feature now.'`). The replay proves the
+ *       client accumulates deltas without re-appending a prefix; it does NOT prove the
+ *       adapter's snapshot dedup.
+ *     - TOOL-NAME NORMALIZATION (behavior 16): the committed ACP fixtures carry only
+ *       canonical lowercase `part.tool` values (`bash`/`read`/`task`/`edit`) — the raw
+ *       `"Terminal"`/`"Read File"`/`"Update TODOs"` titles never appear. The replay
+ *       proves canonical-name -> renderer dispatch; it does NOT prove the registry's
+ *       name mapping.
+ *     - TRANSPORT-SENTINEL SWALLOW (behavior 14): the sentinel is absent from the
+ *       fixture entirely, so no DOM assertion about it can discriminate anything (see
+ *       behavior 14 for what the test asserts instead).
+ *   Closing these gaps requires either regenerating fixtures with pre-translation
+ *   payloads or asserting in `packages/agent-event-runtime`'s own suite (where
+ *   `harnesses/acp/event-translator.test.ts` already covers the sentinel and the
+ *   snapshot->delta conversion). Both are OUT OF SCOPE for this spec, which is forbidden
+ *   from editing fixtures.
+ *
+ *   ACP families (claude-acp/codex-acp/cursor-acp) route every tool_call
  *   through `harnesses/acp/registry.ts`'s per-client rule table, which assigns a
  *   canonical lowercase `short` name (behavior 16) — this is why ACP tool names are
  *   consistently normalized. Native SDK families (claude-sdk/codex-app-server/
@@ -182,8 +290,10 @@
  *   component at all, behavior 12); the per-turn diff ACCORDION driven by
  *   `message.summary.diffs` and `session-turn.tsx`'s own compaction divider
  *   (`core-timeline-rendering-scroll`); tool-part expand/collapse defaults
- *   (`core-timeline-rendering-scroll`); `file`-type assistant parts are asserted ABSENT
- *   (a real gap), not given dedicated rendering coverage.
+ *   (`core-timeline-rendering-scroll`). CORRECTED (2026-07-25): `file`-type assistant
+ *   parts are NO LONGER out of scope and are no longer "asserted ABSENT (a real gap)" —
+ *   behavior 6 gives them positive rendering coverage. Still genuinely uncovered:
+ *   `patch`/`agent`/`step-*` part types, which have no registered component.
  *
  * REMEDIATION ADDENDUM (2026-07-10, verified-green pass) — two real, source-verified
  * rendering behaviors this file's tests now account for, not previously documented
@@ -203,9 +313,15 @@
  *   deferred; live store inspection root-caused all three (compaction/file dropped in the
  *   raw-Part<->UIMessage projection; reasoning gated behind the opt-in
  *   `showReasoningSummaries` setting) and they are now covered by real tests — see each
- *   test's inline note. The one remaining `test.fixme` is the `pi` harness's fixture
- *   (`e2e/fixtures/harness-traces/pi.json`), which is missing its promised tool-renderer
- *   event entirely (a fixture-generation gap, not an app bug).
+ *   test's inline note.
+ *   CORRECTED (2026-07-25): this paragraph used to end by claiming "the one remaining
+ *   `test.fixme` is the `pi` harness's fixture … missing its promised tool-renderer event
+ *   entirely". BOTH halves were stale. There are ZERO `test.fixme` calls in this file
+ *   (`grep -n 'test\.fixme'` matches nothing outside this sentence), and
+ *   `e2e/fixtures/harness-traces/pi.json` DOES carry its tool envelope — 4 envelopes:
+ *   a text part, its delta, a reasoning part, and a `completed` `read` tool part — which
+ *   the "pi — one dedicated tool renderer (config.json subtitle)" test below asserts
+ *   against directly.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
@@ -830,7 +946,12 @@ test.describe("core harness rendering matrix @core", () => {
 
     const content = page.locator(assistantContent())
 
-    // behavior 1: cumulative-snapshot dedup — final text renders once, not doubled.
+    // behavior 1: delta ACCUMULATION — the fixture's two deltas ('Building the ' +
+    // 'feature now.') concatenate to the final text once, with no re-appended prefix.
+    // NOT snapshot dedup: the adapter already converted the raw cumulative snapshots
+    // ("Building the " / "Building the feature now.",
+    // generate-harness-fixtures.ts:155,160) into these incremental deltas upstream — see
+    // the FIXTURE PRE-BAKING note in the SPEC block.
     // (Leading text part, shown even while the rest of the turn is folded — the
     // delivery anchor before we unfold.)
     await expect(content.getByText("Building the feature now.", { exact: true })).toBeVisible({ timeout: 45_000 })
@@ -839,11 +960,14 @@ test.describe("core harness rendering matrix @core", () => {
     // SESSION-TIMELINE REDESIGN: unfold the turn and open its groups.
     await revealTurn(page)
 
-    // behavior 16: "Terminal" -> bash. A LONE work tool (between the text and the read),
-    // so it stays a standalone row whose command subtitle is already visible.
+    // behavior 16: the fixture's `part.tool: "bash"` (the ACP registry already mapped
+    // Claude's raw "Terminal" title upstream — the raw string is NOT in the fixture, see
+    // FIXTURE PRE-BAKING) dispatches to the bash renderer. A LONE work tool (between the
+    // text and the read), so it stays a standalone row whose command subtitle is visible.
     await expect(content.getByText("printf hi")).toBeVisible()
 
-    // behavior 3: "Read File" -> read. Even a SINGLE context-group tool renders inside
+    // behavior 3: the fixture's `part.tool: "read"` (raw "Read File" already normalized
+    // upstream) hits the dedicated read renderer. Even a SINGLE context-group tool renders inside
     // the closed-by-default `ContextToolGroup` collapsible (opened by `revealTurn`).
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "index.ts" })).toBeVisible()
 
@@ -892,18 +1016,36 @@ test.describe("core harness rendering matrix @core", () => {
 
     const content = page.locator(assistantContent())
 
-    // behavior 13: cumulative snapshot ("A" then "A1") renders once, no duplication.
+    // behavior 13: the fixture's incremental deltas ('A' then '1' — the adapter's
+    // post-dedup output for the raw "A"/"A1" snapshots at
+    // generate-harness-fixtures.ts:317-318) accumulate to "A1" exactly once, no "AA1".
+    // The dedup itself happened upstream; see the FIXTURE PRE-BAKING note.
     // (Leading text — the delivery anchor before we unfold.)
     await expect(content.getByText("A1", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("AA1")).toHaveCount(0)
 
-    // behavior 14: the sentinel tail never shows up anywhere.
+    // behavior 14: the "Error: RetriableError: WritableIterable is closed" transport tail.
+    // The DOM assertion alone is VACUOUS — `grep -c WritableIterable
+    // e2e/fixtures/harness-traces/cursor-acp.json` is 0, so the string is not in the
+    // replayed trace and `toHaveCount(0)` would pass on a blank page. The swallow happens
+    // UPSTREAM (`isCursorWritableIterableTail`, agent-event-runtime
+    // harnesses/acp/translate-session-update.ts:152,216-223), and the generator DOES feed
+    // the raw chunk through the real adapter (generate-harness-fixtures.ts:324) — so the
+    // discriminating proof available to a fixture replay is that the TRANSLATED trace
+    // carries no trace of the sentinel. Fixtures are regenerated by script, so an adapter
+    // regression that stopped swallowing it would fail HERE at the next regeneration.
+    expect(JSON.stringify(trace), "the translated cursor-acp trace must not carry the swallowed transport tail").not.toContain(
+      "WritableIterable",
+    )
+    // Corollary (kept, but not the proof): nothing renders it either.
     await expect(page.getByText("WritableIterable is closed")).toHaveCount(0)
 
     // SESSION-TIMELINE REDESIGN: unfold the turn and open its groups.
     await revealTurn(page)
 
-    // behavior 16: Terminal -> bash. A LONE work tool -> standalone row, command visible.
+    // behavior 16: the fixture's `part.tool: "bash"` (Cursor's raw "Terminal" title was
+    // normalized upstream — see FIXTURE PRE-BAKING) hits the bash renderer. A LONE work
+    // tool -> standalone row, command visible.
     await expect(content.getByText("ls", { exact: true })).toBeVisible()
 
     // behavior 15: "Task: Subagent task" -> task, child-linked.
@@ -996,7 +1138,9 @@ test.describe("core harness rendering matrix @core", () => {
 
     const content = page.locator(assistantContent())
 
-    // behavior 1: "Hel" then full snapshot "Hello there" -> renders once, not doubled.
+    // behavior 1: the fixture's deltas 'Hel' + 'lo there' (the adapter's post-dedup
+    // output for the raw "Hel"/"Hello there" snapshots, generate-harness-fixtures.ts:
+    // 350-351) accumulate to "Hello there" once, no "HelHello" — see FIXTURE PRE-BAKING.
     await expect(content.getByText("Hello there", { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(content.getByText("HelHello")).toHaveCount(0)
 

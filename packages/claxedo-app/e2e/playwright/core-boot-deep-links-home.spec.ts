@@ -37,7 +37,7 @@
  *     navigates to `workspaceSessionRoute(directory, id)` (or `sessionRoute(id)` only
  *     for sessions whose `sessionRef.host === "central"`).
  *   - Server connectivity gating ("startup gate"): `ConnectionGate`
- *     (`src/app.tsx`) is a `createResource` that polls `GET /api/claxedo/health`
+ *     (`src/app/entry/app.tsx:184`) is a `createResource` that polls `GET /api/claxedo/health`
  *     (`src/utils/server-health.ts`) — for an `http`-type connection this is a SINGLE
  *     check, not a retry loop, capped at a 10s timeout either way.
  *     `revealBeforeHealth = pathname.startsWith("/s/") || pathname.startsWith("/w/")`
@@ -59,19 +59,26 @@
  *     timeline for the `session-unavailable` placeholder.
  *
  * ANATOMY —
- *   `[data-claxedo]` — shell root; presence == app painted past `ConnectionGate`.
+ *   `[data-claxedo]` — shell root (`src/app/app-shell-layout.tsx:301`); it lives INSIDE
+ *     `ConnectionGate`'s `<Show when={startup()}>` children branch, so its presence is
+ *     exactly "the app painted past the gate" and its ABSENCE is the load-bearing oracle
+ *     for "the gate is still holding" (behavior 9's negative half).
  *   The route-matched `/` component remains mounted invisibly so its providers stay
- *     available. The visible zero-project surface is `RailWorkbenchCanvas`'s
+ *     available (`RailWorkbenchShell` wraps all routed page content in
+ *     `<div class="hidden">`, `src/app/workbench/rail/rail-workbench-shell.tsx:129`).
+ *     The visible zero-project surface is `RailWorkbenchCanvas`'s
  *     `OnboardingEmptyState`: a four-step setup shell whose project action delegates to
  *     the existing `handleNewProject`. With ≥1 project registered,
  *     `useRailEmptyDraftController`'s `emptyDraftDirectory` memo
- *     (`src/claxedo-ui/layouts/rail-empty-draft-controller.ts:40`) resolves to
+ *     (`src/app/workbench/rail/rail-empty-draft-controller.ts:40`) resolves to
  *     `activeWorkspaceId() ?? projects()[0]?.worktree`, so the canvas instead renders a
  *     live `EmptyDraftSessionComposer` for that project (and `shouldOpenEmptyDraftSession`
  *     can auto-navigate away from `/` entirely). Tests below assert against the visible
  *     workbench surface; the historical recents-list expectation remains `test.fixme()`.
- *   `ConnectionError` (`src/app.tsx`): "Could not reach {server name}" +
- *     "Retrying automatically…" copy; no interactive retry control.
+ *   `ConnectionError` (`src/app/entry/app.tsx:267`): "Could not reach {server name}" +
+ *     "Retrying automatically…" copy; no interactive retry control. It renders as the
+ *     `fallback` of the same `<Show>` that owns `props.children`, so ConnectionError and
+ *     the shell root are mutually exclusive by construction.
  *   `[data-testid="session-content"][data-session-id]` — a workspace-backed session
  *     pane (`src/claxedo-ui/content-renderers/session-content.tsx`).
  *   `[data-testid="central-session-content"][data-session-id]` — a session pane with
@@ -86,9 +93,16 @@
  *
  * BEHAVIORS —
  *   1. A completely fresh browser context boots the shell (`[data-claxedo]` visible)
- *      with zero console errors/exceptions and zero failed/bad network requests
- *      (Clerk's dev-key CORS noise excluded — it is an always-on side effect of
- *      `VITE_AUTH_ENABLED=true`, unrelated to this app's own code paths).
+ *      with zero console errors/exceptions and zero failed/bad network requests.
+ *      TWO origin exclusions apply, and ONLY two: Clerk's dev-key CORS noise (an
+ *      always-on side effect of `VITE_AUTH_ENABLED=true`, unrelated to this app's own
+ *      code paths) and the unmockable central-server origin `127.0.0.1:3001` (see the
+ *      `fromUnmockedCentralOrigin` FINDING). The console list additionally drops
+ *      Chromium's own *mirror* lines for network failures ("Failed to load resource"),
+ *      which carry no URL in `message.text()` and therefore cannot be origin-attributed
+ *      — that is a de-duplication, not a hole: every such line also lands in
+ *      `requests.failed`/`requests.badResponses` WITH its full URL, and the test pins
+ *      that correspondence explicitly so a mirror line with no network record fails.
  *   2. With zero projects ever registered, the workbench renders the setup shell with
  *      four visible steps, live lock state, and a project action.
  *   3. [test.fixme — see ANATOMY finding] As originally specified: with ≥1 project
@@ -121,6 +135,17 @@
  *  10. An unreachable server shows the `ConnectionError` screen, and once
  *      `/api/claxedo/health` starts succeeding again the app auto-recovers to normal
  *      content with no user action (no retry button to click).
+ *  11. [`VITE_CLAXEDO_ONBOARDING_V1=true` + `CLAXEDO_ONBOARDING_DESKTOP_E2E=1` only]
+ *      Desktop-style ramp: with a project already registered, the flagged onboarding
+ *      owner opens in `data-mode="form"` at the "Connect your AI" step, credential
+ *      discovery/selection saves only the CHECKED items, and once a saved credential
+ *      verifies the owner flips to `data-mode="hidden"` and hands off to the real draft
+ *      composer — which then sends a normal first prompt.
+ *  12. [`VITE_CLAXEDO_ONBOARDING_V1=true`, non-desktop surface only] `/?onboarding=…`
+ *      is an honored deep link into a specific setup step: with project and AI already
+ *      proven, `?onboarding=compute` restores step 3 ("Add compute") in the owner's
+ *      form mode with its action enabled, rather than resuming at the first unproven
+ *      step.
  *
  * INVARIANTS —
  *   - A fresh app mount at a session-owning URL always discards any workbench state
@@ -329,15 +354,39 @@ function fromUnmockedCentralOrigin(item: string) {
   return item.includes("127.0.0.1:3001")
 }
 
+/** Chromium's own console MIRROR of a network event ("Failed to load resource: …").
+ * `mock-runtime.ts` records only `message.text()`, which for these lines carries no URL
+ * (the origin lives in `message.location()`, which the shared helper does not capture),
+ * so they cannot be origin-attributed from the console list alone. Dropping them from
+ * `nonClerkConsole` is a DE-DUPLICATION, not a silent hole: a resource that fails to
+ * load always also produces either a `requestfailed` (`requests.failed`) or a >=400
+ * `response` (`requests.badResponses`) entry WITH its full URL, and those two lists are
+ * asserted below with only the two documented origin exclusions. `expectConsoleMirrors
+ * AreAccountedFor` pins that correspondence so this filter can never swallow a failure
+ * the network assertions cannot see. (The former blanket `"ERR_FAILED"` clause was
+ * removed: it was undocumented, matched any origin, and is redundant — Chromium prefixes
+ * those same lines with "Failed to load resource".) */
+function isNetworkMirrorConsole(item: string) {
+  return item.includes("Failed to load resource")
+}
+
 function nonClerkConsole(entries: string[]) {
   return entries.filter(
     (item) =>
       !item.includes("clerk.accounts.dev") &&
       !item.includes("Clerk:") &&
-      !item.includes("Failed to load resource") &&
-      !item.includes("ERR_FAILED") &&
+      !isNetworkMirrorConsole(item) &&
       !fromUnmockedCentralOrigin(item),
   )
+}
+
+/** Every dropped network-mirror console line must have a real network record behind it.
+ * If mirrors outnumber the recorded failures, some failure exists that ONLY the
+ * (URL-less, hence unfilterable) console knows about — exactly the blind spot the
+ * `isNetworkMirrorConsole` filter would otherwise create. */
+function expectConsoleMirrorsAreAccountedFor(requests: { console: string[]; failed: string[]; badResponses: string[] }) {
+  const mirrors = requests.console.filter(isNetworkMirrorConsole)
+  expect(mirrors.length).toBeLessThanOrEqual(requests.failed.length + requests.badResponses.length)
 }
 
 function nonClerkFailed(entries: string[]) {
@@ -401,23 +450,28 @@ test.describe("core boot, deep links, and home @core", () => {
       await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
     }
-    // Not `.toHaveCount(0)`: the dead, permanently-hidden `pages/home.tsx` (see ANATOMY
-    // finding) can still transiently mount a "Recent projects" text node inside its own
-    // hidden subtree during a query-cache race — that is invisible DOM structure of dead
-    // code, not a user-visible recents list, so the correct assertion is non-visibility.
+    // Non-visibility, not `.toHaveCount(0)`: `routes/home.tsx` is dead code but still
+    // MOUNTS, inside `RailWorkbenchShell`'s permanently-`hidden` subtree (see the ANATOMY
+    // finding). Its "Recent projects" node is gated on `recent().length > 0`, which this
+    // zero-project fixture never satisfies — so this line's job is only to state that the
+    // dead recents surface is not user-visible; the load-bearing behavior-2 oracle is the
+    // "No projects yet…" / "Set up Claxedo" branch assertion above.
     await expect(page.getByText("Recent projects")).not.toBeVisible()
 
     // Behavior 1: clean boot hygiene.
     await expect(page.locator("text=/something went wrong/i")).toHaveCount(0)
-    const persistedKeys = await page.evaluate(() => Object.keys(localStorage))
-    expect(persistedKeys.length).toBeLessThan(20)
+    // (A `localStorage.length < 20` proxy for "clean shell" used to sit here. It was an
+    // arbitrary magic ceiling — it neither named a key that must not be written nor
+    // could fail for any behavior this spec owns — so it is gone rather than restated.
+    // The real boot-hygiene oracles are the four network/console lists below.)
     expect(nonClerkConsole(mock.requests.console)).toEqual([])
     expect(nonClerkFailed(mock.requests.failed)).toEqual([])
     expect(nonClerkBadResponses(mock.requests.badResponses)).toEqual([])
     expect(mock.requests.unhandled).toEqual([])
+    expectConsoleMirrorsAreAccountedFor(mock.requests)
   })
 
-  test("the desktop-style ramp hands off from AI verification to the real draft composer", async ({ page }) => {
+  test("the desktop-style ramp hands off from AI verification to the real draft composer — behavior 11", async ({ page }) => {
     test.skip(!ONBOARDING_V1 || !ONBOARDING_DESKTOP_RAMP, "Requires the onboarding flag and non-sandbox surface")
     const mock = await installMockRuntime(page, {
       dir: DIR,
@@ -505,7 +559,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("the web compute deep link restores step 3 after project and AI are proven", async ({ page }) => {
+  test("the web compute deep link restores step 3 after project and AI are proven — behavior 12", async ({ page }) => {
     test.skip(!ONBOARDING_V1 || ONBOARDING_DESKTOP_RAMP, "Requires the flagged web onboarding surface")
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
@@ -531,23 +585,24 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.getByTestId("setup-content-pane").getByRole("button", { name: "Add compute" })).toBeEnabled()
   })
 
-  // FINDING (verified by reading source — real app behavior, not a test bug): the `/`
-  // route's `<Home/>` component is unconditionally rendered `display:none` by
-  // `RailWorkbenchShell` (src/claxedo-ui/layouts/rail-workbench-shell.tsx:96,
+  // FINDING (re-verified 2026-07-25 by reading source — real app behavior, not a test
+  // bug): the `/` route's `<Home/>` component (src/app/routes/home.tsx, mounted at
+  // src/app/entry/app.tsx:484) is unconditionally rendered `display:none` by
+  // `RailWorkbenchShell` (src/app/workbench/rail/rail-workbench-shell.tsx:129,
   // `<div class="hidden">{props.children}</div>` around all routed page content), so
-  // `pages/home.tsx`'s "Recent projects" heading/list and its sandbox-gated
-  // `chooseProject()` dialog branch (DialogCreateCloudProject when
-  // config.sandboxEnabled) are dead code — never reachable by a real user. With ≥1
-  // project registered, the REAL surface at `/` (RailWorkbenchCanvas's empty-state
-  // fallback, src/claxedo-ui/layouts/rail-workbench-canvas.tsx:41-51) instead renders a
-  // live draft-session composer for `projects()[0]?.worktree`
-  // (rail-empty-draft-controller.ts:40's `emptyDraftDirectory` memo), and can
-  // auto-navigate away from `/` entirely (`shouldOpenEmptyDraftSession`) — there is no
-  // reachable "recent projects" list anywhere in the current UI to assert against. The
-  // real "+New project" flow (src/claxedo-ui/claxedo-layout-actions/
-  // project-actions.tsx:96-150 `handleNewProject`) always opens `DialogSelectDirectory`,
-  // never the sandbox/cloud branch this test originally pinned — that flow's directory-
-  // dialog coverage lives in `core-workspace-lifecycle` per this spec's OUT OF SCOPE.
+  // home.tsx's `language.t("home.recentProjects")` heading/list (home.tsx:97) and its
+  // sandbox-gated `chooseProject()` dialog branch (DialogCreateCloudProject when
+  // config.sandboxEnabled) are dead code — mounted, but never reachable by a real user.
+  // With ≥1 project registered, the REAL surface at `/` (RailWorkbenchCanvas's
+  // `renderEmpty` fallback, src/app/workbench/rail/rail-workbench-canvas.tsx:56-60)
+  // instead renders a live draft-session composer for `projects()[0]?.worktree`
+  // (src/app/workbench/rail/rail-empty-draft-controller.ts:40's `emptyDraftDirectory`
+  // memo), and can auto-navigate away from `/` entirely (`shouldOpenEmptyDraftSession`)
+  // — there is no VISIBLE "recent projects" list anywhere in the current UI to assert
+  // against. The real "+New project" flow (`handleNewProject`) always opens
+  // `DialogSelectDirectory`, never the sandbox/cloud branch this test originally pinned
+  // — that flow's directory-dialog coverage lives in `core-workspace-lifecycle` per this
+  // spec's OUT OF SCOPE.
   test.fixme(
     "Home lists recent projects and Open project opens the platform dialog — behavior 3",
     async ({ page }) => {
@@ -572,20 +627,28 @@ test.describe("core boot, deep links, and home @core", () => {
     const primaryUrl = await createSessionViaFirstSend(page, "core boot workspace deep link turn")
     expect(primaryUrl).toContain(workspaceSessionUrl(DIR, SESSION_ID))
 
-    // FINDING (verified by reading source, worked around here — not a test bug):
-    // `useRailEmptyDraftController` (src/claxedo-ui/layouts/rail-empty-draft-
-    // controller.ts) auto-opens a second, empty draft-session pane for the project
-    // right after the real session pane materializes (whenever no surface is
-    // focused/visible), so `beforeCount` below is reliably >= 2 already — that extra
-    // auto-opened draft IS the "stale tab" behavior 6 discards. A deliberate "New
-    // Session" button click was tried instead but is a no-op here: `handleNewSession`
-    // (claxedo-layout-actions/session-actions.tsx:187) calls
-    // `state.layout.openSession(directory, "new", ...)` with the exact same
-    // (directory, "new") signature as the already-open auto-draft, which the
-    // workbench dedupes against instead of creating a third pane.
-    const beforeDraft = await readPersistedLayout(page)
-    const beforeCount = beforeDraft?.workbench?.contentIds?.length ?? 0
-    expect(beforeCount).toBeGreaterThanOrEqual(1)
+    // Behavior 6 needs a stale tab to actually exist before the fresh nav, so open one
+    // DELIBERATELY. The precondition is pinned STRICTLY `> 1`: with the previous
+    // `toBeGreaterThanOrEqual(1)` the post-nav `toBe(1)` assertion below was satisfiable
+    // by a 1 -> 1 no-op, i.e. the test passed without anything ever being discarded.
+    //
+    // CORRECTED FINDING (2026-07-25 — the previous comment here was stale and its
+    // premise is now measurably false): `useRailEmptyDraftController`
+    // (src/app/workbench/rail/rail-empty-draft-controller.ts:53-60) does NOT auto-open a
+    // second draft pane in this scenario. `shouldOpenEmptyDraftSession` requires BOTH
+    // `visibleRenderableSurfaceIds().length === 0` AND `!focusedSurface()`, and the real
+    // session pane materialized by the first send is visible AND focused — so the
+    // auto-draft never fires and `contentIds` stays at exactly 1. (Pinning `> 1` without
+    // this click was tried first and timed out at a steady `Received: 1`, which is what
+    // exposed the stale claim.) With no auto-draft to dedupe against, the "New Session"
+    // click that the old comment described as a no-op now genuinely opens a second pane:
+    // `handleNewSession` (src/features/session/actions/session-actions.tsx:194) calls
+    // `state.layout.openSession(directory, "new", ...)`, and there is no existing
+    // (directory, "new") surface for the workbench to collapse it into.
+    await page.getByRole("button", { name: "New Session", exact: true }).first().click()
+    await expect
+      .poll(async () => (await readPersistedLayout(page))?.workbench?.contentIds?.length ?? 0, { timeout: 15_000 })
+      .toBeGreaterThan(1)
 
     // Behavior 6: a FRESH navigation (full page load) back to the session's own deep
     // link discards the extra draft tab — only the URL's own content survives.
@@ -751,12 +814,22 @@ test.describe("core boot, deep links, and home @core", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByText(/Could not reach/)).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText("Recent projects")).toHaveCount(0)
+    // The "content never revealed" half of behavior 9 is pinned on the SHELL ROOT, not
+    // on any page-level text. `[data-claxedo]` (app-shell-layout.tsx:301) mounts inside
+    // `ConnectionGate`'s `<Show when={startup()}>` children branch, whose `fallback` is
+    // ConnectionError itself — so its absence is a direct, falsifiable statement that the
+    // gate is still holding, and it flips the instant the gate leaks. (This assertion
+    // previously used `getByText("Recent projects")`, which is a poor oracle here: that
+    // string only ever renders inside `pages/home.tsx`, which `RailWorkbenchShell` keeps
+    // in a permanently `hidden` subtree — see the ANATOMY finding — and only once its
+    // lazy chunk plus the projects query have both landed. It could read 0 for reasons
+    // that have nothing to do with the gate.)
+    await expect(page.locator("[data-claxedo]")).toHaveCount(0)
 
     // Stays broken — no spurious recovery while health keeps failing.
     await page.waitForTimeout(1_500)
     await expect(page.getByText(/Could not reach/)).toBeVisible()
-    await expect(page.getByText("Recent projects")).toHaveCount(0)
+    await expect(page.locator("[data-claxedo]")).toHaveCount(0)
   })
 
   test("unreachable server auto-recovers once health returns, no retry button — behavior 10", async ({ page }) => {

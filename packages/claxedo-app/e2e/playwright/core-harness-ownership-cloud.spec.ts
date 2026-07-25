@@ -9,10 +9,12 @@
  * `core-cloud-provisioning.spec.ts`) — AND documents the parts of that contract that are
  * genuinely DIFFERENT for a relay-backed workspace: draft-time harness switching never
  * touches the local readiness-check endpoint, the model-options endpoint is a relay-only
- * route, and a draft pane that carries a non-OpenCode harness selection across a
- * navigation into a workspace-runtime directory has that selection forcibly reset — so a
- * cloud/user-hosted session can never silently inherit a harness/model chosen for a
- * different (local or other-workspace) scope.
+ * route, and a draft pane navigated from a local directory (with a non-OpenCode harness
+ * picked) into a workspace-runtime directory shows the WORKSPACE's own default rather than
+ * the local selection — because the draft default is stored per-directory, not because
+ * anything is force-reset (that reset hook is gone; see STATE MODEL). So a cloud/user-hosted
+ * session can never silently inherit a harness/model chosen for a different (local or
+ * other-workspace) scope, and the local scope's own choice is not destroyed either.
  *
  * STATE MODEL — same client-local `harnessStore` as spec 3
  * (`src/claxedo-ui/context/harness-store.ts`, scope = `panePreferenceScope`), but the
@@ -48,25 +50,28 @@
  *     `/workspaces/:workspaceId/session...` — never the loopback `/session/...` paths
  *     directly (verified per-request below via the mock's path routing, not by trusting
  *     client code).
- *   - Cross-workspace leak guard: `shouldResetWorkspaceDraftHarness`
- *     (`store-policy.ts:80-92`) fires inside `createHarnessHydrator`'s `hydrate()`
- *     (`src/claxedo-ui/context/harness-hydrator.ts:89-100`) whenever the scope is still a
- *     draft, the CURRENT `directory` resolves a workspace-runtime ref (cloud/user-hosted),
- *     there is no session yet, and the scope's already-selected harness (from whatever it
- *     was set to before this hydrate call) is not `"opencode"` — it force-resets the
- *     scope's harness to `"opencode"`. The scope key is `panePreferenceScope` — when a
- *     stable `draftId` (the pane's `surfaceId`) is supplied, the scope is `draft:${draftId}`
- *     and does NOT change with `directory`
- *     (`src/pane/store/pane-preferences.ts:39-43`), so a SAME-PANE, same-tab, client-side
- *     navigation (Solid Router's `navigate()`, e.g. via the empty-draft header's project
- *     `<Select>`, `openProject` in `src/components/session/session-new-design-view.tsx`)
- *     from a local directory (harness already picked) into a workspace-runtime directory
- *     is exactly the carryover this guard exists to prevent — it is the mechanism behind
- *     "no local/OpenCode state leaks into cloud sessions" / "switching local↔cloud leaks
- *     nothing". `harness-preferences.ts`'s `save()` is a documented no-op ("new choices
- *     are persisted by session config", not per-scope localStorage) — so this in-memory
- *     reset is the ONLY guard against carryover; there is no separate persisted-storage
- *     isolation to fall back on.
+ *   - Cross-workspace isolation is PER-DIRECTORY PERSISTENCE, not a reset hook. The old
+ *     `shouldResetWorkspaceDraftHarness` guard was deleted (owner decision 27) and does
+ *     not exist in `src/` any more — do not re-cite it. What isolates the two drafts now
+ *     is the draft-default record's STORAGE SCOPE: `createDraftDefaultPreferences`
+ *     (`src/features/session/harness/draft-defaults.ts`) keys every record by
+ *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, i.e.
+ *     `opencode.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v1`
+ *     (`src/platform/persistence/persist.ts:223-233,382-384`) — a DIFFERENT localStorage
+ *     key per (server, workspaceKey) pair. `rememberDraftHarness`
+ *     (`src/features/session/harness/harness-store.ts:171-199`) writes that record when the
+ *     user picks a draft harness; `beginDraftDefault` (`harness-store.ts:189-224`) re-reads
+ *     it and re-seeds the scope's harness whenever the scope's `workspaceKey` changes.
+ *     The scope key is `panePreferenceScope` — when a stable `draftId` (the pane's
+ *     `surfaceId`) is supplied the scope is `draft:${draftId}` and does NOT change with
+ *     `directory`, so a SAME-PANE, same-tab, client-side navigation (Solid Router's
+ *     `navigate()`, via the empty-draft header's project chip, `openProject` in
+ *     `src/features/session/ui/components/session-new-design-view.tsx:199-208`) from a
+ *     local directory into a workspace-runtime directory keeps the scope but swaps the
+ *     workspaceKey — so the cloud draft re-seeds from the CLOUD directory's own (absent)
+ *     record and lands on `"opencode"`, while the local directory's `"claude-acp"` record
+ *     is untouched and restores on the way back. That round trip is what behavior 5
+ *     asserts, key-for-key.
  *
  * ANATOMY — same selectors as spec 3 (`[data-action="prompt-model"]`,
  *   `[data-action="prompt-harness-model"]`, the harness `<Select>` trigger/options, submit
@@ -76,13 +81,16 @@
  *     session lands here, never on the bare `/session/...`/`/api/claxedo/...` paths.
  *   - `/workspaces/<workspaceId>/api/wr/harness-config-options?harness=<type>` — the
  *     relay's per-harness model-options endpoint (query-param scoped, see STATE MODEL).
- *   - the empty-draft header's project `<Select>` (only rendered pre-send,
- *     `session-new-design-view.tsx`, `!runtimeMode()`) — a `role="button"` trigger showing
- *     the current project's label and `role="option"` entries for every top-level project
- *     in the signed inventory (including a cloud workspace registered as its OWN
- *     top-level project row); selecting a different entry calls `navigate()` (client-side,
- *     no page reload) — the vehicle this spec uses to reproduce the same-pane
- *     local→cloud navigation the leak guard defends against.
+ *   - the empty-draft header's project picker (only rendered pre-send,
+ *     `session-new-design-view.tsx`, `!runtimeMode()`) — the vehicle this spec uses to
+ *     reproduce the same-pane local↔cloud navigation, since selecting an entry calls
+ *     `navigate()` (client-side, no page reload). It is MID-MIGRATION between an
+ *     `@opencode-ai/ui` `Select` (trigger's accessible name IS the project label, entries
+ *     are real `role="option"`s) and `SessionContextRow`'s chip popover (trigger carries a
+ *     STATIC `aria-label="Project"`, rows are `List` buttons with NO ARIA listbox roles),
+ *     so `getByRole("button", {name: <projectName>})` / `getByRole("option", ...)` is NOT
+ *     a safe address for it. `openProjectFromChip` below drives whichever shape is mounted
+ *     and asserts the project label on the row either way — see its comment.
  *
  * BEHAVIORS —
  *   1. For each configurable harness (`claude-acp`, `claude-sdk`, `codex-acp`,
@@ -106,20 +114,23 @@
  *      local `/api/claxedo/agent-config/harness` status endpoint — readiness resolves
  *      "ready" unconditionally pre-send (see HARNESS NOTES for the consequence).
  *   5. Picking a non-OpenCode harness while the draft pane's directory is a plain local
- *      project, then client-side-navigating (via the project `<Select>`, no page reload)
- *      that SAME pane to a cloud workspace's directory, resets the draft harness back to
- *      OpenCode BEFORE any cloud request is made: exactly one model control
+ *      project, then client-side-navigating (via the project chip picker, no page reload)
+ *      that SAME pane to a cloud workspace's directory, leaves the cloud draft on its OWN
+ *      OpenCode default BEFORE any cloud request is made: exactly one model control
  *      (`[data-action="prompt-model"]`) is present immediately after the navigation
  *      settles, and the prompt subsequently sent through the cloud workspace carries
  *      `providerID: "opencode"` — the local harness/model selection never reaches the
- *      relay lane.
+ *      relay lane. The local choice is not discarded either: it stays in ITS OWN
+ *      directory-scoped draft-default localStorage key (a different key from any the
+ *      cloud directory writes), and navigating the same pane BACK restores Claude plus
+ *      its harness model control.
  *
  * INVARIANTS — harness ownership (#1 in e2e/INVARIANTS.md): the selected harness owns
  *   model/effort/payload at every stage, exactly one model control exists at a time, a
- *   harness is locked once the session is created. No silent fallback (#3): the ONE
- *   fallback-to-OpenCode this spec exercises (behavior 5) is the INTENDED cross-workspace
- *   leak guard, not a failure-path fallback — it fires deterministically on navigation,
- *   before any request, never mid-turn. Submit gating (#4): every wait below is a
+ *   harness is locked once the session is created. No silent fallback (#3): the OpenCode
+ *   selection behavior 5 observes on the cloud draft is NOT a fallback at all — it is the
+ *   cloud directory's OWN unset draft-default resolving to the default harness, proven by
+ *   the local directory's record surviving the trip untouched. Submit gating (#4): every wait below is a
  *   deterministic DOM/request-count assertion, never a bare `waitForTimeout`.
  *
  * HARNESS NOTES — cloud/user-hosted drafts skip the local readiness POST/polling
@@ -212,6 +223,64 @@ function sessionUrlPattern(sessionId: string) {
 async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: number, fromLabel: RegExp = /^OpenCode$/) {
   await page.getByRole("button", { name: fromLabel }).last().click()
   await page.getByRole("option", { name: optionName }).nth(optionIndex).click()
+}
+
+// The empty-draft header's project picker, which is mid-migration between two shapes:
+//
+//   CHIP  — `SessionContextRow` (`src/features/session/ui/components/session-context-row.tsx`)
+//           renders a Kobalte `Popover` whose trigger carries `data-slot="context-chip-project"`
+//           and a STATIC `aria-label="Project"`; the project's own name is only inner text
+//           (`[data-slot="context-chip-label"]`) and collapses to an avatar monogram in a
+//           narrow pane. Its rows are `@opencode-ai/ui`'s `List` buttons —
+//           `[data-slot="list-item"][data-key="<directory>"]` — with NO ARIA listbox roles
+//           (`packages/ui/src/components/list.tsx:338-341`).
+//   SELECT — the shape it replaces: `@opencode-ai/ui`'s `Select` with
+//           `triggerClass="claxedo-new-session-project-picker"`, whose trigger's accessible
+//           name IS the current project label and whose entries are real `role="option"`s.
+//
+// Both are addressed structurally, and BOTH branches assert the human-readable project name
+// rather than using it as the selector — so the label stays a checked fact. The count poll
+// below requires EXACTLY ONE shape to be on screen: zero (a renamed hook) must fail loudly
+// instead of silently falling through to the other branch. Delete the SELECT branch once
+// `session-context-row.tsx` is committed and the `Select` header is gone for good.
+async function openProjectFromChip(page: Page, directory: string, projectName: string) {
+  const chip = page.locator('[data-slot="context-chip-project"]').filter({ visible: true })
+  const select = page.locator(".claxedo-new-session-project-picker").filter({ visible: true })
+  await expect
+    .poll(async () => (await chip.count()) + (await select.count()), { timeout: 20_000 })
+    .toBe(1)
+
+  if ((await chip.count()) === 1) {
+    await chip.click()
+    const row = page.locator(`[data-slot="list-item"][data-key="${directory}"]`).filter({ visible: true })
+    await expect(row).toHaveCount(1, { timeout: 20_000 })
+    await expect(row).toContainText(projectName)
+    await row.click()
+    return
+  }
+
+  await select.click()
+  const option = page.getByRole("option", { name: projectName })
+  await expect(option).toHaveCount(1, { timeout: 20_000 })
+  await option.click()
+}
+
+// Every draft-default record currently in localStorage, key -> raw JSON. The key is
+// `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, so a
+// DISTINCT key per (server, workspace directory) pair — which is exactly the per-directory
+// scoping behavior 5 has to prove, hence key-level (not `some()`-over-all-values) checks.
+function readDraftDefaults(page: Page) {
+  return page.evaluate(() =>
+    Object.fromEntries(
+      Object.entries(localStorage)
+        .filter(([key]) => key.includes("draft-default"))
+        .map(([key, value]) => [key, String(value)] as const),
+    ),
+  )
+}
+
+function visibleHarnessTrigger(page: Page, name: RegExp) {
+  return page.getByRole("button", { name }).filter({ visible: true })
 }
 
 // `:visible` (not a bare count): a same-pane cross-workspace navigation (behavior
@@ -424,32 +493,74 @@ test.describe("core harness ownership (cloud) @core", () => {
     await switchDraftHarness(page, /^Claude$/, 0)
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
+    // Snapshot the draft-default records while the LOCAL directory is the only one ever
+    // visited: every key present now is, by construction, the local directory's own. That
+    // is what makes the post-navigation checks below key-scoped rather than a blind
+    // "somewhere in localStorage" match — the storage key embeds a hash of the workspace
+    // directory, so it cannot be reconstructed in the test, but it CAN be pinned by
+    // observing it before the second directory exists.
+    await expect
+      .poll(async () => Object.values(await readDraftDefaults(page)).filter((value) => value.includes('"harness":"claude-acp"')).length, {
+        timeout: 20_000,
+      })
+      .toBe(1)
+    const localDraftDefaults = await readDraftDefaults(page)
+    const localKeys = Object.keys(localDraftDefaults)
+    expect(localKeys).toHaveLength(1)
+    const localDraftDefaultKey = localKeys[0]!
+
     // Client-side navigate the SAME pane to the cloud workspace's own top-level project
     // entry via the empty-draft header's project picker (no page reload).
-    const projectPicker = page.getByRole("button", { name: PROJECT_NAME }).last()
-    await expect(projectPicker).toBeVisible({ timeout: 20_000 })
-    await projectPicker.click()
-    await page.getByRole("option", { name: WORKSPACE_PROJECT_NAME }).click()
+    await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
 
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     // The cloud workspace draft shows its OWN OpenCode default — exactly one plain model
     // control, no relay options ever fetched for a carried-over "claude-acp".
     await expectOnlyOpenCodeModelControl(page)
+    await expect(visibleHarnessTrigger(page, /^OpenCode$/)).toHaveCount(1, { timeout: 20_000 })
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-acp")).toBe(false)
-    // ...and the user's local Claude choice is NOT lost — it stays persisted per-directory,
-    // ready to restore when navigating back. This is the "keep the user's choice" contract.
-    await expect
-      .poll(() =>
-        page.evaluate(() =>
-          Object.entries(localStorage).some(
-            ([key, value]) => key.includes("draft-default") && String(value).includes('"harness":"claude-acp"'),
-          ),
-        ),
-      )
-      .toBe(true)
 
-    const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    await expect(cloudInput).toBeVisible({ timeout: 20_000 })
+    // ...and the user's local Claude choice is NOT lost — it stays under the LOCAL
+    // directory's own storage key, byte-identical to what was written before the
+    // navigation, while NO other draft-default key (i.e. nothing the cloud directory
+    // writes) ever carries "claude-acp". That pair of checks is the per-directory scoping
+    // claim: a change to the key SHAPE that merged both directories into one record would
+    // fail the second half instead of silently passing a substring search.
+    const afterNavigation = await readDraftDefaults(page)
+    expect(afterNavigation[localDraftDefaultKey]).toBe(localDraftDefaults[localDraftDefaultKey])
+    expect(afterNavigation[localDraftDefaultKey]).toContain('"harness":"claude-acp"')
+    expect(
+      Object.entries(afterNavigation)
+        .filter(([key]) => key !== localDraftDefaultKey)
+        .filter(([, value]) => value.includes('"harness":"claude-acp"')),
+    ).toEqual([])
+
+    // "Preserved per-directory" means RESTORED, not merely retained — so navigate the same
+    // pane back to the local project and prove the local draft comes back on Claude with
+    // its harness-owned model control, then return to the cloud draft (which must still be
+    // on its own OpenCode default) before sending.
+    await openProjectFromChip(page, DIR, PROJECT_NAME)
+    // `openProject` routes through `workspaceSessionRoute(directory)`
+    // (`src/platform/identity/route.ts:58-61`), so picking a PLAIN LOCAL project from the
+    // chip lands on `/w/<encodeURIComponent(directory)>/session` — the same route shape the
+    // cloud workspace uses, keyed by the directory instead of a workspace id. It is NOT the
+    // base64 `/${slug(DIR)}/session` route this test `goto`s at the top; the two are
+    // equivalent entry points to the same local directory, and the harness assertions below
+    // are what prove this one really resolved the local (non-cloud) scope.
+    await expect(page).toHaveURL(new RegExp(`/w/${encodeURIComponent(DIR)}/session$`), { timeout: 20_000 })
+    await expect(visibleHarnessTrigger(page, /^Claude$/)).toHaveCount(1, { timeout: 20_000 })
+    await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
+
+    await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
+    await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
+    await expectOnlyOpenCodeModelControl(page)
+    await expect(visibleHarnessTrigger(page, /^OpenCode$/)).toHaveCount(1, { timeout: 20_000 })
+
+    // `filter({visible: true})`, not `.last()`: the round trip above leaves the prior
+    // directories' composers mounted-but-hidden, and DOM order does not guarantee the live
+    // one is last.
+    const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).filter({ visible: true })
+    await expect(cloudInput).toHaveCount(1, { timeout: 20_000 })
     // `expectOnlyOpenCodeModelControl` above only proves a plain (non-harness) model
     // control is showing, not that it has RESOLVED a real model yet — the cloud workspace's
     // own provider/model catalog is a fresh relay request fired on this first-ever visit.
@@ -458,7 +569,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await cloudInput.click()
     await cloudInput.fill(text)
     await expect(cloudInput).toContainText(text, { timeout: 10_000 })
-    await page.locator(SELECTORS.submitControl).last().click()
+    await page.locator(`${SELECTORS.submitControl}:visible`).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
     // The cloud workspace draft dispatches its own OpenCode default, never the local pane's

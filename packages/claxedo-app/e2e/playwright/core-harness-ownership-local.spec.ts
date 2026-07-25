@@ -56,18 +56,38 @@
  *     the harness `<Select>` (`harnessDisabled` in
  *     `agent-harness-selector.tsx:180`); nothing in this codebase migrates an existing
  *     session's backing harness.
- *   - Readiness — `harnessStatusPatch` (`src/session-client/harness/store-state.ts:70-85`)
- *     computes `readiness: failedHarness(data) ? "error" : "ready"` — it is a strict
- *     binary. `failedHarness` is true whenever `status==="error"`, an `error` message is
- *     present, OR `ready===false` — so a backend `status:"applying"` (still starting up)
- *     collapses onto the SAME `"error"` readiness as a hard auth failure. The type
- *     `HarnessReadiness` (`src/session-client/harness/selection.ts:11`) also declares a
- *     `"polling"` member, and `AgentHarnessSelector`'s `isPolling()`
- *     (`agent-harness-selector.tsx:125`) and the composer's `harnessPending()`
- *     (`src/session-client/composer/composer.tsx:202-206`) both gate on
- *     `readiness === "polling"` — but nothing in the local harness store, switcher,
- *     hydrator, or status-actions module ever assigns that value (grepped; zero hits
- *     outside the type declaration). See BEHAVIORS #6 / INVARIANTS for the consequence.
+ *   - Readiness — `harnessStatusPatch`
+ *     (`src/features/session/harness/store-state.ts:103-148`) is NOT a binary. It
+ *     resolves the 4-member `HarnessReadiness` union
+ *     (`src/features/session/harness/selection.ts:10`) in this precedence order
+ *     (`store-state.ts:130-136`):
+ *       (a) `hardFailedHarness(data)` — `status === "error"` or an `error` message —
+ *           => `"error"`;
+ *       (b) else a NON-`opencode` harness reporting `ready === false` =>
+ *           `"polling"` for a startup/in-flight hydration probe, but `"error"` when the
+ *           frame is a *settled* completed switch response (`settled: true` is passed
+ *           only from `harness-switcher.ts:206`, the posted-switch path);
+ *       (c) else a non-`opencode` harness whose `harnessHealth.status` is
+ *           `degraded`/`unavailable` => `"degraded"`;
+ *       (d) else `"ready"`.
+ *     `opencode` — the always-available local default — is never `"polling"` and never
+ *     `"degraded"`. So a backend `status:"applying"` (still starting up) is DISTINCT
+ *     from a hard auth failure: it renders the pulsing "Connecting" pill, not the red
+ *     "Unavailable" dot. `AgentHarnessSelector`'s `isPolling()`
+ *     (`src/features/session/ui/controls/agent-harness-selector.tsx:214`), the
+ *     composer's `harnessPending()` (`src/features/session/composer/composer.tsx:169-171`,
+ *     which feeds `toolbar-controls.tsx`'s `addDisabled`), and `submitBlockReason`'s
+ *     `harness-polling` block (`src/features/session/composer/submit-block-reason.ts:94`)
+ *     all gate on `readiness === "polling"`. BEHAVIORS #6's test covers the pill
+ *     (`isPolling`) and the submit block (`harness-polling`); the `+`-button disable that
+ *     `harnessPending()` drives via `toolbar-controls.tsx`'s `addDisabled` is reachable
+ *     but NOT asserted below — a genuine coverage gap, not a dead code path.
+ *     `"polling"` is NOT a dead end: `watchHarnessReprobe`
+ *     (`src/features/session/harness/harness-reprobe.ts`, wired at
+ *     `agent-harness-selector.tsx:222`) drives a BOUNDED re-probe loop while readiness is
+ *     `"polling"` — it clears the hydrator's per-scope "seen" stamp and re-hydrates on an
+ *     interval until the harness settles, or gives up after a hard cap and transitions to
+ *     "Unavailable" (never infinite, never silent). See BEHAVIORS #6 / #6b.
  *   - Pi reads provider/model choices from its Pi-scoped provider catalog. Switching
  *     to Pi never fetches `/harness/options`; submission waits for an exact connected
  *     provider/model pair selected by the user or the unambiguous default policy.
@@ -99,15 +119,20 @@
  *     readiness indicator, shown when `isError()` (`readiness === "error"`)
  *     (`agent-harness-selector.tsx:273-281`).
  *   `[title="Connecting to agent runtime..."]` — the pulsing-dot "Connecting" pill,
- *     shown when `isPolling()` (`readiness === "polling"`) — see BEHAVIORS #6, currently
- *     unreachable.
+ *     shown when `isPolling()` (`readiness === "polling"`) — reachable and covered by
+ *     BEHAVIORS #6 / #6b.
  *   `[aria-label="<configError message>"]` — the model-issue warning/error tooltip
  *     glyph next to the harness model control (`agent-harness-selector.tsx:311-330`).
- *   `[data-action="prompt-attach"]` — the attachment button; `disabled` while
- *     `harnessPending()` (`src/components/prompt-input/toolbar-controls.tsx:67`).
- *   `[role="textbox"]` composer editor — `contenteditable="false"` and
- *     `aria-disabled="true"` while `harnessPending()`
- *     (`src/components/prompt-input/frame.tsx:196-197`).
+ *   `[data-action="prompt-add"]` — the `+` trigger that opens the flat action menu;
+ *     `disabled` while `harnessPending()` (`toolbar-controls.tsx#addDisabled`). The
+ *     attachment entry itself is `[data-action="prompt-attach"]` INSIDE that menu.
+ *   `[role="textbox"]` composer editor — UNCONDITIONALLY `contenteditable="true"`, and
+ *     never carries `aria-disabled`, polling or not
+ *     (`src/features/session/composer/ui/frame.tsx:245` — the only `contenteditable`
+ *     write in the file, a literal). Per T5 §4 (`dev-docs/CLAXEDO_ERROR_PROPOSAL.md`)
+ *     the composer gates the SUBMIT, not the typing: a dead-looking box teaches nothing.
+ *     The editor is therefore NOT a signal for `harnessPending()` — the harness `<Select>`
+ *     trigger and `[data-action="prompt-submit"]` are (see BEHAVIORS #6).
  *   `[data-action="prompt-submit"]` — submit/stop control; `data-icon="stop"` only
  *     while `stoppable()` (`working() && canAbort()`); `disabled` per
  *     `submitDisabled` above.
@@ -143,11 +168,25 @@
  *      requires `current.harness !== "opencode"`, which correctly limits protection
  *      to a genuinely confirmed non-opencode harness since "opencode" is the only
  *      value a fresh, never-confirmed scope can seed.
- *   6. [Currently unreachable — see STATE MODEL] readiness never resolves to
- *      `"polling"` for a local harness, so the "Connecting" pill, the composer's
- *      contenteditable lock, and the attach-button disable that are gated on it never
- *      fire; an in-progress ("applying") backend status is indistinguishable from a
- *      hard failure and renders the SAME "Unavailable" indicator instead.
+ *   6. A non-`opencode` harness whose backend reports `ready:false` WITHOUT a hard
+ *      failure (`status:"applying"`, i.e. still starting up) resolves readiness to
+ *      `"polling"`, NOT `"error"` — so the pulsing `[title="Connecting to agent
+ *      runtime..."]` pill renders and the red `[title="Agent runtime unreachable after
+ *      timeout"]` dot does not. While polling, the harness `<Select>` trigger and the
+ *      submit control are both `disabled` (`harness-polling` is deliberately NOT in
+ *      `submit-block-reason.ts`'s `ACTIONABLE` set, unlike behavior 5's `harness-error`),
+ *      zero session/prompt requests are sent, and the plain-OpenCode model control never
+ *      reappears. The composer editor stays live and typeable throughout (see ANATOMY) —
+ *      it is the submit that is gated, not the typing.
+ *   6b. `"polling"` is a transient state, not a dead end. Hydration is one-shot (the
+ *      hydrator stamps a per-scope "seen" key and early-returns forever), so a harness
+ *      that first answered `ready:false` would once have stayed on the "Connecting" pill
+ *      FOREVER. `watchHarnessReprobe` (`src/features/session/harness/harness-reprobe.ts`,
+ *      wired at `agent-harness-selector.tsx:222`) drives a BOUNDED re-probe while
+ *      readiness is `"polling"`: it clears the seen stamp and re-hydrates on an interval
+ *      until the harness settles — at which point the Connecting pill clears and the
+ *      `<Select>`/submit unlock — or, after a hard cap, transitions to "Unavailable".
+ *      Never infinite, never silent.
  *   7. When the session's `abort` capability is `false`, a busy turn's submit control
  *      is disabled while the composer is blank (it can neither stop nor send).
  *   8. A `stale:true` model-options response that still carries a model list is applied
@@ -155,12 +194,22 @@
  *      "Loading"); the scheduled retry's eventual non-stale response does not change or
  *      clear that already-resolved selection.
  *   9. [Out of scope locally — see OUT OF SCOPE] a draft harness resets to `opencode`
- *      when the directory changes away from a workspace-runtime ref
- *      (`shouldResetWorkspaceDraftHarness`, `src/session-client/harness/
- *      store-policy.ts:80-92`) — that ref only exists for cloud/user-hosted
- *      workspaces (`sessionWorkspaceRuntimeRef`,
- *      `src/shell/workspace/session-workspace-key.ts:20-35`), which this local-only
- *      spec's mock cannot produce.
+ *      when the scope leaves a workspace-runtime-backed directory. NOTE (corrected
+ *      2026-07-25): the predicate this entry used to name,
+ *      `shouldResetWorkspaceDraftHarness`, NO LONGER EXISTS — `grep -rn
+ *      shouldResetWorkspaceDraftHarness packages/claxedo-app/src` returns zero hits, and
+ *      it is not "the ONLY guard against carryover" anywhere. The reset is now an ACTION,
+ *      not a predicate: `resetWorkspaceDraftHarness`
+ *      (`src/features/session/harness/harness-status-actions.ts:36-42`) applies
+ *      `workspaceDraftHarnessResetPatch()` (`store-state.ts:88-101` — harness/harnessMode
+ *      back to `opencode`, model cleared, readiness `"ready"`) plus a preference save,
+ *      and is handed to the hydrator as a capability
+ *      (`harness-hydrator.ts:50`, wired at `harness-config-store.ts:141`). The
+ *      workspace-runtime ref itself is read through `harnessWorkspaceRuntimeRef` /
+ *      `refreshHarnessTypeForScope` (`store-policy.ts:76-86`) over
+ *      `sessionWorkspaceRuntimeRef` (`src/platform/runtime/session-workspace.ts`), which
+ *      only resolves for cloud/user-hosted workspaces — which this local-only spec's mock
+ *      cannot produce, so the whole path stays untested HERE either way.
  *
  * INVARIANTS — harness ownership (#1 in e2e/INVARIANTS.md): the selected harness owns
  *   model/effort/payload at every stage, exactly one model control exists at a time, a
@@ -180,8 +229,9 @@
  *   which DOES click through the `<Select>` (path (a)), disambiguates by option index
  *   instead (ACP variant = 1st match, native-SDK variant = 2nd match). Pi and OpenCode
  *   share the "Direct" group but have unique labels ("Pi", "OpenCode"). See STATE MODEL
- *   for the dead "polling" readiness value shared by all harnesses uniformly (not
- *   harness-specific).
+ *   for the `"polling"`/`"degraded"` readiness values, which are computed uniformly for
+ *   every non-`opencode` harness (not harness-specific) — `opencode` alone is exempt from
+ *   both.
  *
  * OUT OF SCOPE — model/effort/variant selection mechanics and the multi-agent selector
  *   (`core-model-effort-agent-controls`); busy/thinking/escalation UI and
@@ -547,7 +597,11 @@ test.describe("core harness ownership (local) @core", () => {
   )
 
   test(
-    "Connecting pill + composer fade + attach-disabled while readiness is polling — behavior 6",
+    // Title corrected 2026-07-25: it used to promise "composer fade + attach-disabled",
+    // neither of which this test asserts (nor should — the editor is unconditionally
+    // editable now, see ANATOMY). What it actually pins is the pill + the Select/submit
+    // gate + zero requests.
+    "Connecting pill, harness Select and submit both disabled, zero requests while readiness is polling — behavior 6",
     async ({ page }) => {
       // Fixed in Wave 2 (WP-B9): `harnessStatusPatch`
       // (src/session-client/harness/store-state.ts) now maps a non-opencode
@@ -609,15 +663,19 @@ test.describe("core harness ownership (local) @core", () => {
   )
 
   test(
-    "a slow harness that starts polling settles under the bounded re-probe loop: Connecting pill clears, composer unlocks, submit enables — behavior 6b",
+    // Title corrected 2026-07-25: dropped "composer unlocks" — the composer is never
+    // locked (see ANATOMY); the pill clearing and the Select/submit unlocking are the
+    // real settle signals.
+    "a slow harness that starts polling settles under the bounded re-probe loop: Connecting pill clears, harness Select and submit unlock — behavior 6b",
     async ({ page }) => {
       // The polling readiness used to be a DEAD-END: hydration is one-shot
-      // (src/claxedo-ui/harness/harness-hydrator.ts stamps a per-scope "seen" key
+      // (src/features/session/harness/harness-hydrator.ts stamps a per-scope "seen" key
       // and early-returns forever), and nothing re-applied harness status, so a
       // harness that first answered `ready:false` (backend `status:"applying"`)
-      // stayed on the "Connecting" pill with a faded, non-editable composer
-      // FOREVER. The fix (src/claxedo-ui/harness/harness-reprobe.ts +
-      // AgentHarnessSelector's `watchHarnessReprobe` wiring) drives a bounded
+      // stayed on the "Connecting" pill FOREVER. The fix
+      // (src/features/session/harness/harness-reprobe.ts +
+      // AgentHarnessSelector's `watchHarnessReprobe` wiring, agent-harness-selector.tsx:222)
+      // drives a bounded
       // re-probe while readiness is "polling": it clears the seen stamp and
       // re-hydrates on an interval until the harness settles (or, after a hard
       // cap, transitions to "Unavailable" — never infinite, never silent).
@@ -882,12 +940,22 @@ test.describe("core harness ownership (local) @core", () => {
       await seedOneProject(page, DIR)
       await openDraftPrompt(page, DIR)
 
+      // `harnessPostCount` counts BOTH verbs on `/api/claxedo/agent-config/harness`:
+      // `mock-runtime.ts:1368` increments it BEFORE the `method() === "POST"` check, and
+      // says so at `mock-runtime.ts:166-173`. `harnessGetCount` (`mock-runtime.ts:1405`)
+      // counts ONLY the GETs, so `harnessPostCount - harnessGetCount` is the true POST
+      // count. A bare `harnessPostCount > 0` was VACUOUS here — the mount-time hydrate GET
+      // in `openDraftPrompt` had already moved it, so that assertion could not fail even
+      // if the switch POST were never issued at all.
       const getsBeforeSwitch = mock.requests.harnessGetCount
+      const postsBeforeSwitch = mock.requests.harnessPostCount - mock.requests.harnessGetCount
       await switchDraftHarness(page, /^Claude$/, 0)
       await expectOnlyHarnessModelControl(page, /Claude Sonnet/)
 
-      // The switch POST landed...
-      await expect.poll(() => mock.requests.harnessPostCount, { timeout: 15_000 }).toBeGreaterThan(0)
+      // The switch POST landed (GET-discriminated, per the note above)...
+      await expect
+        .poll(() => mock.requests.harnessPostCount - mock.requests.harnessGetCount, { timeout: 15_000 })
+        .toBeGreaterThan(postsBeforeSwitch)
       // ...and a GET followed it. Before the fix this count never moved, because the
       // empty-but-truthy decode swallowed the fallback.
       await expect
