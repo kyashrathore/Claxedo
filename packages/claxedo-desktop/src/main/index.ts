@@ -198,13 +198,28 @@ function getClaxedoServerPath(): string {
     : join(MAIN_DIR, "../../resources/claxedo-server/index.js")
 }
 
+// The claxedo-server bundle externalizes `opencode/node-embed` (see
+// scripts/bundle-claxedo-server.ts), and the bundled chunk cannot resolve the
+// bare "opencode" specifier from its resources/ location — no node_modules up
+// that tree is guaranteed to contain it. Hand the artifact location to the
+// utility process explicitly.
+function getOpenCodeEmbedPath(): string {
+  return IS_PACKAGED
+    ? join(process.resourcesPath, "opencode-engine", "node.js")
+    : join(MAIN_DIR, "../../../opencode/dist/node/node.js")
+}
+
 async function startClaxedoServer(): Promise<{ url: string }> {
   const claxedoPort = await getFreePort(Number(process.env.CLAXEDO_SERVER_PORT ?? 3001))
   const serverPath = getClaxedoServerPath()
-  logger.log("starting claxedo-server with embedded OpenCode", { serverPath, claxedoPort })
+  const openCodeEmbedPath = getOpenCodeEmbedPath()
+  logger.log("starting claxedo-server with embedded OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
+  }
+  if (!existsSync(openCodeEmbedPath)) {
+    throw new Error(`OpenCode engine artifact was not found at ${openCodeEmbedPath}. Rebuild the desktop app and try again.`)
   }
 
   const acpDir = IS_PACKAGED
@@ -254,6 +269,7 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         ),
         CLAXEDO_CHILD_PORT: String(claxedoPort),
         CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
+        CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
         CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
       },

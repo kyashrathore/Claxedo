@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
@@ -527,5 +527,41 @@ describe("DirectoryScope bootstrap gating", () => {
       expect(state.dataProviderProps?.data.part).toEqual({})
     })
     expect(state.refreshDirectory).not.toHaveBeenCalled()
+  })
+
+  test("shows a retryable error instead of spinning forever when the session cache fails to warm", async () => {
+    // A local existing session has no draft/route-session fallback: when the
+    // refresh resolves without populating the cache (the load error is toasted
+    // upstream and swallowed), the pane must not stay on "Preparing workspace".
+    const result = render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/broken"
+        harnessType={() => state.harnessType()}
+        sessionId={() => "ses_broken"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>broken pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(state.refreshDirectory).toHaveBeenCalledWith("/repo/broken", "codex-acp", { quiet: undefined })
+    })
+    await waitFor(() => {
+      expect(result.getByText("Failed to load sessions")).toBeTruthy()
+    })
+    expect(result.queryByText("Preparing workspace")).toBeNull()
+    expect(result.queryByText("broken pane content")).toBeNull()
+
+    state.refreshDirectory.mockClear()
+    fireEvent.click(result.getByRole("button", { name: "Retry" }))
+
+    await waitFor(() => {
+      expect(state.refreshDirectory).toHaveBeenCalledTimes(1)
+    })
+    // Still failing — the error state returns rather than an endless spinner.
+    await waitFor(() => {
+      expect(result.getByText("Failed to load sessions")).toBeTruthy()
+    })
   })
 })

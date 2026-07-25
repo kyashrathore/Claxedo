@@ -32,6 +32,7 @@ import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "./p
 import { configureOpencodeMcpSync } from "./opencode-mcp-sync"
 import {
   configureOpenCodeApplicationTools,
+  configureOpenCodeEmbedPath,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -639,6 +640,7 @@ export type ControlPlaneStackOptions = {
   port?: number
   opencodeUrl?: string
   opencodePassword?: string | null
+  opencodeEmbedPath?: string
   processObserver?: ProcessObserver
 }
 
@@ -848,6 +850,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     left.workspaceId === right.workspaceId &&
     left.leaseEpoch === right.leaseEpoch
   configureOpenCodeAuth(options.opencodePassword)
+  configureOpenCodeEmbedPath(options.opencodeEmbedPath)
   if (options.opencodeUrl) {
     configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
   } else {
@@ -1393,7 +1396,7 @@ export function startServer(
   port = 3001,
   opencodeUrl?: string,
   opencodePassword?: string | null,
-  options: { processObserver?: ProcessObserver } = {},
+  options: { processObserver?: ProcessObserver; opencodeEmbedPath?: string } = {},
 ) {
   // `undefined` opencodeUrl => embedded engine (the default local composition).
   // An explicit URL is the external-URL opt-in.
@@ -1402,6 +1405,7 @@ export function startServer(
     port,
     ...(opencodeUrl ? { opencodeUrl } : {}),
     opencodePassword,
+    ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   })
 }

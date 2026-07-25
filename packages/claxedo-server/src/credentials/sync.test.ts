@@ -396,6 +396,63 @@ describe("syncLocalCredentials", () => {
     expect(secret?.tokens?.id_token).toBe("fresh-id")
   })
 
+  // Both files can hold the SAME account with different tokens — the CLI
+  // refreshes whichever copy it is using. Importing the accounts-dir copy
+  // wholesale meant picking a months-old token that the provider had already
+  // revoked, while a token refreshed yesterday sat in auth.json.
+  test("prefers the freshest copy of an account across auth.json and the accounts dir", async () => {
+    const codexDir = path.join(process.env.HOME!, ".codex")
+    const accountsDir = path.join(codexDir, "accounts")
+    mkdirSync(accountsDir, { recursive: true })
+    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: "renewed-access",
+        refresh_token: "renewed-refresh",
+        account_id: "shared-account",
+      },
+      last_refresh: "2026-07-24T00:00:00.000Z",
+    }))
+    await fs.writeFile(path.join(accountsDir, "shared@example.com.auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: "stale-access",
+        refresh_token: "stale-refresh",
+        account_id: "shared-account",
+      },
+      last_refresh: "2026-06-02T00:00:00.000Z",
+    }))
+
+    const discovered = (await collectLocalCredentialItems())
+      .filter((item) => item.provider_id === "codex-acp")
+
+    expect(discovered).toHaveLength(1)
+    expect(discovered[0]!.account_id).toBe("shared-account")
+    expect(discovered[0]!.origin).toBe("~/.codex/auth.json")
+    expect(JSON.parse(discovered[0]!.secret).access).toBe("renewed-access")
+  })
+
+  test("still lists a top-level account that has no accounts-dir copy", async () => {
+    const codexDir = path.join(process.env.HOME!, ".codex")
+    const accountsDir = path.join(codexDir, "accounts")
+    mkdirSync(accountsDir, { recursive: true })
+    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "solo-access", refresh_token: "solo-refresh", account_id: "solo-account" },
+      last_refresh: "2026-04-01T00:00:00.000Z",
+    }))
+    await fs.writeFile(path.join(accountsDir, "other@example.com.auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "other-access", refresh_token: "other-refresh", account_id: "other-account" },
+      last_refresh: "2026-04-22T00:00:00.000Z",
+    }))
+
+    const discovered = (await collectLocalCredentialItems())
+      .filter((item) => item.provider_id === "codex-acp")
+
+    expect(discovered.map((item) => item.account_id).sort()).toEqual(["other-account", "solo-account"])
+  })
+
   test("discovers every local Codex account without exposing account names in origins", async () => {
     const accountsDir = path.join(process.env.HOME!, ".codex", "accounts")
     mkdirSync(accountsDir, { recursive: true })

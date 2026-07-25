@@ -18,6 +18,7 @@ process.parentPort?.on("message", (event) => {
 })
 
 startServer(startup.port, startup.opencodeUrl, startup.opencodePassword, {
+  ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })
 

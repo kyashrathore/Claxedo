@@ -21,6 +21,7 @@
 
 import path from "path"
 import fs from "fs"
+import { pathToFileURL } from "url"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   createEmbeddedHost,
@@ -103,13 +104,29 @@ export function configureOpenCodeCompat(url: string) {
 
 // --- Embedded engine (lazy, memoized) ------------------------------------
 
+// Absolute artifact path configured by a composition root (desktop main). The
+// bundled claxedo-server cannot rely on bare-specifier resolution — the bundle
+// lives outside any node_modules tree that contains "opencode" — so the
+// composition root hands us the artifact location explicitly. Undefined keeps
+// the historical bare import (claxedo-server dev/tests, external embedders).
+let embedPath: string | undefined
+
+export function configureOpenCodeEmbedPath(next: string | undefined) {
+  embedPath = next?.trim() || undefined
+}
+
+function defaultLoader(): Promise<EmbeddedModule> {
+  if (embedPath) return import(pathToFileURL(embedPath).href)
+  return import("opencode/node-embed")
+}
+
 // Injectable import seam so tests can exercise the structured-failure path
 // without shipping a broken artifact. Production loads the real node artifact.
-let loader: () => Promise<EmbeddedModule> = () => import("opencode/node-embed")
+let loader: () => Promise<EmbeddedModule> = defaultLoader
 
 /** TEST-ONLY: replace the engine module loader (structured-failure coverage). */
 export function __setOpenCodeEmbedLoaderForTests(next: (() => Promise<EmbeddedModule>) | undefined) {
-  loader = next ?? (() => import("opencode/node-embed"))
+  loader = next ?? defaultLoader
   embeddedHostPromise = undefined
   loadedHost = undefined
 }

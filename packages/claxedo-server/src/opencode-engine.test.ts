@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import fs from "fs"
+import os from "os"
+import path from "path"
 import {
   __setOpenCodeEmbedLoaderForTests,
   configureOpenCodeApplicationTools,
+  configureOpenCodeEmbedPath,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -15,6 +19,7 @@ const originalFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  configureOpenCodeEmbedPath(undefined)
   __setOpenCodeEmbedLoaderForTests(undefined)
   configureOpenCodeApplicationTools(undefined)
   configureOpenCodeEngine({ embedded: true })
@@ -164,5 +169,26 @@ describe("opencode-engine embedded mode", () => {
       throw new Error("should not be called")
     })
     await expect(drainOpenCodeEngine()).resolves.toBeUndefined()
+  })
+
+  test("loads the embedded engine from a configured artifact path instead of bare-specifier resolution", async () => {
+    // The desktop-bundled server cannot resolve the bare "opencode" specifier;
+    // the composition root hands over an absolute artifact path.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-embed-"))
+    const artifact = path.join(dir, "fake-engine.mjs")
+    fs.writeFileSync(
+      artifact,
+      [
+        `export const Server = { Default: () => ({ app: { fetch: async () => Response.json({ from: "configured-path" }) } }) }`,
+        `export const InstanceRuntime = { disposeAllInstances: async () => {} }`,
+      ].join("\n"),
+    )
+    configureOpenCodeEmbedPath(artifact)
+    configureOpenCodeEngine({ embedded: true })
+
+    const res = await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ from: "configured-path" })
+    await drainOpenCodeEngine()
   })
 })

@@ -28,6 +28,20 @@ describe("Claxedo server utility startup", () => {
     })
   })
 
+  test("passes through the embedded engine artifact path", () => {
+    expect(claxedoServerStartup({
+      CLAXEDO_CHILD_PORT: "3210",
+      CLAXEDO_DESKTOP_PARENT_PID: "99",
+      CLAXEDO_CHILD_OPENCODE_EMBED_PATH: "/opt/claxedo/opencode-engine/node.js",
+    })).toEqual({
+      port: 3210,
+      desktopParentPid: 99,
+      opencodeUrl: undefined,
+      opencodePassword: null,
+      opencodeEmbedPath: "/opt/claxedo/opencode-engine/node.js",
+    })
+  })
+
   test("rejects a missing utility-process port", () => {
     expect(() => claxedoServerStartup({})).toThrow("missing its startup configuration")
   })

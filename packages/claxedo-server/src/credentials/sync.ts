@@ -158,6 +158,39 @@ function codexAccountAuths() {
   }
 }
 
+/**
+ * Every Codex login on this machine, newest copy per account.
+ *
+ * `~/.codex/auth.json` and `~/.codex/accounts/<email>.auth.json` can hold the
+ * *same* account with different tokens — the CLI refreshes whichever it is
+ * using — so preferring the accounts directory wholesale meant importing a
+ * months-old copy while a token refreshed yesterday sat in `auth.json`, and the
+ * stale one is usually dead at the provider. Compare `last_refresh` across both
+ * sources and keep the freshest per account.
+ */
+function codexAuthCandidates() {
+  const primary = codexAuth()
+  const primaryBundle = primary ? codexBundle(primary) : undefined
+  const candidates = [
+    ...codexAccountAuths(),
+    ...(primary
+      ? [{
+        data: primary,
+        origin: "~/.codex/auth.json",
+        refreshed: primaryBundle ? Date.parse(primaryBundle.last_refresh) || 0 : 0,
+      }]
+      : []),
+  ]
+
+  const freshest = new Map<string, (typeof candidates)[number]>()
+  for (const candidate of candidates) {
+    const account = codexBundle(candidate.data)?.tokens.account_id ?? ""
+    const current = freshest.get(account)
+    if (!current || candidate.refreshed > current.refreshed) freshest.set(account, candidate)
+  }
+  return [...freshest.values()].sort((a, b) => b.refreshed - a.refreshed)
+}
+
 function jwtExp(input: string | undefined) {
   if (!input) return
   try {
@@ -377,8 +410,8 @@ export async function collectLocalCredentials() {
   const sandboxDriverConfigValue = sandboxDriverConfig(cfg)
   const map = new Map<string, LocalCredentialItem>()
   const opencode = opencodeAuth()
-  const codexAccounts = codexAccountAuths()
-  const codex = codexAccounts[0]?.data ?? codexAuth()
+  const codexAccounts = codexAuthCandidates()
+  const codex = codexAccounts[0]?.data
 
   put(map, opencodeOpenAI(opencode?.openai))
   const primaryCodex = opencodeCodex(opencode?.openai, codex)
@@ -550,7 +583,14 @@ export async function syncLocalCredentials(ids?: string[]) {
       continue
     }
     try {
-      await Promise.all(items.map(putCredential))
+      // Carry the collected token expiry through, the same way the discovery
+      // path does. Without it an imported OAuth login is stored with no
+      // `expires_at`, so nothing downstream can tell a fresh account from a
+      // months-old one when a provider has several.
+      await Promise.all(items.map((item) => putCredential({
+        ...item,
+        ...(item.fresh_until ? { expires_at: item.fresh_until } : {}),
+      })))
       synced.push(providerId)
     } catch (err) {
       failed.push({

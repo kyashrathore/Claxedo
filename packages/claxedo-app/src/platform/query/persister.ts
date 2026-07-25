@@ -51,6 +51,27 @@ let uninstall: (() => void) | undefined
 
 export const queryPersisterKey = "claxedo-query-v1"
 
+const MAP_TAG = "$claxedo:map"
+
+// Query data can hold `Map` instances (the provider catalog's `all` from
+// `normalizeProviderList` is one). Plain JSON.stringify flattens every Map to
+// "{}" — a warm boot then rehydrates an EMPTY catalog and the model picker
+// shows nothing until the staleTime refetch heals it. Tag Maps on the way out
+// and revive them on restore so the persisted catalog keeps its entries.
+function mapReplacer(_key: string, value: unknown) {
+  return value instanceof Map ? { [MAP_TAG]: [...value.entries()] } : value
+}
+
+function mapReviver(_key: string, value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record)
+  if (keys.length === 1 && keys[0] === MAP_TAG && Array.isArray(record[MAP_TAG])) {
+    return new Map(record[MAP_TAG] as [unknown, unknown][])
+  }
+  return value
+}
+
 export const queryPersistencePolicies = [
   {
     id: "control-plane.cache",
@@ -167,6 +188,8 @@ export function installQueryPersister(input: {
       storage,
       key: queryPersisterKey,
       throttleTime: input.throttleTime ?? 1000,
+      serialize: (client) => JSON.stringify(client, mapReplacer),
+      deserialize: (cached) => JSON.parse(cached, mapReviver),
     })
     const result = persistQueryClient({
       queryClient: queryClient as never,

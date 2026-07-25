@@ -391,7 +391,13 @@ describe("credential routes", () => {
     expect(String(url)).toBe("https://chatgpt.com/backend-api/codex/responses")
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer codex-access-secret")
     expect(new Headers(init?.headers).get("chatgpt-account-id")).toBe("account_1")
-    expect(JSON.parse(String(init?.body))).toMatchObject({ max_output_tokens: 1 })
+    // This previously asserted `max_output_tokens: 1`, which the ChatGPT-backed
+    // Codex endpoint rejects outright ("Unsupported parameter"), along with a
+    // string `input`, `store: true`, and `stream: false`. The assertion pinned a
+    // request no live subscription could ever answer with 200.
+    expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true, store: false })
+    expect(Array.isArray(JSON.parse(String(init?.body)).input)).toBe(true)
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty("max_output_tokens")
   })
 
   test("redacts credential and provider secrets from every verification response", async () => {

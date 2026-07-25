@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { Project, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
-import { normalizeProjectList, projectListQuery, providerAuthQuery, providerListQuery } from "./control-plane"
+import {
+  normalizeProjectList,
+  projectCatalogMissingWorkspace,
+  projectListQuery,
+  providerAuthQuery,
+  providerListQuery,
+} from "./control-plane"
 
 function project(id: string, worktree: string): Project {
   return {
@@ -29,6 +35,43 @@ describe("control-plane query helpers", () => {
       project("skip", "/tmp/opencode-test-skip"),
       project("relay", "/private/var/folders/t2/relay/T/claxedo-signed-browser-relay-vMkcgb/workspace"),
     ]).map((item) => item.id)).toEqual(["relay", "skip"])
+  })
+
+  describe("projectCatalogMissingWorkspace", () => {
+    const dir = "/Users/me/opencode"
+
+    test("treats an engine-shaped entry for the directory as missing", () => {
+      // The embedded OpenCode engine answers with a hashed id, `vcs`, and no
+      // `workspaces` — the worktree matches, so only the workspace map
+      // distinguishes it from the control-plane payload the rail needs.
+      expect(projectCatalogMissingWorkspace(
+        [{ ...project("ee9452087e23bf5d5c78b90f6ae74ef692a26b68", dir), vcs: "git" } as Project],
+        dir,
+      )).toBe(true)
+    })
+
+    test("treats a control-plane entry carrying the workspace as present", () => {
+      expect(projectCatalogMissingWorkspace(
+        [{ ...project("ws-uuid", dir), workspaces: { "ws-uuid": { directory: dir } } }],
+        dir,
+      )).toBe(false)
+    })
+
+    test("ignores control-plane entries for other directories", () => {
+      expect(projectCatalogMissingWorkspace(
+        [{ ...project("other", "/Users/me/other"), workspaces: { other: { directory: "/Users/me/other" } } }],
+        dir,
+      )).toBe(true)
+    })
+
+    test("reports missing for an empty or absent catalog", () => {
+      expect(projectCatalogMissingWorkspace([], dir)).toBe(true)
+      expect(projectCatalogMissingWorkspace(undefined, dir)).toBe(true)
+    })
+
+    test("never reports missing without a directory to check", () => {
+      expect(projectCatalogMissingWorkspace([], "")).toBe(false)
+    })
   })
 
   test("projectListQuery normalizes results", async () => {

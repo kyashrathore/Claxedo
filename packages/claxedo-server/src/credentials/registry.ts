@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "crypto"
-import { eq, and, desc, inArray } from "drizzle-orm"
+import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../storage/db"
 import { ClaxedoProviderCredentialTable } from "../storage/provider-credential.sql"
 import { getBackend } from "./store"
@@ -164,6 +164,23 @@ export function listCredentials(): CredentialMetadata[] {
   )
 }
 
+/**
+ * Ordering for "the credential to use for this provider" when more than one
+ * exists — a user with two ChatGPT accounts has two `codex-acp` credentials.
+ *
+ * Write order (`updated_at` alone) is not a preference: importing an older
+ * account last made every session resolve to the older, often already-revoked
+ * token. Rank by likelihood of working instead — usable status, not known
+ * expired, then the furthest-out expiry (no expiry sorts first: an API key
+ * outlives any token), and only then most-recently-written as a tiebreak.
+ */
+const providerPreference = [
+  sql`case when ${ClaxedoProviderCredentialTable.status} = 'available' then 0 else 1 end`,
+  sql`case when ${ClaxedoProviderCredentialTable.health} = 'expired' then 1 else 0 end`,
+  sql`coalesce(${ClaxedoProviderCredentialTable.expires_at}, 9223372036854775807) desc`,
+  desc(ClaxedoProviderCredentialTable.updated_at),
+]
+
 /** Get credential metadata by provider ID. */
 export function getCredentialByProvider(providerId: string): CredentialMetadata | undefined {
   const row = safeRead<CredentialRow | undefined>("credential lookup", undefined, () =>
@@ -172,7 +189,7 @@ export function getCredentialByProvider(providerId: string): CredentialMetadata 
         .select()
         .from(ClaxedoProviderCredentialTable)
         .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
-        .orderBy(desc(ClaxedoProviderCredentialTable.updated_at))
+        .orderBy(...providerPreference)
         .get(),
     ),
   )
@@ -186,7 +203,7 @@ export function requireCredentialRegistryLookup(providerId: string): CredentialM
       .select()
         .from(ClaxedoProviderCredentialTable)
         .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
-        .orderBy(desc(ClaxedoProviderCredentialTable.updated_at))
+        .orderBy(...providerPreference)
         .get(),
   )
   return row ? toMetadata(row) : undefined
@@ -232,6 +249,34 @@ function touchCredential(id: string) {
     .set({ last_used_at: now() })
     .where(eq(ClaxedoProviderCredentialTable.id, id))
     .run())
+}
+
+/**
+ * Replace stored secret material in place, keeping the credential's identity,
+ * scope, and consent. Used when an OAuth credential is renewed during
+ * verification — `putCredential` would be the wrong tool: it resets health and
+ * re-runs the exclusive-kind replacement logic for what is the same login.
+ */
+export async function updateCredentialSecret(id: string, secret: string, expiresAt?: number): Promise<boolean> {
+  const credential = getCredential(id)
+  if (!credential) return false
+  const backend = getBackend()
+  const ref = await backend.put(id, secret)
+  if (credential.secure_ref && credential.secure_ref !== ref) {
+    await backend.delete(credential.secure_ref).catch((err) => {
+      log.warn("Failed to delete superseded secret ref", { id, error: String(err) })
+    })
+  }
+  ClaxedoDB.use((db) => db
+    .update(ClaxedoProviderCredentialTable)
+    .set({
+      secure_ref: ref,
+      expires_at: expiresAt ?? credential.expires_at ?? null,
+      updated_at: now(),
+    })
+    .where(eq(ClaxedoProviderCredentialTable.id, id))
+    .run())
+  return true
 }
 
 export function updateCredentialScope(id: string, scope: CredentialScope, consentAt: number) {

@@ -127,7 +127,10 @@ export function startServer(
   port?: number,
   opencodeUrl?: string,
   opencodePassword?: string | null,
-  options?: { processObserver?: import("@claxedo/workspace-runtime").ProcessObserver },
+  options?: {
+    processObserver?: import("@claxedo/workspace-runtime").ProcessObserver
+    opencodeEmbedPath?: string
+  },
 ): unknown
 export function betterAuthAdapter(input: {
   issuer: string

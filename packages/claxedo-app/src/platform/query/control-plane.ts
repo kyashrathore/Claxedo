@@ -54,6 +54,32 @@ export function normalizeProjectList(data: Project[] | undefined) {
     .sort((a, b) => cmp(a.id, b.id))
 }
 
+/**
+ * Whether the cached project catalog still lacks a control-plane project for
+ * `directory`.
+ *
+ * A workspace is only registered in the claxedo workspace store when a
+ * directory-scoped request first touches it, so global bootstrap can win the
+ * race and seed this query from the embedded OpenCode engine instead — that
+ * payload carries `{ id: <engine hash>, worktree, vcs }` with no `name` and no
+ * `workspaces`. It looks like a hit on `worktree` alone, which is why the check
+ * is on `workspaces`: the rail then labels the project from the worktree
+ * basename and, because the engine's hashed `id` never matches the workspace
+ * uuid the session inventory groups by, shows no sessions. `staleTime` freezes
+ * that payload for five minutes, so it only heals when something invalidates
+ * the query (previously: opening a surface, via `ensureProject`).
+ */
+export function projectCatalogMissingWorkspace(
+  projects: Array<Project & { workspaces?: Record<string, unknown> }> | undefined,
+  worktree: string,
+) {
+  if (!worktree) return false
+  return !(projects ?? []).some(
+    (project) =>
+      project.worktree === worktree && Object.keys(project.workspaces ?? {}).length > 0,
+  )
+}
+
 export function projectListQuery(input: {
   baseUrl?: string
   client: ProjectClient

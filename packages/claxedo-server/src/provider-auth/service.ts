@@ -1,8 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "../control-plane/services"
+import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./openai-oauth"
 
-const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-const OPENAI_ISSUER = "https://auth.openai.com"
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
 const OPENAI_DEVICE_REDIRECT_URI = `${OPENAI_ISSUER}/deviceauth/callback`
 

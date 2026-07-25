@@ -283,7 +283,16 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const handleSidebarMouseLeave = () => {
     shellLayout.collapseFloatingRail()
   }
-  useRailKeyboardController({ state: claxedoState, command, dialog, platform, toggleSidebar })
+  useRailKeyboardController({
+    state: claxedoState,
+    command,
+    dialog,
+    platform,
+    // mod+<n> follows the tab strip the user is looking at (the same
+    // switcherItems the header renders), not the MRU recency stack.
+    surfaceOrder: () => workbenchController.switcherItems().map((item) => item.contentId),
+    toggleSidebar,
+  })
 
   function workspacePanelWidth() {
     return shellLayout.workspacePanelWidth()

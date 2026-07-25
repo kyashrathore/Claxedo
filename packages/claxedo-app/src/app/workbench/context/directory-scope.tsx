@@ -10,7 +10,8 @@
   * The provider chain mirrors directory-layout.tsx but is decoupled from routing.
   */
 
-import { Show, type Accessor, type ParentProps, createEffect, createMemo, untrack } from "solid-js"
+import { Show, type Accessor, type ParentProps, createEffect, createMemo, createSignal, untrack } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 import { useWorkspaceQuery } from "../../../features/workspaces/data/use-workspace-query"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { LocalProvider } from "@/features/session/providers/session-selection"
@@ -160,6 +161,31 @@ export function DirectoryScope(props: ParentProps<{
     : undefined
   const loading = () => !data()
 
+  // The refresh promise RESOLVES even when the underlying session load fails
+  // (the error is toasted once upstream, then swallowed) — so "cache still
+  // missing after the refresh settles" is the only failure signal available at
+  // this layer. Track it and swap the spinner for a retryable error so the
+  // pane cannot spin forever on a broken directory.
+  const [bootstrapFailed, setBootstrapFailed] = createSignal(false)
+  let warmSerial = 0
+  const warm = (dir: string) => {
+    const serial = ++warmSerial
+    setBootstrapFailed(false)
+    void refreshDirectorySessionCache({
+      directory: dir,
+      harnessType: untrack(passiveHarnessType),
+      refresh: props.refreshDirectory,
+    })
+      .catch(() => undefined)
+      .then(() => {
+        if (serial !== warmSerial) return
+        if (!sessionCacheQuery.data) setBootstrapFailed(true)
+      })
+  }
+  const retryBootstrap = () => {
+    if (props.directory) warm(props.directory)
+  }
+
   // The connecting / provisioning / offline UI is owned by WorkspaceGate, which
   // wraps DirectoryScope and only renders it in its `ready` branch — by the time
   // this component mounts, the workspace runtime is guaranteed connected/healthy.
@@ -167,10 +193,22 @@ export function DirectoryScope(props: ParentProps<{
   // lightweight spinner (NOT a second connection gate / CloudStartupView).
   const loadingFallback = () => (
     <div class="flex h-full w-full items-center justify-center bg-background-base text-text-weak">
-      <div class="flex items-center gap-3 text-16-medium">
-        <div class="size-5 animate-spin rounded-full border border-border-base border-t-transparent" />
-        <span>Preparing workspace</span>
-      </div>
+      <Show
+        when={!bootstrapFailed()}
+        fallback={
+          <div class="flex flex-col items-center gap-3 text-16-medium">
+            <span>Failed to load sessions</span>
+            <Button variant="secondary" onClick={retryBootstrap}>
+              Retry
+            </Button>
+          </div>
+        }
+      >
+        <div class="flex items-center gap-3 text-16-medium">
+          <div class="size-5 animate-spin rounded-full border border-border-base border-t-transparent" />
+          <span>Preparing workspace</span>
+        </div>
+      </Show>
     </div>
   )
   // Auto-bootstrap the workspace child for this directory. DirectoryScope
@@ -183,12 +221,8 @@ export function DirectoryScope(props: ParentProps<{
     if (!dir) return
     if (!active()) return
     if (!props.workspaceReady()) return
-    if (!sessionCacheQuery.data)
-      void refreshDirectorySessionCache({
-        directory: dir,
-        harnessType: untrack(passiveHarnessType),
-        refresh: props.refreshDirectory,
-      }).catch(() => undefined)
+    if (sessionCacheQuery.data) return
+    warm(dir)
   })
   return (
     <Show when={data() && !loading()} fallback={loadingFallback()}>

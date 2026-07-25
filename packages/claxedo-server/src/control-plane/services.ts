@@ -80,11 +80,36 @@ export type ControlPlaneCredentials = {
     saved: Array<{ credential_id: string; provider_id: string; account_id?: string }>
   }>
   updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number) => Promise<boolean>
+  /** Persist renewed secret material for an existing credential (OAuth refresh). */
+  updateCredentialSecret?: (id: string, secret: string, expiresAt?: number) => Promise<boolean>
   syncLocalCredentials: (providerIds?: string[]) => Promise<CredentialSyncResult>
 }
 
 async function credentialRegistry() {
   return await import("../credentials/registry")
+}
+
+/**
+ * A renewed OAuth login imported from this machine exists in two places: the
+ * Claxedo store and the CLI's own auth file. The provider may rotate the
+ * refresh token, so leaving the file behind can strand the user's CLI. Node
+ * hosts keep both in step; Worker hosts have no such file and never reach here
+ * (the fs-touching module is loaded lazily, off the worker import graph).
+ */
+async function mirrorRenewedLocalTokens(id: string, secret: string) {
+  try {
+    const registry = await credentialRegistry()
+    const credential = registry.getCredential(id)
+    if (!credential || !credential.account_id) return
+    const codex = await import("../credentials/codex-auth-file")
+    if (!codex.shouldMirrorCodexTokens(credential)) return
+    const tokens = codex.renewedCodexTokens(secret, credential.account_id)
+    if (!tokens) return
+    codex.mirrorCodexTokens(tokens)
+  } catch {
+    // Never fail a credential write because its on-disk mirror could not be
+    // updated — the stored credential is the one Claxedo runs on.
+  }
 }
 
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
@@ -108,6 +133,12 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
     discoverLocalCredentials: async () => (await import("../credentials/discovery")).credentialDiscovery.discover(),
     saveDiscoveredCredentials: async (input) => (await import("../credentials/discovery")).credentialDiscovery.save(input),
     updateCredentialScope: async (id, scope, consentAt) => (await credentialRegistry()).updateCredentialScope(id, scope, consentAt),
+    updateCredentialSecret: async (id, secret, expiresAt) => {
+      const registry = await credentialRegistry()
+      const stored = await registry.updateCredentialSecret(id, secret, expiresAt)
+      if (stored) await mirrorRenewedLocalTokens(id, secret)
+      return stored
+    },
     syncLocalCredentials: async (providerIds) => (await import("../credentials/sync")).syncLocalCredentials(providerIds),
   }
 }

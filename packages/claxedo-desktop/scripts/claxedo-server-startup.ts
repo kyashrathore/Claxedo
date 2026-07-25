@@ -13,6 +13,7 @@ export function claxedoServerStartup(env: NodeJS.ProcessEnv) {
     desktopParentPid,
     opencodeUrl: env.CLAXEDO_CHILD_OPENCODE_URL || undefined,
     opencodePassword: env.CLAXEDO_CHILD_OPENCODE_PASSWORD || null,
+    opencodeEmbedPath: env.CLAXEDO_CHILD_OPENCODE_EMBED_PATH || undefined,
   }
 }
 

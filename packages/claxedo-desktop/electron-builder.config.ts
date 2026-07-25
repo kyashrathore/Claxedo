@@ -85,6 +85,15 @@ const getBase = (): Configuration => ({
       to: "acp/",
       filter: ["**/*"],
     },
+    {
+      // The claxedo-server bundle externalizes `opencode/node-embed`; the
+      // desktop main process points the utility process at this explicit
+      // artifact path (CLAXEDO_CHILD_OPENCODE_EMBED_PATH). Source maps stay
+      // out of the installer.
+      from: "../opencode/dist/node/",
+      to: "opencode-engine/",
+      filter: ["**/*", "!**/*.map"],
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",

@@ -89,6 +89,28 @@ describe("query persister", () => {
     expect(queryClient.getQueryData(["runtime", "base", "mcp", "/tmp/ws"])).toBeUndefined()
   })
 
+  test("round-trips Map-valued query data (provider catalog) through storage", async () => {
+    const target = storage()
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
+
+    queryClient.setQueryData(["controlPlane", "base", "providers"], {
+      all: new Map([["opencode", { id: "opencode", models: { "big-pickle": { id: "big-pickle" } } }]]),
+      connected: ["opencode"],
+      default: { opencode: "big-pickle" },
+    })
+    await tick()
+
+    resetQueryPersisterForTest()
+    queryClient.clear()
+
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
+
+    const restored = queryClient.getQueryData<{ all: unknown; connected: string[] }>(["controlPlane", "base", "providers"])
+    expect(restored?.all instanceof Map).toBe(true)
+    expect((restored?.all as Map<string, { id: string }>).get("opencode")?.id).toBe("opencode")
+    expect(restored?.connected).toEqual(["opencode"])
+  })
+
   test("drops stale pending queries before restore", async () => {
     const target = storage()
     target.setItem(queryPersisterKey, JSON.stringify({

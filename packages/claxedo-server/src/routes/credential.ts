@@ -190,10 +190,15 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_secret_unavailable", "Credential secret is unavailable"), 409)
       }
       try {
-        const result = await verifyCredential(credential, secret, options)
+        const { health, refreshed } = await verifyCredential(credential, secret, options)
         const verifiedAt = (options.now ?? Date.now)()
-        await credentials.updateCredentialHealth(id, result, verifiedAt)
-        return c.json({ result, health: result, verified_at: verifiedAt })
+        // Persist first: a renewed access token that is verified but not stored
+        // would make every later read fall back to the stale one.
+        if (refreshed) {
+          await credentials.updateCredentialSecret?.(id, refreshed.secret, refreshed.expiresAt)
+        }
+        await credentials.updateCredentialHealth(id, health, verifiedAt)
+        return c.json({ result: health, health, verified_at: verifiedAt })
       } catch (error) {
         if (error instanceof CredentialVerificationError) {
           return c.json(errorBody("credential_verification_failed", "Credential verification failed"), 502)
