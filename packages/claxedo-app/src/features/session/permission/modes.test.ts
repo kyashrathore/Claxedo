@@ -36,11 +36,36 @@ describe("Claxedo's one built-in mode", () => {
   // allowlist. This table is the contract.
   test("Auto delegates to the native mechanism where one exists", () => {
     const opencode = claxedoAutoMode("opencode").delivery
-    if (opencode.kind !== "opencode-config-rules") throw new Error("expected config rules")
-    expect(opencode.rules["*"]).toBe("ask")
-    expect(opencode.rules.read).toBe("allow")
-    expect(opencode.rules.edit).toBe("allow")
-    expect(opencode.rules.bash).toBe("ask")
+    if (opencode.kind !== "opencode-session-ruleset") throw new Error("expected a session ruleset")
+    const action = (permission: string) =>
+      opencode.ruleset.filter((rule) => rule.permission === permission).at(-1)?.action
+    expect(action("*")).toBe("ask")
+    expect(action("read")).toBe("allow")
+    expect(action("edit")).toBe("allow")
+    expect(action("bash")).toBe("ask")
+
+    // The delivery must be the SESSION route, never `PATCH /config`. That handler
+    // disposes the engine instance unconditionally, which hard-interrupts every
+    // running turn in the directory and wipes standing "allow always" grants — so a
+    // mode change would read to the user as their turn being aborted. It also writes
+    // a config path no loader reads. Pinned here because the failure is invisible
+    // until someone is mid-turn.
+    expect(opencode.appliesFrom).toBe("next-turn")
+
+    // Order is load-bearing: `Permission.evaluate` takes the LAST matching rule, so
+    // the catch-all has to come first or every grant after it is unreachable.
+    expect(opencode.ruleset[0]).toEqual({ permission: "*", pattern: "*", action: "ask" })
+    expect(opencode.ruleset.findIndex((rule) => rule.permission === "read")).toBeGreaterThan(0)
+
+    // Complete, not a partial patch: the session handler MERGES rather than
+    // replaces, so anything omitted keeps whatever a previous mode left behind.
+    for (const permission of ["read", "edit", "bash", "webfetch", "task"]) {
+      expect(action(permission), `${permission} missing from the ruleset`).toBeDefined()
+    }
+
+    // Every rule carries an explicit pattern. An absent pattern is not "match all"
+    // in the engine's schema — `pattern` is required on PermissionRule.
+    expect(opencode.ruleset.every((rule) => rule.pattern === "*")).toBe(true)
 
     // Claude's own classifier, not our allowlist.
     expect(claxedoAutoMode("claude-sdk").delivery).toEqual({
@@ -118,7 +143,12 @@ describe("harness-supplied modes", () => {
 
     const opencode = harnessPermissionModes({ harness: "opencode" })
     expect(opencode.modes).toEqual([])
-    expect(opencode.unavailable).toContain("config rules")
+    // It has rules, not modes — so the picker shows Auto alone rather than inventing
+    // mode names opencode does not have.
+    expect(opencode.unavailable).toContain("rules rather than modes")
+    // And it must NOT say "config": the rules are session-scoped now, and calling
+    // them config would point the next reader back at the turn-killing endpoint.
+    expect(opencode.unavailable).not.toContain("config")
   })
 
   test("Claude SDK exposes its real typed union, with the SDK's own descriptions", () => {

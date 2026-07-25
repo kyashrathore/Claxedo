@@ -95,7 +95,31 @@ export type PermissionModeDelivery =
        */
       respondWith: "once" | "always"
     }
-  | { kind: "opencode-config-rules"; rules: Record<string, "ask" | "allow" | "deny"> }
+  | {
+      kind: "opencode-session-ruleset"
+      /**
+       * ORDERED, and the order is load-bearing: `Permission.evaluate` takes the
+       * LAST wildcard-matching rule, so the catch-all comes first and the specific
+       * grants after it. This is an array rather than the `Record` this used to be
+       * precisely because object key order is an implementation detail to rely on
+       * and array order is not.
+       *
+       * Always the COMPLETE set, never a partial patch: the session handler MERGES
+       * (`Permission.merge(current, incoming)`) rather than replacing, so a partial
+       * update would leave a previous mode's rule still in the array and, being
+       * earlier, still reachable by `findLast` only if the new set does not cover
+       * the same permission. Sending every key makes the write order-independent.
+       */
+      ruleset: readonly { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[]
+      /**
+       * Takes effect at the START OF THE NEXT TURN, not mid-turn: `runLoop`
+       * snapshots the session row once at entry (`session/prompt.ts`) and reuses it
+       * for every step. The write itself is harmless mid-turn — it just will not be
+       * observed by the turn already running. The UI must say so rather than
+       * implying the change is live.
+       */
+      appliesFrom: "next-turn"
+    }
   | { kind: "acp-set-session-mode"; modeId: string }
   | {
       kind: "claude-sdk-permission-mode"
@@ -143,6 +167,38 @@ const CLAXEDO_LOCAL_AUTO: PermissionModeDelivery = {
 }
 
 /**
+ * Auto expressed in opencode's own rule vocabulary.
+ *
+ * Order matters and is the reason this is a list: `Permission.evaluate` collects
+ * every rule whose `permission`/`pattern` match and takes the LAST one, so the
+ * catch-all must come FIRST and every grant after it.
+ *
+ * `pattern: "*"` on each entry means "any argument to this tool". That is
+ * deliberately as far as this goes for `bash`: the engine already tree-sitter-parses
+ * shell and generalises commands via `BashArity` (`git checkout main` becomes
+ * `git checkout *`), so pattern-scoped bash grants ARE expressible — but choosing
+ * which command patterns are safe is the shell-classification problem the owner
+ * ruled out of scope. So `bash` stays in the ask tier rather than shipping a
+ * half-guessed allowlist.
+ *
+ * The danger tier is listed explicitly even though `*` already denies it by
+ * default. Two reasons: it states the intent where a reader will look for it, and
+ * because the session handler MERGES rulesets, an explicit late `ask` cannot be
+ * outranked by an `allow` for the same permission left behind by a previous mode.
+ */
+function opencodeAutoRuleset(): readonly { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[] {
+  const allow = (keys: readonly string[]) =>
+    keys.map((permission) => ({ permission, pattern: "*", action: "allow" as const }))
+  return [
+    { permission: "*", pattern: "*", action: "ask" },
+    ...allow(SAFE_READ_PERMISSIONS),
+    ...allow(INTERACTIVE_PERMISSIONS),
+    ...allow(IN_PROJECT_WRITE_PERMISSIONS),
+    ...DANGER_GATED_PERMISSIONS.map((permission) => ({ permission, pattern: "*", action: "ask" as const })),
+  ]
+}
+
+/**
  * How Auto is delivered on a given harness.
  *
  * Auto has ONE meaning — approve reads and in-project edits, ask before anything
@@ -168,21 +224,14 @@ const CLAXEDO_LOCAL_AUTO: PermissionModeDelivery = {
 function autoDelivery(harness: HarnessId): { delivery: PermissionModeDelivery; caveat?: string } {
   const mechanism = PERMISSION_MECHANISMS[harness]
   switch (mechanism.kind) {
-    case "opencode-config-rules":
+    case "opencode-session-ruleset":
       return {
         delivery: {
-          kind: "opencode-config-rules",
-          // Every key, every time: `Config.update` deep-merges and
-          // `Permission.evaluate` takes the LAST matching rule in key order, so a
-          // partial patch would let a stale rule outrank `*`.
-          rules: {
-            "*": "ask",
-            ...Object.fromEntries(SAFE_READ_PERMISSIONS.map((key) => [key, "allow" as const])),
-            ...Object.fromEntries(INTERACTIVE_PERMISSIONS.map((key) => [key, "allow" as const])),
-            ...Object.fromEntries(IN_PROJECT_WRITE_PERMISSIONS.map((key) => [key, "allow" as const])),
-            ...Object.fromEntries(DANGER_GATED_PERMISSIONS.map((key) => [key, "ask" as const])),
-          },
+          kind: "opencode-session-ruleset",
+          ruleset: opencodeAutoRuleset(),
+          appliesFrom: "next-turn",
         },
+        caveat: "Applies from your next message; the turn already running keeps its current rules",
       }
 
     case "claude-sdk-permission-mode":
@@ -362,11 +411,11 @@ export function harnessPermissionModes(input: {
         unavailable: `${label} has no permission settings of its own, so only Claxedo's Auto applies`,
       }
 
-    case "opencode-config-rules":
-      // opencode's mechanism is per-tool config rules, not a mode list. Claxedo's
+    case "opencode-session-ruleset":
+      // opencode's mechanism is a per-session rule list, not a mode list. Claxedo's
       // Auto expresses the useful policy; inventing "modes" here would be naming
       // things opencode does not have.
-      return { modes: [], unavailable: `${label} uses per-tool config rules rather than modes` }
+      return { modes: [], unavailable: `${label} uses per-tool permission rules rather than modes` }
 
     case "claude-sdk-permission-mode":
       return { modes: CLAUDE_SDK_MODES }

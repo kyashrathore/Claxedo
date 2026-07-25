@@ -16,10 +16,34 @@ import { type HarnessId } from "@/platform/identity/session-ref"
  */
 export type PermissionMechanism =
   /**
-   * `opencode` — typed rules in the project config, wildcard-matched.
-   * Written with `client.config.update()` (`PATCH /config`).
+   * `opencode` — a per-session `PermissionRuleset`, written with
+   * `client.session.update({ permission })` (`PATCH /session/:sessionID`).
+   *
+   * NOT `PATCH /config`, which is where this started and which was rejected after
+   * reading the engine. Three findings, each independently disqualifying:
+   *
+   *  1. The config HTTP handler calls `markInstanceForDisposal` UNCONDITIONALLY —
+   *     every request, even a no-op payload
+   *     (`server/routes/instance/httpapi/handlers/config.ts`). Disposal runs inside
+   *     the same request, `Effect.uninterruptible`, with no check for an active turn.
+   *  2. The disposer set includes `SessionRunState`, whose scope finalizer cancels
+   *     every live turn — `Fiber.interrupt` on the turn's fiber
+   *     (`packages/opencode/src/session/run-state.ts` and the turn-execution module
+   *     beside it in `src/effect/`) — the same path as the user pressing Stop. The
+   *     prompt returns 200 with a partial message stamped `AbortError{aborted:true}`,
+   *     so changing a dropdown is indistinguishable from the user aborting. Pending
+   *     permission prompts get `RejectedError`, and MCP clients and LSP servers die
+   *     with it.
+   *  3. `Config.update` writes `<instance dir>/config.json`, and NO config loader
+   *     reads that path — the loader only walks `opencode.json`/`opencode.jsonc`,
+   *     `.opencode/`, `$OPENCODE_CONFIG`, and the GLOBAL config dir. So it appears
+   *     to pay the full restart cost and change nothing.
+   *
+   * The session route has none of that: no disposal in its handler, and the ruleset
+   * is projected into SQLite, so it survives an engine restart AND an app restart —
+   * unlike `reply: "always"`, which is a plain in-memory array.
    */
-  | { kind: "opencode-config-rules" }
+  | { kind: "opencode-session-ruleset" }
   /**
    * `claude-sdk` — the Claude Agent SDK's own enumerated `PermissionMode`, set via
    * `options.permissionMode` at query time and `Query.setPermissionMode()`
@@ -54,7 +78,7 @@ export type PermissionMechanism =
   | { kind: "none"; reason: string }
 
 export const PERMISSION_MECHANISMS: Record<HarnessId, PermissionMechanism> = {
-  opencode: { kind: "opencode-config-rules" },
+  opencode: { kind: "opencode-session-ruleset" },
   "claude-sdk": { kind: "claude-sdk-permission-mode" },
   "claude-acp": { kind: "acp-session-mode" },
   "codex-acp": { kind: "acp-session-mode" },
