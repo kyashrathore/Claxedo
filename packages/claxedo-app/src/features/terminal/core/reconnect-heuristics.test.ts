@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "./reconnect-heuristics"
+import { cursorPlan, initialDelay, isLikelyTui, restoreSize } from "./reconnect-heuristics"
 
 describe("terminal reconnect/restore heuristics", () => {
   test("isLikelyTui: matches title", () => {
@@ -29,21 +29,12 @@ describe("terminal reconnect/restore heuristics", () => {
     ).toBe(true)
   })
 
-  test("filterModeSequences: strips alt-screen toggles always", () => {
-    const raw = "\x1b[?1049h\x1b[?1h\x1b[?1049l"
-    expect(filterModeSequences({ raw, likelyTui: true })).toBe("\x1b[?1h")
-    expect(filterModeSequences({ raw, likelyTui: false })).toBe("\x1b[?1h")
-  })
-
-  test("filterModeSequences: non-TUI strips mouse/focus", () => {
-    const raw = "\x1b[?1h\x1b[?1000h\x1b[?1006h\x1b[?1004h\x1b[?2004h"
-    expect(filterModeSequences({ raw, likelyTui: false })).toBe("\x1b[?1h\x1b[?2004h")
-  })
-
-  test("filterModeSequences: TUI keeps mouse/focus", () => {
-    const raw = "\x1b[?1h\x1b[?1000h\x1b[?1006h\x1b[?1004h\x1b[?2004h"
-    expect(filterModeSequences({ raw, likelyTui: true })).toBe(raw)
-  })
+  // The three `filterModeSequences` cases that lived here are GONE with the
+  // function. They pinned a renderer-side mode snapshot filtered by a match on
+  // the tab TITLE — which is precisely what re-armed mouse reporting in shells
+  // whose TUI had exited. Modes are now resynced from live server truth
+  // (workspace-runtime `pty/mode-tracker.ts`, covered by mode-tracker.test.ts),
+  // so there is no snapshot left to filter and nothing to port these to.
 
   test("cursorPlan: TUI split with snapshot uses live tail", () => {
     const plan = cursorPlan({

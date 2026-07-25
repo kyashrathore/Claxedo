@@ -33,6 +33,8 @@ import { safeChunkEnd, safeStartIndex } from "./safe-slice"
 import { createMarkerScanner } from "./marker-scan"
 import { SHELL_READY_MARKER } from "./shell-ready"
 import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
+import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
+import { createModeTracker, type ModeTracker } from "./mode-tracker"
 import { workspaceRuntimeBus, type PtyInfo } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
@@ -241,6 +243,20 @@ export namespace Pty {
     buffer: string
     bufferCursor: number
     cursor: number
+    /**
+     * This session replaced a lost PTY and its buffer was seeded from disk
+     * history, so the first client to attach should be shown a separator
+     * between the restored content and the fresh shell. Consumed by the first
+     * SUCCESSFUL replay (see connect) — a send that fails leaves it set so the
+     * next attach still marks the seam.
+     */
+    restoredNoticePending: boolean
+    /**
+     * Headless emulator mirroring this PTY's output, so a reattaching renderer
+     * can be resynced to the modes the RUNNING program actually has set rather
+     * than to a snapshot the renderer guessed earlier. See mode-tracker.ts.
+     */
+    modeTracker: ModeTracker
     history: Awaited<ReturnType<typeof createDiskHistory>>
     osc7: string
     processExitBuf: string
@@ -282,6 +298,9 @@ export namespace Pty {
     if (session.removed) return
 
     clearInterrupt(session)
+    // Release the headless emulator on BOTH paths — it holds a parser and a
+    // screen buffer per session, so leaking one per terminal adds up.
+    session.modeTracker.dispose()
 
     if (session.orphanTimer) {
       clearTimeout(session.orphanTimer)
@@ -553,6 +572,17 @@ export namespace Pty {
       buffer: restored,
       bufferCursor: 0,
       cursor: restored.length,
+      // Deliberately NOT concatenated into `buffer`: the buffer is bounded by
+      // BUFFER_LIMIT and trimmed from the head, so a burst of output before any
+      // client attached would evict the notice first — exactly the seam we want
+      // to mark. Kept as session state and prepended at replay time instead,
+      // which makes it immune to trimming by construction.
+      restoredNoticePending: shouldMarkRestored({ previousPtyId, restoredLength: restored.length }),
+      // node-pty's own default geometry; the client's first resize on attach
+      // brings both the pty and this emulator to the real size. Geometry only
+      // affects where the emulator wraps, not which modes it records, so a
+      // brief mismatch cannot corrupt the preamble.
+      modeTracker: createModeTracker(80, 24),
       history,
       osc7: "",
       processExitBuf: "",
@@ -617,6 +647,11 @@ export namespace Pty {
         workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "command-exit", exitCode: exitParsed.exitCode })
       }
 
+      // Mirror into the headless emulator BEFORE broadcasting, so a client that
+      // attaches in the same tick gets a preamble that already includes
+      // whatever this chunk just set.
+      session.modeTracker.feed(data)
+
       safeBroadcast(session, data)
 
       session.buffer += data
@@ -680,6 +715,7 @@ export namespace Pty {
       if (!session.ready) {
         enqueueWrite(session, { type: "resize", cols: input.size.cols, rows: input.size.rows })
       } else {
+        session.modeTracker.resize(input.size.cols, input.size.rows)
         session.process.resize(input.size.cols, input.size.rows)
       }
     }
@@ -709,6 +745,7 @@ export namespace Pty {
         enqueueWrite(session, { type: "resize", cols, rows })
         return
       }
+      session.modeTracker.resize(cols, rows)
       session.process.resize(cols, rows)
     }
   }
@@ -754,12 +791,27 @@ export namespace Pty {
       return session.buffer.slice(offset)
     })()
 
-    if (!safeReplay(ws, data)) {
+    // Append the seam marker AFTER the restored content and before the fresh
+    // shell's first output, so it reads as a rule between the two. Only for a
+    // client that is actually receiving the restored buffer: a reconnect asking
+    // for the live tail (`cursor === -1`) has already seen it, or wants only
+    // what is new, and would get the rule stranded at the bottom.
+    // Mode preamble FIRST, from live emulator state. Mode-setting escapes are
+    // emitted once at program startup and broadcast away rather than buffered,
+    // so a fresh xterm needs them re-asserted on every attach — even when the
+    // replay itself is empty (a live-tail reconnect to a running TUI).
+    const preamble = session.modeTracker.buildPreamble()
+    const showNotice = session.restoredNoticePending && data.length > 0
+    const body = showNotice ? data + SESSION_RESTORED_NOTICE : data
+    if (!safeReplay(ws, preamble + body)) {
       session.subscribers.delete(ws)
       workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "error", message: "replay_send_failed" })
       ws.close()
       return
     }
+    // Consumed only now — a failed send above returns early and leaves the flag
+    // set, so the next attach still marks the seam.
+    if (showNotice) session.restoredNoticePending = false
 
     if (!sendWebSocketWithBackpressure(ws, meta(end), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })) {
       session.subscribers.delete(ws)

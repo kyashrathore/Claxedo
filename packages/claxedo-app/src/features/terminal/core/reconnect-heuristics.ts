@@ -1,5 +1,3 @@
-const ALT_TOGGLE_RE = /\x1b\[\?(?:47|1047|1049)[hl]/g
-const MOUSE_FOCUS_RE = /\x1b\[\?(?:9|1000|1001|1002|1003|1004|1005|1006)[hl]/g
 const AGENT_TUI_RE = /\b(?:codex|claude|opencode|gemini|cursor-agent|cursor)\b/i
 
 export function isLikelyTui(input: {
@@ -13,11 +11,25 @@ export function isLikelyTui(input: {
   return false
 }
 
-export function filterModeSequences(input: { raw?: string; likelyTui: boolean }) {
-  const base = (input.raw ?? "").replace(ALT_TOGGLE_RE, "")
-  if (input.likelyTui) return base
-  return base.replace(MOUSE_FOCUS_RE, "")
-}
+/**
+ * REMOVED: `filterModeSequences`.
+ *
+ * The renderer used to persist a snapshot of the terminal modes it had scanned
+ * out of the stream, then replay that snapshot on the next mount — filtered by
+ * `likelyTui`, which is a match on the tab's TITLE. A tab merely NAMED "Claude"
+ * therefore re-armed mouse reporting on every mount, whether or not a TUI was
+ * running, which sprayed `ESC[<35;…M` reports into the shell prompt.
+ *
+ * Modes are now resynced from live server-side truth: the PTY host mirrors its
+ * output through a headless xterm and sends a preamble built from the ACTUAL
+ * current mode state on every attach (workspace-runtime `pty/mode-tracker.ts`).
+ * A snapshot the renderer guessed is strictly worse than asking the process,
+ * so there is nothing left to filter.
+ *
+ * `isLikelyTui` survives because the OTHER heuristics it feeds — cursor replay
+ * strategy, SIGWINCH forcing, settle delays — are about how to reconnect, not
+ * about what the program's modes are.
+ */
 
 export function cursorPlan(input: {
   likelyTui: boolean

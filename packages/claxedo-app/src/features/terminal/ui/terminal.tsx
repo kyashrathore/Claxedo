@@ -24,7 +24,7 @@ import {
   openTerminalWebSocket,
 } from "@/features/terminal/core/terminal-connection"
 import { createTerminalRuntimeQueue } from "@/features/terminal/core/terminal-runtime-queue"
-import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
+import { cursorPlan, initialDelay, isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
 import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-reply-filter"
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -399,13 +399,10 @@ export const Terminal = (props: TerminalProps) => {
             return ""
           }
         })()
-        const modeSequences = (() => {
-          try {
-            return backend.rehydrateSequences()
-          } catch {
-            return ""
-          }
-        })()
+        // Modes are NOT persisted any more. The PTY host mirrors its output
+        // through a headless xterm and sends a preamble built from live mode
+        // state on every attach, so a renderer-side guess is both redundant and
+        // (when the program it described has since exited) actively harmful.
         const wasAltScreen = (() => {
           try {
             return backend.isAltScreen()
@@ -426,7 +423,6 @@ export const Terminal = (props: TerminalProps) => {
         props.onUpdate?.({
           id: local.pty.id,
           buffer,
-          modeSequences,
           wasAltScreen,
           wasAtBottom,
           cursor,
@@ -469,18 +465,11 @@ export const Terminal = (props: TerminalProps) => {
           title: local.pty.title ?? "",
         })
 
-      // Never restore alternate-screen toggles from mode rehydrate (snapshot
-      // buffer restore handles alt-screen). For non-TUIs, strip mouse/focus
-      // reporting to avoid accidental SGR mouse "gibberish" in shells.
-      //
-      // A recreated PTY always takes the stripping path: its persisted
-      // modeSequences describe a TUI that no longer exists, and re-arming
-      // mouse tracking into a fresh shell is exactly what sprays
-      // `35;72;51M`-shaped reports into the prompt on every pointer move.
-      const snapshotModeSequences = filterModeSequences({
-        raw: local.pty.modeSequences ?? "",
-        likelyTui,
-      })
+      // No renderer-side mode rehydrate any more: the PTY host sends a preamble
+      // built from LIVE emulator state ahead of the replay on every attach, so
+      // the modes we adopt describe the process that is actually running rather
+      // than a snapshot of one that may have exited.
+      const snapshotModeSequences = ""
 
       // Setup WebSocket connection.
       // For normal shell buffers, reconnect from live tail to avoid replaying
