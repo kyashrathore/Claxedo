@@ -217,6 +217,42 @@ describe("hosted app", () => {
     expect(insecure.headers.get("access-control-allow-origin")).toBeNull()
   })
 
+  test("CORS does not grant loopback origins on the hosted worker by default", async () => {
+    const plane = fakePlane()
+    plane.env = {
+      ...plane.env,
+      CLAXEDO_DEPLOYMENT_MODE: "hosted",
+      CLAXEDO_APP_ORIGINS: "https://app.claxedo-staging.test",
+    }
+    const app = createHostedApp(plane)
+    const health = (origin: string) =>
+      app.fetch(new Request("http://cp.test/api/claxedo/health", { headers: { origin } }))
+
+    // A blanket loopback grant on the internet-facing plane means any local
+    // port a visitor happens to be running gets a same-origin read of the
+    // hosted control plane. Deployments opt in per-origin instead (below).
+    for (const origin of ["http://localhost:31337", "http://127.0.0.1:31337"]) {
+      expect((await health(origin)).headers.get("access-control-allow-origin")).toBeNull()
+    }
+  })
+
+  test("CORS grants a loopback origin only when the deployment lists it explicitly", async () => {
+    const plane = fakePlane()
+    plane.env = {
+      ...plane.env,
+      CLAXEDO_DEPLOYMENT_MODE: "hosted",
+      CLAXEDO_APP_ORIGINS: "http://localhost:4444",
+    }
+    const app = createHostedApp(plane)
+    const health = (origin: string) =>
+      app.fetch(new Request("http://cp.test/api/claxedo/health", { headers: { origin } }))
+
+    expect((await health("http://localhost:4444")).headers.get("access-control-allow-origin"))
+      .toBe("http://localhost:4444")
+    // Exact match only — the grant must not widen to every other local port.
+    expect((await health("http://localhost:31337")).headers.get("access-control-allow-origin")).toBeNull()
+  })
+
   test("mode reports configured dependencies without leaking secrets", async () => {
     const app = createHostedApp(fakePlane())
     const res = await app.fetch(new Request("http://cp.test/api/claxedo/mode"))

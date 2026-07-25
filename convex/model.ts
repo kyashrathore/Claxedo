@@ -317,12 +317,27 @@ export async function userByClerkSubject(db: Db, clerkSubject: string) {
 //   exact calling convention of the control-plane executor
 //   (`packages/claxedo-server/src/control-plane/adapters/convex/`).
 // - `publicQuery`/`publicMutation`: explicitly unauthenticated. Adding one is
-//   a reviewed decision, not a default.
+//   a reviewed decision, not a default. There are currently ZERO callers, and
+//   that is the intended steady state — see `webhookMutation` below for why the
+//   last one was removed.
 // - `cronMutation`: a deployment-internal function for `convex/crons.ts`
 //   handlers (D13 reaper). Internal visibility means it is NOT callable by any
 //   client at all — only the Convex scheduler/crons — which is a strictly
 //   stronger stance than a service token, and the reason the guard permits
 //   `internalMutationGeneric` here.
+// - `webhookMutation`: the appliers invoked by a signature-verified webhook
+//   httpAction in `convex/http.ts` via `ctx.runMutation`. Same internal
+//   visibility as `cronMutation`, for the same reason.
+//
+//   This exists because building such an applier from `publicMutation` is a
+//   privilege-escalation hole, not a style problem: the signature check lives
+//   in the httpAction, so a PUBLIC applier is separately callable by any
+//   unauthenticated Convex client with the deployment URL (which ships in the
+//   web/desktop bundle as `VITE_CONVEX_URL`) — handing the caller the webhook's
+//   authority with the signature check skipped entirely. `orgs.applyClerkWebhook`
+//   was reachable this way and let any signed-up user mint themselves an
+//   `org:admin` membership in ANY org, which `directOrgRole` then resolves to
+//   admin on every workspace in that org. Webhook appliers MUST be internal.
 // ---------------------------------------------------------------------------
 
 type Identity = NonNullable<Awaited<ReturnType<IdentityCtx["auth"]["getUserIdentity"]>>>
@@ -406,6 +421,13 @@ export function serviceMutation<Args extends PropertyValidators, Output>(spec: {
 }
 
 export function cronMutation<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: MutationCtx, args: ObjectType<Args>) => Output
+}) {
+  return internalMutationGeneric(spec)
+}
+
+export function webhookMutation<Args extends PropertyValidators, Output>(spec: {
   args: Args
   handler: (ctx: MutationCtx, args: ObjectType<Args>) => Output
 }) {

@@ -33,7 +33,32 @@ const ALLOWED_FUNCTION_BUILDERS = new Set([
   // client, only the Convex scheduler/crons: strictly stronger than a service
   // token, so admitting it keeps the ratchet honest rather than loosening it.
   "cronMutation",
+  // Appliers invoked by a signature-verified webhook httpAction via
+  // `ctx.runMutation`. Also wraps `internalMutationGeneric`, same reasoning as
+  // `cronMutation`. See PUBLIC_BUILDERS below for why a webhook applier must
+  // never be built from `publicMutation` instead.
+  "webhookMutation",
 ])
+
+// The unauthenticated builders. Every exported Convex function is reachable by
+// any client that knows the deployment URL, and the URL is not a secret — it
+// ships in the web/desktop bundle as `VITE_CONVEX_URL`. So a `publicMutation`
+// is an internet-facing, unauthenticated endpoint, and the only correct number
+// of them is zero unless someone has deliberately argued otherwise.
+//
+// This ratchet exists because `orgs.applyClerkWebhook` was one. Its Svix
+// signature check lives in the httpAction, not the mutation, so being public
+// made it a second door into the same authority with the signature check
+// skipped: any signed-up user could POST `organizationMembership.created` to
+// `<deployment>.convex.cloud/api/mutation` and mint themselves an `org:admin`
+// membership in an arbitrary org, which `directOrgRole` resolves to admin on
+// every workspace in that org. Webhook appliers belong on `webhookMutation`.
+//
+// Adding a name back to this baseline must come with a written argument for why
+// the endpoint is safe to expose unauthenticated — the failure mode is not
+// "leaks a bit of data", it is cross-tenant privilege escalation.
+const PUBLIC_BUILDERS = ["publicQuery", "publicMutation"] as const
+const PUBLIC_BUILDER_BASELINE: string[] = []
 
 // D14: `convex/migrations.ts` functions are built via the
 // `@convex-dev/migrations` component (`migrations.define(...)` /
@@ -123,6 +148,29 @@ describe("Convex authz builder guard (D8)", () => {
       }
     }
     expect(violations).toEqual([])
+  })
+
+  test("no convex module exports an unauthenticated public function", () => {
+    const exportPattern = /^export const (\w+)\s*=\s*(\w+)\s*\(/gm
+    const publicBuilders = new Set<string>(PUBLIC_BUILDERS)
+    const found = convexModules()
+      .filter(({ file }) => file !== BUILDER_MODULE)
+      .flatMap(({ file, source }) =>
+        [...source.matchAll(exportPattern)]
+          .filter((match) => publicBuilders.has(match[2]!))
+          .map((match) => `convex/${file}: export const ${match[1]} = ${match[2]}(...)`))
+    expect(found).toEqual(PUBLIC_BUILDER_BASELINE)
+  })
+
+  test("the Clerk webhook applier is internal, not publicly callable", async () => {
+    // Regression pin for the escalation described on PUBLIC_BUILDERS. Asserted
+    // on the REGISTERED function, not the source text: `isInternal` is the flag
+    // Convex itself uses to refuse client calls, so this fails if the builder
+    // is swapped back to a public one no matter how the call site is spelled.
+    // The applier trusts its `type`/`data` completely because the httpAction has
+    // already verified the Svix signature, so its visibility IS its authz.
+    const orgs = await import("../../../../convex/orgs")
+    expect((orgs.applyClerkWebhook as unknown as { isInternal?: boolean }).isInternal).toBe(true)
   })
 
   test("the builder module defines exactly the mandatory builder set", () => {

@@ -159,12 +159,22 @@ function guardedExecutionWaitUntil(context: Context): ((promise: Promise<unknown
   }
 }
 
+// Hosted CORS reflects ONLY deployment-configured origins. There is
+// deliberately no built-in `http://localhost:*` / `http://127.0.0.1:*` branch:
+// this middleware runs on the internet-facing Worker, where a blanket loopback
+// grant hands every port on a visitor's machine a same-origin read of the
+// hosted control plane, and buys nothing the config cannot express. A
+// deployment that genuinely wants a local app to talk to it (staging, a
+// developer pointing a dev server at hosted) lists the exact origin in
+// `CLAXEDO_APP_ORIGINS` — `configuredAppOrigins` matches it exactly, so
+// `http://localhost:4444` works while `http://localhost:<anything else>` does
+// not. The LOCAL control plane (src/server.ts) keeps its loopback grant: there
+// the reflection is load-bearing for normal browser dev, and the credential
+// routes are separately excluded (connections-cors.test.ts).
 function corsMiddleware(appOriginAllowed: (origin: string) => boolean, originPatterns: RegExp[]) {
   return cors({
     origin: (origin) => {
       if (!origin) return undefined
-      if (origin.startsWith("http://localhost:")) return origin
-      if (origin.startsWith("http://127.0.0.1:")) return origin
       if (originPatterns.some((pattern) => pattern.test(origin))) return origin
       if (appOriginAllowed(origin)) return origin
       return undefined

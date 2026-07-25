@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { authedMutation, authedQuery, orgByClerkOrgId, publicMutation, readUser, serviceQuery, upsertUser, userByClerkSubject } from "./model"
+import { authedMutation, authedQuery, orgByClerkOrgId, readUser, serviceQuery, upsertUser, userByClerkSubject, webhookMutation } from "./model"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
@@ -231,12 +231,19 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
 }
 
 // Applier for the Svix-verified Clerk webhook http action (convex/http.ts),
-// which invokes it via `ctx.runMutation`. PUBLIC ON PURPOSE-shaped hole with a
-// known ceiling: as a public mutation it is also directly callable by any
-// Convex client without authentication, which pre-dates D8 and is preserved
-// byte-identical here. Closing it (internal mutation, or a service-token arg
-// threaded from the http action) is a flagged follow-up, not a D8 change.
-export const applyClerkWebhook = publicMutation({
+// which invokes it via `ctx.runMutation`.
+//
+// INTERNAL, never public. The Svix signature check lives in the httpAction, so
+// a public applier is a second, unauthenticated door into the same authority
+// with the signature check skipped. As a `publicMutation` this was directly
+// callable by any Convex client holding the deployment URL (public: it ships in
+// the app bundle as `VITE_CONVEX_URL`), and `organizationMembership.created`
+// let the caller mint themselves an `org:admin` membership in an arbitrary org
+// — which `directOrgRole` resolves to admin on every workspace in that org.
+// `webhookMutation` gives it internal visibility — callable ONLY from inside
+// the deployment. `ctx.runMutation` in http.ts is unaffected because it resolves
+// by UDF path, not visibility.
+export const applyClerkWebhook = webhookMutation({
   args: {
     type: v.string(),
     data: v.any(),
