@@ -24,7 +24,20 @@
  * Pattern adapted from VS Code's XtermSerializer (ptyService.ts).
  */
 
-import { Terminal as HeadlessTerminal } from "@xterm/headless"
+// Imported as a default (whole-module) binding, NOT as `{ Terminal }`. The
+// package ships no `exports` map and its `module` field points at a file that
+// does not exist, so every loader falls back to `main`
+// (lib-headless/xterm-headless.js) — a minified CJS bundle that assigns its
+// exports dynamically. Node's cjs-module-lexer therefore detects ZERO named
+// exports from it, and `import { Terminal } from "@xterm/headless"` dies with
+// "does not provide an export named 'Terminal'" under plain Node ESM (this
+// package's own `dev`/`start` scripts, and the runtime child process spawned by
+// workspace-relay-e2e.test.ts). esbuild and Bun paper over it with their own
+// interop shims, which is why the bundled sidecar worked and hid the break.
+// The default binding is `module.exports`, which every loader agrees on.
+import xtermHeadless from "@xterm/headless"
+
+const HeadlessTerminal = xtermHeadless.Terminal
 
 export type ModeTracker = {
   /** Feed a chunk of PTY output. Parsed synchronously. */
