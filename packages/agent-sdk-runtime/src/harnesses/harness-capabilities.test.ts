@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import type { WithInternals } from "../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./acp/index"
 import { ClaudeHarnessAdapter } from "./claude/index"
 import { CodexHarnessAdapter } from "./codex/index"
@@ -25,23 +26,34 @@ const REQUIRED_KEYS: ReadonlyArray<keyof HarnessCapabilities> = [
   "configOptions",
 ]
 
-function acpAdapterWithHarness(harness: "claude" | "codex" | "cursor") {
-  const adapter = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
-    options: { binary: string; harness: "claude" | "codex" | "cursor" }
-    sessions: Map<string, unknown>
-    probe: null
+type AcpBaseInternals = {
+  options: { binary: string; harness: "claude" | "codex" | "cursor" }
+  sessions: Map<string, unknown>
+  probe: null
+}
+
+/** `Extra` names the extra internals a given test drives; see acp/workspace-behavior.test.ts. */
+function acpAdapterWithHarness<Extra extends object = Record<never, never>>(
+  harness: "claude" | "codex" | "cursor",
+) {
+  const adapter = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
+    AcpHarnessAdapter,
+    Omit<AcpBaseInternals, keyof Extra> & Extra
+  >
+  const defaults: AcpBaseInternals = {
+    options: { binary: "test-acp", harness },
+    sessions: new Map(),
+    probe: null,
   }
-  adapter.options = { binary: "test-acp", harness }
-  adapter.sessions = new Map()
-  adapter.probe = null
+  Object.assign(adapter, defaults)
   return adapter
 }
 
 function sdkAdapterWithDriver(type: "claude" | "codex" | "cursor") {
   const Adapter = type === "claude" ? ClaudeHarnessAdapter : type === "cursor" ? CursorHarnessAdapter : CodexHarnessAdapter
-  const adapter = Object.create(Adapter.prototype) as (ClaudeHarnessAdapter | CodexHarnessAdapter | CursorHarnessAdapter) & {
+  const adapter = Object.create(Adapter.prototype) as WithInternals<(ClaudeHarnessAdapter | CodexHarnessAdapter | CursorHarnessAdapter), {
     driver: { type: "claude" | "codex" | "cursor" }
-  }
+  }>
   adapter.driver = { type }
   return adapter
 }
@@ -137,10 +149,10 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
   })
 
   test("ACP fork is reported only for a live process that advertises session fork", () => {
-    const adapter = acpAdapterWithHarness("claude") as AcpHarnessAdapter & {
+    const adapter = acpAdapterWithHarness<{
       sessions: Map<string, unknown>
       store: { getAgentSessionId: (sessionId: string) => string | null }
-    }
+    }>("claude")
     adapter.store = { getAgentSessionId: () => "agent_1" }
     adapter.sessions.set("s1", {
       proc: {

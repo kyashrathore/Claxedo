@@ -1,19 +1,34 @@
 import { describe, expect, it } from "bun:test"
+import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
-function adapter() {
-  const out = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
-    busySessions: Set<string>
-    currentModel: string
-    options: { binary: string }
-    sessions: Map<string, { directory: string; proc: null; init: null }>
-    probe: null
+type BaseInternals = {
+  busySessions: Set<string>
+  currentModel: string
+  options: { binary: string }
+  sessions: Map<string, { directory: string; proc: null; init: null }>
+  probe: null
+}
+
+/**
+ * Each test drives a different slice of the adapter's internals, so the slice is
+ * a type argument rather than a cast on the result: re-casting one internals
+ * shape to another is not a legal conversion, and `Extra` intentionally wins
+ * over the defaults it overrides.
+ */
+function adapter<Extra extends object = Record<never, never>>() {
+  const out = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
+    AcpHarnessAdapter,
+    Omit<BaseInternals, keyof Extra> & Extra
+  >
+  const defaults: BaseInternals = {
+    busySessions: new Set(),
+    currentModel: "",
+    options: { binary: "fake-acp" },
+    sessions: new Map(),
+    probe: null,
   }
-  out.busySessions = new Set()
-  out.currentModel = ""
-  out.options = { binary: "fake-acp" }
-  out.sessions = new Map()
-  out.probe = null
+  Object.assign(out, defaults)
   return out
 }
 
@@ -40,7 +55,7 @@ describe("AcpHarnessAdapter", () => {
   it("restores and syncs an existing ACP session before prompting on a fresh process", async () => {
     const calls: Array<{ name: string; args: unknown[] }> = []
     const seen: string[] = []
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -59,7 +74,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     item.store = {
       getAgentSessionId() {
@@ -127,7 +142,7 @@ describe("AcpHarnessAdapter", () => {
   })
 
   it("applies prompt response usage to the final assistant message before idle", async () => {
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -160,7 +175,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     item.store = {
       getAgentSessionId() {
@@ -230,10 +245,10 @@ describe("AcpHarnessAdapter", () => {
   })
 
   it("caches resolved MCP when config updates only auth", async () => {
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       currentMcp: unknown[]
       restart: () => void
-    }
+    }>()
     let restarts = 0
     item.currentMcp = []
     item.restart = () => {
@@ -265,7 +280,7 @@ describe("AcpHarnessAdapter", () => {
 
   it("recreates the ACP session when resume says resource not found after restart", async () => {
     const calls: Array<{ name: string; args: unknown[] }> = []
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -273,7 +288,7 @@ describe("AcpHarnessAdapter", () => {
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
         startTurn: (input: unknown) => void
-        appendEvent: (input: { payload: { type: string } }) => void
+        appendEvent: (input: { sessionId?: string; payload: { type: string } }) => { sessionId: string; seq: number; createdAt: number; payload: { type: string } }
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
@@ -285,7 +300,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     item.store = {
       getAgentSessionId() {
@@ -359,7 +374,7 @@ describe("AcpHarnessAdapter", () => {
   })
 
   it("emits recovering status instead of terminal error for recoverable ACP restarts", async () => {
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -378,7 +393,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     item.store = {
       getAgentSessionId() {
@@ -422,7 +437,7 @@ describe("AcpHarnessAdapter", () => {
     }, "/work", Date.now())) {
       out.push({
         type: event.type,
-        ...("status" in event.properties ? { status: event.properties.status } : {}),
+        ...("properties" in event && "status" in event.properties ? { status: event.properties.status } : {}),
       })
     }
 
@@ -440,7 +455,7 @@ describe("AcpHarnessAdapter", () => {
 
   it("retries the prompt with a replacement ACP session when prompt says resource not found", async () => {
     const calls: Array<{ name: string; args: unknown[] }> = []
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -448,7 +463,7 @@ describe("AcpHarnessAdapter", () => {
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
         startTurn: (input: unknown) => void
-        appendEvent: (input: { payload: { type: string } }) => void
+        appendEvent: (input: { sessionId?: string; payload: { type: string } }) => { sessionId: string; seq: number; createdAt: number; payload: { type: string } }
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
@@ -459,7 +474,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     item.store = {
       getAgentSessionId() {
@@ -534,7 +549,7 @@ describe("AcpHarnessAdapter", () => {
   })
 
   it("reuses one ACP process for separate local sessions with the same process key", async () => {
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getSession: (id: string) => { id: string } | null
         markSessionInterrupted: (id: string) => void
@@ -544,7 +559,7 @@ describe("AcpHarnessAdapter", () => {
         dispose: () => void
         alive: boolean
       }
-    }
+    }>()
     const seen: string[] = []
     item.store = {
       getSession(id) {
@@ -572,7 +587,7 @@ describe("AcpHarnessAdapter", () => {
 
   it("clears a persisted permission reply even after reload lost the live ACP process", async () => {
     const calls: Array<{ sessionId: string; payload: { type: string; properties: { requestID: string } } }> = []
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
         appendEvent: (input: { sessionId: string; payload: { type: string; properties: { requestID: string } } }) => {
@@ -583,7 +598,7 @@ describe("AcpHarnessAdapter", () => {
         }
       }
       sessions: Map<string, { proc?: { alive: boolean; pendingPermissions: Map<string, unknown>; respondPermission: (...args: unknown[]) => void } }>
-    }
+    }>()
 
     item.store = {
       listPermissions() {
@@ -607,14 +622,14 @@ describe("AcpHarnessAdapter", () => {
   it("hides orphaned ACP permissions after reload without mutating during list", async () => {
     const stale: string[] = []
     const recovering: Array<{ id: string; message: string }> = []
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
         stalePermission: (id: string) => void
         markRecovering: (id: string, message: string) => void
       }
       sessions: Map<string, { proc?: { alive: boolean; pendingPermissions: Map<string, unknown> } }>
-    }
+    }>()
 
     item.store = {
       listPermissions() {
@@ -643,7 +658,7 @@ describe("AcpHarnessAdapter", () => {
   it("fails the turn instead of hanging forever when cold-start resume stalls", async () => {
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -662,7 +677,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     let open!: () => void
     const gate = new Promise<void>((resolve) => {
@@ -738,10 +753,9 @@ describe("AcpHarnessAdapter", () => {
   it("fails the turn instead of hanging forever when cold-start sync stalls", async () => {
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
-    const item = adapter() as AcpHarnessAdapter & {
+    const item = adapter<{
       store: {
-        getAgentSessionId: (id: string) => string
-        getSession: (id: string) => { title?: string | null } | null
+        getAgentSessionId: (id: string) => string | undefined
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
@@ -757,7 +771,7 @@ describe("AcpHarnessAdapter", () => {
         }
         isNew: boolean
       }>
-    }
+    }>()
 
     let open!: () => void
     const gate = new Promise<void>((resolve) => {

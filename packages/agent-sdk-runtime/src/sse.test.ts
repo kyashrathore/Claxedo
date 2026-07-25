@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData } from "./sse"
+import { fakeSetInterval } from "./test-utils/class-internals"
 
 type TestEvent = { type: "delta" | "idle"; value: string }
 
@@ -11,7 +12,7 @@ describe("attachSseFanout", () => {
     let cleared: unknown
     const written: unknown[] = []
 
-    globalThis.setInterval = (() => "heartbeat-timer") as typeof setInterval
+    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
     globalThis.clearInterval = ((id: unknown) => {
       cleared = id
     }) as typeof clearInterval
@@ -52,7 +53,7 @@ describe("attachSseFanout", () => {
     const dropped: unknown[] = []
     const resolvers: Array<() => void> = []
 
-    globalThis.setInterval = (() => "heartbeat-timer") as typeof setInterval
+    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
     globalThis.clearInterval = (() => {}) as typeof clearInterval
 
     try {
@@ -109,7 +110,7 @@ describe("attachSseFanout", () => {
     const dropped: unknown[] = []
     const resolvers: Array<() => void> = []
 
-    globalThis.setInterval = (() => "heartbeat-timer") as typeof setInterval
+    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
     globalThis.clearInterval = (() => {}) as typeof clearInterval
 
     try {
@@ -169,10 +170,9 @@ describe("attachSseFanout", () => {
     const resolvers: Array<() => void> = []
     const heartbeat = { type: "heartbeat" } as const
 
-    globalThis.setInterval = ((fn: () => void) => {
+    globalThis.setInterval = fakeSetInterval("heartbeat-timer", (fn) => {
       heartbeatTick = fn
-      return "heartbeat-timer"
-    }) as typeof setInterval
+    })
     globalThis.clearInterval = (() => {}) as typeof clearInterval
 
     try {
@@ -228,7 +228,7 @@ describe("attachSseFanout", () => {
     replay.push({ type: "delta", value: "old" })
     const written: Array<{ event: TestEvent; id?: string }> = []
 
-    globalThis.setInterval = (() => "heartbeat-timer") as typeof setInterval
+    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
     globalThis.clearInterval = (() => {}) as typeof clearInterval
 
     try {
@@ -270,7 +270,7 @@ describe("attachSseFanout", () => {
     replay.push({ type: "delta", value: "3" })
     const written: unknown[] = []
 
-    globalThis.setInterval = (() => "heartbeat-timer") as typeof setInterval
+    globalThis.setInterval = fakeSetInterval("heartbeat-timer")
     globalThis.clearInterval = (() => {}) as typeof clearInterval
 
     try {

@@ -1,13 +1,26 @@
 import { describe, expect, it } from "bun:test"
+import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
-function adapter() {
-  const out = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
-    sessions: Map<string, unknown>
-    probe: { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null; directory: string; init: null } | null
-  }
-  out.sessions = new Map()
-  out.probe = null
+type ProbeEntry = {
+  proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null
+  directory: string
+  init: null
+}
+
+type BaseInternals = {
+  sessions: Map<string, unknown>
+  probe: ProbeEntry | null
+}
+
+/** `Extra` names the extra internals a given test drives; see workspace-behavior.test.ts. */
+function adapter<Extra extends object = Record<never, never>>() {
+  const out = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
+    AcpHarnessAdapter,
+    Omit<BaseInternals, keyof Extra> & Extra
+  >
+  const defaults: BaseInternals = { sessions: new Map(), probe: null }
+  Object.assign(out, defaults)
   return out
 }
 
@@ -18,9 +31,9 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     delete process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS
 
-    const out = adapter() as AcpHarnessAdapter & {
+    const out = adapter<{
       getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
-    }
+    }>()
     out.getOrSpawnProbe = async (directory) => {
       expect(directory).toBe("/work")
       return new Promise(() => {})
@@ -40,9 +53,9 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
     const prev = process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS
     process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS = "10"
 
-    const out = adapter() as AcpHarnessAdapter & {
+    const out = adapter<{
       getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
-    }
+    }>()
     out.getOrSpawnProbe = async (directory) => {
       expect(directory).toBe("/work")
       return new Promise(() => {})
@@ -57,10 +70,10 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
   })
 
   it("returns cached options from the shared process without booting", async () => {
-    const out = adapter() as AcpHarnessAdapter & {
+    const out = adapter<{
       probe: { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null; directory: string; init: null }
       getOrSpawnProbe: (directory: string) => Promise<unknown>
-    }
+    }>()
     out.probe = {
       proc: {
         alive: true,

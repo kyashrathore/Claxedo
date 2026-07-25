@@ -39,6 +39,14 @@ export type AgentHarnessAdapterProcessOptions = {
   processObserver?: AgentProcessObserver
 }
 
+/**
+ * An injectable HTTP seam. Only the call signature is ever used, so this is
+ * deliberately narrower than `typeof fetch` — the platform type also carries
+ * `preconnect`, which no caller here touches and which would force every
+ * injected double to fabricate it.
+ */
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
 export type AgentInteractionResult = {
   events: CompatEvent[]
 }

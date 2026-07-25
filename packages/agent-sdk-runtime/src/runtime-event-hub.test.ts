@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import { createRuntimeEventHub } from "./runtime-event-hub"
+import { sessionIdle } from "./compat-events"
 
 describe("createRuntimeEventHub", () => {
   test("isolates subscriber failures from later global subscribers", () => {
@@ -17,7 +18,7 @@ describe("createRuntimeEventHub", () => {
         seen.push(event.payload.type)
       })
 
-      hub.publishGlobal({ directory: "/work", payload: { type: "session.idle", properties: { sessionID: "s1" } } })
+      hub.publishGlobal({ directory: "/work", payload: sessionIdle("s1") })
 
       expect(seen).toEqual(["session.idle"])
     } finally {

@@ -11,7 +11,7 @@ import { createRuntimeEventHub } from "../../runtime-event-hub"
 import * as path from "path"
 import * as os from "os"
 import * as fs from "fs"
-import type { CompatEvent } from "../../compat-events"
+import type { AgentRuntimeStreamEvent } from "../../index"
 
 const API_KEY = process.env.ANTHROPIC_API_KEY
 const BINARY = path.resolve(import.meta.dirname, "../../../node_modules/.bin/claude-agent-acp")
@@ -47,7 +47,7 @@ describe.skipIf(!API_KEY)("ACP title generation (live)", () => {
     const sessionId = session.id
 
     // 2. Send a message — this should trigger auto-title
-    const events: CompatEvent[] = []
+    const events: AgentRuntimeStreamEvent[] = []
     for await (const event of adapter.sendMessage(
       sessionId,
       {
@@ -64,7 +64,8 @@ describe.skipIf(!API_KEY)("ACP title generation (live)", () => {
     // 3. Verify events include session.updated with a truncated title (immediate fallback)
     const titleEvents = events.filter((e) => e.type === "session.updated")
     expect(titleEvents.length).toBeGreaterThanOrEqual(1)
-    const firstTitle = (titleEvents[0] as any).properties.info.title
+    const first = titleEvents[0]
+    const firstTitle = first?.type === "session.updated" ? first.properties.info.title : undefined
     expect(firstTitle).toBeTruthy()
     expect(typeof firstTitle).toBe("string")
     console.log("[test] immediate title:", firstTitle)
@@ -104,7 +105,7 @@ describe.skipIf(!API_KEY)("ACP title generation (live)", () => {
     const sessionId = session.id
 
     // 2. Send a message
-    const events: CompatEvent[] = []
+    const events: AgentRuntimeStreamEvent[] = []
     for await (const event of adapter.sendMessage(
       sessionId,
       {

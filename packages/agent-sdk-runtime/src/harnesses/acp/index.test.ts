@@ -1,17 +1,20 @@
 import { describe, expect, test } from "bun:test"
+import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
+import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 import { generateAITitle } from "./title"
+import type { CompatEvent } from "../../compat-events"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 
 function adapter() {
-  const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+  const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
     store: {
       listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
       appendEvent: (input: unknown) => void
     }
     sessions: Map<string, { proc: { alive: boolean; pendingPermissions: Map<string, unknown>; respondPermission: (id: string, response: unknown) => void } }>
-  }
+  }>
   item.sessions = new Map()
   Object.assign(item, { permissionOwners: new Map() })
   return item
@@ -161,16 +164,17 @@ describe("AcpHarnessAdapter permissions", () => {
 
 describe("AcpHarnessAdapter active turn cleanup", () => {
   test("process keys are opaque fingerprints without raw launch secrets", () => {
-    const item = new AcpHarnessAdapter({
+    const adapter = new AcpHarnessAdapter({
       binary: "fake-acp",
-      type: "codex-acp",
+      harness: "codex",
       args: ["--api-key", "arg-secret"],
       env: { ACP_TOKEN: "env-secret" },
       store: {} as AcpRuntimeStore,
-    }) as AcpHarnessAdapter & {
+    })
+    const item = internalsOf<{
       currentMcp: unknown[]
       processKey: (directory: string) => string
-    }
+    }>(adapter)
     item.currentMcp = [{
       name: "private-mcp",
       command: "node",
@@ -189,22 +193,22 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("process-level config changes ignore stale stored process keys", () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       currentModel: string
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       store: { getSessionOwnerKey: (id: string) => string | null }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       processes: Map<string, unknown>
       sessionProcesses: Map<string, string>
       ignoreStoredProcessKeys: boolean
       keyForSession: (id: string, directory: string) => string
-    }
+    }>
     item.currentEnv = { ACP_TOKEN: "old" }
     item.currentMcp = []
     item.currentModel = ""
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.store = {
       getSessionOwnerKey() {
         return "old-stored-key"
@@ -237,11 +241,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         calls.push("dispose")
       },
     }
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       currentModel: string
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       store: {
         getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
@@ -251,12 +255,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       processes: Map<string, { key: string; directory: string; proc: typeof proc | null; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
       permissionOwners: Map<string, typeof proc>
-    }
+    }>
     const lost: unknown[] = []
     item.currentEnv = {}
     item.currentMcp = []
     item.currentModel = ""
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.store = {
       getAgentSessionId() {
         return "agent-session-1"
@@ -295,7 +299,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
   test("delete keeps a shared process alive while persisted siblings remain", async () => {
     const calls: string[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getSessionOwnerKey: (id: string) => string | null
         listSessionsByOwnerKey: (key: string) => string[]
@@ -303,7 +307,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       }
       processes: Map<string, { key: string; directory: string; proc: { dispose: () => void }; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
-    }
+    }>
     item.store = {
       getSessionOwnerKey() {
         return "process-key"
@@ -335,7 +339,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
   test("delete disposes a shared process when no in-memory or persisted siblings remain", async () => {
     const calls: string[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getSessionOwnerKey: (id: string) => string | null
         listSessionsByOwnerKey: (key: string) => string[]
@@ -343,7 +347,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       }
       processes: Map<string, { key: string; directory: string; proc: { dispose: () => void }; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
-    }
+    }>
     item.store = {
       getSessionOwnerKey() {
         return "process-key"
@@ -389,7 +393,6 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
     const item = new AcpHarnessAdapter({
       binary: "remote-acp",
-      type: "codex-acp",
       args: ["--stdio"],
       env: { ACP_TOKEN: "secret" },
       store: {} as AcpRuntimeStore,
@@ -446,7 +449,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       alive: true,
       dispose() {},
     })
-    const item = new AcpHarnessAdapter({
+    const adapter = new AcpHarnessAdapter({
       binary: "/safe/bin/codex-acp",
       harness: "codex",
       args: ["--token", sentinel],
@@ -454,7 +457,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       store: {} as AcpRuntimeStore,
       createTransport,
       processObserver,
-    }) as AcpHarnessAdapter & {
+    })
+    const item = internalsOf<{
       currentMcp: Array<{
         name: string
         command: string
@@ -462,7 +466,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         env: Array<{ name: string; value: string }>
       }>
       make: (directory: string, role: "harness" | "probe") => { dispose(): void }
-    }
+    }>(adapter)
     item.currentMcp = [{
       name: "safe-mcp",
       command: "node",
@@ -534,7 +538,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       binary: "codex-acp",
       harness: "codex",
       args: ["-c", "service_tier=\"fast\""],
-      store: {
+      store: fakeRuntimeStore({
         updateSessionConfig() {
           return {
             harness: { id: "codex", access: "acp" },
@@ -543,10 +547,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
             agent: "build",
           }
         },
-        getAgentSessionId() {
-          return undefined
-        },
-      } as AcpRuntimeStore,
+        getAgentSessionId: () => undefined,
+      }),
       createTransport(input) {
         calls.push({ args: input.args, env: input.env })
         return transport
@@ -567,14 +569,14 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
   test("sendMessage applies the prompt model before process lookup", async () => {
     const calls: string[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: () => string
         getSession: () => { title: string }
       }
       setModel: (model: string) => void
       getOrSpawnProcess: () => Promise<never>
-    }
+    }>
     item.store = {
       getAgentSessionId() {
         return "agent-session-1"
@@ -602,9 +604,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("initialization timeout disposes the process", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       initialize: (proc: { initialize: () => Promise<void>; dispose: () => void }, ms: number) => Promise<void>
-    }
+    }>
     let disposed = false
 
     await expect(item.initialize({
@@ -620,13 +622,13 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("initialization failure preserves ACP stderr detail", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       initialize: (proc: {
         initialize: () => Promise<void>
         dispose: () => void
         failureDetail: () => string
       }, ms: number) => Promise<void>
-    }
+    }>
 
     await expect(item.initialize({
       async initialize() {
@@ -644,9 +646,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   test("session creation timeout disposes the process before storing a session", async () => {
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentModel: string
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       store: {
         bindSession: () => void
         updateSessionConfig: () => void
@@ -657,10 +659,10 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
           dispose: () => void
         }
       }>
-    }
+    }>
     const calls: string[] = []
     item.currentModel = ""
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.store = {
       bindSession() {
         calls.push("bind")
@@ -703,7 +705,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
 
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -712,7 +714,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       getOrSpawnProcess: () => Promise<{
         proc: {
@@ -725,9 +727,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         }
         isNew: boolean
       }>
-    }
+    }>
     const calls: string[] = []
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.store = {
       getAgentSessionId() {
@@ -794,7 +796,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const prev = process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS
     process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "5"
 
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -803,7 +805,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       getOrSpawnProcess: () => Promise<{
         proc: {
@@ -816,9 +818,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         }
         isNew: boolean
       }>
-    }
+    }>
     const calls: string[] = []
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.store = {
       getAgentSessionId() {
@@ -878,7 +880,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("config apply defers restart while a turn is active", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -887,7 +889,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       sessions: Map<string, { directory: string; proc: unknown; init: null }>
       probe: null
@@ -907,10 +909,10 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         }
         isNew: boolean
       }>
-    }
+    }>
 
     const calls: string[] = []
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.sessions = new Map()
     item.probe = null
@@ -990,18 +992,18 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("unchanged config apply does not drain an active turn", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
-      options: { binary: string; type: "codex-acp" }
+      options: { binary: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       restart: () => void
-    }
+    }>
 
     const calls: string[] = []
     item.currentEnv = { OPENAI_API_KEY: "sk-same" }
     item.currentMcp = []
-    item.options = { binary: "fake-acp", type: "codex-acp" }
+    item.options = { binary: "fake-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.turnLifecycle.enter("s1")
     item.turnLifecycle.set("s1", {
@@ -1022,19 +1024,19 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("claude oauth config applies as Claude Code oauth env", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
-      options: { binary: string; type: "claude-acp" }
+      options: { binary: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       restart: () => void
       forgetSessionProcessBindings: () => void
-    }
+    }>
 
     const calls: string[] = []
     item.currentEnv = {}
     item.currentMcp = []
-    item.options = { binary: "fake-acp", type: "claude-acp" }
+    item.options = { binary: "fake-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.restart = () => calls.push("restart")
     item.forgetSessionProcessBindings = () => calls.push("forget")
@@ -1059,24 +1061,24 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS = "5"
     const originalSetInterval = globalThis.setInterval
     const originalClearInterval = globalThis.clearInterval
-    const intervals: ReturnType<typeof setInterval>[] = []
+    const intervals: number[] = []
     let cleared = 0
     globalThis.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
       const id = originalSetInterval(handler, timeout, ...args)
       intervals.push(id)
       return id
     }) as typeof setInterval
-    globalThis.clearInterval = ((id?: ReturnType<typeof setInterval>) => {
-      if (id && intervals.includes(id)) cleared++
+    globalThis.clearInterval = ((id?: number) => {
+      if (id !== undefined && intervals.includes(id)) cleared++
       return originalClearInterval(id)
     }) as typeof clearInterval
 
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       sessions: Map<string, unknown>
       probe: null
       getOrSpawnProbe: () => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
       boot: () => Promise<string>
-    }
+    }>
     item.sessions = new Map()
     item.probe = null
     item.getOrSpawnProbe = async () => ({ alive: true, cachedConfigOptions: null })
@@ -1098,7 +1100,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 describe("AcpHarnessAdapter fork support", () => {
   test("does not fabricate a fork when the ACP process does not advertise fork support", async () => {
     const calls: unknown[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentMcp: unknown[]
       store: {
         getSession: (id: string) => { title?: string } | null
@@ -1112,7 +1114,7 @@ describe("AcpHarnessAdapter fork support", () => {
           forkSession: () => Promise<string>
         }
       }>
-    }
+    }>
     item.currentMcp = []
     item.store = {
       getSession: () => ({ title: "Demo" }),
@@ -1139,7 +1141,7 @@ describe("AcpHarnessAdapter fork support", () => {
 
   test("binds a fork to the agent session returned by session/fork", async () => {
     const calls: unknown[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentMcp: unknown[]
       store: {
         getSession: (id: string) => { title?: string } | null
@@ -1154,7 +1156,7 @@ describe("AcpHarnessAdapter fork support", () => {
             forkSession: (agentSessionId: string, directory: string) => Promise<string>
         }
       }>
-    }
+    }>
     item.currentMcp = []
     item.store = {
       getSession: () => ({ title: "Demo" }),
@@ -1245,17 +1247,20 @@ describe("AcpHarnessAdapter event fan-out", () => {
   test("AI title updates are persisted before direct global fan-out", async () => {
     const persisted: string[] = []
     const global: string[] = []
+    /** Only `session.updated` carries a session row, so the title has to be read behind that check. */
+    const titleOrType = (payload: CompatEvent) =>
+      payload.type === "session.updated" ? payload.properties.info.title : payload.type
     const store = {
       getSession() {
         return null
       },
-      appendEvent(input: { payload: { type: string; properties: { info?: { title?: string } } } }) {
-        persisted.push(input.payload.properties.info?.title ?? input.payload.type)
+      appendEvent(input: { sessionId: string; payload: CompatEvent }) {
+        persisted.push(titleOrType(input.payload))
       },
     }
     const eventHub = {
-      publishGlobal(event: { payload: { type: string; properties: { info?: { title?: string } } } }) {
-        global.push(event.payload.properties.info?.title ?? event.payload.type)
+      publishGlobal(event: { payload: CompatEvent }) {
+        global.push(titleOrType(event.payload))
       },
     }
     const proc = {

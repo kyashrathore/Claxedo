@@ -7,6 +7,7 @@ import type {
   SessionConfigOption,
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
+  SessionMode,
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
@@ -55,8 +56,24 @@ export type ACPState = {
   caps: Caps
   prompt: PromptCapabilities | null | undefined
   cfg: SessionConfigOption[] | null
-  /** Available ACP mode IDs (e.g. ["code", "plan"]). Empty = modes not supported. */
-  modeIds: string[]
+  /**
+   * Modes the agent advertised, as protocol `SessionMode` objects. Empty = modes
+   * not supported.
+   *
+   * The full object is kept, not just the id, because `SessionModeId` is
+   * deliberately an open `string` in the spec — there is no enumeration to match
+   * against, so a client that wants to TELL the user what a mode means has only
+   * the agent's own `name`/`description` to show. Dropping those (this used to be
+   * `modeIds: string[]`) forced callers to invent their own labels for ids they
+   * could only guess at.
+   *
+   * This channel is GENERIC and serves two unrelated purposes in this repo:
+   * `sync` below matches AGENT names against these ids, while Claxedo's
+   * permission-mode picker matches its own policy intents against them. So this
+   * keeps the protocol's term — an advertised session mode is not necessarily a
+   * permission mode.
+   */
+  modes: SessionMode[]
 }
 
 export type ACPConn = ClientContext
@@ -66,19 +83,34 @@ export function init(caps: Caps): ACPState {
     caps,
     prompt: caps?.promptCapabilities,
     cfg: null,
-    modeIds: [],
+    modes: [],
   }
 }
 
-/** Extract mode IDs from the raw modes field returned by loadSession/resumeSession. */
-function extractModeIds(modes: unknown): string[] {
+/** Ids only, for call sites that just need to test membership. */
+export function modeIds(state: ACPState): string[] {
+  return state.modes.map((mode) => mode.id)
+}
+
+/**
+ * Extract advertised modes from the raw `modes` field returned by
+ * loadSession/resumeSession. `id` and `name` are required by the spec, so a mode
+ * missing either is malformed and dropped rather than shown with a fabricated
+ * label; `description` is optional and passed through as-is.
+ */
+function extractModes(modes: unknown): SessionMode[] {
   if (!modes || typeof modes !== "object") return []
   const obj = modes as Record<string, unknown>
   const available = obj.availableModes
   if (!Array.isArray(available)) return []
-  return available
-    .map((m) => (m && typeof m === "object" ? (m as Record<string, unknown>).id : undefined))
-    .filter((id): id is string => typeof id === "string")
+  return available.flatMap((entry) => {
+    const mode = rec(entry)
+    const id = str(mode?.id)
+    const name = str(mode?.name)
+    if (!id || !name) return []
+    const description = str(mode?.description)
+    return [{ id, name, ...(description ? { description } : {}) } satisfies SessionMode]
+  })
 }
 
 export function merge(state: ACPState, meta: Meta): ACPState {
@@ -86,7 +118,7 @@ export function merge(state: ACPState, meta: Meta): ACPState {
     caps: state.caps,
     prompt: state.prompt,
     cfg: meta.configOptions !== undefined ? meta.configOptions : state.cfg,
-    modeIds: meta.modes !== undefined ? (meta.modes !== null ? extractModeIds(meta.modes) : []) : state.modeIds,
+    modes: meta.modes !== undefined ? (meta.modes !== null ? extractModes(meta.modes) : []) : state.modes,
   }
 }
 
@@ -156,11 +188,11 @@ export async function sync(conn: ACPConn, state: ACPState, sessionId: string, in
         value: mid,
       }),
     )
-  } else if (next.modeIds.length > 0) {
+  } else if (next.modes.length > 0) {
     // Only call setSessionMode if the agent name matches a known ACP mode.
     // OpenCode agent names (e.g. "General") don't map to ACP modes (e.g. "code", "plan").
     const lower = input.agent.toLowerCase()
-    const matched = next.modeIds.find((id) => id === input.agent || id === lower)
+    const matched = modeIds(next).find((id) => id === input.agent || id === lower)
     if (matched) {
       await conn.request(methods.agent.session.setMode, { sessionId, modeId: matched })
     }

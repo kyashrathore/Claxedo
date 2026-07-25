@@ -9,7 +9,7 @@ import {
 } from "@claxedo/agent-event-runtime"
 import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentConfigOptionRow, PromptInput } from "../../index"
-import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
+import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
@@ -116,7 +116,7 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
   return new CodexAppServerDriver(host, options)
 }
 
-type CodexDriverOptions = { binary?: string; fetch?: typeof fetch; codexHome?: string }
+type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const

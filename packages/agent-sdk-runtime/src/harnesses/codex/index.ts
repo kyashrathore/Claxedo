@@ -1,8 +1,9 @@
 import { SdkRuntimeAdapter, type SdkRuntimeAdapterOptions } from "../shared/sdk-runtime-adapter"
 import { createCodexAppServerDriver } from "./driver"
+import type { FetchLike } from "../../adapter-contract"
 
 export type CodexHarnessAdapterOptions = Omit<SdkRuntimeAdapterOptions, "driver"> & {
-  fetch?: typeof fetch
+  fetch?: FetchLike
   codexHome?: string
 }
 

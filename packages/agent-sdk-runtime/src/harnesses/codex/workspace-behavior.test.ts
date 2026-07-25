@@ -3,7 +3,9 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { CodexHarnessAdapter } from "./index"
-import type { PromptInput } from "../../index"
+import type { PromptInput, SessionConfig } from "../../index"
+import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
+import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 
 const tempDirs: string[] = []
 
@@ -27,44 +29,31 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
 })
 
-class FakeRuntimeStore {
-  private sessions = new Map<string, { id: string; directory: string; title?: string }>()
-  private configs = new Map<string, Record<string, unknown>>()
-  private agentSessionIds = new Map<string, string>()
+/**
+ * Session/config state the codex adapter actually round-trips, layered on the
+ * shared inert base so the double stays a complete runtime store. (As a
+ * hand-rolled class it implemented 7 of the port's members and the gap went
+ * unnoticed while tests were outside the typecheck.)
+ */
+function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
+  const sessions = new Map<string, { id: string; directory: string; title?: string }>()
+  const configs = new Map<string, SessionConfig>()
+  const agentSessionIds = new Map<string, string>()
 
-  constructor(_storeRoot?: string) {}
-
-  bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }) {
-    this.sessions.set(input.sessionId, { id: input.sessionId, directory: input.directory, title: input.title })
-    this.agentSessionIds.set(input.sessionId, input.agentSessionId)
-  }
-
-  getAgentSessionId(id: string) {
-    return this.agentSessionIds.get(id)
-  }
-
-  getSession(id: string) {
-    return this.sessions.get(id) ?? null
-  }
-
-  updateSessionConfig(id: string, patch: Record<string, unknown>) {
-    this.configs.set(id, { ...(this.configs.get(id) ?? {}), ...patch })
-    return this.configs.get(id)
-  }
-
-  getSessionConfig(id: string) {
-    return this.configs.get(id)
-  }
-
-  startTurn(_input: unknown) {}
-  appendEvent(input: { sessionId?: string; payload: unknown }) {
-    return {
-      sessionId: input.sessionId ?? "session",
-      seq: 1,
-      createdAt: 1,
-      payload: input.payload,
-    }
-  }
+  return fakeRuntimeStore({
+    bindSession(input) {
+      sessions.set(input.sessionId, { id: input.sessionId, directory: input.directory, title: input.title })
+      agentSessionIds.set(input.sessionId, input.agentSessionId)
+    },
+    getAgentSessionId: (id) => agentSessionIds.get(id),
+    getSession: (id) => sessions.get(id) ?? null,
+    updateSessionConfig(id, update) {
+      const next = { ...(configs.get(id) ?? {}), ...update } as SessionConfig
+      configs.set(id, next)
+      return next
+    },
+    getSessionConfig: (id) => configs.get(id),
+  })
 }
 
 async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean } = {}) {
@@ -151,7 +140,7 @@ async function runWithModels(input: {
   const fake = await makeFakeCodex()
   const adapter = new CodexHarnessAdapter({
     binary: fake.binary,
-    createStore: (storeRoot) => new FakeRuntimeStore(storeRoot),
+    createStore: () => fakeCodexStore(),
     storeRoot: path.join(fake.dir, "store"),
   })
   adapter.setModel(input.globalModel)
@@ -211,7 +200,7 @@ describe("CodexHarnessAdapter", () => {
           account_id: "acct-2",
         })
       },
-      createStore: (storeRoot) => new FakeRuntimeStore(storeRoot),
+      createStore: () => fakeCodexStore(),
       storeRoot: path.join(fake.dir, "store"),
     })
     adapter.setModel("gpt-5.5")
@@ -264,7 +253,7 @@ describe("CodexHarnessAdapter", () => {
     const fake = await makeFakeCodex({ auth401: true })
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
-      createStore: (storeRoot) => new FakeRuntimeStore(storeRoot),
+      createStore: () => fakeCodexStore(),
       storeRoot: path.join(fake.dir, "store"),
     })
     adapter.setModel("gpt-5.5")

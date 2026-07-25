@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import type { WithInternals } from "../../test-utils/class-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./sdk-runtime-adapter"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { createCodexAppServerDriver } from "../codex/driver"
 import { createMemoryRuntimeStore } from "../../stores/memory"
+import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
+import { storeRows } from "../../test-utils/store-internals"
 
 function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   return {
@@ -11,9 +14,10 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     applyConfig() {},
     createAgentSession: async () => "thread-1",
     createRuntime() {
+      const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
       return {
-        ingest: () => ({ events: [], snapshot: { harness: "codex", threadId: "thread-1", adapterState: {} } }),
-        snapshot: () => ({ harness: "codex", threadId: "thread-1", adapterState: {} }),
+        ingest: () => ({ state: {}, events: [], snapshot: snapshot() }),
+        snapshot,
       }
     },
     runTurn: async () => {},
@@ -25,7 +29,7 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
 
 describe("SdkRuntimeAdapter", () => {
   test.each(["claude", "codex", "cursor"] as const)("%s native generates and persists a title after the first turn", async (type) => {
-    const store = createMemoryRuntimeStore()
+    const store = storeRows(createMemoryRuntimeStore())
     const adapter = new SdkRuntimeAdapter({
       store,
       driver: () => ({
@@ -64,12 +68,12 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("requires a workspace directory at cwd-dependent boundaries", async () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as SdkRuntimeAdapter & {
+    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
       pendingPermissions: Map<string, unknown>
       store: {
         listPermissions: () => []
       }
-    }
+    }>
     item.pendingPermissions = new Map()
     item.store = {
       listPermissions: () => [],
@@ -92,10 +96,10 @@ describe("SdkRuntimeAdapter", () => {
     lifecycle.set("s1", { abort })
     host.pendingPermissions = new Map([["perm-1", { resolve: (decision) => decisions.push(decision) }]])
     host.pendingQuestions = new Map([["question-1", { reject: () => { rejected = true } }]])
-    const driver = createCodexAppServerDriver(host as never) as SdkRuntimeDriver & {
+    const driver = createCodexAppServerDriver(host as never) as WithInternals<SdkRuntimeDriver, {
       activeThreads: Map<string, unknown>
       failInteractiveState: (err: Error) => void
-    }
+    }>
     driver.activeThreads.set("thread-1", {})
 
     driver.failInteractiveState(new Error("process exited"))
@@ -115,13 +119,13 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("dispose aborts and closes active turns", () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as SdkRuntimeAdapter & {
+    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       pendingPermissions: Map<string, unknown>
       pendingQuestions: Map<string, { reject: () => void }>
       driver: SdkRuntimeDriver
       dispose: () => void
-    }
+    }>
     const abort = new AbortController()
     let closed = false
     let rejected = false
@@ -145,7 +149,7 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("per-session config updates do not mutate the adapter-wide model", async () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as SdkRuntimeAdapter & {
+    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
       currentModel: string
       options: {}
       driver: SdkRuntimeDriver
@@ -153,7 +157,7 @@ describe("SdkRuntimeAdapter", () => {
         updateSessionConfig: () => unknown
         getSessionConfig: () => unknown
       }
-    }
+    }>
     item.currentModel = ""
     item.options = {}
     item.driver = minimalSdkRuntimeDriver()

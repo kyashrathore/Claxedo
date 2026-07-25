@@ -67,6 +67,7 @@ import type {
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { extractAgents } from "./session"
+import { acpPermissionRequest, permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
 import { firstTurnErrorData } from "../../first-turn-error"
 import { Log } from "../../log"
@@ -1031,17 +1032,12 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         }
       }
       const install = () => {
-        proc.permissionPushers.set(agentSessionId, (permId, tool, paths) => {
-          log.info("sendMessage: forwarding permission-request to stream", { permId, tool })
+        proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+          log.info("sendMessage: forwarding permission-request to stream", { permId, tool, kind })
           this.permissionOwnerMap().set(permId, proc)
-          const event = permissionAsked({
-            id: permId,
-            sessionID: id,
-            permission: tool,
-            patterns: paths,
-            metadata: {},
-            always: paths,
-          })
+          const event = permissionAsked(
+            acpPermissionRequest({ permId, sessionId: id, tool, kind, paths }),
+          )
           this.store.appendEvent({
             sessionId: id,
             agentSessionId,
@@ -1312,7 +1308,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         caps: null,
         prompt: null,
         cfg: cfg as SessionConfigOption[],
-        modeIds: [],
+        modes: [],
       })
       if (list.length > 0) return list
     }
@@ -1379,28 +1375,25 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       })
       return clear()
     }
-    const kindMap: Record<string, PermissionOptionKind> = {
-      allow_once: "allow_once",
-      allow_always: "allow_always",
-      deny: "reject_once",
-      reject_always: "reject_always",
-    }
-    const targetKind = kindMap[decision] ?? "reject_once"
-    const option = pending.options.find((o) => o.kind === targetKind)
+    const preferred = permissionOptionPreference(decision)
+    const option = selectPermissionOption(decision, pending.options)
     if (option) {
       log.info("respondPermission: resolving with option", {
         permId,
         decision,
-        targetKind,
+        requestedKind: preferred[0],
         selectedOptionId: option.optionId,
         selectedKind: option.kind,
+        // Loud when we had to settle for something other than first choice.
+        degraded: option.kind !== preferred[0],
       })
       proc.respondPermission(permId, { outcome: { outcome: "selected", optionId: option.optionId } })
       return clear()
     }
-    log.info("respondPermission: no matching option found in pending.options", {
+    log.info("respondPermission: no acceptable option found in pending.options", {
       permId,
       decision,
+      preferred,
       availableKinds: pending.options.map((o) => o.kind),
     })
     proc.respondPermission(permId, { outcome: { outcome: "cancelled" } })

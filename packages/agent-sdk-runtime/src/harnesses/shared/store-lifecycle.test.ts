@@ -1,61 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { AcpHarnessAdapter, type AcpRuntimeStore } from "../acp"
-import type { CompatEvent } from "../../compat-events"
 import { CodexHarnessAdapter } from "../codex"
-import type { AgentRuntimeCommittedCompatOutput } from "./runtime-store"
+import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import type { SdkRuntimeStore } from "./sdk-runtime-adapter"
 
-function committed(input: { sessionId: string; agentSessionId?: string; payload: CompatEvent }): AgentRuntimeCommittedCompatOutput {
-  return {
-    sessionId: input.sessionId,
-    seq: 1,
-    createdAt: 1,
-    ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
-    payload: input.payload,
-  }
-}
-
 function acpStore(close?: () => void): AcpRuntimeStore {
-  return {
-    listSessions: () => [],
-    getSession: () => null,
-    bindSession: () => {},
-    updateSessionConfig: () => null,
-    updateSession: () => null,
-    getSessionConfig: () => null,
-    deleteSession: () => {},
-    getAgentSessionId: () => null,
-    startTurn: () => {},
-    appendEvent: committed,
-    getMessages: () => [],
-    getTodos: () => [],
-    listPermissions: () => [],
-    stalePermission: () => {},
-    markRecovering: () => {},
-    markSessionInterrupted: () => {},
-    consumeRecoveryError: () => null,
-    ...(close ? { close } : {}),
-  }
+  return fakeRuntimeStore(close ? { close } : {})
 }
 
 function sdkStore(close?: () => void): SdkRuntimeStore {
-  return {
-    listSessions: () => [],
-    getSession: () => null,
-    bindSession: () => {},
-    updateSessionConfig: () => null,
-    updateSession: () => null,
-    getSessionConfig: () => null,
-    deleteSession: () => {},
-    getAgentSessionId: () => null,
-    startTurn: () => {},
-    appendEvent: committed,
-    getMessages: () => [],
-    getTodos: () => [],
-    listPermissions: () => [],
-    stalePermission: () => {},
-    ...(close ? { close } : {}),
-  }
+  return fakeRuntimeStore(close ? { close } : {})
 }
 
 describe("adapter store lifecycle", () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { fakeGlobalFetch } from "../../test-utils/class-internals"
 import { OpenCodeHarnessAdapter, spawnEnv, type OpenCodeRequestFn } from "./index"
 
 function prompt() {
@@ -287,9 +288,9 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     // No URL, only an injected handler — the process must never be consulted.
     // Fail loudly if any real network is attempted.
     const prev = globalThis.fetch
-    globalThis.fetch = (async () => {
+    globalThis.fetch = fakeGlobalFetch(async () => {
       throw new Error("network must not be used in injected mode")
-    }) as typeof fetch
+    })
     try {
       const adapter = new OpenCodeHarnessAdapter(undefined, { request: handler })
 
@@ -371,13 +372,13 @@ describe("OpenCodeHarnessAdapter external transport", () => {
   test("removes stale compression headers after fetch decompresses a response", async () => {
     const prev = globalThis.fetch
     const body = JSON.stringify({ data: [{ type: "session.next.prompt.admitted", prompt: "x".repeat(2_000) }] })
-    globalThis.fetch = (async () => new Response(body, {
+    globalThis.fetch = fakeGlobalFetch(async () => new Response(body, {
       headers: {
         "content-type": "application/json",
         "content-encoding": "gzip",
         "content-length": "128",
       },
-    })) as typeof fetch
+    }))
 
     try {
       const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")

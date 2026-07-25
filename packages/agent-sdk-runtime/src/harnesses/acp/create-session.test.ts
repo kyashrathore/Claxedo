@@ -1,33 +1,45 @@
 import { describe, expect, it } from "bun:test"
+import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
-function adapter() {
-  const out = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
-    options: { binary: string; type?: string; storeRoot?: string }
-    currentModel: string
-    dirs: Set<string>
+type BaseInternals = {
+  options: { binary: string; storeRoot?: string }
+  currentModel: string
+  dirs: Set<string>
+  sessions: Map<string, unknown>
+  busySessions: Set<string>
+  shared: {
+    proc: { alive: boolean } | null
+    init: null
+    refs: number
+    key: string
+    model: string
+    leases: Set<AcpHarnessAdapter>
+  }
+}
+
+/** `Extra` names the extra internals a given test drives; see workspace-behavior.test.ts. */
+function adapter<Extra extends object = Record<never, never>>() {
+  const out = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
+    AcpHarnessAdapter,
+    Omit<BaseInternals, keyof Extra> & Extra
+  >
+  const defaults: BaseInternals = {
+    options: { binary: "fake-acp" },
+    currentModel: "",
+    dirs: new Set(),
+    sessions: new Map(),
+    busySessions: new Set(),
     shared: {
-      proc: { alive: boolean } | null
-      init: null
-      refs: number
-      key: string
-      model: string
-      leases: Set<AcpHarnessAdapter>
-    }
+      proc: null,
+      init: null,
+      refs: 1,
+      key: "test",
+      model: "",
+      leases: new Set(),
+    },
   }
-  out.options = { binary: "fake-acp" }
-  out.currentModel = ""
-  out.dirs = new Set()
-  ;(out as any).sessions = new Map()
-  ;(out as any).busySessions = new Set()
-  out.shared = {
-    proc: null,
-    init: null,
-    refs: 1,
-    key: "test",
-    model: "",
-    leases: new Set(),
-  }
+  Object.assign(out, defaults)
   return out
 }
 
@@ -37,7 +49,7 @@ describe("AcpHarnessAdapter.createSession", () => {
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     let dead = false
 
-    const out = adapter() as AcpHarnessAdapter & {
+    const out = adapter<{
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
           newSession: (directory: string, title?: string) => Promise<string>
@@ -46,7 +58,7 @@ describe("AcpHarnessAdapter.createSession", () => {
         isNew: boolean
       }>
       store: { bindSession: (input: unknown) => void; updateSessionConfig: (id: string, cfg: unknown) => void }
-    }
+    }>()
     out.store = {
       bindSession() {
         throw new Error("bindSession should not be called")
@@ -97,7 +109,7 @@ describe("AcpHarnessAdapter.createSession", () => {
       bindSession() {},
       updateSessionConfig() {},
     }
-    const a = adapter() as AcpHarnessAdapter & {
+    const a = adapter<{
       make: () => {
         alive: boolean
         cachedConfigOptions: unknown[] | null
@@ -106,8 +118,8 @@ describe("AcpHarnessAdapter.createSession", () => {
         dispose: () => void
       }
       store: { bindSession: (input: unknown) => void; updateSessionConfig: (id: string, cfg: unknown) => void }
-    }
-    const b = adapter() as AcpHarnessAdapter & {
+    }>()
+    const b = adapter<{
       make: () => {
         alive: boolean
         cachedConfigOptions: unknown[] | null
@@ -116,9 +128,9 @@ describe("AcpHarnessAdapter.createSession", () => {
         dispose: () => void
       }
       store: { bindSession: (input: unknown) => void; updateSessionConfig: (id: string, cfg: unknown) => void }
-    }
-    a.options = { binary: "fake-acp", type: "claude-acp" }
-    b.options = { binary: "fake-acp", type: "claude-acp" }
+    }>()
+    a.options = { binary: "fake-acp" }
+    b.options = { binary: "fake-acp" }
     a.store = store
     b.store = store
     a.make = make

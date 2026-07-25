@@ -587,13 +587,15 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return []
   }
 
-  async listPermissions(): Promise<AgentPermissionRow[]> {
+  /** Pi runs in-process with no workspace of its own, so `directory` is accepted (the port passes it) and ignored. */
+  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermissionRow[]> {
     return [...this.sessions.values()].flatMap((session) => [...session.permissions.values()].map((item) => item.row))
   }
 
   async respondPermission(
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
+    _directory?: RuntimeDirectory,
   ) {
     for (const session of this.sessions.values()) {
       const pending = session.permissions.get(permId)

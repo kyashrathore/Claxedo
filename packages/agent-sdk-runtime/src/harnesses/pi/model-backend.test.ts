@@ -31,8 +31,12 @@ describe("Pi model backend resolution", () => {
   })
 
   test("rejects unknown models with a structured error", () => {
+    // `expect.objectContaining` is not generic; the shape is pinned on the const
+    // so `code` is checked against `PiModelResolutionErrorCode` rather than being
+    // a free-form string the matcher would accept either way.
+    const unsupportedModel: Partial<PiModelResolutionError> = { code: "unsupported_model" }
     expect(() => requirePiModel({ providerID: "openai", modelID: "not-a-model" })).toThrow(
-      expect.objectContaining<PiModelResolutionError>({ code: "unsupported_model" }),
+      expect.objectContaining(unsupportedModel),
     )
   })
 })

@@ -9,6 +9,7 @@ import {
   type McpServer,
   type PermissionOption,
   type RequestPermissionRequest,
+  type ToolKind,
   type RequestPermissionResponse,
   type SessionConfigOption,
   type SessionNotification,
@@ -25,11 +26,26 @@ import type { AgentProcessObserverHandle } from "../../process-observer"
 const log = Log.create({ service: "acp-adapter" })
 
 export type SessionUpdate = SessionNotification["update"]
-export type PermissionPusher = (permId: string, tool: string, paths: string[]) => void
+/**
+ * `tool` is the agent's human-readable `toolCall.title` ("Read file src/index.ts");
+ * `kind` is the protocol's machine-readable `ToolKind` classification. Both are
+ * strings, so they are passed BY NAME — transposing them positionally would
+ * silently reintroduce the bug this shape exists to prevent.
+ */
+export type PermissionPushPayload = {
+  permId: string
+  tool: string
+  kind?: ToolKind
+  paths: string[]
+}
+
+export type PermissionPusher = (payload: PermissionPushPayload) => void
 
 export interface PendingPermission {
   aid: string
   tool: string
+  /** Protocol classification; absent when the agent does not send one. */
+  kind?: ToolKind
   paths: string[]
   options: PermissionOption[]
   resolve: (response: RequestPermissionResponse) => void
@@ -136,12 +152,19 @@ export class ACPProcess {
         const permId = randomUUID()
         const toolCall = params.toolCall
         const tool = toolCall.title ?? "unknown"
+        // `title` is prose for display; `kind` is the classification any policy
+        // decision must key on. Forwarding only the title left every consumer
+        // matching against strings like "Read file src/index.ts".
+        // ACP types this as `ToolKind | null | undefined`; collapse the null so
+        // downstream only has to handle "absent".
+        const kind = toolCall.kind ?? undefined
         const paths: string[] = []
         const hasListener = this.sessionListeners.has(params.sessionId)
 
         log.info("ACP requestPermission received", {
           sessionId: params.sessionId,
           tool,
+          kind,
           permId,
           optionKinds: params.options.map((o) => o.kind),
           hasListener,
@@ -151,6 +174,7 @@ export class ACPProcess {
           this.pendingPermissions.set(permId, {
             aid: params.sessionId,
             tool,
+            kind,
             paths,
             options: params.options,
             resolve,
@@ -163,11 +187,11 @@ export class ACPProcess {
               permId,
               tool,
             })
-            pusher(permId, tool, (params.toolCall.locations ?? []).map((l) => l.path))
+            pusher({ permId, tool, kind, paths: (params.toolCall.locations ?? []).map((l) => l.path) })
           } else {
             log.info(
               "ACP requestPermission: no active pusher — permission stored but not forwarded to frontend yet",
-              { permId, tool, sessionId: params.sessionId },
+              { permId, tool, kind, sessionId: params.sessionId },
             )
           }
         })
@@ -275,7 +299,7 @@ export class ACPProcess {
         caps: this.caps,
         prompt: null,
         cfg: this.cachedConfigOptions,
-        modeIds: [],
+        modes: [],
       })
       if (agents.length > 0) return agents
     }
@@ -311,7 +335,7 @@ export class ACPProcess {
       workingDirectory,
       kind,
       pid,
-      modeCount: state.modeIds.length,
+      modeCount: state.modes.length,
       hasCfg: !!state.cfg?.length,
     })
     const stop = watch("resumeSession", { agentSessionId, workingDirectory, kind, pid })
@@ -346,7 +370,7 @@ export class ACPProcess {
       model: input.model.modelID,
       variant: input.variant ?? null,
       pid,
-      modeCount: state.modeIds.length,
+      modeCount: state.modes.length,
       hasCfg: !!state.cfg?.length,
     })
     const stop = watch("syncSession", {

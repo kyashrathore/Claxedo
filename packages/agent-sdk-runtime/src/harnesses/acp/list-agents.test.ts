@@ -1,22 +1,34 @@
 import { describe, expect, it } from "bun:test"
+import type { SessionConfigOption } from "@agentclientprotocol/sdk"
+import type { WithOverrides } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
+type ProbedAgent = { name: string; description: string; mode: string }
+
+/**
+ * `probeConfigOptions` is declared as returning `AgentConfigOptionRow[]`, but it
+ * hands back the ACP process cache verbatim (`cachedConfigOptions as
+ * AgentConfigOptionRow[]`, index.ts:1464/1494/1514) and `listAgents` reads it back
+ * as `SessionConfigOption[]`. The stub therefore has to be ACP-shaped, and has to
+ * override the declared signature rather than intersect with it.
+ */
 function adapter(input?: {
-  list?: unknown[]
-  cfg?: unknown[]
+  list?: ProbedAgent[]
+  cfg?: SessionConfigOption[]
 }) {
-  const out = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
-    shared: { proc: { alive: boolean; getAgents: () => unknown[] } | null }
-    probeConfigOptions: (directory: string) => Promise<unknown[]>
-  }
-  ;(out as any).sessions = new Map()
+  const out = Object.create(AcpHarnessAdapter.prototype) as WithOverrides<AcpHarnessAdapter, {
+    sessions: Map<string, { directory: string; proc: { alive: boolean; getAgents: () => ProbedAgent[] }; init: null }>
+    shared: { proc: { alive: boolean; getAgents: () => ProbedAgent[] } | null }
+    probeConfigOptions: (directory: string) => Promise<SessionConfigOption[]>
+  }>
+  out.sessions = new Map()
   out.shared = { proc: null }
   out.probeConfigOptions = async (directory) => {
     expect(directory).toBe("/work")
     return input?.cfg ?? []
   }
   if (input?.list) {
-    ;(out as any).sessions.set("live", {
+    out.sessions.set("live", {
       directory: "/work",
       proc: {
         alive: true,

@@ -5,8 +5,15 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "noUncheckedIndexedAccess": false,
-    "lib": ["ESNext", "DOM"]
+    "lib": ["ESNext", "DOM"],
+    "types": ["bun"]
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.vitest.ts"]
+  "$comment": [
+    "Tests are DELIBERATELY typechecked here. They used to be excluded, which silently killed every",
+    "type-level assertion in a *.test.ts (`satisfies`, `Expect<Equal<…>>`, exhaustiveness checks): they",
+    "compiled no matter what they claimed. Emit is not a concern — tsconfig.build.json declares its own",
+    "include/exclude (which replace, not merge with, these), so tests never reach dist/.",
+    "Do not re-add an exclude for src/**/*.test.ts."
+  ]
 }

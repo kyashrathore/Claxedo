@@ -11,6 +11,7 @@ import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated } from "./compat-events"
 import type { AgentRuntimeStreamEvent } from "./index"
+import { storeRows } from "./test-utils/store-internals"
 
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
   const out: T[] = []
@@ -27,6 +28,11 @@ function tempRoot() {
 
 function tick() {
   return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Session rows are `unknown` on the store port — the runtime owns their shape — so narrow on read. */
+function lastTurnOf(rows: { getSession(id: string): unknown }, id: string) {
+  return (rows.getSession(id) as { lastTurn?: { status?: string; error?: string } } | null)?.lastTurn
 }
 
 function testHarness(options: {
@@ -139,6 +145,7 @@ describe("createAgentRuntime", () => {
 
   test("commits streamed compatibility events to replay before publishing", async () => {
     const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -164,7 +171,7 @@ describe("createAgentRuntime", () => {
     await events
     await tick()
 
-    expect(store.getMessages(session.id)).toMatchObject([
+    expect(rows.getMessages(session.id)).toMatchObject([
       { info: { id: "msg_1", role: "user" } },
       {
         info: { id: "msg_1_r", role: "assistant" },
@@ -176,6 +183,7 @@ describe("createAgentRuntime", () => {
 
   test("aliases emitted assistant ids back to the submitted assistant id", async () => {
     const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -209,19 +217,20 @@ describe("createAgentRuntime", () => {
     await events
     await tick()
 
-    expect(store.getMessages(session.id)).toMatchObject([
+    expect(rows.getMessages(session.id)).toMatchObject([
       { info: { id: "msg_1", role: "user" } },
       {
         info: { id: "msg_1_r", role: "assistant" },
         parts: [{ id: "part_1", text: "aliased reply" }],
       },
     ])
-    expect(store.getMessages(session.id)).toHaveLength(2)
+    expect(rows.getMessages(session.id)).toHaveLength(2)
     runtime.dispose()
   })
 
   test("aliases assistant parts even when they arrive before assistant metadata", async () => {
     const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -247,19 +256,20 @@ describe("createAgentRuntime", () => {
     await events
     await tick()
 
-    expect(store.getMessages(session.id)).toMatchObject([
+    expect(rows.getMessages(session.id)).toMatchObject([
       { info: { id: "msg_1", role: "user" } },
       {
         info: { id: "msg_1_r", role: "assistant" },
         parts: [{ id: "part_1", text: "part-first reply" }],
       },
     ])
-    expect(store.getMessages(session.id)).toHaveLength(2)
+    expect(rows.getMessages(session.id)).toHaveLength(2)
     runtime.dispose()
   })
 
   test("projects runtime-native text chunks into durable replay", async () => {
     const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -279,7 +289,7 @@ describe("createAgentRuntime", () => {
     await events
     await tick()
 
-    expect(store.getMessages(session.id)).toMatchObject([
+    expect(rows.getMessages(session.id)).toMatchObject([
       { info: { id: "msg_1", role: "user" } },
       {
         info: { id: "msg_1_r", role: "assistant" },
@@ -468,7 +478,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("removes pending interactions when deleting a session", () => {
-    const store = createMemoryRuntimeStore()
+    const store = storeRows(createMemoryRuntimeStore())
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -479,7 +489,9 @@ describe("createAgentRuntime", () => {
       payload: permissionAsked({
         id: "perm_1",
         sessionID: "ses_1",
-        tool: "bash",
+        permission: "bash",
+        patterns: ["*"],
+        always: [],
         metadata: {},
       }),
     })
@@ -488,7 +500,11 @@ describe("createAgentRuntime", () => {
       payload: questionAsked({
         id: "question_1",
         sessionID: "ses_1",
-        questions: [{ id: "q1", type: "input", text: "Name?" }],
+        questions: [{
+          question: "What should the new service be called?",
+          header: "Name?",
+          options: [{ label: "api", description: "Public HTTP surface" }],
+        }],
       }),
     })
 
@@ -502,7 +518,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("preserves message parts across later message metadata updates", async () => {
-    const store = createMemoryRuntimeStore()
+    const store = storeRows(createMemoryRuntimeStore())
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -542,7 +558,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("persists session.updated into the store projection", () => {
-    const store = createMemoryRuntimeStore()
+    const store = storeRows(createMemoryRuntimeStore())
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -638,7 +654,7 @@ describe("createAgentRuntime", () => {
   test("sqlite store coalesces event bursts into a single snapshot write", async () => {
     const root = tempRoot()
     try {
-      const store = createSqliteRuntimeStore({ root })
+      const store = storeRows(createSqliteRuntimeStore({ root }))
       const internals = store as unknown as {
         persist(): void
         bindSession(input: { sessionId: string; directory: string; agentSessionId: string }): void
@@ -686,13 +702,13 @@ describe("createAgentRuntime", () => {
   })
 
   test("surfaces convex projection failures from flush", async () => {
-    const store = createConvexRuntimeStore({
+    const store = storeRows(createConvexRuntimeStore({
       projection: {
         syncSession: async () => {
           throw new Error("projection down")
         },
       },
-    })
+    }))
 
     store.bindSession({
       sessionId: "ses_1",
@@ -705,7 +721,7 @@ describe("createAgentRuntime", () => {
 
   test("syncs sessions and messages through a hosted Convex authority", async () => {
     const calls: Array<{ method: string; args: unknown }> = []
-    const store = createConvexRuntimeStore({
+    const store = storeRows(createConvexRuntimeStore({
       auth: { token: "signed" },
       workspaceId: "ws_1",
       authority: {
@@ -713,7 +729,7 @@ describe("createAgentRuntime", () => {
         upsertSessionVisibility: async (_auth, args) => calls.push({ method: "upsertSessionVisibility", args }),
         syncSessionMessages: async (_auth, args) => calls.push({ method: "syncSessionMessages", args }),
       },
-    })
+    }))
 
     store.bindSession({
       sessionId: "ses_1",
@@ -767,11 +783,13 @@ describe("createAgentRuntime", () => {
 
   test("syncs turn outcomes through convex session projection", async () => {
     const sessions: unknown[] = []
-    const store = createConvexRuntimeStore({
+    const store = storeRows(createConvexRuntimeStore({
       projection: {
-        syncSession: (session) => sessions.push(session),
+        syncSession: (session) => {
+          sessions.push(session)
+        },
       },
-    })
+    }))
 
     store.bindSession({
       sessionId: "ses_1",
@@ -801,7 +819,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("records failed turn errors on the active assistant message", () => {
-    const store = createMemoryRuntimeStore()
+    const store = storeRows(createMemoryRuntimeStore())
     store.bindSession({
       sessionId: "ses_1",
       directory: "/repo",
@@ -833,6 +851,7 @@ describe("createAgentRuntime", () => {
 
   test("keeps the specific runtime error after a generic error status", async () => {
     const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
@@ -853,9 +872,9 @@ describe("createAgentRuntime", () => {
       text: "hello",
       model: { providerID: "pi", modelID: "virtual" },
     })
-    while (!store.getSession(session.id)?.lastTurn) await tick()
+    while (!lastTurnOf(rows, session.id)) await tick()
 
-    expect(store.getSession(session.id)?.lastTurn).toMatchObject({
+    expect(lastTurnOf(rows, session.id)).toMatchObject({
       status: "failed",
       error: "Codex authentication failed with 401 Unauthorized",
     })
