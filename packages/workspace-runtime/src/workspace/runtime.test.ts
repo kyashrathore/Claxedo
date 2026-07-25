@@ -442,6 +442,13 @@ describe("workspace runtime auth helpers", () => {
     const home = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-checkpoint-auth-"))
     tempDirs.push(home)
     process.env.HOME = home
+    // A successful apply persists `.workspace-runtime/runtime-config/*.json`
+    // into the workspace directory. `workspaceDir()` falls back to
+    // `process.cwd()`, so without an explicit directory this test would write
+    // those files into the package root and dirty tracked files on every run.
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-checkpoint-workspace-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const app = new Hono()
     const host = mountTestHost(app)
 

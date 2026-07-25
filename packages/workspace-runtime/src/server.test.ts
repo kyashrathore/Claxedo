@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import fs from "fs"
 import os from "os"
 import path from "path"
@@ -39,6 +39,33 @@ const relayHostAuth: RelayHostAuthOptions = {
   workspaceId: "ws_1",
   hostId: "host_1",
 }
+
+const tempWorkspaceDirs: string[] = []
+const originalWorkspaceDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+
+/**
+ * Pin the runtime to a throwaway workspace directory.
+ *
+ * A successful `POST /api/wr/config` persists
+ * `.workspace-runtime/runtime-config/{accepted-snapshot,apply-status}.json`
+ * into the workspace directory. `workspaceDir()` falls back to `process.cwd()`
+ * when nothing is configured, which under `bun test` is the package root — so
+ * an unpinned apply rewrites tracked files in the repo on every run.
+ */
+async function pinTempWorkspaceDirectory() {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-server-workspace-"))
+  tempWorkspaceDirs.push(dir)
+  process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+  return dir
+}
+
+afterEach(async () => {
+  if (originalWorkspaceDirectory === undefined) delete process.env.WORKSPACE_RUNTIME_DIRECTORY
+  else process.env.WORKSPACE_RUNTIME_DIRECTORY = originalWorkspaceDirectory
+  await Promise.all(
+    tempWorkspaceDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
+  )
+})
 
 const managementToken = "allow-runtime-config"
 const managementAuth: WorkspaceRuntimeManagementAuth = {
@@ -531,6 +558,7 @@ describe("workspace runtime host route auth", () => {
   })
 
   test("management config push is not preempted by relay auth", async () => {
+    await pinTempWorkspaceDirectory()
     const runtime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
@@ -849,6 +877,7 @@ describe("relay-host auth middleware (characterization)", () => {
   })
 
   test("management token bypasses relay auth for POST /api/wr/config", async () => {
+    await pinTempWorkspaceDirectory()
     const runtime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
