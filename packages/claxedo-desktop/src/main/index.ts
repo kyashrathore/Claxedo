@@ -354,7 +354,17 @@ async function startClaxedoServer(): Promise<{ url: string }> {
 
 async function setupServerConnection(): Promise<ServerConnection> {
   if (!IS_PACKAGED) {
-    const candidates = [process.env.CLAXEDO_SERVER_URL, "http://127.0.0.1:3001"].filter(Boolean) as string[]
+    // Probe the SAME port the embedded server would claim. This was hardcoded
+    // to 3001 while `startClaxedoServer` honours CLAXEDO_SERVER_PORT, so the
+    // env var moved the embedded server but not the probe — leaving no way to
+    // run an isolated dev server. Two checkouts of the repo (say a worktree and
+    // the main tree) both defaulted to 3001, so whichever started second
+    // silently attached to the FIRST one's server: its PTYs, its
+    // workspace-runtime code. A renderer change appears to work while the
+    // server half of the same change never runs, and quitting one app leaves
+    // the other's PTYs alive. Set CLAXEDO_SERVER_PORT to get a private server.
+    const devPort = Number(process.env.CLAXEDO_SERVER_PORT ?? 3001)
+    const candidates = [process.env.CLAXEDO_SERVER_URL, `http://127.0.0.1:${devPort}`].filter(Boolean) as string[]
     const results = await Promise.all(candidates.map(async (url) => ({ url, ok: await checkHealth(url) })))
     const hit = results.find((r) => r.ok)
     if (hit) {
