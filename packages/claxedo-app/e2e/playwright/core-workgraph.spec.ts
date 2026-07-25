@@ -11,6 +11,8 @@ import { AxeBuilder } from "@axe-core/playwright"
 import type {
   AdmissionProposalDto,
   CommandResult,
+  CompletionRequirementID,
+  ConnectionID,
   DecisionDto,
   WorkGraphCommandRequest,
 } from "@claxedo/workgraph/contracts"
@@ -729,7 +731,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
         version: 1,
         mode: "all",
         requirements: [{
-          id: "real-session-proof",
+          id: requirementId("real-session-proof"),
           kind: "test",
           description: "The project Session completes through its scoped WorkGraph tool",
         }],
@@ -903,7 +905,8 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
   })
 
   test("holds and confirms the first public PR through a real master Session V2", async ({ page, request }) => {
-    const connectionId = harness.connectionEvidence().connectionId
+    // Branded in the contracts; the harness reports it as a plain string.
+    const connectionId = harness.connectionEvidence().connectionId as ConnectionID
     const stream = await command(request, {
       version: 1,
       type: "create_stream",
@@ -1808,10 +1811,32 @@ async function openConnectionsSettings(page: Page) {
   return dialog
 }
 
+/**
+ * The server types a successful command's `value` as `z.json()`
+ * (`packages/workgraph/src/contracts/commands.ts:584`), i.e. `string | number |
+ * boolean | null | JSONType[] | Record<string, JSONType>`. Every command this spec
+ * issues returns an OBJECT (`{ streamId }`, `{ workItemId }`, `{ proposalId }`, …),
+ * so this narrows to a record ONCE, with a real runtime check, instead of ~96
+ * unchecked property accesses on a possibly-null union.
+ *
+ * The check is not ceremony: a command that starts returning a scalar (or null)
+ * would otherwise surface as `undefined` silently flowing into a URL segment as the
+ * string "undefined" — a green test asserting against a nonsense id.
+ */
+function commandValue(value: unknown, input: WorkGraphCommandRequest["command"]): Readonly<Record<string, unknown>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(
+      `WorkGraph command "${input.type}" returned a non-object value (${JSON.stringify(value)}); `
+        + `every command in this spec is expected to return an object payload.`,
+    )
+  }
+  return value as Readonly<Record<string, unknown>>
+}
+
 async function command(request: APIRequestContext, input: WorkGraphCommandRequest["command"]) {
   const result = await rawCommand(request, input)
   if (!result.ok) throw new Error(result.error.message)
-  return result
+  return { ...result, value: commandValue(result.value, input) }
 }
 
 async function rawCommand(request: APIRequestContext, input: WorkGraphCommandRequest["command"]) {
@@ -1894,11 +1919,21 @@ function confirmProposalCommand(
   }
 }
 
+/**
+ * Requirement ids are branded (`string & $brand<"CompletionRequirementID">`) in the
+ * WorkGraph contracts, so a bare string does not satisfy the command type. These
+ * helpers are the single place that mints one, which is why the cast lives here and
+ * not at ~9 call sites.
+ */
+function requirementId(value: string) {
+  return value as CompletionRequirementID
+}
+
 function ownerConfirmation(description: string) {
   return {
     version: 1 as const,
     mode: "all" as const,
-    requirements: [{ id: crypto.randomUUID(), kind: "owner_confirmation" as const, description }],
+    requirements: [{ id: requirementId(crypto.randomUUID()), kind: "owner_confirmation" as const, description }],
   }
 }
 
@@ -1906,7 +1941,7 @@ function testCompletion(id: string, description: string) {
   return {
     version: 1 as const,
     mode: "all" as const,
-    requirements: [{ id, kind: "test" as const, description }],
+    requirements: [{ id: requirementId(id), kind: "test" as const, description }],
   }
 }
 

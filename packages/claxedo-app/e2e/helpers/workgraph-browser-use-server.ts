@@ -1,6 +1,8 @@
 import os from "node:os"
 import path from "node:path"
-import { createRealWorkGraphHarness } from "./real-workgraph-harness.ts"
+// Extensionless, matching every other relative import in this tree — bun resolves it
+// the same way, and the `.ts` form needs `allowImportingTsExtensions` to typecheck.
+import { createRealWorkGraphHarness } from "./real-workgraph-harness"
 
 const port = Number(process.env.CLAXEDO_WORKGRAPH_BROWSER_API_PORT ?? 4312)
 const temporaryRoot = process.env.CLAXEDO_WORKGRAPH_BROWSER_DATA

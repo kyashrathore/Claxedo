@@ -306,9 +306,11 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         repositoryRequired: true,
         remoteUrlInput: false,
         baseRevisionInput: true,
-        isolation: ["stream", "child"],
-        cleanup: ["destroy_on_close", "retain"],
-        integration: ["manual"],
+        // `isolation`/`cleanup`/`integration` were removed here: they are legacy
+        // policy fields that `withoutLegacyPolicies`
+        // (workgraph/src/contracts/execution-capabilities.ts:105-113) deletes before
+        // the schema ever sees them, so this fixture was declaring capabilities the
+        // system had already stopped reading.
       },
       readRuntime: async () => ({
         harness: { harness: "opencode" },
@@ -341,32 +343,55 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     }),
     sourcePlanning: { sessions: generationSessions, directory: repository },
   })
-  executeAttempt = (context, request) => embedded.service.execute(context, {
-    operationId: request.operation.operationId,
-    command: request.operation.type === "record_checkpoint"
-      ? {
+  executeAttempt = (context, request) => {
+    // `WorkGraphAttemptOperation` is a FOUR-member union (record_checkpoint |
+    // complete | update_stream_notes | notify_owner). This used to be a
+    // `type === "record_checkpoint" ? … : …` ternary, so the else branch silently
+    // mapped update_stream_notes/notify_owner onto a `complete_attempt` command with
+    // `summary`/`artifacts`/`evidence` all undefined. Narrow explicitly instead, and
+    // fail loudly on the operations this harness genuinely does not implement rather
+    // than issuing a malformed command.
+    const identity = {
+      attemptId: request.identity.attemptId,
+      sessionId: request.identity.sessionId,
+      workspaceId: request.identity.workspaceId,
+      ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+    }
+    const operation = request.operation
+    if (operation.type === "record_checkpoint") {
+      return embedded.service.execute(context, {
+        operationId: operation.operationId,
+        command: {
           version: 1,
           type: "record_attempt_checkpoint",
-          attemptId: request.identity.attemptId,
-          sessionId: request.identity.sessionId,
-          workspaceId: request.identity.workspaceId,
-          ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
-          level: request.operation.level,
-          summary: request.operation.summary,
-          evidenceIds: request.operation.evidenceIds,
-        }
-      : {
+          ...identity,
+          level: operation.level,
+          summary: operation.summary,
+          evidenceIds: operation.evidenceIds,
+        },
+      })
+    }
+    if (operation.type === "complete") {
+      return embedded.service.execute(context, {
+        operationId: operation.operationId,
+        command: {
           version: 1,
           type: "complete_attempt",
-          attemptId: request.identity.attemptId,
-          sessionId: request.identity.sessionId,
-          workspaceId: request.identity.workspaceId,
-          ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
-          summary: request.operation.summary,
-          artifacts: request.operation.artifacts,
-          evidence: request.operation.evidence,
-      },
-  })
+          ...identity,
+          summary: operation.summary,
+          artifacts: operation.artifacts,
+          evidence: operation.evidence,
+        },
+      })
+    }
+    throw new Error(
+      `real-workgraph-harness does not implement the "${operation.type}" attempt operation. `
+        + `It reaches the ledger through a different command shape (update_stream_notes needs a `
+        + `streamId + expectedVersion; notify_owner has no attempt command at all), so mapping it `
+        + `onto complete_attempt — which is what this helper used to do silently — produces a `
+        + `malformed command. Implement it properly here if a spec needs it.`,
+    )
+  }
   recordPullRequest = async (context, request) => {
     const result = await embedded.service.execute(context, {
       operationId: `pull_request_${request.idempotencyKey}` as never,
@@ -456,7 +481,9 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       input.port,
       embedded,
       realSessions,
-      (request) => connectionsRoutes.fetch(request),
+      // `fetch` is typed `Response | Promise<Response>` (Hono may answer
+      // synchronously); `respond` wants a Promise. `async` normalizes both.
+      async (request) => await connectionsRoutes.fetch(request),
       () => backgroundFailure,
       request.controller,
     )
@@ -627,6 +654,29 @@ function controlledCodeHostConnector(input: Readonly<{
         url: "https://github.example/claxedo/app/pull/482",
         draft: request.draft,
       }
+    },
+    /**
+     * Required by `CodeHostConnector`
+     * (workgraph/src/connectors/code-host/interface.ts:28) and previously MISSING
+     * here. That mattered: `workgraph-session-gateway.ts:564` calls it behind
+     * `.catch(() => true)` ("lookup failure reads as public, which forces
+     * confirmation"), so the absent method threw, was swallowed, and the
+     * public-PR confirmation gate fired off the FAIL-CLOSED fallback. The
+     * "holds and confirms the first public PR" test therefore passed without ever
+     * exercising the provider-verified visibility lookup its name claims.
+     *
+     * Reporting "public" keeps that test's expected outcome identical while making
+     * it prove the real path. Authorization is asserted the same way
+     * `openPullRequest` does, so a broken token surfaces here too instead of being
+     * silently absorbed by the caller's catch.
+     */
+    async repositoryVisibility(authorization, repository) {
+      if (authorization.token !== input.token || authorization.tokenType !== "bearer") {
+        throw new Error(
+          `Controlled GitHub connector received invalid authorization for repositoryVisibility(${repository})`,
+        )
+      }
+      return "public"
     },
   }
 }
@@ -1329,6 +1379,13 @@ async function createRealSessionRuntime(
         },
       )
       process.stderr.write(`[harness-diag] bun spawned pid=${opencode.pid}, waiting for health +${Date.now() - diagT0}ms\n`)
+      // `stdio: ["ignore", "pipe", "pipe"]` above guarantees both are streams, but
+      // Node types them nullable for the general case. Assert rather than `!`: if the
+      // spawn options ever change, losing the log tail silently would gut every
+      // harness failure message that quotes `logs`.
+      if (!opencode.stdout || !opencode.stderr) {
+        throw new Error("opencode was spawned without piped stdout/stderr; harness diagnostics need both")
+      }
       opencode.stdout.on("data", (chunk) => logs.push(String(chunk)))
       opencode.stderr.on("data", (chunk) => logs.push(String(chunk)))
       await waitForOpenCode(opencodePort, opencode, logs)
@@ -1336,6 +1393,7 @@ async function createRealSessionRuntime(
     },
     invokeApplicationTool: async (input) => {
       const invocation = object(input)
+      if (!invocation) throw new Error("Application tool callback received a non-object invocation")
       const sessionID = typeof invocation?.sessionID === "string" ? invocation.sessionID : undefined
       const name = typeof invocation?.name === "string" ? invocation.name : undefined
       const toolCallID = typeof invocation?.toolCallID === "string" ? invocation.toolCallID : undefined
@@ -1363,15 +1421,20 @@ async function createRealSessionRuntime(
     }),
     close: async () => {
       await closeServer(provider)
-      if (!opencode) return
-      if (opencode.exitCode === null) opencode.kill("SIGTERM")
+      // Captured into a const: `opencode` is a mutable outer binding, so the `if
+      // (!opencode) return` guard below does not survive into the Promise/timeout
+      // callbacks (TS re-widens it, and at runtime a concurrent reassignment really
+      // could swap the process out from under the SIGKILL).
+      const child = opencode
+      if (!child) return
+      if (child.exitCode === null) child.kill("SIGTERM")
       await new Promise<void>((resolve) => {
-        if (opencode.exitCode !== null) return resolve()
+        if (child.exitCode !== null) return resolve()
         const timeout = setTimeout(() => {
-          if (opencode.exitCode === null) opencode.kill("SIGKILL")
+          if (child.exitCode === null) child.kill("SIGKILL")
           resolve()
         }, 5_000)
-        opencode.once("exit", () => {
+        child.once("exit", () => {
           clearTimeout(timeout)
           resolve()
         })

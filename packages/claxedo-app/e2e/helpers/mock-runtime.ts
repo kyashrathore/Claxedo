@@ -14,6 +14,34 @@
 // why (Playwright's `route.fulfill` cannot drip a body over time, so we use the app's
 // own SSE-reconnect loop as the delivery mechanism).
 import type { Page, Route } from "@playwright/test"
+import {
+  assistantIdForUserMessage,
+  parseSessionPromptRequest,
+  SESSION_PROMPT_SUCCESS,
+} from "./contracts/session-prompt"
+import {
+  assertSessionCreateResponse,
+  parseDraftIdHeader,
+  parseSessionCreateRequest,
+  SESSION_CREATE_STATUS,
+} from "./contracts/session-create"
+import {
+  assertSessionConfigPatchResponse,
+  parseSessionConfigPatch,
+  sessionConfigPatchHarnessSwitchBody,
+  SESSION_CONFIG_PATCH_HARNESS_SWITCH_STATUS,
+  SESSION_CONFIG_PATCH_SUCCESS_STATUS,
+} from "./contracts/session-config"
+import { HARNESS_POST_SUCCESS, parseHarnessConfigRequest } from "./contracts/agent-config-harness"
+import { parseSessionCommandRequest, SESSION_COMMAND_SUCCESS } from "./contracts/session-command"
+import {
+  parseQuestionRejectRequest,
+  parseQuestionReplyRequest,
+  parseSessionPermissionRequest,
+  SESSION_INTERACTION_SUCCESS,
+  type PermissionResponseValue,
+  type QuestionReplyBody,
+} from "./contracts/session-interactions"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,6 +125,14 @@ export type PromptBody = {
   variant?: string
 }
 
+/** A recorded, contract-validated `POST /session`. */
+export type SessionCreateRequest = {
+  /** The `x-claxedo-draft-id` header, validated against the server's own pattern. */
+  draftId: string | undefined
+  /** The request body; `{}` when the client sent none (which is the normal case). */
+  body: Record<string, unknown>
+}
+
 export type ConfigPatchBody = { body: unknown }
 
 export type MockRuntimeRequests = {
@@ -105,18 +141,40 @@ export type MockRuntimeRequests = {
   badResponses: string[]
   unhandled: string[]
   createSessionCount: number
+  /**
+   * One entry per `POST /session`, in order — the validated draft-id header and body.
+   * Previously only the COUNT was recorded, so no spec could assert what the client
+   * actually asked for at creation time (which draft it belonged to, what title or
+   * harness/model config it carried). See e2e/helpers/contracts/session-create.ts.
+   */
+  createSessionBodies: SessionCreateRequest[]
   opencodeSessionCreateCount: number
   harnessSessionCreateCount: number
   promptCount: number
   promptBodies: PromptBody[]
+  /** Validated `POST /session/:id/permissions/:permId` decisions, in order. */
+  permissionResponses: PermissionResponseValue[]
+  /** Validated `POST /question/:id/reply` bodies, in order. */
+  questionReplies: QuestionReplyBody[]
+  /** `POST /question/:id/reject` count. */
+  questionRejectCount: number
   shellCount: number
   slashCount: number
   configPatchCount: number
   configPatchBodies: ConfigPatchBody[]
   harnessOptionsCount: number
   harnessPostCount: number
+  /**
+   * GET probes of `/api/claxedo/agent-config/harness`, counted separately from
+   * `harnessPostCount` (which counts BOTH verbs). A GET immediately after a switch POST
+   * is the observable signature of `fetchHarnessStatus` running — the fallback that was
+   * unreachable while the POST answered with a full status payload.
+   */
+  harnessGetCount: number
   /** `POST /workspaces/:workspaceId/session` — cloud/relay-lane session creation (see `MockRuntimeOptions.cloud`). */
   cloudSessionCreateCount: number
+  /** Per-request draft id + body for the cloud lane, same contract as `createSessionBodies`. */
+  cloudSessionCreateBodies: SessionCreateRequest[]
   /** `POST /workspaces/:workspaceId/session/:id/prompt_async`. */
   cloudPromptCount: number
   cloudPromptBodies: PromptBody[]
@@ -175,8 +233,19 @@ export type MockRuntimeOptions = {
   errorMidTurn?: boolean | string
   /** `POST /session/:id/prompt_async` returns 500 instead of dispatching. */
   dispatchFailure?: boolean
-  /** `PATCH /session/:id/config` returns a non-2xx. */
+  /** `PATCH /session/:id/config` returns a non-2xx (500 — a simulated adapter/transport blowup). */
   configPatchFailure?: boolean
+  /**
+   * `PATCH /session/:id/config` answers the route's REAL harness-switch rejection:
+   * 409 + the `unsupported_operation` envelope. Distinct from `configPatchFailure`.
+   *
+   * The client sends `harness.type` on every config save
+   * (`submit-transport.ts:186-193`), so the real server evaluates `sameSessionHarness`
+   * on EVERY patch — but the mock accepted any harness, leaving the guard that
+   * enforces "a harness is locked once the session is created" (e2e/INVARIANTS.md
+   * cross-cutting invariant #1) with zero e2e coverage.
+   */
+  configPatchHarnessSwitchFailure?: boolean
   /** Stage timings, in ms, all optional — sane defaults keep specs fast. */
   timingsMs?: { busy?: number; pending?: number; delta?: number; completed?: number; idle?: number }
   /**
@@ -481,17 +550,23 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     badResponses: [],
     unhandled: [],
     createSessionCount: 0,
+    createSessionBodies: [],
     opencodeSessionCreateCount: 0,
     harnessSessionCreateCount: 0,
     promptCount: 0,
     promptBodies: [],
+    permissionResponses: [],
+    questionReplies: [],
+    questionRejectCount: 0,
     shellCount: 0,
     slashCount: 0,
     configPatchCount: 0,
     configPatchBodies: [],
     harnessOptionsCount: 0,
     harnessPostCount: 0,
+    harnessGetCount: 0,
     cloudSessionCreateCount: 0,
+    cloudSessionCreateBodies: [],
     cloudPromptCount: 0,
     cloudPromptBodies: [],
     cloudHarnessOptionsCount: 0,
@@ -1207,6 +1282,46 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, [])
   })
 
+  // Permission / question MUTATION routes. These had no shared handler at all — only
+  // the two always-empty GET stubs above — so `core-docks.spec.ts` hand-rolled its own
+  // (`installDockMutationRoutes`, and it says so in a comment at :243-248). That is a
+  // standing violation of e2e/INVARIANTS.md authoring rule #1 ("Do not hand-roll a
+  // parallel mock ... extend the shared helper instead"). These are the shared,
+  // contract-validated versions; see e2e/helpers/contracts/session-interactions.ts.
+  //
+  // A spec that registers its own route for these paths still wins (Playwright resolves
+  // last-registered-first), so adopting these is opt-in and core-docks is unaffected
+  // until it deletes its local copies.
+  await page.route("**/session/*/permissions/*", async (route) => {
+    if (!api(route)) return route.continue()
+    if (route.request().method() !== "POST") return route.fallback()
+    // Throws on ANY value that is not exactly "once" | "always" | "reject". That
+    // strictness is the point: the server maps every unrecognised value — a typo, a
+    // rename, a missing body — onto `deny` with HTTP 200 and no error, so an ALLOW
+    // silently becomes a DENY (session-core.ts:834-835).
+    requests.permissionResponses.push(
+      parseSessionPermissionRequest(route.request().postDataJSON?.() ?? undefined, route.request().url()),
+    )
+    return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
+  })
+
+  await page.route("**/question/*/reply", async (route) => {
+    if (!api(route)) return route.continue()
+    if (route.request().method() !== "POST") return route.fallback()
+    requests.questionReplies.push(
+      parseQuestionReplyRequest(route.request().postDataJSON?.() ?? undefined, route.request().url()),
+    )
+    return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
+  })
+
+  await page.route("**/question/*/reject", async (route) => {
+    if (!api(route)) return route.continue()
+    if (route.request().method() !== "POST") return route.fallback()
+    parseQuestionRejectRequest(route.request().postDataJSON?.() ?? undefined, route.request().url())
+    requests.questionRejectCount += 1
+    return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
+  })
+
   await page.route("**/api/workspace/resolve**", (r) =>
     api(r)
       ? json(r, { workspaceId: `local-${SESSION_ID}`, directory: DIR, kind: "local", status: "ready" })
@@ -1253,18 +1368,41 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     requests.harnessPostCount += 1
     if (r.request().method() === "POST") {
       harnessPollCount += 1
-      let body: { type?: string } | undefined
+      let body: unknown
       try {
         body = r.request().postDataJSON()
       } catch {
         body = undefined
       }
-      if (body?.type && body.type in harnessModels) harness = body.type as Harness
-    } else {
-      // Count GET probes so `harnessGetPollSettleAfter` can settle a slow
-      // polling harness under the client's bounded re-probe loop.
-      harnessGetPollCount += 1
+      // CONTRACT: validated against the real claxedo-server handler (see
+      // e2e/helpers/contracts/agent-config-harness.ts). The validator CALLS the real
+      // exported `normalizeHarnessIdentity`/`harnessKey`, so the accepted harness-id
+      // vocabulary cannot drift from the server's. The old inline `{ type?: string }`
+      // cast ignored `binary`, `sessionId`, `directory`, and `workspaceId` entirely.
+      parseHarnessConfigRequest(body, r.request().url())
+      // Selection still keys off the RAW posted string, not the validator's canonical
+      // `activeType`. That is deliberate: `harnessModels` is keyed by the app's legacy
+      // ids (`claude-sdk`, `codex-app-server`, `cursor-sdk`) while the real server
+      // normalizes and echoes canonical ones (`claude`, `codex`, `cursor`) — see
+      // `HARNESS_CONTRACT_DIVERGENCES.legacyKeyEcho`. Switching this fixture to the
+      // canonical key is a real behavior change for every harness spec, so it is
+      // recorded there rather than smuggled in here.
+      const postedType = (body as { type?: unknown } | undefined)?.type
+      if (typeof postedType === "string" && postedType in harnessModels) harness = postedType as Harness
+      // CONTRACT: the real switch endpoint returns `{ ok: true }` and NOTHING else
+      // (agent-config-harness-routes.ts:202 and :211 — both the per-session and the
+      // global-config branch). This fixture used to answer with a full harness-status
+      // payload, which the client feeds straight into `decodeHarnessState` →
+      // `applyPostedStatus`; that let every harness spec watch a switch settle
+      // (including settle to ERROR) directly off the POST — a path production can
+      // never take. Harness state now settles the way it really does: through the GET
+      // below, reached via `fetchHarnessStatus`.
+      return json(r, HARNESS_POST_SUCCESS.body, HARNESS_POST_SUCCESS.status)
     }
+    // Count GET probes so `harnessGetPollSettleAfter` can settle a slow
+    // polling harness under the client's bounded re-probe loop.
+    harnessGetPollCount += 1
+    requests.harnessGetCount += 1
     const model = harnessModel()
     const status = harnessStatusPayload()
     return json(
@@ -1290,12 +1428,25 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(route)) return route.continue()
     if (route.request().method() === "POST") {
       requests.createSessionCount += 1
-      const sessionHarness = new URL(route.request().url()).searchParams.get("harness")
+      const url = route.request().url()
+      // CONTRACT: validated against the real route (see
+      // e2e/helpers/contracts/session-create.ts). The draft-id header is checked the
+      // way `parseDraftId` checks it — a malformed id is a hard 400 server-side, so
+      // it must not pass silently here; the body is optional (the app sends none).
+      const draftId = parseDraftIdHeader(route.request().headers(), url)
+      const body = parseSessionCreateRequest(route.request().postDataJSON?.() ?? undefined, url)
+      requests.createSessionBodies.push({ draftId, body })
+      const sessionHarness = new URL(url).searchParams.get("harness")
       if (sessionHarness && sessionHarness !== "opencode") requests.harnessSessionCreateCount += 1
       else requests.opencodeSessionCreateCount += 1
       sessionCreated = true
       messages = []
-      return json(route, sessionRow(""))
+      // CONTRACT: 201, not the `json()` default of 200 — the real route is
+      // `c.json(normalizeSession(...), 201)`. The response shape is asserted too so
+      // this fixture cannot drift away from what the route actually returns.
+      const created = sessionRow("")
+      assertSessionCreateResponse(created, url)
+      return json(route, created, SESSION_CREATE_STATUS)
     }
     return json(route, sessionCreated ? [sessionRow(textOf(messages[0]?.parts) || "")] : [])
   }
@@ -1308,17 +1459,51 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(route)) return route.continue()
     if (route.request().method() === "PATCH") {
       requests.configPatchCount += 1
+      const url = route.request().url()
+      // CONTRACT: validated against the real PATCH route (see
+      // e2e/helpers/contracts/session-config.ts). The body used to be recorded as an
+      // opaque `unknown`, so a half-filled `model` — which `promptModel`
+      // (session-config.ts:74) drops SILENTLY server-side — read as a successful save.
       let body: unknown
       try {
         body = route.request().postDataJSON()
       } catch {
         body = undefined
       }
-      requests.configPatchBodies.push({ body })
+      requests.configPatchBodies.push({ body: parseSessionConfigPatch(body, url) })
       if (options.configPatchFailure) {
+        // Deliberately NOT the route's 409: this option simulates an adapter/transport
+        // blowup, which really can surface as a 500. The route's own 409 harness-switch
+        // failure is a separate path — see `configPatchHarnessSwitchFailure` below.
         return json(route, { error: "could not save session config" }, 500)
       }
-      return json(route, { ok: true })
+      if (options.configPatchHarnessSwitchFailure) {
+        // CONTRACT: the route's ONE self-generated failure. The client sends
+        // `harness.type` on EVERY save (submit-transport.ts:186-193), so the real
+        // server runs `sameSessionHarness` on every PATCH and answers a mismatch with
+        // this exact 409 envelope. Nothing exercised it before.
+        return json(
+          route,
+          sessionConfigPatchHarnessSwitchBody({
+            currentHarnessId: harness,
+            requestedHarnessId: String(
+              (body as { harness?: { type?: unknown; id?: unknown } } | undefined)?.harness?.id
+                ?? (body as { harness?: { type?: unknown } } | undefined)?.harness?.type
+                ?? "unknown",
+            ),
+            transport: "local",
+          }),
+          SESSION_CONFIG_PATCH_HARNESS_SWITCH_STATUS,
+        )
+      }
+      // CONTRACT: the real route returns the full `SessionConfig`
+      // (`c.json(config)`, session-core.ts:571) — NOT `{ ok: true }`. The old
+      // acknowledgement was doubly wrong: it is the wrong shape, and its `ok` key
+      // collides with the FAILURE envelope's `ok` discriminant, so a client branching
+      // on `body.ok` looked correct by accident.
+      const saved = sessionConfig()
+      assertSessionConfigPatchResponse(saved, url)
+      return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
     }
     return json(route, sessionConfig())
   })
@@ -1350,13 +1535,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(route, { error: "dispatch failed" }, 500)
     }
     requests.promptCount += 1
-    const body = route.request().postDataJSON() as {
-      messageID?: string
-      parts?: unknown
-      agent?: string
-      model?: { providerID?: string; modelID?: string }
-      variant?: string
-    }
+    // CONTRACT: validated against the REAL server's `SessionPromptBody`
+    // (`@claxedo/workspace-runtime/routes`) instead of a locally re-declared shape.
+    // A body the real route could not consume now throws here rather than being
+    // silently accepted — see e2e/helpers/contracts/session-prompt.ts for why.
+    const body = parseSessionPromptRequest(route.request().postDataJSON(), route.request().url())
     const text = textOf(body?.parts) || `message ${requests.promptCount}`
     const userID = body?.messageID || `msg_user_${requests.promptCount}`
     const providerID = body?.model?.providerID || providerIdFor(harness)
@@ -1368,7 +1551,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // `assistantMessageIdForUserMessage`, the mechanism that clears a
     // stale-busy submit control without SSE) matches by EXACTLY this id — a
     // synthetic id here silently disables that entire path for every spec.
-    const assistantID = `${userID}_r`
+    const assistantID = assistantIdForUserMessage(userID)
     requests.promptBodies.push({
       sessionID: decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-2) ?? ""),
       messageID: body?.messageID,
@@ -1381,7 +1564,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     })
 
     messages = [...messages, userMessage({ id: userID, text, agent, providerID, modelID })]
-    await route.fulfill({ status: 204, body: "" })
+    // CONTRACT: the real route returns 204 with an empty body on every success path.
+    await route.fulfill({ ...SESSION_PROMPT_SUCCESS })
 
     // Fire-and-forget: the staged event sequence runs on its own clock, independent
     // of this route handler's lifecycle.
@@ -1401,7 +1585,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const url = new URL(route.request().url())
     if (!url.pathname.match(/^\/session\/[^/]+\/command$/)) return route.fallback()
     requests.slashCount += 1
-    return route.fulfill({ status: 204, body: "" })
+    // CONTRACT: see e2e/helpers/contracts/session-command.ts. The body was never
+    // inspected here, and the response was `204` with an empty body while the real
+    // route returns `c.json({ ok: true })` — HTTP 200 (session-core.ts:712).
+    parseSessionCommandRequest(route.request().postDataJSON?.() ?? undefined, route.request().url())
+    return route.fulfill({ ...SESSION_COMMAND_SUCCESS })
   })
 
   await page.route("**/session/*/message**", (r) => (api(r) ? json(r, messages) : r.continue()))
@@ -1586,11 +1774,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       if (!api(route)) return route.continue()
       if (route.request().method() === "POST") {
         requests.cloudSessionCreateCount += 1
-        const sessionHarness = new URL(route.request().url()).searchParams.get("harness")
+        // CONTRACT: same binding as the local lane — the relay forwards to the SAME
+        // workspace-runtime route, so the cloud lane must not drift into accepting a
+        // draft id or body the local lane rejects.
+        const url = route.request().url()
+        const draftId = parseDraftIdHeader(route.request().headers(), url)
+        const body = parseSessionCreateRequest(route.request().postDataJSON?.() ?? undefined, url)
+        requests.cloudSessionCreateBodies.push({ draftId, body })
+        const sessionHarness = new URL(url).searchParams.get("harness")
         if (sessionHarness && sessionHarness in harnessModels) cloudHarness = sessionHarness as Harness
         cloudSessionCreated = true
         cloudMessages = []
-        return json(route, cloudSessionRow())
+        const created = cloudSessionRow()
+        assertSessionCreateResponse(created, url)
+        return json(route, created, SESSION_CREATE_STATUS)
       }
       return json(route, cloudSessionCreated ? [cloudSessionRow()] : [])
     }
@@ -1623,19 +1820,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/session/*/prompt_async**`, async (route) => {
       if (!api(route)) return route.continue()
       requests.cloudPromptCount += 1
-      const body = route.request().postDataJSON() as {
-        messageID?: string
-        parts?: unknown
-        agent?: string
-        model?: { providerID?: string; modelID?: string }
-        variant?: string
-      }
+      // CONTRACT: same real-server binding as the local lane above. The relay
+      // forwards this body to the same `workspace-runtime` route, so the cloud lane
+      // must not be allowed to drift into accepting a shape the local lane rejects.
+      const body = parseSessionPromptRequest(route.request().postDataJSON(), route.request().url())
       const text = textOf(body?.parts) || `cloud message ${requests.cloudPromptCount}`
       const userID = body?.messageID || `msg_cloud_user_${requests.cloudPromptCount}`
       const providerID = body?.model?.providerID || providerIdFor(cloudHarness)
       const modelID = body?.model?.modelID || cloudHarnessModel().id
       const agent = body?.agent || "build"
-      const assistantID = `${userID}_r`
+      const assistantID = assistantIdForUserMessage(userID)
       requests.cloudPromptBodies.push({
         messageID: body?.messageID,
         assistantID,
@@ -1647,7 +1841,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       })
 
       cloudMessages = [...cloudMessages, cloudUserMessage({ id: userID, text, agent, providerID, modelID })]
-      await route.fulfill({ status: 204, body: "" })
+      await route.fulfill({ ...SESSION_PROMPT_SUCCESS })
 
       void driveCloudTurn({ userID, assistantID, text, agent, providerID, modelID, turn: requests.cloudPromptCount })
     })

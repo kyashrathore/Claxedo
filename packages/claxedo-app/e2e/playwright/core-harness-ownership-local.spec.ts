@@ -847,4 +847,52 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
     },
   )
+
+  test(
+    "switching harness re-reads status over GET, because the switch POST returns only {ok:true} — behavior 10",
+    async ({ page }) => {
+      // REGRESSION TEST for a real production bug, not a mock artifact.
+      //
+      // `POST /api/claxedo/agent-config/harness` answers `{ ok: true }` and nothing
+      // else (claxedo-server/src/routes/agent-config-harness-routes.ts:202,211).
+      // `postHarnessConfig` (src/features/session/harness/harness-switcher.ts) did:
+      //
+      //     decodeHarnessState(await res.json()) ?? await fetchHarnessStatus(...) ?? true
+      //
+      // `decodeHarnessState({ok:true})` finds no harness/status/binary keys and returns
+      // an EMPTY OBJECT (profile.ts:84-99). `{}` is truthy, so `??` short-circuited and
+      // `fetchHarnessStatus` — the fallback that exists for exactly this response —
+      // could never run against a real server. `applyPostedStatus` then skipped its
+      // patch because `failedHarness({})` is false, so a switch onto a broken harness
+      // surfaced NO error at all.
+      //
+      // This was invisible for as long as it existed because the e2e fixture answered
+      // the POST with a full harness-status payload, letting every harness spec watch a
+      // switch settle straight off the POST — a path production cannot take. The mock
+      // now returns the honest `{ok:true}`, and this test pins the GET that must follow.
+      //
+      // Distinct from behavior 5, which covers HYDRATION onto an already-failing
+      // harness (status is known before any switch). This covers the SWITCH path.
+      const mock = await installMockRuntime(page, {
+        dir: DIR,
+        sessionId: "ses_core_harness_switch_status",
+        harnessModels: { "claude-acp": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet" }] },
+      })
+
+      await seedOneProject(page, DIR)
+      await openDraftPrompt(page, DIR)
+
+      const getsBeforeSwitch = mock.requests.harnessGetCount
+      await switchDraftHarness(page, /^Claude$/, 0)
+      await expectOnlyHarnessModelControl(page, /Claude Sonnet/)
+
+      // The switch POST landed...
+      await expect.poll(() => mock.requests.harnessPostCount, { timeout: 15_000 }).toBeGreaterThan(0)
+      // ...and a GET followed it. Before the fix this count never moved, because the
+      // empty-but-truthy decode swallowed the fallback.
+      await expect
+        .poll(() => mock.requests.harnessGetCount, { timeout: 15_000 })
+        .toBeGreaterThan(getsBeforeSwitch)
+    },
+  )
 })

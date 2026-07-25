@@ -943,9 +943,14 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     })
     page.on("requestfailed", (request) => requestFailures.push(request.url()))
     const runtime = new DocumentRuntime()
-    const document = runtime.seed({ displayName: "Editable rich document", markdown: "# Editable\n\nStart here.\n" })
+    // NOT `document`: this test also runs `page.evaluate` callbacks that reference the
+    // BROWSER's `document` global. A Node-side local named `document` shadows it for
+    // the whole test body — the callbacks still worked at runtime (Playwright
+    // serializes them, so `document` resolves in the page), but they typechecked
+    // against this seed object instead of the DOM.
+    const doc = runtime.seed({ displayName: "Editable rich document", markdown: "# Editable\n\nStart here.\n" })
     await bootstrap(page, runtime)
-    await openDocument(page, document.summary.id)
+    await openDocument(page, doc.summary.id)
     const rich = page.getByRole("textbox", { name: "Document rich editor" })
     await expect(page.locator(".notion-page-shell")).toBeVisible()
     await expect(page.getByRole("textbox", { name: "Document name" })).toHaveClass(/notion-title/)
@@ -1018,10 +1023,10 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     if (!richHandleAfterSave) throw new Error("Rich editor disappeared after autosave")
     expect(await page.evaluate(([before, after]) => before === after, [richHandle, richHandleAfterSave])).toBe(true)
     expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
-    expect(runtime.inspect(document.summary.id).markdown).toContain("Caret stable: Second paragraph. Pasted!")
+    expect(runtime.inspect(doc.summary.id).markdown).toContain("Caret stable: Second paragraph. Pasted!")
     await proveGeometry(page, rich, testInfo, "rich-editor-stable-after-autosave")
 
-    await openDocument(page, document.summary.id)
+    await openDocument(page, doc.summary.id)
     const reopened = page.getByRole("textbox", { name: "Document rich editor" })
     await expect(reopened).toContainText("Caret stable: Second paragraph. Pasted!")
     await expect(page.getByText("Source mode")).toHaveCount(0)
@@ -1042,12 +1047,13 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     })
     page.on("requestfailed", (request) => requestFailures.push(request.url()))
     const runtime = new DocumentRuntime()
-    const document = runtime.seed({
+    // NOT `document` — same DOM-global shadowing trap as the test above.
+    const doc = runtime.seed({
       displayName: "Rich interaction document",
       markdown: "First paragraph.\n\nSecond paragraph.\n",
     })
     await bootstrap(page, runtime)
-    await openDocument(page, document.summary.id)
+    await openDocument(page, doc.summary.id)
 
     const title = page.getByRole("textbox", { name: "Document name" })
     const rich = page.getByRole("textbox", { name: "Document rich editor" })
@@ -1124,13 +1130,13 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await page.keyboard.type("Slash heading")
 
     await expect(page.getByRole("status")).toContainText("Saved", { timeout: 10_000 })
-    const saved = runtime.inspect(document.summary.id).markdown
+    const saved = runtime.inspect(doc.summary.id).markdown
     expect(saved).toContain("**First paragraph.**")
     expect(saved).toContain("## Slash heading")
     const richHandleAfterSave = await rich.elementHandle()
     if (!richHandleAfterSave) throw new Error("Rich editor disappeared after interaction autosave")
     expect(await page.evaluate(([before, after]) => before === after, [richHandle, richHandleAfterSave])).toBe(true)
-    await openDocument(page, document.summary.id)
+    await openDocument(page, doc.summary.id)
     await expect(page.getByRole("textbox", { name: "Document rich editor" })).toContainText("Slash heading")
     expect(pageErrors).toEqual([])
     expect(unexpectedCanaryConsoleErrors(consoleErrors)).toEqual([])

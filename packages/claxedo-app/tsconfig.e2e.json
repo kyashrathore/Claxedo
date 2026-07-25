@@ -5,7 +5,12 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
-    "types": ["vite/client", "node", "vitest/globals", "@testing-library/jest-dom"],
+    // "bun": several e2e helpers import claxedo-server source directly
+    // (workgraph-connection-browser-use-server.ts → src/server-workgraph, …), which
+    // transitively reaches `src/storage/db.ts`'s `typeof import("bun:sqlite")`.
+    // claxedo-server's own tsconfig declares `types: ["bun", "node"]` for exactly
+    // this reason; the e2e project needs it too or that import cannot resolve.
+    "types": ["vite/client", "node", "bun", "vitest/globals", "@testing-library/jest-dom"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "jsx": "preserve",
@@ -21,12 +26,20 @@
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"]
+      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"],
+      // Type-only, for e2e/helpers/contracts/*: `SessionConfigUpdate` is the shape
+      // `POST /session` actually consumes, but it is imported-not-re-exported by
+      // `@claxedo/workspace-runtime/routes`, and agent-sdk-runtime is not a direct
+      // dependency of this package. Same source-alias convention as the three
+      // agent-event-runtime entries above.
+      "@claxedo/agent-sdk-runtime": ["../agent-sdk-runtime/src/index.ts"]
     }
   },
+  // No exclusions: all 45 files under e2e/ are typechecked. `e2e/bun/**` and
+  // `real-provider-preflight.test.ts` used to be excluded because they rely on
+  // `bun:test` globals that this project did not pull in; adding "bun" to `types`
+  // above resolves them, and both now compile clean.
   "include": ["e2e"],
   "exclude": [
-    "e2e/bun/**",
-    "e2e/playwright/real-provider-preflight.test.ts"
   ]
 }

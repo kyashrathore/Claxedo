@@ -172,7 +172,19 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       )
       if (!active()) return false
       if (res.ok) {
-        const data = decodeHarnessState(await res.json().catch(() => undefined)) ?? await fetchHarnessStatus(params, session) ?? true
+        // The switch endpoint answers `{ ok: true }` and nothing else
+        // (claxedo-server/src/routes/agent-config-harness-routes.ts:202,211), so
+        // `decodeHarnessState` finds no harness/status/binary keys and returns an EMPTY
+        // object. `{}` is truthy, so a plain `??` here short-circuited and
+        // `fetchHarnessStatus` — the fallback that exists precisely for this case —
+        // could never run against a real server. The switch then reported no state, and
+        // `applyPostedStatus` skipped its patch because `failedHarness({})` is false:
+        // switching to an unavailable harness silently showed no error.
+        // Treat a state that decoded nothing as absent so the GET fallback runs.
+        const posted = decodeHarnessState(await res.json().catch(() => undefined))
+        const data = (posted && Object.keys(posted).length > 0 ? posted : undefined)
+          ?? await fetchHarnessStatus(params, session)
+          ?? true
         return active() ? data : false
       }
       throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))

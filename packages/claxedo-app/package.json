@@ -18,7 +18,7 @@
     "./pages": "./src/app/routes/index.ts"
   },
   "scripts": {
-    "typecheck": "bun run lint:theme-tokens && bun run test:architecture && tsgo -b && bun run test:performance",
+    "typecheck": "bun run lint:theme-tokens && bun run test:architecture && tsgo -b && bun run typecheck:e2e && bun run test:performance",
     "test:architecture": "bun test ./src/architecture",
     "lint:theme-tokens": "bun run scripts/check-theme-tokens.ts",
     "lint:eager-deps": "bun run scripts/check-forbidden-eager-deps.ts",
@@ -61,11 +61,13 @@
     "test:e2e:all:video": "CLAXEDO_E2E_SUITE=all PLAYWRIGHT_VIDEO=1 npx playwright test --config playwright.config.ts",
     "test:e2e:deployment": "CLAXEDO_E2E_SUITE=all npx playwright test --config playwright.config.ts e2e/playwright/deployment-portability-staging.spec.ts",
     "test:e2e:deployed-workgraph": "npx playwright test --config playwright.deployed.config.ts",
-    "test:e2e:deployment:video": "CLAXEDO_E2E_SUITE=all PLAYWRIGHT_VIDEO=1 npx playwright test --config playwright.config.ts e2e/playwright/deployment-portability-staging.spec.ts"
+    "test:e2e:deployment:video": "CLAXEDO_E2E_SUITE=all PLAYWRIGHT_VIDEO=1 npx playwright test --config playwright.config.ts e2e/playwright/deployment-portability-staging.spec.ts",
+    "typecheck:e2e": "tsgo -p tsconfig.e2e.json"
   },
   "license": "MIT",
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
+    "@claxedo/workspace-runtime": "workspace:*",
     "@clerk/testing": "2.2.7",
     "@happy-dom/global-registrator": "20.0.11",
     "@modelcontextprotocol/sdk": "1.25.2",
