@@ -1,11 +1,12 @@
 import windowState from "electron-window-state"
-import { app, BrowserWindow, nativeImage } from "electron"
+import { app, BrowserWindow, nativeImage, shell, type WebContents } from "electron"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./browser/flag"
 import { IS_PACKAGED } from "./constants"
+import { navigationDecision, windowOpenDecision, type NavigationDecision } from "./navigation-guard"
 
 type Globals = {
   updaterEnabled: boolean
@@ -73,6 +74,7 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
       webviewTag: isBrowserTabEnabled(),
     },
   })
+  wireNavigationGuard(win.webContents)
   if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
     log.info(`[startup-perf] browser-window ready elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
   }
@@ -96,6 +98,29 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
 
 export function loadMainWindow(win: BrowserWindow) {
   loadWindow(win, "index.html")
+}
+
+/**
+ * Apply the main-window navigation policy. See `./navigation-guard` for why the
+ * main window must never navigate away from the app document — in short, the
+ * preload's IPC bridge follows the window to whatever it loads, and that bridge
+ * reaches `execFile`. Decisions live in that module; this only performs them.
+ */
+export function wireNavigationGuard(wc: WebContents) {
+  const perform = (decision: NavigationDecision, context: string) => {
+    if (decision.action === "external") void shell.openExternal(decision.url)
+    else if (decision.action === "block") log.warn(`[security] blocked ${context} to ${decision.url}`)
+  }
+  wc.on("will-navigate", (event, urlString) => {
+    const decision = navigationDecision(urlString, isTrustedMainRendererUrl)
+    if (decision.action === "allow") return
+    event.preventDefault()
+    perform(decision, "main-window navigation")
+  })
+  wc.setWindowOpenHandler(({ url }) => {
+    perform(windowOpenDecision(url), "window.open")
+    return { action: "deny" as const }
+  })
 }
 
 export function isTrustedMainRendererUrl(input: string) {
@@ -140,6 +165,7 @@ export function createLoadingWindow(globals: Globals) {
       webviewTag: isBrowserTabEnabled(),
     },
   })
+  wireNavigationGuard(win.webContents)
 
   loadWindow(win, "loading.html")
   injectGlobals(win, globals)

@@ -13,6 +13,7 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
+import { isSafeExternalUrl } from "./navigation-guard"
 import {
   registerProcessDiagnosticsIpc,
   type DiagnosticsIpcRouter,
@@ -142,7 +143,12 @@ export function registerIpcHandlers(deps: Deps) {
     },
   )
 
+  // Scheme-gated: `shell.openExternal` hands the URL to the OS handler, and the
+  // callers are untrusted content — rendered agent markdown and terminal
+  // output-detected links both reach here. Without this an agent could get
+  // `file:///…/Evil.app` (or any privileged platform scheme) launched by a click.
   ipcMain.on("open-link", (_event: IpcMainEvent, url: string) => {
+    if (!isSafeExternalUrl(url)) return
     void shell.openExternal(url)
   })
 
