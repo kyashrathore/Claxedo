@@ -459,6 +459,39 @@ unnecessary; take the second version.
 
 ---
 
+## Implementation status (worktree `terminal-fidelity`, 2026-07-25)
+
+| WP | Status | Notes |
+|---|---|---|
+| W1 data path | **done** | F2 confirmed live and fixed; F3 fixed at all 3 cut sites + `safeReplay`; F1 downgraded to latent and hardened; marker + ED3 chunk-boundary gaps closed |
+| W2 xterm bump | **done** | beta.289 / webgl beta.288, ligatures held at 220; `bun run build` verified |
+| W3 font-settle | **done** | `fonts.load(spec)` + timeout + swallow |
+| W4 parser-idle gate | **done** | every fit routed through it |
+| W5 mode truth | **half** | reclaimer + repeating prompt marker done; the server-side headless-xterm **live mode tracker** replacing the stale client snapshot is NOT done |
+| W6 restore honesty | **done** | `mountCols` measured post-fit and unknown-safe; recreated PTYs skip the live-TUI paths |
+| W7a identity | **done** | `TERM_PROGRAM=vscode` + version; host emulator markers no longer leak; coupling test |
+| W7b wheel fidelity | **not done** | must ship coupled with flipping the identity to kitty |
+| W8 restored separator | **not done** | |
+| W9 parked runtimes / pty-daemon | deferred by design | |
+
+**Two decisions taken during implementation, both recorded in code:**
+
+1. **Identity is `vscode`, not `kitty`.** The reference uses `kitty`, but only
+   because it ships a full-fidelity wheel handler. We use xterm's stock damped
+   wheel handling, and a kitty-class claim without that handler makes agent TUIs
+   disable their own multiplier and scroll at ~1/3 speed. `identity.test.ts`
+   enforces the pairing in both directions, so W7b must flip both together.
+2. **`vtExtensions.kittyKeyboard` stays off** until the reclaimer has live
+   verification. Advertising the protocol makes its leak (unusable keyboard
+   until `reset`) reachable; the reclaimer now exists to handle it, so enabling
+   it is a follow-up rather than a blocker.
+
+**Evidence level: test and build only.** Every DoD below calls for a live
+desktop repro and none has had one. Test deltas: workspace-runtime 350→390
+pass, claxedo-app terminal 979→1016 pass, zero new failures (the pre-existing
+21 fail / 19 errors in workspace-runtime and 1 fail / 1 error in claxedo-app are
+identical with these changes stashed). `tsgo -b` clean in both packages.
+
 ## Work packages
 
 ### W1 — Byte-clean data path *(F1, F2, F3)*
