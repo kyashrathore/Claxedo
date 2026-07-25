@@ -252,24 +252,30 @@ test.describe("core first prompt (local) @core", () => {
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
 
-    // (b) The directory-less draft route itself. `/s/new` DOES own a route
-    // surface, so once the session inventory reports `loaded` the route intent
-    // resolves the (unresolvable) session id to a central session content
-    // (`state.layout.openCentralSession` in `route-intent.ts`), and
-    // `SessionContent` renders its "No workspace backing" surface
-    // (`src/features/session/ui/content/session-content.tsx` — the only
-    // `central-session-content` testid in the app). That surface is the SETTLED
-    // state of this route; the workbench-empty placeholder from (a) is only
-    // reachable here in the sub-second window before the inventory loads, which is
-    // why asserting it on this route is a race (it survives only on a slow runner).
-    // We therefore gate on the settled surface and assert the real contract:
-    // whichever zero-workspace surface renders, it offers no compose affordance.
+    // (b) The directory-less draft route itself, `/s/new`.
+    //
+    // With ZERO projects registered this route settles on the SAME workbench-empty
+    // placeholder as (a): route intent cannot resolve the unresolvable id `"new"` to
+    // anything backed by a directory, so the workbench never gains a content and
+    // `renderEmpty` (`src/app/workbench/rail/rail-workbench-canvas.tsx`) stays
+    // mounted. `central-session-content` — `SessionContent`'s "No workspace backing"
+    // surface — is NOT reached in this scenario.
+    //
+    // This assertion has moved twice; do not "fix" it by guessing. Verify against a
+    // real run before changing it: an earlier revision asserted the placeholder, a
+    // later one asserted `central-session-content` after route intent began resolving
+    // `"new"`, and the current app settles back on the placeholder. What is INVARIANT
+    // across all three, and is the actual contract behavior 5 exists to pin, is the
+    // bottom half: zero compose surface, and zero sessions created. Assert the
+    // settled surface positively first so the negatives below cannot pass vacuously.
     await page.goto("/s/new")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    const centralSurface = page.getByTestId("central-session-content")
-    await expect(centralSurface, "directory-less route never settled").toBeVisible({ timeout: 30_000 })
-    await expect(centralSurface).toHaveText("No workspace backing")
+    await expect(
+      page.getByText("No projects yet. Create one to get started."),
+      "directory-less route never settled on a zero-workspace surface",
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: "New Project" })).toBeVisible()
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
     await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)

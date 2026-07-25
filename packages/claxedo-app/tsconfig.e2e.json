@@ -32,7 +32,16 @@
       // `@claxedo/workspace-runtime/routes`, and agent-sdk-runtime is not a direct
       // dependency of this package. Same source-alias convention as the three
       // agent-event-runtime entries above.
-      "@claxedo/agent-sdk-runtime": ["../agent-sdk-runtime/src/index.ts"]
+      "@claxedo/agent-sdk-runtime": ["../agent-sdk-runtime/src/index.ts"],
+      // Point at SOURCE, not `dist`. These subpaths resolve to `dist/*.d.ts` by
+      // package exports, and `dist` is gitignored — so a clean tree (or anyone who
+      // has not run a build) gets `TS2307: Cannot find module`, which is exactly
+      // what happened here once `packages/workspace-runtime/dist` was wiped. CI
+      // builds these before typecheck so it never noticed; local runs did.
+      // Aliasing to src makes the contract bindings independent of a build artifact.
+      "@claxedo/workspace-runtime/routes": ["../workspace-runtime/src/routes.ts"],
+      "@claxedo/workspace-runtime/config": ["../workspace-runtime/src/config.ts"],
+      "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"]
     }
   },
   // No exclusions: all 45 files under e2e/ are typechecked. `e2e/bun/**` and

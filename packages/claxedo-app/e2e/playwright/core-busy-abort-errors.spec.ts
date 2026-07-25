@@ -855,42 +855,50 @@ test.describe("core busy / abort / errors @core", () => {
       const STATUS_TIMER_SCALE = 0.02 // redispatch 160ms · pending 400ms · long 900ms · failed 6s
       await page.addInitScript((scale: number) => {
         ;(window as typeof window & { __claxedoStatusTimerScale?: number }).__claxedoStatusTimerScale = scale
-        ;(window as unknown as { __dbgStatus?: boolean }).__dbgStatus = true
       }, STATUS_TIMER_SCALE)
-      // DEBUG-TEMP
-      const dbgLogs: string[] = []
-      page.on("console", (m) => {
-        const t = m.text()
-        if (t.startsWith("DBGSTATUS")) dbgLogs.push(t)
-      })
-      if (process.env.DBG_THROTTLE) {
-        const cdp = await page.context().newCDPSession(page)
-        await cdp.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.DBG_THROTTLE) })
-      }
 
       test.setTimeout(120_000)
       const abortState = await registerAbortRoute(page)
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
-      await silencePromptAsync(page)
+      const promptState = await silencePromptAsync(page)
       await neutralizeStatusPoll(page)
 
       await seedOneProject(page, DIR)
       const input = await openDraftPrompt(page, DIR)
 
       // First send creates the session and moves the URL onto its route. The Retry
-      // affordance is only meaningful once the composer's scope is stable: while the
-      // route is still the fresh draft ("new"), the draft→session handoff flips
-      // `resolvedSessionId` inside the composer's boot scope, which resets the
-      // "last submitted prompt" snapshot that Retry restores. So we drive the
-      // realistic hang→cancel→resend flow — after this send stabilizes the scope on
-      // SESSION_ID, the SECOND send below re-arms the ladder with the snapshot intact.
-      await input.click()
-      await input.fill("is anyone still there")
-      await page.locator(SELECTORS.submitControl).last().click()
-      await expect(page, "URL never moved onto the created session's route").toHaveURL(sessionUrlPattern(SESSION_ID), {
-        timeout: 20_000,
-      })
+      // affordance is only meaningful once the composer's scope is stable: the
+      // draft→session handoff replaces the draft ("new-session" variant) composer
+      // with the session ("dock" variant) one, and the "last submitted prompt"
+      // snapshot that Retry restores lives per composer instance — it is dropped by
+      // the instance swap and re-armed by `createPromptInputSubmitRetry`'s `resetKey`
+      // effect (`src/features/session/composer/ui/submit-ui-state.ts`, keyed on
+      // `composerBootScope`) on every scope change. So we drive the realistic
+      // hang→cancel→resend flow: the SECOND send below arms the snapshot on the
+      // already-settled session composer.
+      await sendPrompt(page, input, "is anyone still there")
       await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+      // The URL moving is NOT the same event as the composer's own scope settling —
+      // it is the app-shell route that follows the handoff, and the composer swap can
+      // land after it on a slow runner. Assert the composer surface itself has left
+      // draft mode (`data-component`, `composer/ui/frame.tsx`, driven by the same
+      // `modeSnapshot` memo that feeds `composerBootScope`): without this precondition
+      // the second send's Retry snapshot can be armed on the draft instance and then
+      // dropped by the swap, leaving the failed-stage banner with Cancel but no Retry.
+      await expect(
+        page.locator('[data-component="session-new-composer"]'),
+        "draft composer never handed off to the session composer",
+      ).toHaveCount(0, { timeout: 20_000 })
+      await expect(page.locator('[data-component="session-composer"]').last()).toBeVisible({ timeout: 20_000 })
+      // See waitForDispatchReceived's doc comment: Stop clicked inside the
+      // pre-dispatch window takes the local `takePendingPrompt` short-circuit and the
+      // turn's own send pipeline never runs to completion — its late continuation
+      // (`sendPromptRequest`'s post-dispatch reconcile, `src/features/session/submit/
+      // send.ts`) would then land during the SECOND turn and clear its optimistic
+      // status meta, which is what silently deletes the escalation banner mid-ladder.
+      // Wait for the mock to have actually received turn one's dispatch so the cancel
+      // below is the "abort an already-dispatched turn" path this scenario intends.
+      await waitForDispatchReceived(promptState)
 
       // Cancel the first (silent) turn to return the composer to ready without a
       // scope change, then resend on the now-stable session route.
@@ -899,8 +907,16 @@ test.describe("core busy / abort / errors @core", () => {
 
       await input.click()
       await input.fill("still nothing?")
+      // The submit button and the editor are the same form; assert the editor has
+      // actually committed the text before submitting, so the click cannot land on an
+      // empty composer (a blank submit arms no Retry snapshot and starts no turn).
+      await expect(input).toContainText("still nothing?", { timeout: 10_000 })
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+      // The escalation ladder below only measures the intended scenario once the
+      // second turn has genuinely reached the (silent) server: a turn still inside the
+      // pre-dispatch window is optimistically busy but not yet dispatched.
+      await expect.poll(() => promptState.count, { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
 
       const stage = page.getByTestId("session-status-stage")
       // The banner appears (pending/long — proven as a stepped ladder by the
@@ -910,35 +926,22 @@ test.describe("core busy / abort / errors @core", () => {
       // so on a slow runner the intermediate stages can already have elapsed before
       // these checks run. "failed" is stable (rank 4, never advances) until Cancel, so
       // this is deterministic regardless of runner speed.
-      try {
-        await expect(stage, "escalation banner never appeared").toBeVisible({ timeout: 30_000 })
-        await expect(stage).toHaveAttribute("data-stage", "failed", { timeout: 30_000 })
-      } catch (e) {
-        throw new Error(`${(e as Error).message}\n\nDBGLOGS:\n${dbgLogs.join("\n")}`)
-      }
+      await expect(stage, "escalation banner never appeared").toBeVisible({ timeout: 30_000 })
+      await expect(stage).toHaveAttribute("data-stage", "failed", { timeout: 30_000 })
       await expect(stage).toContainText("unresponsive")
 
       // At the terminal stage BOTH controls are offered: Cancel to abort the stuck
       // run and Retry to re-run the last prompt.
       await expect(page.locator('[data-action="session-status-cancel"]')).toBeVisible()
-      try {
-        await expect(page.locator('[data-action="session-status-retry"]')).toBeVisible()
-      } catch (e) {
-        const probe = await page.evaluate(() =>
-          [...document.querySelectorAll("[data-component]")]
-            .map((el) => el.getAttribute("data-component"))
-            .filter((v) => v && v.includes("composer")),
-        )
-        throw new Error(
-          `${(e as Error).message}\n\nDBGCOMPOSER: ${JSON.stringify(probe)}\nURL=${page.url()}\nDBGLOGS:\n${dbgLogs.join("\n")}`,
-        )
-      }
+      await expect(
+        page.locator('[data-action="session-status-retry"]'),
+        "failed stage offered Cancel but no Retry — the composer's last-submitted snapshot was dropped",
+      ).toBeVisible()
 
       await page.locator('[data-action="session-status-cancel"]').click()
       await expect(stage, "escalation banner did not clear after Cancel").toHaveCount(0, { timeout: 15_000 })
       await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
       await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-      if (process.env.DBG === "1") throw new Error("DBGDUMP\n" + dbgLogs.filter((l) => l.includes("RESETKEY") || l.includes("SUBMIT")).join("\n"))
     },
   )
 })

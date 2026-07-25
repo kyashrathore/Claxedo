@@ -88,7 +88,19 @@ export default defineConfig({
   },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : suite === "all" ? 1 : 0,
+  // No retries, anywhere. CI used to retry twice, which silently converted flakes
+  // into passes: three separate flaky tests survived unnoticed that way, and one
+  // (`core-first-prompt-local` behavior 5) turned out to be a HARD 15/15 failure
+  // locally that only ever looked intermittent because slower runners crossed a
+  // timing boundary. A retry budget does not make a suite trustworthy, it makes an
+  // untrustworthy suite quiet. A flake is now a red build, which is the point.
+  //
+  // KNOWN RESIDUAL RISK: the draft->session handoff has an unfixed app race — a
+  // confirmed `POST /session -> 201` sometimes leaves the URL on the draft route.
+  // It is shared by the `sendPrompt` helper and therefore reachable from many core
+  // specs under heavy load. If CI goes red there, fix the race; do not restore
+  // retries.
+  retries: 0,
   // Under a prebuilt static server, per-file parallelism is safe: mocks are
   // page-scoped route interceptions and every spec keys its own /tmp dir. The
   // single-worker pin only protects dev-serving runs (module-graph contention).
