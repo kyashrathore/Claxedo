@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import type { Accessor, JSX } from "solid-js"
 import type { CommandOption } from "@/app/providers/command"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -17,6 +17,15 @@ export function useRailKeyboardController(input: {
     platform?: string
     quit?: () => unknown
   }
+  /**
+   * The surfaces in the order the user SEES them — the header tab strip / the
+   * compact switcher (`switcherItems`). `mod+<n>` indexes THIS list, not
+   * `recentContents()`: recency is a most-recently-used stack, so `mod+1` used
+   * to land on whatever surface was touched last and every number shuffled as
+   * soon as you switched, which reads as random. Omitted (tests) → the alive
+   * content order, which is the same insertion order the tab strip renders.
+   */
+  surfaceOrder?: Accessor<readonly string[]>
   toggleSidebar: () => void
 }) {
   const closeFocusedPane = () => {
@@ -44,6 +53,9 @@ export function useRailKeyboardController(input: {
     input.state.layout.closePane(focusedPaneId, { destroyContent: false })
   }
 
+  const orderedSurfaces = (): readonly string[] =>
+    input.surfaceOrder?.() ?? input.state.wb.selectors.aliveContents()
+
   input.command.register(() =>
     createRailKeyboardCommands({
       closeFocusedPane,
@@ -63,7 +75,7 @@ export function useRailKeyboardController(input: {
       },
       toggleSidebar: input.toggleSidebar,
       showSurfaceAtIndex: (index) => {
-        const contentId = input.state.wb.selectors.recentContents()[index]
+        const contentId = orderedSurfaces()[index]
         if (contentId) input.state.wb.navigation.show(contentId)
       },
       focusSplitLeft: () => {

@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Show, Switch } from "solid-js"
+import { createMemo, createRoot, For, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -431,17 +431,43 @@ function ProcessesRow(props: {
   )
 }
 
+export type SessionEnvironmentCardState = {
+  collapsed: () => boolean
+  /** False until the persisted preference has been read back — see below. */
+  ready: () => boolean
+  setCollapsed: (collapsed: boolean) => void
+  toggle: () => void
+}
+
 /** Route-restorable collapse preference, shared by the mount and its tests. */
-export function createSessionEnvironmentCardState() {
-  const [ui, setUi] = persisted(
+export function createSessionEnvironmentCardState(): SessionEnvironmentCardState {
+  const [ui, setUi, , ready] = persisted(
     Persist.global("session.environment-card-collapsed.v1"),
     createStore<{ collapsed: boolean }>({ collapsed: false }),
   )
   return {
     collapsed: () => ui.collapsed,
+    ready,
     setCollapsed: (collapsed: boolean) => setUi("collapsed", collapsed),
     toggle: () => setUi("collapsed", !ui.collapsed),
   }
+}
+
+/**
+ * ONE collapse store for the whole app, created outside any component owner.
+ *
+ * Desktop persistence is ASYNC (the store lives behind an Electron IPC store,
+ * so `persisted()` hands back a Promise init). A per-mount store therefore
+ * always renders the `collapsed: false` DEFAULT first and only flips to the
+ * saved value once the read resolves — which the user sees as the card popping
+ * open and folding itself shut again on every fresh mount (app restart, and any
+ * time the session surface re-mounts). Hoisting the store means that read
+ * happens ONCE per app run; `ready` covers that first read.
+ */
+let sharedCardState: SessionEnvironmentCardState | undefined
+export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
+  if (!sharedCardState) sharedCardState = createRoot(() => createSessionEnvironmentCardState())
+  return sharedCardState
 }
 
 /**
@@ -459,12 +485,16 @@ export function SessionEnvironmentCardMount() {
   const queryOptions = useShellQueryOptions()
   const platform = usePlatform()
   const prompt = usePrompt()
-  const collapse = createSessionEnvironmentCardState()
+  const collapse = sessionEnvironmentCardState()
 
   const directory = () => sdk.directory
   const panelOpen = () => state.workspacePanel.state().open
   const focused = () => !paneId || state.wb.state.focusedPaneId === paneId
   const visible = () => !panelOpen() && !!directory() && focused()
+  // Never paint the card before its persisted collapse state is known: showing
+  // the default (expanded) and correcting it a tick later is the visible
+  // expand-then-collapse flash. `ready` is already true on the sync (web) path.
+  const painted = () => visible() && collapse.ready()
 
   // Isolation, from typed sources only:
   //  - cloud: a signed workspace kind (cloud/user-hosted — never local) or a
@@ -626,7 +656,7 @@ export function SessionEnvironmentCardMount() {
   }
 
   return (
-    <Show when={visible()}>
+    <Show when={painted()}>
       <SessionEnvironmentCard
         source={source}
         collapsed={collapse.collapsed()}
