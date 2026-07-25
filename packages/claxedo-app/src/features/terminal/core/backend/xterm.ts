@@ -9,6 +9,7 @@ import { createModeScanner } from "../mode-scan"
 import { createQuerySuppressor } from "../query-suppression"
 import type { TerminalBackend, TerminalBackendOptions, Disposable, CreateBackendFn } from "./types"
 import { cancelParserIdleWork, createParserIdleGate, wrapWrite } from "../parser-idle-gate"
+import { installInputModeReclaimer } from "./input-mode-reclaimer"
 
 export const createBackend: CreateBackendFn = async (
   container: HTMLDivElement,
@@ -45,6 +46,12 @@ export const createBackend: CreateBackendFn = async (
   // Track bracketed paste mode across split writes.
   const mode = createModeScanner()
   const suppress = createQuerySuppressor()
+
+  // Disarm mouse / focus / kitty-keyboard modes that a TUI killed uncleanly
+  // left armed in the shell that reclaimed the pty. Installed on every
+  // terminal; it only acts at a prompt, and only on modes a TUI armed.
+  const reclaimer = installInputModeReclaimer(xterm)
+  cleanups.push(() => reclaimer.dispose())
   // Count in-flight writes so a fit can wait out a paused async parser handler
   // instead of re-entering the parser and permanently FAILing it. Wrapping here
   // (rather than at each call site) means EVERY write is counted, including the

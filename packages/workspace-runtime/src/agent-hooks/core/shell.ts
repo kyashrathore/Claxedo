@@ -177,7 +177,11 @@ export function getShellArgs(shell: string): string[] {
     return [
       "-l",
       "--init-command",
-      `set -l _claxedo_bin "${escaped}"; contains -- "$_claxedo_bin" $PATH; or set -gx PATH "$_claxedo_bin" $PATH; function _claxedo_shell_ready --on-event fish_prompt; printf '\\033]777;claxedo-shell-ready\\007'; functions -e _claxedo_shell_ready; end`,
+      // The shell-ready marker fires on EVERY prompt (no `functions -e`): the
+      // renderer's leaked-input-mode reclaim treats each marker as "the shell
+      // owns the foreground again", which is only correct if it repeats. The
+      // first-marker consumer (initial command) is idempotent.
+      `set -l _claxedo_bin "${escaped}"; contains -- "$_claxedo_bin" $PATH; or set -gx PATH "$_claxedo_bin" $PATH; function _claxedo_shell_ready --on-event fish_prompt; printf '\\033]777;claxedo-shell-ready\\007'; end`,
     ]
   }
   if (["zsh", "sh", "ksh"].includes(shellName)) {
