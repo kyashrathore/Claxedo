@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Rebake the crabbox Hetzner base image: boot a temp box from the current
+# image, refresh system packages + the bun install cache, snapshot it via the
+# Hetzner API, and point script/cbx at the new image ID.
+#
+# Run when: a cold box's first `bun install` feels slow (lockfile drift), or
+# the toolchain (bun / node / system packages) needs changes. Not needed for
+# repo code changes — those flow through sync on every run.
+#
+# Usage: ./script/cbx-rebake [--delete-old]
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CBX="$ROOT/script/cbx"
+SLUG="cbx-rebake-$$"
+
+set -a
+source "$ROOT/packages/claxedo-server/.env"
+set +a
+
+trap '"$CBX" stop "$SLUG" 2>/dev/null || true' EXIT
+
+echo "==> warming temp box $SLUG from current image"
+"$CBX" warmup --slug "$SLUG"
+
+echo "==> refreshing system packages, toolchain, umask, playwright, and bun cache"
+"$CBX" run --id "$SLUG" -- bash -c '
+set -e
+sudo -n apt-get update -qq && sudo -n apt-get upgrade -y -qq >/dev/null
+# bunx symlink + npx->bunx shim (npm cannot parse bun catalog: deps)
+sudo -n ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+printf "#!/bin/sh\nexec bunx \"\$@\"\n" | sudo -n tee /usr/local/bin/npx >/dev/null
+sudo -n chmod +x /usr/local/bin/npx
+# tests assume umask 022 (box default 002 breaks opencode permission tests)
+grep -q "umask 022" ~/.bashrc || echo "umask 022" >> ~/.bashrc
+# playwright lacks an ubuntu26.04 build; spoof 24.04 so install works
+grep -q "VERSION_ID=\"26.04\"" /etc/os-release && sudo -n sed -i.bak "s/VERSION_ID=\"26.04\"/VERSION_ID=\"24.04\"/" /etc/os-release || true
+bun install --frozen-lockfile >/dev/null
+(cd packages/claxedo-app && bun x playwright install --with-deps chromium >/dev/null)
+# keep the image lean: drop the synced workdir, retain bun + playwright caches
+cd / && sudo -n rm -rf /work/crabbox/*
+echo image-prepped'
+
+SERVER_ID="$("$CBX" list | awk -v s="$SLUG" 'index($2, s) > 0 {print $1; exit}')"
+[[ -n "$SERVER_ID" ]] || { echo "error: no server found for slug $SLUG"; exit 1; }
+
+echo "==> snapshotting server $SERVER_ID"
+IMAGE_ID="$(curl -sf -X POST \
+  -H "Authorization: Bearer $HETZNER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"description\":\"bun-ci-base rebaked $(date -u +%Y-%m-%d)\",\"type\":\"snapshot\",\"labels\":{\"crabbox\":\"true\",\"purpose\":\"ci-base\"}}" \
+  "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/create_image" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"]["id"])')"
+
+echo "==> waiting for image $IMAGE_ID"
+STATUS=""
+for _ in $(seq 1 60); do
+  STATUS="$(curl -sf -H "Authorization: Bearer $HETZNER_TOKEN" \
+    "https://api.hetzner.cloud/v1/images/$IMAGE_ID" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"]["status"])')"
+  [[ "$STATUS" == "available" ]] && break
+  sleep 10
+done
+[[ "$STATUS" == "available" ]] || { echo "error: image stuck in status=$STATUS"; exit 1; }
+
+OLD_ID="$(grep -oE 'CRABBOX_HETZNER_IMAGE:-[0-9]+' "$CBX" | grep -oE '[0-9]+')"
+sed -i '' "s/CRABBOX_HETZNER_IMAGE:-[0-9]*/CRABBOX_HETZNER_IMAGE:-$IMAGE_ID/" "$CBX"
+echo "==> script/cbx now boots $IMAGE_ID (was $OLD_ID)"
+
+if [[ "${1:-}" == "--delete-old" && -n "$OLD_ID" ]]; then
+  curl -sf -X DELETE -H "Authorization: Bearer $HETZNER_TOKEN" \
+    "https://api.hetzner.cloud/v1/images/$OLD_ID" >/dev/null
+  echo "==> deleted old image $OLD_ID"
+fi
+
+echo "==> done (temp box stopped)"

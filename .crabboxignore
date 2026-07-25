@@ -1,0 +1,16 @@
+# Exclude heavy folders from local network upload
+node_modules/
+# Crabbox config/wrapper are consumed client-side; the remote box never needs them.
+# Keeping these out of the dirty delta lets sync skip entirely on a clean tree.
+.crabbox.yaml
+.crabboxignore
+script/cbx
+
+.turbo/
+dist/
+build/
+.artifacts/
+.crabbox/
+AWSCLIV2.pkg
+*.log
+tmp/

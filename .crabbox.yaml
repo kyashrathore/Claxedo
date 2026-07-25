@@ -1,0 +1,11 @@
+# Crabbox repo config (v0.40 schema — unknown keys are silently ignored).
+# Validate with: crabbox doctor (expect default_type=cpx22) and crabbox config show.
+#
+# NOTE: the pre-baked snapshot is NOT set here — Hetzner image override only works
+# via the CRABBOX_HETZNER_IMAGE env var (see ./script/cbx wrapper).
+
+provider: hetzner
+serverType: cpx22         # 4 GB / 2 vCPU — key is "serverType", not "type"
+keep: true                # keep warm boxes alive for reuse between runs
+ttl: 3h                   # max lease lifetime (Go duration) — not "ttl_minutes"
+idleTimeout: 45m          # auto-teardown after this much idle time
