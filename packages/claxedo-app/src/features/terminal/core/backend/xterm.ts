@@ -8,6 +8,7 @@ import { setupResizeHandlers } from "./resize-handlers"
 import { createModeScanner } from "../mode-scan"
 import { createQuerySuppressor } from "../query-suppression"
 import type { TerminalBackend, TerminalBackendOptions, Disposable, CreateBackendFn } from "./types"
+import { cancelParserIdleWork, createParserIdleGate, wrapWrite } from "../parser-idle-gate"
 
 export const createBackend: CreateBackendFn = async (
   container: HTMLDivElement,
@@ -44,7 +45,15 @@ export const createBackend: CreateBackendFn = async (
   // Track bracketed paste mode across split writes.
   const mode = createModeScanner()
   const suppress = createQuerySuppressor()
-  const originalWrite = xterm.write.bind(xterm)
+  // Count in-flight writes so a fit can wait out a paused async parser handler
+  // instead of re-entering the parser and permanently FAILing it. Wrapping here
+  // (rather than at each call site) means EVERY write is counted, including the
+  // buffer restore and the mode preamble.
+  const parserGate = createParserIdleGate()
+  const originalWrite = wrapWrite(parserGate, xterm.write.bind(xterm) as (
+    data: string | Uint8Array,
+    callback?: () => void,
+  ) => void)
 
   // Data/key listeners managed externally
   let dataListeners: Array<(data: string) => void> = []
@@ -178,8 +187,11 @@ export const createBackend: CreateBackendFn = async (
       for (const fn of resizeListeners) fn({ cols, rows })
     },
     instance.renderer,
+    parserGate,
   )
   cleanups.push(resizeHandlers.cleanup)
+  // Drop any fit parked behind a write that will never complete now.
+  cleanups.push(() => cancelParserIdleWork(parserGate))
 
   // Wire xterm's native onData (user typing) into our data listeners
   const xtermOnData = xterm.onData((data) => {

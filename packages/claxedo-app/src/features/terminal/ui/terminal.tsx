@@ -33,6 +33,8 @@ import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-m
 import { resolveInitialCommand } from "./initial-command"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"
 import { classifyTerminalClose } from "./close"
+import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
+import { scheduleFontSettleRefit } from "../core/font-settle"
 
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
@@ -303,13 +305,19 @@ export const Terminal = (props: TerminalProps) => {
       backend = b
       cleanups.push(() => b.dispose())
 
-      // Refit after all fonts load so custom mono fonts do not leave the terminal
-      // stuck with fallback metrics.
-      if (typeof document !== "undefined" && document.fonts) {
-        document.fonts.ready.then(() => {
-          if (!disposed) backend?.fit()
-        })
-      }
+      // Refit once OUR font is usable, so a custom mono face that resolves
+      // after xterm measured its cell size doesn't leave the terminal on
+      // fallback metrics (mangled glyphs until the next resize).
+      //
+      // `document.fonts.ready` was the wrong signal — it resolves when the
+      // loads already pending settle, which can be before a face that only
+      // xterm's canvas measurement requests has begun loading at all.
+      scheduleFontSettleRefit({
+        fontFamily: monoFontFamily(settings.appearance.font()),
+        fontSize: TERMINAL_OPTIONS.fontSize,
+        isAlive: () => !disposed,
+        refit: () => backend?.fit(),
+      })
 
       // Auto-focus: the createEffect-based auto-focus cannot track `backend`
       // because it's a plain variable (not a signal), so it returns early and
@@ -324,7 +332,23 @@ export const Terminal = (props: TerminalProps) => {
           focusTerminal()
         })
       }
-      const mountCols = b.cols
+      // Measure the mount width only once the terminal has actually been fitted
+      // to its container. `b.cols` straight after creation is xterm's 80-column
+      // default (fonts have not settled, no fit has run), so every cold mount
+      // used to compare a real snapshot width against 80 and conclude the width
+      // had changed. That drives four branches, all destructive: the
+      // clear-screen on socket open, the live-tail cursor, the forced SIGWINCH
+      // toggle, and restoreSize. `undefined` when the container has no usable
+      // size yet — an unmeasurable width must read as "unchanged", never as
+      // "changed", so an unknown never triggers a destructive path.
+      const mountCols = (() => {
+        try {
+          b.fit()
+        } catch {}
+        const rect = container.getBoundingClientRect()
+        if (rect.width < MIN_CONTAINER_PX || rect.height < MIN_CONTAINER_PX) return undefined
+        return b.cols
+      })()
 
       // Allow queued store updates from the previous mount cleanup to settle
       // so restore/connect use one consistent snapshot (cursor + buffer).
@@ -353,7 +377,11 @@ export const Terminal = (props: TerminalProps) => {
       const snapshotWasAtBottom = local.pty.wasAtBottom
       const snapshotScrollY = local.pty.scrollY
       cursor = snapshotCursor ?? 0
-      const splitWidthChanged = typeof snapshotCols === "number" && snapshotCols > 0 && snapshotCols !== mountCols
+      const splitWidthChanged =
+        typeof mountCols === "number" &&
+        typeof snapshotCols === "number" &&
+        snapshotCols > 0 &&
+        snapshotCols !== mountCols
 
       // Reload detection marker is retained for diagnostics only.
       const reloadKey = terminalReloadStorageKey(local.pty.id)
@@ -426,15 +454,29 @@ export const Terminal = (props: TerminalProps) => {
         } catch {}
       })
 
-      const likelyTui = isLikelyTui({
-        snapshotWasAltScreen: snapshotWasAltScreen === true,
-        initialCommand: local.pty.initialCommand ?? "",
-        title: local.pty.title ?? "",
-      })
+      // This PTY was created moments ago to replace one the server had lost
+      // (clone recovery). Whatever the tab is NAMED, there is no TUI behind it
+      // — the shell is brand new. Consume the flag now so a later remount of
+      // the same, by-then-established session behaves normally again.
+      const isRecreatedPty = local.pty.recreated === true
+      if (isRecreatedPty) props.onUpdate?.({ id: local.pty.id, recreated: false })
+
+      const likelyTui =
+        !isRecreatedPty &&
+        isLikelyTui({
+          snapshotWasAltScreen: snapshotWasAltScreen === true,
+          initialCommand: local.pty.initialCommand ?? "",
+          title: local.pty.title ?? "",
+        })
 
       // Never restore alternate-screen toggles from mode rehydrate (snapshot
       // buffer restore handles alt-screen). For non-TUIs, strip mouse/focus
       // reporting to avoid accidental SGR mouse "gibberish" in shells.
+      //
+      // A recreated PTY always takes the stripping path: its persisted
+      // modeSequences describe a TUI that no longer exists, and re-arming
+      // mouse tracking into a fresh shell is exactly what sprays
+      // `35;72;51M`-shaped reports into the prompt on every pointer move.
       const snapshotModeSequences = filterModeSequences({
         raw: local.pty.modeSequences ?? "",
         likelyTui,
@@ -730,7 +772,9 @@ export const Terminal = (props: TerminalProps) => {
         const size = restoreSize({
           likelyTui,
           splitWidthChanged,
-          mountCols,
+          // restoreSize already falls back to backendCols for a nonsense width;
+          // an unmeasured mount takes the same path.
+          mountCols: mountCols ?? b.cols,
           snapshotCols,
           snapshotRows,
           backendCols: b.cols,
@@ -840,9 +884,15 @@ export const Terminal = (props: TerminalProps) => {
       }
 
       // --- Reconnectable WebSocket connection ---
-      // Shared decoders persist across reconnections (no per-socket state).
+      // Shared decoder persists across reconnections (no per-socket state).
+      //
+      // PTY output arrives as WebSocket TEXT frames today, so `event.data` is
+      // already a string and this decoder only handles the 0x00-prefixed meta
+      // frame. The binary branch below still decodes with `{ stream: true }`
+      // so that if anything ever does deliver PTY bytes (a relay change, a
+      // move to binary frames), a multi-byte codepoint straddling a frame
+      // boundary is buffered rather than replaced with U+FFFD.
       const decoder = new TextDecoder()
-      const encoder = new TextEncoder()
 
       const scheduleReconnect = () => {
         if (disposed || overload) return
@@ -995,7 +1045,10 @@ export const Terminal = (props: TerminalProps) => {
             // WebSocket control frame: 0x00 + UTF-8 JSON (currently { cursor }).
             const bytes = new Uint8Array(event.data)
             if (bytes[0] === 0) {
-              const json = decoder.decode(bytes.subarray(1))
+              // Meta frames are self-contained: decode without `stream` so a
+              // truncated one can't poison the decoder's carry state for the
+              // PTY-data path below.
+              const json = new TextDecoder().decode(bytes.subarray(1))
               try {
                 const meta = JSON.parse(json) as { cursor?: unknown }
                 const next = meta?.cursor
@@ -1009,7 +1062,7 @@ export const Terminal = (props: TerminalProps) => {
               }
               return
             }
-            data = decoder.decode(bytes)
+            data = decoder.decode(bytes, { stream: true })
           } else {
             data = typeof event.data === "string" ? event.data : ""
           }
@@ -1020,8 +1073,15 @@ export const Terminal = (props: TerminalProps) => {
           if (!gated && !initialSent) {
             queueInitial(ws, "output-settled")
           }
-          const dataBytes = encoder.encode(data).byteLength
-          cursor += dataBytes
+          // The cursor is an INDEX INTO THE SERVER'S UTF-16 STRING BUFFER — the
+          // server advances it by `data.length` and `connect()` feeds it
+          // straight into `String.slice`. Counting UTF-8 bytes here instead
+          // drifted the client strictly ahead of the server on any non-ASCII
+          // output (UTF-8 bytes >= UTF-16 units), so on reconnect the server
+          // saw `from >= end` and replayed NOTHING — output produced while
+          // disconnected was dropped silently. Count the same units the server
+          // does; the string here is byte-identical to the one it sent.
+          cursor += data.length
           // Respond to terminal capability queries immediately, before any queuing.
           // TUI apps (e.g. codex) query the terminal at startup and time out
           // after ~2s per query group if no responses arrive. We respond here

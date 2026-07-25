@@ -66,12 +66,22 @@ const ALLOWED_VARS = new Set([
   // macOS
   "__CF_USER_TEXT_ENCODING", "Apple_PubSub_Socket_Render",
 
-  // Terminal metadata
-  "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "COLORTERM",
-  "ITERM_SESSION_ID", "ITERM_PROFILE", "TERM_SESSION_ID",
-  "WT_SESSION", "WT_PROFILE_ID",
-  "WEZTERM_EXECUTABLE", "WEZTERM_CONFIG_DIR",
-  "KITTY_PID", "ALACRITTY_SOCKET", "GHOSTTY_RESOURCES_DIR",
+  // Terminal metadata.
+  //
+  // COLORTERM describes colour capability, which is ours to claim and true
+  // either way, so it passes through.
+  //
+  // The host terminal's IDENTITY markers do NOT pass through. We announce a
+  // deliberate identity (see identity.ts) and these would contradict it: a TUI
+  // that finds `KITTY_PID` or `ITERM_SESSION_ID` set concludes it is running
+  // inside kitty or iTerm and enables terminal-specific behaviour our xterm
+  // does not implement. Inheriting them from whatever launched the desktop app
+  // made that behaviour vary per user machine.
+  //
+  // TERM_PROGRAM / TERM_PROGRAM_VERSION are set explicitly downstream of the
+  // allowlist, so they are omitted here rather than passed through and
+  // overwritten.
+  "COLORTERM",
 
   // Misc
   "MANPATH", "INFOPATH", "LESS", "LESSOPEN", "LESSCLOSE",

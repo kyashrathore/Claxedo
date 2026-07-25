@@ -14,7 +14,7 @@ import * as os from "os"
 import * as path from "path"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
 import { createDiskHistory, renameHistory } from "./history-disk"
-import { containsClearScrollbackSequence, extractContentAfterClear } from "./escape-filter"
+import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"
 import { osc7 as osc7Parser } from "./osc7"
 import { oscProcessExit } from "./osc-process-exit"
 import { buildSafeEnv, getLocale } from "./env"
@@ -29,6 +29,10 @@ import {
 } from "./write-queue"
 import { decodeInput } from "./decode-input"
 import { sendWebSocketWithBackpressure } from "./websocket-backpressure"
+import { safeChunkEnd, safeStartIndex } from "./safe-slice"
+import { createMarkerScanner } from "./marker-scan"
+import { SHELL_READY_MARKER } from "./shell-ready"
+import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
 import { workspaceRuntimeBus, type PtyInfo } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
@@ -127,12 +131,21 @@ export namespace Pty {
   function safeReplay(ws: WSContext, replay: string) {
     if (!replay) return true
     try {
-      for (let i = 0; i < replay.length; i += BUFFER_CHUNK) {
-        if (!sendWebSocketWithBackpressure(ws, replay.slice(i, i + BUFFER_CHUNK), {
+      let i = 0
+      while (i < replay.length) {
+        // A fixed-stride slice can end between the halves of a surrogate pair,
+        // which makes the outgoing text frame invalid UTF-8. Escapes split
+        // across sends are fine — xterm reassembles them across writes.
+        const end = safeChunkEnd(replay, Math.min(replay.length, i + BUFFER_CHUNK))
+        // Degenerate guard: a pair straddling the very first boundary would
+        // otherwise pin `end` at `i` and spin forever.
+        const stop = end > i ? end : Math.min(replay.length, i + BUFFER_CHUNK)
+        if (!sendWebSocketWithBackpressure(ws, replay.slice(i, stop), {
           maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX,
         })) {
           return false
         }
+        i = stop
       }
       return true
     } catch {
@@ -396,6 +409,13 @@ export namespace Pty {
       ...buildSafeEnv(inputEnv, { customPrefix: "CLAXEDO" }),
       ...shellEnv.env,
       TERM: "xterm-256color",
+      // Describe OUR terminal, not whatever launched the desktop app. These
+      // come after the allowlist spread so they override the inherited values
+      // — a TUI seeing the host's `Apple_Terminal` tunes for the wrong
+      // terminal. See identity.ts for why this value is `vscode` and what it
+      // is coupled to.
+      TERM_PROGRAM: TERMINAL_TERM_PROGRAM,
+      TERM_PROGRAM_VERSION: TERMINAL_TERM_PROGRAM_VERSION,
       OPENCODE_TERMINAL: "1",
       COLORFGBG: "15;0",
     } as Record<string, string>
@@ -508,6 +528,10 @@ export namespace Pty {
     const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
     let initialCommandSent = false
     let initialCommandTimer: ReturnType<typeof setTimeout> | undefined
+    // Per-session, because the carry is stream state.
+    const shellReadyScanner = createMarkerScanner(SHELL_READY_MARKER)
+    const clearScrollbackScanner = createMarkerScanner(CLEAR_SCROLLBACK)
+    let clearScrollbackCarry = ""
     const sendInitialCommand = (reason: string) => {
       if (!initialCommand || initialCommandSent) return
       initialCommandSent = true
@@ -561,7 +585,10 @@ export namespace Pty {
         })
       }
 
-      if (initialCommand && data.includes("claxedo-shell-ready")) {
+      // Chunk-safe: a plain `data.includes(...)` missed the marker whenever a
+      // PTY read boundary fell inside it, and the initial command then waited
+      // out the 1200ms fallback timer instead of firing at the prompt.
+      if (initialCommand && shellReadyScanner.scan(data)) {
         if (initialCommandTimer) clearTimeout(initialCommandTimer)
         initialCommandTimer = setTimeout(() => sendInitialCommand("shell-ready"), 10)
       }
@@ -594,9 +621,14 @@ export namespace Pty {
 
       session.buffer += data
       if (session.buffer.length > BUFFER_LIMIT) {
-        const excess = session.buffer.length - BUFFER_LIMIT
-        session.buffer = session.buffer.slice(excess)
-        session.bufferCursor += excess
+        // Cut on a safe boundary: a raw `slice(excess)` can land inside an
+        // escape sequence, and the replay then starts mid-CSI — xterm prints
+        // the parameter bytes as literal junk at the top of the scrollback.
+        // `bufferCursor` advances by the ACTUAL cut so the invariant
+        // `bufferCursor + buffer.length === cursor` still holds for connect().
+        const cut = safeStartIndex(session.buffer, session.buffer.length - BUFFER_LIMIT)
+        session.buffer = session.buffer.slice(cut)
+        session.bufferCursor += cut
       }
       if (session.managed && busy(data)) {
         session.addrInUse = true
@@ -604,9 +636,14 @@ export namespace Pty {
       }
 
       const filtered = (() => {
-        if (!containsClearScrollbackSequence(data)) return data
+        // Chunk-safe: the scanner carries a tail so an ED3 split across two PTY
+        // reads still clears history. `carry` gives extractContentAfterClear
+        // the same view so it can strip the tail of a straddling sequence.
+        const carry = clearScrollbackCarry
+        clearScrollbackCarry = data.slice(Math.max(0, data.length - (CLEAR_SCROLLBACK.length - 1)))
+        if (!clearScrollbackScanner.scan(data)) return data
         void session.history.clear()
-        return extractContentAfterClear(data)
+        return extractContentAfterClear(data, carry)
       })()
       if (filtered) session.history.append(filtered)
     })
