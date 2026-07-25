@@ -8,7 +8,10 @@ export type OptionsSource = "harness" | "catalog" | "empty"
 export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
 export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
 export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
-export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<{ id: string; name: string }> }
+/** A model choice offered by a harness. `description` carries the version and
+ * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
+export type HarnessModelOption = { id: string; name: string; description?: string }
+export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<HarnessModelOption> }
 export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsSource; stale: boolean }
 
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
@@ -61,12 +64,16 @@ export function failedHarness(data: HarnessState) { return hardFailedHarness(dat
 
 export function extractModelsFromConfigOptions(
   options: HarnessConfigOption[],
-): { models: { id: string; name: string }[]; currentModel?: string } | null {
+): { models: HarnessModelOption[]; currentModel?: string } | null {
   const opt = options.find((item) => item.category === "model" && item.type === "select")
   if (!opt) return null
   const models = opt.selectOptions?.length
     ? opt.selectOptions.map((item) => ({ ...item, id: normalizeHarnessModelId(item.id) }))
-    : (opt.options ?? []).map((item) => ({ id: normalizeHarnessModelId(item.value), name: item.name }))
+    : (opt.options ?? []).map((item) => ({
+        id: normalizeHarnessModelId(item.value),
+        name: item.name,
+        ...(item.description ? { description: item.description } : {}),
+      }))
   if (models.length === 0) return null
   return {
     models,
@@ -175,9 +182,16 @@ function decodeChoice(value: unknown): { value: string; name: string; descriptio
   }
 }
 
-function decodeSelectOption(value: unknown): { id: string; name: string } | undefined {
+function decodeSelectOption(value: unknown): { id: string; name: string; description?: string } | undefined {
   const raw = record(value)
-  return raw && typeof raw.id === "string" && typeof raw.name === "string" ? { id: raw.id, name: raw.name } : undefined
+  if (!raw || typeof raw.id !== "string" || typeof raw.name !== "string") return undefined
+  return {
+    id: raw.id,
+    name: raw.name,
+    // Harness display names are short marketing labels ("Sonnet", "Opus"); the
+    // version and context window only live in the description, so keep it.
+    ...(typeof raw.description === "string" ? { description: raw.description } : {}),
+  }
 }
 
 function decodeConfigOptions(values: unknown[]) {

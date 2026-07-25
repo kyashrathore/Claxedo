@@ -6,6 +6,7 @@ import { Select } from "@opencode-ai/ui/select"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover, type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
+import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/features/session/harness/profile"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
@@ -48,6 +49,7 @@ function harnessOptionGroup(input: HarnessType) {
 type Item = {
   id: string
   name: string
+  description?: string
   provider: {
     id: string
     name: string
@@ -253,6 +255,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return selection().models.map((item) => ({
       id: item.id,
       name: item.name,
+      ...(item.description ? { description: item.description } : {}),
       provider: { id: item.providerID ?? currentHarness, name: label(item.providerID ?? currentHarness) },
       connected: true,
     }))
@@ -498,6 +501,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       <Show when={selection().isHarnessMode}>
         <ModelSelectorPopover
           model={model()}
+          // Same surface as the `+` menu and the context-row pickers it sits
+          // beside. Without this the harness model popover opened at its own
+          // width and row rhythm — and harness mode is the DEFAULT, so this was
+          // the most visible instance of the inconsistency, not an edge case.
+          contentClass={COMPOSER_MENU_CLASS}
           actions={harness() === "pi"}
           connectHarness={harness() === "pi" ? "pi" : undefined}
           tooltips={false}

@@ -58,113 +58,35 @@
     container-name: session-new-design;
   }
 
-  [data-component="session-new-design-content"] .claxedo-new-session-project-picker {
-    width: 6.5rem;
-    min-width: 6.5rem;
-    max-width: 6.5rem;
-    flex: 0 0 6.5rem;
-  }
-
-  [data-component="session-new-design-content"] .claxedo-new-session-project-picker [data-slot="select-select-trigger-value"] {
-    min-width: 0;
-    flex: 1;
-  }
-
-  [data-component="session-new-design-content"] [data-slot="worktree-picker-shell"] {
-    width: 10rem;
-    min-width: 10rem;
-    max-width: 10rem;
-    flex: 0 0 10rem;
-  }
-
-  [data-component="session-new-design-content"] .claxedo-new-session-worktree-picker {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
-
-  [data-component="session-new-design-content"] .claxedo-new-session-worktree-picker [data-slot="select-select-trigger-value"] {
-    min-width: 0;
-    flex: 1;
-  }
-
-  /* Select content is portalled outside the container. Let Kobalte's
-     same-width positioning follow each compact trigger instead of enforcing
-     the shared menu's 104px floor, and truncate long workspace identifiers. */
-  [data-component="select-content"].claxedo-new-session-scope-menu {
-    min-width: 0;
-  }
-
-  [data-component="select-content"].claxedo-new-session-scope-menu [data-slot="select-select-item-label"] {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  [data-component="session-new-design-content"] [data-slot="compact-icon"],
-  [data-component="session-new-design-content"] [data-slot="self-hosted-compact-detail"] {
+  /* The context row above the composer. Chips size to their own content and
+     truncate, so unlike the segmented-control row this replaced there are no
+     fixed per-picker widths to maintain — the only responsive behaviour left is
+     swapping the self-hosted workspace's long detail line for its short form. */
+  [data-component="session-context-row"] [data-slot="self-hosted-compact-detail"] {
     display: none;
   }
 
   /* The labelled row needs about 32rem at its natural size. Compact only once
      the composer itself crosses that fit point, independent of the viewport. */
   @container session-new-design (max-width: 32rem) {
-    [data-component="session-new-workspace-controls"] .claxedo-new-session-project-picker {
-      width: 5.5rem;
-      min-width: 5.5rem;
-      max-width: 5.5rem;
-      flex-basis: 5.5rem;
-    }
-
-    [data-component="session-new-workspace-controls"] [data-slot="worktree-picker-shell"] {
-      width: 7rem;
-      min-width: 7rem;
-      max-width: 7rem;
-      flex-basis: 7rem;
-    }
-
-    [data-component="session-new-workspace-controls"] [data-slot="workspace-segment-button"] {
-      width: 1.5rem;
-      padding-inline: 0.25rem;
-    }
-
-    [data-component="session-new-workspace-controls"] [data-slot="compact-icon"] {
-      display: inline-flex;
-    }
-
-    [data-component="session-new-workspace-controls"] [data-slot="control-label"],
-    [data-component="session-new-workspace-controls"] [data-slot="self-hosted-detail"] {
+    [data-component="session-context-row"] [data-slot="self-hosted-detail"] {
       display: none;
     }
 
-    [data-component="session-new-workspace-controls"] [data-slot="self-hosted-compact-detail"] {
+    [data-component="session-context-row"] [data-slot="self-hosted-compact-detail"] {
       display: inline;
-    }
-
-    [data-component="session-new-workspace-controls"] [data-slot="self-hosted-workspace"] {
-      flex: 1;
     }
   }
 
-  /* Keep the control strip on one line in the narrowest supported pane. Both
-     names retain a compact, ellipsized slice instead of forcing a wrap. */
+  /* Keep the chip strip on one line in the narrowest supported pane: the
+     project and worktree labels give up their text before the row wraps. */
   @container session-new-design (max-width: 20rem) {
-    [data-component="session-new-workspace-controls"] {
-      padding-left: 0;
+    [data-component="session-context-row"] [data-slot="context-chip-label"] {
+      display: none;
     }
 
-    [data-component="session-new-workspace-controls"] .claxedo-new-session-project-picker {
-      width: 4.5rem;
-      min-width: 4.5rem;
-      max-width: 4.5rem;
-      flex-basis: 4.5rem;
-    }
-
-    [data-component="session-new-workspace-controls"] [data-slot="worktree-picker-shell"] {
-      width: 4.75rem;
-      min-width: 4.75rem;
-      max-width: 4.75rem;
-      flex-basis: 4.75rem;
+    [data-component="session-context-row"] [data-slot="context-chip-worktree"] [data-slot="context-chip-label"] {
+      display: inline;
     }
   }
 
@@ -254,4 +176,96 @@
       opacity: 1;
     }
   }
+}
+
+/* ── UNLAYERED ON PURPOSE ────────────────────────────────────────────────────
+   menu-v2.css, select.css and list.css all ship their own UNLAYERED rules, and
+   an unlayered rule beats anything in `@layer components` no matter how
+   specific. The composer's cross-primitive dropdown normalisation therefore has
+   to live outside the layer too, and the class is doubled so it also wins the
+   source-order tie against those stylesheets (Vite's injection order for
+   component CSS is not guaranteed relative to this file).
+   Keep this block last. */
+/* ── One dropdown language for the composer dock ─────────────────────────
+   The composer opens menus built on three different primitives that sit
+   directly next to each other: MenuV2 (the `+` menu), Select (the effort
+   menu), and List-in-a-Popover (the model popover and the context-row
+   pickers). Their stock metrics disagree on every axis — row height, row
+   padding, row gap, container padding, and min-width — so switching between
+   two adjacent triggers visibly changed the menu's rhythm and width.
+   This block pins all three to the same surface and row spec. */
+.claxedo-composer-menu.claxedo-composer-menu {
+  width: 300px;
+  min-width: 300px;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+/* Row spec, applied to whichever primitive's row is inside. */
+.claxedo-composer-menu.claxedo-composer-menu [data-component="menu-v2-item"],
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="select-select-item"],
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-item"] {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 10px;
+  gap: 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 440;
+}
+
+/* List rows are flex columns with their own inner padding; neutralise it so
+   they match the single-line rhythm of the menu/select rows. */
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-item"] {
+  padding-block: 5px;
+}
+
+/* Two-line picker rows (label + path/detail). Left at the primitives' stock
+   1.5 line-height these came out 51px tall — nearly double the 28px rows of the
+   `+` and effort menus sitting right next to them, which is the "some slim,
+   some chunky" mismatch. Tightening the two lines lands the row at ~44px. */
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="context-chip-row"] {
+  gap: 1px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="context-chip-row"] > span {
+  line-height: 16px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="context-chip-row"] > span:first-child {
+  font-size: 13px;
+  font-weight: 440;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="context-chip-row"] > span + span {
+  font-size: 11px;
+  font-weight: 440;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-items"],
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-group"] {
+  padding: 0;
+}
+
+/* Group headers: MenuV2 group labels and List headers land on one style. */
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="menu-v2-group-label"],
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-header"],
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="select-section"] {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 530;
+  letter-spacing: 0.05px;
+  color: var(--v2-text-text-faint);
+  background: transparent;
+}
+
+/* The searchable pickers' filter field, aligned to the same 10px gutter. */
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search"] {
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search-wrapper"] {
+  padding: 0;
 }

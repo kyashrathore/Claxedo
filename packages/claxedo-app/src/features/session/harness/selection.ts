@@ -3,6 +3,7 @@ import {
   DEFAULT_HARNESS_MODEL,
   HARNESS_DISPLAY_NAMES,
   effectiveHarnessModel,
+  type HarnessModelOption,
   type HarnessType,
 } from "./profile"
 
@@ -13,7 +14,7 @@ export type HarnessSelectionState = {
   readonly harnessBinary?: string
   readonly selectedModel?: string
   readonly selectedModelProvider?: string
-  readonly dynamicModels?: readonly { id: string; name: string; providerID?: string }[] | null
+  readonly dynamicModels?: readonly (HarnessModelOption & { providerID?: string })[] | null
   readonly readiness: HarnessReadiness
   readonly optionsLoading: boolean
   readonly configError?: string
@@ -30,7 +31,11 @@ export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness" 
   return HARNESS_DISPLAY_NAMES[key] ?? key
 }
 
-export function harnessModels(state: Pick<HarnessSelectionState, "harness" | "selectedModel" | "selectedModelProvider" | "dynamicModels">) {
+export type HarnessModelChoice = HarnessModelOption & { providerID?: string }
+
+export function harnessModels(
+  state: Pick<HarnessSelectionState, "harness" | "selectedModel" | "selectedModelProvider" | "dynamicModels">,
+): HarnessModelChoice[] {
   const selected = effectiveHarnessModel(state.harness, state.selectedModel)
   if (state.dynamicModels?.length) {
     if (!selected || state.dynamicModels.some((item) => item.id === selected)) return [...state.dynamicModels]

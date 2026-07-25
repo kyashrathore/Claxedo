@@ -81,6 +81,7 @@ export function SessionComposerRegion(props: {
   system?: string
   agent?: string
   canAbort?: () => boolean
+  canPrompt?: () => boolean
   /**
    * Session status/active-turn supplied by the session owner (`sessionController`).
    * Without these the composer's `working()`/`busy()` derivation
@@ -332,6 +333,7 @@ export function SessionComposerRegion(props: {
                       system={props.system}
                       agent={props.agent}
                       canAbort={props.canAbort}
+                      canPrompt={props.canPrompt}
                       status={props.status}
                       activeTurn={props.activeTurn}
                       registerRetry={props.registerRetry}

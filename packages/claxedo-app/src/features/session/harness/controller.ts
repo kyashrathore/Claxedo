@@ -1,5 +1,5 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
-import type { HarnessReadiness } from "./selection"
+import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-default-policy"
@@ -29,7 +29,7 @@ export type HarnessSelectionControllerStore = {
   harness(scope: string): HarnessType
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
-  models(scope: string): { id: string; name: string; providerID?: string }[]
+  models(scope: string): HarnessModelChoice[]
   selectedModel(scope: string): string
   selectedModelKey(scope: string): ModelKey | undefined
   optionsStale(scope: string): boolean
@@ -51,7 +51,7 @@ export type HarnessSelectionSnapshot = {
   harness: HarnessType
   isHarnessMode: boolean
   readiness: HarnessReadiness
-  models: { id: string; name: string; providerID?: string }[]
+  models: HarnessModelChoice[]
   selectedModel: string
   selectedModelKey?: ModelKey
   optionsStale: boolean

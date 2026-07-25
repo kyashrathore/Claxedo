@@ -5,6 +5,7 @@ import { Persist, persisted } from "@/platform/persistence/persist"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import {
   navigatePromptHistory,
+  normalizePromptHistoryEntry,
   prependHistoryEntry,
   type PromptHistoryComment,
   type PromptHistoryEntry,
@@ -16,7 +17,7 @@ type PromptHistoryMode = "normal" | "shell"
 
 type PromptContextItem = FileContextItem & { key: string }
 
-type PromptHistoryComments = {
+export type PromptHistoryComments = {
   all: () => Array<{
     id: string
     file: string
@@ -117,6 +118,13 @@ export function createPromptHistoryController(input: {
   return {
     historyActive: () => input.historyIndex() >= 0,
     historyComments,
+    // The two accessors below exist so the CONTROLLER engine (plan
+    // 2026-07-25-005 T2.2) can own history NAVIGATION in upstream's state
+    // machine while this module stays the single owner of the persisted entry
+    // lists and the comment round-trip. Nothing about the legacy path changes.
+    entries: (mode: PromptHistoryMode) =>
+      (mode === "shell" ? shellHistory.entries : history.entries).map(normalizePromptHistoryEntry),
+    applyComments: applyHistoryComments,
     addToHistory: (prompt: Prompt, mode: PromptHistoryMode) => {
       const currentHistory = mode === "shell" ? shellHistory : history
       const setCurrentHistory = mode === "shell" ? setShellHistory : setHistory

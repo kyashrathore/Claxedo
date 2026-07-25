@@ -47,6 +47,18 @@ export interface PromptInputProps {
   agent?: string
   /** Whether a busy session can be stopped through the current transport. */
   canAbort?: () => boolean
+  /**
+   * Whether the current transport exposes a permission docking surface. Gates the
+   * composer's approval control, and is the same capability the
+   * `permissions.autoaccept` command gates on. Defaults to `true`.
+   *
+   * NOTE: every harness adapter shipped today reports `true` (acp/index.ts,
+   * shared/sdk-runtime-adapter.ts, pi/index.ts, opencode/index.ts all declare
+   * `permissions: true`) — an older comment in use-session-commands.tsx claiming
+   * codex-acp lacks a permission surface is stale. In practice this is false only
+   * for the pending-harness placeholder while readiness is still polling.
+   */
+  canPrompt?: () => boolean
   /** Session status supplied by the session owner. Defaults to idle for embedded contexts. */
   status?: () => SessionStatus
   /** Active turn state supplied by the session owner. Defaults to status-only for embedded contexts. */

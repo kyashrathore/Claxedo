@@ -15,8 +15,8 @@ describe("ClaxedoIcon", () => {
     render(() => <ClaxedoIcon name="worktree" />)
 
     expect(sprite.querySelector("[data-stale]")).toBeNull()
-    expect(sprite.querySelector("#claxedo-icon-worktree path")?.getAttribute("d")).toContain("M4 10H8")
-    expect(sprite.querySelector("#claxedo-icon-worktree path")?.getAttribute("stroke-width")).toBe("1.5")
+    expect(sprite.querySelector("#claxedo-icon-worktree path")?.getAttribute("d")).toContain("M5 10H8.5")
+    expect(sprite.querySelector("#claxedo-icon-worktree path")?.getAttribute("stroke-width")).toBe("1.25")
   })
 
   test("renders Claxedo-owned glyphs from the app sprite", () => {

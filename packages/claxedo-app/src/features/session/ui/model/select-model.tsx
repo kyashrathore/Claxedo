@@ -20,6 +20,10 @@ const isFree = (provider: string, cost: { input: number } | undefined) =>
 export type PickerItem = {
   id: string
   name: string
+  /** Harness-supplied detail line. Display names are short marketing labels
+   * ("Sonnet", "Opus"), so this is the only place the version and context
+   * window appear — e.g. "Opus 4.8 with 1M context · $5/$25 per Mtok". */
+  description?: string
   provider: {
     id: string
     name: string
@@ -80,7 +84,7 @@ const ModelList: Component<{
       key={(x) => `${x.provider.id}:${x.id}`}
       items={models}
       current={props.model.current()}
-      filterKeys={["provider.name", "name", "id"]}
+      filterKeys={["provider.name", "name", "id", "description"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
       groupBy={(x) => x.provider.name}
       groupHeader={(group) => {
@@ -121,13 +125,21 @@ const ModelList: Component<{
       }}
     >
       {(i) => (
-        <div class="w-full flex items-center gap-x-2 text-13-regular">
-          <span class="truncate">{i.name}</span>
-          <Show when={isFree(i.provider.id, i.cost)}>
-            <Tag>{language.t("model.tag.free")}</Tag>
-          </Show>
-          <Show when={i.latest}>
-            <Tag>{language.t("model.tag.latest")}</Tag>
+        <div class="w-full min-w-0 flex flex-col items-start gap-y-0.5 text-left text-13-regular">
+          <div class="w-full flex items-center gap-x-2">
+            <span class="truncate">{i.name}</span>
+            <Show when={isFree(i.provider.id, i.cost)}>
+              <Tag>{language.t("model.tag.free")}</Tag>
+            </Show>
+            <Show when={i.latest}>
+              <Tag>{language.t("model.tag.latest")}</Tag>
+            </Show>
+          </div>
+          {/* Display names are short labels ("Sonnet", "Opus"); the version and
+              context window live only here, so give it its own line rather than
+              truncating it away next to the name. */}
+          <Show when={i.description}>
+            <span class="line-clamp-2 text-12-regular text-text-weak">{i.description}</span>
           </Show>
         </div>
       )}
@@ -148,6 +160,10 @@ export function ModelSelectorPopover(props: {
   actions?: boolean
   tooltips?: boolean
   connectHarness?: string
+  /** Extra class for the popover surface. The composer passes its shared
+   * dropdown class so this picker matches the other menus on the dock instead
+   * of opening at its own width and row rhythm. */
+  contentClass?: string
 }) {
   const [store, setStore] = createStore<{
     open: boolean
@@ -194,7 +210,10 @@ export function ModelSelectorPopover(props: {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
-          class="w-72 h-80 flex flex-col p-2 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden"
+          // `w-72`/`p-2` only apply when no caller has taken over sizing: a
+          // Tailwind utility lives in @layer utilities and would beat the
+          // caller's own width/padding rules.
+          class={`${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
           onEscapeKeyDown={(event) => {
             close("escape")
             event.preventDefault()

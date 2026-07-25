@@ -13,7 +13,13 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
-import { normalizeProjectList, providerAuthQuery, projectListQuery, providerListQuery } from "@/platform/query/control-plane"
+import {
+  normalizeProjectList,
+  projectCatalogMissingWorkspace,
+  providerAuthQuery,
+  projectListQuery,
+  providerListQuery,
+} from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
 import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
@@ -175,6 +181,7 @@ function setDirectoryPathQuery(baseUrl: string | undefined, directory: Bootstrap
 function setDirectoryProjectQuery(baseUrl: string | undefined, directory: BootstrapDirectory, project: string) {
   queryClient.setQueryData(queryKeys.directory.project(baseUrl, directory), project)
 }
+
 
 export async function bootstrapGlobal(input: {
   baseUrl: string
@@ -474,7 +481,21 @@ export async function bootstrapDirectory(input: {
             directory: input.directory,
             client: input.sdk,
           })),
-        ),
+        ).then(async () => {
+          // `projectCurrentQuery` is the request that registers this workspace
+          // in the claxedo store, so until it resolves the catalog seeded by
+          // global bootstrap can legitimately be missing it (see
+          // `projectCatalogMissingWorkspace`). The catalog is cached with a
+          // five-minute `staleTime` and nothing else refetches it, which used
+          // to leave the rail on the engine-shaped payload — worktree basename
+          // for a name, and no sessions — until the user opened a surface.
+          // Refetch only when the catalog really is missing this workspace, so
+          // the common warm boot stays a no-op.
+          const queryKey = queryKeys.controlPlane.projects(input.baseUrl)
+          const cached = queryClient.getQueryData<Array<Project & { workspaces?: Record<string, unknown> }>>(queryKey)
+          if (!projectCatalogMissingWorkspace(cached, input.directory)) return
+          await queryClient.invalidateQueries({ queryKey })
+        }),
         retry(() =>
           queryClient.fetchQuery(configQuery({
             baseUrl: input.baseUrl,

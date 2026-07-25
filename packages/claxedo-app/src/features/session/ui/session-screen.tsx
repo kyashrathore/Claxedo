@@ -17,7 +17,8 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { useTerminal } from "@/features/session/app-ports"
-import { useLayout } from "@/features/session/app-ports"
+import { useCommand, useLayout } from "@/features/session/app-ports"
+import { addProjectAction } from "@/features/session/ui/components/session-add-project-action"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLocation, useNavigate } from "@solidjs/router"
@@ -107,6 +108,8 @@ export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
+  const command = useCommand()
+  const addProject = createMemo(() => addProjectAction(command))
   const layout = useLayout()
   const local = useLocal()
   const server = useServer()
@@ -1338,6 +1341,7 @@ export default function SessionPage() {
                   workspaceKind="cloud"
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
+                  onAddProject={addProject()}
                   main={
                     <div class="flex min-h-[280px] items-center justify-start px-2">
                       <CloudStartupView
@@ -1438,6 +1442,7 @@ export default function SessionPage() {
                   workspaceKind={store.newSessionWorkspaceKind}
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
+                  onAddProject={addProject()}
                   onProjectChange={(target: string) => {
                     if (target === dir()) return
                     layout.projects.open(target)
@@ -1452,6 +1457,7 @@ export default function SessionPage() {
                       inputRef = el
                     }}
                     variant="new-session"
+                    canPrompt={() => supports("permissions")}
                     newSessionWorktree={newSessionWorktree()}
                     newSessionWorkspaceKind={store.newSessionWorkspaceKind}
                     onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
@@ -1499,6 +1505,7 @@ export default function SessionPage() {
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}
               canAbort={() => supports("abort")}
+              canPrompt={() => supports("permissions")}
               status={sessionController.status}
               activeTurn={sessionController.activeTurn}
               beforeInput={

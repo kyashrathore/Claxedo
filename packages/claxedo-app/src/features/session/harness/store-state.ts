@@ -4,6 +4,7 @@ import {
   hardFailedHarness,
   harnessHasConfigOptions,
   type HarnessHealthStatus,
+  type HarnessModelOption,
   type HarnessState,
   type HarnessType,
   type OptionsSource,
@@ -20,7 +21,7 @@ export type HarnessStoreState = {
   selectedModel: string
   selectedModelProvider?: string
   selectedAgent: string
-  dynamicModels: { id: string; name: string }[] | null
+  dynamicModels: HarnessModelOption[] | null
   readiness: HarnessReadiness
   optionsSource: OptionsSource
   optionsStale: boolean

@@ -1,13 +1,21 @@
-// Claxedo keeps workspace-start controls below upstream's composer so local/cloud selection can drive runtime lifecycle.
+// Claxedo owns the workspace-start controls that drive local/cloud runtime
+// lifecycle. They render ABOVE upstream's composer as a stacked card of
+// dropdown chips (see session-context-row.tsx) rather than below it as
+// segmented controls.
 import type { JSX } from "solid-js"
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
 import { getFilename } from "@/lib/path"
-import { Select } from "@opencode-ai/ui/select"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
+import {
+  SessionContextRow,
+  type ContextChip,
+  type ContextChipAvatar,
+  type ContextChipOption,
+} from "@/features/session/ui/components/session-context-row"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { useLayout } from "@/features/session/app-ports"
 import { useSDK } from "@/features/session/app-ports"
@@ -19,15 +27,31 @@ import {
   type NewSessionWorkspaceKind,
   type ProjectWorkspace,
 } from "./session-new-workspace-options"
+import { useLanguage } from "@/platform/i18n/provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 
 export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
 
+type ProjectIconMeta = { url?: string; override?: string; color?: string }
+
 type ProjectInventoryItem = {
   worktree: string
   name?: string
+  icon?: ProjectIconMeta
   sandboxes?: string[]
   workspaces?: Record<string, ProjectWorkspace>
+}
+
+/**
+ * Mirrors `app/workbench/titlebar/project.ts` (which `features/session` may not
+ * import) minus its hardcoded opencode.ai favicon. A `color` means "render the
+ * monogram square", so it must beat an inherited `url` — otherwise a project that
+ * was deliberately given a colour would still show a stale favicon.
+ */
+const projectAvatarSource = (icon?: ProjectIconMeta) => {
+  if (icon?.override) return icon.override
+  if (icon?.color) return undefined
+  return icon?.url
 }
 
 export function NewSessionDesignView(props: {
@@ -36,15 +60,27 @@ export function NewSessionDesignView(props: {
   onWorktreeChange: (value: string) => void
   onWorkspaceKindChange: (value: NewSessionWorkspaceKind) => void
   onProjectChange?: (directory: string) => void
+  /**
+   * Upstream's project menu ends in an "Add project" footer action. Adding a
+   * project needs the directory-picker dialog plus the `ensureLocalProject`
+   * round-trip, both of which live in `app/` and `features/workspaces/` — paths
+   * `features/session` is forbidden to import (see `src/features/session/AGENTS.md`).
+   * So the owner of that surface passes the handler in; the footer row is omitted
+   * entirely when it is absent, rather than rendered inert.
+   *
+   * `session-screen.tsx` builds it with `addProjectAction()`, which reaches the
+   * real flow through the `project.open` command the app shell registers.
+   */
+  onAddProject?: () => void
   main?: JSX.Element
   children: JSX.Element
 }) {
   const queryOptions = useQueryOptions()
+  const language = useLanguage()
   const layout = useLayout()
   const navigate = useNavigate()
   const sdk = useSDK()
   const server = useServer()
-  const [worktreePickerOpen, setWorktreePickerOpen] = createSignal(false)
   const projectsQuery = useQuery(() => queryOptions.projects())
 
   const inventoryProjects = createMemo(() => (projectsQuery.data ?? []) as ProjectInventoryItem[])
@@ -99,6 +135,25 @@ export function NewSessionDesignView(props: {
     // 4) Last resort: the directory basename (a UUID for cloud workspaces).
     return getFilename(value)
   }
+  // Same three-source cascade as `projectLabel`, for the icon rather than the name.
+  const projectIcon = (value: string): ProjectIconMeta | undefined => {
+    const fromList = (layout.projects.list() ?? []).find((project) => project.worktree === value)?.icon
+    if (fromList) return fromList
+    const fromGlobal = inventoryProjects().find((project) => project.worktree === value)?.icon
+    if (fromGlobal) return fromGlobal
+    if (value === projectRoot()) return activeProject()?.icon
+    return undefined
+  }
+  // The avatar's monogram comes from the resolved LABEL, never the directory: a
+  // cloud workspace's directory basename is a UUID, so `getFilename(dir)[0]` would
+  // put a random hex digit on the square that is supposed to identify the project.
+  const projectAvatar = (value: string): ContextChipAvatar => {
+    const icon = projectIcon(value)
+    return {
+      fallback: projectLabel(value),
+      src: projectAvatarSource(icon),
+    }
+  }
   const worktreeLabel = (value: string) => {
     if (value === MAIN_WORKTREE) {
       const workspace = workspaces()[projectRoot()]
@@ -117,6 +172,15 @@ export function NewSessionDesignView(props: {
     return selfHosted?.workspace_name?.trim() || projectLabel(projectRoot())
   })
 
+  // Single source for the self-hosted branch: the workspace is relay-connected
+  // and already pinned by the route, so it gets a status pin instead of the
+  // environment and worktree chips.
+  const selfHostedWorkspace = createMemo(() => props.workspaceKind === "user-hosted")
+
+  const environmentLabel = (kind: NewSessionWorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
+  const createActionLabel = () =>
+    props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree"
+
   const openProject = (directory: string | undefined) => {
     if (!directory) return
     if (directory === projectRoot()) return
@@ -128,6 +192,79 @@ export function NewSessionDesignView(props: {
     server.projects.touch(directory)
     navigate(workspaceSessionRoute(directory))
   }
+
+  // Declared after `openProject` on purpose: createMemo computes eagerly, so a
+  // reference to a `const` below it would hit the temporal dead zone on mount.
+  const contextChips = createMemo<ContextChip[]>(() => {
+    const chips: ContextChip[] = [
+      {
+        slot: "context-chip-project",
+        // `icon` is the fallback the chip uses when no avatar resolves; in practice
+        // `projectRoot()` always does, so the avatar is what renders.
+        icon: <Icon name="folder" size="small" />,
+        avatar: projectAvatar(projectRoot()),
+        label: projectLabel(projectRoot()),
+        ariaLabel: "Project",
+        search: { placeholder: "Search projects" },
+        emptyMessage: "No projects",
+        current: projectRoot(),
+        options: projects().map<ContextChipOption>((value) => ({
+          value,
+          label: projectLabel(value),
+          // projectLabel falls back to a directory basename, which is a raw UUID
+          // for cloud workspaces — the path is what disambiguates two projects
+          // that resolve to the same display name. Upstream drops the path
+          // because its project list cannot contain UUID-named directories; ours
+          // can, so this line stays even though it costs the row a second line.
+          detail: value,
+          avatar: projectAvatar(value),
+        })),
+        onSelect: openProject,
+        action: props.onAddProject
+          ? { label: language.t("home.project.add"), onSelect: props.onAddProject }
+          : undefined,
+      },
+    ]
+    if (selfHostedWorkspace()) return chips
+
+    chips.push({
+      slot: "context-chip-environment",
+      icon: <ClaxedoIcon name={props.workspaceKind === "cloud" ? "cloud" : "laptop"} size="small" />,
+      label: environmentLabel(props.workspaceKind),
+      ariaLabel: "Workspace environment",
+      emptyMessage: "No environments",
+      current: props.workspaceKind,
+      options: (["local", "cloud"] satisfies NewSessionWorkspaceKind[]).map<ContextChipOption>((kind) => ({
+        value: kind,
+        label: environmentLabel(kind),
+        detail: kind === "cloud" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
+      })),
+      onSelect: (value) => props.onWorkspaceKindChange(value as NewSessionWorkspaceKind),
+    })
+    chips.push({
+      slot: "context-chip-worktree",
+      icon: (
+        <Icon
+          name={creatingWorkspace() && props.workspaceKind === "cloud" ? "cloud-upload" : "branch"}
+          size="small"
+        />
+      ),
+      label: creatingWorkspace() ? createActionLabel() : (currentWorktree() ? worktreeLabel(currentWorktree()!) : ""),
+      ariaLabel: "Workspace",
+      search: { placeholder: "Search workspaces" },
+      emptyMessage: props.workspaceKind === "cloud" ? "No cloud workspace" : "No local workspace",
+      current: creatingWorkspace() ? undefined : currentWorktree(),
+      options: worktreeOptions().map<ContextChipOption>((value) => ({
+        value,
+        label: worktreeLabel(value),
+      })),
+      onSelect: (value) => props.onWorktreeChange(value),
+      // CREATE_WORKTREE is a sentinel selection, never a list option — so it is
+      // the picker's footer action rather than an entry the search can filter away.
+      action: { label: createActionLabel(), onSelect: () => props.onWorktreeChange(CREATE_WORKTREE) },
+    })
+    return chips
+  })
 
   return (
     <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
@@ -145,159 +282,35 @@ export function NewSessionDesignView(props: {
             </div>
           </Show>
           <div>
-            {props.main ?? props.children}
+            {/* The content wrapper is a named inline-size container; the context
+                row's chips truncate against it when the session pane is
+                squeezed. */}
             <Show when={!runtimeMode()}>
-              {/* The content wrapper is a named inline-size container. When the
-                  session pane is squeezed, the segmented controls become
-                  icon-only while both selectors truncate on the same line.
-                  `data-claxedo-compact-touch` keeps the dense controls below
-                  the global 40px touch floor. */}
-              <div
-                data-component="session-new-workspace-controls"
-                data-claxedo-compact-touch
-                class="mt-3 flex h-8 min-w-0 items-center gap-1.5 pl-2"
-              >
-                <Select
-                  size="normal"
-                  variant="ghost"
-                  options={projects()}
-                  current={projectRoot()}
-                  label={projectLabel}
-                  onSelect={openProject}
-                  triggerClass="claxedo-new-session-project-picker justify-start text-text-base"
-                  contentClass="claxedo-new-session-scope-menu"
-                  valueClass="truncate text-13-regular text-text-weak"
-                />
-                <Show
-                  when={props.workspaceKind !== "user-hosted"}
-                  fallback={
-                    <div
-                      data-self-hosted-pinned="true"
-                      data-slot="self-hosted-workspace"
-                      class="flex h-7 min-w-0 items-center gap-2 rounded-md border border-border-weak-base bg-surface-base px-2.5"
-                    >
-                      <span class="size-1.5 shrink-0 rounded-full bg-surface-success-strong" aria-hidden="true" />
-                      <span class="truncate text-13-regular text-text-base">{pinnedWorkspaceName()}</span>
-                      <span data-slot="self-hosted-detail" class="shrink-0 text-12-medium text-text-weak">· Self-hosted · Connected via relay</span>
-                      <span data-slot="self-hosted-compact-detail" class="shrink-0 text-12-medium text-text-weak">· Self-hosted</span>
-                    </div>
-                  }
-                >
-                <div
-                  role="group"
-                  aria-label="Workspace environment"
-                  data-slot="workspace-segmented-control"
-                  class="flex h-7 shrink-0 items-center rounded-md border border-border-weak-base bg-surface-base p-0.5"
-                >
-                  <For each={["local", "cloud"] satisfies NewSessionWorkspaceKind[]}>
-                    {(value) => (
-                      <button
-                        type="button"
-                        aria-pressed={props.workspaceKind === value}
-                        aria-label={value === "cloud" ? "Cloud workspace" : "Local workspace"}
-                        title={value === "cloud" ? "Cloud workspace" : "Local workspace"}
-                        data-slot="workspace-segment-button"
-                        class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium capitalize transition-colors"
-                        classList={{
-                          "bg-background-base text-text-base shadow-xs-border-base": props.workspaceKind === value,
-                          "text-text-weak hover:text-text-base": props.workspaceKind !== value,
-                        }}
-                        onClick={() => props.onWorkspaceKindChange(value)}
-                      >
-                        <span data-slot="compact-icon">
-                          <ClaxedoIcon name={value === "cloud" ? "cloud" : "laptop"} size="small" />
-                        </span>
-                        <span data-slot="control-label">{value}</span>
-                      </button>
-                    )}
-                  </For>
-                </div>
-                <div
-                  role="group"
-                  aria-label="Workspace source"
-                  data-slot="workspace-segmented-control"
-                  class="flex h-7 shrink-0 items-center rounded-md border border-border-weak-base bg-surface-base p-0.5"
-                >
-                  <button
-                    type="button"
-                    aria-pressed={!creatingWorkspace()}
-                    aria-label="Select existing workspace"
-                    title="Select existing workspace"
-                    data-slot="workspace-segment-button"
-                    class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium transition-colors"
-                    classList={{
-                      "bg-background-base text-text-base shadow-xs-border-base": !creatingWorkspace(),
-                      "text-text-weak hover:text-text-base": creatingWorkspace() && worktreeOptions().length > 0,
-                      "text-text-weaker/50": worktreeOptions().length === 0,
-                    }}
-                    disabled={worktreeOptions().length === 0}
-                    onClick={() => {
-                      const next = currentWorktree()
-                      if (next) props.onWorktreeChange(next)
-                    }}
-                  >
-                    <span data-slot="compact-icon">
-                      <ClaxedoIcon name="worktree" size="small" />
-                    </span>
-                    <span data-slot="control-label">Select</span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={creatingWorkspace()}
-                    aria-label="Create new workspace"
-                    title="Create new workspace"
-                    data-slot="workspace-segment-button"
-                    class="flex h-6 items-center justify-center rounded-[4px] px-2 text-12-medium transition-colors"
-                    classList={{
-                      "bg-background-base text-text-base shadow-xs-border-base": creatingWorkspace(),
-                      "text-text-weak hover:text-text-base": !creatingWorkspace(),
-                    }}
-                    onClick={() => props.onWorktreeChange(CREATE_WORKTREE)}
-                  >
-                    <span data-slot="compact-icon">
-                      <ClaxedoIcon name="plus-small" size="small" />
-                    </span>
-                    <span data-slot="control-label">Create new</span>
-                  </button>
-                </div>
-                <div
-                  data-new-workspace={creatingWorkspace() ? "true" : "false"}
-                  data-slot="worktree-picker-shell"
-                  class="flex h-7 min-w-0 items-center overflow-hidden"
-                >
-                  <Show
-                    when={!creatingWorkspace()}
-                    fallback={
-                      <div data-slot="new-workspace-label" class="flex h-7 min-w-0 flex-1 items-center gap-2 px-2.5 text-13-regular text-text-weak">
-                        <Icon name={props.workspaceKind === "cloud" ? "cloud-upload" : "branch"} size="small" class="shrink-0" />
-                        <span class="truncate">
-                          New {props.workspaceKind === "cloud" ? "cloud sandbox" : "local worktree"}
-                        </span>
-                      </div>
-                    }
-                  >
-                    <Select
-                      size="normal"
-                      variant="ghost"
-                      options={worktreeOptions()}
-                      current={currentWorktree()}
-                      placeholder={props.workspaceKind === "cloud" ? "No cloud workspace" : "No local workspace"}
-                      label={worktreeLabel}
-                      disabled={worktreeOptions().length === 0}
-                      onOpenChange={setWorktreePickerOpen}
-                      onSelect={(value) => {
-                        if (!worktreePickerOpen()) return
-                        if (value) props.onWorktreeChange(value)
-                      }}
-                      triggerClass="claxedo-new-session-worktree-picker justify-start text-text-base disabled:opacity-50"
-                      contentClass="claxedo-new-session-scope-menu"
-                      valueClass="truncate text-13-regular text-text-weak"
-                    />
-                  </Show>
-                </div>
-                </Show>
-              </div>
+              <SessionContextRow
+                chips={contextChips()}
+                pin={
+                  selfHostedWorkspace()
+                    ? {
+                        slot: "self-hosted-workspace",
+                        label: pinnedWorkspaceName(),
+                        detail: "· Self-hosted · Connected via relay",
+                        compactDetail: "· Self-hosted",
+                      }
+                    : undefined
+                }
+              />
             </Show>
+            {/* Lifts the composer over the context row's bottom padding (and
+                above it in paint order) so the two read as one stacked card
+                instead of two separate surfaces. */}
+            <div
+              classList={{
+                relative: true,
+                "z-10 -mt-2": !runtimeMode(),
+              }}
+            >
+              {props.main ?? props.children}
+            </div>
           </div>
         </div>
       </div>

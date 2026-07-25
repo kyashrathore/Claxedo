@@ -72,6 +72,12 @@ export const PromptInputFrame: Component<{
   addAttachments: (files: File[]) => void
   attachStyle: Accessor<JSX.CSSProperties>
   pick: VoidFunction
+  openCommands: VoidFunction
+  openContext: VoidFunction
+  enterShellMode: VoidFunction
+  approveEnabled: Accessor<boolean>
+  approveActive: Accessor<boolean>
+  onToggleApprove: VoidFunction
   harnessController: Accessor<HarnessSelectionController | undefined>
   harnessDirectory: Accessor<string | undefined>
   harnessSessionId: Accessor<string | undefined>
@@ -85,7 +91,6 @@ export const PromptInputFrame: Component<{
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
-  agentTriggerStyle: Accessor<JSX.CSSProperties>
   modelHarnessMode: Accessor<boolean>
   paidProviderCount: Accessor<number>
   providerLoading: Accessor<boolean>
@@ -253,7 +258,10 @@ export const PromptInputFrame: Component<{
             onKeyDown={props.onEditorKeyDown}
             classList={{
               "select-text": true,
-              "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
+              // What the user typed reads at full strength; only the placeholder
+              // below is dimmed. These were both `text-faint`, which made real
+              // input look like a leftover hint.
+              "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base [font-family:Inter,var(--font-family-sans)]": true,
               "[&_[data-type=file]]:text-syntax-property": true,
               "[&_[data-type=agent]]:text-syntax-type": true,
               "font-mono!": props.mode() === "shell",
@@ -284,10 +292,23 @@ export const PromptInputFrame: Component<{
               }}
             />
           )}
-          attachTitle={props.t("prompt.action.attachFile")}
+          addTitle={props.t("prompt.action.add")}
+          attachTitle={props.t("prompt.action.imagesAndFiles")}
           attachKeybind={props.commandKeybind("file.attach") ?? ""}
           attachStyle={props.attachStyle}
           onAttach={props.pick}
+          commandsTitle={props.t("prompt.action.commands")}
+          onCommands={props.openCommands}
+          contextTitle={props.t("prompt.action.context")}
+          onContext={props.openContext}
+          shellTitle={props.t("prompt.action.shellCommand")}
+          onEnterShell={props.enterShellMode}
+          planModeTitle={props.t("prompt.action.planMode")}
+          agentGroupTitle={props.t("prompt.action.agentGroup")}
+          approveEnabled={props.approveEnabled}
+          approveActive={props.approveActive}
+          approveTitle={props.t("prompt.action.approveForMe")}
+          onToggleApprove={props.onToggleApprove}
           mode={props.mode}
           harnessPending={props.harnessPending}
           harnessController={props.harnessController}
@@ -300,12 +321,9 @@ export const PromptInputFrame: Component<{
           sessionLocked={props.sessionLocked}
           modelLocked={props.modelLocked}
           showAgentSelector={props.showAgentSelector}
-          agentTitle={props.t("command.agent.cycle")}
-          agentKeybind={props.commandKeybind("agent.cycle") ?? ""}
           agentNames={props.agentNames}
           currentAgentName={props.currentAgentName}
           onAgentSelect={props.onAgentSelect}
-          agentTriggerStyle={props.agentTriggerStyle}
           modelHarnessMode={props.modelHarnessMode}
           paidProviderCount={props.paidProviderCount}
           providerLoading={props.providerLoading}

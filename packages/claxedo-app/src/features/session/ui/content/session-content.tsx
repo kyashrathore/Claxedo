@@ -24,7 +24,17 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     sessionId: sessionId(),
     directory: directory(),
   })
-  const requiresSessionRef = () => !!sessionId() && sessionId() !== "new"
+  /**
+   * A draft session has no server-side session behind it yet: the route carries
+   * either no id at all or the `"new"` placeholder that stands in until the
+   * first prompt creates one.
+   *
+   * Named because two separate decisions read it — whether a session ref is
+   * required, and whether the environment card mounts — and `!!id && id !==
+   * "new"` open-coded twice invites the two from drifting apart.
+   */
+  const draftSession = () => !sessionId() || sessionId() === "new"
+  const requiresSessionRef = () => !draftSession()
   const missingSessionRef = () => requiresSessionRef() && !effectiveSessionRef() && !directory()
   const sessionVisible = () => typeof props.ctx.isVisible === "function" ? props.ctx.isVisible() : !!props.ctx.isVisible
   const [activated, setActivated] = createSignal(false)
@@ -151,7 +161,27 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                   data-session-directory={dir()}
                 >
                   <div class="session-envcard-primary">{sessionPage()}</div>
-                  <SessionEnvironmentCardMount />
+                  {/* Not on a draft session. The card reports on a session that
+                      exists — isolation, subagents, and a collapsed rail whose
+                      items deep-link to that session's Changes, Files and
+                      Processes. None of those have a referent before the first
+                      prompt creates the session, so on the draft screen it is a
+                      card of dead ends that also costs the composer its
+                      right-hand gutter.
+
+                      Gating the MOUNT rather than adding a condition inside the
+                      card keeps the split clean — whether this surface exists for
+                      this route is the pane's concern, while the card owns its own
+                      visibility (workspace panel open, pane focus, persisted
+                      collapse state) — and it is strictly cheaper: an unmounted
+                      card never creates its file-status, vcs or processes queries
+                      at all, where an internal flag would leave them mounted and
+                      merely disabled. It is also what the CSS expects: the
+                      reserved gutter is keyed off `:has(.session-envcard)`, so an
+                      unmounted card reclaims the width with no extra rule. */}
+                  <Show when={!draftSession()}>
+                    <SessionEnvironmentCardMount />
+                  </Show>
                 </div>
               </SessionPaneScope>
             )}

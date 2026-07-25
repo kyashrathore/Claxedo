@@ -15,6 +15,10 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
 const modelConnectActions = vi.hoisted(() => [] as VoidFunction[])
 const dialogShow = vi.hoisted(() => vi.fn())
 const loadSelectProviderDialog = vi.hoisted(() => vi.fn(async () => ({ DialogSelectProvider: () => null })))
+// `openAIConnect` (submit-block-wiring.ts) loads the AI-Connect dialog, NOT the
+// provider picker — this mock was missing, so the badge-routing test below threw
+// on the undefined export instead of asserting anything.
+const loadAIConnectDialog = vi.hoisted(() => vi.fn(async () => ({ DialogAIConnect: () => null })))
 
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (() => {
@@ -138,6 +142,8 @@ vi.mock("@/features/session/app-ports", () => ({
   listDocumentMentions: vi.fn(async () => []),
   documentMentionText: vi.fn(),
   loadSelectProviderDialog,
+  loadAIConnectDialog,
+  applyAIConnectionResults: vi.fn(),
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({
@@ -341,7 +347,7 @@ describe("composer component mode isolation", () => {
 
     expect(view.getByTestId("model-connect-required").textContent).toBe("true")
     modelConnectActions[0]?.()
-    await vi.waitFor(() => expect(loadSelectProviderDialog).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(loadAIConnectDialog).toHaveBeenCalledOnce())
     expect(dialogShow).toHaveBeenCalledOnce()
   })
 })

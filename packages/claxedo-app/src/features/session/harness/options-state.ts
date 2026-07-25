@@ -1,6 +1,7 @@
 import {
   effectiveHarnessModel,
   extractModelsFromConfigOptions,
+  type HarnessModelOption,
   type HarnessType,
   type OptionsResponse,
   type OptionsSource,
@@ -12,7 +13,7 @@ import {
 } from "./store-policy"
 
 export type HarnessOptionsStatePatch = {
-  dynamicModels?: { id: string; name: string }[] | null
+  dynamicModels?: HarnessModelOption[] | null
   selectedModel?: string
   optionsSource?: OptionsSource
   optionsStale?: boolean

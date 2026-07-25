@@ -53,6 +53,31 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
     input.closeDocumentPicker()
   }
 
+  /**
+   * Open the `@`/`/` popover from outside the editor (the `+` menu's "Context" /
+   * "Commands" entries). No trigger character is inserted: both lists populate
+   * on an EMPTY query (`popover-controller.ts#promptAtOptions`), so priming the
+   * filter to "" is all that stands between a menu click and a full list.
+   *
+   * `closeDocumentPicker()` first because the `@` list swaps to documents while
+   * the picker is open, and a stale picker would show documents under a menu
+   * entry that promises mentions.
+   *
+   * It deliberately does NOT move focus into the editor. Measured in the running
+   * app: the caller is the `+` menu's teardown, and every focus attempt from
+   * there — inline, on a frame, or on a macrotask — ended up blurred again by
+   * Kobalte's focus scope, and `handleBlur` closes the popover, so the menu entry
+   * looked inert. Leaving focus alone is what makes the surface actually stay
+   * open; the rows are clickable, and typing/arrow keys take over as soon as the
+   * user is in the editor.
+   */
+  const openPopover = (popover: "at" | "slash") => {
+    input.closeDocumentPicker()
+    if (popover === "at") input.atOnInput("")
+    if (popover === "slash") input.slashOnInput("")
+    input.setPopover(popover)
+  }
+
   const clearEditor = () => {
     input.editor().innerHTML = ""
   }
@@ -305,6 +330,7 @@ export function createPromptEditorActions(input: PromptEditorActionsInput) {
     handleInput,
     handleSlashSelect,
     isImeComposing,
+    openPopover,
     reconcile,
     replaceText(text: string) {
       setEditorText(text)

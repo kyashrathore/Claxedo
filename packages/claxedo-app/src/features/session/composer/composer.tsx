@@ -1,7 +1,5 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
-import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { createEffect, on, Component, createMemo, createResource, createSignal, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, Component, createMemo, createResource, createSignal, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import {
@@ -26,19 +24,15 @@ import {
   scrollPromptCursorIntoView,
   setCursorPosition,
 } from "@/features/session/composer/ui/editor-dom"
-import { createPromptEditorActions } from "@/features/session/composer/ui/editor-actions"
 import { submitHardBlocked } from "@/features/session/composer/submit-block-reason"
-import { createPromptInputKeyDown } from "@/features/session/composer/ui/editor-keymap"
 import { createPromptAttachments } from "@/features/session/composer/ui/attachments"
 import { ACCEPTED_FILE_TYPES } from "@/features/session/composer/ui/files"
-import { promptLength, type PromptHistoryEntry } from "@/features/session/composer/ui/history"
-import { createPromptHistoryController } from "@/features/session/composer/ui/history-controller"
+import { promptLength } from "@/features/session/composer/ui/history"
 import { createPromptCommentRouter } from "@/features/session/composer/ui/comment-routing"
 import { createPromptSubmit } from "@/features/session/composer/ui/submit"
 import { createPromptInputBootState, createPromptInputSubmitRetry } from "@/features/session/composer/ui/submit-ui-state"
-import { createPromptPopoverController } from "@/features/session/composer/ui/popover-controller"
 import { registerPromptModeCommands } from "@/features/session/composer/ui/mode-commands"
-import { createPromptEditLoader, createPromptExampleRotation, promptCaretState } from "@/features/session/composer/ui/lifecycle"
+import { createPromptEditLoader, createPromptExampleRotation } from "@/features/session/composer/ui/lifecycle"
 import { PromptInputFrame } from "@/features/session/composer/ui/frame"
 import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
 import { promptDesignPlaceholder } from "@/features/session/composer/role-gate"
@@ -64,9 +58,11 @@ import { createPromptToolbarState } from "./toolbar-state"
 import { knownWorkspaceKind, signedWorkspaceForDirectory, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
-import { createDocumentPickerController } from "./document-picker-controller"
+import { createComposerEngine } from "./v2/engine"
 import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
+import { createComposerAutoAccept } from "./auto-accept"
+import { createPromptToolbarMotion } from "./ui/toolbar-motion"
 const idleSessionStatus = { type: "idle" as const }
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -97,7 +93,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // Captured so the no-model explain-on-intent action can open the model picker
   // that already lives in this composer's toolbar (reuse, no new picker).
   let rootEl: HTMLDivElement | undefined
-  let restoreEndOnFocus = true
 
   const inset = 56
 
@@ -170,7 +165,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
     return next
   })
-  const fade = createMemo(() => (harnessPending() ? 0.45 : 1))
   const panePreferences = createMemo(() => createPanePreferences(localStorage))
   const sessionKey = () => modeSnapshot().sessionKey
   const tabs = createMemo(() => layout.tabs(sessionKey))
@@ -320,36 +314,44 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
 
-  const [store, setStore] = createStore<{
-    popover: "at" | "slash" | null
-    historyIndex: number
-    savedPrompt: PromptHistoryEntry | null
-    placeholder: number
-    draggingType: "image" | "@mention" | null
-    mode: "normal" | "shell"
-    applyingHistory: boolean
-  }>({
-    popover: null,
-    historyIndex: -1,
-    savedPrompt: null as PromptHistoryEntry | null,
-    placeholder: Math.floor(Math.random() * PROMPT_EXAMPLES.length),
-    draggingType: null,
-    mode: "normal",
-    applyingHistory: false,
+  const [placeholderIndex, setPlaceholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
+  // The composer's INPUT ENGINE (plan 2026-07-25-005 W3/T3.1): either Claxedo's
+  // own editor/popover/history machinery (default) or upstream's vendored
+  // `createPromptInputV2Controller`, behind `v2/engine-contract.ts`. Only one is ever
+  // built; the draft itself belongs to neither, which is why the flip is lossless.
+  // Everything defined later in this component is passed as a thunk.
+  const engine = createComposerEngine({
+    editor: () => editorRef,
+    prompt,
+    imageAttachments,
+    queueScroll,
+    comments,
+    agents: () => directoryAgentsQuery.data ?? [],
+    recentFiles: recent,
+    searchFilesAndDirectories: files.searchFilesAndDirectories,
+    commandOptions: () => command.options,
+    customCommands,
+    triggerSlashCommand: (id) => command.trigger(id, "slash"),
+    documentDirectory: commandDirectory,
+    listDocuments: listDocumentMentions,
+    documentMentionText,
+    pick: () => pick(),
+    escBlur: () => escBlur(),
+    stoppable: () => stoppable(),
+    booting: () => booting(),
+    working: () => working(),
+    blank: () => blank(),
+    abort: () => void abort(),
+    handleSubmit: (event) => void handleSubmit(event),
   })
 
-  const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
-  const motion = (value: number) => ({
-    opacity: value,
-    transform: `scale(${0.98 + value * 0.02})`,
-    filter: `blur(${(1 - value) * 2}px)`,
-    "pointer-events": value > 0.5 ? ("auto" as const) : ("none" as const),
+  const { buttons, control } = createPromptToolbarMotion({
+    shellMode: () => engine.mode() === "shell",
+    pending: harnessPending,
   })
-  const buttons = createMemo(() => motion(buttonsSpring()))
-  const control = createMemo(() => ({ height: "28px", ...buttons() }))
 
   const commentCount = createMemo(() => {
-    if (store.mode === "shell") return 0
+    if (engine.mode() === "shell") return 0
     return prompt.context.items().filter((item) => !!item.comment?.trim()).length
   })
   const blank = createMemo(() => {
@@ -361,7 +363,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const contextItems = createMemo(() => {
     const items = prompt.context.items()
-    if (store.mode !== "shell") return items
+    if (engine.mode() !== "shell") return items
     return items.filter((item) => !item.comment?.trim())
   })
 
@@ -374,32 +376,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const placeholder = createMemo(() =>
     promptPlaceholder({
-      mode: store.mode,
+      mode: engine.mode(),
       commentCount: commentCount(),
-      example: suggest() ? language.t(PROMPT_EXAMPLES[store.placeholder]) : "",
+      example: suggest() ? language.t(PROMPT_EXAMPLES[placeholderIndex()]) : "",
       suggest: suggest(),
       t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
     }),
   )
-
-  const historyController = createPromptHistoryController({
-    comments,
-    prompt,
-    mode: () => store.mode,
-    editor: () => editorRef,
-    queueScroll,
-    applyingHistory: () => store.applyingHistory,
-    setApplyingHistory: (value) => setStore("applyingHistory", value),
-    historyIndex: () => store.historyIndex,
-    setHistoryIndex: (value) => setStore("historyIndex", value),
-    savedPrompt: () => store.savedPrompt,
-    setSavedPrompt: (value) => setStore("savedPrompt", value),
-  })
-  const resetHistoryNavigation = historyController.resetHistoryNavigation
-  const addToHistory = historyController.addToHistory
-  const navigateHistory = historyController.navigateHistory
-
-  const getCaretState = () => promptCaretState({ editor: () => editorRef, prompt })
 
   const handleRootFocusIn = () => undefined
 
@@ -407,34 +390,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const pick = () => fileInputRef?.click()
 
-  const setMode = (mode: "normal" | "shell") => {
-    setStore("mode", mode)
-    setStore("popover", null)
-    requestAnimationFrame(() => editorRef?.focus())
-  }
   const restoreFocus = () => requestAnimationFrame(() => editorRef?.focus())
-
-  const handleFocus = () => {
-    if (!restoreEndOnFocus) return
-    restoreEndOnFocus = false
-    requestAnimationFrame(() => {
-      if (document.activeElement !== editorRef) return
-      setCursorPosition(editorRef, prompt.cursor() ?? promptLength(prompt.current()))
-      queueScroll()
-    })
-  }
 
   const bindEditorRef = (el: HTMLDivElement) => {
     editorRef = el
-    restoreEndOnFocus = true
+    engine.bindEditor(el)
     props.ref?.(el)
   }
 
   registerPromptModeCommands({
     register: (scope, commands) => command.register(scope, commands),
-    mode: () => store.mode,
+    mode: engine.mode,
     pick,
-    setMode,
+    setMode: engine.enterMode,
     labels: {
       attachFile: language.t("prompt.action.attachFile"),
       fileCategory: language.t("command.category.file"),
@@ -446,7 +414,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   createPromptExampleRotation({
     disabled: () => !!resolvedSessionId() || !suggest(),
-    setPlaceholder: (next) => setStore("placeholder", next),
+    setPlaceholder: (next) => setPlaceholderIndex(next),
   })
 
   const selectedVariant = createMemo<string | null | undefined>(() => {
@@ -475,82 +443,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     configuredVariant: local.model.variant.configured,
   })
 
-  let editorActions!: ReturnType<typeof createPromptEditorActions>
-  const documentPicker = createDocumentPickerController({
-    directory: commandDirectory,
-    list: listDocumentMentions,
-    mentionText: documentMentionText,
-    replaceText: (text) => editorActions.replaceText(text),
-    openPopover: () => setStore("popover", "at"),
-  })
-  const popoverController = createPromptPopoverController({
-    popover: () => store.popover,
-    agents: () => directoryAgentsQuery.data ?? [],
-    recentFiles: recent,
-    searchFilesAndDirectories: files.searchFilesAndDirectories,
-    commandOptions: () => command.options,
-    customCommands,
-    documentPicker: documentPicker.open,
-    documents: documentPicker.documents,
-    onAtSelect: (option) => editorActions.handleAtSelect(option),
-    onSlashSelect: (cmd) => editorActions.handleSlashSelect(cmd),
-  })
-
-  editorActions = createPromptEditorActions({
-    editor: () => editorRef,
-    prompt,
-    imageAttachments,
-    mode: () => store.mode,
-    setPopover: (popover) => setStore("popover", popover),
-    resetHistoryNavigation,
-    queueScroll,
-    promptLength,
-    atOnInput: popoverController.atOnInput,
-    slashOnInput: popoverController.slashOnInput,
-    triggerSlashCommand: (id) => command.trigger(id, "slash"),
-    openDocumentPicker: documentPicker.show,
-    closeDocumentPicker: documentPicker.close,
-    onDocumentSelect: documentPicker.select,
-  })
-  const addPart = editorActions.addPart
-  const closePopover = editorActions.closePopover
-  const handleBlur = editorActions.handleBlur
-  const handleCompositionEnd = editorActions.handleCompositionEnd
-  const handleCompositionStart = editorActions.handleCompositionStart
-  const handleInput = editorActions.handleInput
-  const isImeComposing = editorActions.isImeComposing
-
-  createEffect(
-    on(
-      () => prompt.current(),
-      (parts) => {
-        if (editorActions.composing()) return
-        editorActions.reconcile(parts.filter((part) => part.type !== "image"))
-      },
-    ),
-  )
-
   createPromptEditLoader({
     edit: () => props.edit,
     prompt,
     editor: () => editorRef,
     queueScroll,
-    setMode: (mode) => setStore("mode", mode),
-    setPopover: (popover) => setStore("popover", popover),
-    setHistoryIndex: (index) => setStore("historyIndex", index),
-    setSavedPrompt: (value) => setStore("savedPrompt", value),
+    setMode: engine.setMode,
+    setPopover: () => engine.closePopover(),
+    // The edit loader only ever clears history navigation; both engines express
+    // that as one forced reset rather than two separate field writes.
+    setHistoryIndex: () => engine.resetHistoryNavigation(true),
+    setSavedPrompt: () => undefined,
     onEditLoaded: props.onEditLoaded,
   })
 
   const { addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
     editor: () => editorRef,
     isDialogActive: () => !!dialog.active,
-    setDraggingType: (type) => setStore("draggingType", type),
+    setDraggingType: engine.setDraggingType,
     focusEditor: () => {
       editorRef.focus()
       setCursorPosition(editorRef, promptLength(prompt.current()))
     },
-    addPart,
+    addPart: engine.addPart,
     readClipboardImage: platform.readClipboardImage,
   })
   const setScopedVariant = (value: string | undefined) => writeOpenCodeDraftVariant({
@@ -567,11 +482,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     sessionParams.surfaceId?.() ?? "",
     toolbarState.currentVariant() ?? "default",
   ].join("\n"))
-  const accepting = createMemo(() => {
-    const id = resolvedSessionId()
-    const directory = resolvedSessionDirectory() ?? sdk.directory
-    if (!id) return permission.isAutoAcceptingDirectory(directory)
-    return permission.isAutoAccepting(id, directory)
+  const autoAccept = createComposerAutoAccept({
+    permission,
+    sessionId: resolvedSessionId,
+    directory: () => resolvedSessionDirectory() ?? sdk.directory,
   })
   // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
   // derivation plus the two intent actions that resolve an actionable block.
@@ -602,16 +516,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     surfaceId: () => sessionParams.surfaceId?.(),
     imageAttachments,
     commentCount,
-    autoAccept: () => accepting(),
-    mode: () => store.mode,
+    autoAccept: () => autoAccept.active(),
+    mode: engine.mode,
     working: stoppable,
     editor: () => editorRef,
     queueScroll,
     promptLength,
-    addToHistory,
-    resetHistoryNavigation: () => resetHistoryNavigation(true),
-    setMode: (mode) => setStore("mode", mode),
-    setPopover: (popover) => setStore("popover", popover),
+    addToHistory: engine.addToHistory,
+    resetHistoryNavigation: () => engine.resetHistoryNavigation(true),
+    setMode: engine.setMode,
+    setPopover: () => engine.closePopover(),
     composerMode,
     newSessionWorktree: () => props.newSessionWorktree,
     newSessionWorkspaceKind: () => props.newSessionWorkspaceKind,
@@ -646,8 +560,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     prompt,
     imageCount: () => imageAttachments().length,
     commentCount,
-    mode: () => store.mode,
-    setMode: (mode) => setStore("mode", mode),
+    mode: engine.mode,
+    setMode: engine.setMode,
     promptLength,
     clearBoot: () => setBoot(undefined),
     registerRetry: props.registerRetry,
@@ -655,39 +569,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const handleSubmit = submitRetry.handleSubmit
   const onRetry = submitRetry.onRetry
 
-  const handleKeyDown = createPromptInputKeyDown({
-    editor: () => editorRef,
-    mode: () => store.mode,
-    setMode: (mode) => {
-      setStore("mode", mode)
-      setStore("popover", null)
-    },
-    popover: () => store.popover,
-    closePopover,
-    pick,
-    getCaretState,
-    isImeComposing,
-    addTextPart: (content) => addPart({ type: "text", content, start: 0, end: 0 }),
-    selectPopoverActive: popoverController.selectPopoverActive,
-    atOnKeyDown: popoverController.atOnKeyDown,
-    slashOnKeyDown: popoverController.slashOnKeyDown,
-    stoppable,
-    abort,
-    escBlur,
-    booting,
-    working,
-    blank,
-    promptText: () =>
-      prompt
-        .current()
-        .map((part) => ("content" in part ? part.content : ""))
-        .join(""),
-    historyActive: () => store.historyIndex >= 0,
-    navigateHistory,
-    handleSubmit,
-  })
-
-  const designPlaceholder = () => promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: store.mode, shellPlaceholder: placeholder() })
+  const designPlaceholder = () => promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
       rootRef={(el) => (rootEl = el)}
@@ -695,34 +577,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       scrollRef={(el) => (scrollRef = el)}
       className={props.class}
       newSession={newSession}
-      mode={() => store.mode}
+      mode={engine.mode}
       dirty={prompt.dirty}
-      draggingType={() => store.draggingType}
+      draggingType={engine.draggingType}
       designPlaceholder={designPlaceholder}
       handleRootFocusIn={handleRootFocusIn}
       handleSubmit={handleSubmit}
       harnessPending={harnessPending}
-      onEditorFocus={handleFocus}
-      onEditorInput={handleInput}
+      onEditorFocus={engine.handleFocus}
+      onEditorInput={engine.handleInput}
       onEditorPaste={handlePaste}
-      onCompositionStart={handleCompositionStart}
-      onCompositionEnd={handleCompositionEnd}
-      onEditorBlur={handleBlur}
-      onEditorKeyDown={handleKeyDown}
+      onCompositionStart={engine.handleCompositionStart}
+      onCompositionEnd={engine.handleCompositionEnd}
+      onEditorBlur={engine.handleBlur}
+      onEditorKeyDown={engine.handleKeyDown}
       focusEditor={() => editorRef?.focus()}
-      popover={store.popover}
-      documentPicker={documentPicker.open()}
-      documentNotice={documentPicker.notice()}
-      setSlashPopoverRef={popoverController.setSlashPopoverRef}
-      atFlat={popoverController.atFlat()}
-      atActive={popoverController.atActive() ?? undefined}
-      atKey={popoverController.atKey}
-      setAtActive={popoverController.setAtActive}
-      onAtSelect={popoverController.handleAtSelect}
-      slashFlat={popoverController.slashFlat()}
-      slashActive={popoverController.slashActive() ?? undefined}
-      setSlashActive={popoverController.setSlashActive}
-      onSlashSelect={popoverController.handleSlashSelect}
+      popover={engine.popover()}
+      documentPicker={engine.documentPicker.open()}
+      documentNotice={engine.documentPicker.notice()}
+      setSlashPopoverRef={engine.popoverView.setSlashPopoverRef}
+      atFlat={engine.popoverView.atFlat()}
+      atActive={engine.popoverView.atActive()}
+      atKey={engine.popoverView.atKey}
+      setAtActive={engine.popoverView.setAtActive}
+      onAtSelect={engine.popoverView.onAtSelect}
+      slashFlat={engine.popoverView.slashFlat()}
+      slashActive={engine.popoverView.slashActive()}
+      setSlashActive={engine.popoverView.setSlashActive}
+      onSlashSelect={engine.popoverView.onSlashSelect}
       commandKeybind={command.keybind}
       contextItems={contextItems()}
       contextActive={(item) => {
@@ -741,6 +623,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       addAttachments={(files) => void addAttachments(files)}
       attachStyle={buttons}
       pick={pick}
+      openCommands={() => engine.openPopover("slash")}
+      openContext={() => engine.openPopover("at")}
+      enterShellMode={() => engine.enterMode("shell")}
+      approveEnabled={() => props.canPrompt?.() ?? true}
+      approveActive={autoAccept.active}
+      onToggleApprove={autoAccept.toggle}
       harnessController={() => harnessSelectionController}
       harnessDirectory={harnessDirectory}
       harnessSessionId={harnessSessionId}
@@ -757,7 +645,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         local.agent.set(value)
         restoreFocus()
       }}
-      agentTriggerStyle={() => ({ ...control(), opacity: buttonsSpring() * fade() })}
       modelHarnessMode={() => toolbarHarnessMode(scope())}
       paidProviderCount={() => providers.paid().length}
       providerLoading={providers.loading}

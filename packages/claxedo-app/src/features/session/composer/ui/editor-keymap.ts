@@ -182,7 +182,13 @@ export function createPromptInputKeyDown<TEvent extends PromptInputKeyEvent>(dep
   }
 }
 
-function moveBeforeZeroWidthSentinel() {
+/**
+ * Backspace next to the zero-width sentinel we append after a trailing `<br>`
+ * would delete the sentinel instead of the newline. Exported because the
+ * controller engine needs the same pre-step (plan 2026-07-25-005 T2.2): upstream's
+ * `interaction.ts` has no notion of our sentinel.
+ */
+export function moveBeforeZeroWidthSentinel() {
   const selection = window.getSelection()
   if (!selection?.isCollapsed) return
 
