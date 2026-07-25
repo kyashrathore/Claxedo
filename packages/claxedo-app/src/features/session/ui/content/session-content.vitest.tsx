@@ -22,6 +22,17 @@ vi.mock("@/features/session/app-ports", () => ({
   }),
 }))
 
+// This file's subject is which surface SessionContent ROUTES to, not what the
+// environment card renders. The card reaches for a deep provider graph
+// (useSDK, usePaneId, useShellQueryOptions, usePlatform, usePrompt, plus
+// workspacePanel and focused-pane state), so satisfying it here would mean
+// growing this mock to describe a component these tests never assert on.
+// It has its own tests, and whether it mounts at all is covered by
+// session-content-envcard.vitest.tsx.
+vi.mock("./session-environment-card", () => ({
+  SessionEnvironmentCardMount: () => null,
+}))
+
 vi.mock("../components/session-pane-scope", () => ({
 	  SessionPaneScope: (props: {
 	    children: unknown
