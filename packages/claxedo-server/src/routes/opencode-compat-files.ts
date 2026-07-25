@@ -37,6 +37,78 @@ export async function globSearch(
   return out
 }
 
+// Text search budget. The engine backs `/find` with ripgrep; the compat layer
+// has no ripgrep binary, so the pure-Node scan is bounded to keep a
+// no-match pattern from reading an entire monorepo.
+const GREP_MAX_FILES = 5_000
+const GREP_MAX_FILE_BYTES = 1_000_000
+
+export type GrepMatch = {
+  path: { text: string }
+  lines: { text: string }
+  line_number: number
+  absolute_offset: number
+  submatches: { match: { text: string }; start: number; end: number }[]
+}
+
+// Mirrors the engine's `findText` handler (ripgrep.grep -> LegacyMatch), which
+// caps results at 10 and reports 1-based line numbers with byte offsets.
+export async function grepSearch(root: string, pattern: string, limit = 10): Promise<GrepMatch[]> {
+  const out: GrepMatch[] = []
+  if (!pattern.trim() || !root.trim() || limit < 1) return out
+  let re: RegExp
+  try {
+    re = new RegExp(pattern, "g")
+  } catch {
+    return out
+  }
+  const files = (await gitListAll(root)) ?? (await walkAll(root))
+  let scanned = 0
+  for (const rel of files) {
+    if (out.length >= limit || scanned >= GREP_MAX_FILES) break
+    const abs = path.join(root, rel)
+    let buf: Buffer
+    try {
+      const stat = await fs.promises.stat(abs)
+      if (!stat.isFile() || stat.size > GREP_MAX_FILE_BYTES) continue
+      buf = await fs.promises.readFile(abs)
+    } catch {
+      continue
+    }
+    scanned++
+    if (buf.includes(0)) continue
+    let text: string
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buf)
+    } catch {
+      continue
+    }
+    let offset = 0
+    let lineNumber = 0
+    for (const raw of text.split("\n")) {
+      lineNumber++
+      const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw
+      const submatches = Array.from(line.matchAll(re)).map((hit) => ({
+        match: { text: hit[0] },
+        start: hit.index,
+        end: hit.index + hit[0].length,
+      }))
+      if (submatches.length) {
+        out.push({
+          path: { text: rel },
+          lines: { text: line },
+          line_number: lineNumber,
+          absolute_offset: offset,
+          submatches,
+        })
+        if (out.length >= limit) break
+      }
+      offset += Buffer.byteLength(raw, "utf-8") + 1
+    }
+  }
+  return out
+}
+
 export async function gitListAll(root: string): Promise<string[] | undefined> {
   try {
     const tracked = await git(root, ["ls-files"])

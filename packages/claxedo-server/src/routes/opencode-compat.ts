@@ -9,7 +9,7 @@ import { listProjects, resolveWorkspace } from "../workspace-store"
 import { errorBody } from "./http"
 import { bootPath, queryHarnessId, requestHarnessId, runner, workspaceInput } from "./opencode-compat-context"
 import { streamGlobalEvents } from "./opencode-compat-events"
-import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody } from "./opencode-compat-file-browser"
+import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./opencode-compat-file-browser"
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./opencode-compat-provider-config"
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./opencode-compat-proxy"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./opencode-compat-worktree-routes"
@@ -64,9 +64,15 @@ export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
       })
       return c.json(bootPath(ws?.directory ?? input.directory))
     })
+    .get("/find", async (c) => {
+      return c.json(await findTextBody(c))
+    })
     .get("/find/file", async (c) => {
       return c.json(await findFilesBody(c))
     })
+    // Engine parity: the engine's `findSymbol` handler is itself a stub that
+    // returns no symbols, so the compat layer answers in kind instead of 404ing.
+    .get("/find/symbol", (c) => c.json([]))
     .get("/file", async (c) => {
       return c.json(await directoryEntriesBody(c))
     })

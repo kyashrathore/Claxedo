@@ -2,7 +2,17 @@ import fs from "fs"
 import path from "path"
 import { resolveWorkspace } from "../workspace-store"
 import { workspaceInput, workspacePath, workspaceRoot, type OpenCodeCompatRequestContext } from "./opencode-compat-context"
-import { fileStatus, gitListAll, globSearch, walkAll } from "./opencode-compat-files"
+import { fileStatus, gitListAll, globSearch, grepSearch, walkAll } from "./opencode-compat-files"
+
+export async function findTextBody(c: OpenCodeCompatRequestContext) {
+  const pattern = c.req.query("pattern") ?? ""
+  const input = workspaceInput(c)
+  const ws = await resolveWorkspace({
+    workspaceId: input.workspaceId,
+    directory: input.directory,
+  })
+  return grepSearch(ws?.directory ?? input.directory ?? process.cwd(), pattern)
+}
 
 export async function findFilesBody(c: OpenCodeCompatRequestContext) {
   const query = c.req.query("query") ?? ""
