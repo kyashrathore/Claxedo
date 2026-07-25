@@ -2944,10 +2944,17 @@ describe("workspace runtime route audit", () => {
     expect(cacheModule).toMatch(
       /export type DisposableResource<T> = \{[\s\S]*value: T[\s\S]*dispose: \(\) => void[\s\S]*\}/,
     )
-    expect(cacheModule).toMatch(/export function createLruResourceCache<T>\(max: number\)/)
-    expect(cacheModule).toMatch(/cache\.get\(oldest\)\?\.dispose\(\)/)
     expect(cacheModule).toMatch(/export function createRefCountedLruResourceCache<T>\(max: number\)/)
     expect(cacheModule).toMatch(/if \(entry\.refs > 0\) continue/)
+    // Eviction is the ONLY place dispose runs, and it runs at most once.
+    expect(cacheModule).toMatch(/const disposeOnce = \(entry: Entry\) => \{[\s\S]*entry\.disposed = true[\s\S]*entry\.dispose\(\)/)
+    expect(cacheModule).toMatch(/cache\.delete\(key\)\n\s*disposeOnce\(entry\)/)
+    // The unpinned LRU that used to live here is DELETED, not merely unused: it
+    // disposed on cap pressure with no idea who was still reading, which is
+    // never a safe rule for the disposable roots this module caches. Nothing may
+    // reintroduce it — not the factory, not its `load` entry point.
+    expect(cacheModule).not.toMatch(/createLruResourceCache/)
+    expect(cacheModule).not.toMatch(/\bload\b/)
     // Rubric C4: directory-layout is a pure pass-through; PromptProvider
     // mounts only through Workbench's DirectoryScope (per pane) and the
     // review workspace, never through the route subtree.

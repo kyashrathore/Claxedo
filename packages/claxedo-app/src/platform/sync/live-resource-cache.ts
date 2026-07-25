@@ -62,8 +62,8 @@ export function createRefCountedResourceCache<T>(max: number) {
 }
 
 /**
- * Reference-counted LRU: the RETENTION of `createLruResourceCache` plus the
- * LIVENESS guarantee of `createRefCountedResourceCache`.
+ * Reference-counted LRU: LRU RETENTION plus the LIVENESS guarantee of
+ * `createRefCountedResourceCache`.
  *
  * `acquire` pins an entry for as long as its handle is held, so a resource whose
  * consumer is still mounted can never be evicted. `release` does NOT dispose —
@@ -72,12 +72,14 @@ export function createRefCountedResourceCache<T>(max: number) {
  * Eviction happens only under cap pressure, oldest-first, and skips pinned
  * entries; that is the only place `dispose` runs, and it runs at most once.
  *
- * Neither sibling can express that on its own:
+ * Neither simpler shape can express that on its own:
  *   - `createRefCountedResourceCache` disposes at zero refs, so it retains
  *     nothing — an unmounted resource is destroyed the instant its last consumer
  *     lets go, which for a draft cache throws the draft away.
- *   - `createLruResourceCache` has no idea who is still reading, so `max` newer
- *     keys dispose a reactive root a mounted consumer is still subscribed to.
+ *   - A plain LRU has no idea who is still reading, so `max` newer keys dispose
+ *     a reactive root a mounted consumer is still subscribed to. That is why
+ *     there is no unpinned LRU factory in this module: for the disposable
+ *     resources it caches, eviction-without-pinning is never the right rule.
  *
  * The cost, stated plainly: `max` bounds RETENTION, not total live resources. If
  * more than `max` consumers are mounted at once the cache exceeds `max` rather
@@ -140,54 +142,6 @@ export function createRefCountedLruResourceCache<T>(max: number) {
 
   return {
     acquire,
-    has: (key: string) => cache.has(key),
-    size: () => cache.size,
-  }
-}
-
-/**
- * Least-recently-used cache: `load` returns a shared resource for a key,
- * creating it on a miss and moving it to the most-recently-used position on a
- * hit. When the cache grows past `max`, the least-recently-used entry is
- * evicted and disposed. There is no ref-counting — the newest `max` keys are
- * kept regardless of who is still reading them.
- *
- * NO PRODUCTION CONSUMER since prompt.tsx moved to `createRefCountedLruResourceCache`.
- * Do not reach for this for anything whose `dispose` tears down state a mounted
- * consumer is subscribed to (a Solid root, a socket, a PTY): `max` newer keys will
- * dispose it underneath that consumer. It is only safe for values that can be
- * dropped and rebuilt at any moment, with no live reader.
- */
-export function createLruResourceCache<T>(max: number) {
-  type Entry = { value: T; dispose: () => void }
-  const cache = new Map<string, Entry>()
-
-  const prune = () => {
-    while (cache.size > max) {
-      const oldest = cache.keys().next().value
-      if (oldest === undefined) return
-      cache.get(oldest)?.dispose()
-      cache.delete(oldest)
-    }
-  }
-
-  const load = (key: string, create: () => DisposableResource<T>): T => {
-    const existing = cache.get(key)
-    if (existing) {
-      // Re-insert to mark most-recently-used (Map preserves insertion order).
-      cache.delete(key)
-      cache.set(key, existing)
-      return existing.value
-    }
-
-    const entry = create()
-    cache.set(key, entry)
-    prune()
-    return entry.value
-  }
-
-  return {
-    load,
     has: (key: string) => cache.has(key),
     size: () => cache.size,
   }

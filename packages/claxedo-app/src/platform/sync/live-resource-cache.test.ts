@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createLruResourceCache,
-  createRefCountedLruResourceCache,
-  createRefCountedResourceCache,
-} from "./live-resource-cache"
+import { createRefCountedLruResourceCache, createRefCountedResourceCache } from "./live-resource-cache"
 
 // These caches back the shared terminal/prompt sessions in terminal.tsx and
 // prompt.tsx. The contract that actually matters — dispose-once ref-counting
@@ -91,9 +87,9 @@ describe("createRefCountedResourceCache", () => {
 })
 
 describe("createRefCountedLruResourceCache", () => {
-  // The two properties that make this factory necessary, one per sibling:
+  // The two properties that make this factory necessary:
   //   1. it RETAINS on release   — `createRefCountedResourceCache` disposes there
-  //   2. it PINS the referenced  — `createLruResourceCache` has no idea who reads
+  //   2. it PINS the referenced  — a plain LRU has no idea who is still reading
   test("release retains the entry instead of disposing it, so a re-acquire is the same value", () => {
     const log: string[] = []
     const cache = createRefCountedLruResourceCache<{ id: string }>(10)
@@ -218,53 +214,5 @@ describe("createRefCountedLruResourceCache", () => {
     expect(log).toEqual(["dispose:old"])
     expect(fresh.value).toEqual({ id: "fresh" })
     expect(cache.has("fresh")).toBe(true)
-  })
-})
-
-describe("createLruResourceCache", () => {
-  test("load returns a cached value on hit without re-creating", () => {
-    const created: string[] = []
-    const cache = createLruResourceCache<{ id: string }>(10)
-
-    const first = cache.load("k", () => {
-      created.push("k")
-      return fakeResource([], "k")
-    })
-    const second = cache.load("k", () => {
-      created.push("k-again")
-      return fakeResource([], "k")
-    })
-
-    expect(created).toEqual(["k"])
-    expect(first).toBe(second)
-  })
-
-  test("evicts and disposes the least-recently-used entry when over max", () => {
-    const log: string[] = []
-    const cache = createLruResourceCache<{ id: string }>(2)
-
-    cache.load("a", () => fakeResource(log, "a"))
-    cache.load("b", () => fakeResource(log, "b"))
-    cache.load("c", () => fakeResource(log, "c")) // size 3 > max → evict oldest "a"
-
-    expect(log).toEqual(["dispose:a"])
-    expect(cache.has("a")).toBe(false)
-    expect(cache.has("b")).toBe(true)
-    expect(cache.has("c")).toBe(true)
-  })
-
-  test("a hit refreshes recency so the touched key survives the next eviction", () => {
-    const log: string[] = []
-    const cache = createLruResourceCache<{ id: string }>(2)
-
-    cache.load("a", () => fakeResource(log, "a"))
-    cache.load("b", () => fakeResource(log, "b"))
-    cache.load("a", () => fakeResource(log, "a")) // touch a → b is now oldest
-    cache.load("c", () => fakeResource(log, "c")) // evict oldest "b"
-
-    expect(log).toEqual(["dispose:b"])
-    expect(cache.has("a")).toBe(true)
-    expect(cache.has("b")).toBe(false)
-    expect(cache.has("c")).toBe(true)
   })
 })
