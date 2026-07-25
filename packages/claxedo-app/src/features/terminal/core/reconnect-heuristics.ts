@@ -43,7 +43,18 @@ export function cursorPlan(input: {
   const LOOKBACK_BYTES = input.lookbackBytes ?? 256 * 1024
 
   const hasPersistedBuffer = input.snapshotHasBuffer
-  const tailOnReload = input.isReload && !input.snapshotHasBuffer && input.snapshotCursor === undefined
+  // REMOVED: `tailOnReload`, which asked the server for the LIVE TAIL when a
+  // reload left us with no persisted buffer and no cursor.
+  //
+  // That is precisely the case where the server's buffer is the only copy of
+  // the session's scrollback, and asking for the tail throws it away: the PTY
+  // is alive with a full Claude Code session behind it and the user gets an
+  // empty screen. Observed directly — pty running, 22KB of scrollback held
+  // server-side, terminal blank.
+  //
+  // The live tail is only ever the right ask when the client ALREADY has the
+  // content locally (the `!likelyTui && hasPersistedBuffer` branch below),
+  // because then replaying would duplicate it. With nothing local, replay.
   const hasAltSnapshot = input.snapshotWasAltScreen && input.snapshotHasBuffer
   const splitTuiLiveTail = input.likelyTui && input.splitWidthChanged && input.snapshotHasBuffer
 
@@ -57,7 +68,7 @@ export function cursorPlan(input: {
 
   const tuiLiveTail = input.isReload && hasAltSnapshot
   const useLiveTailCursor =
-    (!input.likelyTui && hasPersistedBuffer) || tailOnReload || tuiLiveTail || splitTuiLiveTail
+    (!input.likelyTui && hasPersistedBuffer) || tuiLiveTail || splitTuiLiveTail
 
   const cursorStart = input.likelyTui
     ? useLiveTailCursor

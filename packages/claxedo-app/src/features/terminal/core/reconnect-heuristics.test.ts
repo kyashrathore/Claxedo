@@ -131,3 +131,46 @@ describe("terminal reconnect/restore heuristics", () => {
     })
   })
 })
+
+describe("cursorPlan: a client with no local copy must ask the server to replay", () => {
+  // Regression for observed history loss: after a reload that lost the
+  // localStorage snapshot, the client asked for the LIVE TAIL while the PTY was
+  // still alive holding the entire session. The server's buffer was the only
+  // copy of that scrollback and the user got a blank terminal.
+  test("reload with no persisted buffer replays from the start, not the tail", () => {
+    const plan = cursorPlan({
+      likelyTui: false,
+      splitWidthChanged: false,
+      isReload: true,
+      snapshotHasBuffer: false,
+      snapshotWasAltScreen: false,
+    })
+    expect(plan.useLiveTailCursor).toBe(false)
+    expect(plan.cursorParam).toBe(0)
+  })
+
+  test("the same holds for a TUI whose snapshot was lost", () => {
+    const plan = cursorPlan({
+      likelyTui: true,
+      splitWidthChanged: false,
+      isReload: true,
+      snapshotHasBuffer: false,
+      snapshotWasAltScreen: false,
+    })
+    expect(plan.useLiveTailCursor).toBe(false)
+    expect(plan.cursorParam).toBe(0)
+  })
+
+  test("a client that DOES hold the content still takes the tail, so replay cannot duplicate it", () => {
+    const plan = cursorPlan({
+      likelyTui: false,
+      splitWidthChanged: false,
+      isReload: true,
+      snapshotHasBuffer: true,
+      snapshotWasAltScreen: false,
+      snapshotCursor: 4096,
+    })
+    expect(plan.useLiveTailCursor).toBe(true)
+    expect(plan.cursorParam).toBe(-1)
+  })
+})

@@ -35,6 +35,7 @@ import { SHELL_READY_MARKER } from "./shell-ready"
 import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
 import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
 import { createModeTracker, type ModeTracker } from "./mode-tracker"
+import { sanitizeReplay } from "./replay-sanitize"
 import { workspaceRuntimeBus, type PtyInfo } from "../bus"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
@@ -788,7 +789,12 @@ export namespace Pty {
       if (from >= end) return ""
       const offset = Math.max(0, from - start)
       if (offset >= session.buffer.length) return ""
-      return session.buffer.slice(offset)
+      // A replay is a RECORDING. Queries in it would make the reattaching
+      // terminal answer a program that asked minutes ago — and if that program
+      // has exited, the shell now reading the pty echoes the reply as typed
+      // input. Mode sets in it would re-arm mouse/focus/kitty for a program
+      // that may be gone. Modes come from the live preamble below instead.
+      return sanitizeReplay(session.buffer.slice(offset))
     })()
 
     // Append the seam marker AFTER the restored content and before the fresh
