@@ -646,7 +646,62 @@ Two independent architectural moves:
   descriptor per spawn on macOS — they pin `1.2.0-beta.14` and run the daemon
   under Electron's bundled Node.
 
-**Not scheduled.** Decide after W1–W8.
+**DECIDED 2026-07-25 (owner): stay with the current architecture.** Neither the
+PTY daemon nor a detached server is being built. Recorded here with the analysis
+so it does not get relitigated from scratch.
+
+#### What actually happens today, verified
+
+A PTY does NOT survive the app. Tested empirically rather than reasoned: spawn a
+PTY, run a long-lived foreground process, `kill -9` the PTY owner — the child is
+gone within 3 seconds. The mechanism is *not* an explicit kill (`Pty.dispose()`
+is never called in production, and the server has no SIGTERM handler that reaps
+PTYs). When the pty MASTER fd closes, the kernel sends SIGHUP to the slave's
+foreground process group, and the shell takes its children with it. So programs
+get SIGHUP, never SIGTERM — no chance to save state.
+
+A second, independent killer: the 60s orphan timer reaps a session 60 seconds
+after its last WebSocket subscriber disconnects. So even a surviving server
+loses the PTY if you reopen slowly.
+
+#### Do not delete the watchdog
+
+`scripts/claxedo-server-startup.ts` is a deliberate dead-man's switch, not
+cruft. The server probes its parent PID every 250ms (`process.kill(pid, 0)`) and
+SIGTERMs itself on ESRCH; `claxedoServerStartup` refuses to boot at all without
+`CLAXEDO_DESKTOP_PARENT_PID`. It discriminates ESRCH from EPERM (EPERM means the
+process EXISTS) and `unref()`s its timer — someone thought about this.
+
+It exists because an Electron `utilityProcess` survives a SIGKILLed parent as an
+orphan, and an orphaned claxedo-server would hold the port, the data-dir
+ownership lock, the PTYs, and serve stale code. That is exactly the failure that
+cost half a verification round in this session.
+
+#### If PTY survival ever becomes a real complaint
+
+Cheapest first, and only then:
+
+1. **Raise the 60s orphan timer.** Config change, no architecture. Buys "quit and
+   reopen within N minutes". Does not survive a real quit or a reboot.
+2. **Detached claxedo-server.** Sized at ~1.5–2 weeks, not 2 days. The Electron
+   coupling is only 73 lines (`claxedo-server-entry.ts` + `claxedo-server-startup.ts`)
+   and the portable core already ships to Fly/Docker, so the mechanical part is
+   ~2 days. The rest is what makes it shippable: a version handshake (a new app
+   finding an old server is the dominant risk), moving the diagnostics transport
+   off `process.parentPort` (otherwise `processObserver` is silently never passed
+   and the whole Diagnostics attribution layer degrades with no error), plus
+   supervision, idle shutdown, and Quit Completely. Framed honestly this is not
+   "delete the watchdog" — it is replacing one orphan-prevention mechanism with
+   four.
+3. **PTY daemon.** Larger, and protects terminals from *our server* rather than
+   from the app. Note it also breaks the mode tracker differently: the tracker
+   lives in the server, so a server restart yields a live TUI with an EMPTY
+   tracker — the preamble says "no modes set" while the program believes
+   otherwise. Superset has the same shape; adoption builds a fresh tracker.
+
+What softens all of this: the transcript now restores correctly, and for Claude
+Code specifically `claude --continue` recovers the conversation. What is left
+unprotected is long-running builds, dev servers, and migrations.
 
 ---
 
