@@ -130,9 +130,17 @@
  *      hovering a session row reveals its Archive button the same way — both
  *      are effectively hidden at rest.
  *   4. A session row's status indicator moves idle (no dot, time label) →
- *      working (`data-sidebar-status="working"`, amber, pulsing) → done
- *      (`data-sidebar-status="done"`, green, unseen) as `session.status`/
- *      `session.idle` SSE events land for a row that is never opened/focused.
+ *      working (`data-sidebar-status="working"`, pulsing `bg-text-weak`) → done
+ *      (`data-sidebar-status="done"`, solid `bg-text-weak`, unseen) as
+ *      `session.status`/`session.idle` SSE events land for a row that is never
+ *      opened/focused. (The palette is deliberately minimal — grey for both,
+ *      red only for `permission`; `NavigationStatusDot`,
+ *      `src/app/workbench/navigation/navigation-row.tsx:116-137`. The earlier
+ *      "amber"/"green" wording here never matched the component.) Across a
+ *      RELOAD there is no SSE frame to lean on, so a still-running session's
+ *      dot is rehydrated purely from `GET /session/status`; the in-memory
+ *      unseen-done flag does not survive that, so a turn that finished while
+ *      the tab was away comes back as idle rather than "done".
  *   5. Clicking a session row activates it (`data-active="true"`); clicking a
  *      second row before the first click's work settles resolves
  *      deterministically onto the second row, not a stale mix of both.
@@ -625,7 +633,7 @@ test.describe("core sidebar tree @core", () => {
     await expect.poll(() => opacityOf(archiveButton)).toBe(1)
   })
 
-  test("status dot: idle has no dot — behavior 4 (partial; live push half is blocked)", async ({ page }) => {
+  test("status dot: idle has no dot — behavior 4 (partial)", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "status" }) })
     await seedProject(page, { dir: DIR })
@@ -636,38 +644,106 @@ test.describe("core sidebar tree @core", () => {
     await expect(row).toBeVisible({ timeout: 15_000 })
 
     // Idle: no status dot at all, the relative-time label renders instead.
-    // (This much is provable without live SSE — see the fixme below for the
-    // working/done transitions, which are blocked by a shared-helper gap.)
+    // The working/done half of behavior 4 is the sibling test below.
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
   })
 
-  test.fixme(
-    "status dot moves working -> done as session.status/session.idle SSE land — behavior 4 (shared-helper gap)",
-    async () => {
-      // SHARED-HELPER GAP, not a real app bug — but NOTE the original reason
-      // recorded here ("`installMockRuntime` only mocks `/api/wr/events` under
-      // the relay origin when `options.cloud` is set, so the local-mode stream
-      // is never intercepted") is STALE and has been removed: mock-runtime.ts
-      // now registers `**/api/wr/events**` unconditionally on the primary
-      // origin (`wrEventsHandler`, alongside the flat-frame replay window),
-      // and `emit()` fans out to that channel. Behavior 15's live test below
-      // proves events do reach the client in local mode.
-      //
-      // What still blocks THIS scenario, verified by reading the helper (not
-      // by a fresh live repro): the sidebar row's status is reconciled against
-      // `client.session.status()`, and `installMockRuntime`'s
-      // `**/session/status**` route answers a fixed map containing ONLY the
-      // one modelled session id (`{ [SESSION_ID]: { type: "idle" } }`), while
-      // the rows this spec renders are `installSessionTreeFixtures` ids
-      // (`ses_status_*`). Any status read for a fixture row therefore resolves
-      // to "no entry" -> idle and clobbers a pushed busy state, so the
-      // working -> done transition cannot be pinned without teaching the
-      // shared mock to model per-row session status. That is a shared-file
-      // change forbidden in this pooled run; filed as a finding for a
-      // follow-up session with exclusive access to mock-runtime.ts. Re-attempt
-      // the scenario then rather than assuming it is still blocked.
-    },
-  )
+  test("status dot moves working -> done as session.status/session.idle SSE land — behavior 4", async ({ page }) => {
+    const targetId = "ses_live_0"
+    // Two independently-updated caches decide this row's dot (see SPEC STATE
+    // MODEL): the SSE dispatch into `shellDataKeys.sessionId(id,"status")`, and
+    // the sidebar's batched `client.session.status()` reconciliation. The
+    // mock's live-session map is moved in step with every frame emitted here
+    // so the two can never disagree — which is what the real server does
+    // anyway, publishing `session.status` and updating the map it serves from
+    // the same `SessionStatus.set` call (`opencode/src/session/status.ts:38-47`).
+    //
+    // MEASURED, so nobody re-derives it from the source and gets it wrong the
+    // way this test's `fixme` note did: with the mock's OLD status handling
+    // restored, this scenario still passed 6/6. The batch fires once per
+    // `sessionStatusTargetSignature` change and is then gated for
+    // `SIDEBAR_SESSION_STATUS_FRESH_MS` (10s), so it had already run before the
+    // first emit — and it could not have contradicted anything anyway, because
+    // `GET /session/status` was being answered by the shared mock's
+    // `**/session/*` catch-all with a session ROW rather than a status map (see
+    // that route's comment in mock-runtime.ts). The `setSessionStatus` calls
+    // below therefore keep the mock honest rather than papering over a live
+    // race here; where the map IS decisive is the reload scenario in the next
+    // test, which has no SSE frame to lean on at all.
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "live" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${targetId}"]`)
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
+
+    // idle -> working. `busy` is the only status the dot's "working" branch
+    // reads besides `retry` (`sessionSurfaceStatus`, surface-status.ts:28).
+    mock.setSessionStatus(targetId, { type: "busy" })
+    mock.emit({ type: "session.status", properties: { sessionID: targetId, status: { type: "busy" } } })
+    await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
+
+    // working -> done. The row was never opened or focused (this spec never
+    // clicks it), so the active->inactive edge sets the unseen-done flag
+    // rather than falling back to idle — the INVARIANT that a completed but
+    // unfocused turn never silently reverts to "no dot". Settling clears the
+    // session from the live map: the real route reports idle by OMITTING the
+    // key, never by sending `{type:"idle"}` (e2e/helpers/contracts/
+    // session-status.ts).
+    mock.setSessionStatus(targetId)
+    mock.emit({ type: "session.idle", properties: { sessionID: targetId } })
+    await expect(row.locator('[data-sidebar-status="done"]')).toHaveCount(1, { timeout: 20_000 })
+    await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(0)
+  })
+
+  test("status dot rehydrates from GET /session/status after a reload, with no SSE frame — behavior 4", async ({ page }) => {
+    // The other half of the two-cache model in behavior 4, and the half no SSE
+    // test can reach: a reload throws away every in-memory status cache, so a
+    // session that is STILL busy on the server can only get its dot back from
+    // the batched `client.session.status()` read (rail-sidebar.tsx:912-927).
+    // If that read reports the row idle, the dot is silently wrong for up to
+    // the whole rest of the turn — the row looks finished while the agent is
+    // still working.
+    //
+    // This is also what pins the shared mock's live-session map: the map is the
+    // only input here. Seeded via `options.sessionStatuses` rather than
+    // `setSessionStatus` so it is already live at first paint, exactly as a
+    // server restarted mid-turn would report it.
+    const targetId = "ses_rehydrate_0"
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      projectId: PROJECT_ID,
+      projectName: "sidebar-tree",
+      sessionStatuses: { [targetId]: { type: "busy" } },
+    })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "rehydrate" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${targetId}"]`)
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
+
+    // Reload with the session still busy server-side: the dot must come back.
+    await page.reload()
+    await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
+
+    // And settling it server-side (the key is DROPPED, not set to idle — see
+    // e2e/helpers/contracts/session-status.ts) clears the dot on the next
+    // reload. "done" is deliberately NOT expected here: the unseen-done flag is
+    // in-memory sidebar state that a reload discards, so a turn that finished
+    // while the tab was gone rehydrates as plain idle, not as unseen-done.
+    mock.setSessionStatus(targetId)
+    await page.reload()
+    await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row.locator("[data-sidebar-status]")).toHaveCount(0, { timeout: 20_000 })
+  })
 
   test("clicking a session row activates it; a rapid second click resolves onto the last row — behavior 5", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })

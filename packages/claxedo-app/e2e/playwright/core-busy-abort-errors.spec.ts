@@ -276,16 +276,23 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
 /** Starves the bulk `/session/status` endpoint for the scenarios that need an optimistic
  * busy status to outlive the first-fold hydrate.
  *
- * This is NOT a workaround for a mock bug. A previous revision of this comment asserted a
- * "verified, reproducible SHARED-MOCK BUG" — that `installMockRuntime` registered
- * `page.route("**​/session/status", ...)` without a trailing wildcard, so the app's
- * `?directory=…` request fell through to the `**​/session/*` catch-all and got a session
- * row instead of a status map. That is FALSE against the current helper:
- * mock-runtime.ts:1425 already registers `"**​/session/status**"`, with its own comment
- * explaining that exact fix, and answers `{[SESSION_ID]: {type: "idle"}}` correctly.
+ * This is NOT a workaround for a mock bug — though the history here is worth keeping
+ * straight, because two revisions of this comment have now been wrong in opposite
+ * directions. The first asserted a "verified, reproducible SHARED-MOCK BUG": that
+ * `installMockRuntime` registered `page.route("**​/session/status", ...)` without a
+ * trailing wildcard, so the app's `?directory=…` request fell through to the
+ * `**​/session/*` catch-all and got a session row. The second declared that FALSE on the
+ * grounds that the wildcard was present. The wildcard WAS present — and the request was
+ * still being answered with a session row, because the catch-all is registered later and
+ * Playwright matches most-recently-registered-first. The catch-all now hands
+ * `/session/status` back (see its comment in mock-runtime.ts), so the route finally
+ * serves a real status map: by default an EMPTY one, since an idle session is an absent
+ * key on the wire (e2e/helpers/contracts/session-status.ts). Every consumer decodes an
+ * absent key exactly as it decoded the unusable session row — as idle — so nothing in
+ * this spec's behavior moved.
  *
  * The reason to starve it is simpler and is a property of the SCENARIO, not a defect:
- * that correct `idle` answer is itself a server-source reconciliation.
+ * that idle answer is itself a server-source reconciliation.
  * `syncSessionMeta` (`src/features/session/store/session-controller.ts:333-397`) reads
  * `status[sessionID]` and dispatches `session.status` from it (falling back to
  * `idleSessionStatus`, :390), so as soon as the hydrate resolves the turn is declared
@@ -296,8 +303,8 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
 async function neutralizeStatusPoll(page: Page) {
   await page.route("**/session/status**", () => {
     // Intentionally never fulfilled/continued — any resolved response, including the
-    // mock's correct `{[SESSION_ID]:{type:"idle"}}`, is a premature reconciliation for
-    // these scenarios. See the comment above.
+    // mock's empty (= all idle) status map, is a premature reconciliation for these
+    // scenarios. See the comment above.
   })
 }
 

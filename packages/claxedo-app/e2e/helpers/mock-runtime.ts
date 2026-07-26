@@ -34,6 +34,7 @@ import {
 } from "./contracts/session-config"
 import { HARNESS_POST_SUCCESS, parseHarnessConfigRequest } from "./contracts/agent-config-harness"
 import { parseSessionCommandRequest, SESSION_COMMAND_SUCCESS } from "./contracts/session-command"
+import { sessionStatusResponseBody, type LiveSessionStatus } from "./contracts/session-status"
 import {
   parseQuestionRejectRequest,
   parseQuestionReplyRequest,
@@ -304,13 +305,17 @@ export type MockRuntimeOptions = {
   harnessReadiness?: HarnessReadiness
   harnessReadinessError?: string
   /**
-   * Extra session ids to report as `idle` from `GET /session/status`, alongside the
-   * mock's own `sessionId`. Specs that render rows from their OWN fixture ids (rather
-   * than the one modelled session) need this — without it those rows have no status
-   * entry at all, which is what blocks `core-sidebar-tree`'s behavior-4 status-dot
-   * test. Ids not listed here are deliberately ABSENT from the map, not idle.
+   * Seed for the LIVE session map `GET /session/status` answers — keyed by session id,
+   * for any session the spec models, not just the mock's own `sessionId`. Mutable at
+   * runtime via `handles.setSessionStatus`, so a spec can drive a row busy and settle it
+   * again while its SSE frames land.
+   *
+   * Only live statuses are representable: the real route's map holds `busy`/`retry`/
+   * `recovering` and NOTHING else — an idle session is an ABSENT key on both server
+   * paths, and every client already reads absence as idle. See
+   * `./contracts/session-status.ts` for the two implementations and the citations.
    */
-  statusSessionIds?: string[]
+  sessionStatuses?: Record<string, LiveSessionStatus>
   /**
    * Number of `POST /api/claxedo/agent-config/harness` calls that should still report
    * "applying" before flipping to the final `harnessReadiness` — models the
@@ -432,6 +437,17 @@ export type MockRuntimeHandles = {
    * unconditionally.
    */
   releaseAbort: () => void
+  /**
+   * Moves a session in or out of the LIVE map `GET /session/status` answers, for ANY
+   * session id the spec models — not only the mock's own `sessionId`.
+   *
+   * Pass `undefined` (or nothing) to settle the session: the real route drops the key
+   * entirely rather than reporting `{type:"idle"}`, so this does the same. Keep it in
+   * step with the `session.status`/`session.idle` frames you emit — the sidebar
+   * reconciles every row against this route on a batched poll, and it is the ONLY
+   * source of a row's status after a reload, when no SSE frame replays the live state.
+   */
+  setSessionStatus: (sessionId: string, status?: LiveSessionStatus) => void
   session: { id: string; dir: string; projectId: string }
 }
 
@@ -737,6 +753,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     cloudPromptBodies: [],
     cloudHarnessOptionsCount: 0,
     cloudHarnessOptionsHarnesses: [],
+  }
+
+  // The LIVE half of `GET /session/status`, modelled the way the server models it: a
+  // map of the sessions that are currently busy/retrying/recovering. Settling a session
+  // DELETES its key rather than storing idle — see `./contracts/session-status.ts`.
+  const liveSessionStatuses = new Map<string, LiveSessionStatus>(Object.entries(options.sessionStatuses ?? {}))
+  const setSessionStatus = (sessionId: string, status?: LiveSessionStatus) => {
+    if (status) liveSessionStatuses.set(sessionId, status)
+    else liveSessionStatuses.delete(sessionId)
   }
 
   // `holdAbort`'s gate. `releaseAbort` is handed back on the handles and is safe to
@@ -1927,25 +1952,26 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     api(r) ? json(r, [{ name: "build", description: "Build command" }]) : r.continue(),
   )
 
-  // "**" after /status is required: the app requests /session/status?directory=…,
-  // and a bare "**/session/status" pattern never matches a query string — requests
-  // then fall through to the **/session/** catch-all and get a session row instead
-  // of a status map, corrupting busy/idle logic in every consumer spec.
-  // The map covers SESSION_ID plus any ids the spec declares via
-  // `statusSessionIds`. It used to be hardcoded to SESSION_ID alone, which meant a
-  // spec whose rows use its own fixture ids (e.g. `core-sidebar-tree`'s `ses_status_*`)
-  // got NO status entry for them — the reason that spec's behavior-4 status-dot test
-  // is still `test.fixme`. Unknown ids stay absent rather than defaulting to idle, so
-  // a spec cannot accidentally assert against a status the server never reported.
+  // "**" after /status is required: the app requests /session/status?directory=…, and a
+  // bare "**/session/status" pattern never matches a query string — the request would
+  // fall past this route entirely. That is necessary but was NOT sufficient: the
+  // `**/session/*` catch-all below is registered later and so out-matched this route
+  // even with the wildcard, which is the shadowing its own comment now records.
+  //
+  // The body is the LIVE map, built through `sessionStatusResponseBody` so it can only
+  // ever carry the shape the real route produces — see `./contracts/session-status.ts`
+  // for both server implementations. It used to be a fixed `{[SESSION_ID]:
+  // {type:"idle"}}`: one hardcoded id, in an idle-VALUED shape neither server path can
+  // emit (idle is an absent key on the wire). A spec rendering rows from its own
+  // fixture ids therefore had no entry for them and no way to model one, so no scenario
+  // could put a fixture row into a live state at all — half of what parked
+  // `core-sidebar-tree`'s behavior-4 status-dot scenario. (The other half: this route
+  // was being SHADOWED by the `**/session/*` catch-all near the bottom of this file and
+  // never ran at all — see the exclusion there.) Specs now seed
+  // `options.sessionStatuses` and/or drive `handles.setSessionStatus` per session id;
+  // sessions absent from the map read as idle everywhere, exactly as on the wire.
   await page.route("**/session/status**", (r) =>
-    api(r)
-      ? json(
-          r,
-          Object.fromEntries(
-            [SESSION_ID, ...(options.statusSessionIds ?? [])].map((id) => [id, { type: "idle" }]),
-          ),
-        )
-      : r.continue(),
+    api(r) ? json(r, sessionStatusResponseBody(Object.fromEntries(liveSessionStatuses))) : r.continue(),
   )
 
   const handleSessionList = async (route: Route) => {
@@ -2149,6 +2175,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(r)) return r.continue()
     const pathname = new URL(r.request().url()).pathname
     if (!pathname.match(/^\/session\/[^/]+$/)) return r.fallback()
+    // `/session/status` is a BULK STATUS MAP, not a session whose id happens to be
+    // "status" — but it is shaped `/session/<one-segment>`, so it satisfies the regex
+    // above and this catch-all, registered LAST, out-prioritised the dedicated
+    // `**/session/status**` route several hundred lines up (Playwright matches routes
+    // most-recently-registered-first). Every `client.session.status()` call in every
+    // spec was therefore answered with a SESSION ROW. Nothing failed loudly because
+    // every consumer indexes the response by session id
+    // (`statuses[sessionID] ?? {type:"idle"}`) and a session row has no such key, so the
+    // garbage read as "everything idle" — which is also why the dedicated route's own
+    // comment about falling through to this catch-all describes a bug that was still
+    // live, and why `core-sidebar-tree`'s behavior-4 status-dot scenario could not be
+    // written at all. Hand it back so the real handler gets it.
+    if (pathname.endsWith("/session/status")) return r.fallback()
     // CONTRACT: `PATCH /session/:id` answers with the normalized session row, same as
     // the GET (`c.json(normalizeSession(session, directory))`, workspace-runtime
     // `routes/session-core.ts:546`) — so the shared `sessionRow()` fixture below is the
@@ -2471,6 +2510,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     emitDurable,
     emitFlat,
     releaseAbort: () => releaseAbort(),
+    setSessionStatus,
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
   }
 }
