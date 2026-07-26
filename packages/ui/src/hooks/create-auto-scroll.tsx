@@ -169,8 +169,16 @@ export function createAutoScroll(options: AutoScrollOptions) {
     el.style.overflowAnchor = store.userScrolled ? "auto" : "none"
   }
 
+  // The distance from the bottom is `scrollHeight - clientHeight - scrollTop`,
+  // so the viewport's own height moves the bottom exactly as much as the
+  // content's does. Observing only the content leaves a real gap: when the
+  // viewport grows the browser clamps `scrollTop` down to the new maximum, and
+  // when it shrinks back that clamped value is stranded short of the bottom —
+  // with no content resize to trigger a re-pin. A transient viewport change
+  // (the prompt dock losing and regaining a status line as a turn completes)
+  // therefore knocked the timeline permanently off the bottom by one line.
   createResizeObserver(
-    () => store.contentRef,
+    () => [store.contentRef, store.scrollRef],
     () => {
       const el = store.scrollRef
       if (el && !canScroll(el)) {
