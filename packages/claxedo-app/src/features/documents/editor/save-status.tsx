@@ -1,4 +1,4 @@
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Match, Switch } from "solid-js"
 import type { PersistenceSnapshot } from "@/features/documents/state/persistence-controller"
 

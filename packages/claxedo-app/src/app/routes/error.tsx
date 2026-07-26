@@ -6,7 +6,7 @@ import { Component, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { formatError } from "./error-format"
 
 export type { InitError } from "./error-format"

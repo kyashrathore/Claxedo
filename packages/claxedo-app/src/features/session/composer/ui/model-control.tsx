@@ -1,11 +1,11 @@
 import { type Accessor, type JSX, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { ModelSelectorPopover, type PickerState } from "@/features/session/ui/model/select-model"
-import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
+import { COMPOSER_COMPACT_MENU_CLASS, COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 
 /**
  * Model and thinking-effort read as one control: `Sonnet 5 High ⌄`.
@@ -46,14 +46,15 @@ export function PromptModelControl(props: {
 
   const content = () => (
     <>
+      <Icon name="brain" size="small" class="composer-compact-only shrink-0 text-v2-icon-icon-base" />
       <Show when={props.providerID()}>
         <ProviderIcon
           id={props.providerID()!}
-          class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+          class="composer-model-provider size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
           style={{ "will-change": "opacity", transform: "translateZ(0)" }}
         />
       </Show>
-      <span class="truncate">{props.label()}</span>
+      <span data-slot="composer-control-label" class="truncate">{props.label()}</span>
       {/* One chevron per control: the effort half owns it when it is rendered. */}
       <Show when={!props.providerLoading() && !props.showVariantSelector()}>
         <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
@@ -144,10 +145,19 @@ export function PromptModelControl(props: {
               class="capitalize max-w-[120px] max-md:hidden"
               valueClass="truncate text-[13px] font-[440] leading-4 text-v2-text-text-faint"
               triggerStyle={props.controlStyle()}
-              contentClass={COMPOSER_MENU_CLASS}
+              contentClass={COMPOSER_COMPACT_MENU_CLASS}
               triggerProps={{ "data-action": "prompt-model-variant" }}
               variant="ghost"
-            />
+            >
+              {(value) => (
+                <span class="flex min-w-0 items-center gap-1.5">
+                  <Icon name="sliders" size="small" class="composer-compact-only shrink-0" />
+                  <span data-slot="composer-control-label" class="truncate">
+                    {props.variantLabel(value ?? "default")}
+                  </span>
+                </span>
+              )}
+            </Select>
           </TooltipKeybind>
         </Show>
       </div>

@@ -8,7 +8,7 @@
 
 import { createSignal, createMemo, createResource, For, Show, onMount } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useGlobalSDK } from "@/features/settings/app-ports"
 import { can } from "@/platform/auth/role"

@@ -2,7 +2,7 @@
 import { Component, createSignal, onCleanup, onMount } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { SettingsGeneral } from "@/features/settings/ui/general"

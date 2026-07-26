@@ -1,7 +1,7 @@
 import { createEffect, createSignal, Index, Show, type Component } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
 
 const TERMINAL_COMMANDS_KEY = "claxedo.terminalCommands"

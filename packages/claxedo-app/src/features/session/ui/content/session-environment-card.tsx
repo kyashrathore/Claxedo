@@ -1,7 +1,7 @@
 import { createMemo, createRoot, For, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { useSDK } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
@@ -203,6 +203,7 @@ export function SessionEnvironmentCard(props: {
     <>
       <button
         type="button"
+        data-icon-interaction="standalone"
         class="ui-context-card-rail-item"
         aria-label="Open changes"
         onClick={() => props.onOpenTab("changes")}
@@ -211,6 +212,7 @@ export function SessionEnvironmentCard(props: {
       </button>
       <button
         type="button"
+        data-icon-interaction="standalone"
         class="ui-context-card-rail-item"
         aria-label="Open files"
         onClick={() => props.onOpenTab("files")}
@@ -219,6 +221,7 @@ export function SessionEnvironmentCard(props: {
       </button>
       <button
         type="button"
+        data-icon-interaction="standalone"
         class="ui-context-card-rail-item"
         aria-label="Open processes"
         onClick={() => props.onOpenTab("processes")}

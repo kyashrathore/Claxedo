@@ -149,14 +149,14 @@ describe("NavigationStatusDot", () => {
     const view = render(() => <NavigationStatusDot status="working" active />)
     const dot = view.container.querySelector('[data-sidebar-status="working"]')
     expect(dot).not.toBeNull()
-    expect(dot?.querySelector(".animate-pulse")).not.toBeNull()
+    expect(dot?.classList.contains("animate-pulse")).toBe(true)
   })
 
-  test("non-working status renders a solid colored dot", () => {
+  test("non-working status renders a solid grey dot", () => {
     const view = render(() => <NavigationStatusDot status="done" />)
     const dot = view.container.querySelector('[data-sidebar-status="done"]')
     expect(dot).not.toBeNull()
-    expect(dot?.querySelector(".animate-pulse")).toBeNull()
-    expect(dot?.classList.contains("bg-icon-success-base")).toBe(true)
+    expect(dot?.classList.contains("animate-pulse")).toBe(false)
+    expect(dot?.classList.contains("bg-text-weak")).toBe(true)
   })
 })

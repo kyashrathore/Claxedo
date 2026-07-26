@@ -79,8 +79,9 @@ function SessionNavigationItem(props: {
         prepareContentId={() => props.onPrepareDrag(props.row)}
         onDragStart={props.onDragStart}
       >
-        <div class="flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span
+            data-slot="session-navigation-title"
             class="text-[13px] leading-tight truncate flex-1 min-w-0"
             classList={{
               "text-text-strong font-semibold": props.row.active,
@@ -92,6 +93,7 @@ function SessionNavigationItem(props: {
           <Show when={props.row.metadata}>
             {(metadata) => (
               <span
+                data-icon-interaction="passive"
                 role="img"
                 aria-label={metadata().label}
                 title={metadata().label}
@@ -107,6 +109,7 @@ function SessionNavigationItem(props: {
             archive button stays clickable and isn't a nested interactive. */}
         <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
+            data-slot="session-navigation-time"
             class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100"
             classList={{
               "text-text-base/70": props.row.active,
@@ -119,9 +122,10 @@ function SessionNavigationItem(props: {
           </span>
           <button
             type="button"
+            data-icon-interaction="row-action"
             aria-label={`Archive ${props.row.title}`}
             disabled={archiving()}
-            class="absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
+            class="absolute inset-0 pointer-events-auto flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()

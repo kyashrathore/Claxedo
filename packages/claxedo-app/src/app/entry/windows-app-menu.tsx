@@ -1,9 +1,8 @@
 import { Show, type JSX } from "solid-js"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 
 import { useCommand } from "@/app/providers/command"
 import { DESKTOP_MENU, desktopMenuVisible, type DesktopMenuAction, type DesktopMenuEntry } from "@/app/entry/desktop-menu"

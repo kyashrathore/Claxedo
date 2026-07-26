@@ -1,5 +1,5 @@
 import { Component, For, Show } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { ImageAttachmentPart } from "@/features/session/providers/prompt"
 

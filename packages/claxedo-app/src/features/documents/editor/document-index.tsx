@@ -1,4 +1,4 @@
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { List } from "@opencode-ai/ui/list"
 import { Popover } from "@opencode-ai/ui/popover"
 import { For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js"
@@ -673,7 +673,7 @@ function FilterChip(props: { label: string; value?: string; options: FilterOptio
       portal
       open={open()}
       onOpenChange={setOpen}
-      class="documents-filter-popover"
+      class="codex-overlay-surface documents-filter-popover"
       trigger={
         <>
           <span class="documents-chip-label">{props.label}</span>
@@ -730,4 +730,3 @@ function FilterChip(props: { label: string; value?: string; options: FilterOptio
     </Popover>
   )
 }
-

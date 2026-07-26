@@ -48,6 +48,7 @@ describe("SessionEnvironmentCard", () => {
     // its directory basename.
     expect(within(card()).getByText("opencode-fix")).toBeInTheDocument()
     expect(within(card()).getByText("codex/feat-documents-core")).toBeInTheDocument()
+    expect(card().querySelector('[data-icon="worktree"]')).not.toBeNull()
 
     // Facts are not buttons — navigation lives only in the nav section.
     expect(within(card()).getByText("opencode-fix").closest("button")).toBeNull()

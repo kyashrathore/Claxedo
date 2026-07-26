@@ -154,6 +154,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
           {(state) => {
             const selected = state.selectedOption() ?? local.current
             if (!selected) return local.placeholder || ""
+            if (local.children) return local.children(selected)
             if (local.label) return local.label(selected)
             return selected as string
           }}

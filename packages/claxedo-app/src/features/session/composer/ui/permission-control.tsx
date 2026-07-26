@@ -1,10 +1,13 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 import type { PermissionModeGroups, PermissionModeRow } from "@/features/session/composer/permission-mode"
-import type { PermissionModeOption } from "@/features/session/permission/modes"
+import {
+  CLAXEDO_ASK_ALWAYS_ID,
+  type PermissionModeOption,
+} from "@/features/session/permission/modes"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 
 /**
  * The composer's permission-mode picker.
@@ -67,11 +70,11 @@ export function PromptPermissionControl(props: {
               size="small"
               class="shrink-0"
               classList={{
-                "text-v2-icon-icon-accent": shieldActive(),
+                "text-v2-icon-icon-base": shieldActive(),
                 "text-v2-icon-icon-muted": !shieldActive(),
               }}
             />
-            <span class="truncate max-md:hidden">{triggerText()}</span>
+            <span data-slot="composer-control-label" class="truncate">{triggerText()}</span>
           </MenuV2.Trigger>
         </Tooltip>
         <MenuV2.Portal>
@@ -137,32 +140,46 @@ function ModeRow(props: {
 }) {
   const option = () => props.row.option
   const selected = () => props.current()?.id === option().id
-  // What this maps to in the harness, and any condition that can withdraw it. This
-  // is the "learn more" content, inline rather than behind a second affordance.
+  // The row explains the choice itself. A caveat about when a new selection
+  // takes effect is shared by every option and therefore belongs to the
+  // interaction, not repeated inside every row.
   const detail = () => {
-    const parts = [option().description, props.row.blockedReason, option().caveat].filter(Boolean)
+    const parts = [option().description, props.row.blockedReason].filter(Boolean)
     return parts.join(" — ")
   }
 
   return (
-    <Tooltip placement="right" value={detail() || option().name}>
-      <MenuV2.Item
-        data-mode={option().id}
-        data-what={option().delivery.kind}
-        data-selectable={props.row.selectable ? "true" : "false"}
-        disabled={!props.row.selectable}
-        onSelect={() => props.row.selectable && props.onSelect(option())}
-      >
-        <span class="flex min-w-0 items-center gap-1.5">
-          <Icon
-            name="check"
-            size="small"
-            class="shrink-0"
-            classList={{ "opacity-0": !selected(), "text-v2-icon-icon-accent": selected() }}
-          />
-          <span class="truncate">{option().name}</span>
+    <MenuV2.Item
+      data-permission-mode-row
+      data-mode={option().id}
+      data-what={option().delivery.kind}
+      data-selectable={props.row.selectable ? "true" : "false"}
+      class="w-full"
+      disabled={!props.row.selectable}
+      onSelect={() => props.row.selectable && props.onSelect(option())}
+    >
+      <span class="flex min-w-0 items-start gap-2">
+        <Icon
+          name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
+          size="small"
+          class="mt-0.5 shrink-0"
+          classList={{
+            "text-v2-icon-icon-base": selected(),
+            "text-v2-icon-icon-muted": !selected(),
+          }}
+        />
+        <span class="flex min-w-0 flex-col gap-0.5">
+          <span class="text-[13px] leading-4 text-v2-text-text-base">{option().name}</span>
+          <Show when={detail()}>
+            <span
+              data-slot="permission-mode-description"
+              class="line-clamp-2 whitespace-normal text-[11px] leading-[15px] text-v2-text-text-faint"
+            >
+              {detail()}
+            </span>
+          </Show>
         </span>
-      </MenuV2.Item>
-    </Tooltip>
+      </span>
+    </MenuV2.Item>
   )
 }

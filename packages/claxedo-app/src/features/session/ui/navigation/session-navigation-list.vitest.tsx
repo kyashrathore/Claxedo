@@ -200,6 +200,21 @@ describe("SessionNavigation", () => {
     expect(view.getByTestId("rail-sidebar-terminal-row").querySelector('[data-sidebar-status="working"]')).not.toBeNull()
   })
 
+  test("uses the semantic terminal glyph and an optically centered bare close glyph", () => {
+    const view = render(() => (
+      <TerminalSurfaceNavigation
+        rows={[terminalRow(1)]}
+        onActivate={() => {}}
+        onClose={() => {}}
+      />
+    ))
+
+    const row = view.getByTestId("rail-sidebar-terminal-row")
+    expect(row.querySelector('[data-slot="terminal-row-icon"] [data-icon="terminal"]')).not.toBeNull()
+    expect(row.querySelector('[data-slot="terminal-row-icon"]')?.textContent).not.toContain(">")
+    expect(row.querySelector('[data-slot="terminal-row-close"] > svg[data-slot="icon-svg"]')).not.toBeNull()
+  })
+
   test("keeps unrelated rows mounted across large activity bursts", async () => {
     const [sessions, setSessions] = createSignal(
       Array.from({ length: 500 }, (_, index) =>

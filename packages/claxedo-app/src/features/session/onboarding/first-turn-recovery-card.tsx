@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { sessionRecovery, type SessionErrorClass } from "./first-turn-recovery"
 

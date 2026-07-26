@@ -2,7 +2,7 @@ import { For, Show, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { DockTray } from "@opencode-ai/ui/dock-surface"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { useLanguage } from "@/platform/i18n/provider"
 
 export function SessionFollowupDock(props: {

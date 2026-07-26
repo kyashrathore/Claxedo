@@ -195,10 +195,98 @@
    two adjacent triggers visibly changed the menu's rhythm and width.
    This block pins all three to the same surface and row spec. */
 .claxedo-composer-menu.claxedo-composer-menu {
-  width: 300px;
-  min-width: 300px;
+  width: 360px;
+  min-width: 360px;
   padding: 4px;
   border-radius: 8px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact {
+  width: 180px;
+  min-width: 180px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness {
+  width: 210px;
+  min-width: 210px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
+  [data-slot="select-select-content-list"],
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
+  [data-slot="select-select-item"],
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
+  [data-slot="select-select-content-list"],
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
+  [data-slot="select-select-item"] {
+  width: 100%;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
+  [data-slot="select-select-item-label"],
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
+  [data-slot="select-select-item-label"] {
+  min-width: 0;
+  flex: 1;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
+  [data-slot="select-select-item-indicator"],
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-harness
+  [data-slot="select-select-item-indicator"] {
+  margin-left: auto;
+}
+
+/* The dock is frequently narrower than the viewport because workspace panes
+   surround it. Container queries make its controls collapse based on the space
+   they actually own, not on the browser window. */
+[data-component="composer-frame"] {
+  container-name: prompt-composer;
+  container-type: inline-size;
+}
+
+.composer-compact-only {
+  display: none;
+}
+
+@container prompt-composer (max-width: 560px) {
+  [data-slot="composer-toolbar"] {
+    gap: 2px;
+  }
+
+  [data-action="prompt-permission-mode"],
+  [data-action="prompt-harness"],
+  [data-action="prompt-model"],
+  [data-action="prompt-harness-model"],
+  [data-action="prompt-model-variant"] {
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+    flex: 0 0 28px;
+    justify-content: center;
+    padding-inline: 6px;
+    gap: 0;
+  }
+
+  [data-action="prompt-permission-mode"] [data-slot="composer-control-label"],
+  [data-action="prompt-harness"] [data-slot="composer-control-label"],
+  [data-action="prompt-model"] [data-slot="composer-control-label"],
+  [data-action="prompt-harness-model"] [data-slot="composer-control-label"],
+  [data-action="prompt-model-variant"] [data-slot="composer-control-label"],
+  [data-action="prompt-harness"] [data-slot="select-select-trigger-icon"],
+  [data-action="prompt-model-variant"] [data-slot="select-select-trigger-icon"],
+  [data-action="prompt-model"] > [data-component="icon"]:last-child,
+  [data-action="prompt-harness-model"] > [data-component="icon"]:last-child,
+  [data-action="prompt-model"] .composer-model-provider,
+  [data-action="prompt-harness-model"] .composer-model-provider {
+    display: none;
+  }
+
+  [data-action="prompt-model"] .composer-compact-only,
+  [data-action="prompt-harness-model"] .composer-compact-only,
+  [data-action="prompt-model-variant"] .composer-compact-only {
+    display: inline-flex;
+  }
 }
 
 /* Row spec, applied to whichever primitive's row is inside. */
@@ -260,6 +348,13 @@
   background: transparent;
 }
 
+/* List group labels are sticky. Their background must remain opaque while the
+   model rows scroll underneath or the first row visually collides with the
+   provider title. */
+.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-header"] {
+  background: var(--codex-surface-overlay, var(--v2-background-bg-layer-01));
+}
+
 /* The searchable pickers' filter field, aligned to the same 10px gutter. */
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search"] {
   padding: 4px 10px;
@@ -268,4 +363,53 @@
 
 .claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search-wrapper"] {
   padding: 0;
+}
+
+/* Permission choices carry their explanation inside the row. The item owns the
+   complete hover target; there is no tooltip wrapper to shrink it to its text. */
+.claxedo-composer-menu.claxedo-composer-menu [data-permission-mode-row] {
+  height: auto;
+  min-height: 48px;
+  padding-block: 6px;
+  align-items: flex-start;
+}
+
+/* Context pickers keep search and creation controls stationary while only the
+   option list scrolls. */
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] [data-slot="list-scroll"] {
+  max-height: 252px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker] [data-slot="list-item-add"] {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  background: var(--codex-surface-overlay, var(--v2-background-bg-layer-01));
+}
+
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker]
+  [data-slot="list-item-add"]:hover,
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker]
+  [data-slot="list-item-add"]:focus-within {
+  background: var(--codex-surface-row-hover, var(--v2-overlay-simple-overlay-hover));
+}
+
+/* The project monogram is identification, not a filled status badge. Apply the
+   same outline-only treatment to both the context-row trigger and picker rows. */
+[data-component="session-context-row"]
+  [data-slot="context-chip-avatar"]
+  [data-slot="project-avatar-surface"],
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker="context-chip-project"]
+  [data-slot="context-chip-avatar"]
+  [data-slot="project-avatar-surface"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--codex-border-overlay, var(--v2-border-border-strong));
+  color: var(--codex-icon-overlay, var(--v2-text-text-muted));
+}
+
+/* The selected project is already represented by the trigger and row highlight;
+   the trailing generic check/list glyph adds a second, unrelated state mark. */
+.claxedo-composer-menu.claxedo-composer-menu[data-context-chip-picker="context-chip-project"]
+  [data-slot="list-item-selected-icon"] {
+  display: none;
 }

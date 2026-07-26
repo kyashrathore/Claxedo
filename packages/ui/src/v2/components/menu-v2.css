@@ -13,9 +13,11 @@
   z-index: 60;
   pointer-events: auto;
 
-  background: var(--v2-background-bg-layer-01);
-  border-radius: 6px;
-  box-shadow: var(--v2-elevation-floating);
+  background: var(--codex-surface-overlay, var(--v2-background-bg-layer-01));
+  border: 1px solid var(--codex-border-overlay, transparent);
+  background-clip: padding-box;
+  border-radius: var(--codex-radius-overlay, 6px);
+  box-shadow: var(--codex-shadow-overlay, var(--v2-elevation-floating));
 
   outline: none;
 
@@ -32,14 +34,14 @@
 }
 
 [data-component="menu-v2-item"] {
-  --menu-v2-fg: var(--v2-text-text-base);
-  --menu-v2-fg-muted: var(--v2-text-text-faint);
-  --menu-v2-fg-subtle: var(--v2-text-text-muted);
-  --menu-v2-icon: var(--v2-icon-icon-base);
+  --menu-v2-fg: var(--codex-text-overlay, var(--v2-text-text-base));
+  --menu-v2-fg-muted: var(--codex-text-overlay-muted, var(--v2-text-text-faint));
+  --menu-v2-fg-subtle: var(--codex-text-overlay-muted, var(--v2-text-text-muted));
+  --menu-v2-icon: var(--codex-icon-overlay, var(--v2-icon-icon-base));
   --menu-v2-accent: var(--v2-text-text-accent);
   --menu-v2-badge-bg: var(--v2-background-bg-layer-02);
   --menu-v2-badge-border: var(--v2-border-border-base);
-  --menu-v2-hover: var(--v2-overlay-simple-overlay-hover);
+  --menu-v2-hover: var(--codex-surface-overlay-hover, var(--v2-overlay-simple-overlay-hover));
 
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -158,7 +160,7 @@
   height: 1px;
   width: calc(100% + 4px);
   margin: 2px -2px;
-  background: var(--v2-border-border-muted);
+  background: var(--codex-border-overlay, var(--v2-border-border-muted));
   border: none;
 }
 
@@ -173,7 +175,7 @@
   font-weight: 530;
   line-height: 100%;
   letter-spacing: 0.05px;
-  color: var(--v2-text-text-faint);
+  color: var(--codex-text-overlay-muted, var(--v2-text-text-faint));
   user-select: none;
   font-variant-numeric: tabular-nums;
 }

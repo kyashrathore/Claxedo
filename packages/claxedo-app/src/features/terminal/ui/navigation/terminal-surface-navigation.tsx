@@ -1,5 +1,5 @@
 import { For, Show, createMemo } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { NavigationRow, NavigationStatusDot, type SwitcherStatus } from "@/features/terminal/app-ports"
 import { terminalSurfaceTitle } from "./terminal-surface-title"
@@ -79,19 +79,22 @@ function TerminalSurfaceNavigationRow(props: {
     >
       <span
         aria-hidden="true"
-        class="shrink-0 select-none font-mono text-[12px] leading-none"
+        data-slot="terminal-row-icon"
+        class="relative z-[1] pointer-events-none flex size-4 shrink-0 items-center justify-center"
         classList={{
           "text-text-strong": props.row.active,
-          "text-text-weaker": !props.row.active,
+          "text-icon-weak-base": !props.row.active,
         }}
       >
-        &gt;
+        <Icon name="terminal" size="small" />
       </span>
       <Show when={status() !== "idle"}>
-        <NavigationStatusDot status={status()} active={props.row.active} />
+        <span class="relative z-[1] pointer-events-none flex">
+          <NavigationStatusDot status={status()} active={props.row.active} />
+        </span>
       </Show>
       <span
-        class="font-mono text-[12px] leading-tight truncate flex-1 min-w-0"
+        class="relative z-[1] pointer-events-none font-mono text-[12px] leading-tight truncate flex-1 min-w-0"
         classList={{
           "text-text-strong font-semibold": props.row.active,
           "text-text-weak": !props.row.active,
@@ -106,13 +109,14 @@ function TerminalSurfaceNavigationRow(props: {
         <button
           type="button"
           aria-label={`Close terminal: ${props.row.title}`}
-          class="relative z-10 shrink-0 border-none bg-transparent p-0 text-icon-base hover:text-icon-strong-base transition-colors cursor-pointer opacity-0 group-hover/terminal:opacity-100 focus:opacity-100"
+          data-slot="terminal-row-close"
+          class="relative z-10 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full border-none bg-transparent p-0 leading-none text-icon-weak-base opacity-0 transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base group-hover/terminal:opacity-100 focus:opacity-100 focus-visible:bg-surface-base-hover focus-visible:outline-none"
           onClick={(event) => {
             event.stopPropagation()
             props.onClose(props.row)
           }}
         >
-          <Icon name="close" size="small" />
+          <ClaxedoIconV2 name="close-small" size="small" />
         </button>
       </Tooltip>
     </NavigationRow>

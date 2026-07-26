@@ -1,5 +1,5 @@
 import { Component, Show } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 
 type PromptDragOverlayProps = {
   type: "image" | "@mention" | null

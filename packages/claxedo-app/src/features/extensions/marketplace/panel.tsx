@@ -1,5 +1,5 @@
 import { Component, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { requestMarketplaceConfirm } from "./confirm-dialog"

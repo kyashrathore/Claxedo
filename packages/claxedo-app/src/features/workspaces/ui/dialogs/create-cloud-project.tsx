@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { api, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"

@@ -2,11 +2,11 @@
 [data-component="context-menu-sub-content"] {
   min-width: 8rem;
   overflow: hidden;
-  border: none;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xs-border);
+  border: 1px solid var(--codex-border-overlay, transparent);
+  border-radius: var(--codex-radius-overlay, var(--radius-md));
+  box-shadow: var(--codex-shadow-overlay, var(--shadow-xs-border));
   background-clip: padding-box;
-  background-color: var(--surface-raised-stronger-non-alpha);
+  background-color: var(--codex-surface-overlay, var(--surface-raised-stronger-non-alpha));
   padding: 4px;
   z-index: 100;
   transform-origin: var(--kb-menu-content-transform-origin);
@@ -48,7 +48,7 @@
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
-    color: var(--text-strong);
+    color: var(--codex-text-overlay, var(--text-strong));
 
     transition-property: background-color, color;
     transition-duration: var(--transition-duration);
@@ -56,18 +56,18 @@
     user-select: none;
 
     &:hover {
-      background-color: var(--surface-raised-base-hover);
+      background-color: var(--codex-surface-overlay-hover, var(--surface-raised-base-hover));
     }
 
     &[data-disabled] {
-      color: var(--text-weak);
+      color: var(--codex-text-overlay-muted, var(--text-weak));
       pointer-events: none;
     }
   }
 
   [data-slot="context-menu-sub-trigger"] {
     &[data-expanded] {
-      background: var(--surface-raised-base-hover);
+      background: var(--codex-surface-overlay-hover, var(--surface-raised-base-hover));
       outline: none;
       border: none;
     }
@@ -87,13 +87,13 @@
 
   [data-slot="context-menu-item-description"] {
     font-size: var(--font-size-x-small);
-    color: var(--text-weak);
+    color: var(--codex-text-overlay-muted, var(--text-weak));
   }
 
   [data-slot="context-menu-separator"] {
     height: 1px;
     margin: 4px -4px;
-    border-top-color: var(--border-weak-base);
+    border-top-color: var(--codex-border-overlay, var(--border-weak-base));
   }
 
   [data-slot="context-menu-group-label"] {
@@ -103,11 +103,11 @@
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
-    color: var(--text-weak);
+    color: var(--codex-text-overlay-muted, var(--text-weak));
   }
 
   [data-slot="context-menu-arrow"] {
-    fill: var(--surface-raised-stronger-non-alpha);
+    fill: var(--codex-surface-overlay, var(--surface-raised-stronger-non-alpha));
   }
 }
 

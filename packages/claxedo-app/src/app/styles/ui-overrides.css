@@ -108,3 +108,356 @@
     animation: none;
   }
 }
+
+/*
+ * Codex appearance layer
+ *
+ * Theme JSON owns the shared semantic palette. These selectors only handle
+ * surfaces whose roles are specific to the Claxedo shell, plus the typography
+ * and SVG geometry that are not expressible through desktop-theme tokens.
+ * Layout, labels, and behavior intentionally remain unchanged.
+ */
+html[data-theme="codex"] {
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif !important;
+  --font-family-text:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --v2-font-family-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-family: var(--font-family-sans);
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-theme="codex"] body {
+  font-family: var(--font-family-sans) !important;
+  letter-spacing: -0.006em;
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar"] {
+  background-color: var(--codex-surface-sidebar);
+  border-right-color: var(--codex-border-sidebar) !important;
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
+  background-color: var(--codex-surface-sidebar);
+  border-bottom-color: var(--codex-border-sidebar);
+}
+
+html[data-theme="codex"] .session-envcard.is-floating {
+  background: var(--codex-surface-composer);
+}
+
+html[data-theme="codex"] [data-testid="global-navigation"] {
+  border-bottom-color: var(--codex-border-sidebar);
+}
+
+html[data-theme="codex"] [data-testid="global-navigation"] button,
+html[data-theme="codex"] [data-testid="project-header"],
+html[data-theme="codex"] [data-testid="workspace-project-header"] {
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: -0.008em;
+}
+
+html[data-theme="codex"] [data-slot="rail-section-label"] {
+  color: var(--text-weak);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.006em;
+  text-transform: none;
+}
+
+html[data-theme="codex"] [data-slot="session-navigation-title"] {
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: -0.008em;
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"] [data-slot="session-navigation-title"] {
+  font-weight: 500;
+}
+
+html[data-theme="codex"] [data-slot="session-navigation-time"] {
+  font-size: 12px;
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar"] [aria-current="page"],
+html[data-theme="codex"] [data-testid="project-header"][data-active="true"],
+html[data-theme="codex"] [data-testid="workspace-project-header"][data-active="true"] {
+  background-color: var(--codex-surface-row-selected);
+}
+
+html[data-theme="codex"] [data-testid="global-navigation"] button:hover,
+html[data-theme="codex"] [data-slot="navigation-row-activate"]:hover,
+html[data-theme="codex"] [data-testid="project-header"]:hover,
+html[data-theme="codex"] [data-testid="workspace-project-header"]:hover {
+  background-color: var(--codex-surface-row-hover);
+}
+
+html[data-theme="codex"] [data-testid="workbench-shell-header"] {
+  background-color: var(--codex-surface-header);
+  border-bottom-color: var(--codex-border-header);
+}
+
+html[data-theme="codex"] [data-slot="workbench-tab"][data-selected="true"],
+html[data-theme="codex"] [data-slot="workspace-tab"][data-selected="true"] {
+  background-color: var(--codex-surface-tab-selected);
+}
+
+html[data-theme="codex"] [data-component="session-new-composer"],
+html[data-theme="codex"] [data-component="session-composer"] {
+  background-color: var(--codex-surface-composer);
+  box-shadow:
+    inset 0 0 0 1px var(--codex-border-composer),
+    0 1px 2px #00000026;
+}
+
+html[data-theme="codex"] [data-component="prompt-input"] {
+  color: var(--text-strong);
+  font-family: var(--font-family-sans) !important;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: -0.006em;
+}
+
+html[data-theme="codex"] [data-component="prompt-input"][data-placeholder]::before {
+  color: var(--text-weak);
+}
+
+html[data-theme="codex"] [data-slot="workspace-segmented-control"] {
+  background-color: var(--codex-surface-control);
+  border-color: var(--codex-border-control);
+}
+
+html[data-theme="codex"] [data-slot="workspace-segment-button"][aria-pressed="true"] {
+  background-color: var(--codex-surface-control-active);
+  color: var(--text-strong);
+}
+
+html[data-theme="codex"] .settings-dialog > [data-slot="tabs-list"] {
+  background-color: var(--codex-surface-sidebar);
+}
+
+html[data-theme="codex"] .settings-dialog > [data-slot="tabs-content"] {
+  background-color: var(--codex-surface-settings-content);
+}
+
+html[data-theme="codex"] .settings-dialog [data-slot="tabs-trigger"][aria-selected="true"] {
+  background-color: var(--codex-surface-row-selected);
+}
+
+html[data-theme="codex"] .settings-dialog [class~="bg-surface-raised-base"] {
+  background-color: var(--codex-surface-settings-card);
+}
+
+html[data-theme="codex"] .settings-dialog [class~="bg-surface-base"] {
+  background-color: var(--codex-surface-settings-content);
+}
+
+html[data-theme="codex"] [data-component="icon"] {
+  color: currentColor;
+}
+
+html[data-theme="codex"] [data-component="icon"] [data-slot="icon-svg"] {
+  shape-rendering: geometricPrecision;
+}
+
+/*
+ * Codex icon interaction grammar:
+ * - passive glyphs stay visually quiet when their containing row is hovered;
+ * - row actions brighten their outline without drawing a second hover pill;
+ * - standalone controls receive a hover surface;
+ * - a pressed binary control is communicated by its glyph and foreground,
+ *   not a persistent filled background.
+ */
+html[data-theme="codex"] [data-icon-interaction="passive"] {
+  color: var(--icon-weak-base);
+}
+
+html[data-theme="codex"] [data-icon-interaction="row-action"],
+html[data-theme="codex"] [data-icon-interaction="row-actions"] button {
+  color: var(--icon-weak-base);
+}
+
+html[data-theme="codex"] [data-icon-interaction="row-action"] [data-component="icon"],
+html[data-theme="codex"] [data-icon-interaction="row-actions"] button [data-component="icon"],
+html[data-theme="codex"] [data-icon-interaction="binary"] [data-component="icon"],
+html[data-theme="codex"] [data-icon-interaction="persistent"] [data-component="icon"] {
+  color: inherit !important;
+}
+
+html[data-theme="codex"] [data-icon-interaction="row-action"]:hover,
+html[data-theme="codex"] [data-icon-interaction="row-actions"] button:hover {
+  color: var(--icon-strong-base);
+  background-color: transparent;
+}
+
+html[data-theme="codex"] [data-icon-interaction="binary"] {
+  color: var(--icon-weak-base) !important;
+}
+
+html[data-theme="codex"] [data-icon-interaction="binary"][aria-pressed="true"],
+html[data-theme="codex"] [data-icon-interaction="binary"][aria-expanded="true"],
+html[data-theme="codex"] [data-icon-interaction="binary"][data-icon-state="open"],
+html[data-theme="codex"] [data-icon-interaction="binary"][data-icon-state="active"],
+html[data-theme="codex"] [data-icon-interaction="binary"][data-icon-state="selected"] {
+  color: var(--icon-strong-base) !important;
+}
+
+html[data-theme="codex"] [data-icon-interaction="persistent"],
+html[data-theme="codex"] [data-icon-interaction="standalone"] {
+  color: var(--icon-strong-base);
+}
+
+html[data-theme="codex"] .ui-context-card-row-glyph[data-icon-interaction="persistent"] {
+  color: var(--icon-strong-base) !important;
+}
+
+html[data-theme="codex"] [data-icon-interaction="standalone"]:hover {
+  background-color: var(--codex-surface-row-hover);
+}
+
+html[data-theme="codex"] [data-icon-interaction="standalone"][aria-pressed="true"] {
+  background-color: transparent;
+}
+
+html[data-theme="codex"] [data-icon-interaction="subdued"] {
+  color: var(--icon-weak-base);
+}
+
+html[data-theme="codex"] [data-icon-interaction="subdued"]:hover,
+html[data-theme="codex"] [data-icon-interaction="subdued"]:focus-visible {
+  color: var(--icon-weak-base);
+  background-color: var(--codex-surface-row-hover);
+}
+
+/*
+ * Custom picker shells (model picker, Review source, composer suggestions,
+ * and document filters) are authored outside the shared menu primitives.
+ * Rebind their local semantic tokens so their entire subtree follows the same
+ * Codex overlay palette as DropdownMenu, Select, and MenuV2.
+ */
+html[data-theme="codex"] .codex-overlay-surface {
+  --background-base: var(--codex-surface-overlay);
+  --background-stronger: var(--codex-surface-overlay);
+  --surface-base: var(--codex-surface-overlay);
+  --surface-base-hover: var(--codex-surface-overlay-hover);
+  --surface-base-active: var(--codex-surface-overlay-hover);
+  --surface-raised-base: var(--codex-surface-overlay);
+  --surface-raised-base-hover: var(--codex-surface-overlay-hover);
+  --surface-raised-base-active: var(--codex-surface-overlay-hover);
+  --surface-raised-stronger-non-alpha: var(--codex-surface-overlay);
+  --border-base: var(--codex-border-overlay);
+  --border-weak-base: var(--codex-border-overlay);
+  --border-weaker-base: var(--codex-border-overlay);
+  --text-strong: var(--codex-text-overlay);
+  --text-base: var(--codex-text-overlay);
+  --text-weak: var(--codex-text-overlay-muted);
+  --text-weaker: var(--codex-text-overlay-muted);
+  --icon-strong-base: var(--codex-icon-overlay);
+  --icon-base: var(--codex-icon-overlay);
+  --icon-weak-base: var(--codex-icon-overlay-muted);
+  --color-background-base: var(--codex-surface-overlay);
+  --color-background-stronger: var(--codex-surface-overlay);
+  --color-surface-base: var(--codex-surface-overlay);
+  --color-surface-base-hover: var(--codex-surface-overlay-hover);
+  --color-surface-base-active: var(--codex-surface-overlay-hover);
+  --color-surface-raised-base: var(--codex-surface-overlay);
+  --color-surface-raised-base-hover: var(--codex-surface-overlay-hover);
+  --color-surface-raised-base-active: var(--codex-surface-overlay-hover);
+  --color-surface-raised-stronger-non-alpha: var(--codex-surface-overlay);
+  --color-border-base: var(--codex-border-overlay);
+  --color-border-weak-base: var(--codex-border-overlay);
+  --color-text-strong: var(--codex-text-overlay);
+  --color-text-base: var(--codex-text-overlay);
+  --color-text-weak: var(--codex-text-overlay-muted);
+  --color-text-weaker: var(--codex-text-overlay-muted);
+  --color-icon-base: var(--codex-icon-overlay);
+  --color-icon-weak-base: var(--codex-icon-overlay-muted);
+
+  color: var(--codex-text-overlay);
+  background-color: var(--codex-surface-overlay) !important;
+  border-color: var(--codex-border-overlay) !important;
+  border-radius: var(--codex-radius-overlay) !important;
+  box-shadow: var(--codex-shadow-overlay) !important;
+}
+
+html[data-theme="codex"] .codex-model-picker [data-slot="list-search"] {
+  background-color: var(--codex-surface-overlay-input);
+  border-radius: 8px;
+}
+
+html[data-theme="codex"] .codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] {
+  color: var(--codex-icon-overlay-muted);
+  width: 14px;
+  height: 14px;
+}
+
+html[data-theme="codex"] .codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] [data-slot="icon-svg"] {
+  width: 14px;
+  height: 14px;
+}
+
+html[data-theme="codex"] .codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-component="icon"],
+html[data-theme="codex"] .codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-slot="icon-svg"] {
+  width: 14px;
+  height: 14px;
+}
+
+/*
+ * The platform directory picker is a full dialog rather than a floating menu,
+ * but Codex gives both the same elevated overlay family. Keep the list canvas
+ * on the overlay surface and reserve the slightly lighter tone for the search
+ * field and hovered rows.
+ */
+html[data-theme="codex"] .codex-directory-picker {
+  background-color: var(--codex-surface-overlay) !important;
+}
+
+html[data-theme="codex"] .codex-directory-picker [data-slot="dialog-header"],
+html[data-theme="codex"] .codex-directory-picker [data-slot="dialog-body"],
+html[data-theme="codex"] .codex-directory-picker [data-component="list"],
+html[data-theme="codex"] .codex-directory-picker [data-slot="list-scroll"],
+html[data-theme="codex"] .codex-directory-picker [data-slot="list-header"] {
+  background-color: var(--codex-surface-overlay);
+}
+
+html[data-theme="codex"] .codex-directory-picker [data-slot="list-search-wrapper"] {
+  margin: 0;
+  padding: 0 12px 8px;
+}
+
+html[data-theme="codex"] .codex-directory-picker [data-slot="list-search"] {
+  background-color: var(--codex-surface-overlay-input);
+  border-radius: 8px;
+}
+
+html[data-theme="codex"] .codex-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
+html[data-theme="codex"] .codex-directory-picker [data-slot="list-search-container"] [data-slot="icon-svg"] {
+  width: 14px;
+  height: 14px;
+  color: var(--codex-icon-overlay-muted);
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"] + [data-slot="accordion-item"] {
+  margin-top: -0.5px;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"],
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-content"] {
+  border-width: 0.5px !important;
+  border-color: var(--border-weak-base) !important;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-diff-chevron"] {
+  color: var(--icon-weak-base);
+}
+
+html[data-theme="codex"]
+  .claxedo-workspace-review
+  [data-slot="accordion-trigger"]:hover
+  [data-slot="session-review-diff-chevron"] {
+  color: var(--icon-base);
+}

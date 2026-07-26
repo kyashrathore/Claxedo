@@ -7,7 +7,7 @@ import { collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
 import { useDragSource, workbenchDrag } from "./pointer-drag"
 import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 
 export type PaneCtx = {
   paneId: string

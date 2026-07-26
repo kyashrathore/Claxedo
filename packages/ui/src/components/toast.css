@@ -41,9 +41,9 @@
   transition: all 150ms ease-out;
 
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-weak-base);
-  background: var(--surface-float-base);
-  color: var(--text-invert-base);
+  border: 1px solid var(--codex-border-overlay, var(--border-weak-base));
+  background: var(--codex-surface-overlay, var(--surface-float-base));
+  color: var(--codex-text-overlay-muted, var(--text-invert-base));
   box-shadow: var(--shadow-md);
 
   [data-slot="toast-inner"] {
@@ -92,7 +92,7 @@
     justify-content: center;
 
     [data-component="icon"] {
-      color: var(--text-invert-stronger);
+      color: var(--codex-icon-overlay, var(--text-invert-stronger));
       /* color: var(--icon-invert-base); */
     }
   }
@@ -114,7 +114,7 @@
   }
 
   [data-slot="toast-title"] {
-    color: var(--text-invert-strong);
+    color: var(--codex-text-overlay, var(--text-invert-strong));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -131,7 +131,7 @@
   }
 
   [data-slot="toast-description"] {
-    color: var(--text-invert-base);
+    color: var(--codex-text-overlay-muted, var(--text-invert-base));
     text-wrap-style: pretty;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -165,7 +165,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 
-    color: var(--text-invert-weak);
+    color: var(--codex-text-overlay-muted, var(--text-invert-weak));
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
@@ -177,12 +177,26 @@
     }
 
     &:first-child {
-      color: var(--text-invert-strong);
+      color: var(--codex-text-overlay, var(--text-invert-strong));
     }
   }
 
   [data-slot="toast-close-button"] {
     flex-shrink: 0;
+    color: var(--codex-icon-overlay-muted, var(--icon-base));
+
+    [data-slot="icon-svg"] {
+      color: var(--codex-icon-overlay-muted, var(--icon-base));
+    }
+
+    &:hover:not(:disabled),
+    &:focus-visible:not(:disabled) {
+      background-color: var(--codex-surface-overlay-hover, var(--surface-float-base-hover));
+
+      [data-slot="icon-svg"] {
+        color: var(--codex-icon-overlay, var(--icon-hover));
+      }
+    }
   }
 
   [data-slot="toast-progress-track"] {

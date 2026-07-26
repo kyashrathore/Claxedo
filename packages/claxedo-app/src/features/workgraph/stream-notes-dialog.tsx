@@ -1,7 +1,7 @@
 import type { StreamDto } from "@claxedo/workgraph/contracts"
 import { Dialog as DialogRoot } from "@kobalte/core/dialog"
 import { Dialog as DialogShell } from "@opencode-ai/ui/dialog"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { createResource, Show } from "solid-js"
 import { normalizeError } from "./content-chrome"
 import type { WorkGraphClient } from "./api"

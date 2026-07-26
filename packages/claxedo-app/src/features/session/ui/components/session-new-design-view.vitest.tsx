@@ -56,6 +56,11 @@ afterEach(() => {
 })
 
 describe("NewSessionDesignView project chip footer action", () => {
+  test("labels the project option group", () => {
+    renderView()
+    expect(projectChip()?.groupLabel).toBe("Projects")
+  })
+
   test("omits the footer row when no add-project capability is supplied", () => {
     renderView(undefined)
     expect(projectChip()?.action).toBeUndefined()

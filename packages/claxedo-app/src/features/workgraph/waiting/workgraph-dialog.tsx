@@ -1,6 +1,6 @@
 import { Dialog as DialogRoot } from "@kobalte/core/dialog"
 import { Dialog as DialogShell } from "@opencode-ai/ui/dialog"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { type JSX, Match, type Resource, Show, Switch } from "solid-js"
 
 /**

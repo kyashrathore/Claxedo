@@ -2,13 +2,12 @@ import { createEffect, createMemo, For, mapArray, Match, onCleanup, Show, startT
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { useQuery } from "@tanstack/solid-query"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Button } from "@opencode-ai/ui/button"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { useTheme } from "@opencode-ai/ui/theme/context"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
 import {
   setTitlebarCenterSlot,
   setTitlebarLeftSlot,
@@ -503,6 +502,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                     onClick={layout.sidebar.toggle}
                     aria-label={language.t("command.sidebar.toggle")}
                     aria-expanded={layout.sidebar.opened()}
+                    aria-pressed={layout.sidebar.opened()}
+                    data-icon-interaction="binary"
                   >
                     <Icon size="small" name={layout.sidebar.opened() ? "sidebar-active" : "sidebar"} />
                   </Button>

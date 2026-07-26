@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch, createMemo } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { Process } from "@/features/processes/data/process"

@@ -24,7 +24,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useFile } from "@/app/providers/file"
 import { PromptProvider } from "@/features/session/providers/prompt"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@/lib/path"
@@ -425,7 +425,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     <IconButton
       icon="close-small"
       variant="ghost"
-      class="h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
+      class="h-5 w-5 rounded-full transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
       classList={{
         "opacity-100 pointer-events-auto": visible,
         "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
@@ -433,6 +433,10 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
+        if (id === REVIEW_TAB_ID) {
+          claxedoState.workspacePanel.close()
+          return
+        }
         closeTab(id)
       }}
       aria-label={label}
@@ -497,7 +501,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       case "process":
         return "Close process section"
       case "review":
-        return ""
+        return "Close review"
     }
   }
 
@@ -505,6 +509,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const selected = () => store.activeTabId === tab.id
     return (
       <div
+        data-slot="workspace-tab"
+        data-selected={selected() ? "true" : undefined}
         data-workspace-tab-id={tab.id}
         data-workspace-tab-kind={tab.kind}
         class="group relative my-1 ml-0.5 flex h-7 max-w-[180px] shrink-0 items-center rounded-md border border-transparent text-13-medium transition-[background-color,color] duration-100"
@@ -515,8 +521,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       >
         <button
           type="button"
-          class="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 leading-none"
-          classList={{ "pr-7": tab.kind !== "review" }}
+          class="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 pr-7 leading-none"
           aria-current={selected() ? "true" : undefined}
           onClick={() => setActiveTab(tab.id)}
           onAuxClick={(event) => {
@@ -533,13 +538,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           />
           <span class="truncate">{tabLabel(tab)}</span>
         </button>
-        <Show when={tab.kind !== "review"}>
-          <div class="absolute right-1 flex h-full items-center">
-            <div data-testid="workspace-tab-close" data-workspace-tab-id={tab.id}>
-              {closeButtonFor(tab.id, closeLabel(tab), selected())}
-            </div>
+        <div class="absolute right-1 flex h-full items-center">
+          <div data-testid="workspace-tab-close" data-workspace-tab-id={tab.id}>
+            {closeButtonFor(tab.id, closeLabel(tab), selected())}
           </div>
-        </Show>
+        </div>
       </div>
     )
   }
@@ -624,11 +627,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         >
           <DropdownMenu gutter={4} placement="bottom-start">
             <DropdownMenu.Trigger
-              class="flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+              class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
               aria-label="Add workspace tab"
               title="Add workspace tab"
             >
-              <Icon name="plus-small" size="medium" />
+              <Icon name="plus-small" size="small" />
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content class="z-[200]">

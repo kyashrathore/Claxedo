@@ -10,7 +10,7 @@ import type {
   WorkItemDto,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createMemo, createResource, createSignal, For, type JSX, onMount, Show } from "solid-js"
 import { ActionError, createAction } from "./dialog-action"
 import { ProposalContent } from "./item-dialog-proposal"

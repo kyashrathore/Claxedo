@@ -2,7 +2,7 @@ import { For, Show } from "solid-js"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 
 export function SessionPermissionDock(props: {

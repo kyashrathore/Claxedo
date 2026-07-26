@@ -1,4 +1,4 @@
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { For, Show, createSignal } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
