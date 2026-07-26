@@ -7,7 +7,12 @@ import { OpenCodeIcon as UpstreamIcon, type IconProps as UpstreamIconProps } fro
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
 import { ACTIVE_ICON_LIBRARY } from "@/ui/icons/config"
 import type { AppIconName } from "@/ui/icons/catalog"
-import { CODEX_ICON_TRANSFORMS, codexIconLibrary, type CodexGlyphName } from "@/ui/icons/codex"
+import {
+  CODEX_ICON_TRANSFORMS,
+  codexIconLibrary,
+  type CodexCustomGlyph,
+  type CodexGlyphName,
+} from "@/ui/icons/codex"
 import { openCodeIconLibrary } from "@/ui/icons/opencode"
 
 const claxedoIcons = {
@@ -15,33 +20,18 @@ const claxedoIcons = {
   copy: `<rect x="7" y="6.5" width="8.5" height="8.5" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M12.5 4.5H6.5C5.39543 4.5 4.5 5.39543 4.5 6.5V12.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   send: `<path d="M10 15.5V4.5M5.75 8.75L10 4.5L14.25 8.75" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
   stop: `<rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor"/>`,
-  play: `<path d="M7.08301 5.83268V14.166L14.1663 9.99935L7.08301 5.83268Z" fill="currentColor"/>`,
   // Trunk splitting into two bracketed arrows. Drawn to a ~10-unit optical box
   // (matching `folder-open` / `gauge`) rather than the full 20-unit grid — at the
   // original 13-unit height it read a size larger than its toolbar neighbours.
   // Stroke sits at 1.25: the set default of 1 leaves the small arrowheads too
   // faint, but the previous 1.5 was heavier than everything beside it.
   worktree: `<path d="M5 10H8.5L13.5 5M11 5H13.5V7.5M8.5 10L13.5 15M11 15H13.5V12.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="square" stroke-linejoin="miter"/>`,
-  "file-tree": `<path d="M4.58203 16.6693L6.66536 9.58594H17.082M4.58203 16.6693H16.457L18.5404 9.58594H17.082M4.58203 16.6693H2.08203V3.33594H8.33203L9.9987 5.83594H17.082V9.58594" stroke="currentColor" stroke-linecap="round"/>`,
-  "file-tree-active": `<path d="M6.66536 9.58594L4.58203 16.6693H16.457L18.5404 9.58594H17.082H6.66536Z" fill="currentColor" fill-opacity="16%"/><path d="M4.58203 16.6693L6.66536 9.58594H17.082M4.58203 16.6693H16.457L18.5404 9.58594H17.082M4.58203 16.6693H2.08203V3.33594H8.33203L9.9987 5.83594H17.082V9.58594" stroke="currentColor" stroke-linecap="round"/>`,
-  "new-session": `<path d="M17.0827 17.0807V17.5807H17.5827V17.0807H17.0827ZM2.91602 17.0807H2.41602L2.41602 17.5807H2.91602L2.91602 17.0807ZM2.91602 2.91406V2.41406H2.41602V2.91406H2.91602ZM9.58268 3.41406H10.0827V2.41406L9.58268 2.41406V2.91406V3.41406ZM17.5827 10.4141V9.91406L16.5827 9.91406V10.4141H17.0827H17.5827ZM6.24935 11.2474L5.8958 10.8938L5.74935 11.0403V11.2474H6.24935ZM6.24935 13.7474H5.74935V14.2474H6.24935V13.7474ZM8.74935 13.7474V14.2474H8.95646L9.1029 14.101L8.74935 13.7474ZM15.2077 2.28906L15.5612 1.93551L15.2077 1.58196L14.8541 1.93551L15.2077 2.28906ZM17.7077 4.78906L18.0612 5.14262L18.4148 4.78906L18.0612 4.43551L17.7077 4.78906ZM17.0827 17.0807V16.5807H2.91602V17.0807L2.91602 17.5807H17.0827V17.0807ZM2.91602 17.0807H3.41602L3.41602 2.91406H2.91602H2.41602L2.41602 17.0807H2.91602ZM2.91602 2.91406V3.41406L9.58268 3.41406V2.91406V2.41406L2.91602 2.41406V2.91406ZM17.0827 10.4141H16.5827V17.0807H17.0827H17.5827V10.4141H17.0827ZM6.24935 11.2474H5.74935V13.7474H6.24935H6.74935V11.2474H6.24935ZM6.24935 13.7474V14.2474L8.74935 14.2474V13.7474V13.2474L6.24935 13.2474V13.7474ZM6.24935 11.2474L6.6029 11.6009L15.5612 2.64262L15.2077 2.28906L14.8541 1.93551L5.8958 10.8938L6.24935 11.2474ZM15.2077 2.28906L14.8541 2.64262L17.3541 5.14262L17.7077 4.78906L18.0612 4.43551L15.5612 1.93551L15.2077 2.28906ZM17.7077 4.78906L17.3541 4.43551L8.3958 13.3938L8.74935 13.7474L9.1029 14.101L18.0612 5.14262L17.7077 4.78906Z" fill="currentColor"/>`,
-  "file-text": `<path d="M12.5 2.08325H5.41667V17.9166H14.5833V4.16658M12.5 2.08325L14.5833 4.16658M12.5 2.08325V4.16658H14.5833M7.5 8.33325H12.5M7.5 11.6666H12.5M7.5 14.9999H10" stroke="currentColor" stroke-linecap="square"/>`,
   pin: `<path d="M6.667 10.417H13.333M8.333 10.417V5H11.667V10.417M10 10.417V16.667" stroke="currentColor" stroke-linecap="square"/>`,
   "pin-filled": `<path d="m8.69891 2.27336c.61298-.91267 1.85279-1.04591 2.67379-.40625l.1582.13867.003.00195 2.4433 2.41504.002.00195c.4266.42675.5579.99704.499 1.50586-.0582.50163-.3073 1.00104-.7187 1.31836l-.0069.00586-.0078.00586-2.415 1.72461c-.1659.11864-.2814.29628-.3223.49609l-.5293 2.59084-.0029.0166-.0039.0156c-.1932.7147-.70508 1.2981-1.36526 1.5254-.68313.2349-1.44732.0609-2.04883-.585l-1.69336-1.6679-2.99316 2.9941c-.20505.2047-.53727.2049-.74219 0-.2047-.2049-.20464-.5372 0-.7422l2.98731-2.9883-1.59571-1.57125c-.58829-.57126-.78754-1.34847-.59179-2.04199.19649-.69522.77364-1.25029 1.60644-1.41308l2.48047-.57227c.19499-.04517.367-.16097.48145-.3252z" fill="currentColor"/>`,
   kebab: `<circle cx="10" cy="5" r="2" fill="currentColor"/><circle cx="10" cy="10" r="2" fill="currentColor"/><circle cx="10" cy="15" r="2" fill="currentColor"/>`,
   "more-horizontal": `<circle cx="5" cy="10" r="1.6" fill="currentColor"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/><circle cx="15" cy="10" r="1.6" fill="currentColor"/>`,
   "magnifying-glass": `<path d="M15.75 15.75L12.8023 12.8023M14.444 8.34701C14.444 11.4382 11.9382 13.944 8.84701 13.944C5.75587 13.944 3.25 11.4382 3.25 8.34701C3.25 5.25587 5.75587 2.75 8.84701 2.75C11.9382 2.75 14.444 5.25587 14.444 8.34701Z" stroke="currentColor" stroke-linecap="square"/>`,
   "magnifying-glass-menu": `<path d="M2.08325 10.0002H4.58325M2.08325 5.41683H5.41659M2.08325 14.5835H5.41659M16.4583 13.9585L18.7499 16.2502M17.9166 10.0002C17.9166 12.9917 15.4915 15.4168 12.4999 15.4168C9.50838 15.4168 7.08325 12.9917 7.08325 10.0002C7.08325 7.00862 9.50838 4.5835 12.4999 4.5835C15.4915 4.5835 17.9166 7.00862 17.9166 10.0002Z" stroke="currentColor" stroke-linecap="square"/>`,
-  globe: `<path d="M17.9163 9.9987C17.9163 14.371 14.3719 17.9154 9.99967 17.9154C5.62742 17.9154 2.08301 14.371 2.08301 9.9987C2.08301 5.62644 5.62742 2.08203 9.99967 2.08203C14.3719 2.08203 17.9163 5.62644 17.9163 9.9987Z" stroke="currentColor"/><path d="M2.5 9.99935H17.5" stroke="currentColor" stroke-linecap="square"/><path d="M9.99967 2.08203C12.1071 4.16666 13.3327 7.0026 13.3327 9.9987C13.3327 12.9948 12.1071 15.8307 9.99967 17.9154C7.89225 15.8307 6.66634 12.9948 6.66634 9.9987C6.66634 7.0026 7.89225 4.16666 9.99967 2.08203Z" stroke="currentColor"/>`,
-  cloud: `<path d="M15 15.4167H5.83333C3.30203 15.4167 1.25 13.5646 1.25 11.25C1.25 9.34892 2.84892 7.48794 4.96501 7.08214C5.76101 5.08114 7.71532 3.66667 10 3.66667C12.8586 3.66667 15.2 5.71436 15.4025 8.35467C17.2843 8.5555 18.75 10.1482 18.75 12.0833C18.75 14.1544 17.0711 15.4167 15 15.4167Z" stroke="currentColor" stroke-linecap="square"/>`,
-  laptop: `<path d="M3.33333 13.3333V5C3.33333 4.07953 4.07953 3.33333 5 3.33333H15C15.9205 3.33333 16.6667 4.07953 16.6667 5V13.3333M1.66667 15H18.3333C18.3333 14.0795 17.5871 13.3333 16.6667 13.3333H3.33333C2.41286 13.3333 1.66667 14.0795 1.66667 15Z" stroke="currentColor" stroke-linecap="square"/>`,
-  reload: `<path d="M16.25 6.66667C14.95 4.66667 12.65 3.33333 10 3.33333C6.31667 3.33333 3.33333 6.31667 3.33333 10C3.33333 13.6833 6.31667 16.6667 10 16.6667C13.05 16.6667 15.6 14.6167 16.4333 11.8333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.6667 2.5V6.66667H12.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
-  page: `<path d="M5 2.5H12.5L15.8333 5.83333V17.5H5V2.5Z" stroke="currentColor" stroke-linecap="square"/><path d="M12.5 2.5V5.83333H15.8333" stroke="currentColor" stroke-linecap="square"/><path d="M7.5 9.16667H12.9167M7.5 11.6667H12.9167M7.5 14.1667H10.8333" stroke="currentColor" stroke-linecap="square"/>`,
-  // Document outline with a centred plus — the "add to Documents" action. Body
-  // and folded corner mirror `page`; the interior carries a + instead of text
-  // lines so the glyph reads as "new / add document" rather than "a document".
-  "page-plus": `<path d="M5 2.5H12.5L15.8333 5.83333V17.5H5V2.5Z" stroke="currentColor" stroke-linecap="square"/><path d="M12.5 2.5V5.83333H15.8333" stroke="currentColor" stroke-linecap="square"/><path d="M10.4167 9.58333V13.75M8.33333 11.6667H12.5" stroke="currentColor" stroke-linecap="square"/>`,
-  gauge: `<path d="M3.33333 15C2.5 13.6111 2.08333 11.9444 2.08333 10.2778C2.08333 5.90279 5.625 2.36112 10 2.36112C14.375 2.36112 17.9167 5.90279 17.9167 10.2778C17.9167 11.9444 17.5 13.6111 16.6667 15" stroke="currentColor" stroke-linecap="round"/><path d="M10 10.2778L13.3333 6.94446" stroke="currentColor" stroke-linecap="round"/><circle cx="10" cy="10.2778" r="1.25" fill="currentColor"/>`,
   // Codex authors project disclosure folders on a 16px grid. Scale those
   // source paths into this component's 20px sprite without altering geometry.
   folder: `<g transform="scale(1.25)"><path d="M5.36914 2.1416C5.92368 2.14164 6.3602 2.23705 6.73242 2.38965C7.09745 2.53934 7.38155 2.73818 7.61816 2.9043C8.07599 3.22573 8.42077 3.47464 9.16602 3.47461H11.9473C13.3336 3.47484 14.4453 4.61217 14.4453 6V7.06543C14.4453 7.07196 14.4435 7.07845 14.4434 7.08496V11.3311C14.4432 12.7187 13.3316 13.8562 11.9453 13.8564H4.05371C2.66747 13.8562 1.55583 12.7187 1.55566 11.3311V7.35059C1.55545 7.34451 1.55377 7.33815 1.55371 7.33203C1.55371 7.32563 1.55539 7.31884 1.55566 7.3125V4.66699C1.55566 3.27918 2.66737 2.14185 4.05371 2.1416H5.36914ZM2.60547 7.85645V11.3311C2.60563 12.1519 3.26037 12.8054 4.05371 12.8057H11.9453C12.7387 12.8054 13.3934 12.1519 13.3936 11.3311V7.85645H2.60547ZM4.05371 3.19238C3.26027 3.19264 2.60547 3.84598 2.60547 4.66699V6.80664H13.3955V6C13.3955 5.17898 12.7407 4.52562 11.9473 4.52539H9.16699C8.07975 4.52558 7.50694 4.10863 7.01562 3.76367C6.77766 3.5966 6.57849 3.46159 6.33398 3.36133C6.09656 3.264 5.79646 3.19242 5.36914 3.19238H4.05371Z" fill="currentColor"/></g>`,
@@ -52,7 +42,6 @@ const claxedoIcons = {
   "collapse-all": `<path d="M6 3.5V8M6 8L3.75 5.75M6 8L8.25 5.75M6 16.5V12M6 12L3.75 14.25M6 12L8.25 14.25M10.5 6.5H16M10.5 10H14.5M10.5 13.5H16" stroke="currentColor" stroke-width="1.33" stroke-linecap="round" stroke-linejoin="round"/>`,
   "diff-split": `<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M10 4.75V15.25" stroke="currentColor" stroke-width="1"/><rect x="4.75" y="6" width="3.5" height="8" rx="0.75" fill="var(--text-diff-delete-base)"/><rect x="11.75" y="6" width="3.5" height="8" rx="0.75" fill="var(--text-diff-add-base)"/>`,
   "diff-unified": `<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M3.75 10H16.25" stroke="currentColor" stroke-width="1"/><rect x="5" y="5.75" width="10" height="2.5" rx="0.75" fill="var(--text-diff-delete-base)"/><rect x="5" y="11.75" width="10" height="2.5" rx="0.75" fill="var(--text-diff-add-base)"/>`,
-  archive: `<path d="M3.333 6.25H16.667V16.667H3.333V6.25Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 3.333H17.5V6.25H2.5V3.333Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.333 10H11.667" stroke="currentColor" stroke-linecap="round"/>`,
   // Monochrome harness marks: Claude, Cursor, OpenAI and Pi use the MIT-licensed
   // LobeHub geometry; OpenCode uses its official brand/provider geometry.
   // They are authored on a 0 0 24 24 grid. Rather than scale to fill the sprite
@@ -137,7 +126,11 @@ const customGlyphs = {
   "codex-custom-send": "send",
   "codex-custom-stop": "stop",
   "codex-custom-worktree": "worktree",
-} as const satisfies Partial<Record<CodexGlyphName, keyof typeof claxedoIcons>>
+  // Deliberately Record, not Partial<Record>. Every `codex-custom-*` name in
+  // CodexGlyphName must be drawn here: a missing entry would fall through to
+  // `${codexIconSprite}#codex-custom-x`, which the extracted sprite does not
+  // contain, and render an invisible icon with no error anywhere.
+} as const satisfies Record<CodexCustomGlyph, keyof typeof claxedoIcons>
 
 function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare"])

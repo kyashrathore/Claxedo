@@ -8,7 +8,7 @@ import { APP_ICONS, type AppIconName } from "@/ui/icons/catalog"
 import { defineIconLibrary } from "@/ui/icons/registry"
 
 type CodexSpriteGlyph = `codex-20-${string}`
-type CodexCustomGlyph =
+export type CodexCustomGlyph =
   | "codex-custom-claude"
   | "codex-custom-close-small"
   | "codex-custom-copy"

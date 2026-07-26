@@ -133,6 +133,32 @@ export function PromptPermissionControl(props: {
   )
 }
 
+/**
+ * The three strings a mode row shows.
+ *
+ * Extracted and exported because this is exactly where the regression happened:
+ * `caveat` was quietly dropped from the assembled parts while `modes.ts` kept
+ * producing it and `modes.test.ts` kept asserting it existed, so the suite
+ * stayed green while the warning stopped reaching anyone. As a pure function it
+ * can be tested without standing up a portal-rendered menu.
+ *
+ * - `detail`   — what the mode does, plus why it is unavailable if it is.
+ * - `caveat`   — the condition that can withdraw it. Rendered separately and
+ *                never clamped: on the local-answering path this is the line
+ *                that says the harness enforces nothing.
+ * - `tooltip`  — everything, because `detail` is clamped to two lines and a
+ *                truncated `blockedReason` is unreadable exactly when it matters.
+ */
+export function permissionRowText(row: PermissionModeRow) {
+  const detail = [row.option.description, row.blockedReason].filter(Boolean).join(" — ")
+  const caveat = row.option.caveat
+  return {
+    detail,
+    caveat,
+    tooltip: [detail, caveat].filter(Boolean).join(" — ") || row.option.name,
+  }
+}
+
 function ModeRow(props: {
   row: PermissionModeRow
   current: Accessor<PermissionModeOption | undefined>
@@ -140,46 +166,58 @@ function ModeRow(props: {
 }) {
   const option = () => props.row.option
   const selected = () => props.current()?.id === option().id
-  // The row explains the choice itself. A caveat about when a new selection
-  // takes effect is shared by every option and therefore belongs to the
-  // interaction, not repeated inside every row.
-  const detail = () => {
-    const parts = [option().description, props.row.blockedReason].filter(Boolean)
-    return parts.join(" — ")
-  }
+  const text = () => permissionRowText(props.row)
+  const detail = () => text().detail
+  const caveat = () => text().caveat
+  const tooltip = () => text().tooltip
 
   return (
-    <MenuV2.Item
-      data-permission-mode-row
-      data-mode={option().id}
-      data-what={option().delivery.kind}
-      data-selectable={props.row.selectable ? "true" : "false"}
-      class="w-full"
-      disabled={!props.row.selectable}
-      onSelect={() => props.row.selectable && props.onSelect(option())}
-    >
-      <span class="flex min-w-0 items-start gap-2">
-        <Icon
-          name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
-          size="small"
-          class="mt-0.5 shrink-0"
-          classList={{
-            "text-v2-icon-icon-base": selected(),
-            "text-v2-icon-icon-muted": !selected(),
-          }}
-        />
-        <span class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-[13px] leading-4 text-v2-text-text-base">{option().name}</span>
-          <Show when={detail()}>
-            <span
-              data-slot="permission-mode-description"
-              class="line-clamp-2 whitespace-normal text-[11px] leading-[15px] text-v2-text-text-faint"
-            >
-              {detail()}
-            </span>
-          </Show>
+    <Tooltip placement="right" value={tooltip()}>
+      <MenuV2.Item
+        data-permission-mode-row
+        data-mode={option().id}
+        data-what={option().delivery.kind}
+        data-selectable={props.row.selectable ? "true" : "false"}
+        class="w-full"
+        disabled={!props.row.selectable}
+        onSelect={() => props.row.selectable && props.onSelect(option())}
+      >
+        <span class="flex min-w-0 items-start gap-2">
+          <Icon
+            name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
+            size="small"
+            class="mt-0.5 shrink-0"
+            classList={{
+              "text-v2-icon-icon-base": selected(),
+              "text-v2-icon-icon-muted": !selected(),
+            }}
+          />
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-[13px] leading-4 text-v2-text-text-base">{option().name}</span>
+            <Show when={detail()}>
+              <span
+                data-slot="permission-mode-description"
+                class="line-clamp-2 whitespace-normal text-[11px] leading-[15px] text-v2-text-text-faint"
+              >
+                {detail()}
+              </span>
+            </Show>
+            <Show when={caveat()}>
+              <span
+                data-slot="permission-mode-caveat"
+                class="whitespace-normal text-[11px] leading-[15px]"
+                // The composer is v2 UI, so this is the v2 warning foreground.
+                // Not `--text-danger`: that token is not defined by the theme
+                // layer these menus render under, so it silently resolves to
+                // inherited body text and the caveat stops reading as a warning.
+                style={{ color: "var(--v2-state-fg-warning)" }}
+              >
+                {caveat()}
+              </span>
+            </Show>
+          </span>
         </span>
-      </span>
-    </MenuV2.Item>
+      </MenuV2.Item>
+    </Tooltip>
   )
 }
