@@ -84,7 +84,7 @@ export function createComposerAutoAccept(input: {
     // The `opencode-session-ruleset` check is what skips every other harness:
     // elsewhere these options deliver `claxedo-auto-answer`, which sends nothing
     // and is already handled by the local switch this function rides alongside.
-    const options = claxedoPermissionModes(harness)
+    const options = claxedoPermissionModes({ harness })
     const wanted = enabling ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID
     const delivery = options.find((option) => option.id === wanted)?.delivery
     if (!delivery || delivery.kind !== "opencode-session-ruleset") return

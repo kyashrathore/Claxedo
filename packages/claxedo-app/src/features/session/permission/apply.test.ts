@@ -4,7 +4,7 @@ import { CLAXEDO_ALLOW_SAFE_ID, claxedoPermissionModes, type PermissionModeDeliv
 
 /** The permissive Claxedo option for a harness, which is what these tests deliver. */
 const permissive = (harness: Parameters<typeof claxedoPermissionModes>[0]) =>
-  claxedoPermissionModes(harness).find((option) => option.id === CLAXEDO_ALLOW_SAFE_ID)!
+  claxedoPermissionModes({ harness }).find((option) => option.id === CLAXEDO_ALLOW_SAFE_ID)!
 
 type Call = {
   sessionID: string
