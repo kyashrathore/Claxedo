@@ -27,7 +27,6 @@
     "src/components/app-icons/sprite.svg",
     "src/components/file-icons/sprite.svg",
     "src/components/provider-icons/sprite.svg",
-    "src/assets/icons/codex/*",
     "src/assets/icons/app/*",
     "src/assets/fonts/*",
     "src/assets/audio/*",
@@ -61,7 +60,6 @@
     "typecheck": "tsgo --noEmit",
     "test": "bun test src --only-failures",
     "dev": "vite",
-    "generate:codex-icons": "bun run script/extract-codex-icons.ts",
     "generate:tailwind": "bun run script/tailwind.ts",
     "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts"
   },
