@@ -412,7 +412,7 @@ test.describe("core docks — permission @core", () => {
     await expect(composerTextbox(page)).toBeVisible({ timeout: 20_000 })
   })
 
-  test("Allow always persists auto-accept; a later permission for the same session never surfaces a dock — behavior 4", async ({
+  test("Allow always persists auto-accept for allowlisted permissions; a danger-gated one still surfaces a dock — behavior 4", async ({
     page,
   }) => {
     const { mock, counters } = await establishSession(page)
@@ -436,16 +436,18 @@ test.describe("core docks — permission @core", () => {
     await expect(permissionDock(page)).toHaveCount(0, { timeout: 20_000 })
     await expect(composerTextbox(page)).toBeVisible({ timeout: 20_000 })
 
-    // A second permission for the SAME session is auto-responded by the global
-    // listener in src/context/permission.tsx before session-composer-state's own
-    // memo would ever surface it — proven by the counter reaching 2 with zero dock
-    // mounts in between (not a waitForTimeout-guarded absence).
+    // An AUTO-APPROVABLE permission for the same session is answered by the
+    // global listener in features/session/providers/permission.tsx before
+    // session-composer-state's own memo would ever surface it — proven by the
+    // counter reaching 2 with zero dock mounts in between (not a
+    // waitForTimeout-guarded absence). `read` is in SAFE_READ_PERMISSIONS
+    // (features/session/permission/modes.ts).
     mock.emit({
       type: "permission.asked",
       properties: {
         id: "perm_always_2",
         sessionID: SESSION_ID,
-        permission: "bash",
+        permission: "read",
         patterns: [],
         metadata: {},
         always: [],
@@ -456,6 +458,29 @@ test.describe("core docks — permission @core", () => {
     expect(counters.permissionRespond.bodies[1]).toEqual({ response: "once" })
     await expect(permissionDock(page)).toHaveCount(0)
     await expect(composerTextbox(page)).toBeVisible()
+
+    // ...but auto-accept is an ALLOWLIST, not "approve everything". `bash` is in
+    // DANGER_GATED_PERMISSIONS, so it must still reach the user even with the
+    // switch on. This half is the security-relevant one: before the composer
+    // rebuild the switch answered "once" to EVERY permission type regardless,
+    // so a shell command rode in on a decision the user made about an edit.
+    // Asserting only the auto-answered case would let that regress silently.
+    mock.emit({
+      type: "permission.asked",
+      properties: {
+        id: "perm_always_3",
+        sessionID: SESSION_ID,
+        permission: "bash",
+        patterns: [],
+        metadata: {},
+        always: [],
+      },
+    })
+
+    await expect(permissionDock(page)).toBeVisible({ timeout: 20_000 })
+    await expect(composerTextbox(page)).toHaveCount(0)
+    // Surfaced, not answered: the counter has NOT moved past the `read` above.
+    expect(counters.permissionRespond.count).toBe(2)
   })
 })
 
@@ -651,6 +676,16 @@ test.describe("core docks — question wizard @core", () => {
 
     // The dock auto-focuses its first option on mount; Escape bubbles from that
     // focused element up to the DockPrompt root's own onKeyDown handler.
+    //
+    // Wait for the focus to actually LAND before pressing. `focus()` is deferred
+    // into a requestAnimationFrame (session-question-dock.tsx), while
+    // `toBeVisible()` above resolves a frame or more earlier — so under parallel
+    // load the keypress could arrive while focus was still on BODY, where it
+    // bubbles to nothing and rejects nothing. That is a race, not a product bug,
+    // but it made this test fail intermittently in sharded runs only.
+    await expect(questionDock(page).locator('[data-slot="question-option"]').first()).toBeFocused({
+      timeout: 10_000,
+    })
     await page.keyboard.press("Escape")
     await expect.poll(() => counters.questionReject.count, { timeout: 10_000 }).toBe(2)
     await expect(questionDock(page)).toHaveCount(0, { timeout: 20_000 })

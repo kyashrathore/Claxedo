@@ -201,7 +201,26 @@ export function createSessionHistoryWindow(input: Input) {
       () => [input.sessionID(), input.messagesReady()] as const,
       ([id, ready]) => {
         if (!id || !ready) return
-        setTurnStart(initialTurnStart(input.visibleUserMessages().length))
+        const len = input.visibleUserMessages().length
+        // Only COMMIT once there is a real window to commit.
+        //
+        // `messagesReady` can flip while the timeline still holds the FIRST turn
+        // alone — the rest of the history arrives a tick later. For any
+        // `len <= turnInit`, `initialTurnStart(len)` is 0, so committing here
+        // wrote a zero window AND claimed ownership of the session (`turnID`).
+        // From then on `turnStart`'s `state.turnID !== id` branch stopped
+        // re-deriving and its `state.turnStart <= 0` branch returned 0 forever,
+        // so the remaining turns arrived into a permanently un-windowed
+        // timeline: every fetched turn painted at once, for the whole life of
+        // the session, with only a full reload to recover.
+        //
+        // Leaving it uncommitted costs nothing: the memo keeps deriving
+        // `initialTurnStart` reactively from the live length, which is the same
+        // 0 while the list is short and becomes the real window the moment the
+        // history lands. A stale committed value from a previous, longer list is
+        // still handled by the memo's own `state.turnStart >= len` branch.
+        if (len <= turnInit) return
+        setTurnStart(initialTurnStart(len))
       },
       { defer: true },
     ),

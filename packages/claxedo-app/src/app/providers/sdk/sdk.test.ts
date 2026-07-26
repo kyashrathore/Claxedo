@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test"
+// Imported from `./runtime-request`, not `./sdk`: several unrelated suites stub
+// `@/app/providers/sdk/sdk` with `mock.module`, which replaces the module for
+// the whole `bun test` process, so importing these from there fails depending
+// on file order.
 import {
   cachedSdkRuntimeRequest,
   resetSdkRuntimeRequestCacheForTest,
   sdkRuntimeRequestQueryKey,
-} from "./sdk"
+} from "./runtime-request"
 
 afterEach(() => {
   resetSdkRuntimeRequestCacheForTest()
@@ -73,15 +77,19 @@ describe("sdk runtime request cache", () => {
   })
 
   test("keeps SDK runtime request dedupe out of private maps", async () => {
-    const source = await Bun.file(new URL("./sdk.tsx", import.meta.url)).text()
+    for (const file of ["./sdk.tsx", "./runtime-request.ts"]) {
+      const source = await Bun.file(new URL(file, import.meta.url)).text()
 
-    expect(source).not.toContain("runtimeRequests = new Map")
-    expect(source).not.toContain("const runtimeRequests")
+      expect(source).not.toContain("runtimeRequests = new Map")
+      expect(source).not.toContain("const runtimeRequests")
+    }
   })
 
   test("keeps SDK runtime routing off the gateway facade", async () => {
-    const source = await Bun.file(new URL("./sdk.tsx", import.meta.url)).text()
+    for (const file of ["./sdk.tsx", "./runtime-request.ts"]) {
+      const source = await Bun.file(new URL(file, import.meta.url)).text()
 
-    expect(source).not.toContain("RuntimeGateway.")
+      expect(source).not.toContain("RuntimeGateway.")
+    }
   })
 })

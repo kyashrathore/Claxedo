@@ -67,7 +67,7 @@
     "platform/sync/global-sync/queue.ts",
     "features/session/providers/session-selection.tsx",
     "features/session/providers/permission-auto-response-cache.ts",
-    "app/providers/sdk/sdk.tsx",
+    "app/providers/sdk/runtime-request.ts",
     "app/connection/server.tsx",
     "features/session/ui/composer/session-question-cache.ts",
     "features/session/ui/prompt-preview-handoff.ts",

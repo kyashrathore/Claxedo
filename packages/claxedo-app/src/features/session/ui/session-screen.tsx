@@ -39,6 +39,7 @@ import { PromptInput } from "@/features/session/composer/composer"
 import { same } from "@/lib/same"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
+import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
@@ -972,7 +973,6 @@ export default function SessionPage() {
 
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
-  let historyFillFrame: number | undefined
   let scrollToEnd = () => {}
 
   const updateScrollState = (el: HTMLDivElement) => {
@@ -1080,23 +1080,23 @@ export default function SessionPage() {
     onAfterLoad: () => restoreHistoryAnchor(),
   })
 
-  const scheduleHistoryFill = () => {
-    if (historyFillFrame !== undefined) return
-
-    historyFillFrame = requestAnimationFrame(() => {
-      historyFillFrame = undefined
-
-      if (!sessionID() || !messagesReady()) return
-      if (autoScroll.userScrolled() || historyLoading()) return
+  // See `createHistoryFill` for why the decision is confirmed across two frames.
+  const historyFill = createHistoryFill({
+    eligible: () => {
+      if (!sessionID() || !messagesReady()) return false
+      if (autoScroll.userScrolled() || historyLoading()) return false
 
       const el = scroller
-      if (!el) return
-      if (el.scrollHeight > el.clientHeight + 1) return
-      if (historyWindow.turnStart() <= 0 && !historyMore()) return
+      if (!el) return false
+      if (el.scrollHeight > el.clientHeight + 1) return false
+      if (historyWindow.turnStart() <= 0 && !historyMore()) return false
 
-      void historyWindow.loadAndReveal()
-    })
-  }
+      return true
+    },
+    reveal: () => void historyWindow.loadAndReveal(),
+  })
+
+  const scheduleHistoryFill = () => historyFill.schedule()
 
   createEffect(
     on(
@@ -1312,7 +1312,7 @@ export default function SessionPage() {
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown)
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
-    if (historyFillFrame !== undefined) cancelAnimationFrame(historyFillFrame)
+    historyFill.cancel()
     promptDockResize.dispose()
   })
 

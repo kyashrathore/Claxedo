@@ -1458,16 +1458,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
   // Directory-scoped: what a DRAFT asks for.
-  await page.route("**/permission/modes**", (r) =>
-    api(r) ? json(r, modeState(options.harness ?? "opencode")) : r.continue(),
-  )
+  //
+  // `harness`, NOT `options.harness`: the mutable binding is the whole reason
+  // `harness` is a `let` (see its declaration) — it tracks the in-app switch via
+  // `POST /api/claxedo/agent-config/harness`. Reading the frozen install option
+  // here meant a draft that switched harness kept reporting the ORIGINAL
+  // harness's permission modes forever, so a real per-harness-modes regression
+  // could not fail this mock.
+  await page.route("**/permission/modes**", (r) => (api(r) ? json(r, modeState(harness)) : r.continue()))
   await page.route("**/session/*/permission-mode**", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() === "PUT") {
       const body = JSON.parse(route.request().postData() || "{}") as { modeId?: string }
       if (body.modeId) requests.permissionModeWrites.push({ modeId: body.modeId })
     }
-    return json(route, modeState(options.harness ?? "opencode"))
+    // `harness`, not `options.harness` — same reason as the directory-scoped route above.
+    return json(route, modeState(harness))
   })
 
   await page.route("**/session/*/permissions/*", async (route) => {
@@ -1920,7 +1926,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       json(r, [{ id: "build", name: "build", description: "Build agent" }]),
     )
     await page.route(`${base}/command**`, (r) => json(r, [{ name: "build", description: "Build command" }]))
-    await page.route(`${base}/permission**`, (r) => json(r, []))
+    await page.route(`${base}/permission**`, (r) => {
+      // `/permission/modes` is NOT this handler's, and the trailing `**` would
+      // otherwise take it. Playwright matches routes LAST-REGISTERED-FIRST, and
+      // this cloud-lane glob is registered after `**/permission/modes**` above —
+      // so without this guard it shadows it and serves `[]`, an ARRAY, where the
+      // app expects a `HarnessModeReport` object. The composer then reads `modes`
+      // off an array and the whole cloud lane renders its error boundary.
+      if (!new URL(r.request().url()).pathname.endsWith("/permission")) return r.fallback()
+      return json(r, [])
+    })
     await page.route(`${base}/question**`, (r) => json(r, []))
     await page.route(`${base}/provider`, (r) => json(r, cloudProviderResponse()))
     await page.route(`${base}/provider?**`, (r) => json(r, cloudProviderResponse()))

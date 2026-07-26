@@ -456,6 +456,24 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }])
       if (runtimePath === "/command") return json(route, [])
       if (runtimePath === "/permission") return json(route, [])
+      // Deliberately NOT left to the `json(route, {})` catch-all at the bottom of
+      // this handler, and the difference is fatal rather than cosmetic. The
+      // composer fetches this on every render (composer/permission-mode-wiring.ts),
+      // and `harnessPermissionModes` reads `report.modes` straight off the body
+      // (session/permission/modes.ts). An empty object has no `modes`, the read
+      // used to throw inside a Solid memo, and the error escaped to the app-level
+      // boundary — so the WHOLE page became "Something went wrong" and this spec
+      // saw no composer at all rather than a broken one. The body below is
+      // verbatim what workspace-runtime serves for a harness with no
+      // adapter-reported modes (routes/session-core.ts), which is opencode — the
+      // harness this spec's session config pins.
+      if (runtimePath === "/permission/modes") {
+        return json(route, {
+          modes: [],
+          unsupported: "opencode has no permission modes of its own",
+          appliesFrom: "next-turn",
+        })
+      }
       if (runtimePath === "/question") return json(route, [])
       if (runtimePath === "/provider") {
         return json(route, {
@@ -517,6 +535,18 @@ async function installUserHostedRuntimeMock(
       }
       if (/^\/session\/[^/]+\/capabilities$/.test(runtimePath)) {
         return json(route, { transport: "opencode", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
+      }
+      // The SESSION-scoped half of the same contract. `getPermissionModes`
+      // (platform/runtime/agent/agent-runtime-client.ts) switches from the
+      // directory-scoped `/permission/modes` to this path the moment a session id
+      // exists — so a draft that becomes a session moves onto it mid-test, and
+      // leaving it to the `{}` catch-all reintroduces the identical crash.
+      if (/^\/session\/[^/]+\/permission-mode$/.test(runtimePath)) {
+        return json(route, {
+          modes: [],
+          unsupported: "opencode has no permission modes of its own",
+          appliesFrom: "next-turn",
+        })
       }
       if (/^\/session\/[^/]+\/todo$/.test(runtimePath)) return json(route, [])
       if (/^\/session\/[^/]+\/message$/.test(runtimePath)) return json(route, messages)
@@ -842,6 +872,17 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/vcs") return json(route, {})
       if (url.pathname === "/command") return json(route, [])
       if (url.pathname === "/permission") return json(route, [])
+      // Same fatal gap as the relay lane above: this mock's trailing
+      // `json(route, {}, 200)` would serve `{}` here, the composer would read
+      // `.modes` off it, and the app would render its error boundary instead of
+      // the shell — which is exactly how this test lost `[data-claxedo]`.
+      if (url.pathname === "/permission/modes") {
+        return json(route, {
+          modes: [],
+          unsupported: "opencode has no permission modes of its own",
+          appliesFrom: "next-turn",
+        })
+      }
       if (url.pathname === "/question") return json(route, [])
       if (url.pathname === "/session/status") return json(route, {})
       if (url.pathname === "/session" || url.pathname === "/experimental/session") return json(route, [])

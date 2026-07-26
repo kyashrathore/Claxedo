@@ -6,15 +6,14 @@ import { useQuery } from "@tanstack/solid-query"
 import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { isOpenCodeSdkEvent, useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
-import { createTransport, type RuntimeTransport } from "@/platform/runtime/transport"
+import { cachedSdkRuntimeRequest } from "./runtime-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "@/platform/runtime/agent/dialog-select-directory-routes"
-import { centralTransportForServer, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeSnapshotLike } from "@/platform/runtime/transport"
+import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 
 type SDKEventMap = {
   [key in Event["type"]]: Extract<Event, { type: key }>
@@ -23,64 +22,6 @@ type SDKEventMap = {
 type SdkResponse<T> = {
   data?: T
   response?: Response
-}
-
-type SdkRuntimeRequestInput = {
-  serverUrl?: string
-  directory?: string
-  workspaceId?: string
-  workspace?: WorkspaceRuntimeSnapshotLike
-  request?: typeof fetch
-  relayRequest?: typeof fetch
-  resolveWorkspaceRuntime?: WorkspaceRuntimeRequestOptions["resolveWorkspaceRuntime"]
-}
-
-const sdkRuntimeRequestQueryRoot = ["shell", "sdk-runtime-request"] as const
-
-export function sdkRuntimeRequestQueryKey(input: {
-  owner: string
-  serverUrl?: string
-  directory?: string
-  workspaceId?: string
-}) {
-  return [
-    ...sdkRuntimeRequestQueryRoot,
-    input.owner,
-    input.serverUrl ?? "",
-    input.directory ?? "",
-    input.workspaceId ?? "",
-  ] as const
-}
-
-export function resetSdkRuntimeRequestCacheForTest() {
-  queryClient.removeQueries({ queryKey: sdkRuntimeRequestQueryRoot })
-}
-
-export function cachedSdkRuntimeRequest(input: SdkRuntimeRequestInput & { owner: string }) {
-  const queryKey = sdkRuntimeRequestQueryKey({
-    owner: input.owner,
-    serverUrl: input.serverUrl,
-    directory: input.directory,
-    workspaceId: input.workspaceId,
-  })
-  const cached = queryClient.getQueryData<RuntimeTransport>(queryKey)
-  if (cached) return cached
-  const next = createTransport({
-    placement: {
-      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-      hosting: "workspace",
-      transport: input.workspaceId && centralTransportForServer(input.serverUrl) !== "loopback" ? "workspace-relay" : "loopback",
-    },
-    serverUrl: input.serverUrl,
-    directory: input.directory,
-    request: input.request,
-    relayRequest: input.relayRequest,
-    resolveWorkspaceRuntime: fastSessionSwitchAnyNetworkQuiet() && input.directory && !input.workspaceId
-      ? async () => null
-      : input.resolveWorkspaceRuntime,
-  })
-  queryClient.setQueryData(queryKey, next)
-  return next
 }
 
 async function readRuntimeJson<T>(response: Response): Promise<SdkResponse<T>> {
