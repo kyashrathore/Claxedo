@@ -254,28 +254,52 @@ test.describe("core first prompt (local) @core", () => {
 
     // (b) The directory-less draft route itself, `/s/new`.
     //
-    // With ZERO projects registered this route settles on the SAME workbench-empty
-    // placeholder as (a): route intent cannot resolve the unresolvable id `"new"` to
-    // anything backed by a directory, so the workbench never gains a content and
-    // `renderEmpty` (`src/app/workbench/rail/rail-workbench-canvas.tsx`) stays
-    // mounted. `central-session-content` — `SessionContent`'s "No workspace backing"
-    // surface — is NOT reached in this scenario.
+    // With ZERO projects registered this route settles on `central-session-content` —
+    // `SessionContent`'s "No workspace backing" branch
+    // (`src/features/session/ui/content/session-content.tsx:81-88`, reached when
+    // `fallbackDirectory()` is absent because the only candidate is the `/workspace`
+    // placeholder, which that memo rejects at :62-64). Route intent resolves `"new"`
+    // far enough to own a surface, but nothing backs it with a real directory, so the
+    // pane is a dead end rather than a composer. This is what SPEC BEHAVIORS #5 above
+    // has said all along — "the directory-less draft route (`/s/new`) settles on the
+    // central 'No workspace backing' surface … the placeholder is only transiently
+    // reachable on `/s/new` (it survives just until the session inventory loads)". The
+    // spec block was right and the assertion had drifted away from it; see below for
+    // why the drift stayed green.
     //
-    // This assertion has moved twice; do not "fix" it by guessing. Verify against a
-    // real run before changing it: an earlier revision asserted the placeholder, a
-    // later one asserted `central-session-content` after route intent began resolving
-    // `"new"`, and the current app settles back on the placeholder. What is INVARIANT
-    // across all three, and is the actual contract behavior 5 exists to pin, is the
-    // bottom half: zero compose surface, and zero sessions created. Assert the
-    // settled surface positively first so the negatives below cannot pass vacuously.
+    // This assertion has now moved THREE times; do not "fix" it by guessing — verify
+    // against a real run, as this revision did. The first two moves are recorded
+    // below; the third (this one) has a specific, non-obvious cause worth stating,
+    // because it means the earlier "settles back on the placeholder" observation was
+    // an artifact of a broken mock rather than a change in the app:
+    //
+    //   `installMockRuntime` did not mock `GET /api/control/sessions`, and the app
+    //   addresses it on the CENTRAL origin (`VITE_CLAXEDO_SERVER_URL`,
+    //   http://127.0.0.1:3001) where NOTHING is listening under this harness. So the
+    //   fetch in `fetchLocalControlSessions`
+    //   (`src/features/session/data/sync/inventory-source.ts:449-457`) did not return
+    //   an empty inventory — it REJECTED with a connection error, and that rejection
+    //   aborted the inventory bootstrap before route intent could resolve `"new"`.
+    //   The workbench then never gained a content and `renderEmpty` won. The shared
+    //   mock now serves that endpoint the way the real server does
+    //   (`{ sessions: [] }`, claxedo-server/src/hosted-app.ts:486-503), so the
+    //   bootstrap completes and the app reaches its genuine settled surface for this
+    //   state. Found by `requests.unhandled`, which had never recorded anything until
+    //   it was made real.
+    //
+    // What is INVARIANT across all three revisions, and is the actual contract
+    // behavior 5 exists to pin, is the bottom half: zero compose surface, and zero
+    // sessions created. Assert the settled surface positively first so the negatives
+    // below cannot pass vacuously.
     await page.goto("/s/new")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     await expect(
-      page.getByText("No projects yet. Create one to get started."),
+      page.getByTestId("central-session-content"),
       "directory-less route never settled on a zero-workspace surface",
     ).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole("button", { name: "New Project" })).toBeVisible()
+    await expect(page.getByText("No workspace backing")).toBeVisible()
+    await expect(page.getByRole("button", { name: "New Project" }).first()).toBeVisible()
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
     await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)

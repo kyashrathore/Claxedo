@@ -174,6 +174,43 @@ export type MockRuntimeRequests = {
   console: string[]
   failed: string[]
   badResponses: string[]
+  /**
+   * Every API request (`resourceType` fetch/xhr) that reached the END of this page's
+   * route chain without any handler fulfilling it — i.e. every request that ESCAPED
+   * the mock and went to the real network.
+   *
+   * WHY THIS EXISTS AS A REAL LIST NOW. It was declared and initialised but never
+   * written to by anything, so `core-boot-deep-links-home`'s
+   * `expect(mock.requests.unhandled).toEqual([])` — the suite's only "did anything
+   * escape?" tripwire — passed vacuously from the day it was written.
+   *
+   * An escape has two failure modes and NEITHER is loud, which is why four route
+   * families sat escaped for so long:
+   *   1. SAME-ORIGIN — the VITE DEV SERVER answers the SPA's `index.html` at **HTTP
+   *      200**. `badResponses` (>=400 only) never flags it, the JSON parse throws, and
+   *      every caller that wraps the fetch in `.catch(() => [])` degrades to an empty
+   *      result indistinguishable from a genuinely empty answer.
+   *   2. CENTRAL ORIGIN (`VITE_CLAXEDO_SERVER_URL`, 127.0.0.1:3001) — nothing is
+   *      listening at all, so the fetch REJECTS. Callers without a catch propagate
+   *      that rejection and silently abort whatever bootstrap they were part of. This
+   *      is strictly worse than mode 1 and was the harder one to spot: it made
+   *      `core-first-prompt-local` behavior 5 assert a surface the app only reaches
+   *      when its session inventory fails to load.
+   *
+   * The four, all now mocked below: `POST /session/:id/abort`, the `/find` + `/file`
+   * browser surface, `GET /api/wr/diff/vcs/file`, and `GET /api/control/sessions` —
+   * the last of which this list found itself, on its first honest run.
+   *
+   * FORMAT is `"<METHOD> <origin><pathname>"`. The query string is dropped so the list
+   * is stable across runs (directories, session ids and cache-busters all live there);
+   * the ORIGIN is kept, deliberately, because a request that escapes to a third party
+   * (Clerk, a CDN) is a different finding from one that escapes to the app's own
+   * origin, and a pathname-only record cannot tell a filter which is which.
+   *
+   * NOT recorded: documents, scripts, stylesheets, images and fonts. The SPA's own
+   * asset graph is served by the dev server BY DESIGN and is not an escape — the
+   * `api()` gate (fetch/xhr only) is what draws that line.
+   */
   unhandled: string[]
   createSessionCount: number
   /**
@@ -187,6 +224,17 @@ export type MockRuntimeRequests = {
   harnessSessionCreateCount: number
   promptCount: number
   promptBodies: PromptBody[]
+  /**
+   * `POST /session/:id/abort` — one per request, counted the moment it is RECEIVED
+   * (before `holdAbort`'s gate, so a held-open abort still increments here).
+   *
+   * The mock had no abort route at all, so `core-busy-abort-errors` and
+   * `core-composer-modes` each hand-rolled their own — a standing violation of
+   * e2e/INVARIANTS.md authoring rule 1, and one that made them disagree about the
+   * response (`200 {}` vs `204` empty; the real route answers 200 with an
+   * `AbortResult`). Both spec-local copies are deleted in favour of this.
+   */
+  abortCount: number
   /** Validated `POST /session/:id/permissions/:permId` decisions, in order. */
   permissionResponses: PermissionResponseValue[]
   /**
@@ -287,6 +335,33 @@ export type MockRuntimeOptions = {
   errorMidTurn?: boolean | string
   /** `POST /session/:id/prompt_async` returns 500 instead of dispatching. */
   dispatchFailure?: boolean
+  /**
+   * `POST /session/:id/abort` RECORDS the request (see `requests.abortCount`) but
+   * withholds its response until `handles.releaseAbort()` is called.
+   *
+   * This is what makes "status reconciles optimistically BEFORE the network responds"
+   * (core-busy-abort-errors behavior 3) falsifiable instead of decorative: with an
+   * immediately-200 abort there is no window in which the network has not answered
+   * yet, so an assertion made after the click proves nothing about optimism. With the
+   * response held open, the submit control can only leave "stop" via the client-side
+   * write in `createPromptAbort`
+   * (`src/features/session/composer/ui/submit-abort.ts` — `setPromptSessionStatus
+   * ({status: idle, source: "server"})` runs BEFORE `client.session.abort()` is even
+   * called).
+   *
+   * Release before the test ends so the page tears down cleanly.
+   */
+  holdAbort?: boolean
+  /**
+   * What the mock workspace's file-browser surface (`/find/file`, `/find`,
+   * `/file`, `/file/content`) reports. Defaults to `DEFAULT_WORKSPACE_FILES` — a
+   * tiny but REAL tree (a README with an `# H1` heading, a source file carrying a
+   * `TODO`), because the alternative default (empty everything) leaves the
+   * onboarding starter-prompt signals permanently blank and a regression in them
+   * indistinguishable from the steady state. Pass `[]` for a genuinely empty
+   * workspace.
+   */
+  workspaceFiles?: { path: string; content: string }[]
   /** `PATCH /session/:id/config` returns a non-2xx (500 — a simulated adapter/transport blowup). */
   configPatchFailure?: boolean
   /**
@@ -351,6 +426,12 @@ export type MockRuntimeHandles = {
    * consumed via `globalSDK.event`.
    */
   emitFlat: (payload: MockEvent) => void
+  /**
+   * Releases a `holdAbort: true` abort response. A no-op when `holdAbort` is unset
+   * (the abort answered immediately) and idempotent, so a `finally` can call it
+   * unconditionally.
+   */
+  releaseAbort: () => void
   session: { id: string; dir: string; projectId: string }
 }
 
@@ -530,6 +611,25 @@ function sseBody(batch: LoggedEvent[]) {
 
 export const BIG_PICKLE: HarnessModelOption = { id: "big-pickle-1", name: "Big Pickle" }
 
+/**
+ * The mock workspace's files, as served by `/find/file`, `/find`, `/file` and
+ * `/file/content` (see `MockRuntimeOptions.workspaceFiles`).
+ *
+ * Deliberately NOT empty. `starter-prompts-query.ts` fires all three of those routes
+ * on every session mount and wraps each in `.catch(() => [])`, so an empty (or
+ * escaping-to-the-dev-server) answer degrades silently to `{files: [], todos: []}` —
+ * which `createStarterPrompts` still turns into three chips, just the generic
+ * fallback third one. That is why the escape was invisible for so long. This fixture
+ * carries exactly the two signals the feature branches on: an `# H1` README heading
+ * (highest-priority branch, `repoPrompt`) and a `TODO` line (second branch).
+ */
+export const DEFAULT_WORKSPACE_FILES: { path: string; content: string }[] = [
+  { path: "README.md", content: "# Mock Runtime\n\nA fixture workspace served by e2e/helpers/mock-runtime.ts.\n" },
+  { path: "package.json", content: "{\n  \"name\": \"mock-runtime-fixture\"\n}\n" },
+  { path: "src/index.ts", content: "// TODO: replace the fixture entrypoint\nexport const ready = true\n" },
+  { path: "src/util.ts", content: "export function noop() {}\n" },
+]
+
 const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
   opencode: [BIG_PICKLE],
   "claude-acp": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
@@ -618,6 +718,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     harnessSessionCreateCount: 0,
     promptCount: 0,
     promptBodies: [],
+    abortCount: 0,
     permissionResponses: [],
     permissionModeWrites: [],
     questionReplies: [],
@@ -637,6 +738,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     cloudHarnessOptionsCount: 0,
     cloudHarnessOptionsHarnesses: [],
   }
+
+  // `holdAbort`'s gate. `releaseAbort` is handed back on the handles and is safe to
+  // call when the gate was never armed, or twice.
+  let releaseAbort = () => {}
+  const abortGate = options.holdAbort
+    ? new Promise<void>((resolve) => {
+        releaseAbort = resolve
+      })
+    : undefined
 
   const fanout = new FanoutBus()
   const busGlobal = fanout.channel() // /global/event + /event
@@ -1211,7 +1321,39 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   // ------------------------------------------------------------------------
   // Route registration
+  //
+  // THE TERMINAL CATCH-ALL MUST STAY FIRST. Playwright resolves route handlers
+  // LAST-REGISTERED-FIRST, and `route.fallback()` defers to the next-earlier
+  // matching handler — so a catch-all registered BEFORE every other route in this
+  // file is the chain's final link, reached only when nothing above it fulfilled
+  // the request. That is precisely the definition of "escaped the mock", which is
+  // what `requests.unhandled` is for (see its doc comment on
+  // `MockRuntimeRequests`). Registering it anywhere else silently inverts the
+  // meaning: a catch-all registered LAST would intercept everything first and
+  // record every single request as unhandled.
+  //
+  // Corollary for spec authors: routes a spec registers BEFORE calling
+  // `installMockRuntime` sit earlier in the chain than this recorder and will be
+  // recorded as unhandled even though they do handle the request. Register
+  // spec-local routes AFTER `installMockRuntime` — which is also the only order
+  // that lets them take precedence over the shared mock, so it was already the
+  // documented convention.
+  //
+  // The shape (record, then `route.fallback()`) follows the 598/599-sentinel
+  // catch-alls that `core-cloud-offline-roles.spec.ts` and
+  // `core-cloud-provisioning.spec.ts` already run locally; this is the shared
+  // version of the same idea, minus the sentinel status (the point here is to let
+  // the request through and REPORT it, not to fail it — a hard failure would
+  // change app behavior and mask the very degradation being measured).
   // ------------------------------------------------------------------------
+
+  await page.route("**/*", async (route) => {
+    if (api(route)) {
+      const url = new URL(route.request().url())
+      requests.unhandled.push(`${route.request().method()} ${url.origin}${url.pathname}`)
+    }
+    await route.fallback()
+  })
 
   await page.route("**/health", (r) => (api(r) ? json(r, { healthy: true }) : r.continue()))
 
@@ -1315,6 +1457,30 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         totalKnown: 0,
       }),
     })
+  })
+
+  // GET /api/control/sessions — the FLAT session inventory on the control plane
+  // (`controlSessionListUrl`, src/platform/runtime/agent/workspace-control-routes.ts:76-85),
+  // read by `fetchLocalControlSessions`
+  // (src/features/session/data/sync/inventory-source.ts:449-457). Distinct route from
+  // `/api/control/session-list` above (the rail sidebar's grouped view), and it was
+  // escaping the mock entirely — found by `requests.unhandled` the first time that list
+  // was actually populated.
+  //
+  // It degraded silently rather than loudly, which is why nothing caught it: the escape
+  // is answered by the Vite dev server with `index.html` at **200**, so `res.ok` passes,
+  // and the very next line is `await res.json().catch(() => ({ sessions: [] }))` — the
+  // HTML parse failure is swallowed into an empty inventory indistinguishable from a
+  // workspace that genuinely has no sessions.
+  //
+  // CONTRACT (claxedo-server/src/hosted-app.ts:486-503): `{ sessions: [...] }`. The
+  // EMPTY body is not a stub here — it is the route's own answer on this exact request:
+  // `fetchLocalControlSessions` sends no `workspaceId`, and the handler's first line is
+  // `if (!workspaceId || !services.authority?.listSessions) return c.json({ sessions: [] })`.
+  await page.route("**/api/control/sessions**", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/control/sessions") return r.fallback()
+    return json(r, { sessions: [] })
   })
 
   await page.route("**/path**", (r) => {
@@ -1512,19 +1678,178 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       : r.continue(),
   )
 
+  // `/vcs/file` is checked BEFORE `/vcs` — `endsWith("/vcs")` is false for
+  // `/api/wr/diff/vcs/file`, but the ordering is written explicitly anyway because
+  // getting it backwards is silent: the app would receive `[]` where it expects an
+  // object. That single-file endpoint used to fall through this handler entirely
+  // (it matched none of the three suffixes, so `body === undefined` and the request
+  // escaped to the dev server's `index.html`), and the relay-origin copy further
+  // below actively answered `[]` for it — its `else` branch is unconditional.
+  //
+  // CONTRACT (workspace-runtime/src/routes/diff.ts:142-168 → `filePatchDiff`,
+  // workspace-files/diff.ts:505-527): 200 with `Partial<FileDiff> & { file: string }`.
+  // A file with no diff to show is `{ file, patch: "" }` — the function's own final
+  // return — NOT an empty array and NOT an absent body. `file` echoes the `file`
+  // query param, which the route requires (400 `file_required` without it).
+  function diffBody(url: URL): unknown {
+    const pathname = url.pathname
+    if (pathname.endsWith("/refs")) return { branches: [], tags: [], recent: [] }
+    if (pathname.endsWith("/targets")) return {}
+    if (pathname.endsWith("/vcs/file")) return { file: url.searchParams.get("file") ?? "", patch: "" }
+    if (pathname.endsWith("/vcs")) return []
+    return undefined
+  }
+  /** The cloud/relay lanes have no fallthrough of their own — an unknown diff path there
+   * previously became `[]`, the WRONG shape for three of the four endpoints. Empty
+   * `/vcs`-style is still the least-surprising default, but it is now the default only
+   * for paths the suffix table does not name. */
+  const relayDiffBody = (url: URL) => diffBody(url) ?? []
   await page.route("**/api/wr/diff/**", (r) => {
     if (!api(r)) return r.continue()
-    const pathname = new URL(r.request().url()).pathname
-    const body = pathname.endsWith("/refs")
-      ? { branches: [], tags: [], recent: [] }
-      : pathname.endsWith("/targets")
-        ? {}
-        : pathname.endsWith("/vcs")
-          ? []
-          : undefined
+    const body = diffBody(new URL(r.request().url()))
     if (body === undefined) return r.fallback()
     return json(r, body)
   })
+
+  // ------------------------------------------------------------------------
+  // File browser / search surface on the PRIMARY origin.
+  //
+  // These were mocked only on the cloud lane (`${base}/file**`, `${base}/find**`,
+  // registered inside `if (cloud)`), so on the primary origin they escaped to the
+  // dev server. `starter-prompts-query.ts` fires `find.files` -> `GET /find/file`,
+  // `file.read` -> `GET /file/content` and `find.text` -> `GET /find` on EVERY
+  // session mount, and wraps each one in `.catch(() => [])` — so the escape
+  // presented as "the workspace happens to be empty" rather than as a failure.
+  //
+  // CONTRACTS, all read from the routes the app actually talks to
+  // (claxedo-server/src/routes/opencode-compat.ts:67-89, which delegate to
+  // opencode-compat-file-browser.ts; workspace-runtime/src/routes/file.ts:55-108 is
+  // the same surface behind the relay and agrees on every shape):
+  //   GET /find/file    -> string[] of workspace-RELATIVE paths (globSearch)
+  //   GET /find         -> GrepMatch[] : { path:{text}, lines:{text}, line_number,
+  //                        absolute_offset, submatches:[{match:{text},start,end}] }
+  //   GET /file         -> { name, path, absolute, type:"file"|"directory", ignored }[]
+  //   GET /file/content -> { type:"text", content } (or a base64 `binary` variant)
+  //   GET /file/status  -> [] here; the fixture has no VCS state
+  //   GET /file/all     -> { paths: string[] }
+  //   GET /find/symbol  -> [] — the real handler is itself a stub (opencode-compat.ts:75)
+  // ------------------------------------------------------------------------
+  const workspaceFiles = options.workspaceFiles ?? DEFAULT_WORKSPACE_FILES
+  const workspaceFilePaths = workspaceFiles.map((file) => file.path)
+  /** Mirrors `globSearch`/`searchWorkspaceFiles`: substring match, case-insensitive, capped. */
+  const findFiles = (url: URL) => {
+    const query = (url.searchParams.get("query") ?? "").trim().toLowerCase()
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? "50") || 50, 200)
+    return workspaceFilePaths.filter((path) => !query || path.toLowerCase().includes(query)).slice(0, limit)
+  }
+  /** Mirrors `grepSearch`: real regex over the fixture's contents, 1-based line numbers, capped at 10. */
+  const findText = (url: URL) => {
+    const pattern = url.searchParams.get("pattern") ?? ""
+    if (!pattern.trim()) return []
+    let expression: RegExp
+    try {
+      expression = new RegExp(pattern, "g")
+    } catch {
+      return []
+    }
+    const out: {
+      path: { text: string }
+      lines: { text: string }
+      line_number: number
+      absolute_offset: number
+      submatches: { match: { text: string }; start: number; end: number }[]
+    }[] = []
+    for (const file of workspaceFiles) {
+      let offset = 0
+      let lineNumber = 0
+      for (const line of file.content.split("\n")) {
+        lineNumber += 1
+        const submatches = Array.from(line.matchAll(expression)).map((hit) => ({
+          match: { text: hit[0] },
+          start: hit.index,
+          end: hit.index + hit[0].length,
+        }))
+        if (submatches.length > 0) {
+          out.push({
+            path: { text: file.path },
+            lines: { text: line },
+            line_number: lineNumber,
+            absolute_offset: offset,
+            submatches,
+          })
+          if (out.length >= 10) return out
+        }
+        offset += line.length + 1
+      }
+    }
+    return out
+  }
+  /** Mirrors `directoryEntriesBody`: one level of the fixture tree, directories first. */
+  const listDirectory = (url: URL) => {
+    const requested = (url.searchParams.get("path") ?? "").replace(/^\/+|\/+$/g, "")
+    const prefix = requested ? `${requested}/` : ""
+    const names = new Map<string, "file" | "directory">()
+    for (const path of workspaceFilePaths) {
+      if (!path.startsWith(prefix)) continue
+      const rest = path.slice(prefix.length)
+      if (!rest) continue
+      const slash = rest.indexOf("/")
+      names.set(slash === -1 ? rest : rest.slice(0, slash), slash === -1 ? "file" : "directory")
+    }
+    return [...names]
+      .map(([name, type]) => ({
+        name,
+        path: `${prefix}${name}`,
+        absolute: `${DIR}/${prefix}${name}`,
+        type,
+        ignored: name.startsWith(".") || name === "node_modules",
+      }))
+      .sort((left, right) =>
+        left.type !== right.type ? (left.type === "directory" ? -1 : 1) : left.name.localeCompare(right.name),
+      )
+  }
+  const fileBrowserHandler = (r: Route) => {
+    if (!api(r)) return r.continue()
+    const url = new URL(r.request().url())
+    // The relay/loopback lane addresses the SAME runtime routes under a
+    // `/workspaces/:workspaceId` prefix (see the DUAL-ORIGIN note in the cloud
+    // block below), so strip it and dispatch on the runtime path. This lets the
+    // cloud lane reuse this handler instead of its old `${base}/file** -> []`
+    // stub, which answered an ARRAY for `/file/content` — where the client expects
+    // `{type, content}`.
+    switch (url.pathname.replace(/^\/workspaces\/[^/]+/, "")) {
+      case "/find/file":
+        return json(r, findFiles(url))
+      case "/find/symbol":
+        return json(r, [])
+      case "/find":
+        return json(r, findText(url))
+      case "/file":
+        return json(r, listDirectory(url))
+      case "/file/content": {
+        const requested = (url.searchParams.get("path") ?? "").replace(/^\/+/, "")
+        const match = workspaceFiles.find((file) => file.path === requested)
+        // CONTRACT: an unreadable path is NOT an error here — `fileContentBody`'s
+        // catch returns `{type:"text", content:""}` (opencode-compat-file-browser.ts:75-80).
+        return json(r, { type: "text", content: (match?.content ?? "").trim() })
+      }
+      case "/file/status":
+        return json(r, [])
+      case "/file/all":
+        return json(r, { paths: workspaceFilePaths })
+      default:
+        return r.fallback()
+    }
+  }
+  // Both a bare and a `?**` glob per path family: Playwright anchors the end of a
+  // glob, so `**/find` alone never matches the app's real `GET /find?pattern=…`
+  // (the same gap already documented for `/provider` and `/config` above).
+  await page.route("**/find", fileBrowserHandler)
+  await page.route("**/find?**", fileBrowserHandler)
+  await page.route("**/find/**", fileBrowserHandler)
+  await page.route("**/file", fileBrowserHandler)
+  await page.route("**/file?**", fileBrowserHandler)
+  await page.route("**/file/**", fileBrowserHandler)
 
   await page.route("**/api/claxedo/agent-config/harness/options**", (r) => {
     if (!api(r)) return r.continue()
@@ -1772,6 +2097,32 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     void driveTurn({ userID, assistantID, text, agent, providerID, modelID, turn: requests.promptCount })
   })
 
+  // POST /session/:id/abort — the route the mock never had.
+  //
+  // CONTRACT (workspace-runtime/src/routes/session-core.ts:769-782): the handler
+  // returns `c.json(result)` — HTTP 200 with the adapter's `AbortResult`
+  // (`agent-sdk-runtime/src/adapter-contract.ts:20-22`), i.e.
+  // `{ ok: true, status: "cancelled" | "already_idle" }` on success. The two
+  // spec-local copies this replaces answered `200 {}` (core-busy-abort-errors) and
+  // `204` empty (core-composer-modes) — neither is a shape the real server emits,
+  // and their disagreement went unnoticed because nothing reads the body: the app
+  // awaits and discards it (`submit-abort.ts:49`).
+  //
+  // "cancelled", not "already_idle": every spec that exercises this has a genuinely
+  // in-flight turn. `already_idle` is the adapter's answer when the lifecycle had no
+  // live turn to cancel (`sdk-runtime-adapter.ts:458`); a mock that returned it
+  // unconditionally would misdescribe every scenario in the suite.
+  await page.route("**/session/*/abort**", async (route) => {
+    if (!api(route)) return route.continue()
+    if (!new URL(route.request().url()).pathname.match(/\/session\/[^/]+\/abort$/)) return route.fallback()
+    if (route.request().method() !== "POST") return route.fallback()
+    // Counted on RECEIPT, before the gate: a held-open abort has still reached the
+    // network, and proving exactly that is what `holdAbort` exists for.
+    requests.abortCount += 1
+    if (abortGate) await abortGate
+    return json(route, { ok: true, status: "cancelled" })
+  })
+
   await page.route("**/session/*/shell**", async (route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
@@ -1976,15 +2327,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         ],
       })
     })
-    await page.route(`${base}/api/wr/diff/**`, (r) => {
-      const pathname = new URL(r.request().url()).pathname
-      const body = pathname.endsWith("/refs")
-        ? { branches: [], tags: [], recent: [] }
-        : pathname.endsWith("/targets")
-          ? {}
-          : []
-      return json(r, body)
-    })
+    // Same suffix table as the primary-origin handler above, `/vcs/file` included.
+    // The `else` branch here used to be an unconditional `[]`, so this lane
+    // answered an ARRAY for the single-file patch endpoint where the app expects
+    // `{ file, patch }`.
+    await page.route(`${base}/api/wr/diff/**`, (r) => json(r, relayDiffBody(new URL(r.request().url()))))
 
     const relayEventHandler = async (route: Route) => {
       const batch = await busRelay.drain(sseIdleTimeoutMs, lastEventIdOf(route))
@@ -2085,8 +2432,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // above (those have an extra `/`-delimited segment) — same convention as the
     // local lane's own `"**/session/*"` catch-all.
     await page.route(`${base}/session/*`, (r) => (api(r) ? json(r, cloudSessionRow()) : r.continue()))
-    await page.route(`${base}/file**`, (r) => json(r, []))
-    await page.route(`${base}/find**`, (r) => json(r, []))
+    // Same shared handler as the primary origin — it strips the `/workspaces/:id`
+    // prefix itself. These used to answer `[]` for EVERY path under `/file` and
+    // `/find`, which is the right shape for `/find/file` and `/file` but the wrong
+    // one for `/file/content` (`{type, content}`) and `/file/all` (`{paths}`).
+    await page.route(`${base}/file**`, fileBrowserHandler)
+    await page.route(`${base}/find**`, fileBrowserHandler)
 
     // Bare (un-prefixed) relay routes kept for existing callers that mount `cloud`
     // without exercising the full session lane above (e.g. specs asserting only on
@@ -2109,15 +2460,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         ],
       })
     })
-    await page.route(`${relayOrigin}/api/wr/diff/**`, (r) => {
-      const pathname = new URL(r.request().url()).pathname
-      const body = pathname.endsWith("/refs")
-        ? { branches: [], tags: [], recent: [] }
-        : pathname.endsWith("/targets")
-          ? {}
-          : []
-      return json(r, body)
-    })
+    await page.route(`${relayOrigin}/api/wr/diff/**`, (r) => json(r, relayDiffBody(new URL(r.request().url()))))
     await page.route(`${relayOrigin}/api/wr/events`, relayEventHandler)
     await page.route(`${relayOrigin}/api/wr/runtime-events`, relayEventHandler)
   }
@@ -2127,6 +2470,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     emit,
     emitDurable,
     emitFlat,
+    releaseAbort: () => releaseAbort(),
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
   }
 }

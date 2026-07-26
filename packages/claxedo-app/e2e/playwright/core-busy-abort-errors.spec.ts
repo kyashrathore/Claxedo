@@ -265,36 +265,13 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
   return input
 }
 
-/** Still not covered by the shared mock: mock-runtime.ts has no `POST /session/:id/abort`
- * route at all (its only `abort` occurrences are the `abort: true` capability flags at
- * :1517 and :1805), so this is a spec-local addition of a genuinely missing route rather
- * than a parallel re-implementation of one the helper already owns.
- *
- * `hold: true` records the request but never fulfills it until `release()` is called.
- * That is what makes behavior 3's headline claim FALSIFIABLE instead of decorative: with
- * an immediately-200 route there is no window in which "the network has not responded
- * yet", so an assertion made after the click proves nothing about optimism. With the
- * response held open, the submit control can only return to ready via the client-side
- * optimistic write in `createPromptAbort`
- * (`src/features/session/composer/ui/submit-abort.ts` — `setPromptSessionStatus({status:
- * idle, source: "server"})` runs BEFORE `client.session.abort()` is even called). */
-async function registerAbortRoute(page: Page, options: { hold?: boolean } = {}) {
-  let releaseGate = () => {}
-  const gate = options.hold
-    ? new Promise<void>((resolve) => {
-        releaseGate = resolve
-      })
-    : undefined
-  const state = { count: 0, release: () => releaseGate() }
-  await page.route("**/session/*/abort**", async (route) => {
-    const type = route.request().resourceType()
-    if (type !== "fetch" && type !== "xhr") return route.continue()
-    state.count += 1
-    if (gate) await gate
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" }).catch(() => {})
-  })
-  return state
-}
+/** `POST /session/:id/abort` is now owned by the shared mock — `mock.requests.abortCount`
+ * counts it and `installMockRuntime({ holdAbort: true })` + `mock.releaseAbort()` provide
+ * the held-open response behavior 3 needs. The spec-local `registerAbortRoute` that used
+ * to live here was a standing violation of e2e/INVARIANTS.md authoring rule 1, and it
+ * answered `200 {}` where the real route answers 200 with an `AbortResult`
+ * (`{ ok, status }`, workspace-runtime session-core.ts:769-782); `core-composer-modes`
+ * had a third, `204`-answering copy. All three are gone. */
 
 /** Starves the bulk `/session/status` endpoint for the scenarios that need an optimistic
  * busy status to outlive the first-fold hydrate.
@@ -478,11 +455,15 @@ test.describe("core busy / abort / errors @core", () => {
   test("Stop click aborts the turn and status reconciles optimistically before the network responds — behavior 3", async ({
     page,
   }) => {
-    // `hold: true` — the abort response is withheld until `release()` below, so the
-    // "BEFORE the network responds" half of this behavior is actually under test rather
-    // than assumed (see registerAbortRoute's doc comment).
-    const abortState = await registerAbortRoute(page, { hold: true })
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
+    // `holdAbort` — the abort response is withheld until `mock.releaseAbort()` below, so
+    // the "BEFORE the network responds" half of this behavior is actually under test
+    // rather than assumed (see MockRuntimeOptions.holdAbort's doc comment).
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      holdAbort: true,
+    })
     // Registered AFTER installMockRuntime: Playwright resolves the most-recently-added
     // matching route first, so this must come after the shared mock's own
     // prompt_async handler to actually take precedence over it.
@@ -512,7 +493,7 @@ test.describe("core busy / abort / errors @core", () => {
     // held open by the route's gate — and only THEN assert the submit control is back to
     // ready. Inside that window the only thing that could have moved the control is the
     // client-optimistic `session.status: idle` write, never the round trip.
-    await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+    await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     await expect(
       submitIcon(page),
       "submit control did not return to ready while the abort response was still held open",
@@ -521,11 +502,10 @@ test.describe("core busy / abort / errors @core", () => {
 
     // Let the held response resolve so the page tears down cleanly and the abort's own
     // follow-up reconciliation is not left permanently pending.
-    abortState.release()
+    mock.releaseAbort()
   })
 
   test("an aborted assistant message renders an Interrupted divider at its position — behavior 5", async ({ page }) => {
-    const abortState = await registerAbortRoute(page)
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
     // Registered AFTER installMockRuntime — see the note in the previous test.
     const promptState = await silencePromptAsync(page)
@@ -542,7 +522,7 @@ test.describe("core busy / abort / errors @core", () => {
     await waitForDispatchReceived(promptState)
 
     await submitIcon(page).click()
-    await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+    await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
 
     const userID = promptState.lastMessageID
     expect(userID, "mock never recorded the user messageID").toBeTruthy()
@@ -598,7 +578,6 @@ test.describe("core busy / abort / errors @core", () => {
   })
 
   test("Enter on a blank composer while busy is an intentional no-op — behavior 4", async ({ page }) => {
-    const abortState = await registerAbortRoute(page)
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -638,7 +617,7 @@ test.describe("core busy / abort / errors @core", () => {
     // request log (never waitForTimeout as the sole guard of this negative).
     await page.waitForTimeout(400)
     expect(mock.requests.promptCount, "Enter-on-blank must not submit a second prompt").toBe(1)
-    expect(abortState.count, "Enter-on-blank must not call session.abort").toBe(0)
+    expect(mock.requests.abortCount, "Enter-on-blank must not call session.abort").toBe(0)
     await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
 
     // The turn was never disturbed: it completes normally afterward (oracle), driven by
@@ -791,8 +770,7 @@ test.describe("core busy / abort / errors @core", () => {
       //    `subscribePromptSessionStatusMeta` (dispatcher-owned query-cache
       //    subscription).
       test.setTimeout(300_000)
-      const abortState = await registerAbortRoute(page)
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
+      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
       // Registered AFTER installMockRuntime — see the note in behavior 3's test:
       // Playwright resolves the most-recently-added matching route first.
       await silencePromptAsync(page)
@@ -836,7 +814,7 @@ test.describe("core busy / abort / errors @core", () => {
       await page.locator('[data-action="session-status-cancel"]').click()
       await expect(stage, "escalation banner did not clear after Cancel").toHaveCount(0, { timeout: 15_000 })
       await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
-      await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+      await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     },
   )
 
@@ -858,8 +836,7 @@ test.describe("core busy / abort / errors @core", () => {
       }, STATUS_TIMER_SCALE)
 
       test.setTimeout(120_000)
-      const abortState = await registerAbortRoute(page)
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
+      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
       const promptState = await silencePromptAsync(page)
       await neutralizeStatusPoll(page)
 
@@ -941,7 +918,7 @@ test.describe("core busy / abort / errors @core", () => {
       await page.locator('[data-action="session-status-cancel"]').click()
       await expect(stage, "escalation banner did not clear after Cancel").toHaveCount(0, { timeout: 15_000 })
       await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
-      await expect.poll(() => abortState.count, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
+      await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     },
   )
 })
