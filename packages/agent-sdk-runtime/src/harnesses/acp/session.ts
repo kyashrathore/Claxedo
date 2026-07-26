@@ -163,8 +163,30 @@ const LEVEL_IDS: Record<AutoLevel, readonly string[]> = {
    * reads and edits, ASK before anything risky". A classifier mode stays fully
    * selectable — it just is not what gets chosen for someone by default.
    */
-  auto: ["acceptedits", "autoedit", "autoaccept", "editauto"],
-  full: ["fullaccess", "bypasspermissions", "yolo", "dangerfullaccess", "bypass"],
+  auto: [
+    "acceptedits",
+    "autoedit",
+    "autoaccept",
+    "editauto",
+    // codex-acp's middle rung. Confirmed against the live binary, which reports
+    // exactly `read-only`, `agent`, `agent-full-access`: `agent` is workspace-write
+    // — edits inside the project run, network and anything outside it still ask —
+    // which is this rung's definition. Untagged, codex-acp had NO auto rung, so
+    // Claxedo's Auto fell through to answering prompts locally on a harness that
+    // enforces perfectly well.
+    "agent",
+    "workspacewrite",
+  ],
+  full: [
+    "fullaccess",
+    "bypasspermissions",
+    "yolo",
+    "dangerfullaccess",
+    "bypass",
+    // Also from the live codex-acp list. `agentfullaccess` does not match the
+    // bare `fullaccess` entry above, so it was landing untagged.
+    "agentfullaccess",
+  ],
 }
 
 const normalizeId = (id: string) => id.toLowerCase().replace(/[-_\s]/g, "")

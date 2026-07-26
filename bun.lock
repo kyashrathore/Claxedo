@@ -169,6 +169,7 @@
       },
       "devDependencies": {
         "@axe-core/playwright": "4.12.1",
+        "@claxedo/workspace-runtime": "workspace:*",
         "@clerk/testing": "2.2.7",
         "@happy-dom/global-registrator": "20.0.11",
         "@modelcontextprotocol/sdk": "1.25.2",

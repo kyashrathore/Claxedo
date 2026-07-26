@@ -162,3 +162,62 @@ describe("currentModeId survives merges", () => {
     expect(merge(first, { configOptions: [] }).currentModeId).toBe("a")
   })
 })
+
+/**
+ * Level inference, pinned against what the LIVE binaries actually advertise.
+ *
+ * These id lists are not guesses. They are what `claude-agent-acp` and
+ * `codex-acp` reported when spawned by `script/permission-probe.ts`, which
+ * creates a real session and reads the agent's own mode list.
+ */
+describe("rung inference matches the live agents", () => {
+  const modesFor = (ids: string[]) =>
+    permissionModes(
+      state({
+        cfg: [
+          {
+            id: "mode",
+            type: "select",
+            name: "Mode",
+            category: "mode",
+            currentValue: ids[0],
+            options: ids.map((id) => ({ value: id, name: id })),
+          },
+        ] as never,
+      }),
+    ).modes
+
+  test("codex-acp's three modes each land on a rung", () => {
+    // Live output: read-only, agent, agent-full-access. Before this, `agent` and
+    // `agent-full-access` were both untagged, so codex-acp had NO auto rung and
+    // Claxedo's Auto fell through to answering prompts locally on a harness that
+    // enforces perfectly well.
+    const modes = modesFor(["read-only", "agent", "agent-full-access"])
+    expect(modes.map((m) => `${m.id}:${m.level ?? "none"}`)).toEqual([
+      "read-only:ask",
+      "agent:auto",
+      "agent-full-access:full",
+    ])
+  })
+
+  test("claude-acp keeps its classifier mode off the auto rung", () => {
+    // Live output includes both a bare `auto` (the classifier, which can approve
+    // COMMANDS) and `acceptEdits`. The rung means "edits yes, risk asks", so it
+    // is acceptEdits that carries it — deliberately, see LEVEL_IDS.
+    const modes = modesFor(["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"])
+    const byId = Object.fromEntries(modes.map((m) => [m.id, m.level]))
+    expect(byId["acceptEdits"]).toBe("auto")
+    expect(byId["auto"]).toBeUndefined()
+    expect(byId["default"]).toBe("ask")
+    expect(byId["bypassPermissions"]).toBe("full")
+  })
+
+  test("exactly one auto rung exists per agent, or Auto cannot resolve", () => {
+    for (const ids of [
+      ["read-only", "agent", "agent-full-access"],
+      ["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"],
+    ]) {
+      expect(modesFor(ids).filter((m) => m.level === "auto")).toHaveLength(1)
+    }
+  })
+})
