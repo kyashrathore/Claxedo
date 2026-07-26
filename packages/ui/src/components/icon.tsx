@@ -1,4 +1,8 @@
 import { onMount, splitProps, type ComponentProps } from "solid-js"
+// ⚠️ Licence risk — see the note in ./codex-icons.tsx. `Icon` below renders
+// artwork extracted from the proprietary ChatGPT desktop app. Known, accepted
+// for now. `OpenCodeIcon` is the original upstream set and carries no such risk,
+// so it is the fallback if this ever has to be pulled.
 import { codexIconSprite } from "./codex-icons"
 import { UI_CODEX_ICON_ALIASES, UI_CODEX_ICON_TRANSFORMS } from "./codex-icon-map"
 

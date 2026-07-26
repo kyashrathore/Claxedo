@@ -1,4 +1,9 @@
 // @ts-nocheck
+// ⚠️ Licence risk — see the note in ./codex-icons.tsx. This story browses
+// artwork extracted from the proprietary ChatGPT desktop app. Known and
+// accepted for now. Note that `manifest.json`, imported below, is the record of
+// where each glyph came from — keep it with the assets rather than tidying it
+// away, since it is the audit trail if this is ever questioned.
 import { createMemo, createSignal, For } from "solid-js"
 import sprite from "../assets/icons/codex/sprite.svg"
 import manifest from "../assets/icons/codex/manifest.json"

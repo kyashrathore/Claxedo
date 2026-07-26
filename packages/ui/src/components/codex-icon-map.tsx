@@ -1,3 +1,8 @@
+/**
+ * ⚠️ Licence risk — see the note in `./codex-icons.tsx`. These ids address
+ * artwork extracted byte-identically from the proprietary ChatGPT desktop app,
+ * not from the Apache-2.0 `openai/codex` repository. Known, accepted for now.
+ */
 export const UI_CODEX_ICON_ALIASES = {
   "align-right": "codex-20-058",
   "arrow-down-to-line": "codex-20-012",
