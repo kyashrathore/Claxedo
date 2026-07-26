@@ -56,7 +56,7 @@
  *   control reachable in the DOM today and every test below drives it. When the picker is
  *   wired, the swap is confined to `approveSwitch`/`setApprove`: open
  *   `[data-action="prompt-permission-mode"]` (its `data-mode` carries the selected mode id)
- *   and click the row `[data-mode="claxedo-auto"]`. Every REQUEST-BODY assertion below is
+ *   and click the row `[data-mode="claxedo-allow-safe"]`. Every REQUEST-BODY assertion below is
  *   unaffected — the delivery is the same `PATCH /session/:sessionID`.
  *   Two things the picker adds that this spec does NOT yet cover, because they have no DOM
  *   surface until it is wired: (a) selecting a `[data-selectable="false"]` row must issue
@@ -253,8 +253,11 @@ async function approveSwitch(page: Page): Promise<Locator> {
  * negative below, since "no request arrived" is worthless if the click never landed.
  */
 async function setApprove(page: Page, control: Locator, next: boolean) {
-  const from = next ? "claxedo-manual" : "claxedo-auto"
-  const to = next ? "claxedo-auto" : "claxedo-manual"
+  // Claxedo's option ids, renamed from claxedo-auto/claxedo-manual when the picker
+  // moved to naming options for what they DO. The rename is the whole reason these
+  // assertions drifted: nothing in the unit suite reads a `data-mode` attribute.
+  const from = next ? "claxedo-ask-always" : "claxedo-allow-safe"
+  const to = next ? "claxedo-allow-safe" : "claxedo-ask-always"
   // Pre-condition, same purpose as before: it pins which direction the handler will
   // compute, so a test expecting a grant cannot accidentally assert on a withdrawal.
   await expect(control).toHaveAttribute("data-mode", from, { timeout: 20_000 })
@@ -444,11 +447,28 @@ test.describe("core permission ruleset delivery @core", () => {
       await expect(page.getByRole("button", { name: harnessCase.label }).last()).toBeVisible({ timeout: 20_000 })
       expect(mock.requests.sessionUpdateBodies).toHaveLength(0)
 
+      // The Claxedo options are ABSENT here, and that is the current mechanism by
+      // which no ruleset can be written — stronger than the old claim.
+      //
+      // This test used to flip Claxedo's Auto/Manual on these harnesses and assert
+      // silence. That premise died when the picker switched to harness-native modes:
+      // a harness reporting its own modes contributes them INSTEAD of Claxedo's, so
+      // there is nothing to toggle. The old version failed with
+      // `Expected "claxedo-manual" / Received "auto"` — it was reading the harness's
+      // own mode where it expected a Claxedo one.
       const control = await approveSwitch(page)
-      await setApprove(page, control, true)
-      // ...and back off again: the withdrawal side must be silent here too, since
-      // `claxedoAutoRevoke` returns undefined for every non-opencode harness.
-      await setApprove(page, control, false)
+      await control.click()
+      await expect(page.locator('[role="menuitem"][data-mode]').first()).toBeVisible({ timeout: 20_000 })
+      const offered = await page
+        .locator('[role="menuitem"][data-mode]')
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-mode") ?? ""))
+      expect(
+        offered.filter((id) => id.startsWith("claxedo-")),
+        `${harnessCase.harness} reports its own modes, so Claxedo's must not be offered alongside them — `
+          + "two controls over one behaviour with no way to tell which wins",
+      ).toEqual([])
+      expect(offered.length, "the harness must contribute at least one mode of its own").toBeGreaterThan(0)
+      await page.keyboard.press("Escape")
 
       // POSITIVE CONTROL (authoring rule #3): a request that DID reach the mock after
       // both toggles, proving the app was live and the recorder was watching — rather
@@ -461,9 +481,8 @@ test.describe("core permission ruleset delivery @core", () => {
 
       expect(
         mock.requests.sessionUpdateBodies,
-        `${harnessCase.harness} has no session ruleset mechanism (PERMISSION_MECHANISMS["${harnessCase.harness}"].kind `
-          + `is "${harnessCase.harness === "claude-acp" ? "acp-session-mode" : "claude-sdk-permission-mode"}"), so the `
-          + `switch must write nothing. A write here means the composer resolved the harness as "opencode": `
+        `${harnessCase.harness} has no session ruleset mechanism, so nothing in this flow may write one. `
+          + `A write here means the composer resolved the harness as "opencode": `
           + `createComposerAutoAccept reads it from currentHarnessType (src/features/session/composer/`
           + `harness-mode-helpers.ts:31), which for a session-mode composer returns sessionHarness(ref).id — and that `
           + `defaults to "opencode" whenever the composer's SessionRef carries no harness, which is the case for a `

@@ -573,8 +573,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // whether the harness has modes of its own.
     selection: () => permissionModeWiring.selection(autoAccept.active()),
     onSelectionChange: (next) => permissionModeWiring.onSelectionChange(next, autoAccept),
+    // HARNESS deliveries only: `autoAccept.toggle` below already writes Claxedo's
+    // own options, so delivering them here too issues two PATCHes per selection.
     deliver: async ({ option, sessionID }) =>
-      applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() }),
+      option.origin === "harness"
+        ? applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() })
+        : { kind: "answered-locally" },
     // Drops the optimistic value as well as toasting — see `reportError`.
     onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
     sessionId: resolvedSessionId,
