@@ -61,7 +61,23 @@ export type GlyphStyle = {
 }
 
 export const GLYPH_STYLES = {
-  /** Soft, humanist. Round caps and joins, generous geometric corners. */
+  /**
+   * Calibrated against the extracted Codex artwork rather than guessed.
+   *
+   * Two measurements drive it. Effective stroke weight: an expanded stroke runs
+   * out along one side of the centreline and back along the other, so opposite
+   * parallel edges sit exactly one stroke width apart — 88 of 145 such pairs
+   * across the set measure 1.33, matching the `stroke-width="1.33"` declared by
+   * the icons that were left as centre-line strokes.
+   *
+   * Corner treatment: at a 90° turn a plain round linejoin yields an outer arc
+   * of radius w/2. The chevron's apex measures 0.666 against a predicted 0.665,
+   * so Codex applies NO geometric corner radius to line junctions — the
+   * softness is entirely linejoin. Hence corner: 0 here. Turning the knob up
+   * makes glyphs rounder than Codex ever was, which is the point of having it.
+   */
+  codex: { strokeWidth: 1.33, cap: "round", join: "round", corner: 0, rectRadius: 1 },
+  /** Softer than Codex: geometric corners on top of round joins. */
   round: { strokeWidth: 1.5, cap: "round", join: "round", corner: 1.6, rectRadius: 1 },
   /** Technical, precise. Square caps, mitered joins, hard corners. */
   sharp: { strokeWidth: 1.25, cap: "square", join: "miter", corner: 0, rectRadius: 0.35 },

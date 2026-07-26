@@ -58,12 +58,14 @@ function CodexGlyph(props: { name: string; size: number }) {
 }
 
 function Workbench() {
-  const [preset, setPreset] = createSignal("round")
-  const [strokeWidth, setStrokeWidth] = createSignal(GLYPH_STYLES.round.strokeWidth)
-  const [corner, setCorner] = createSignal(GLYPH_STYLES.round.corner)
-  const [rectRadius, setRectRadius] = createSignal(GLYPH_STYLES.round.rectRadius)
-  const [cap, setCap] = createSignal(GLYPH_STYLES.round.cap)
-  const [join, setJoin] = createSignal(GLYPH_STYLES.round.join)
+  // Open on the measured Codex calibration, so the two columns start matched
+  // and the knob's effect is visible as a departure from that baseline.
+  const [preset, setPreset] = createSignal("codex")
+  const [strokeWidth, setStrokeWidth] = createSignal(GLYPH_STYLES.codex.strokeWidth)
+  const [corner, setCorner] = createSignal(GLYPH_STYLES.codex.corner)
+  const [rectRadius, setRectRadius] = createSignal(GLYPH_STYLES.codex.rectRadius)
+  const [cap, setCap] = createSignal(GLYPH_STYLES.codex.cap)
+  const [join, setJoin] = createSignal(GLYPH_STYLES.codex.join)
   const [size, setSize] = createSignal(24)
   const [compare, setCompare] = createSignal(true)
   const [filter, setFilter] = createSignal("")
