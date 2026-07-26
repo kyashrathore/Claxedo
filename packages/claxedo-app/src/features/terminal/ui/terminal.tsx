@@ -6,7 +6,7 @@ import { useSDK } from "@/features/terminal/app-ports"
 import { monoFontFamily, useSettings } from "@/platform/settings/provider"
 import { LocalPTY } from "@/features/terminal/providers/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { resolveThemeVariant, useTheme, withAlpha, type HexColor } from "@opencode-ai/ui/theme"
+import { useTheme } from "@opencode-ai/ui/theme"
 import { useLanguage } from "@/platform/i18n/provider"
 import { showToast } from "@opencode-ai/ui/toast"
 import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "@/features/terminal/core/terminal-recovery"
@@ -36,6 +36,9 @@ import { classifyTerminalClose } from "./close"
 import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
 import { scheduleFontSettleRefit } from "../core/font-settle"
 
+import { resolveTerminalColors, type TerminalColors } from "./terminal-colors"
+import { createPtySnapshot } from "./terminal-pty-snapshot"
+import { MAX_BATCH_BYTES, MAX_BATCH_ITEMS, MAX_DROPPED_CHUNKS, MAX_PENDING_BYTES, MAX_STREAM_BYTES, OPEN_RESIZE_SETTLE_MS } from "./terminal-limits"
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
   autoFocus?: boolean
@@ -50,27 +53,7 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onFileLinkOpen?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
 }
 
-type TerminalColors = {
-  background: string
-  foreground: string
-  cursor: string
-  selectionBackground: string
-}
 
-const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
-  light: {
-    background: "#fcfcfc",
-    foreground: "#211e1e",
-    cursor: "#211e1e",
-    selectionBackground: withAlpha("#211e1e", 0.2),
-  },
-  dark: {
-    background: "#191515",
-    foreground: "#d4d4d4",
-    cursor: "#d4d4d4",
-    selectionBackground: withAlpha("#d4d4d4", 0.25),
-  },
-}
 
 // Tuned for vtebench full profile (ramp stage 6: 1 MiB samples, max-secs=10,
 // max-samples=200) so heavy TUI output can complete without early throttling.
@@ -79,12 +62,6 @@ const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
 // scrolling_bottom_region 17.95ms, scrolling_bottom_small_region 18.05ms,
 // scrolling_fullscreen 23.53ms, scrolling_top_region 18.22ms,
 // scrolling_top_small_region 18.04ms, sync_medium_cells 11.75ms, unicode 9.18ms.
-const MAX_PENDING_BYTES = 128 * 1024 * 1024
-const MAX_STREAM_BYTES = 128 * 1024 * 1024
-const MAX_BATCH_BYTES = 4 * 1024 * 1024
-const MAX_BATCH_ITEMS = 8192
-const MAX_DROPPED_CHUNKS = 1_000_000
-const OPEN_RESIZE_SETTLE_MS = 220
 
 export const Terminal = (props: TerminalProps) => {
   const sdk = useSDK()
@@ -141,23 +118,9 @@ export const Terminal = (props: TerminalProps) => {
 
   let container!: HTMLDivElement
   const [local, others] = splitProps(props, ["pty", "autoFocus", "class", "classList", "onConnect", "onConnectError"])
-  const safePty = () => {
-    try {
-      return local.pty
-    } catch {
-      return
-    }
-  }
-  let ptySnapshot = (() => {
-    const pty = safePty()
-    if (!pty) return
-    return { ...pty }
-  })()
-  createEffect(() => {
-    const pty = safePty()
-    if (!pty) return
-    ptySnapshot = { ...pty }
-  })
+  // A detached pane can throw on `local.pty` access, so every read goes through
+  // the guard and the snapshot it maintains — see `createPtySnapshot`.
+  const { safePty, snapshot: ptySnapshotOf } = createPtySnapshot(() => local)
 
   let backend: TerminalBackend | undefined
   // Feeds the mobile accessory row into the terminal user-input path (assigned
@@ -187,26 +150,11 @@ export const Terminal = (props: TerminalProps) => {
   }
 
   // Theme handling
-  const getTerminalColors = (): TerminalColors => {
-    const mode = theme.mode()
-    const fallback = DEFAULT_TERMINAL_COLORS[mode]
-    const currentTheme = theme.themes()[theme.themeId()]
-    if (!currentTheme) return fallback
-    const variant = mode === "dark" ? currentTheme.dark : currentTheme.light
-    if (!variant?.seeds && !variant?.palette) return fallback
-    const resolved = resolveThemeVariant(variant, mode === "dark")
-    const text = resolved["text-stronger"] ?? fallback.foreground
-    const background = resolved["background-stronger"] ?? fallback.background
-    const alpha = mode === "dark" ? 0.25 : 0.2
-    const base = text.startsWith("#") ? (text as HexColor) : (fallback.foreground as HexColor)
-    const selectionBackground = withAlpha(base, alpha)
-    return {
-      background,
-      foreground: text,
-      cursor: text,
-      selectionBackground,
-    }
-  }
+  const getTerminalColors = () =>
+    resolveTerminalColors({
+      mode: theme.mode(),
+      theme: theme.themes()[theme.themeId()],
+    })
 
   const terminalColors = createMemo(getTerminalColors)
 
@@ -1170,7 +1118,7 @@ export const Terminal = (props: TerminalProps) => {
     const pty = (() => {
       const live = safePty()
       if (live) return live
-      return ptySnapshot
+      return ptySnapshotOf()
     })()
     if (backend && props.onCleanup && pty) {
       const buffer = (() => {
