@@ -1,6 +1,10 @@
 import type { Message, Part, Session, Todo } from "@opencode-ai/sdk/v2/client"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
+import type {
+  AgentRuntimeDirectory,
+  AgentRuntimePermissionModeState,
+} from "@/platform/runtime/agent/agent-runtime-client"
 
 export type SessionTurnOutcome = (
   | { status: "completed"; completedAt: number; reason?: string }
@@ -41,4 +45,22 @@ export type SessionBackend = {
     before?: string
   }) => Promise<SessionMessagesPage>
   listTodos: (input: { directory: string; sessionID: string; sessionRef?: SessionRef }) => Promise<{ data?: Todo[] }>
+  /**
+   * The harness's own permission modes for this session.
+   *
+   * Session-scoped rather than harness-scoped because the answer genuinely
+   * differs per session: an ACP agent advertises its modes on `session/new`, and
+   * `currentModeId` is whatever THAT conversation is running under.
+   */
+  getPermissionModes: (input: {
+    directory: AgentRuntimeDirectory
+    sessionID: string
+    sessionRef?: SessionRef
+  }) => Promise<{ data?: AgentRuntimePermissionModeState }>
+  setPermissionMode: (input: {
+    directory: AgentRuntimeDirectory
+    sessionID: string
+    modeId: string
+    sessionRef?: SessionRef
+  }) => Promise<{ data?: AgentRuntimePermissionModeState }>
 }

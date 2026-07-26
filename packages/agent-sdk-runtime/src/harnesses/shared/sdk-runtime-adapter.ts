@@ -35,6 +35,7 @@ import type {
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
   AgentHarnessAdapterProcessOptions,
+  AgentPermissionModeState,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
@@ -108,6 +109,14 @@ export type SdkRuntimeDriver = {
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]>
   peekConfigOptions(currentModel: string): AgentConfigOptionRow[]
+  /**
+   * Optional because a driver without them is a driver whose harness has no
+   * permission surface — the adapter then omits the methods entirely, so the
+   * route answers "unsupported" instead of an empty list that reads like the
+   * harness merely had nothing to say.
+   */
+  permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
+  setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
 }
 export type SdkRuntimeDriverFactory = (host: SdkRuntimeDriverHost) => SdkRuntimeDriver
 
@@ -457,6 +466,17 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async getTodos(sessionId: string, _directory: string): Promise<Array<{ content: string; status: string; priority: string }>> {
     return this.store.getTodos(sessionId)
+  }
+
+  async listPermissionModes(sessionId: string, directory: string): Promise<AgentPermissionModeState> {
+    return this.driver.permissionModes?.(sessionId, directory) ?? { modes: [], appliesFrom: "next-turn" }
+  }
+
+  async setPermissionMode(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState> {
+    if (!this.driver.setPermissionMode) {
+      throw new Error(`${this.driver.type} does not support permission modes`)
+    }
+    return this.driver.setPermissionMode(sessionId, modeId, directory)
   }
 
   async listPermissions(directory: string): Promise<AgentPermissionRow[]> {

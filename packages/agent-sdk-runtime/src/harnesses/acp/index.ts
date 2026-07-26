@@ -64,9 +64,10 @@ import type {
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
   AgentHarnessAdapterProcessOptions,
+  AgentPermissionModeState,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
-import { extractAgents } from "./session"
+import { ACP_DRAFT_MODES, extractAgents } from "./session"
 import { acpPermissionRequest, permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
 import { firstTurnErrorData } from "../../first-turn-error"
@@ -1313,6 +1314,38 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       if (list.length > 0) return list
     }
     throw new Error("ACP harness did not return live agent options")
+  }
+
+  /**
+   * Permission modes for a Claxedo session.
+   *
+   * Two things must both be true before an agent can answer: it has to have been
+   * booted (so there is a process) and a `session/new` must have happened (so
+   * there is an agent session id whose state holds the advertised modes). Before
+   * that this reports NO modes and NO `unsupported` — the caller renders that as
+   * "not reported yet", which is the truth, rather than as "this agent has none".
+   */
+  async listPermissionModes(sessionId: string, directory: string): Promise<AgentPermissionModeState> {
+    directory = requireWorkspaceDirectory(directory)
+    const agentSessionId = this.store.getAgentSessionId(sessionId)
+    const proc = this.entryForSession(sessionId)?.proc
+    // No agent session yet: offer the rungs so a draft still has a real choice.
+    // They resolve to this agent's own mode ids on the first turn.
+    if (!agentSessionId || !proc?.alive) return { modes: [...ACP_DRAFT_MODES], appliesFrom: "next-turn" }
+    return proc.permissionModes(agentSessionId)
+  }
+
+  async setPermissionMode(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState> {
+    directory = requireWorkspaceDirectory(directory)
+    const agentSessionId = this.store.getAgentSessionId(sessionId)
+    const proc = this.entryForSession(sessionId)?.proc
+    // Deliberately a THROW rather than a silent no-op: a permission write that
+    // quietly does nothing is the exact failure this whole channel exists to
+    // prevent, and the caller surfaces it.
+    if (!agentSessionId || !proc?.alive) {
+      throw new Error("ACP session has no live agent session to set a permission mode on")
+    }
+    return proc.setPermissionMode(agentSessionId, modeId)
   }
 
   async getTodos(sessionId: string, _directory: string): Promise<Array<{ content: string; status: string; priority: string }>> {

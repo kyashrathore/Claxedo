@@ -1,32 +1,28 @@
 import type { HarnessId } from "@/platform/identity/session-ref"
-import {
-  HARNESS_LABELS,
-  PERMISSION_MECHANISMS,
-  type ClaudeSdkPermissionMode,
-  type CodexApprovalPolicy,
-  type CodexSandboxMode,
-} from "@/features/session/permission/mechanisms"
+import { HARNESS_LABELS, PERMISSION_MECHANISMS } from "@/features/session/permission/mechanisms"
 
 /**
- * Permission modes: TWO Claxedo-owned modes, plus whatever the selected harness
- * itself offers.
+ * Permission modes, named by whoever enforces them.
  *
- * This replaced an earlier design that invented five abstract modes
- * (manual/auto/full/plan/harness) and mapped each onto every harness. That
- * mapping was lossy in ways no amount of care fixes: `cursor-sdk` has no
- * permission surface at all, `pi` cannot restrict a tool ahead of time, Codex has
- * no plan mode, and ACP mode ids are an open `string` by spec so a "mapping" was
- * really a guess resolved at runtime. Offering five modes everywhere meant
- * claiming capabilities that did not exist.
+ * The harness's OWN modes whenever it reports some — its ids, its names, its
+ * descriptions, fetched per session from the runtime, which reads them off the
+ * installed SDK. Claxedo's own two options appear only where the harness has
+ * nothing, and even those are named for what they do.
  *
- * So: Claxedo ships modes of its own only where it implements them itself and can
- * therefore honour them on every harness — Auto, and Manual as the way back from
- * it. Manual exists because this picker replaced a binary switch whose OFF state
- * was a real capability; without it the picker would be strictly less capable than
- * the toggle it replaced. Everything else comes from the harness, in the harness's
- * OWN words, and is empty (with a reason) when the harness has nothing to offer.
- * Nothing is invented.
+ * There is deliberately no "Auto" here. Two earlier designs failed in the same
+ * direction and this is the correction to both. The first invented five abstract
+ * modes and mapped them onto every harness, naming capabilities that did not
+ * exist. The second kept one Claxedo-owned "Auto" alongside the harness's modes
+ * — better, but "Auto" still meant materially different things depending on the
+ * harness (a persisted engine ruleset on one, Claxedo answering prompts
+ * in-process on another) while wearing one word, and it sat next to the
+ * harness's own modes with no way to tell which won.
+ *
+ * The rule that replaces both: a name the user reads must come from whoever
+ * enforces the behaviour. Names we write can drift from what the harness does;
+ * names the harness reports cannot.
  */
+
 
 /**
  * Tool tiers Claxedo's own Auto mode uses. Shared with permission-auto-respond.
@@ -62,36 +58,24 @@ export const DANGER_GATED_PERMISSIONS = [
   "doom_loop",
 ] as const
 
+
 /**
- * An ACP-advertised mode. Structurally the protocol's `SessionMode`, redeclared
- * so the app layer does not depend on the ACP SDK.
+ * What the user picked.
  *
- * NAMING — the protocol calls these "session modes" and that channel is generic:
- * this repo also matches AGENT names against the same list (`acp/session.ts`).
- * Only the ones surfaced in this picker are permission modes.
+ * `kind` records WHO owns the id, and it is not decoration: the same id string
+ * can exist in both groups, and resolving a claxedo id against the harness's
+ * list (or the reverse) would silently return the wrong option. Both carry a
+ * plain `modeId` because neither set is closed — the harness's ids come off the
+ * wire, and Claxedo's are matched by id for symmetry rather than special-cased.
+ *
+ * There is no module-level default constant. The default depends on what the
+ * harness reported for THIS session, so it is a function — see
+ * `defaultPermissionSelection`. A constant here was previously unreachable in
+ * the running app while appearing to define its behaviour.
  */
-export type AdvertisedPermissionMode = {
-  id: string
-  name: string
-  description?: string
-}
-
-/** What the user picked. */
 export type PermissionSelection =
-  | { kind: "claxedo-auto" }
-  /**
-   * Ask before everything. A distinct variant rather than a `claxedo` kind carrying
-   * an id, because Claxedo's own modes are a CLOSED set of two — Auto and its
-   * inverse — so an exhaustive union is checkable where a string id would not be.
-   * Harness modes keep the id form precisely because theirs is open.
-   */
-  | { kind: "claxedo-manual" }
+  | { kind: "claxedo"; modeId: string }
   | { kind: "harness"; modeId: string }
-
-export const CLAXEDO_AUTO_ID = "claxedo-auto"
-
-/** Auto is the default; Manual is its inverse. */
-export const DEFAULT_PERMISSION_SELECTION: PermissionSelection = { kind: "claxedo-auto" }
 
 /** The concrete call Claxedo makes for a given option. */
 export type PermissionModeDelivery =
@@ -130,13 +114,31 @@ export type PermissionModeDelivery =
        */
       appliesFrom: "next-turn"
     }
-  | { kind: "acp-set-session-mode"; modeId: string }
+  /**
+   * ONE delivery for every harness that has a real mode surface — ACP, Claude,
+   * Codex and Cursor alike.
+   *
+   * This replaced four sibling variants, one per harness, each carrying that
+   * harness's own parameters (`permissionMode`, `approvalPolicy` + `sandbox`,
+   * `sandboxOptions` + `autoReview`, `modeId`). Those existed while the app was
+   * deciding what to send. It no longer does: the runtime owns each harness's
+   * translation now, and the app's whole job is to pass back an id it was given.
+   *
+   * Keeping the per-harness shapes would mean the app re-deriving, from a
+   * `HarnessId`, facts the runtime already knows — which is precisely how the
+   * mechanism table came to assert things that were not true of the installed
+   * SDKs.
+   */
   | {
-      kind: "claude-sdk-permission-mode"
-      permissionMode: ClaudeSdkPermissionMode
-      allowDangerouslySkipPermissions?: true
+      kind: "harness-permission-mode"
+      modeId: string
+      /**
+       * Straight from the harness, never assumed. `next-session` is real and
+       * only Cursor reports it: its options are read by `Agent.create`, so a
+       * change cannot reach the session on screen at all.
+       */
+      appliesFrom: "next-turn" | "next-session"
     }
-  | { kind: "codex-approval-policy"; approvalPolicy: CodexApprovalPolicy; sandbox: CodexSandboxMode }
 
 export type PermissionModeOption = {
   id: string
@@ -209,255 +211,107 @@ function opencodeAutoRuleset(): readonly { permission: string; pattern: string; 
 }
 
 /**
- * How Auto is delivered on a given harness.
+ * Withdraw everything the permissive opencode ruleset granted.
  *
- * Auto has ONE meaning — approve reads and in-project edits, ask before anything
- * risky — but it is NOT delivered the same way everywhere, because delegating to a
- * harness that natively implements that intent is strictly better than Claxedo
- * answering prompts after the fact:
- *
- *   - a native mode is ENFORCED by the harness, so the risky action is never even
- *     attempted, and it survives Claxedo disconnecting;
- *   - Claude's own `auto` runs a model classifier, which judges a command far
- *     more precisely than Claxedo's fixed allowlist can.
- *
- * Claxedo answers locally only where the harness offers nothing. ACP harnesses are
- * deliberately in that group: their mode ids are open strings, and picking one by
- * guessing at its id is exactly the mistake this design removed. The user can
- * still select any advertised ACP mode explicitly.
- *
- * There is no silent fallback. If a delivery fails at runtime (e.g. the model does
- * not support Claude's auto mode), that surfaces as an error rather than quietly
- * dropping to local answering — otherwise the user would believe a classifier is
- * gating their commands when only an allowlist is.
- */
-function autoDelivery(harness: HarnessId): { delivery: PermissionModeDelivery; caveat?: string } {
-  const mechanism = PERMISSION_MECHANISMS[harness]
-  switch (mechanism.kind) {
-    case "opencode-session-ruleset":
-      return {
-        delivery: {
-          kind: "opencode-session-ruleset",
-          ruleset: opencodeAutoRuleset(),
-          appliesFrom: "next-turn",
-        },
-        caveat: "Applies from your next message; the turn already running keeps its current rules",
-      }
-
-    case "claude-sdk-permission-mode":
-      return {
-        delivery: { kind: "claude-sdk-permission-mode", permissionMode: "auto" },
-        caveat: "Uses Claude's own classifier; needs a model that supports auto mode",
-      }
-
-    case "codex-approval-policy":
-      return {
-        delivery: { kind: "codex-approval-policy", approvalPolicy: "on-request", sandbox: "workspace-write" },
-      }
-
-    case "acp-session-mode":
-      return {
-        delivery: CLAXEDO_LOCAL_AUTO,
-        caveat: "Claxedo grants these on first use; the harness enforces them after that",
-      }
-
-    case "claxedo-answers-locally":
-    case "none":
-      return {
-        delivery: CLAXEDO_LOCAL_AUTO,
-        // Pi has no persistence to grant into, so here it really is every time.
-        caveat: "Claxedo answers these prompts on your behalf",
-      }
-  }
-}
-
-/**
- * The delivery that WITHDRAWS what Auto granted.
- *
- * Required, not optional. Turning Auto on writes grants into the engine's own
- * persisted ruleset, so turning it off has to withdraw them — otherwise the switch
- * is one-way and the engine stays permissive after the user has visibly disabled it.
- * That is a security regression, not a missing nicety, and it is invisible from the
- * UI because the switch would read "off" while the rules still say allow.
+ * Required, not optional. Granting writes rules into the engine's PERSISTED
+ * ruleset, so the way back has to withdraw them — otherwise the control is
+ * one-way and the engine stays permissive after the user has visibly changed it.
+ * That is a security regression, and it is invisible from the UI because the
+ * picker would read "ask for everything" while the stored rules still say allow.
  *
  * Withdrawal works BECAUSE the handler merges rather than replaces: the incoming
- * rules land after the existing ones, and `Permission.evaluate` takes the last match,
- * so a later `ask` beats an earlier `allow`. There is no endpoint that deletes rules,
- * so this is the only way to revoke.
- *
- * Every key Auto granted is re-asked EXPLICITLY rather than relying on `*` alone.
- * `*` would in fact suffice by the same last-match rule, but naming each key makes
- * the withdrawal legible in the stored ruleset and independent of how `*` is matched.
+ * rules land after the existing ones and `Permission.evaluate` takes the last
+ * match, so a later `ask` beats an earlier `allow`. No endpoint deletes rules,
+ * which makes this the only way to revoke.
  */
-export function claxedoAutoRevoke(harness: HarnessId): PermissionModeDelivery | undefined {
-  const mechanism = PERMISSION_MECHANISMS[harness]
-  if (mechanism.kind !== "opencode-session-ruleset") return undefined
+function opencodeAskRuleset(): readonly { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[] {
   const ask = (keys: readonly string[]) =>
     keys.map((permission) => ({ permission, pattern: "*", action: "ask" as const }))
-  return {
-    kind: "opencode-session-ruleset",
-    ruleset: [
-      { permission: "*", pattern: "*", action: "ask" },
-      ...ask(SAFE_READ_PERMISSIONS),
-      ...ask(INTERACTIVE_PERMISSIONS),
-      ...ask(IN_PROJECT_WRITE_PERMISSIONS),
-      ...ask(DANGER_GATED_PERMISSIONS),
-    ],
-    appliesFrom: "next-turn",
-  }
+  return [
+    { permission: "*", pattern: "*", action: "ask" },
+    ...ask(SAFE_READ_PERMISSIONS),
+    ...ask(INTERACTIVE_PERMISSIONS),
+    ...ask(IN_PROJECT_WRITE_PERMISSIONS),
+    ...ask(DANGER_GATED_PERMISSIONS),
+  ]
 }
 
-/** Manual's stable id, the counterpart to `CLAXEDO_AUTO_ID`. */
-export const CLAXEDO_MANUAL_ID = "claxedo-manual"
+export const CLAXEDO_ALLOW_SAFE_ID = "claxedo-allow-safe"
+export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
 
 /**
- * Ask before everything — the mode that says "I want to see each tool call".
+ * Claxedo's own two options, for the harnesses that have no modes of their own.
  *
- * Exists because the picker replaced a binary switch, and the switch's OFF state was
- * a real capability: without Manual there is no way back from Auto, and a picker
- * whose only Claxedo option is Auto is strictly less capable than the toggle it
- * replaced.
+ * Named for WHAT THEY DO rather than for a tier. There is deliberately no "Auto"
+ * anywhere in this file any more: "Auto" named a Claxedo abstraction and told the
+ * user nothing about what would actually happen, while meaning something
+ * materially different on each harness — a persisted engine ruleset in one place,
+ * Claxedo answering prompts in-process in another. Two things that differ in who
+ * enforces them and whether they survive the app closing should not share a word.
  *
- * Delivery per harness, and both branches are exact rather than approximate:
- *   - opencode: the withdrawal ruleset, which is the same write Auto's counterpart
- *     performs — every permission back to `ask`, catch-all first. Because the engine
- *     merges and takes the LAST match, this genuinely revokes earlier grants rather
- *     than sitting behind them.
- *   - everything else: `claxedo-auto-answer` with an EMPTY answer list, which is
- *     literally "Claxedo answers nothing" and needs no new delivery kind. Modelling
- *     it as an absence would have meant a mode with no delivery, which the picker
- *     would then have to render as unselectable.
+ * These appear ONLY where the harness has nothing of its own. Everywhere else the
+ * harness's own names are shown, because a name we did not write cannot drift
+ * from what the harness does.
  */
-export function claxedoManualMode(harness: HarnessId): PermissionModeOption {
-  const revoke = claxedoAutoRevoke(harness)
-  return {
-    id: CLAXEDO_MANUAL_ID,
-    name: "Manual",
-    description: "Ask before every tool call",
-    origin: "claxedo",
-    delivery: revoke ?? { kind: "claxedo-auto-answer", autoAnswer: [], respondWith: "once" },
-    ...(revoke ? { caveat: "Applies from your next message; the turn already running keeps its current rules" } : {}),
+export function claxedoPermissionModes(harness: HarnessId): readonly PermissionModeOption[] {
+  const mechanism = PERMISSION_MECHANISMS[harness]
+
+  if (mechanism.kind === "opencode-session-ruleset") {
+    return [
+      {
+        id: CLAXEDO_ALLOW_SAFE_ID,
+        name: "Allow reads and edits",
+        description: "Reads and in-project edits run without asking; commands and network still ask",
+        origin: "claxedo",
+        caveat: "Applies from your next message; the turn already running keeps its current rules",
+        delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAutoRuleset(), appliesFrom: "next-turn" },
+      },
+      {
+        id: CLAXEDO_ASK_ALWAYS_ID,
+        name: "Ask for everything",
+        description: "Every tool call waits for you",
+        origin: "claxedo",
+        caveat: "Applies from your next message; the turn already running keeps its current rules",
+        delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAskRuleset(), appliesFrom: "next-turn" },
+      },
+    ]
   }
-}
 
-/**
- * Claxedo's built-in Auto mode, resolved for a harness.
- *
- * A function rather than a constant because the DELIVERY differs per harness even
- * though the intent does not — see `autoDelivery`.
- */
-export function claxedoAutoMode(harness: HarnessId): PermissionModeOption {
-  const { delivery, caveat } = autoDelivery(harness)
-  return {
-    id: CLAXEDO_AUTO_ID,
-    name: "Auto",
-    description: "Approve reads and edits, ask before anything risky",
-    origin: "claxedo",
-    ...(caveat ? { caveat } : {}),
-    delivery,
-  }
-}
-
-/**
- * Claude Agent SDK modes, with the SDK's OWN descriptions copied verbatim from its
- * `PermissionMode` doc comment (sdk.d.ts), in the order the SDK documents them.
- *
- * The union itself is locked to the SDK at compile time by
- * `agent-sdk-runtime/src/harnesses/claude/permission-mode-parity.ts`.
- */
-const CLAUDE_SDK_MODES: readonly PermissionModeOption[] = [
-  {
-    id: "default",
-    name: "Default",
-    description: "Standard behavior, prompts for dangerous operations",
-    origin: "harness",
-    delivery: { kind: "claude-sdk-permission-mode", permissionMode: "default" },
-  },
-  {
-    id: "acceptEdits",
-    name: "Accept edits",
-    description: "Auto-accept file edit operations",
-    origin: "harness",
-    delivery: { kind: "claude-sdk-permission-mode", permissionMode: "acceptEdits" },
-  },
-  {
-    id: "auto",
-    name: "Claude auto",
-    description: "Use a model classifier to approve/deny permission prompts",
-    origin: "harness",
-    // Three separate things can withdraw this mode, none of them visible from a
-    // mode list: `ModelInfo.supportsAutoMode` is per-model, a `disableAutoMode`
-    // setting turns it off wholesale, and an org `org_max_permission` ceiling of
-    // "ask" forces a prompt anyway.
-    caveat: "Needs a model that supports auto mode; org policy can still force prompts",
-    delivery: { kind: "claude-sdk-permission-mode", permissionMode: "auto" },
-  },
-  {
-    id: "plan",
-    name: "Plan",
-    description: "Planning mode, no actual tool execution",
-    origin: "harness",
-    delivery: { kind: "claude-sdk-permission-mode", permissionMode: "plan" },
-  },
-  {
-    id: "dontAsk",
-    name: "Don't ask",
-    description: "Don't prompt for permissions, deny if not pre-approved",
-    origin: "harness",
-    delivery: { kind: "claude-sdk-permission-mode", permissionMode: "dontAsk" },
-  },
-  {
-    id: "bypassPermissions",
-    name: "Bypass permissions",
-    description: "Bypass all permission checks",
-    origin: "harness",
-    caveat: "Disables every permission check for the session",
-    delivery: {
-      kind: "claude-sdk-permission-mode",
-      permissionMode: "bypassPermissions",
-      // The SDK requires this alongside the mode as a deliberate-intent guard.
-      allowDangerouslySkipPermissions: true,
+  // Everywhere else Claxedo answers the harness's own prompts in-process. The
+  // caveat says so rather than letting this look like the harness was configured:
+  // nothing is enforced, and the grants die with the app.
+  return [
+    {
+      id: CLAXEDO_ALLOW_SAFE_ID,
+      name: "Allow reads and edits",
+      description: "Reads and in-project edits run without asking; commands and network still ask",
+      origin: "claxedo",
+      caveat: "Claxedo answers these prompts on your behalf; the harness enforces nothing",
+      delivery: { kind: "claxedo-auto-answer", autoAnswer: CLAXEDO_AUTO_ANSWERS, respondWith: "always" },
     },
-  },
-]
+    {
+      id: CLAXEDO_ASK_ALWAYS_ID,
+      name: "Ask for everything",
+      description: "Every tool call waits for you",
+      origin: "claxedo",
+      delivery: { kind: "claxedo-auto-answer", autoAnswer: [], respondWith: "once" },
+    },
+  ]
+}
 
 /**
- * Codex app-server policies. Codex has no mode list — these are its documented
- * `approval_policy` values, each paired with the sandbox that makes it coherent.
+ * What the harness itself reported, as served by the runtime.
+ *
+ * Structurally the runtime's `AgentPermissionModeState`, redeclared so this
+ * module does not depend on the runtime package — see the wire-shape note on
+ * `AgentRuntimePermissionModeState`.
  */
-const CODEX_APP_SERVER_MODES: readonly PermissionModeOption[] = [
-  {
-    id: "untrusted",
-    name: "Untrusted",
-    description: "Only trusted commands run without asking; anything else escalates",
-    origin: "harness",
-    delivery: { kind: "codex-approval-policy", approvalPolicy: "untrusted", sandbox: "workspace-write" },
-  },
-  {
-    id: "on-request",
-    name: "On request",
-    description: "The model decides when to ask you for approval",
-    origin: "harness",
-    delivery: { kind: "codex-approval-policy", approvalPolicy: "on-request", sandbox: "workspace-write" },
-  },
-  {
-    id: "read-only",
-    name: "Read only",
-    description: "Never asks; the sandbox permits reads only, so writes fail",
-    origin: "harness",
-    // Not a plan mode: Codex still ATTEMPTS writes and the sandbox rejects them.
-    caveat: "Codex has no plan mode — writes are attempted and fail rather than withheld",
-    delivery: { kind: "codex-approval-policy", approvalPolicy: "never", sandbox: "read-only" },
-  },
-  {
-    id: "never",
-    name: "Never ask",
-    description: "Never asks; failures are returned to the model instead",
-    origin: "harness",
-    caveat: "Full filesystem access with no confirmation",
-    delivery: { kind: "codex-approval-policy", approvalPolicy: "never", sandbox: "danger-full-access" },
-  },
-]
+export type HarnessModeReport = {
+  modes: readonly { id: string; name: string; description?: string; level?: "ask" | "auto" | "full" }[]
+  currentModeId?: string
+  unsupported?: string
+  appliesFrom: "next-turn" | "next-session"
+}
 
 export type HarnessPermissionModes = {
   modes: readonly PermissionModeOption[]
@@ -466,89 +320,102 @@ export type HarnessPermissionModes = {
 }
 
 /**
- * The selected harness's own permission modes.
+ * The harness's own modes, converted for display.
  *
- * Returns an empty list plus a reason rather than a fabricated set whenever the
- * harness genuinely has nothing — the picker then shows Claxedo's Auto alone,
- * which is the honest outcome.
+ * Every field the user sees comes from `report`. Nothing here consults
+ * `HarnessId` to decide what a mode does, which is the point: the app used to
+ * hold a table of what each SDK supported, and that table was wrong about three
+ * harnesses at once because nothing forced it to agree with the installed
+ * packages. The runtime reads the packages; this renders what it says.
  */
 export function harnessPermissionModes(input: {
   harness: HarnessId
-  /** Advertised modes for THIS session. Required for ACP harnesses. */
-  advertisedModes?: readonly AdvertisedPermissionMode[]
+  report?: HarnessModeReport
 }): HarnessPermissionModes {
-  const mechanism = PERMISSION_MECHANISMS[input.harness]
   const label = HARNESS_LABELS[input.harness]
+  const report = input.report
 
-  switch (mechanism.kind) {
-    case "none":
-      return { modes: [], unavailable: `${label} offers no permission modes — ${mechanism.reason}` }
+  // Not yet fetched. Genuinely transient, and distinct from every case below.
+  if (!report) return { modes: [], unavailable: `Loading ${label}'s permission modes…` }
 
-    case "claxedo-answers-locally":
-      return {
-        modes: [],
-        unavailable: `${label} has no permission settings of its own, so only Claxedo's Auto applies`,
-      }
+  if (report.unsupported) return { modes: [], unavailable: report.unsupported }
 
-    case "opencode-session-ruleset":
-      // opencode's mechanism is a per-session rule list, not a mode list. Claxedo's
-      // Auto expresses the useful policy; inventing "modes" here would be naming
-      // things opencode does not have.
-      return { modes: [], unavailable: `${label} uses per-tool permission rules rather than modes` }
+  if (report.modes.length === 0) {
+    return { modes: [], unavailable: `${label} has not reported any permission modes for this session` }
+  }
 
-    case "claude-sdk-permission-mode":
-      return { modes: CLAUDE_SDK_MODES }
-
-    case "codex-approval-policy":
-      return { modes: CODEX_APP_SERVER_MODES }
-
-    case "acp-session-mode": {
-      const advertised = input.advertisedModes
-      if (advertised === undefined) {
-        return { modes: [], unavailable: `Waiting for ${label} to report its modes` }
-      }
-      if (advertised.length === 0) {
-        return { modes: [], unavailable: `${label} reported no modes for this session` }
-      }
-      return {
-        modes: advertised.map((mode) => ({
-          id: mode.id,
-          // The agent's own name and description — never a Claxedo label, because
-          // `SessionModeId` is an open string and we cannot know what an id means.
-          name: mode.name,
-          ...(mode.description ? { description: mode.description } : {}),
-          origin: "harness" as const,
-          delivery: { kind: "acp-set-session-mode" as const, modeId: mode.id },
-        })),
-      }
-    }
+  return {
+    modes: report.modes.map((mode) => ({
+      id: mode.id,
+      // The harness's own name and description, verbatim.
+      name: mode.name,
+      ...(mode.description ? { description: mode.description } : {}),
+      origin: "harness" as const,
+      ...(report.appliesFrom === "next-session"
+        ? { caveat: `Applies to the next ${label} agent, not this session` }
+        : {}),
+      delivery: {
+        kind: "harness-permission-mode" as const,
+        modeId: mode.id,
+        appliesFrom: report.appliesFrom,
+      },
+    })),
   }
 }
 
-/** Everything the picker shows: Claxedo's Auto first, then the harness's own. */
+/**
+ * Everything the picker shows.
+ *
+ * The two groups are mutually exclusive by design: a harness either has modes of
+ * its own or it does not. Showing Claxedo's options ALONGSIDE a harness's own
+ * would put two controls over the same behaviour in one menu with no way to tell
+ * which wins — and on every harness that has modes, the harness's are strictly
+ * better, because they are enforced where the tools actually run.
+ */
 export function permissionModeOptions(input: {
   harness: HarnessId
-  advertisedModes?: readonly AdvertisedPermissionMode[]
+  report?: HarnessModeReport
 }): { claxedo: readonly PermissionModeOption[]; harness: HarnessPermissionModes } {
-  // Auto first because it is the default; Manual second because it is the way back
-  // from it. Both are Claxedo's own, so they appear on every harness.
-  return {
-    claxedo: [claxedoAutoMode(input.harness), claxedoManualMode(input.harness)],
-    harness: harnessPermissionModes(input),
+  const harness = harnessPermissionModes(input)
+  if (harness.modes.length > 0) return { claxedo: [], harness }
+  return { claxedo: claxedoPermissionModes(input.harness), harness }
+}
+
+/**
+ * The mode to start on when the user has chosen nothing.
+ *
+ * Prefers what the HARNESS says is current — it is the truth about the session,
+ * and on a resumed session it is the mode already in force. Only when the harness
+ * reports no current mode does this fall to the `auto` rung, and then to the
+ * first option, so a picker is never blank while a real mode is running.
+ */
+export function defaultPermissionSelection(input: {
+  harness: HarnessId
+  report?: HarnessModeReport
+}): PermissionSelection {
+  const report = input.report
+  if (report && report.modes.length > 0) {
+    const current = report.currentModeId
+      ? report.modes.find((mode) => mode.id === report.currentModeId)
+      : undefined
+    const chosen = current ?? report.modes.find((mode) => mode.level === "auto") ?? report.modes[0]!
+    return { kind: "harness", modeId: chosen.id }
   }
+  return { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID }
 }
 
 /** Resolve a selection to the option it refers to, or undefined if it is stale. */
 export function findPermissionModeOption(input: {
   selection: PermissionSelection
   harness: HarnessId
-  advertisedModes?: readonly AdvertisedPermissionMode[]
+  report?: HarnessModeReport
 }): PermissionModeOption | undefined {
   const selection = input.selection
-  if (selection.kind === "claxedo-auto") return claxedoAutoMode(input.harness)
-  if (selection.kind === "claxedo-manual") return claxedoManualMode(input.harness)
   // Bound to a local before the callback: TypeScript discards narrowing on a
   // property access once it is read inside a closure.
   const modeId = selection.modeId
+  if (selection.kind === "claxedo") {
+    return claxedoPermissionModes(input.harness).find((mode) => mode.id === modeId)
+  }
   return harnessPermissionModes(input).modes.find((mode) => mode.id === modeId)
 }

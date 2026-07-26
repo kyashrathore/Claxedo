@@ -107,6 +107,69 @@ export interface SupportsPermissions {
   respondPermission(permId: string, decision: PermissionDecision, directory: RuntimeDirectory): Promise<AgentInteractionResult | void>
 }
 
+/**
+ * The three rungs every harness's permission surface is mapped onto.
+ *
+ * A LADDER, not a taxonomy: the rungs are ordered by how much runs without
+ * asking, and that ordering is the only thing shared across harnesses. What each
+ * rung concretely does is the harness's business and differs wildly — `auto` is
+ * an OS sandbox on codex, a model classifier on claude and cursor, and a rule
+ * list on opencode.
+ *
+ * `level` is therefore a HINT for choosing a default, never a promise about
+ * behaviour. Anything user-facing must show `AgentPermissionMode.name` — the
+ * harness's own word for it — because that is the only label guaranteed to
+ * describe what actually happens.
+ */
+export type AutoLevel = "ask" | "auto" | "full"
+
+/** One selectable permission mode, in the harness's own vocabulary. */
+export type AgentPermissionMode = {
+  id: string
+  /** The harness's own name. Rendered as-is; never paraphrased. */
+  name: string
+  description?: string
+  /**
+   * Which rung this is, when it maps to one at all. Absent means the harness
+   * offers it but it does not correspond to a rung — still selectable, just not
+   * a candidate for the default.
+   */
+  level?: AutoLevel
+}
+
+export type AgentPermissionModeState = {
+  modes: AgentPermissionMode[]
+  /**
+   * Read back from the harness, never assumed from the last write. ACP agents
+   * can clamp this to something other than what was set (claude-agent-acp
+   * returns to `default` when a model change shrinks the available set), so a
+   * client that echoes its own request will drift from reality.
+   */
+  currentModeId?: string
+  /**
+   * Set when this harness has no mode surface. Distinct from `modes: []`, which
+   * means it has one and reported nothing — greying out for the right reason
+   * requires telling those apart.
+   */
+  unsupported?: string
+  /**
+   * When a change lands. `next-session` is not a rounding error: on cursor these
+   * are `Agent.create` options, so a change cannot affect the session in front
+   * of the user at all.
+   */
+  appliesFrom: "next-turn" | "next-session"
+}
+
+export interface SupportsPermissionModes {
+  listPermissionModes(sessionId: string, directory: RuntimeDirectory): Promise<AgentPermissionModeState>
+  /**
+   * Returns the state read back AFTER the write, which is why it does not return
+   * void: the caller must be able to see that the harness kept something other
+   * than what was asked for.
+   */
+  setPermissionMode(sessionId: string, modeId: string, directory: RuntimeDirectory): Promise<AgentPermissionModeState>
+}
+
 export interface SupportsQuestions {
   listQuestions(directory: RuntimeDirectory): Promise<AgentQuestion[]>
   replyQuestion(qId: string, answer: string, directory: RuntimeDirectory): Promise<AgentInteractionResult | void>
@@ -129,6 +192,7 @@ export type AgentHarnessAdapter =
   & Partial<SupportsUnrevert>
   & Partial<SupportsFork>
   & Partial<SupportsCommands>
+  & Partial<SupportsPermissionModes>
   & Partial<SupportsAgents>
   & Partial<SupportsTodos>
   & Partial<SupportsPermissions>

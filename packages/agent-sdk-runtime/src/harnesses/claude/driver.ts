@@ -9,6 +9,7 @@ import {
   query,
   type CanUseTool,
   type McpServerConfig,
+  type PermissionMode,
   type PermissionResult,
   type PermissionUpdate,
   type Query,
@@ -33,6 +34,11 @@ import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { requireClaudeExecutable } from "./executable"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import {
+  CLAUDE_DENY_FLOOR,
+  CLAUDE_PERMISSION_MODES,
+  PermissionModeSelection,
+} from "../shared/permission-modes"
+import {
   observeAgentProcess,
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
@@ -54,7 +60,24 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     fetchModels: (directory) => this.fetchModels(directory),
   })
 
+  /**
+   * `next-turn`: `permissionMode` is read when `query()` is called, and a turn
+   * is one query, so a change is live from the next message. The SDK also has
+   * `setPermissionMode()` for mid-turn changes, deliberately unused — it applies
+   * to a streaming-input query this driver does not hold open between turns, so
+   * calling it would mean keeping a handle alive purely to mutate it.
+   */
+  private readonly permissionSelection = new PermissionModeSelection(CLAUDE_PERMISSION_MODES, "next-turn")
+
   constructor(private readonly host: SdkRuntimeDriverHost) {}
+
+  permissionModes(sessionId: string) {
+    return this.permissionSelection.state(sessionId)
+  }
+
+  async setPermissionMode(sessionId: string, modeId: string) {
+    return this.permissionSelection.set(sessionId, modeId)
+  }
 
   setAuth(keys: SdkRuntimeAuth) {
     this.auth = {
@@ -131,6 +154,16 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         pathToClaudeCodeExecutable: requireClaudeExecutable(),
         includePartialMessages: true,
         abortController: input.abort,
+        // Both are passed together on purpose. `permissionMode` decides how much
+        // runs unprompted; `canUseTool` only fires when the flow falls THROUGH to
+        // a prompt, so under `bypassPermissions` it never runs at all. Policy that
+        // must hold in every mode therefore cannot live in the callback — it lives
+        // in the deny floor below.
+        permissionMode: this.permissionSelection.currentId(input.sessionId) as PermissionMode | undefined,
+        ...(this.permissionSelection.currentId(input.sessionId) === "bypassPermissions"
+          ? { allowDangerouslySkipPermissions: true as const }
+          : {}),
+        settings: { permissions: { deny: [...CLAUDE_DENY_FLOOR] } },
         canUseTool: requestPermission,
         ...(input.input.agent ? { agent: input.input.agent } : {}),
         ...(turnModel(input.input.model.modelID, input.model) ? { model: turnModel(input.input.model.modelID, input.model) } : {}),

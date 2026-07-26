@@ -27,6 +27,14 @@ import {
 } from "../shared/sdk-runtime-adapter"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import {
+  CODEX_PERMISSION_MODES,
+  CODEX_SETTINGS,
+  DEFAULT_CODEX_MODE,
+  PermissionModeSelection,
+  codexSandboxPolicy,
+  codexSettingsFor,
+} from "../shared/permission-modes"
+import {
   observeAgentProcess,
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
@@ -158,14 +166,37 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
   }
 
+  private readonly permissionSelection = new PermissionModeSelection(CODEX_PERMISSION_MODES, "next-turn")
+
+  permissionModes(sessionId: string) {
+    return this.permissionSelection.state(sessionId)
+  }
+
+  /**
+   * Stores only — nothing is sent here.
+   *
+   * `thread/settings/update` exists and would let this land immediately, but
+   * both `thread/start` and `turn/start` already carry the policy on every
+   * request, so applying it at turn start reaches the same place with one code
+   * path instead of two that can disagree. The pinned-policy bug this replaces
+   * came precisely from those two call sites drifting apart.
+   */
+  async setPermissionMode(sessionId: string, modeId: string, _directory: string) {
+    if (!CODEX_SETTINGS[modeId]) throw new Error(`Unknown Codex permission mode "${modeId}"`)
+    return this.permissionSelection.set(sessionId, modeId)
+  }
+
   async createAgentSession(input: { directory: string; model: string }) {
     const proc = await this.ensureProcess(input.directory)
     const model = codexAppServerModel(input.model)
+    // A thread created before the user has touched the picker still has to run
+    // under the default rung rather than whatever `thread/start` would assume.
+    const settings = CODEX_SETTINGS[DEFAULT_CODEX_MODE]!
     const result = await proc.request("thread/start", {
       cwd: input.directory,
-      approvalPolicy: "on-request",
+      approvalPolicy: settings.approvalPolicy,
       approvalsReviewer: "user",
-      sandbox: "workspace-write",
+      sandbox: settings.sandbox,
       ...(model ? { model } : {}),
     }) as JsonRecord
     const thread = record(result.thread)
@@ -243,15 +274,12 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       threadId,
       input: codexUserInput(input.input.parts),
       cwd: input.directory,
-      approvalPolicy: "on-request",
+      approvalPolicy: codexSettingsFor(this.permissionSelection.currentId(input.sessionId)).approvalPolicy,
       approvalsReviewer: "user",
-      sandboxPolicy: {
-        type: "workspaceWrite",
-        writableRoots: [input.directory],
-        networkAccess: true,
-        excludeTmpdirEnvVar: false,
-        excludeSlashTmp: false,
-      },
+      sandboxPolicy: codexSandboxPolicy(
+        codexSettingsFor(this.permissionSelection.currentId(input.sessionId)).sandbox,
+        input.directory,
+      ),
       ...(model ? { model } : {}),
     }) as Promise<JsonRecord>
 

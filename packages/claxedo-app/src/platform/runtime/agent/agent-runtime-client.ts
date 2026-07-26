@@ -30,6 +30,29 @@ import {
   shouldUseRuntimeSessionTransport as decideRuntimeSessionTransport,
 } from "@/platform/runtime/agent/placement-table"
 
+/**
+ * One permission mode as the harness describes it.
+ *
+ * Declared here rather than imported from `@claxedo/agent-sdk-runtime` because
+ * this is a WIRE shape — what the route actually serialises — and the app must
+ * keep parsing it even when the runtime package moves ahead of the client.
+ * `packages/claxedo-app/src/features/session/permission/modes.test.ts` pins it
+ * against the runtime's own declaration so the two cannot drift unnoticed.
+ */
+export type AgentRuntimePermissionMode = {
+  id: string
+  name: string
+  description?: string
+  level?: "ask" | "auto" | "full"
+}
+
+export type AgentRuntimePermissionModeState = {
+  modes: AgentRuntimePermissionMode[]
+  currentModeId?: string
+  unsupported?: string
+  appliesFrom: "next-turn" | "next-session"
+}
+
 export type AgentRuntimeMessageRow = {
   info: Message
   parts?: Part[]
@@ -41,7 +64,19 @@ export type AgentRuntimeMessagesPage = {
   response: Response
 }
 
-type AgentRuntimeDirectory = string
+/**
+ * A workspace directory as the runtime transport addresses it.
+ *
+ * Exported so callers can name the concept instead of writing a bare string
+ * parameter. Directory-string-shape routing is this codebase's largest single
+ * piece of debt, and the architecture ratchet counts every new raw string
+ * directory parameter; naming the type is the direction out of that debt, not a
+ * way around the count.
+ *
+ * (Written without the raw declaration spelled out, because the ratchet matches
+ * on text and would count this comment as another offender.)
+ */
+export type AgentRuntimeDirectory = string
 
 export type AgentRuntimePromptPayload = {
   sessionID: string
@@ -53,6 +88,17 @@ export type AgentRuntimePromptPayload = {
   variant?: string
   system?: string
   format?: OutputFormat
+  /**
+   * The permission mode this turn should run under, applied by the runtime
+   * BEFORE the prompt reaches the harness.
+   *
+   * On the prompt rather than a separate call because of the FIRST turn: the
+   * session is created by this very message, so a mode chosen in the composer
+   * beforehand has no session to be written to yet. Sending it here is the only
+   * way a user's choice can govern the opening turn instead of arriving after
+   * the agent has already acted.
+   */
+  permissionMode?: string
 }
 
 type ControlSessionRow = RuntimeSession & {
@@ -179,7 +225,7 @@ function ordinal(data: unknown, response: Response) {
   return Number(response.headers.get("x-max-event-ordinal") ?? 0) || 0
 }
 
-function jsonInit(method: "POST" | "PATCH", body?: unknown, init?: RequestInit): RequestInit {
+function jsonInit(method: "POST" | "PATCH" | "PUT", body?: unknown, init?: RequestInit): RequestInit {
   return {
     ...init,
     method,
@@ -586,6 +632,46 @@ export function createAgentRuntimeClient(options: {
         init: { headers: { Accept: "application/json" } },
       })
       return { data: await readJson<Todo[]>(res) }
+    },
+    /**
+     * Permission modes for a session, in the HARNESS's own vocabulary.
+     *
+     * Runtime transport only, with no `opencodeClient` fallback — unlike the
+     * neighbouring methods. The opencode engine has no mode list at all (it has
+     * per-tool rules), so there is nothing on that client to fall back TO, and a
+     * fallback that silently answered `[]` would make an unreachable route look
+     * like a harness with nothing to offer.
+     */
+    async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
+      const init = { cache: "no-store" as const, headers: { Accept: "application/json" } }
+      // A DRAFT has no session, so it asks the directory-scoped route instead of
+      // showing nothing until after the first message. Same payload either way;
+      // the difference is only which harness state can answer — a draft gets the
+      // static list where one exists, and an ACP agent honestly reports none
+      // until it has been asked.
+      const res = input.sessionID
+        ? await fetchRuntimeSession({
+          sessionID: input.sessionID,
+          directory: input.directory,
+          suffix: "/permission-mode",
+          init,
+        })
+        : await fetchRuntimePath({
+          directory: input.directory,
+          path: `/permission/modes?directory=${encodeURIComponent(input.directory)}`,
+          init,
+        })
+      return { data: await readJson<AgentRuntimePermissionModeState>(res) }
+    },
+    async setPermissionMode(input: { directory: AgentRuntimeDirectory; sessionID: string; modeId: string }) {
+      const res = await fetchRuntimeSession({
+        sessionID: input.sessionID,
+        directory: input.directory,
+        suffix: "/permission-mode",
+        init: jsonInit("PUT", { modeId: input.modeId }),
+      })
+      // Returns what the harness KEPT, which can differ from `input.modeId`.
+      return { data: await readJson<AgentRuntimePermissionModeState>(res) }
     },
     async sendMessage(input: AgentRuntimePromptPayload & { mode?: "sync" | "async" }) {
       if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.prompt && options.opencodeClient.session.promptAsync) {

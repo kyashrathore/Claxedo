@@ -14,6 +14,11 @@ import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
+  CURSOR_PERMISSION_MODES,
+  PermissionModeSelection,
+  cursorPermissionOptions,
+} from "../shared/permission-modes"
+import {
   extractTextFromParts,
   record,
   text,
@@ -66,6 +71,26 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
   }
 
+  /**
+   * Keyed by DIRECTORY, not session id — the one place in this file that departs
+   * from how the other drivers store this.
+   *
+   * Forced by where the options are read: `Agent.create` consumes them, and it
+   * runs before a Claxedo session id exists to key on. Keying by directory also
+   * matches what the setting can actually promise — "the next Cursor agent in
+   * this workspace" — rather than implying it is scoped to a conversation it
+   * cannot reach.
+   */
+  private readonly permissionSelection = new PermissionModeSelection(CURSOR_PERMISSION_MODES, "next-session")
+
+  permissionModes(_sessionId: string, directory: string) {
+    return this.permissionSelection.state(directory)
+  }
+
+  async setPermissionMode(_sessionId: string, modeId: string, directory: string) {
+    return this.permissionSelection.set(directory, modeId)
+  }
+
   async createAgentSession(input: { directory: string; title?: string; model: string }) {
     const { Agent } = await import("@cursor/sdk")
     const model = cursorSdkModel(input.model)
@@ -78,6 +103,11 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
         local: {
           cwd: input.directory,
+          // `sandboxOptions` and `autoReview` are LocalAgentOptions, read here by
+          // Agent.create and nowhere else — LocalSendOptions carries only `force`
+          // and `customTools`. Passing them to `send` instead compiles and does
+          // nothing, which is why the mode's appliesFrom is "next-session".
+          ...cursorPermissionOptions(this.permissionSelection.currentId(input.directory)),
         },
       })
       observation.update({ lifecycle: "ready" })

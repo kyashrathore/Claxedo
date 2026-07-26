@@ -18,7 +18,18 @@ import {
 } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
 import { Log } from "../../log"
-import { blocks, extractAgents, init, merge, resume, sync, type ACPState } from "./session"
+import {
+  blocks,
+  extractAgents,
+  init,
+  merge,
+  permissionModes,
+  resume,
+  setPermissionMode,
+  sync,
+  type ACPState,
+} from "./session"
+import type { AgentPermissionModeState } from "../../adapter-contract"
 import { IDLE_TIMEOUT_MS, promptTimeoutMs, watch } from "./helpers"
 import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
 import type { AgentProcessObserverHandle } from "../../process-observer"
@@ -284,6 +295,26 @@ export class ACPProcess {
     this.states.set(sessionId, next)
     if (next.cfg && next.cfg.length > 0) this.cachedConfigOptions = next.cfg
     return next
+  }
+
+  /**
+   * Permission modes for one agent session.
+   *
+   * Keyed on the AGENT session id, the same key `states` uses — not Claxedo's
+   * session id. The adapter translates before calling in.
+   */
+  permissionModes(agentSessionId: string): AgentPermissionModeState {
+    return permissionModes(this.state(agentSessionId))
+  }
+
+  async setPermissionMode(agentSessionId: string, modeId: string): Promise<AgentPermissionModeState> {
+    const { state, result } = await setPermissionMode(this.agent, this.state(agentSessionId), agentSessionId, modeId)
+    this.states.set(agentSessionId, state)
+    // Keep the shared config cache aligned with the write. `set_config_option`
+    // returns the complete refreshed list, so this REPLACES rather than merges —
+    // merging would resurrect options the agent just dropped.
+    if (state.cfg && state.cfg.length > 0) this.cachedConfigOptions = state.cfg
+    return result
   }
 
   /** Derive available agents from any session state or cached config options. */

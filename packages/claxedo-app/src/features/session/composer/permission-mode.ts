@@ -1,12 +1,11 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { HarnessId } from "@/platform/identity/session-ref"
 import {
-  CLAXEDO_AUTO_ID,
-  CLAXEDO_MANUAL_ID,
-  DEFAULT_PERMISSION_SELECTION,
+  CLAXEDO_ALLOW_SAFE_ID,
+  defaultPermissionSelection,
   findPermissionModeOption,
   permissionModeOptions,
-  type AdvertisedPermissionMode,
+  type HarnessModeReport,
   type PermissionModeOption,
   type PermissionSelection,
 } from "@/features/session/permission/modes"
@@ -61,8 +60,12 @@ const row = (option: PermissionModeOption): PermissionModeRow => {
  */
 export function createComposerPermissionMode(input: {
   harness: Accessor<HarnessId | undefined>
-  /** Modes the harness advertised for THIS session. Required for ACP harnesses. */
-  advertisedModes?: Accessor<readonly AdvertisedPermissionMode[] | undefined>
+  /**
+   * What the runtime reported for THIS session. `undefined` means not fetched
+   * yet — a real, transient state the picker shows as loading, distinct from a
+   * harness that answered and has nothing.
+   */
+  report?: Accessor<HarnessModeReport | undefined>
   selection: Accessor<PermissionSelection | undefined>
   onSelectionChange: (selection: PermissionSelection) => void
   sessionId: Accessor<string | undefined>
@@ -73,12 +76,21 @@ export function createComposerPermissionMode(input: {
   onDeliveryError?: (input: { error: unknown; option: PermissionModeOption }) => void
 }) {
   /**
-   * Auto is the default, and it is a FALLBACK rather than a stored value: a session
-   * that has never been touched, and one whose stored mode the harness no longer
-   * advertises, both land here. ACP mode ids are open strings that can disappear
-   * between sessions, so a stored id is a hint, never a guarantee.
+   * The stored choice, or the default derived from what the harness reported.
+   *
+   * The default is computed per session rather than being a constant, because it
+   * depends on the harness's own answer — including which mode it says is ALREADY
+   * current, which on a resumed session is the mode genuinely in force. A constant
+   * could only ever name a Claxedo mode, which is how the picker previously showed
+   * a label with no relationship to what the harness was doing.
    */
-  const selection = createMemo<PermissionSelection>(() => input.selection() ?? DEFAULT_PERMISSION_SELECTION)
+  const selection = createMemo<PermissionSelection>(() => {
+    const stored = input.selection()
+    if (stored) return stored
+    const harness = input.harness()
+    if (!harness) return { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID }
+    return defaultPermissionSelection({ harness, report: input.report?.() })
+  })
 
   const groups = createMemo<PermissionModeGroups | undefined>(() => {
     const harness = input.harness()
@@ -90,13 +102,13 @@ export function createComposerPermissionMode(input: {
     // for an unknown harness: it can never produce a ruleset write to the wrong
     // engine. The harness group is empty and says the harness is unidentified.
     if (!harness) {
-      const safe = permissionModeOptions({ harness: "pi" })
+      const safe = permissionModeOptions({ harness: "pi", report: { modes: [], appliesFrom: "next-turn" } })
       return {
         claxedo: safe.claxedo.map(row),
         harness: { label: "Harness", rows: [], unavailable: "Still identifying this session's harness" },
       }
     }
-    const options = permissionModeOptions({ harness, advertisedModes: input.advertisedModes?.() })
+    const options = permissionModeOptions({ harness, report: input.report?.() })
     return {
       claxedo: options.claxedo.map(row),
       harness: {
@@ -121,13 +133,13 @@ export function createComposerPermissionMode(input: {
     return findPermissionModeOption({
       selection: selection(),
       harness,
-      advertisedModes: input.advertisedModes?.(),
+      report: input.report?.(),
     })
   })
 
   const select = (option: PermissionModeOption) => {
     if (!permissionModeDeliverable(option.delivery.kind)) return
-    const next: PermissionSelection = claxedoSelection(option) ?? { kind: "harness", modeId: option.id }
+    const next: PermissionSelection = { kind: option.origin === "claxedo" ? "claxedo" : "harness", modeId: option.id }
     input.onSelectionChange(next)
 
     const deliver = input.deliver
@@ -139,18 +151,6 @@ export function createComposerPermissionMode(input: {
   }
 
   return { groups, current, selection, select }
-}
-
-/**
- * Claxedo's own modes map to their own selection variants; anything else is a
- * harness mode addressed by id. Keyed on the option ID rather than on `origin`
- * alone, because `origin === "claxedo"` covers two modes now and collapsing them
- * would store Auto whichever the user picked.
- */
-function claxedoSelection(option: PermissionModeOption): PermissionSelection | undefined {
-  if (option.id === CLAXEDO_AUTO_ID) return { kind: "claxedo-auto" }
-  if (option.id === CLAXEDO_MANUAL_ID) return { kind: "claxedo-manual" }
-  return undefined
 }
 
 function harnessGroupLabel(harness: HarnessId) {

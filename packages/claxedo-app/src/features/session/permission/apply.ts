@@ -9,6 +9,16 @@ import type { PermissionModeDelivery } from "@/features/session/permission/modes
  * `PATCH /session/{sessionID}` method).
  */
 export type SessionPermissionWriter = {
+  /**
+   * Optional because the runtime session transport is not always in play — a
+   * cloud opencode session talks to the opencode client, which has no such
+   * method. Absent means the harness delivery reports `not-wired` rather than
+   * throwing, which is the honest outcome: there is genuinely no route to it.
+   */
+  setPermissionMode?: (input: {
+    sessionID: string
+    modeId: string
+  }) => Promise<{ currentModeId?: string }>
   session: {
     update: (input: {
       sessionID: string
@@ -29,7 +39,16 @@ export type SessionPermissionWriter = {
  * harness has no way to receive this" apart from "the write failed".
  */
 export type PermissionModeApplied =
-  | { kind: "applied"; appliesFrom: "next-turn" }
+  | {
+      kind: "applied"
+      appliesFrom: "next-turn" | "next-session"
+      /**
+       * What the harness reports as current AFTER the write, when it says. Absent
+       * for deliveries with no read-back (the opencode ruleset write returns no
+       * mode, because opencode has rules rather than modes).
+       */
+      kept?: string
+    }
   /**
    * Claxedo answers prompts itself for this delivery; there is nothing to send. Not
    * a failure — it is how ACP and pi work.
@@ -62,17 +81,21 @@ export function permissionModeDeliverable(kind: PermissionModeDelivery["kind"]) 
     case "opencode-session-ruleset":
     case "claxedo-auto-answer":
       return true
-    case "acp-set-session-mode":
-    case "claude-sdk-permission-mode":
-    case "codex-approval-policy":
-      return false
+    case "harness-permission-mode":
+      // Deliverable: the runtime owns the translation, so the app only has to
+      // hand back an id the harness gave it. This returned false while the app
+      // held per-harness delivery shapes it had no implementation for.
+      return true
   }
 }
 
 /**
  * Deliver a permission mode to the harness.
  *
- * Only the opencode path is implemented. It writes a SESSION-scoped ruleset via
+ * Two real paths now. The harness path forwards an id the harness itself
+ * supplied, so this module holds no per-harness knowledge at all — the runtime
+ * translates. The opencode path stays separate because opencode has no modes to
+ * forward: it writes a SESSION-scoped ruleset via
  * `PATCH /session/:sessionID` — deliberately NOT `PATCH /config`, whose handler
  * disposes the engine instance on every request and so hard-interrupts every running
  * turn in the directory (and wipes standing "allow always" grants, which live only in
@@ -107,9 +130,17 @@ export async function applyPermissionMode(input: {
     case "claxedo-auto-answer":
       return { kind: "answered-locally" }
 
-    case "acp-set-session-mode":
-    case "claude-sdk-permission-mode":
-    case "codex-approval-policy":
-      return { kind: "not-wired", delivery: delivery.kind }
+    case "harness-permission-mode": {
+      if (!input.client.setPermissionMode) return { kind: "not-wired", delivery: delivery.kind }
+      const state = await input.client.setPermissionMode({
+        sessionID: input.sessionID,
+        modeId: delivery.modeId,
+      })
+      // The harness's read-back, not the request. `kept` differing from
+      // `delivery.modeId` is a real outcome — an ACP agent can clamp the mode —
+      // and the caller has to be able to see it rather than being told the
+      // requested mode is active.
+      return { kind: "applied", appliesFrom: delivery.appliesFrom, kept: state.currentModeId }
+    }
   }
 }

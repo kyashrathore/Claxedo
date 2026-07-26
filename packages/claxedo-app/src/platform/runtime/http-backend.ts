@@ -198,5 +198,7 @@ export function createHttpSessionBackend(input: {
     getSession: (params) => runtimeFor(params.sessionRef).getSession(params),
     listMessages: (params) => runtimeFor(params.sessionRef).getMessages(params),
     listTodos: (params) => runtimeFor(params.sessionRef).getTodos(params),
+    getPermissionModes: (params) => runtimeFor(params.sessionRef).getPermissionModes(params),
+    setPermissionMode: (params) => runtimeFor(params.sessionRef).setPermissionMode(params),
   }
 }

@@ -64,6 +64,7 @@ import { createComposerEngine } from "./v2/engine"
 import { isSignedWorkspaceDefaultModel } from "./signed-workspace-model"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
 import { createComposerAutoAccept } from "./auto-accept"
+import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
 import { createComposerPermissionMode } from "./permission-mode"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
 const idleSessionStatus = { type: "idle" as const }
@@ -517,6 +518,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return id
   }
 
+  const permissionModeWiring = createComposerPermissionModeWiring({
+    sessionId: resolvedSessionId,
+    directory: () => resolvedSessionDirectory() ?? sdk.directory,
+    harness: permissionHarness,
+    client: sdk.client.session,
+    requestFailedTitle: () => language.t("common.requestFailed"),
+  })
+
   const autoAccept = createComposerAutoAccept({
     permission,
     sessionId: resolvedSessionId,
@@ -559,14 +568,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // cannot hold "Claude: plan". At that point the selection needs real per-scope
     // storage, and `permissionModeDeliverable` returning true for a harness delivery
     // is the signal that the day has come.
-    selection: () => (autoAccept.active() ? { kind: "claxedo-auto" } : { kind: "claxedo-manual" }),
-    onSelectionChange: (next) => {
-      const wantAuto = next.kind === "claxedo-auto"
-      // Guard against a redundant toggle: selecting the mode already in effect must
-      // not flip the switch to its opposite.
-      if (wantAuto === autoAccept.active()) return
-      autoAccept.toggle()
-    },
+    report: permissionModeWiring.report,
+    // Selection routing lives in the wiring: which store owns a choice depends on
+    // whether the harness has modes of its own.
+    selection: () => permissionModeWiring.selection(autoAccept.active()),
+    onSelectionChange: (next) => permissionModeWiring.onSelectionChange(next, autoAccept),
+    deliver: async ({ option, sessionID }) =>
+      applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() }),
+    // Drops the optimistic value as well as toasting — see `reportError`.
+    onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
     sessionId: resolvedSessionId,
     // No `deliver` here ON PURPOSE. `autoAccept.toggle` already performs exactly the
     // right write for both modes — the Auto ruleset when enabling, the withdrawal
@@ -598,6 +608,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   const { abort, handleSubmit: rawHandleSubmit } = createPromptSubmit({
     info,
+    // Only HARNESS modes travel with the prompt. Claxedo's own options are not
+    // ids any harness would recognise — they are delivered by their own paths
+    // (the opencode ruleset write, or Claxedo answering prompts locally), and
+    // forwarding one here would have the runtime try to set a mode that does
+    // not exist.
+    permissionMode: () => {
+      const selection = permissionMode.selection()
+      return selection.kind === "harness" ? selection.modeId : undefined
+    },
     sessionID: resolvedSessionId,
     sessionDirectory: submitSessionDirectory,
     surfaceId: () => sessionParams.surfaceId?.(),

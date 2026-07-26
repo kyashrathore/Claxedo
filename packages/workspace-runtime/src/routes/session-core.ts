@@ -169,6 +169,34 @@ type Opts = {
 
 const DRAFT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
+
+/**
+ * Apply a turn's requested permission mode before the prompt reaches the harness.
+ *
+ * Best-effort ON PURPOSE, and the asymmetry with the PUT route is deliberate: a
+ * bad mode id there is the whole request and must fail loudly, whereas here it
+ * rides along with a message the user is trying to send. Refusing the message
+ * because a stale mode id no longer exists would be a worse outcome than running
+ * the turn under the harness's current mode, so this logs the divergence and
+ * lets the prompt through.
+ *
+ * Returns nothing: callers do not branch on it. The mode either landed before
+ * the turn or the turn runs as the harness already stood.
+ */
+async function applyTurnPermissionMode(input: {
+  adapter: AgentHarnessAdapter
+  sessionId: string
+  directory: RuntimeDirectory
+  modeId?: string
+}) {
+  if (!input.modeId || !input.adapter.setPermissionMode) return
+  try {
+    await input.adapter.setPermissionMode(input.sessionId, input.modeId, input.directory)
+  } catch {
+    // Swallowed by design -- see the note above.
+  }
+}
+
 export function parseDraftId(raw: string | null | undefined): string | undefined {
   if (raw === null || raw === undefined) return undefined
   if (typeof raw !== "string") return undefined
@@ -590,6 +618,7 @@ export function createSessionRoutes(opts: Opts) {
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
+      await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       const activeTurn = runtime && opts.createActiveTurnScope
         ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
         : undefined
@@ -651,6 +680,91 @@ export function createSessionRoutes(opts: Opts) {
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "todos", "getTodos", "todos")
       if (unsupported) return unsupported
       return noStoreJson(c, await adapter.getTodos!(sessionId, directory))
+    })
+    .get("/permission/modes", async (c) => {
+      // DIRECTORY-scoped, for a draft that has no session yet.
+      //
+      // Under `/permission/` deliberately. claxedo-server gates every path
+      // through an explicit ownership registry (route-ownership.ts), so a new
+      // top-level path 404s before reaching this router no matter what is
+      // registered here. `/permission` is already a declared prefix owned by the
+      // session runtime, so nesting under it needs no registry change — and the
+      // session-scoped sibling below works for the same reason via `/session`.
+      //
+      // Without this the composer could not show a harness's modes until after
+      // the first message, so the opening turn — the one moment a user most
+      // wants to say "ask me about everything" — ran under a default nobody
+      // chose. Claude, Codex and Cursor need no session for this at all: their
+      // mode lists are static. ACP genuinely does, because the agent advertises
+      // its modes on `session/new`, and it reports empty here rather than
+      // inventing a list.
+      const directory = await opts.resolveDirectory(c)
+      const adapter = await opts.resolveAdapter(c, { directory })
+      if (!adapter.listPermissionModes) {
+        const caps = await adapter.readHarnessCapabilities(directory)
+        return noStoreJson(c, {
+          modes: [],
+          unsupported: `${caps.harness} has no permission modes of its own`,
+          appliesFrom: "next-turn",
+        })
+      }
+      // Empty session id: adapters treat it as "no session", which is exactly
+      // what a draft is.
+      return noStoreJson(c, await adapter.listPermissionModes("", directory))
+    })
+    .get("/session/:id/permission-mode", async (c) => {
+      const sessionId = c.req.param("id")
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      // No `unsupportedIfUnavailable` here, unlike the neighbouring routes: an
+      // adapter without the method is a harness with no mode surface, and the
+      // picker needs to say WHICH harness and why rather than render a generic
+      // unsupported-operation error where a list belongs.
+      if (!adapter.listPermissionModes) {
+        const caps = await adapter.readHarnessCapabilities(directory)
+        return noStoreJson(c, {
+          modes: [],
+          unsupported: `${caps.harness} has no permission modes of its own`,
+          appliesFrom: "next-turn",
+        })
+      }
+      return noStoreJson(c, await adapter.listPermissionModes(sessionId, directory))
+    })
+    .put("/session/:id/permission-mode", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      if (!adapter.setPermissionMode) {
+        const caps = await adapter.readHarnessCapabilities(directory)
+        return unsupportedOperation(c, caps, "set_permission_mode", {
+          capability: "permissions",
+          reason: "adapter_method_unavailable",
+          message: `${caps.harness} cannot be told about permission modes`,
+        })
+      }
+      const body = (await c.req.json().catch(() => ({}))) as { modeId?: unknown }
+      const modeId = typeof body.modeId === "string" ? body.modeId : ""
+      if (!modeId) return c.json({ error: "modeId is required" }, 400)
+      // The adapter's own read-back is returned verbatim. A harness that kept a
+      // different mode than the one requested must reach the client as the mode
+      // it kept, not as an echo of the request.
+      try {
+        return c.json(await adapter.setPermissionMode(sessionId, modeId, directory))
+      } catch (error) {
+        // A mode this harness does not offer is BAD INPUT, not a server fault.
+        // Every adapter rejects an unknown id by throwing (that rejection is
+        // deliberate — silently accepting one would store a mode the harness
+        // will never honour), and without this the throw surfaced as a 500,
+        // which reads as "the runtime broke" and would send someone debugging
+        // the wrong layer. Verified live against claude-agent-acp.
+        const message = error instanceof Error ? error.message : String(error)
+        if (/does not offer|unknown permission mode/i.test(message)) {
+          return c.json({ error: { code: "unknown_permission_mode", message } }, 400)
+        }
+        throw error
+      }
     })
     .post("/session/:id/abort", async (c) => {
       const sessionId = c.req.param("id")
@@ -719,6 +833,7 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
+      await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       if (body.messageID) {
         const admitted = promptAdmissions.get(id) ?? new Set<string>()
         if (admitted.has(body.messageID)) return c.body(null, 204)

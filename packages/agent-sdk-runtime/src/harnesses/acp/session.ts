@@ -11,6 +11,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
+import type { AgentPermissionMode, AgentPermissionModeState, AutoLevel } from "../../adapter-contract"
 
 type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
@@ -74,6 +75,13 @@ export type ACPState = {
    * permission mode.
    */
   modes: SessionMode[]
+  /**
+   * The agent's OWN report of which mode is active, from the same payload as
+   * `modes`. Kept rather than inferred from the last write, because agents clamp:
+   * claude-agent-acp resets this to `default` when a model change shrinks
+   * `availableModes`, so a client that trusts its own request drifts silently.
+   */
+  currentModeId?: string
 }
 
 export type ACPConn = ClientContext
@@ -113,13 +121,187 @@ function extractModes(modes: unknown): SessionMode[] {
   })
 }
 
+function extractCurrentModeId(modes: unknown): string | undefined {
+  const obj = rec(modes)
+  return obj ? str(obj.currentModeId) : undefined
+}
+
 export function merge(state: ACPState, meta: Meta): ACPState {
-  return {
+  const next: ACPState = {
     caps: state.caps,
     prompt: state.prompt,
     cfg: meta.configOptions !== undefined ? meta.configOptions : state.cfg,
     modes: meta.modes !== undefined ? (meta.modes !== null ? extractModes(meta.modes) : []) : state.modes,
   }
+  const currentModeId =
+    meta.modes !== undefined
+      ? meta.modes !== null
+        ? extractCurrentModeId(meta.modes)
+        : undefined
+      : state.currentModeId
+  return currentModeId ? { ...next, currentModeId } : next
+}
+
+/**
+ * Ids that identify a rung, checked against a NORMALISED id (lowercased, with
+ * `-` and `_` stripped) so `acceptEdits`, `accept_edits` and `accept-edits` are
+ * one entry rather than three.
+ *
+ * These decide the DEFAULT only. They are never used to label anything: the
+ * user always sees the agent's own `name`, because `SessionModeId` is an open
+ * string by spec and an id we recognise is still an id whose behaviour we are
+ * guessing at. An unrecognised id is left with no level, which means it stays
+ * fully selectable but is never chosen automatically — the honest outcome for
+ * "we do not know what this does".
+ */
+const LEVEL_IDS: Record<AutoLevel, readonly string[]> = {
+  ask: ["default", "ask", "readonly", "askalways", "manual"],
+  /**
+   * Edit-accepting ids only. A bare `auto` is deliberately ABSENT even though
+   * several agents use it: on Claude it names the model classifier, which can
+   * approve commands as well as edits, and this rung is specifically "allow
+   * reads and edits, ASK before anything risky". A classifier mode stays fully
+   * selectable — it just is not what gets chosen for someone by default.
+   */
+  auto: ["acceptedits", "autoedit", "autoaccept", "editauto"],
+  full: ["fullaccess", "bypasspermissions", "yolo", "dangerfullaccess", "bypass"],
+}
+
+const normalizeId = (id: string) => id.toLowerCase().replace(/[-_\s]/g, "")
+
+function levelFor(id: string): AutoLevel | undefined {
+  const normalized = normalizeId(id)
+  for (const [level, ids] of Object.entries(LEVEL_IDS) as [AutoLevel, readonly string[]][]) {
+    if (ids.includes(normalized)) return level
+  }
+  return undefined
+}
+
+const withLevel = (mode: { id: string; name: string; description?: string }): AgentPermissionMode => {
+  const level = levelFor(mode.id)
+  return {
+    id: mode.id,
+    name: mode.name,
+    ...(mode.description ? { description: mode.description } : {}),
+    ...(level ? { level } : {}),
+  }
+}
+
+/**
+ * What an ACP harness offers BEFORE a session exists.
+ *
+ * An ACP agent advertises its modes on `session/new`, so on a draft there is
+ * genuinely nothing to report — but showing nothing meant the composer fell back
+ * to Claxedo's own options, which are then discarded the instant the session
+ * starts and the agent's real modes take over. Offering a choice that cannot
+ * survive the first message is worse than offering none.
+ *
+ * So a draft offers the RUNGS instead of ids. These are intents, not agent
+ * modes, and `setPermissionMode` resolves each to whatever the agent turns out
+ * to advertise. They are the one place in this design where Claxedo names a
+ * permission option itself, and the names say what the rung does rather than
+ * implying an agent feature.
+ */
+export const ACP_DRAFT_MODES: readonly AgentPermissionMode[] = [
+  { id: "ask", name: "Ask for everything", description: "Every tool call waits for you", level: "ask" },
+  {
+    id: "auto",
+    name: "Allow edits, ask before risk",
+    description: "Resolved to this agent's matching mode when the session starts",
+    level: "auto",
+  },
+  { id: "full", name: "Allow everything", description: "Resolved to this agent's most permissive mode", level: "full" },
+]
+
+/**
+ * The session's permission modes, from whichever channel this agent speaks.
+ *
+ * `configOptions` is preferred over `session/set_mode` because it is the newer
+ * and more expressive channel, but the fallback is not vestigial — it is what
+ * most agents actually implement today, so both paths are live.
+ *
+ * Matching is on `category === "mode"` rather than `id === "mode"` (`pick` does
+ * both): category is the semantic field, and relying on the id only works
+ * because codex-acp and claude-agent-acp happen to have chosen that string.
+ *
+ * `unsupported` is reserved for an agent with NEITHER channel. An agent that has
+ * a channel and reported nothing yet returns empty modes, which is a different
+ * situation and must not be collapsed into the same message.
+ */
+export function permissionModes(state: ACPState): AgentPermissionModeState {
+  const cfg = pick(state.cfg, "mode")
+  if (cfg && cfg.type === "select") {
+    const options = flat(cfg.options ?? [])
+    return {
+      modes: options.map((opt) => withLevel({ id: String(opt.value), name: opt.name, ...(opt.description ? { description: opt.description } : {}) })),
+      ...(currentValue(cfg) ? { currentModeId: currentValue(cfg) } : {}),
+      appliesFrom: "next-turn",
+    }
+  }
+  if (state.modes.length > 0) {
+    return {
+      modes: state.modes.map((mode) => withLevel({ id: mode.id, name: mode.name, ...(mode.description ? { description: mode.description } : {}) })),
+      ...(state.currentModeId ? { currentModeId: state.currentModeId } : {}),
+      appliesFrom: "next-turn",
+    }
+  }
+  return {
+    modes: [],
+    ...(state.cfg === null && state.caps ? { unsupported: "This agent does not expose permission modes" } : {}),
+    appliesFrom: "next-turn",
+  }
+}
+
+/**
+ * Select a mode, then report what the agent actually kept.
+ *
+ * The returned state comes from re-reading, never from echoing `modeId`. Both
+ * write paths make that necessary for the same reason from opposite directions:
+ * `set_config_option` answers with the COMPLETE refreshed option list (which is
+ * why the result replaces `cfg` rather than being merged into it), and
+ * `set_mode` answers with nothing at all, so the only truthful current value is
+ * whatever the next `session/update` reports.
+ */
+export async function setPermissionMode(
+  conn: ACPConn,
+  state: ACPState,
+  sessionId: string,
+  modeId: string,
+): Promise<{ state: ACPState; result: AgentPermissionModeState }> {
+  // A RUNG chosen on a draft resolves here, against what the agent actually
+  // advertised once it started. Falls through to the literal id when nothing
+  // matches, so an agent whose ids happen to be "ask"/"auto"/"full" still works.
+  const resolved = ((): string => {
+    if (!["ask", "auto", "full"].includes(modeId)) return modeId
+    const advertised = permissionModes(state).modes
+    if (advertised.some((mode) => mode.id === modeId)) return modeId
+    return advertised.find((mode) => mode.level === modeId)?.id ?? modeId
+  })()
+  modeId = resolved
+
+  const cfg = pick(state.cfg, "mode")
+  if (cfg && cfg.type === "select") {
+    const known = flat(cfg.options ?? []).some((opt) => String(opt.value) === modeId)
+    if (!known) throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
+    const next = merge(
+      state,
+      (await conn.request(methods.agent.session.setConfigOption, {
+        sessionId,
+        configId: cfg.id,
+        value: modeId,
+      })) as Meta,
+    )
+    return { state: next, result: permissionModes(next) }
+  }
+  if (state.modes.some((mode) => mode.id === modeId)) {
+    await conn.request(methods.agent.session.setMode, { sessionId, modeId })
+    // `set_mode` returns no state. Record the request optimistically so the UI is
+    // not blank, and let the next `session/update` correct it if the agent
+    // clamped to something else.
+    const next: ACPState = { ...state, currentModeId: modeId }
+    return { state: next, result: permissionModes(next) }
+  }
+  throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
 }
 
 /** Derive available agents from ACP session state (config options or legacy modeIds). */

@@ -123,6 +123,15 @@ export type PromptBody = {
   providerID?: string
   modelID?: string
   variant?: string
+  /**
+   * The permission mode this turn asked to run under.
+   *
+   * Recorded because the FIRST turn can only be governed this way — the session
+   * is created by the prompt itself, so there is no session to write a mode to
+   * beforehand. A spec asserts on this rather than on the picker's label, since
+   * a picker can relabel itself while nothing reaches the runtime.
+   */
+  permissionMode?: string
 }
 
 /** A recorded, contract-validated `POST /session`. */
@@ -180,6 +189,15 @@ export type MockRuntimeRequests = {
   promptBodies: PromptBody[]
   /** Validated `POST /session/:id/permissions/:permId` decisions, in order. */
   permissionResponses: PermissionResponseValue[]
+  /**
+   * Every `PUT /session/:id/permission-mode`, in order.
+   *
+   * The point of recording these is that a picker CAN change its own label
+   * without anything reaching the runtime — which is the exact failure this
+   * feature shipped with twice. A spec asserts on this array, not on the
+   * trigger text.
+   */
+  permissionModeWrites: { modeId: string }[]
   /** Validated `POST /question/:id/reply` bodies, in order. */
   questionReplies: QuestionReplyBody[]
   /** `POST /question/:id/reject` count. */
@@ -601,6 +619,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     promptCount: 0,
     promptBodies: [],
     permissionResponses: [],
+    permissionModeWrites: [],
     questionReplies: [],
     questionRejectCount: 0,
     shellCount: 0,
@@ -1376,6 +1395,81 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // A spec that registers its own route for these paths still wins (Playwright resolves
   // last-registered-first), so adopting these is opt-in and core-docks is unaffected
   // until it deletes its local copies.
+  /**
+   * Permission modes, per harness — the shape the real runtime serves from its
+   * static tables (Claude/Codex/Cursor), from the live agent (ACP), or not at
+   * all (opencode has rules, not modes).
+   *
+   * Mirrored here rather than proxied because these lists are exactly what the
+   * picker renders, so a spec asserting on the rows is asserting on this table.
+   * `permissionModeWrites` records every PUT so a spec can prove a selection
+   * reached the runtime instead of only changing a label.
+   */
+  const MODES_BY_HARNESS: Record<string, { modes: { id: string; name: string; level?: string }[]; unsupported?: string }> = {
+    opencode: { modes: [], unsupported: "opencode has no permission modes of its own" },
+    claude: {
+      modes: [
+        { id: "default", name: "Default", level: "ask" },
+        { id: "acceptEdits", name: "Accept edits", level: "auto" },
+        { id: "auto", name: "Auto" },
+        { id: "plan", name: "Plan" },
+        { id: "dontAsk", name: "Don't ask" },
+        { id: "bypassPermissions", name: "Bypass permissions", level: "full" },
+      ],
+    },
+    codex: {
+      modes: [
+        { id: "read-only", name: "Read only", level: "ask" },
+        { id: "workspace-write", name: "Workspace write", level: "auto" },
+        { id: "untrusted", name: "Untrusted" },
+        { id: "full-access", name: "Full access", level: "full" },
+      ],
+    },
+    cursor: {
+      modes: [
+        { id: "review", name: "Review each call", level: "ask" },
+        { id: "auto-review", name: "Auto-review", level: "auto" },
+        { id: "unsandboxed", name: "Unsandboxed", level: "full" },
+      ],
+    },
+    // ACP agents advertise on session/new, so a DRAFT gets the rungs.
+    acp: {
+      modes: [
+        { id: "ask", name: "Ask for everything", level: "ask" },
+        { id: "auto", name: "Allow edits, ask before risk", level: "auto" },
+        { id: "full", name: "Allow everything", level: "full" },
+      ],
+    },
+  }
+  const modeTableFor = (harness: string) => {
+    if (harness === "opencode") return MODES_BY_HARNESS.opencode!
+    if (harness.endsWith("-acp")) return MODES_BY_HARNESS.acp!
+    return MODES_BY_HARNESS[harness.replace(/-sdk|-app-server$/, "")] ?? MODES_BY_HARNESS.acp!
+  }
+  const modeState = (harness: string) => {
+    const table = modeTableFor(harness)
+    const current = requests.permissionModeWrites.at(-1)?.modeId
+      ?? table.modes.find((mode) => mode.level === "auto")?.id
+    return {
+      modes: table.modes,
+      ...(table.unsupported ? { unsupported: table.unsupported } : {}),
+      ...(current ? { currentModeId: current } : {}),
+      appliesFrom: harness === "cursor-sdk" ? "next-session" : "next-turn",
+    }
+  }
+  // Directory-scoped: what a DRAFT asks for.
+  await page.route("**/permission/modes**", (r) =>
+    api(r) ? json(r, modeState(options.harness ?? "opencode")) : r.continue(),
+  )
+  await page.route("**/session/*/permission-mode**", async (route) => {
+    if (!api(route)) return route.continue()
+    if (route.request().method() === "PUT") {
+      const body = JSON.parse(route.request().postData() || "{}") as { modeId?: string }
+      if (body.modeId) requests.permissionModeWrites.push({ modeId: body.modeId })
+    }
+    return json(route, modeState(options.harness ?? "opencode"))
+  })
+
   await page.route("**/session/*/permissions/*", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() !== "POST") return route.fallback()
@@ -1660,6 +1754,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       providerID: body?.model?.providerID,
       modelID: body?.model?.modelID,
       variant: body?.variant,
+      ...(typeof body?.permissionMode === "string" ? { permissionMode: body.permissionMode } : {}),
     })
 
     messages = [...messages, userMessage({ id: userID, text, agent, providerID, modelID })]

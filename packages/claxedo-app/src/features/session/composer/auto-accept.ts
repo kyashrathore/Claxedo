@@ -1,7 +1,12 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { usePermission } from "@/features/session/providers/permission"
 import type { HarnessId } from "@/platform/identity/session-ref"
-import { claxedoAutoMode, claxedoAutoRevoke, type PermissionModeDelivery } from "@/features/session/permission/modes"
+import {
+  CLAXEDO_ALLOW_SAFE_ID,
+  CLAXEDO_ASK_ALWAYS_ID,
+  claxedoPermissionModes,
+  type PermissionModeDelivery,
+} from "@/features/session/permission/modes"
 import type { PermissionModeApplied } from "@/features/session/permission/apply"
 
 /**
@@ -72,10 +77,16 @@ export function createComposerAutoAccept(input: {
     const deliver = input.deliver
     const harness = input.harness?.()
     if (!deliver || !harness) return
-    // Enabling grants; disabling must WITHDRAW those grants. `claxedoAutoRevoke`
-    // returns undefined for harnesses with nothing to withdraw, which is also how
-    // this skips every non-opencode harness on the enable side.
-    const delivery = enabling ? claxedoAutoMode(harness).delivery : claxedoAutoRevoke(harness)
+    // Enabling grants; disabling must WITHDRAW those grants, which on opencode is
+    // its own explicit ruleset rather than the absence of one — nothing deletes
+    // rules, so "ask for everything" has to be written.
+    //
+    // The `opencode-session-ruleset` check is what skips every other harness:
+    // elsewhere these options deliver `claxedo-auto-answer`, which sends nothing
+    // and is already handled by the local switch this function rides alongside.
+    const options = claxedoPermissionModes(harness)
+    const wanted = enabling ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID
+    const delivery = options.find((option) => option.id === wanted)?.delivery
     if (!delivery || delivery.kind !== "opencode-session-ruleset") return
     try {
       await deliver({ delivery, sessionID })

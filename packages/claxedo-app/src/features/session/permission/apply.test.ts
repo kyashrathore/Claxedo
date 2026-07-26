@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { applyPermissionMode, permissionModeDeliverable, type SessionPermissionWriter } from "./apply"
-import { claxedoAutoMode, type PermissionModeDelivery } from "./modes"
+import { CLAXEDO_ALLOW_SAFE_ID, claxedoPermissionModes, type PermissionModeDelivery } from "./modes"
+
+/** The permissive Claxedo option for a harness, which is what these tests deliver. */
+const permissive = (harness: Parameters<typeof claxedoPermissionModes>[0]) =>
+  claxedoPermissionModes(harness).find((option) => option.id === CLAXEDO_ALLOW_SAFE_ID)!
 
 type Call = {
   sessionID: string
@@ -27,7 +31,7 @@ describe("applyPermissionMode — opencode", () => {
   test("writes the ruleset through the session route, never a config route", async () => {
     const { client, calls } = writer()
     const result = await applyPermissionMode({
-      delivery: claxedoAutoMode("opencode").delivery,
+      delivery: permissive("opencode").delivery,
       sessionID: "ses_1",
       client,
     })
@@ -43,7 +47,7 @@ describe("applyPermissionMode — opencode", () => {
   test("sends the complete ruleset, not a partial patch", async () => {
     const { client, calls } = writer()
     await applyPermissionMode({
-      delivery: claxedoAutoMode("opencode").delivery,
+      delivery: permissive("opencode").delivery,
       sessionID: "ses_1",
       client,
     })
@@ -63,7 +67,7 @@ describe("applyPermissionMode — opencode", () => {
   // site (title editing) passes none either.
   test("sends no directory — the client is already scoped to one", async () => {
     const { client, calls } = writer()
-    await applyPermissionMode({ delivery: claxedoAutoMode("opencode").delivery, sessionID: "ses_1", client })
+    await applyPermissionMode({ delivery: permissive("opencode").delivery, sessionID: "ses_1", client })
     expect("directory" in calls[0]!).toBe(false)
   })
 
@@ -78,7 +82,7 @@ describe("applyPermissionMode — opencode", () => {
       },
     }
     await expect(
-      applyPermissionMode({ delivery: claxedoAutoMode("opencode").delivery, sessionID: "ses_1", client }),
+      applyPermissionMode({ delivery: permissive("opencode").delivery, sessionID: "ses_1", client }),
     ).rejects.toThrow("503")
   })
 })
@@ -89,7 +93,7 @@ describe("applyPermissionMode — the other deliveries", () => {
     // ACP and pi both resolve Auto to local answering.
     for (const harness of ["claude-acp", "codex-acp", "cursor-acp", "cursor-sdk", "pi"] as const) {
       const result = await applyPermissionMode({
-        delivery: claxedoAutoMode(harness).delivery,
+        delivery: permissive(harness).delivery,
         sessionID: "ses_1",
         client,
       })
@@ -98,36 +102,55 @@ describe("applyPermissionMode — the other deliveries", () => {
     expect(calls).toHaveLength(0)
   })
 
-  // These are real deliveries with no implementation yet. They must report
-  // `not-wired` rather than success, or a picker will claim a mode is active when
-  // nothing was sent — the exact failure this module exists to prevent for opencode.
-  test("unimplemented deliveries report not-wired, never applied", async () => {
-    const { client, calls } = writer()
-    const deliveries: PermissionModeDelivery[] = [
-      { kind: "acp-set-session-mode", modeId: "plan" },
-      { kind: "claude-sdk-permission-mode", permissionMode: "auto" },
-      { kind: "codex-approval-policy", approvalPolicy: "on-request", sandbox: "workspace-write" },
-    ]
-    for (const delivery of deliveries) {
-      const result = await applyPermissionMode({ delivery, sessionID: "ses_1", client })
-      expect(result).toEqual({ kind: "not-wired", delivery: delivery.kind })
+  // The harness delivery forwards an id the harness itself supplied. It reports
+  // what the harness KEPT, which can differ from the request — an ACP agent clamps
+  // its mode when a model change shrinks the available set, and a client that
+  // echoed its own request would drift from reality without ever noticing.
+  test("a harness mode is forwarded and the harness's own answer is returned", async () => {
+    const sent: { sessionID: string; modeId: string }[] = []
+    const client: SessionPermissionWriter = {
+      session: { update: async () => ({}) },
+      setPermissionMode: async (input) => {
+        sent.push(input)
+        return { currentModeId: "clamped-to-something-else" }
+      },
     }
-    expect(calls).toHaveLength(0)
+    const result = await applyPermissionMode({
+      delivery: { kind: "harness-permission-mode", modeId: "full-access", appliesFrom: "next-turn" },
+      sessionID: "ses_1",
+      client,
+    })
+    expect(sent).toEqual([{ sessionID: "ses_1", modeId: "full-access" }])
+    expect(result).toEqual({ kind: "applied", appliesFrom: "next-turn", kept: "clamped-to-something-else" })
   })
 
-  // Claude and Codex have native mechanisms, so Auto must NOT resolve to local
-  // answering for them — that would silently downgrade an enforced policy to
-  // Claxedo replying to prompts after the fact.
-  test("Claude and Codex Auto are native deliveries, so they are not answered locally", async () => {
-    const { client } = writer()
-    for (const harness of ["claude-sdk", "codex-app-server"] as const) {
-      const result = await applyPermissionMode({
-        delivery: claxedoAutoMode(harness).delivery,
-        sessionID: "ses_1",
-        client,
-      })
-      expect(result.kind, harness).toBe("not-wired")
+  // `next-session` survives the round trip rather than being flattened. On cursor
+  // this is the difference between "from your next message" and "not this session
+  // at all".
+  test("next-session is carried through, not normalised to next-turn", async () => {
+    const client: SessionPermissionWriter = {
+      session: { update: async () => ({}) },
+      setPermissionMode: async () => ({ currentModeId: "auto-review" }),
     }
+    const result = await applyPermissionMode({
+      delivery: { kind: "harness-permission-mode", modeId: "auto-review", appliesFrom: "next-session" },
+      sessionID: "ses_1",
+      client,
+    })
+    expect(result.kind === "applied" && result.appliesFrom).toBe("next-session")
+  })
+
+  // A client with no route to the harness (a cloud opencode session talks to the
+  // opencode client, which has no such method) must say not-wired rather than
+  // throwing or silently succeeding.
+  test("no route to the harness reports not-wired", async () => {
+    const { client } = writer()
+    const result = await applyPermissionMode({
+      delivery: { kind: "harness-permission-mode", modeId: "auto", appliesFrom: "next-turn" },
+      sessionID: "ses_1",
+      client,
+    })
+    expect(result).toEqual({ kind: "not-wired", delivery: "harness-permission-mode" })
   })
 })
 
@@ -139,30 +162,25 @@ describe("permissionModeDeliverable stays pinned to applyPermissionMode", () => 
   // delivery, the picker offers a mode that silently does nothing — the exact
   // failure `not-wired` exists to expose. Walk every kind and require agreement.
   const ALL: PermissionModeDelivery[] = [
-    claxedoAutoMode("opencode").delivery,
-    claxedoAutoMode("pi").delivery,
-    { kind: "acp-set-session-mode", modeId: "plan" },
-    { kind: "claude-sdk-permission-mode", permissionMode: "auto" },
-    { kind: "codex-approval-policy", approvalPolicy: "on-request", sandbox: "workspace-write" },
+    permissive("opencode").delivery,
+    permissive("pi").delivery,
+    { kind: "harness-permission-mode", modeId: "auto", appliesFrom: "next-turn" },
   ]
 
   test("every delivery kind is covered by this table", () => {
     const kinds = new Set(ALL.map((delivery) => delivery.kind))
     // If a new delivery kind is added, this fails until it is listed above — which
     // is what stops the guard silently covering less than it claims.
-    expect(kinds).toEqual(
-      new Set([
-        "opencode-session-ruleset",
-        "claxedo-auto-answer",
-        "acp-set-session-mode",
-        "claude-sdk-permission-mode",
-        "codex-approval-policy",
-      ]),
-    )
+    expect(kinds).toEqual(new Set(["opencode-session-ruleset", "claxedo-auto-answer", "harness-permission-mode"]))
   })
 
   test("deliverable exactly when applyPermissionMode does not report not-wired", async () => {
-    const client: SessionPermissionWriter = { session: { update: async () => ({}) } }
+    // A client that CAN reach the harness, so `not-wired` here can only come from
+    // an unimplemented delivery rather than from a missing route.
+    const client: SessionPermissionWriter = {
+      session: { update: async () => ({}) },
+      setPermissionMode: async () => ({ currentModeId: "auto" }),
+    }
     for (const delivery of ALL) {
       const result = await applyPermissionMode({ delivery, sessionID: "ses_1", client })
       const actuallyDelivered = result.kind !== "not-wired"

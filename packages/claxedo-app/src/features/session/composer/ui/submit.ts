@@ -1,6 +1,7 @@
 import type { OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
+import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
 import { type Accessor } from "solid-js"
 import type { FileSelection } from "@/platform/files/types"
@@ -91,6 +92,8 @@ type PromptSubmitContentInput = {
   composerMode: Accessor<ComposerMode>
   /** System prompt injected with every request (e.g. page context for dock sessions). */
   system?: Accessor<string | undefined>
+  /** Sent with the prompt so it governs THIS turn, including the first. */
+  permissionMode?: Accessor<string | undefined>
   /** Override the agent name (e.g. force "doc" agent in page dock). */
   agent?: Accessor<string | undefined>
   /** Scoped variant override for the current draft/session pane. */
@@ -218,14 +221,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     },
   }
 
-  const errorMessage = (err: unknown) => {
-    if (err && typeof err === "object" && "data" in err) {
-      const data = (err as { data?: { message?: string } }).data
-      if (data?.message) return data.message
-    }
-    if (err instanceof Error) return err.message
-    return language.t("common.requestFailed")
-  }
+  const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
 
   const restoreCommentItems = (items: CommentItem[]) => {
     for (const item of items) {
@@ -754,6 +750,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      permissionMode: input.permissionMode?.(),
       system: input.system?.()?.trim(),
       format: input.format?.(),
       targetCreated: target.created,

@@ -82,15 +82,24 @@ export function PromptPermissionControl(props: {
             <Show when={props.groups()} fallback={<MenuV2.Item disabled>Resolving harness…</MenuV2.Item>}>
               {(groups) => (
                 <>
-                  <MenuV2.Group>
-                    <MenuV2.GroupLabel>Claxedo</MenuV2.GroupLabel>
-                    <For each={groups().claxedo}>
-                      {(item) => (
-                        <ModeRow row={item} current={props.current} onSelect={props.onSelect} />
-                      )}
-                    </For>
-                  </MenuV2.Group>
-                  <MenuV2.Separator />
+                  {/*
+                    The Claxedo group is EMPTY whenever the harness has modes of
+                    its own — the two sets are mutually exclusive by design. So
+                    the heading and its separator have to be conditional, or a
+                    harness-backed session shows a "Claxedo" label with nothing
+                    under it, which reads as a list that failed to load.
+                  */}
+                  <Show when={groups().claxedo.length > 0}>
+                    <MenuV2.Group>
+                      <MenuV2.GroupLabel>Claxedo</MenuV2.GroupLabel>
+                      <For each={groups().claxedo}>
+                        {(item) => (
+                          <ModeRow row={item} current={props.current} onSelect={props.onSelect} />
+                        )}
+                      </For>
+                    </MenuV2.Group>
+                    <MenuV2.Separator />
+                  </Show>
                   <MenuV2.Group>
                     <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
                     <Show

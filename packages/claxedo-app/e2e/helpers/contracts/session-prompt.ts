@@ -143,6 +143,11 @@ export const SESSION_PROMPT_FIELDS = {
     check: optionalString("variant"),
     whenAbsent: "falls back to session config's variant, else omitted — note the server checks `!== undefined`, so an explicit variant of \"\" is meaningful and NOT the same as absent",
   },
+  permissionMode: {
+    check: optionalString("permissionMode"),
+    whenAbsent:
+      "the turn runs under whatever mode the harness already stands at — for a FIRST turn that is the runtime's default rung, since no session existed to set one on beforehand",
+  },
 } satisfies Record<keyof Required<SessionPromptBody>, FieldSpec>
 
 /**

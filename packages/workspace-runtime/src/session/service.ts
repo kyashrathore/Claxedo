@@ -36,6 +36,26 @@ export type SessionPromptBody = {
   format?: PromptInput["format"]
   system?: string
   variant?: string
+  /**
+   * The permission mode this turn should run under, applied BEFORE the prompt
+   * reaches the harness.
+   *
+   * Carried on the prompt rather than requiring a prior `PUT
+   * /session/:id/permission-mode` because of the first turn. That route can only
+   * run once a session exists, but a session is created BY the first message —
+   * so a mode chosen in the composer before sending had no way to reach the
+   * harness in time, and the opening turn always ran under whichever default the
+   * runtime picked. That is exactly backwards: before the agent has touched
+   * anything is when someone most wants to say "ask me about everything".
+   *
+   * Every harness accepts a mode at turn start, which is why this works
+   * uniformly: `permissionMode` is a `query()` option on Claude and `query()`
+   * runs per turn; Codex already carries the policy on `turn/start`; ACP takes
+   * `set_mode` between `session/new` and the prompt.
+   *
+   * The PUT route remains, for changing the mode MID-conversation.
+   */
+  permissionMode?: string
 }
 
 export type SessionPromptTurnResult = {

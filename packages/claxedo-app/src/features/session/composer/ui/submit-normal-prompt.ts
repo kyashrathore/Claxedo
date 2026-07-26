@@ -42,6 +42,16 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly agent: string
   readonly model: { providerID: string; modelID: string }
   readonly variant?: string
+  /**
+   * The permission mode this turn runs under, sent WITH the prompt.
+   *
+   * Not a separate call, because the session is created by this very message:
+   * a mode chosen in the composer beforehand has no session to be written to
+   * until the send is already in flight. The runtime applies it before the
+   * prompt reaches the harness, so it governs the opening turn instead of
+   * landing after the agent has acted.
+   */
+  readonly permissionMode?: string
   readonly system?: string
   readonly format?: PromptDispatchPayload["format"]
   readonly targetCreated: boolean
@@ -188,6 +198,7 @@ export async function dispatchNormalPromptSubmit(input: {
     messageID: promptRequest.messageID,
     parts: promptRequest.requestParts,
     variant: input.variant,
+    ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
     ...(input.system ? { system: input.system } : {}),
     ...(input.format ? { format: input.format } : {}),
   })
