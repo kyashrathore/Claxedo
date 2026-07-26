@@ -1404,8 +1404,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const batch = await busGlobal.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
   }
-  await page.route("**/global/event?**", eventStreamHandler)
+  // Broadest first: `**/event?**` also matches `.../global/event?…`, so registering it
+  // LAST (Playwright matches most-recently-registered-first) would have left the
+  // `/global/event` line permanently unreachable. Inert here — both point at the same
+  // handler, which dispatches on pathname itself — but the ordering is written the
+  // right way round so the shadowing guard has nothing to allowlist.
   await page.route("**/event?**", eventStreamHandler)
+  await page.route("**/global/event?**", eventStreamHandler)
 
   // Sessions on the /w/<dir>/session/<id> route shape consume live events from
   // GET /api/wr/events (see src/context/global-sdk.tsx), NOT /global/event.
@@ -2387,8 +2392,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/global/event**`, relayEventHandler)
     await page.route(`${base}/event**`, relayEventHandler)
 
+    // Same live-map contract as the local lane (`./contracts/session-status.ts`) and the
+    // same `liveSessionStatuses` state, so `handles.setSessionStatus` drives whichever
+    // lane a spec models. This used to answer `{[CLOUD_SESSION_ID]:{type:"idle"}}` once
+    // the session existed — an idle-VALUED entry no server path can emit; every consumer
+    // decoded it exactly as it decodes the absent key it is now, so the shape changed
+    // and the behavior did not.
     await page.route(`${base}/session/status**`, (r) =>
-      json(r, cloudSessionCreated ? { [CLOUD_SESSION_ID]: { type: "idle" } } : {}),
+      json(r, sessionStatusResponseBody(Object.fromEntries(liveSessionStatuses))),
     )
 
     const handleCloudSessionList = async (route: Route) => {
@@ -2469,8 +2480,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // Single `*` (not `**`) matches exactly one path segment, so this never collides
     // with the `/session/*/config|capabilities|todo|message|prompt_async` routes
     // above (those have an extra `/`-delimited segment) — same convention as the
-    // local lane's own `"**/session/*"` catch-all.
-    await page.route(`${base}/session/*`, (r) => (api(r) ? json(r, cloudSessionRow()) : r.continue()))
+    // local lane's own `"**/session/*"` catch-all, INCLUDING that catch-all's one
+    // real collision: `/session/status` is a bulk status map, not a session whose id
+    // is "status", and it is `/session/<one-segment>` shaped so this pattern swallows
+    // it. Registered later than `${base}/session/status**` above, so without the
+    // hand-back below every cloud `client.session.status()` read was answered with a
+    // SESSION ROW — the exact defect the local lane carried. Kept in step with
+    // `mock-route-shadowing.ts`'s allowlist, which pins this expression.
+    await page.route(`${base}/session/*`, (r) => {
+      if (!api(r)) return r.continue()
+      if (new URL(r.request().url()).pathname.endsWith("/session/status")) return r.fallback()
+      return json(r, cloudSessionRow())
+    })
     // Same shared handler as the primary origin — it strips the `/workspaces/:id`
     // prefix itself. These used to answer `[]` for EVERY path under `/file` and
     // `/find`, which is the right shape for `/find/file` and `/file` but the wrong
