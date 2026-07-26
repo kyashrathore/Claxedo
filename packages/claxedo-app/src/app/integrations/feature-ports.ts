@@ -61,6 +61,7 @@ import * as SettingsSourceViews from "@/app/integrations/settings-source-views"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
+import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry } from "@/platform/telemetry/analytics"
@@ -139,6 +140,7 @@ configureTerminalAppPorts({
   NavigationStatusDot: Navigation.NavigationStatusDot,
   workspacePlacement: WorkspaceConnection.workspacePlacement,
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
+  TerminalNewView: TerminalNew.TerminalNewView,
 })
 
 configureSettingsAppPorts({

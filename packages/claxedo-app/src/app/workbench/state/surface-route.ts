@@ -8,6 +8,7 @@ import {
   workspaceSessionRoute,
   workspaceTerminalRoute,
 } from "@/platform/identity/route"
+import { PENDING_TERMINAL_PREFIX } from "@/features/terminal/core/terminal-surface-id"
 
 type RouteContent = Pick<ContentMeta, "type" | "sessionId" | "pageId" | "terminalId" | "content">
 
@@ -63,7 +64,11 @@ export function surfaceRoute(dir: string, content: RouteContent) {
     if (pageId) return pageRoute(dir, pageId)
   }
   const terminalId = routeTerminalId(content)
-  if (content.type === "terminal" && terminalId && !terminalId.startsWith("pending-")) {
+  // `new` (the creator) DOES get a route, unlike `pending-*`: it is a surface
+  // the user can sit on, so it has to survive a reload the way the new-session
+  // composer does. `pending-*` stays unroutable because that id is replaced by
+  // a real pty id moments later and would deep-link to nothing.
+  if (content.type === "terminal" && terminalId && !terminalId.startsWith(PENDING_TERMINAL_PREFIX)) {
     return terminalRoute(dir, terminalId)
   }
   return undefined

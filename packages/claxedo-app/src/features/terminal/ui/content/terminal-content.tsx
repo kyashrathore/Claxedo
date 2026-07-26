@@ -10,10 +10,20 @@ import { pendingRecovery, resolveRecovery, trackRecovery } from "../../workbench
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
-import { SessionPaneScope, useClaxedoState, type ContentMeta, type PaneCtx } from "@/features/terminal/app-ports"
+import {
+  SessionPaneScope,
+  TerminalNewView,
+  useClaxedoState,
+  type ContentMeta,
+  type PaneCtx,
+} from "@/features/terminal/app-ports"
+import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-surface-id"
 import { shouldMountTerminalPane } from "./terminal-content-policy"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
+
+/** See the note on the same alias in `app/workbench/terminal/terminal-new-view.tsx`. */
+type WorkspaceDirectoryRef = string
 
 const recoveryAlias = new Map<string, { id: string; at: number }>()
 const TERMINAL_ACTIVATION_DELAY_MS = 120
@@ -21,6 +31,7 @@ const TERMINAL_ACTIVATION_DELAY_MS = 120
 export function TerminalContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
   const directory = () => props.meta.directory ?? props.meta.content?.directory
   const sessionRef = () => props.meta.content?.sessionRef
+  const terminalId = () => props.meta.terminalId ?? props.meta.content?.terminalId
 
   return (
     <Show
@@ -36,11 +47,73 @@ export function TerminalContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
           paneId={() => props.ctx.paneId}
           surfaceId={() => props.meta.id}
         >
-          <TerminalContentInner meta={props.meta} ctx={props.ctx} directory={() => dir()} />
+          {/* The branch belongs INSIDE the pane scope, not around it. The scope
+              is what provides the directory-scoped SDK/server/layout contexts,
+              and the creator needs them (its placement chips read the project
+              inventory through them). It is `TerminalContentInner` that starts a
+              pty on mount, so swapping only the inner component is what keeps a
+              `new` surface from spawning one. */}
+          <Show
+            when={terminalId() !== NEW_TERMINAL_ID}
+            fallback={<TerminalNewSurface meta={props.meta} ctx={props.ctx} directory={() => dir()} />}
+          >
+            <TerminalContentInner meta={props.meta} ctx={props.ctx} directory={() => dir()} />
+          </Show>
         </SessionPaneScope>
       )}
     </Show>
   )
+}
+
+/**
+ * A terminal surface that has not chosen a workspace yet. It owns the two
+ * transitions the creator itself cannot perform, because both need this
+ * surface's content id: re-pointing at another directory, and becoming a real
+ * terminal in place (rather than opening a second tab and orphaning this one).
+ */
+function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory: () => string }) {
+  const state = useClaxedoState()
+  const navigate = useNavigate()
+
+  const retarget = (directory: WorkspaceDirectoryRef) => {
+    state.meta.patch(props.meta.id, {
+      directory,
+      content: { ...props.meta.content, type: "terminal", directory, terminalId: NEW_TERMINAL_ID },
+    })
+  }
+
+  const launch = (input: { directory: WorkspaceDirectoryRef; command?: string; title?: string }) => {
+    const pendingId = `${PENDING_TERMINAL_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    const title = input.title || "Terminal"
+    batch(() => {
+      state.meta.patch(props.meta.id, {
+        directory: input.directory,
+        terminalId: pendingId,
+        content: {
+          ...props.meta.content,
+          type: "terminal",
+          directory: input.directory,
+          terminalId: pendingId,
+          title,
+          ...(input.command ? { command: input.command } : {}),
+        },
+      })
+      state.terminal.queueCreateForContent(
+        props.meta.id,
+        input.directory,
+        input.command,
+        input.title,
+        props.ctx.paneId,
+      )
+    })
+    // Route to the pending id for the same reason `handleNewTerminal` does: it
+    // is also what lets TerminalContentInner rewrite the URL when the real pty
+    // id arrives (its swap is a no-op unless the route already points at the
+    // pending one).
+    navigate(workspaceTerminalRoute(input.directory, pendingId))
+  }
+
+  return <TerminalNewView directory={props.directory()} onLaunch={launch} onRetarget={retarget} />
 }
 
 function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; directory: () => string }) {

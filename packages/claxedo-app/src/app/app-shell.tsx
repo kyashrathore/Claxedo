@@ -78,6 +78,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     handleDeleteWorkspace,
     handleRemoveProject,
     handleNewTerminal,
+    createWorkspaceDirectory,
     handleNewPage,
     handleTabSelect,
     handleOpenMarketplace,
@@ -108,6 +109,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         canUseDocuments={shell.canUseDocuments()}
         onNewSession={handleNewSession}
         onNewTerminal={handleNewTerminal}
+        onCreateWorkspace={createWorkspaceDirectory}
         onNewPage={handleNewPage}
         onTabSelect={handleTabSelect}
         onTabClose={handleTabClose}

@@ -9,6 +9,7 @@ import type * as SessionNavigation from "@/features/session/ui/navigation/sessio
 import type * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
 import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
+import type * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 
 export type TerminalAppPorts = {
   useSDK: typeof SDK.useSDK
@@ -19,6 +20,12 @@ export type TerminalAppPorts = {
   NavigationStatusDot: typeof Navigation.NavigationStatusDot
   workspacePlacement: typeof WorkspaceConnection.workspacePlacement
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
+  /**
+   * The creator shown for a terminal surface still in its `new` state. It lives
+   * in `app/` because it composes the session composer's placement chips with
+   * the workspaces provisioning flow — two features this one may not import.
+   */
+  TerminalNewView: typeof TerminalNew.TerminalNewView
 }
 
 let ports: TerminalAppPorts | undefined
@@ -52,3 +59,4 @@ export const workspacePlacement = bind("workspacePlacement")
 export type ActionProps = LayoutActions.ActionProps
 export type Nav = LayoutActions.Nav
 export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
+export const TerminalNewView = bind("TerminalNewView")
