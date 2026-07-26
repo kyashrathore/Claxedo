@@ -1,4 +1,6 @@
 import { onMount, splitProps, type ComponentProps } from "solid-js"
+import { codexIconSprite } from "./codex-icons"
+import { UI_CODEX_ICON_ALIASES, UI_CODEX_ICON_TRANSFORMS } from "./codex-icon-map"
 
 const icons = {
   "align-right": `<path d="M12.292 6.04167L16.2503 9.99998L12.292 13.9583M2.91699 9.99998H15.6253M17.0837 3.75V16.25" stroke="currentColor" stroke-linecap="square"/>`,
@@ -158,7 +160,7 @@ export interface IconProps extends ComponentProps<"svg"> {
   size?: "small" | "normal" | "medium" | "large"
 }
 
-export function Icon(props: IconProps) {
+export function OpenCodeIcon(props: IconProps) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
   onMount(ensureSprite)
 
@@ -179,4 +181,48 @@ export function Icon(props: IconProps) {
       </svg>
     </div>
   )
+}
+
+export function Icon(props: IconProps) {
+  const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
+  const glyph = UI_CODEX_ICON_ALIASES[local.name]
+  if (!glyph) {
+    throw new Error(
+      `[icons:codex] No glyph for "${local.name}". The identity mapping "${local.name}" was not found; add an explicit alias.`,
+    )
+  }
+  const custom = codexCustomGlyph(glyph)
+  onMount(ensureSprite)
+
+  return (
+    <div data-component="icon" data-icon={local.name} data-library="codex" data-size={local.size || "normal"}>
+      <svg
+        data-slot="icon-svg"
+        classList={{
+          ...local.classList,
+          [local.class ?? ""]: !!local.class,
+        }}
+        fill="none"
+        viewBox="0 0 20 20"
+        aria-hidden="true"
+        {...others}
+      >
+        <use href={custom ? `#${symbol(custom)}` : `${codexIconSprite}#${glyph}`} transform={codexTransform(local.name)} />
+      </svg>
+    </div>
+  )
+}
+
+function codexCustomGlyph(glyph: (typeof UI_CODEX_ICON_ALIASES)[keyof typeof UI_CODEX_ICON_ALIASES]) {
+  if (glyph === "codex-custom-check") return "check"
+  if (glyph === "codex-custom-close-small") return "close-small"
+  if (glyph === "codex-custom-copy") return "copy"
+  if (glyph === "codex-custom-magnifying-glass") return "magnifying-glass"
+  if (glyph === "codex-custom-magnifying-glass-menu") return "magnifying-glass-menu"
+}
+
+function codexTransform(name: IconProps["name"]) {
+  if (name in UI_CODEX_ICON_TRANSFORMS) {
+    return UI_CODEX_ICON_TRANSFORMS[name as keyof typeof UI_CODEX_ICON_TRANSFORMS]
+  }
 }
