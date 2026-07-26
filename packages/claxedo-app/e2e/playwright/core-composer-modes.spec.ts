@@ -440,12 +440,10 @@ test.describe("core composer modes @core", () => {
       const editor = await openDraftPrompt(page, DIR)
       const submit = page.locator(SELECTORS.submitControl).last()
 
-      let abortCount = 0
-      await page.route("**/session/*/abort**", async (route) => {
-        abortCount += 1
-        await route.fulfill({ status: 204, body: "" })
-      })
-
+      // `POST /session/:id/abort` is the shared mock's (`mock.requests.abortCount`). The
+      // spec-local route that used to sit here answered 204 with an empty body; the real
+      // route answers 200 with an `AbortResult` (workspace-runtime session-core.ts:769-782),
+      // and hand-rolling it violated e2e/INVARIANTS.md authoring rule 1.
       await editor.click()
       await page.keyboard.type("this will stay busy forever")
       await submit.click()
@@ -455,7 +453,7 @@ test.describe("core composer modes @core", () => {
       await editor.click()
       await page.keyboard.press("Escape")
 
-      await expect.poll(() => abortCount, { timeout: 20_000 }).toBe(1)
+      await expect.poll(() => mock.requests.abortCount, { timeout: 20_000 }).toBe(1)
     },
   )
 

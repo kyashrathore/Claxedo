@@ -976,12 +976,25 @@ test.describe("core session actions: subagent (child session) @core", () => {
   })
 
   test("a harness session's auto-title patches the sidebar inventory even without a resolvable projectID — behavior 15", async ({ page }) => {
-    // `installMockRuntime` does not mock `/api/control/sessions` (the session
-    // inventory bootstrap endpoint, `src/context/global-sync/inventory-source.ts`
-    // `fetchLocalControlSessions`) — spec-local route, same pattern
-    // `core-sidebar-tree.spec.ts`'s `installSessionTreeFixtures` uses for the same
-    // gap. Registered after `installMockRuntime` so it wins.
     const HARNESS_SESSION_ID = "ses_core_session_actions_harness_title"
+    await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: HARNESS_SESSION_ID,
+      projectId: PROJECT_ID,
+      projectName: PROJECT_NAME,
+      harness: "codex-acp",
+    })
+    // `/api/control/sessions` (the session inventory bootstrap endpoint,
+    // `fetchLocalControlSessions` in `src/features/session/data/sync/inventory-source.ts`)
+    // IS mocked by the shared helper now — it defaults to the real route's own empty
+    // answer. This override supplies the one seeded row this behavior needs, and must
+    // be registered AFTER `installMockRuntime` to win: Playwright resolves routes
+    // last-registered-first.
+    //
+    // It used to sit BEFORE the install call while its own comment claimed the
+    // opposite. That was harmless only while the shared mock had no route here at all;
+    // the moment one landed, this override was shadowed and the seeded row vanished.
+    // The comment was right and the code was wrong — fixed by moving the code.
     await page.route("**/api/control/sessions**", async (route) => {
       return route.fulfill({
         status: 200,
@@ -997,14 +1010,6 @@ test.describe("core session actions: subagent (child session) @core", () => {
           }],
         }),
       })
-    })
-
-    await installMockRuntime(page, {
-      dir: DIR,
-      sessionId: HARNESS_SESSION_ID,
-      projectId: PROJECT_ID,
-      projectName: PROJECT_NAME,
-      harness: "codex-acp",
     })
     await seedOneProject(page, DIR)
     await openSession(page, DIR, HARNESS_SESSION_ID)

@@ -467,6 +467,13 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(nonClerkConsole(mock.requests.console)).toEqual([])
     expect(nonClerkFailed(mock.requests.failed)).toEqual([])
     expect(nonClerkBadResponses(mock.requests.badResponses)).toEqual([])
+    // `requests.unhandled` is now a REAL list — every fetch/xhr that reached the end of
+    // the route chain without a handler. Verified live while it was being built: a
+    // deliberately-unmocked `fetch("/tripwire-scaffold-probe")` was recorded as exactly
+    // one entry ("GET http://localhost:4455/tripwire-scaffold-probe") and nothing else,
+    // and mocking the one real escape this assertion found on its first honest run
+    // (`GET /api/control/sessions`) took the list back to empty. Before that it was
+    // written to by nothing at all, so this line passed vacuously.
     expect(mock.requests.unhandled).toEqual([])
     expectConsoleMirrorsAreAccountedFor(mock.requests)
   })
