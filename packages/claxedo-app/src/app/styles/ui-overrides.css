@@ -547,6 +547,13 @@ html[data-theme="codex"] [data-slot="switcher-metadata-card"],
 html[data-theme="codex"] .ui-context-card-rail {
   border: 0 !important;
   box-shadow: var(--codex-elevation-card);
+  /*
+   * 10px, same as the menus. The app's scale is `--radius-md: .5rem`,
+   * `--radius-lg: .625rem`, `--radius-xl: .75rem`, and its floating surfaces sit
+   * on `lg` — 10px. Both our `--radius-lg` and Tailwind's `rounded-lg` are 8px,
+   * so these cards were rendering a step tighter than every overlay beside them.
+   */
+  border-radius: var(--codex-radius-overlay) !important;
 }
 
 /*
