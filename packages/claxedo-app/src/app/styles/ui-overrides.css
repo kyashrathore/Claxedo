@@ -110,12 +110,244 @@
 }
 
 /*
+ * Semantic application surfaces
+ *
+ * These rules are theme-agnostic. Every role they name resolves for every
+ * bundled theme — a theme that does not override the role inherits the generic
+ * token named in `SEMANTIC_THEME_ROLE_FALLBACKS` (packages/ui/src/theme/resolve.ts)
+ * — so the shell no longer needs one selector per theme. Codex only supplies
+ * different values.
+ */
+
+/*
+ * Floating surfaces rebind the page palette to the overlay palette for their
+ * whole subtree, so content authored against the generic tokens follows the
+ * menu it sits in rather than the page behind it. `[data-surface="overlay"]` is
+ * stamped by DropdownMenu; `.theme-overlay-surface` (and its current spelling,
+ * `.codex-overlay-surface`) is the opt-in for the hand-authored picker shells —
+ * model picker, Review source, composer suggestions, document filters — that
+ * are built outside the shared menu primitives.
+ *
+ * For a theme with no overlay overrides every value below resolves to exactly
+ * the token the surface already painted, so this is inert outside Codex.
+ */
+[data-surface="overlay"],
+.theme-overlay-surface,
+.codex-overlay-surface {
+  --background-base: var(--overlay-surface);
+  --background-stronger: var(--overlay-surface);
+  --surface-base: var(--overlay-surface);
+  --surface-base-hover: var(--overlay-surface-hover);
+  --surface-base-active: var(--overlay-surface-hover);
+  --surface-inset-base: var(--overlay-surface-input);
+  --surface-inset-base-hover: var(--overlay-surface-hover);
+  --surface-inset-strong: var(--overlay-surface-input);
+  --surface-inset-strong-hover: var(--overlay-surface-hover);
+  --surface-raised-base: var(--overlay-surface);
+  --surface-raised-base-hover: var(--overlay-surface-hover);
+  --surface-raised-base-active: var(--overlay-surface-hover);
+  --surface-raised-stronger-non-alpha: var(--overlay-surface);
+  --border-base: var(--overlay-border);
+  --border-weak-base: var(--overlay-border);
+  --border-weaker-base: var(--overlay-border);
+  --text-stronger: var(--overlay-text);
+  --text-strong: var(--overlay-text);
+  --text-base: var(--overlay-text);
+  --text-weak: var(--overlay-text-muted);
+  --text-weaker: var(--overlay-text-muted);
+  --icon-strong-base: var(--overlay-icon);
+  --icon-base: var(--overlay-icon);
+  --icon-weak-base: var(--overlay-icon-muted);
+  --icon-interaction-muted: var(--overlay-icon-muted);
+  --icon-interaction-strong: var(--overlay-icon);
+  --color-background-base: var(--overlay-surface);
+  --color-background-stronger: var(--overlay-surface);
+  --color-surface-base: var(--overlay-surface);
+  --color-surface-base-hover: var(--overlay-surface-hover);
+  --color-surface-base-active: var(--overlay-surface-hover);
+  --color-surface-inset-base: var(--overlay-surface-input);
+  --color-surface-inset-base-hover: var(--overlay-surface-hover);
+  --color-surface-inset-strong: var(--overlay-surface-input);
+  --color-surface-inset-strong-hover: var(--overlay-surface-hover);
+  --color-surface-raised-base: var(--overlay-surface);
+  --color-surface-raised-base-hover: var(--overlay-surface-hover);
+  --color-surface-raised-base-active: var(--overlay-surface-hover);
+  --color-surface-raised-stronger-non-alpha: var(--overlay-surface);
+  --color-border-base: var(--overlay-border);
+  --color-border-weak-base: var(--overlay-border);
+  --color-border-weaker-base: var(--overlay-border);
+  --color-text-stronger: var(--overlay-text);
+  --color-text-strong: var(--overlay-text);
+  --color-text-base: var(--overlay-text);
+  --color-text-weak: var(--overlay-text-muted);
+  --color-text-weaker: var(--overlay-text-muted);
+  --color-icon-strong-base: var(--overlay-icon);
+  --color-icon-base: var(--overlay-icon);
+  --color-icon-weak-base: var(--overlay-icon-muted);
+  color: var(--overlay-text);
+}
+
+/*
+ * Only the hand-authored shells need the paint forced. They carry utility
+ * classes (`bg-background-base`, `bg-surface-raised-stronger-non-alpha`) that
+ * would otherwise win. The shared menu primitives already paint themselves from
+ * `--overlay-surface`, so overriding them here would be redundant — and an
+ * `!important` on `[data-surface="overlay"]` would take the paint away from
+ * every caller of DropdownMenu in every theme.
+ */
+.theme-overlay-surface,
+.codex-overlay-surface {
+  background-color: var(--overlay-surface) !important;
+  border-color: var(--overlay-border) !important;
+}
+
+/*
+ * The dock shell masks overlapping surfaces with a ring painted in its own
+ * background color, so the ring has to know what the composer is painted with.
+ * Only the color is bound here; the composer keeps whatever elevation its own
+ * surface defines.
+ */
+[data-surface="composer"] {
+  --dock-shell-border-underlay-background: var(--shell-surface-composer);
+}
+
+/*
+ * Icon interaction grammar. The `data-icon-interaction` attribute is emitted by
+ * the shared icon controls in every theme, so its paint is theme-agnostic too:
+ * - passive glyphs stay visually quiet when their containing row is hovered;
+ * - row actions brighten their outline without drawing a second hover pill;
+ * - standalone controls receive a hover surface;
+ * - a pressed binary control is communicated by its glyph and foreground,
+ *   not a persistent filled background.
+ * `icon-interaction-muted` / `-strong` are contrast-derived per theme against
+ * the shell surfaces, so a glyph is legible wherever the shell puts it.
+ */
+[data-icon-interaction="passive"],
+[data-icon-interaction="row-action"],
+[data-icon-interaction="row-actions"] button,
+[data-icon-interaction="binary"],
+[data-icon-interaction="subdued"] {
+  color: var(--icon-interaction-muted);
+}
+
+[data-icon-interaction="passive"] [data-component="icon"],
+[data-icon-interaction="passive"] [data-slot="icon-svg"],
+[data-icon-interaction="row-action"] [data-component="icon"],
+[data-icon-interaction="row-action"] [data-slot="icon-svg"],
+[data-icon-interaction="row-actions"] button [data-component="icon"],
+[data-icon-interaction="row-actions"] button [data-slot="icon-svg"],
+[data-icon-interaction="binary"] [data-component="icon"],
+[data-icon-interaction="binary"] [data-slot="icon-svg"],
+[data-icon-interaction="persistent"] [data-component="icon"],
+[data-icon-interaction="persistent"] [data-slot="icon-svg"],
+[data-icon-interaction="subdued"] [data-component="icon"],
+[data-icon-interaction="subdued"] [data-slot="icon-svg"] {
+  color: inherit !important;
+}
+
+[data-icon-interaction="row-action"]:hover,
+[data-icon-interaction="row-action"]:focus-visible,
+[data-icon-interaction="row-actions"] button:hover,
+[data-icon-interaction="row-actions"]:focus-within button {
+  color: var(--icon-interaction-strong);
+  background-color: transparent;
+}
+
+[data-icon-interaction="binary"][aria-pressed="true"],
+[data-icon-interaction="binary"][aria-expanded="true"],
+[data-icon-interaction="binary"][data-icon-state="open"],
+[data-icon-interaction="binary"][data-icon-state="active"],
+[data-icon-interaction="binary"][data-icon-state="selected"],
+[data-icon-interaction="persistent"],
+[data-icon-interaction="standalone"] {
+  color: var(--icon-interaction-strong);
+}
+
+/* Filled primary icon buttons define their own inverse foreground. Persistent
+   interaction emphasis must not repaint that glyph with the shell icon color. */
+[data-component="icon-button"][data-variant="primary"][data-icon-interaction="persistent"] {
+  color: var(--v2-icon-icon-inverse);
+}
+
+[data-icon-interaction="standalone"]:hover {
+  background-color: var(--row-surface-hover);
+}
+
+[data-icon-interaction="standalone"][aria-pressed="true"] {
+  background-color: transparent;
+}
+
+[data-icon-interaction="subdued"]:hover,
+[data-icon-interaction="subdued"]:focus-visible {
+  color: var(--icon-interaction-muted);
+  background-color: var(--row-surface-hover);
+}
+
+/*
+ * Every searchable picker, not just the model one. The shared List paints its
+ * search field with `--surface-base` — the SHELL surface — which was invisible
+ * back when menus were dark but reads as a grey slab on a light menu. The
+ * model and directory pickers were rebound individually and the composer's
+ * chip pickers (project / local-cloud / branch) were missed, so the same
+ * control came out two different greys. One rule now covers all of them.
+ */
+.theme-model-picker [data-slot="list-search"],
+.theme-directory-picker [data-slot="list-search"],
+.codex-model-picker [data-slot="list-search"],
+.codex-directory-picker [data-slot="list-search"],
+.claxedo-composer-menu [data-slot="list-search"] {
+  background-color: var(--overlay-surface-input);
+  border-radius: 8px;
+}
+
+.theme-model-picker [data-slot="list-search-container"] > [data-component="icon"],
+.theme-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
+.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"],
+.codex-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
+.codex-directory-picker [data-slot="list-search-container"] [data-slot="icon-svg"] {
+  width: 14px;
+  height: 14px;
+  color: var(--overlay-icon-muted);
+}
+
+.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] [data-slot="icon-svg"],
+.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-component="icon"],
+.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-slot="icon-svg"] {
+  width: 14px;
+  height: 14px;
+}
+
+/*
+ * The platform directory picker is a full dialog rather than a floating menu,
+ * but the overlay family covers both. Keep the list canvas on the overlay
+ * surface and reserve the lighter tone for the search field and hovered rows.
+ */
+.theme-directory-picker [data-slot="dialog-header"],
+.theme-directory-picker [data-slot="dialog-body"],
+.theme-directory-picker [data-component="list"],
+.theme-directory-picker [data-slot="list-scroll"],
+.theme-directory-picker [data-slot="list-header"],
+.codex-directory-picker [data-slot="dialog-header"],
+.codex-directory-picker [data-slot="dialog-body"],
+.codex-directory-picker [data-component="list"],
+.codex-directory-picker [data-slot="list-scroll"],
+.codex-directory-picker [data-slot="list-header"] {
+  background-color: var(--overlay-surface);
+}
+
+.theme-directory-picker [data-slot="list-search-wrapper"],
+.codex-directory-picker [data-slot="list-search-wrapper"] {
+  margin: 0;
+  padding: 0 12px 8px;
+}
+
+/*
  * Codex appearance layer
  *
- * Theme JSON owns the shared semantic palette. These selectors only handle
- * surfaces whose roles are specific to the Claxedo shell, plus the typography
- * and SVG geometry that are not expressible through desktop-theme tokens.
- * Layout, labels, and behavior intentionally remain unchanged.
+ * Theme JSON owns the shared semantic palette; the block above spends it.
+ * What is left here is what a color token cannot express: typography, SVG
+ * geometry, the elevation scale, and the shell selectors that still key off
+ * `data-testid` because the `data-surface` markup has not landed yet.
  */
 html[data-theme="codex"] {
   --font-family-sans:
@@ -128,6 +360,23 @@ html[data-theme="codex"] {
   font-synthesis: none;
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
+
+  /*
+   * Elevation follows Codex's own scale, read from the shipped app:
+   * `--elevation-200-geo` (0 2px 4px -1px) at 8% light / 20% dark for raised
+   * surfaces, `--shadow` (0 10px 15px -3px, 0 4px 6px -4px) at 10% / 20% for
+   * overlays, and a sidebar ambient down at 3-5%. These are quiet on purpose —
+   * the hairline carries the edge, not the shadow.
+   *
+   * They live here rather than in the theme's `overrides` because those are
+   * validated as color values by desktop-theme.schema.json, and a shadow is a
+   * geometry-plus-color string.
+   */
+  --codex-radius-overlay: 10px;
+  --codex-shadow-raised: 0 2px 4px -1px light-dark(#00000014, #00000033);
+  --codex-shadow-overlay: 0 10px 15px -3px light-dark(#0000001a, #00000033),
+    0 4px 6px -4px light-dark(#0000001a, #00000033);
+  --codex-shadow-sidebar-edge: inset -14px 0 14px -14px light-dark(#0000001a, #00000040);
 }
 
 html[data-theme="codex"] body {
@@ -145,22 +394,22 @@ html[data-theme="codex"] body {
  * inside the sidebar, so neither can touch it.
  */
 html[data-theme="codex"] [data-testid="rail-sidebar"] {
-  background-color: var(--codex-surface-sidebar);
-  border-right-color: var(--codex-border-sidebar) !important;
+  background-color: var(--shell-surface-sidebar);
+  border-right-color: var(--shell-border-sidebar) !important;
   box-shadow: var(--codex-shadow-sidebar-edge);
 }
 
 html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
-  background-color: var(--codex-surface-sidebar);
-  border-bottom-color: var(--codex-border-sidebar);
+  background-color: var(--shell-surface-sidebar);
+  border-bottom-color: var(--shell-border-sidebar);
 }
 
 html[data-theme="codex"] .session-envcard.is-floating {
-  background: var(--codex-surface-composer);
+  background: var(--shell-surface-composer);
 }
 
 html[data-theme="codex"] [data-testid="global-navigation"] {
-  border-bottom-color: var(--codex-border-sidebar);
+  border-bottom-color: var(--shell-border-sidebar);
 }
 
 html[data-theme="codex"] [data-testid="global-navigation"] button,
@@ -196,37 +445,31 @@ html[data-theme="codex"] [data-slot="session-navigation-time"] {
 html[data-theme="codex"] [data-testid="rail-sidebar"] [aria-current="page"],
 html[data-theme="codex"] [data-testid="project-header"][data-active="true"],
 html[data-theme="codex"] [data-testid="workspace-project-header"][data-active="true"] {
-  background-color: var(--codex-surface-row-selected);
+  background-color: var(--row-surface-selected);
 }
 
 html[data-theme="codex"] [data-testid="global-navigation"] button:hover,
 html[data-theme="codex"] [data-slot="navigation-row-activate"]:hover,
 html[data-theme="codex"] [data-testid="project-header"]:hover,
 html[data-theme="codex"] [data-testid="workspace-project-header"]:hover {
-  background-color: var(--codex-surface-row-hover);
+  background-color: var(--row-surface-hover);
 }
 
 html[data-theme="codex"] [data-testid="workbench-shell-header"] {
-  background-color: var(--codex-surface-header);
-  border-bottom-color: var(--codex-border-header);
+  background-color: var(--shell-surface-header);
+  border-bottom-color: var(--shell-border-header);
 }
 
 html[data-theme="codex"] [data-slot="workbench-tab"][data-selected="true"],
 html[data-theme="codex"] [data-slot="workspace-tab"][data-selected="true"] {
-  background-color: var(--codex-surface-tab-selected);
+  background-color: var(--tab-surface-selected);
 }
 
-/*
- * Elevation follows Codex's own scale: a hairline ring carries the edge and the
- * shadow only lifts the surface off the page. Codex pairs `--elevation-200-geo`
- * (0 2px 4px -1px) with an 8% alpha in light and 20% in dark — deliberately
- * quiet, so the ring reads before the shadow does.
- */
 html[data-theme="codex"] [data-component="session-new-composer"],
 html[data-theme="codex"] [data-component="session-composer"] {
-  background-color: var(--codex-surface-composer);
+  background-color: var(--shell-surface-composer);
   box-shadow:
-    inset 0 0 0 1px var(--codex-border-composer),
+    inset 0 0 0 1px var(--composer-border),
     var(--codex-shadow-raised);
 }
 
@@ -234,16 +477,87 @@ html[data-theme="codex"] [data-component="session-composer"] {
 html[data-theme="codex"] .ui-context-card.is-floating,
 html[data-theme="codex"] .session-envcard.is-floating {
   box-shadow:
-    inset 0 0 0 1px var(--codex-border-composer),
+    inset 0 0 0 1px var(--composer-border),
     var(--codex-shadow-raised);
 }
 
-/* Dialogs are floating overlays; they were the one overlay family still on the
-   generic shadow while every menu already followed the Codex overlay scale. */
-html[data-theme="codex"] [data-component="dialog"] [data-slot="dialog-content"] {
-  box-shadow:
-    inset 0 0 0 1px var(--codex-border-overlay),
-    var(--codex-shadow-overlay);
+/*
+ * Overlay elevation. The shared overlay components own their own shape and
+ * shadow so that no theme is named inside them; Codex restates both here so
+ * dialogs, menus, popovers, tooltips and the hand-authored picker shells all
+ * sit on one scale instead of half the family following Codex and half
+ * following the generic ramp.
+ */
+html[data-theme="codex"] [data-component="dialog"] [data-slot="dialog-content"],
+html[data-theme="codex"] [data-component="dropdown-menu-content"],
+html[data-theme="codex"] [data-component="dropdown-menu-sub-content"],
+html[data-theme="codex"] [data-component="context-menu-content"],
+html[data-theme="codex"] [data-component="context-menu-sub-content"],
+html[data-theme="codex"] [data-component="popover-content"],
+html[data-theme="codex"] [data-component="tooltip"],
+html[data-theme="codex"] [data-component="menu-v2-content"],
+html[data-theme="codex"] [data-component="tooltip-v2"],
+html[data-theme="codex"] .theme-overlay-surface,
+html[data-theme="codex"] .codex-overlay-surface {
+  border-radius: var(--codex-radius-overlay) !important;
+  box-shadow: var(--codex-shadow-overlay) !important;
+}
+
+/*
+ * Component palette bridges. The v2 components and the two chip surfaces are
+ * authored against their own design-system tokens, which have no semantic
+ * overlay role yet. Rebinding those tokens on the component root gives Codex
+ * its overlay palette without naming Codex inside the shared stylesheet, and
+ * leaves every other theme on its own v2 ramp.
+ */
+html[data-theme="codex"] [data-component="menu-v2-content"],
+html[data-theme="codex"] [data-component="tooltip-v2"] {
+  --v2-background-bg-layer-01: var(--overlay-surface);
+  --v2-text-text-base: var(--overlay-text);
+  --v2-text-text-muted: var(--overlay-text-muted);
+  --v2-text-text-faint: var(--overlay-text-muted);
+  --v2-icon-icon-base: var(--overlay-icon);
+  --v2-icon-icon-muted: var(--overlay-icon-muted);
+  --v2-overlay-simple-overlay-hover: var(--overlay-surface-hover);
+  --v2-border-border-muted: var(--overlay-border);
+}
+
+/*
+ * Tooltips are NOT inverted in Codex: the shipped app defines
+ * `--tooltip-background-color: var(--color-surface-elevated)` (gray-0, i.e.
+ * white in light) with `--tooltip-text-color: var(--color-text)`. Its dark chip
+ * is a separate "compact" variant we do not have. So tooltips follow the
+ * overlay family with everything else that floats, and the inverted family is
+ * left serving toasts alone.
+ */
+html[data-theme="codex"] [data-component="tooltip"] {
+  --surface-float-base: var(--overlay-surface);
+  --text-invert-strong: var(--overlay-text);
+  --text-invert-base: var(--overlay-text-muted);
+  --border-weak-base: var(--overlay-border);
+}
+
+/* Toasts are the one inverted surface Codex keeps. */
+html[data-theme="codex"] [data-component="toast"] {
+  --surface-float-base: var(--codex-surface-inverted);
+  --surface-float-base-hover: var(--codex-surface-inverted-hover);
+  --border-weak-base: var(--codex-border-inverted);
+  --text-invert-strong: var(--codex-text-inverted);
+  --text-invert-stronger: var(--codex-icon-inverted);
+  --text-invert-base: var(--codex-text-inverted-muted);
+  --text-invert-weak: var(--codex-text-inverted-muted);
+  --icon-base: var(--codex-icon-inverted-muted);
+  --icon-hover: var(--codex-icon-inverted);
+}
+
+html[data-theme="codex"] [data-component="toast-v2"] {
+  --v2-background-bg-layer-01: var(--codex-surface-inverted);
+  --v2-text-text-base: var(--codex-text-inverted);
+  --v2-text-text-muted: var(--codex-text-inverted-muted);
+  --v2-icon-icon-base: var(--codex-icon-inverted);
+  --v2-icon-icon-muted: var(--codex-icon-inverted-muted);
+  --v2-overlay-simple-overlay-hover: var(--codex-surface-inverted-hover);
+  border-color: var(--codex-border-inverted);
 }
 
 html[data-theme="codex"] [data-component="prompt-input"] {
@@ -259,33 +573,33 @@ html[data-theme="codex"] [data-component="prompt-input"][data-placeholder]::befo
 }
 
 html[data-theme="codex"] [data-slot="workspace-segmented-control"] {
-  background-color: var(--codex-surface-control);
-  border-color: var(--codex-border-control);
+  background-color: var(--control-surface);
+  border-color: var(--control-border);
 }
 
 html[data-theme="codex"] [data-slot="workspace-segment-button"][aria-pressed="true"] {
-  background-color: var(--codex-surface-control-active);
+  background-color: var(--control-surface-active);
   color: var(--text-strong);
 }
 
 html[data-theme="codex"] .settings-dialog > [data-slot="tabs-list"] {
-  background-color: var(--codex-surface-sidebar);
+  background-color: var(--shell-surface-sidebar);
 }
 
 html[data-theme="codex"] .settings-dialog > [data-slot="tabs-content"] {
-  background-color: var(--codex-surface-settings-content);
+  background-color: var(--settings-surface-content);
 }
 
 html[data-theme="codex"] .settings-dialog [data-slot="tabs-trigger"][aria-selected="true"] {
-  background-color: var(--codex-surface-row-selected);
+  background-color: var(--row-surface-selected);
 }
 
 html[data-theme="codex"] .settings-dialog [class~="bg-surface-raised-base"] {
-  background-color: var(--codex-surface-settings-card);
+  background-color: var(--settings-surface-card);
 }
 
 html[data-theme="codex"] .settings-dialog [class~="bg-surface-base"] {
-  background-color: var(--codex-surface-settings-content);
+  background-color: var(--settings-surface-content);
 }
 
 html[data-theme="codex"] [data-component="icon"] {
@@ -296,190 +610,9 @@ html[data-theme="codex"] [data-component="icon"] [data-slot="icon-svg"] {
   shape-rendering: geometricPrecision;
 }
 
-/*
- * Codex icon interaction grammar:
- * - passive glyphs stay visually quiet when their containing row is hovered;
- * - row actions brighten their outline without drawing a second hover pill;
- * - standalone controls receive a hover surface;
- * - a pressed binary control is communicated by its glyph and foreground,
- *   not a persistent filled background.
- */
-html[data-theme="codex"] [data-icon-interaction="passive"] {
-  color: var(--icon-weak-base);
-}
-
-html[data-theme="codex"] [data-icon-interaction="row-action"],
-html[data-theme="codex"] [data-icon-interaction="row-actions"] button {
-  color: var(--icon-weak-base);
-}
-
-html[data-theme="codex"] [data-icon-interaction="row-action"] [data-component="icon"],
-html[data-theme="codex"] [data-icon-interaction="row-actions"] button [data-component="icon"],
-html[data-theme="codex"] [data-icon-interaction="binary"] [data-component="icon"],
-html[data-theme="codex"] [data-icon-interaction="persistent"] [data-component="icon"] {
-  color: inherit !important;
-}
-
-html[data-theme="codex"] [data-icon-interaction="row-action"]:hover,
-html[data-theme="codex"] [data-icon-interaction="row-actions"] button:hover {
-  color: var(--icon-strong-base);
-  background-color: transparent;
-}
-
-html[data-theme="codex"] [data-icon-interaction="binary"] {
-  color: var(--icon-weak-base) !important;
-}
-
-html[data-theme="codex"] [data-icon-interaction="binary"][aria-pressed="true"],
-html[data-theme="codex"] [data-icon-interaction="binary"][aria-expanded="true"],
-html[data-theme="codex"] [data-icon-interaction="binary"][data-icon-state="open"],
-html[data-theme="codex"] [data-icon-interaction="binary"][data-icon-state="active"],
-html[data-theme="codex"] [data-icon-interaction="binary"][data-icon-state="selected"] {
-  color: var(--icon-strong-base) !important;
-}
-
-html[data-theme="codex"] [data-icon-interaction="persistent"],
-html[data-theme="codex"] [data-icon-interaction="standalone"] {
-  color: var(--icon-strong-base);
-}
-
-html[data-theme="codex"] .ui-context-card-row-glyph[data-icon-interaction="persistent"] {
-  color: var(--icon-strong-base) !important;
-}
-
-html[data-theme="codex"] [data-icon-interaction="standalone"]:hover {
-  background-color: var(--codex-surface-row-hover);
-}
-
-html[data-theme="codex"] [data-icon-interaction="standalone"][aria-pressed="true"] {
-  background-color: transparent;
-}
-
-html[data-theme="codex"] [data-icon-interaction="subdued"] {
-  color: var(--icon-weak-base);
-}
-
-html[data-theme="codex"] [data-icon-interaction="subdued"]:hover,
-html[data-theme="codex"] [data-icon-interaction="subdued"]:focus-visible {
-  color: var(--icon-weak-base);
-  background-color: var(--codex-surface-row-hover);
-}
-
-/*
- * Custom picker shells (model picker, Review source, composer suggestions,
- * and document filters) are authored outside the shared menu primitives.
- * Rebind their local semantic tokens so their entire subtree follows the same
- * Codex overlay palette as DropdownMenu, Select, and MenuV2.
- */
-html[data-theme="codex"] .codex-overlay-surface {
-  --background-base: var(--codex-surface-overlay);
-  --background-stronger: var(--codex-surface-overlay);
-  --surface-base: var(--codex-surface-overlay);
-  --surface-base-hover: var(--codex-surface-overlay-hover);
-  --surface-base-active: var(--codex-surface-overlay-hover);
-  --surface-raised-base: var(--codex-surface-overlay);
-  --surface-raised-base-hover: var(--codex-surface-overlay-hover);
-  --surface-raised-base-active: var(--codex-surface-overlay-hover);
-  --surface-raised-stronger-non-alpha: var(--codex-surface-overlay);
-  --border-base: var(--codex-border-overlay);
-  --border-weak-base: var(--codex-border-overlay);
-  --border-weaker-base: var(--codex-border-overlay);
-  --text-strong: var(--codex-text-overlay);
-  --text-base: var(--codex-text-overlay);
-  --text-weak: var(--codex-text-overlay-muted);
-  --text-weaker: var(--codex-text-overlay-muted);
-  --icon-strong-base: var(--codex-icon-overlay);
-  --icon-base: var(--codex-icon-overlay);
-  --icon-weak-base: var(--codex-icon-overlay-muted);
-  --color-background-base: var(--codex-surface-overlay);
-  --color-background-stronger: var(--codex-surface-overlay);
-  --color-surface-base: var(--codex-surface-overlay);
-  --color-surface-base-hover: var(--codex-surface-overlay-hover);
-  --color-surface-base-active: var(--codex-surface-overlay-hover);
-  --color-surface-raised-base: var(--codex-surface-overlay);
-  --color-surface-raised-base-hover: var(--codex-surface-overlay-hover);
-  --color-surface-raised-base-active: var(--codex-surface-overlay-hover);
-  --color-surface-raised-stronger-non-alpha: var(--codex-surface-overlay);
-  --color-border-base: var(--codex-border-overlay);
-  --color-border-weak-base: var(--codex-border-overlay);
-  --color-text-strong: var(--codex-text-overlay);
-  --color-text-base: var(--codex-text-overlay);
-  --color-text-weak: var(--codex-text-overlay-muted);
-  --color-text-weaker: var(--codex-text-overlay-muted);
-  --color-icon-base: var(--codex-icon-overlay);
-  --color-icon-weak-base: var(--codex-icon-overlay-muted);
-
-  color: var(--codex-text-overlay);
-  background-color: var(--codex-surface-overlay) !important;
-  border-color: var(--codex-border-overlay) !important;
-  border-radius: var(--codex-radius-overlay) !important;
-  box-shadow: var(--codex-shadow-overlay) !important;
-}
-
-/*
- * Every searchable picker, not just the model one. The shared List paints its
- * search field with `--surface-base` — the SHELL surface — which was invisible
- * back when menus were dark but reads as a grey slab on a light menu. The
- * model and directory pickers were rebound individually and the composer's
- * chip pickers (project / local-cloud / branch) were missed, so the same
- * control came out two different greys. One rule now covers all of them.
- */
-html[data-theme="codex"] .codex-model-picker [data-slot="list-search"],
-html[data-theme="codex"] .claxedo-composer-menu [data-slot="list-search"] {
-  background-color: var(--codex-surface-overlay-input);
-  border-radius: 8px;
-}
-
-html[data-theme="codex"] .codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] {
-  color: var(--codex-icon-overlay-muted);
-  width: 14px;
-  height: 14px;
-}
-
-html[data-theme="codex"] .codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] [data-slot="icon-svg"] {
-  width: 14px;
-  height: 14px;
-}
-
-html[data-theme="codex"] .codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-component="icon"],
-html[data-theme="codex"] .codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] [data-slot="icon-svg"] {
-  width: 14px;
-  height: 14px;
-}
-
-/*
- * The platform directory picker is a full dialog rather than a floating menu,
- * but Codex gives both the same elevated overlay family. Keep the list canvas
- * on the overlay surface and reserve the slightly lighter tone for the search
- * field and hovered rows.
- */
+html[data-theme="codex"] .theme-directory-picker,
 html[data-theme="codex"] .codex-directory-picker {
-  background-color: var(--codex-surface-overlay) !important;
-}
-
-html[data-theme="codex"] .codex-directory-picker [data-slot="dialog-header"],
-html[data-theme="codex"] .codex-directory-picker [data-slot="dialog-body"],
-html[data-theme="codex"] .codex-directory-picker [data-component="list"],
-html[data-theme="codex"] .codex-directory-picker [data-slot="list-scroll"],
-html[data-theme="codex"] .codex-directory-picker [data-slot="list-header"] {
-  background-color: var(--codex-surface-overlay);
-}
-
-html[data-theme="codex"] .codex-directory-picker [data-slot="list-search-wrapper"] {
-  margin: 0;
-  padding: 0 12px 8px;
-}
-
-html[data-theme="codex"] .codex-directory-picker [data-slot="list-search"] {
-  background-color: var(--codex-surface-overlay-input);
-  border-radius: 8px;
-}
-
-html[data-theme="codex"] .codex-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
-html[data-theme="codex"] .codex-directory-picker [data-slot="list-search-container"] [data-slot="icon-svg"] {
-  width: 14px;
-  height: 14px;
-  color: var(--codex-icon-overlay-muted);
+  background-color: var(--overlay-surface) !important;
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"] + [data-slot="accordion-item"] {

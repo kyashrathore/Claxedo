@@ -180,7 +180,11 @@
   place-items: center;
   width: 1rem;
   flex-shrink: 0;
-  color: var(--icon-weak-base);
+  color: var(--icon-interaction-muted);
+}
+
+.ui-context-card-row-glyph[data-icon-interaction="persistent"] {
+  color: var(--icon-interaction-strong);
 }
 
 .ui-context-card-row-label {
