@@ -1,5 +1,5 @@
 ---
-import { cloudflareDeploymentPrompt } from "../content/deployment"
+import { claxedoRepositoryUrl, cloudflareDeploymentPrompt } from "../content/deployment"
 
 interface Props {
   class?: string
@@ -8,8 +8,10 @@ interface Props {
 }
 
 const { class: className = "btn-secondary", placement, label = "Deploy to Cloudflare" } = Astro.props
+const repositoryLabel = claxedoRepositoryUrl.replace(/^https:\/\//, "")
 ---
 
+<span class="deployment-action-group">
 <span class="deployment-copy-action" data-deployment-prompt-action>
   <button
     class={className}
@@ -36,8 +38,27 @@ const { class: className = "btn-secondary", placement, label = "Deploy to Cloudf
   >{cloudflareDeploymentPrompt}</textarea>
   <span class="deployment-copy-status" aria-live="polite" data-copy-status></span>
 </span>
+<a
+  class="deployment-repo-link"
+  href={claxedoRepositoryUrl}
+  target="_blank"
+  rel="noopener"
+  data-deployment-repo-link
+  data-analytics-event="deploy_cloudflare_repo"
+  data-analytics-placement={placement}
+>{repositoryLabel} <span aria-hidden="true">↗</span></a>
+</span>
 
 <style>
+  .deployment-action-group { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; }
+  .deployment-repo-link {
+    font-size: .82rem;
+    white-space: nowrap;
+    opacity: .72;
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+  }
+  .deployment-repo-link:hover, .deployment-repo-link:focus-visible { opacity: 1; }
   .deployment-copy-action { display: inline-flex; position: relative; }
   .deployment-copy-action button { cursor: pointer; }
   .deployment-copy-action button svg { width: .92rem; height: .92rem; fill: none; stroke: currentColor; stroke-width: 1.25; }
