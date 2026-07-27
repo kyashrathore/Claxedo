@@ -73,9 +73,8 @@ function text(env: NodeJS.ProcessEnv, key: string) {
  * so the kit stays product-free. On loopback exposure it allows local dev
  * origins (`http://localhost:*`, `http://127.0.0.1:*`) plus the Claxedo app on
  * the configured HTTPS origin suffixes (CLAXEDO_ALLOWED_ORIGIN_SUFFIXES,
- * default `*.claxedo.com` / `*.opencode.ai`); every other exposure allows
- * nothing. Both Claxedo hosts (the sandbox host below and the embedded host)
- * pass this so behavior is identical to the old kit default.
+ * default `*.claxedo.com`); every other exposure allows nothing. Both Claxedo
+ * hosts (the sandbox host below and the embedded host) pass this.
  */
 export const claxedoCorsOrigin: WorkspaceRuntimeCorsOrigin = (origin, exposure) => {
   if (exposure.kind !== "loopback") return undefined

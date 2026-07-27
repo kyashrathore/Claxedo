@@ -36,14 +36,21 @@ describe("cors origin patterns", () => {
     expect(matcher("https://localhost:3000")).toBe(false)
   })
 
-  test("default list reproduces the historical built-in policy", () => {
+  test("default list allows Claxedo product and localhost origins", () => {
     const matcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
-    expect(matcher("https://opencode.ai")).toBe(true)
-    expect(matcher("https://app.opencode.ai")).toBe(true)
     expect(matcher("https://claxedo.com")).toBe(true)
     expect(matcher("https://app.claxedo.com")).toBe(true)
     expect(matcher("http://localhost:4444")).toBe(true)
     expect(matcher("https://evilclaxedo.com")).toBe(false)
     expect(matcher("https://claxedo.com.evil.io")).toBe(false)
+  })
+
+  // The default list used to ship upstream's product domains too, which let a
+  // page on app.opencode.ai drive a Claxedo relay. A deployment that still
+  // wants them can pass them explicitly via CLAXEDO_RELAY_ALLOWED_ORIGINS.
+  test("default list does not allow upstream opencode.ai origins", () => {
+    const matcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
+    expect(matcher("https://opencode.ai")).toBe(false)
+    expect(matcher("https://app.opencode.ai")).toBe(false)
   })
 })

@@ -2447,7 +2447,7 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("allows user→relay WS upgrades from *.opencode.ai origin (cloud-vm)", async () => {
+  test("allows user→relay WS upgrades from *.claxedo.com origin (cloud-vm)", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
     const host = Bun.serve<{ ok: true }>({
@@ -2492,7 +2492,7 @@ describe("workspace relay Bun adapter", () => {
       new(url: string, options: { headers?: Record<string, string>; protocols?: string[] }): WebSocket
     })(
       new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"),
-      { headers: { origin: "https://app.opencode.ai" }, protocols: [`claxedo-rat.${token}`] },
+      { headers: { origin: "https://app.claxedo.com" }, protocols: [`claxedo-rat.${token}`] },
     )
 
     try {

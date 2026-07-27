@@ -128,7 +128,7 @@ function isEmbedMode(): boolean {
 
 function isHostedAppHostname(hostname: string | undefined): boolean {
   const host = hostname?.toLowerCase()
-  return host === "opencode.ai" || host?.endsWith(".opencode.ai") === true
+  return host === "claxedo.com" || host?.endsWith(".claxedo.com") === true
 }
 
 function fixDir(input: string | undefined): string | undefined {

@@ -129,22 +129,28 @@ describe("claxedo workspace-runtime boot policy", () => {
 describe("claxedo cors policy", () => {
   const loopback = loopbackWorkspaceRuntimeExposure()
 
-  test("allows opencode.ai and localhost on loopback exposure", () => {
-    expect(claxedoCorsOrigin("https://app.opencode.ai", loopback)).toBe("https://app.opencode.ai")
-    expect(claxedoCorsOrigin("https://opencode.ai", loopback)).toBe("https://opencode.ai")
+  test("allows claxedo.com and localhost on loopback exposure", () => {
+    expect(claxedoCorsOrigin("https://app.claxedo.com", loopback)).toBe("https://app.claxedo.com")
+    expect(claxedoCorsOrigin("https://claxedo.com", loopback)).toBe("https://claxedo.com")
     expect(claxedoCorsOrigin("http://localhost:4444", loopback)).toBe("http://localhost:4444")
     expect(claxedoCorsOrigin("http://127.0.0.1:3000", loopback)).toBe("http://127.0.0.1:3000")
   })
 
+  // Upstream's hosted app is no longer a default first-party origin.
+  test("rejects opencode.ai on loopback exposure", () => {
+    expect(claxedoCorsOrigin("https://app.opencode.ai", loopback)).toBeUndefined()
+    expect(claxedoCorsOrigin("https://opencode.ai", loopback)).toBeUndefined()
+  })
+
   test("rejects other origins and non-loopback exposures", () => {
     expect(claxedoCorsOrigin("https://evil.example", loopback)).toBeUndefined()
-    expect(claxedoCorsOrigin("https://opencode.ai.evil.example", loopback)).toBeUndefined()
+    expect(claxedoCorsOrigin("https://claxedo.com.evil.example", loopback)).toBeUndefined()
     const relay = relayWorkspaceRuntimeExposure({
       key: new Uint8Array([1]),
       workspaceId: "ws_1",
       hostId: "host_1",
     })
-    expect(claxedoCorsOrigin("https://app.opencode.ai", relay)).toBeUndefined()
+    expect(claxedoCorsOrigin("https://app.claxedo.com", relay)).toBeUndefined()
     expect(claxedoCorsOrigin("http://localhost:4444", relay)).toBeUndefined()
   })
 })

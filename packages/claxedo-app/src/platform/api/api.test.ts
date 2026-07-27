@@ -106,11 +106,17 @@ describe("demo routing", () => {
   })
 
   test("matches hosted app hostnames exactly", () => {
-    expect(isHostedAppHostname("opencode.ai")).toBe(true)
-    expect(isHostedAppHostname("app.opencode.ai")).toBe(true)
-    expect(isHostedAppHostname("notopencode.ai")).toBe(false)
-    expect(isHostedAppHostname("opencode.ai.evil.test")).toBe(false)
+    expect(isHostedAppHostname("claxedo.com")).toBe(true)
+    expect(isHostedAppHostname("app.claxedo.com")).toBe(true)
+    expect(isHostedAppHostname("notclaxedo.com")).toBe(false)
+    expect(isHostedAppHostname("claxedo.com.evil.test")).toBe(false)
     expect(isHostedAppHostname(undefined)).toBe(false)
+  })
+
+  // Upstream's hosted app is not ours; it must not be treated as first-party.
+  test("does not match opencode.ai hostnames", () => {
+    expect(isHostedAppHostname("opencode.ai")).toBe(false)
+    expect(isHostedAppHostname("app.opencode.ai")).toBe(false)
   })
 })
 

@@ -174,7 +174,7 @@ describe("workspace relay server", () => {
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
 
-    for (const origin of ["https://app.claxedo.com", "https://opencode.ai", "http://localhost:4444"]) {
+    for (const origin of ["https://app.claxedo.com", "https://claxedo.com", "http://localhost:4444"]) {
       const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,

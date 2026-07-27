@@ -158,7 +158,15 @@ describe("pure export mirrors match the real ../api.ts implementation", () => {
       expect(fixture.module.normalizeUrl(input)).toBe(real.normalizeUrl(input))
     }
 
-    const hostnameInputs = ["opencode.ai", "app.opencode.ai", "notopencode.ai", "opencode.ai.evil.test", undefined]
+    const hostnameInputs = [
+      "claxedo.com",
+      "app.claxedo.com",
+      "notclaxedo.com",
+      "claxedo.com.evil.test",
+      "opencode.ai",
+      "app.opencode.ai",
+      undefined,
+    ]
     for (const input of hostnameInputs) {
       expect(fixture.module.isHostedAppHostname(input)).toBe(real.isHostedAppHostname(input))
     }

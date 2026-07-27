@@ -13,8 +13,6 @@
 export const DEFAULT_RELAY_APP_ORIGINS = [
   "http://localhost:*",
   "http://127.0.0.1:*",
-  "https://opencode.ai",
-  "https://*.opencode.ai",
   "https://claxedo.com",
   "https://*.claxedo.com",
 ]

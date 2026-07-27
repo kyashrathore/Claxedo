@@ -24,6 +24,7 @@ import {
   type WorkspaceRelayOptions,
 } from "./server"
 import { WorkspaceRelayAuthError, verifyHostTunnelToken } from "./auth"
+import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
 
 type RelayClientWebSocketData = {
@@ -377,11 +378,21 @@ function isEventStream(input: TunnelHeaderMap) {
   )
 }
 
+// Same default policy the HTTP path and the Cloudflare adapter apply
+// (./cors-origins). This used to be a hardcoded regex matching ONLY
+// `*.opencode.ai` plus loopback, which both trusted upstream's hosted app and
+// denied Claxedo's own `*.claxedo.com`.
+//
+// KNOWN GAP: unlike src/server.ts, this still ignores
+// `options.allowedOrigins` (CLAXEDO_RELAY_ALLOWED_ORIGINS), because these
+// helpers are module-level and have no access to the options bag. A
+// self-hosted deployment's custom list is honored on the HTTP path but not on
+// the WebSocket upgrade below.
+const defaultRelayOriginMatcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
+
 function allowedCorsOrigin(origin: string | null) {
   if (!origin) return
-  if (origin.startsWith("http://localhost:")) return origin
-  if (origin.startsWith("http://127.0.0.1:")) return origin
-  if (/^https:\/\/([a-z0-9-]+\.)*opencode\.ai$/.test(origin)) return origin
+  if (defaultRelayOriginMatcher(origin)) return origin
 }
 
 function requireAllowedOrigin(request: Request) {

@@ -34,9 +34,11 @@ export function resetApiRuntime() {
   cfg.password = ""
 }
 
+// Claxedo's own hosted app only. This used to also match `opencode.ai` and its
+// subdomains, which trusted upstream's hosted app as if it were ours.
 export function isHostedAppHostname(hostname: string | undefined) {
   const host = hostname?.toLowerCase()
-  return host === "opencode.ai" || host?.endsWith(".opencode.ai") === true
+  return host === "claxedo.com" || host?.endsWith(".claxedo.com") === true
 }
 
 export function fixDir(input: string | undefined): string | undefined {
