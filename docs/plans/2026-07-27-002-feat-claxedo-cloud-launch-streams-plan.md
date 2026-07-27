@@ -1,7 +1,7 @@
 # Claxedo Cloud launch: every stream of work that must be done
 
 - **Date:** 2026-07-27
-- **Status:** PLANNED (planning only — no code, docs, or config changed by this pass)
+- **Status:** EXECUTING (second pass, 2026-07-27 evening — §0 records the re-verified state, the owner's scope cuts, and per-stream dispositions; §0 supersedes stream statuses below where they conflict)
 - **Owner intent:** ship Claxedo Cloud publicly. Four named asks: (1) all docs updated, (2) a Cloudflare deploy prompt with enough context that an agent can actually execute it, copyable from the website's secondary button, (3) npm packages updated, (4) Claxedo Cloud well covered with tests. This doc adds a fifth group the sweep surfaced: the launch-ops work that blocks the other four regardless.
 
 Inherited operating principles (inlined; `docs/plans/goal.md` does not exist on `dev`):
@@ -10,6 +10,69 @@ Inherited operating principles (inlined; `docs/plans/goal.md` does not exist on 
 - Local-first: replay locally before wiring CI, and never deploy to discover a failure.
 - Strangler/additive: nothing removed until its replacement is green.
 - Push parallel agents/workflows for independent streams; the parallelization map in §6 is normative.
+
+---
+
+## 0. Execution update — 2026-07-27 evening (authoritative over the sections below)
+
+### 0.1 Owner direction (2026-07-27)
+
+- A **staging Cloudflare deployment now exists** and deploys continuously from `dev`.
+- **All local commits are pushed** (`origin/dev` == local `dev`).
+- **claxedo.com is live.**
+- **End-user Cloud docs are deliberately deferred** — the owner does not want AI-generated user docs. B4 and B5 are out of scope for this pass.
+- The owner is **personally fixing the live-tier e2e specs**. Agents must not remove or touch any `live-*` spec or its tier wiring. M-tier is reported working by the owner.
+- **Everything after F4 is deferred** — F5 (backup/DR), F6 (launch checklist), F7 (workspace-persistence status) are out of scope for this pass.
+
+### 0.2 Re-verified state (all probes run 2026-07-27 ~18:00 UTC)
+
+| Fact | Evidence |
+|---|---|
+| `origin/dev` fully pushed | `git rev-list --left-right --count origin/dev...dev` → `0 0` |
+| Staging control plane **live and healthy** | `https://claxedo-control-plane-staging.kanusdlp.workers.dev/api/claxedo/health` → `{"ok":true,"mode":"hosted-control-plane","localExecution":false}`; `/api/claxedo/mode` → `signedAuth:true, authority:true, relay:true, workgraph:true` |
+| Staging deploys are continuous, not one-off | Latest dev push (`0bcf5c42`): `deploy-control-plane` ✅, `deploy-claxedo-app-staging` ✅, `claxedo-sandbox-image` ✅. Relay staging worker also live (`claxedo-workspace-relay-staging.kanusdlp.workers.dev`). |
+| Website + docs site live | `claxedo.com` → 200, `docs.claxedo.com` → 200. **But `www.claxedo.com` → 404**, and `redirects.json` `hostingBinding.status` is still `"unbound"` — the live hosting was bound out-of-band and the repo doesn't declare it. No `deploy-claxedo-web`/docs workflow exists in `.github/workflows/`. |
+| CI on `dev` is **still red** | `test.yml` latest run (`0bcf5c42`) failing jobs: `typecheck` (in the separate typecheck.yml run), `unit (linux)`, `unit (windows)`, `local diagnostics release gate`, `e2e (linux 2/12, 4/12, 11/12)` |
+| The typecheck failure | `packages/claxedo-server/src/routes/opencode-compat-provider-harness.test.ts(94,24)` TS2352 — fetch-typed cast needs `as unknown as typeof fetch` |
+| The unit failures (same 5 on linux+windows) | `Markdown rich-mode detector > keeps the 100 KiB and 500 KiB probes responsive…`; `terminal recovery > clearing marker re-enables initial command`; `terminal recovery > claim blocks duplicate launch until released`; `terminal recovery > release re-enables claimed launch`; `workspace connection authority > offline classification: forbidden is terminal…` |
+| The diagnostics-gate failure | `local production spawn inventory > classifies every checked process seam exactly once` (script `test:diagnostics-release`) |
+| No `production` environment yet | `gh api repos/kyashrathore/Claxedo/environments` → only `staging`, `staging - packages/claxedo-docs` |
+| Desktop drafts unreconciled | `gh release list -R kyashrathore/Claxedo` → v0.0.60/61/62 still Draft; 0.0.59 (2026-03-08) still Latest |
+
+### 0.3 Revised stream dispositions
+
+| Stream | Disposition | Note |
+|---|---|---|
+| A1 | **PARTIAL → executing** | Push done. Remainder = make CI green: the typecheck fix, 5 unit failures, the diagnostics-gate failure, e2e shards 2/4/11 (all @core M-tier — live-tier specs don't run in CI and are owner-territory). |
+| B1 | executing | Conflict markers re-verified present at `AGENTS.md:189,191`. |
+| B2 | executing (narrowed) | Deployed reality resolves the §7.3 decision de facto: `docs.claxedo.com` serves `packages/claxedo-docs` (Mintlify) and `claxedo.com/framework` syncs from it → `public-docs/` is the internal ops tree. Fix its README's false claim. Owner can veto. |
+| B3 | executing | |
+| B4 | **DEFERRED (owner)** | No AI-generated end-user docs. |
+| B5 | **DEFERRED (owner)** | Same. The desktop-download staleness note folds into F2. |
+| B6 | **PARTIAL → mostly owner** | Site + docs are live (bound out-of-band). Repo work left: make `redirects.json`/README stop claiming "unbound" once the owner declares the provider; `www.claxedo.com` 404 is a DNS/edge fix only the owner can do. |
+| C1, C2 | executing | Prompt must now say staging exists and is continuously deployed (the "never executed" caveat below is superseded) while still instructing verify-don't-assume. |
+| C3 | **DONE** | Evidence in §0.2. Residual: none — behavioral + workgraph smoke run inside the deploy workflow on every push. |
+| D1, D2 | executing (publish gated) | All prep on a branch; the actual `npm publish`/workflow dispatch happens only after merge to `dev` with green CI. |
+| D3 | executing (deploy gated) | Bumps + local `check:worker-safe` dry-run only; **no staging redeploy while the owner's live-tier work is in flight** — redeploy happens naturally on merge. |
+| D4, D5 | executing | |
+| E1 | executing | The highest-leverage stream, unchanged. |
+| E2 | executing (after E1) | |
+| E3 | executing | |
+| E4 | **OWNER IN PROGRESS** | Owner is fixing live-tier specs now. Agents: hands off all `live-*` specs and tier wiring. The stale "runs nightly" comment gets corrected only as part of the owner's own pass. |
+| F1 | executing (prep only) | Runbook + exact commands + secret inventory; environment creation, secret values, and the supervised promote are owner actions. |
+| F2 | executing (fix only) | Fix the electron `minimum-release-age` block so the pipeline can run; draft reconciliation (§7.4) and the actual tag cut are owner actions. |
+| F3 | executing | Fresh-profile onboarding run + vision review vs D1–D11; flag decision stays with owner after evidence. |
+| F4 | executing | Includes verifying/fixing the critical unauthenticated `publicMutation` cancel-subscription finding at `convex/orgs.ts:239` from the 2026-07-27 security review, CORS/log-scrubbing/rate-limit review, and a light abuse probe against the now-live staging worker. |
+| F5, F6, F7 | **DEFERRED (owner)** | "Leave all after F4." Caution left on record for F7: the persistence design (`2026-07-27-004`) is PLANNED, not built — website copy must not claim durable cloud workspaces until it is. |
+
+### 0.4 §7 owner decisions — updated
+
+1. Hosting/edge owner: **resolved in practice** (site live). Still owed: declare the binding in-repo and fix `www.claxedo.com`.
+2. Analytics owner: **still open.** Flag: the 2026-07-27 tracking review found all telemetry dead (zero PostHog wiring in workflows, zero identify calls) — whoever owns analytics inherits that.
+3. `public-docs/` role: **resolved de facto as internal** (see B2).
+4. Draft releases v0.0.60/61/62: **still open — owner.**
+5. Onboarding flag: **open, pending F3 evidence.**
+6. Cloud persistence claim: **deferred with F7**, caution recorded in §0.3.
 
 ---
 
@@ -40,11 +103,11 @@ One auditor (docs, first attempt) returned placeholder text instead of an audit 
 
 1. **CI runs almost none of the tests that exist.** `turbo.json` has *no* generic `test` task — only five package-scoped entries (`opencode#test`, `@opencode-ai/core#test`, `@opencode-ai/ui#test`, `@opencode-ai/session-ui#test`, `@claxedo/app#test`). `.github/workflows/test.yml:166` runs bare `bun turbo test`, so **claxedo-server's 227 test files and ~257 more across 12 other `@claxedo` packages never gate a PR or a deploy.** The only gate on a control-plane deploy is TypeScript compiling plus a 4-assertion post-deploy smoke. *(Independently re-verified — see §3.)*
 
-2. **`origin/dev` is 93 commits behind local and has not been green in 5 consecutive runs.** `git status` → ahead by 93. `gh run list --workflow test.yml --branch dev --limit 5` → all five `conclusion: failure` (2026-07-24 → 2026-07-26), failing e2e shard 11/12 on `core-timeline-rendering-scroll.spec.ts` and `core-user-hosted-workspace.spec.ts`. Local `dev` also carries 18 modified + 2 untracked files never seen by CI.
+2. **[SUPERSEDED — see §0.2: pushed to 0/0; CI still red with a narrower failure set]** **`origin/dev` is 93 commits behind local and has not been green in 5 consecutive runs.** `git status` → ahead by 93. `gh run list --workflow test.yml --branch dev --limit 5` → all five `conclusion: failure` (2026-07-24 → 2026-07-26), failing e2e shard 11/12 on `core-timeline-rendering-scroll.spec.ts` and `core-user-hosted-workspace.spec.ts`. Local `dev` also carries 18 modified + 2 untracked files never seen by CI.
 
-3. **The Cloudflare deploy has never been executed.** No staging deployment of the hosted control plane has ever been run. And `gh api repos/kyashrathore/Claxedo/environments` returns only `staging` and `staging - packages/claxedo-docs` — **no `production` environment exists**, so the `promote-production` job in `deploy-control-plane.yml:311-315` has no gate and no secrets.
+3. **[SUPERSEDED — see §0.2: staging is live, healthy, and continuously deployed; the "no `production` environment" half is still true]** **The Cloudflare deploy has never been executed.** No staging deployment of the hosted control plane has ever been run. And `gh api repos/kyashrathore/Claxedo/environments` returns only `staging` and `staging - packages/claxedo-docs` — **no `production` environment exists**, so the `promote-production` job in `deploy-control-plane.yml:311-315` has no gate and no secrets.
 
-4. **Nothing publishes the website or the docs.** No workflow in `.github/workflows/` deploys `claxedo-web` or `claxedo-docs`. `packages/claxedo-web/deploy/redirects.json` says `hostingBinding.status: "unbound"`. Meanwhile the root README links `claxedo.com` as if live.
+4. **[PARTIALLY SUPERSEDED — see §0.2: claxedo.com and docs.claxedo.com are live, bound out-of-band; still true that no workflow in-repo deploys them, `www` 404s, and `redirects.json` says "unbound"]** **Nothing publishes the website or the docs.** No workflow in `.github/workflows/` deploys `claxedo-web` or `claxedo-docs`. `packages/claxedo-web/deploy/redirects.json` says `hostingBinding.status: "unbound"`. Meanwhile the root README links `claxedo.com` as if live.
 
 5. **There is no end-user Cloud documentation at all.** Grep across all 47 `claxedo-docs` `.mdx` files: zero hits for pricing/free-tier/per-seat, zero for sign-up/create-an-account, zero for troubleshoot. Every doc surface is framework/self-host/developer material. A person who signs up for the hosted product has nothing to read.
 
@@ -128,7 +191,7 @@ Tasks: fix or create the target; wire a link check for `docs/` and `public-docs/
 
 **Depends on:** nothing.
 
-#### B4 — Write the end-user Claxedo Cloud docs — **M**
+#### B4 — Write the end-user Claxedo Cloud docs — **M** — ⏸ DEFERRED (owner: no AI-generated user docs)
 **Why:** This is the single biggest documentation gap. Zero pages anywhere address someone signing up for the hosted product. Verified by full-text grep across all 47 `.mdx` files: no pricing, no signup, no troubleshooting.
 
 Tasks:
@@ -145,7 +208,7 @@ Tasks:
 
 **Depends on:** B2 (so it isn't written into the wrong tree), and realistically F1 (there must be a Cloud to get started with).
 
-#### B5 — Backfill docs for shipped features — **S–M**
+#### B5 — Backfill docs for shipped features — **S–M** — ⏸ DEFERRED (owner: no AI-generated user docs; download-staleness note folds into F2)
 **Why:** Real user-visible behavior has zero public documentation. WorkGraph's approval gate (`pending_approval` / "Staged", `executionMode` deleted) appears only in internal plan docs — grep across `docs/`, `public-docs/`, `claxedo-docs/` finds it nowhere public. Same for the permission-modes work and opencode-compat provider routing.
 
 Tasks: add "How WorkGraph approval works" to `packages/claxedo-docs/packages/workgraph.mdx`; document the per-harness permission-mode model; add a version/staleness note wherever the desktop download lives (or gate the link until F2 lands).
@@ -182,7 +245,7 @@ Tasks — rewrite `packages/claxedo-web/src/content/deployment.ts` to name:
 - **The unlisted prerequisites:** `wrangler r2 bucket create` before the Worker deploy, and the `claxedo-sandbox-image` workflow (which emits the `CLAXEDO_SANDBOX_BUILD_ID` the Worker deploy passes).
 - **Relay disambiguation:** `packages/workspace-relay/wrangler.toml` only. Never `wrangler-h2.toml` (a tear-down experiment) and never `fly.toml` (the non-Cloudflare shape).
 - **`bun install` at root, then `bunx wrangler`** — not `npx wrangler` as the in-repo comments say, which would resolve an unpinned version instead of the workspace-pinned 4.50.0 CI uses.
-- **The honest caveat:** no CF staging deploy has ever been executed in this repo. Instruct the agent to treat every step as unproven and stop-and-report rather than assume prior success.
+- **The honest caveat (updated 2026-07-27):** staging *has* now been deployed and redeploys continuously from `dev` (§0.2), but production has never been stood up. Instruct the agent to verify each step against its own target account rather than assume this repo's staging success transfers, and to stop-and-report on divergence.
 
 **DoD:**
 - Every binding name, env var, and command listed above appears in `deployment.ts` and is grep-verifiable against the actual `wrangler.toml` / `package.json` it claims to describe. **Add a test that does exactly this diff**, so the prompt cannot silently drift from the config.
@@ -200,7 +263,7 @@ Tasks: put `https://github.com/kyashrathore/Claxedo` next to the button and insi
 **DoD:** the rendered page places a working repo link within one visual unit of the button; the copied text alone lets a brand-new agent session with no repo open get started. Verify by actually pasting it into a fresh session.
 **Depends on:** C1 (same file).
 
-#### C3 — Execute the first real staging deploy — **L**
+#### C3 — Execute the first real staging deploy — **L** — ✅ DONE (see §0.2 for evidence)
 **Why:** C1 surfaces "this has never been run" to every reader. Before advertising the button as launch-ready, the path should have been walked once. **Merged here:** the CF auditor's staging-deploy stream and the cross-cutting auditor's production stream were two overlapping proposals for the same first-ever deploy; they are now one ordered sequence with F1.
 
 Tasks: run the staging sequence end-to-end against the release-acceptance criteria (Convex dry-run + deploy, relay Worker, control-plane Worker, behavioral smoke, WorkGraph cross-tenant smoke, deployed browser journey); record the evidence; update `public-docs/deploy-runbook.md` to reflect a real run.
@@ -315,7 +378,7 @@ Tasks: write credential-route tests asserting unauthenticated → 401, cross-wor
 **DoD:** each of the two surfaces has ≥3 passing tests covering auth-required, scoping-enforced, malformed/traversal-rejected. **Tripwire the scoping assertion on each** — remove the check, watch it fail, restore. Included in E1's CI wiring.
 **Depends on:** nothing (can be written now, gated by E1).
 
-#### E4 — Un-gap or formally retire the live e2e tier — **M**
+#### E4 — Un-gap or formally retire the live e2e tier — **M** — 🔒 OWNER IN PROGRESS (do not touch `live-*` specs or tier wiring)
 **Why:** `test.yml:264-266` claims the Tier M and Tier L suites "run nightly on a separate schedule." **No `schedule:` trigger exists in any of the 13 workflow files.** Only 28 of 34 Playwright specs carry `@core` and run on PR. The six that don't include `live-real-harness-smoke.spec.ts` — the *only* spec that removes all mocking and drives a real claxedo-server + real embedded OpenCode engine + real subprocess harness — and `live-user-hosted-relay.spec.ts`, the only spec touching the real relay hop. Both are effectively dead. The stale comment actively conceals this.
 
 Tasks: decide — add a genuine `schedule:` cron with the live credentials and harness binaries those specs need, or delete the false claim and document them as manual-only. Audit other workflow comments for the same "runs elsewhere" fiction.
@@ -364,7 +427,7 @@ Tasks: secret-scrubbing in logs; CORS policy on the Worker; dependency CVE scan;
 **DoD:** each item has a written finding and a fix-or-accept decision; the abuse question is answered by an actual attempt against staging, not by reading the code; any rate limit changed is tripwired.
 **Depends on:** C3.
 
-#### F5 — Backup and disaster recovery — **S–M**
+#### F5 — Backup and disaster recovery — **S–M** — ⏸ DEFERRED (owner: "leave all after F4")
 **Why:** *Also a critic catch — outside all five audit areas.* Claxedo Cloud stores customer workspace, session, and billing state in Convex and document bytes in R2. Repo-wide grep for backup/DR/retention finds exactly one hit, in a design doc. Losing a user's workspace is trust-destroying regardless of price tier.
 
 Tasks: confirm Convex point-in-time recovery for the production deployment; configure R2 bucket versioning/lifecycle on `claxedo-documents`; write and **actually execute** a restore procedure once.
@@ -372,7 +435,7 @@ Tasks: confirm Convex point-in-time recovery for the production deployment; conf
 **DoD:** a documented restore runbook that has been run end-to-end at least once against staging data, with the recovered state verified — not a procedure that has only been written.
 **Depends on:** F1.
 
-#### F6 — Launch-day safety checklist — **S**
+#### F6 — Launch-day safety checklist — **S** — ⏸ DEFERRED (owner: "leave all after F4")
 **Why:** Small items that are cheap now and expensive on launch day.
 
 Tasks: audit production Convex for any org seeded `plan='pro'` during testing (would silently grant paid entitlements); confirm `CLAXEDO_SENTRY_DSN` is provisioned for the production worker/server/relay (absent DSN is a *silent* no-op by design); confirm PostHog keys for the production app build — note the frontend has **no Sentry at all** by deliberate design (`analytics.ts:43` replaces it), so PostHog is the sole frontend crash-visibility path and must be configured *and watched*.
@@ -380,7 +443,7 @@ Tasks: audit production Convex for any org seeded `plan='pro'` during testing (w
 **DoD:** no non-test org has `plan='pro'` in production; a deliberately-triggered test error reaches the Sentry dashboard (server) and the PostHog dashboard (app).
 **Depends on:** F1.
 
-#### F7 — Confirm persistent cloud workspaces status — **S**
+#### F7 — Confirm persistent cloud workspaces status — **S** — ⏸ DEFERRED (owner: "leave all after F4"; caution in §0.3 stands)
 **Why:** `2026-07-23-002` reads as a complete design (U1–U5, exact files named) with **no implementation evidence found**. Cloud workspace durability is a headline capability claim. If it isn't built, the website should not imply it.
 
 Tasks: check for `packages/sandbox-manager/src/drivers/exe.ts`, `workspace-runtime/src/worktree.ts`, and the `SandboxLease` checkpoint fields; if unimplemented, adjust launch copy to describe Cloud workspaces as ephemeral.
