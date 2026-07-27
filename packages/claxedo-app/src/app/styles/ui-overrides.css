@@ -520,6 +520,16 @@ html[data-theme="codex"] [data-component="popover-content"],
 html[data-theme="codex"] [data-component="tooltip"],
 html[data-theme="codex"] [data-component="menu-v2-content"],
 html[data-theme="codex"] [data-component="tooltip-v2"],
+/*
+ * Select belongs here for the same reason as its neighbours, but it arrived by
+ * a different route: select.css used to read `--codex-radius-overlay` directly
+ * and inherited it from `html[data-theme="codex"]`, so it never needed naming.
+ * Once select.css moved onto the semantic roles that inheritance went away and
+ * the menu silently dropped to a 6px radius and a hairline shadow while every
+ * overlay beside it kept 10px and the drop. Colour roles are what the theme
+ * tests assert, so nothing caught it.
+ */
+html[data-theme="codex"] [data-component="select-content"],
 html[data-theme="codex"] .theme-overlay-surface,
 html[data-theme="codex"] .codex-overlay-surface {
   border-radius: var(--codex-radius-overlay) !important;
