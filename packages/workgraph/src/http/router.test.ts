@@ -472,7 +472,7 @@ describe("WorkGraph northbound HTTP router", () => {
     expect(await retry.json()).toEqual(await first.json())
   })
 
-  // The ordered change feed is no longer client-facing (plan 2026-07-17-004): the
+  // The ordered change feed is no longer client-facing: the
   // `/changes` route is deleted in favour of the `workgraph.changed` bus doorbell.
   // The `wg_v2_changes` log itself is unchanged and stays covered at the store
   // level by the conformance suite (`conformance/index.ts`), which asserts

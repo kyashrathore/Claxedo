@@ -1,6 +1,6 @@
 /**
- * Env → Sentry init options (D12, ops floor ADR
- * docs/plans/2026-07-11-016-wp-ops-floor-design.md §4). Worker-safe: imports
+ * Env → Sentry init options (D12, ops-floor decision: Sentry as the
+ * observability floor). Worker-safe: imports
  * no SDK and no Node builtins — the Worker import-graph guard walks this
  * module, and worker.ts feeds the result straight into
  * `@sentry/cloudflare`'s `withSentry` options callback

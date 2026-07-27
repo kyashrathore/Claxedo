@@ -1,4 +1,4 @@
-// Canonical `workgraph.changed` doorbell envelope (plan 2026-07-17-004, Wave 0).
+// Canonical `workgraph.changed` doorbell envelope.
 // Single source of truth for frontend consumers. The server's `bus.ts` keeps its
 // own matching definition across the package boundary (claxedo-app does not
 // depend on claxedo-server) — keep the two in sync.

@@ -1,5 +1,5 @@
-// Wakes-backed SettlementDispatcher (wakes-v2 plan 2026-07-17-002 U8): the
-// same port hosted.ts already consumes, but the trigger becomes a durable
+// Wakes-backed SettlementDispatcher: the same port hosted.ts already
+// consumes, but the trigger becomes a durable
 // dirty-flag wake plus a WakeLane DO nudge, instead of a WorkGraphSettler
 // nudge. Flag-gated in worker.ts (CLAXEDO_WAKES_SETTLEMENT=1) so staging can
 // prove the wakes path with instant rollback.

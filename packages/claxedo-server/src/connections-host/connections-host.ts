@@ -41,8 +41,7 @@ export type RepositoryAccessResult =
   | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
 
 /**
- * D7 (launch plan 2026-07-11-012; tenant-hardening design 015 §2 Decision 1):
- * the hosted owner-key formats. The kit treats owner as an opaque string —
+ * D7: the hosted owner-key formats. The kit treats owner as an opaque string —
  * THESE two functions are the host's definition of what the strings mean on
  * a hosted deployment:
  * - team rows:     `org:{orgId}`   (the caller's Clerk `org_id` claim)
@@ -61,7 +60,7 @@ export type ConnectionsHostOptions = {
   publicUrl?: string
   turnCredentials?: ConnectionTurnCredentials
   /**
-   * D6/B4 entitlement choke point (launch plan 2026-07-11-012; ADR 014 §5):
+   * D6/B4 entitlement choke point (ADR 014 §5):
    * hosted connections are a paid capability. The hosted composition supplies
    * this from src/billing/entitlement.ts (`createEntitlementGate`, capability
    * "hosted-connections"), keyed by the caller's Clerk org id; it returns a
@@ -97,7 +96,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   // to the pre-D7 behavior. `deploymentMode` throws on an invalid value —
   // a typo'd deploy manifest must fail composition, not fall open (D9).
   const hosted = deploymentMode(env) === "hosted"
-  // Launch hard gate (plan 012 D7): hosted connections stay 503 until the
+  // Launch hard gate (D7): hosted connections stay 503 until the
   // hosted credential surface is deliberately enabled. Org partitioning is
   // live in this module, so the flag is the remaining rollout switch.
   const hostedEnabled = hostedCredentialsEnabled(env)
@@ -223,7 +222,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   // to the owner-absent team partition (unchanged). Hosted: the personal key
   // is `user:{subject}` and the team key derives from the turn's org — a
   // turn without an org resolves NOTHING team-scoped, never a shared
-  // partition (design 015 §2 Decision 1 ride-along).
+  // partition.
   const resolveTurn = (c: Context) => options.turnCredentials?.resolve(c.req.header(CONNECTION_TURN_HEADER))
   const tokenOwner = (c: Context) => {
     const subject = resolveTurn(c)?.subject

@@ -1,5 +1,5 @@
-// Convex adapter for the @claxedo/wakes `WakeStore` port (wakes-v2 plan
-// 2026-07-17-002 U5). A thin transport: every port operation maps 1:1 onto a
+// Convex adapter for the @claxedo/wakes `WakeStore` port. A thin transport:
+// every port operation maps 1:1 onto a
 // service-token-guarded function in convex/wakes.ts, which returns rows
 // already in the port's camelCase/null shape. Args are stripped of explicit
 // nulls where Convex expects absent optionals; the tri-state `serialKey`

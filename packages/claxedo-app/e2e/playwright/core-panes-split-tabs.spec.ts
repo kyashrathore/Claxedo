@@ -1082,8 +1082,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
   // production the resolve endpoint returns the SAME cloud id the inventory
   // carries, so the two paths agree and the terminal shares the connection; the
   // fix below restores that fidelity in the harness. Assertion strength (refs
-  // 1→2→3→2) is unchanged. Ledger:
-  // docs/plans/2026-07-11-002-fixme-ledger-wp-reconciliation.md
+  // 1→2→3→2) is unchanged.
   test("two panes on the same relay-backed workspace share one ref-counted connection — behavior 19", async ({ page }) => {
     const WORKSPACE_ID = "ws_core_panes_split_tabs"
     const RELAY_ORIGIN = "https://relay.core-panes-split-tabs.test"

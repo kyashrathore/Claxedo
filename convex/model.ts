@@ -299,7 +299,7 @@ export async function userByClerkSubject(db: Db, clerkSubject: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Mandatory function builders (launch plan D8 / ADR 015 §3).
+// Mandatory function builders (D8).
 //
 // Every exported Convex function MUST be built from one of these — never from
 // raw `queryGeneric`/`mutationGeneric`. The architecture guard in

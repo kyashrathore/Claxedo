@@ -1,9 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import sharp from "sharp"
 
-// Flow #10 from docs/tech-docs/architecture-direction-flow.md "Real Browser
-// Coverage": "Open terminal in a workspace and confirm it does not steal
-// session focus."
+// Flow #10 (real-browser E2E coverage): "Open terminal in a workspace and
+// confirm it does not steal session focus."
 //
 // What this test does:
 // 1. Boot into a session and confirm session-content is mounted + URL is on

@@ -13,7 +13,7 @@ const testSupportPathPatterns = [
 const typeContractCandidates = new Set([
   "features/extensions/data/types.ts",
   "features/session/data/session-lifecycle.ts",
-  // Doorbell event mirrors (plan 2026-07-17-004): the feature owns the event
+  // Doorbell event mirrors: the feature owns the event
   // type, the shell folds it into `ClaxedoEvent` with a TYPE-ONLY import — same
   // shape as `session-lifecycle.ts` above, so the graph sees no value edge.
   "features/workgraph/workgraph-changed-event.ts",

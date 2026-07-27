@@ -52,3 +52,10 @@ This file defines product terms independently of their UI placement.
 ## Package scope
 
 Claxedo-owned product packages use the `@claxedo/*` scope. `@claxedo/app` is the public app package. Within `claxedo-app`, `@/` resolves to its `src` root; cross-package imports use real package names.
+
+`@claxedo/app` (de-stuttered) was a deliberate choice over the literal scope-swap
+`@claxedo/claxedo-app`: the scope already carries the brand, so the basename only needs to
+say what the package is. This leaves the directory named `packages/claxedo-app` while the
+package itself is `@claxedo/app` — a directory-name vs package-name mismatch that was
+accepted as cosmetic, not an oversight. Do not "fix" this mismatch by renaming the
+directory or reintroducing the stutter.

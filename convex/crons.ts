@@ -1,5 +1,5 @@
-// D13 sandbox lease reaper — Convex cron half (launch plan 2026-07-11-012 §1 /
-// ADR 016 §4 Decision 3, "scheduled reconciliation loop as the truth-keeper").
+// D13 sandbox lease reaper — Convex cron half (ADR 016 §4 Decision 3,
+// "scheduled reconciliation loop as the truth-keeper").
 //
 // This cron keeps the lease TABLE honest (mark dead in-flight acquires
 // unavailable, mark heartbeat-silent ready leases stopped). The driver-side
@@ -26,7 +26,7 @@ crons.interval("sweep stale runtime leases", { minutes: 10 }, internal.sandboxLe
   ready_heartbeat_stale_after_ms: 30 * 60 * 1000,
 })
 
-// D5 billing reconciliation sweep, Convex half (launch plan 012 §1 / ADR 014
+// D5 billing reconciliation sweep, Convex half (ADR 014
 // §3): Polar disables a webhook endpoint after 10 consecutive failed
 // deliveries, so mirror-via-webhook needs a truth-keeper. This cron FLAGS
 // orgs whose billing mirror has not been touched for 24h; the Worker's Cron

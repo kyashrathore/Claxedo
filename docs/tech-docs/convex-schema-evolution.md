@@ -1,8 +1,7 @@
 # Convex schema evolution — expand-migrate-contract is law
 
-Decision D14 of the cloud-subscription launch plan
-(`docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md` §1, argued in
-`docs/plans/2026-07-11-016-wp-ops-floor-design.md` §5). Context that raises the
+Decision D14 of the cloud-subscription launch work, argued alongside the
+operational-floor design. Context that raises the
 stakes: **Convex has no rollback** — recovery is re-pushing old code from a git
 SHA, which only works if every schema change stayed additive. This discipline is
 the substitute for a rollback button, not hygiene.

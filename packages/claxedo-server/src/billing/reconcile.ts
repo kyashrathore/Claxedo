@@ -1,5 +1,5 @@
 /**
- * D5 billing reconciliation sweep — Worker half (launch plan 012 D5/D13;
+ * D5 billing reconciliation sweep — Worker half (D5/D13;
  * ADR 014 §3 "the failure mode webhooks alone can't cover"): Polar disables a
  * webhook endpoint after 10 consecutive failed deliveries, silently stopping
  * all future events. The Convex cron (convex/crons.ts) FLAGS orgs whose

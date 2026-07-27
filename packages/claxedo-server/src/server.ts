@@ -255,7 +255,7 @@ export function createApp(
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
   // so loopback gates verify the socket, not the spoofable Host header.
   app.use(peerAddressStamp())
-  // D12 (ops floor ADR 2026-07-11-016 §4): top-level error handler. Hono's
+  // D12: top-level error handler. Hono's
   // default onError swallows route exceptions into bare 500s; this keeps that
   // exact response behavior (HTTPException responses pass through) while
   // reporting server exceptions through the observability seam — a no-op
@@ -540,7 +540,7 @@ export function createApp(
   )
 
   const documentsBackend = localDocumentsBackend()
-  // Documents doorbell (plan 2026-07-17-004, Wave 2-C). The documents backend is
+  // Documents doorbell. The documents backend is
   // Worker-safe and cannot import the bus, so the local composition root injects
   // the publish here. Every document mutation — saves AND `fs.watch` external
   // changes — funnels through `publishDocumentEvent`, so this one line covers
@@ -599,8 +599,7 @@ export function createApp(
       } : {}),
     }),
   )
-  // Connections framework
-  // (docs/plans/2026-07-03-004-feat-connections-framework-plan.md): kit routes
+  // Connections framework: kit routes
   // with host-injected gates — auth on every route, loopback+header on token.
   // F5: the hosted-connections entitlement hook — undefined on self-host (never
   // gated, byte-identical), a fail-closed billing gate in hosted mode so a free
@@ -1350,7 +1349,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
             }
             await embedded.reconcile(context)
             await embedded.sourcePlanning.runDue(context)
-            // Doorbell safety net (plan 2026-07-17-004): nudge clients when this
+            // Doorbell safety net: nudge clients when this
             // owner's change log advanced by any path that does not run through
             // `service.execute` (attempt settlement, source planning,
             // activity, intake). Tip-conditional, so an idle owner emits nothing.

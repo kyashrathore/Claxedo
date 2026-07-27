@@ -3,7 +3,7 @@
  * Generates e2e/fixtures/harness-traces/<harness>.json for
  * e2e/playwright/core-harness-rendering-matrix.spec.ts.
  *
- * WHY THIS SCRIPT EXISTS (see docs/plans/2026-07-10-001-...-plan.md spec 10 + DoD #4):
+ * WHY THIS SCRIPT EXISTS:
  * the rendering-matrix spec must replay each harness family's REAL translated event
  * trace through the mocked SSE stream, not a hand-invented one. This script is the
  * single source of truth for those traces: it runs the ACTUAL production code from

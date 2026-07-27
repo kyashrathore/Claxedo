@@ -16,7 +16,7 @@
  * Opening is read-only. Human edits move idle → dirty → saving → saved; transport errors
  * move saving → failed → retry; stale If-Match moves saving → conflicted while retaining
  * both draft and disk values. An open editor does NOT live-refresh on an external write
- * (that controller was removed, plan 2026-07-17-004): the divergence surfaces as a CAS
+ * (that controller was removed): the divergence surfaces as a CAS
  * conflict on the next save. Every accepted write snapshots the previous bytes, and restoration is an
  * explicit history action. Agent access hydrates the canonical file into a session path;
  * an ordinary file-tool write conditionally writes back to the indexed placement. Hosted
@@ -63,8 +63,8 @@
  *
  * HARNESS NOTES — tests carry an `evidence-tier=mock-ui` annotation. `installMockRuntime`
  * owns the surrounding shell/session APIs; `DocumentRuntime` owns only `/documents/**`.
- * There is no document event stream any more (removed with external-change,
- * plan 2026-07-17-004); external writes only mutate durable state. “agent edit”, “restart”, “checkout loss”, and “VM loss” here validate
+ * There is no document event stream any more (removed with external-change);
+ * external writes only mutate durable state. “agent edit”, “restart”, “checkout loss”, and “VM loss” here validate
  * browser and wire behavior, not operating-system or deployment durability. WorkGraph
  * exact fetch/pin is companion D10 server contract evidence rather than a browser success
  * behavior because no browser UI owns that direct route. A D14 release verdict must pair
@@ -273,9 +273,9 @@ class DocumentRuntime {
 
   // Mutates the durable document as if something wrote the file out of band.
   // There is no live-refresh notification anymore (the `/documents/events` SSE
-  // and the editor's external-change controller were removed, plan
-  // 2026-07-17-004): an open editor stays put, and the divergence surfaces as a
-  // CAS conflict the next time that editor saves.
+  // and the editor's external-change controller were removed): an open editor
+  // stays put, and the divergence surfaces as a CAS conflict the next time
+  // that editor saves.
   externalEdit(id: string, markdown: string, actor: "agent" | "user" = "agent") {
     const document = this.require(id)
     this.snapshot(document, `before ${actor} edit`, { type: actor, id: `${actor}_documents_core` })
@@ -446,9 +446,8 @@ class DocumentRuntime {
     })
 
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent)
-    // The `/documents/events` SSE route was removed with external-change
-    // (plan 2026-07-17-004); the client never opens it, so there is nothing to
-    // mock here.
+    // The `/documents/events` SSE route was removed with external-change;
+    // the client never opens it, so there is nothing to mock here.
     if (request.method() === "GET" && parts[1] === "statuses") {
       return json(route, [{ id: "draft", name: "Draft", color: "gray", position: 0, transitions: [] }])
     }
@@ -692,7 +691,7 @@ function annotate(testInfo: TestInfo, extra = "") {
 }
 
 function unexpectedCanaryConsoleErrors(messages: string[]) {
-  // The document `/documents/events` SSE is gone (plan 2026-07-17-004), so its
+  // The document `/documents/events` SSE is gone, so its
   // reconnect noise no longer needs an exemption. The central events stream
   // (`GET /api/wr/events`) still churns under this deterministic harness: per
   // core-sidebar-tree.spec.ts's documented shared-helper gap, `installMockRuntime`
@@ -1157,9 +1156,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const secondSource = await sourceEditor(second)
     await secondSource.fill("Heading\n=======\n\nsecond-tab draft\n")
     await firstSource.fill("Heading\n=======\n\nfirst-tab disk\n")
-    // No live-refresh exists any more (plan 2026-07-17-004), so the second tab
-    // never learns of the first tab's save until it saves itself — exactly the
-    // CAS conflict this behavior asserts.
+    // No live-refresh exists any more, so the second tab never learns of the
+    // first tab's save until it saves itself — exactly the CAS conflict this
+    // behavior asserts.
     await page.keyboard.press("ControlOrMeta+s")
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
     const diskAfterFirstSave = runtime.inspect(document.summary.id).markdown
@@ -1174,8 +1173,8 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await second.close()
   })
 
-  // Live-refresh of an open editor was intentionally removed (plan 2026-07-17-004):
-  // an external write no longer follows into an open editor, and a competing write
+  // Live-refresh of an open editor was intentionally removed: an external
+  // write no longer follows into an open editor, and a competing write
   // surfaces as a CAS conflict the next time the human saves — never a silent loss.
   // Out-of-contract Markdown still lands in source mode on (re)load, and a previous
   // snapshot stays restorable through the visible history UI.
@@ -1302,7 +1301,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(runtime.hydratedAgentFiles.get(hydratedPath)?.bytes).toBe("Heading\n=======\n\nagent base\n")
 
     await runtime.runAgentFileTool(hydratedPath, "Heading\n=======\n\nordinary agent file edit\n")
-    // The open editor no longer live-refreshes (plan 2026-07-17-004): it still
+    // The open editor no longer live-refreshes: it still
     // shows the base bytes. The write-back is proven durable by reopening below.
     await expect(editor).toHaveValue("Heading\n=======\n\nagent base\n")
     await proveGeometry(editorPage, editor, testInfo, "agent-file-edit-not-live-refreshed")

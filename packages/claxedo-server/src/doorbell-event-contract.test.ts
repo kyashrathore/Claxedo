@@ -6,7 +6,7 @@ import type {
 import type { WorkgraphChangedEvent as AppWorkgraphChangedEvent } from "../../claxedo-app/src/features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent as AppDocumentChangedEvent } from "../../claxedo-app/src/features/documents/data/document-changed-event"
 
-// Doorbell mirror contract (plan 2026-07-17-004).
+// Doorbell mirror contract.
 //
 // The `workgraph.changed` and `document.changed` envelopes are declared TWICE:
 // the canonical server union in `./bus` (claxedo-server, publisher) and the

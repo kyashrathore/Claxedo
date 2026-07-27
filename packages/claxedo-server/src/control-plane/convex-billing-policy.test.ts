@@ -10,7 +10,7 @@ import {
 import { applyClerkWebhook, membershipByClerkIds } from "../../../../convex/orgs"
 
 /**
- * D5/D6 Convex policy (launch plan 012; ADR 014 §3/§4):
+ * D5/D6 Convex policy (ADR 014 §3/§4):
  * - applyPolarState is idempotent under duplicates and REORDERING (older
  *   source timestamps never overwrite newer state);
  * - full-state sources downgrade previously mirrored orgs absent from the

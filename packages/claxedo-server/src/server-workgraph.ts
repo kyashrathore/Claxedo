@@ -85,7 +85,7 @@ export async function createLocalEmbeddedWorkGraph(
     webhookVerifier?: ConnectionWebhookVerifier
     telemetry?: ControlPlaneTelemetry
     /**
-     * WorkGraph live-sync doorbell (plan 2026-07-17-004). Defaults to the central
+     * WorkGraph live-sync doorbell. Defaults to the central
      * `claxedoBus`, which feeds `/api/wr/events` + `/global/event`; injectable so
      * tests can observe nudges without the bus.
      */

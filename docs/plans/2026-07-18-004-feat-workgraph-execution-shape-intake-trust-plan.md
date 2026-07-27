@@ -9,8 +9,8 @@ action. This document REPLACES the earlier same-numbered draft ("execution shape
 trust"), whose chip vocabulary, policy enums, and intake-lane emphasis were invalidated by
 simulation and research (§2).
 
-Relationship to other plans: builds on 2026-07-18-003 (approval gate / pause-as-launch-gate —
-taken as landed ground truth; its `pending_approval` state now gates only agent-proposed work,
+Relationship to other plans: builds on the approval gate / pause-as-launch-gate work
+(taken as landed ground truth; its `pending_approval` state now gates only agent-proposed work,
 §3.6). The master's session surface aligns with 2026-07-18-002 (background agents steering).
 Wakes (`@claxedo/wakes`, project_wakes_package) is the hibernation engine for masters.
 
@@ -224,7 +224,7 @@ Every stream of validation converged here, so it is a design law, not a feature:
   arrives `pending_approval` ("Staged") with "Approve & run", per-item or bulk. Proposals
   show **file scope per task and overlap flags** so a 45-row proposal reads as ~6–8 groupable
   decisions (the v2 migration fix).
-- No agent can approve. Not the master, not via MCP (2026-07-18-003 decision stands), not via
+- No agent can approve. Not the master, not via MCP (the approval-gate decision stands), not via
   any charter sentence.
 
 ### 3.7 Scheduling law
@@ -264,7 +264,7 @@ list but misses a guardrail fails review.
 
 ## 5. Grounded current state (verified 2026-07-18, file:line)
 
-- Approval gate, pause-as-launch-gate, Staged UI: landed per 2026-07-18-003 (uncommitted).
+- Approval gate, pause-as-launch-gate, Staged UI: landed (uncommitted).
 - Running-task glyph is an animated spinner (landed 2026-07-18, uncommitted):
   [work-item-rows.tsx:74](../../packages/claxedo-app/src/features/workgraph/work-item-rows.tsx).
 - **No stop surface**: `cancelAttempt` exists end-to-end
@@ -296,7 +296,7 @@ list but misses a guardrail fails review.
 "Stopped · Retry". One Pause control (default: pause launches; checkbox: also stop running);
 paused streams announce themselves inline on every affected task row.
 **0b. One running task per stream.** New launchability reason (`workspace_busy`); the domain
-oracle and the SQL mirror share one predicate (the 2026-07-18-003 divergent-copies lesson).
+oracle and the SQL mirror share one predicate (the divergent-copies lesson from the approval-gate work).
 **0c. Honest copy.** "Approve & run" on agent-proposed work; direct human asks skip approval;
 placement line on the card (`worktree · from dev @ <rev>`); session + workspace identity in
 the task inspector.

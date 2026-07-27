@@ -3,7 +3,7 @@
 - **Status**: ACCEPTED (decision to migrate is made; this doc decides HOW)
 - **Date**: 2026-07-11
 - **Owners**: WP-AUTH
-- **Siblings**: `2026-07-11-012-feat-cloud-subscription-launch-plan.md` (Polar $9/seat billing — doc 012/014 lineage), self-host parity plan (embedded Better Auth already shipped as W1)
+- **Siblings**: the cloud subscription launch plan (Polar $9/seat billing — doc 014 lineage), self-host parity plan (embedded Better Auth already shipped as W1)
 - **Business context**: pre-launch, zero production users, subscription product at $9/seat via Polar. There is no cheaper moment to change identity infrastructure than right now.
 
 This is an ADR, not an edit map. It reasons through where the hosted Better Auth issuer should live, who owns org/tenancy truth, and what the frontend contract should be — with the failure modes that drive each choice.

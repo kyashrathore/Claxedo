@@ -3,7 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 /**
- * WP-BILLING architecture guards (launch plan 012 D4/D5, invariants I-1/I-3):
+ * WP-BILLING architecture guards (D4/D5, invariants I-1/I-3):
  *
  * 1. SINGLE WRITER (I-3, the grep-style guard the design doc calls for): the
  *    mirrored org billing fields are written by convex/billing.ts and nowhere

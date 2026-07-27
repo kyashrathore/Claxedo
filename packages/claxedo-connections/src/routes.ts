@@ -27,9 +27,8 @@ export type IntegrationsRouteOptions = {
   // "team" (default): owner-absent rows are the deployment-wide team
   // partition, visible to every gated caller. "refuse": owner-absent rows
   // are never readable or writable through these routes — the hosted
-  // invariant (tenant-hardening design 015 §2 Decision 1): a hosted host
-  // must derive its team partition from the caller's org and refuse the
-  // null partition outright.
+  // invariant: a hosted host must derive its team partition from the
+  // caller's org and refuse the null partition outright.
   ownerlessRows?: "team" | "refuse"
 }
 

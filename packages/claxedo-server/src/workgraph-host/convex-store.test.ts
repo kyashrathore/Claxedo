@@ -2317,7 +2317,7 @@ describe("Convex WorkGraph store", () => {
       attempt: { id: "attempt_subject_owned", ownerUserId: "clerk_user_a" },
       executionReferences: { sessionId: "session_subject_owned" },
     })
-    // The change feed is server-side only now (plan 2026-07-17-004): the `/changes`
+    // The change feed is server-side only now: the `/changes`
     // route is gone, so subject mapping on the changes query is asserted in-process.
     expect(await service.queries.changes.list(owner("clerk_user_a"), { limit: 10 })).toMatchObject([{
       ownerUserId: "clerk_user_a",

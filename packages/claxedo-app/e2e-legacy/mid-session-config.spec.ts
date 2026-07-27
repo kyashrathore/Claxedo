@@ -1,8 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 
-// Flow #8 from docs/tech-docs/architecture-direction-flow.md "Real Browser
-// Coverage": "Change model or agent mid-session, send, reload, confirm
-// persisted config."
+// Flow #8 (real-browser E2E coverage): "Change model or agent mid-session,
+// send, reload, confirm persisted config."
 //
 // Architectural note: for an existing ACP session the runner is locked
 // (see acp-config.ts:shouldFetchConfigOptionsForScope; existingSession

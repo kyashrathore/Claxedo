@@ -1,6 +1,7 @@
 /**
- * Runtime-neutral error-reporting seam (D12, ops floor ADR
- * docs/plans/2026-07-11-016-wp-ops-floor-design.md §4).
+ * Runtime-neutral error-reporting seam (D12, ops-floor decision: Sentry is
+ * the observability floor, with unattended detection and grouping as the
+ * binding requirement for a solo-operator on-call).
  *
  * The Worker, the Node server, and tests all share this module; none of them
  * import a Sentry SDK from here (this file must stay Worker-safe — the

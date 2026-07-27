@@ -1,7 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 
-// Flow #2 from docs/tech-docs/architecture-direction-flow.md "Real Browser
-// Coverage". Seeds the same realistic localStorage state the existing
+// Flow #2 (real-browser E2E coverage). Seeds the same realistic localStorage state the existing
 // session-route-workbench spec uses, then reloads and confirms the focused
 // session re-opens directly (no flicker / blank state / double-load).
 

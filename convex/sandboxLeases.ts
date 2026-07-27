@@ -265,7 +265,7 @@ export const list = serviceQuery({
 
 // ---------------------------------------------------------------------------
 // D13 lease reaper — Convex-side half of the two-way reconciliation
-// (launch plan 2026-07-11-012 §1 / ADR 016 §4 Decision 3).
+// (ADR 016 §4 Decision 3).
 //
 // The split, per the ADR: driver-side convergence (list driver resources,
 // destroy orphans) lives in `sandboxManager.garbageCollect()` and is driven by

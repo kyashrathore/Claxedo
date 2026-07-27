@@ -42,7 +42,7 @@ type IndexState = {
 }
 
 /**
- * Documents index live sync (plan 2026-07-17-004, Wave 2-C).
+ * Documents index live sync.
  *
  * This controller used to own a dedicated `GET /documents/events` SSE purely to
  * learn "something changed" — a held local-origin socket per index surface, and
@@ -177,7 +177,7 @@ export function createDocumentIndexController(input: {
       // Loud on purpose: silently degrading to a non-live index is the failure
       // mode this whole change is supposed to make impossible to ship.
       console.warn(
-        "[documents] central events port unavailable — the Documents index will not live-update (plan 2026-07-17-004 Wave 3 wiring).",
+        "[documents] central events port unavailable — the Documents index will not live-update.",
       )
     }
     unsubscribe = input.subscribe?.((event) => {

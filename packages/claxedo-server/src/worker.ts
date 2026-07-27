@@ -3,13 +3,16 @@
  *
  * This is the ONLY module Wrangler bundles as the Worker. It composes hosted
  * services from the Worker's `env` bindings and serves the Worker-safe
- * `hosted-app`. It imports nothing local: no `@hono/node-server`, no workspace
- * store/supervisor/embedded runtime/tunnel, no SQLite. See
- * `docs/tech-docs/claxedo-server-worker-deployment-plan.md`.
+ * `hosted-app`, which mounts only the hosted control-plane route set (health,
+ * mode, JWKS, device-login, hosted workspace/connection, hosted control,
+ * internal relay, hosted sandbox admin) — a different, narrower surface than
+ * the local Node server's routes. It imports nothing local: no
+ * `@hono/node-server`, no workspace store/supervisor/embedded runtime/tunnel,
+ * no SQLite.
  *
  * The local Node server lives in `server.ts` and is unaffected by this file.
  *
- * D12 observability (ops floor ADR 2026-07-11-016 §4): the handler is wrapped
+ * D12 observability: the handler is wrapped
  * with `@sentry/cloudflare`'s `withSentry`
  * (https://docs.sentry.io/platforms/javascript/guides/cloudflare/ — requires
  * the `nodejs_compat` flag for AsyncLocalStorage, which wrangler.toml already
@@ -111,7 +114,7 @@ function buildApp(env: WorkerEnv): Hono {
   // Every trigger path (cron, admin route, smoke cycles) shares one per-isolate
   // guard: overlapping reconciles have hung the Workers runtime.
   const workGraphReconcile = workGraphRuntime ? skipOverlappingReconcile(workGraphRuntime.reconcile) : undefined
-  // Wakes-path settlement (plan 2026-07-17-002 U8) is flag-gated: with
+  // Wakes-path settlement is flag-gated: with
   // CLAXEDO_WAKES_SETTLEMENT=1 and the WAKE_LANE binding, command nudges go
   // durable-wake-first through the per-lane DO; otherwise the proven
   // WorkGraphSettler path stays in charge. Same SettlementDispatcher port

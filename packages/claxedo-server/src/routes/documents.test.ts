@@ -1061,7 +1061,7 @@ describe("DocumentsRoutes", () => {
   })
 
   // Project-scoped delivery moved off the SSE onto the central `document.changed`
-  // doorbell (plan 2026-07-17-004, Wave 2-C), so this exercises the in-process
+  // doorbell, so this exercises the in-process
   // listener registry that both the doorbell sink and the document-scoped stream
   // are fed from. `publishDocumentEvent` is synchronous, so every event is
   // already recorded by the time each awaited request resolves.

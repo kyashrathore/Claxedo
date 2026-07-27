@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 
-// Flow #7 from docs/tech-docs/architecture-direction-flow.md "Real Browser
-// Coverage": "Send first prompt in a cloud workspace session."
+// Flow #7 (real-browser E2E coverage): "Send first prompt in a cloud
+// workspace session."
 //
 // Boots the shell in cloud workspace mode (signed user, control-plane backed
 // session listing, runtime hosted behind the Workspace Relay), opens a

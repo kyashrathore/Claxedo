@@ -1,7 +1,6 @@
 /**
  * Viewport breakpoint tokens — the single source of truth for every
- * layout-gating pixel threshold in the app (WP-C3, design note
- * `docs/plans/2026-07-11-010-wp-c3-breakpoint-inventory.md`).
+ * layout-gating pixel threshold in the app (WP-C3).
  *
  * The five on-scale tokens mirror Tailwind's default `screens` map
  * (`sm=640, md=768, lg=1024, xl=1280, 2xl=1536`) so a `md:`/`max-md:` utility

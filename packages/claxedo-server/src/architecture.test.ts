@@ -985,8 +985,7 @@ describe("harness-scoped resolution", () => {
       "event-visibility.ts",
       "events.ts",
       // Hosted (Cloudflare Worker) control-plane routes. Mounted by hosted-app.ts
-      // (the Worker entrypoint), NOT by the local Node server.ts. See
-      // docs/tech-docs/claxedo-server-worker-deployment-plan.md.
+      // (the Worker entrypoint), NOT by the local Node server.ts.
       "hosted-control.ts",
       "hosted-device-auth.ts",
       "hosted-sandbox-admin.ts",

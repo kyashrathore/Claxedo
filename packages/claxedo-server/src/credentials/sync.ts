@@ -559,7 +559,7 @@ export async function collectLocalCredentialItems() {
 }
 
 export async function syncLocalCredentials(ids?: string[]) {
-  log.warn("Deprecated sync-local credential path called; migrate to explicit discovery per plan 2026-07-16-004")
+  log.warn("Deprecated sync-local credential path called; migrate to explicit discovery (automatic discovery, explicit upload)")
   const all = await collectLocalCredentials()
   const list = ids?.length ? [...new Set(ids)] : [...new Set([...all.values()].map((item) => item.provider_id))]
   const synced: string[] = []

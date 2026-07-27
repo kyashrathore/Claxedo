@@ -2,11 +2,12 @@
 
 This file is the constitution for `packages/claxedo-app/e2e/**`. It exists because the
 prior suite failed ~20 rounds of the same regression class (assistant replies that never
-visibly render) while staying green — see
-`docs/plans/2026-07-10-001-refactor-e2e-20-spec-consolidation-plan.md` for the full
-post-mortem. Every spec file links back here; this document is authoritative on *why* the
-suite is shaped the way it is. Do not weaken any rule below without updating the plan doc
-first.
+visibly render) while staying green — every default spec fabricated the agent reply
+itself instead of streaming a real busy→completed transition, and assertions targeted
+only the user bubble slot while the assistant slot was hidden via `aria-hidden` in a way
+Playwright's visibility checks don't catch. Every spec file links back here; this
+document is authoritative on *why* the suite is shaped the way it is. Do not weaken any
+rule below without updating this file first.
 
 ## The #1 rule: an assertion is a claim, not proof
 
@@ -156,10 +157,28 @@ no test, fails review.
 
 ## Spec index
 
-See `docs/plans/2026-07-10-001-refactor-e2e-20-spec-consolidation-plan.md` for the full
-25-spec list (Tier M specs 1–21, Tier L specs 22–25) and what each one owns. This file will
-grow a one-line link per spec as specs land:
+The full suite is 25 spec files across two tiers (Tier M specs 1–21 mocked/fixture, Tier
+L specs 22–25 live). This file will grow a one-line link per spec, naming what each one
+owns, as specs land:
 
 - **1. `core-first-prompt-local`** — draft composer → first send → full session UI;
   oracle; exactly one user + one assistant row; optimistic user row before reconcile;
   attach-workspace-before-prompt guard.
+
+## Testing gotchas
+
+Operational lessons paid for in hours of chasing false signals. Do not relearn these.
+
+1. **Tier M must run against `bun run dev`, never `vite preview`.** DEV-only seams get
+   dead-code-eliminated in a preview build, producing false "regressions" that look like
+   real breakage but are only a build-mode artifact.
+2. **Cap roughly 3 concurrent Playwright suites machine-wide.** Recycle long-lived dev
+   servers rather than spinning up more in parallel.
+3. **SSE mocks need per-connection broadcast semantics, not drain-once queues.** A
+   drain-once queue turns delivery into a lottery between the app's multiple stream
+   consumers (fixed in `mock-runtime.ts`; keep new mock variants consistent with this).
+4. **Playwright `page.route` matching is LIFO** — the last-registered handler wins.
+   Order route registrations accordingly when a spec stacks more than one.
+5. **A shared git index across parallel agent sessions means a bare `git commit` sweeps
+   other agents' staged files.** Always commit by pathspec (`git commit --only <paths>`),
+   never a bare `git commit` when other sessions may have work staged.

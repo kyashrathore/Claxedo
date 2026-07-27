@@ -174,6 +174,17 @@ export function createConnectionsService(deps: {
     await deps.credentials.setStatus(connectionProviderId(row.id), "error", "auth_failure_reported")
   }
 
+  // Resolution seam: `options.owner` here must come from a host-minted,
+  // subject-bearing turn credential — never from a runtime-asserted
+  // sessionId. A session id is forgeable/guessable on a shared signed host,
+  // and a wake-fired turn runs `spawnTurn(sessionId)` into an existing,
+  // owned session, so keying resolution off session->owner alone would let
+  // an automated turn spend the owner's personal token. Callers must
+  // therefore omit `owner` (falling to the team-only path below) whenever
+  // they cannot prove the turn was interactively started by that subject.
+  // Fail-safe invariant: a propagation bug that drops/loses the owner
+  // degrades to "personal connection unused", never to "personal token
+  // spent by automation".
   async function resolveForCapability(
     capability: IntegrationCapability,
     options: PartitionInput & { integration?: string } = {},

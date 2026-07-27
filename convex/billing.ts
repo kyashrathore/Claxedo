@@ -1,7 +1,6 @@
 /**
  * B1/D5/D6 — Polar billing mirror, the SINGLE WRITER of org billing fields
- * (launch plan docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md
- * D5/D6, invariants I-3/I-4; ADR docs/plans/2026-07-11-014-wp-billing-polar-
+ * (D5/D6, invariants I-3/I-4; ADR docs/plans/2026-07-11-014-wp-billing-polar-
  * subscription-design.md §3/§4 + addendum).
  *
  * SINGLE-WRITER RULE (I-3): `applyPolarState` below is the ONLY function that

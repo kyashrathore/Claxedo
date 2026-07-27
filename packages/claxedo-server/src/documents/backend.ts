@@ -229,7 +229,7 @@ export function subscribeDocumentEvents(
 }
 
 /**
- * Doorbell sink for the CENTRAL bus (plan 2026-07-17-004, Wave 2-C).
+ * Doorbell sink for the CENTRAL bus.
  *
  * Injected, never imported: this module is in the Worker import graph
  * (`hosted-app.ts` → `routes/documents.ts` → here), and `../bus` pulls

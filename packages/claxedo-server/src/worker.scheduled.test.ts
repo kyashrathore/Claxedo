@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
 /**
- * D13 reaper — Worker `scheduled` handler (ops floor ADR 2026-07-11-016 §4).
+ * D13 reaper — Worker `scheduled` handler.
  *
  * The Cloudflare Cron Trigger must drive the EXISTING sandbox GC path: a
  * synthetic POST to /internal/sandbox-manager/gc authorized with the admin

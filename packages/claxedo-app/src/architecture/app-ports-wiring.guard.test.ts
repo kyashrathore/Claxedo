@@ -7,8 +7,8 @@ import path from "node:path"
  * in the test stub.
  *
  * WHY THIS GUARD EXISTS. `features/workgraph/app-ports.ts` shipped with a
- * `configureWorkGraphAppPorts` that NOTHING ever called (plan 2026-07-17-004,
- * Wave 3). Its accessor is deliberately tolerant — it returns `undefined` for an
+ * `configureWorkGraphAppPorts` that NOTHING ever called. Its accessor is
+ * deliberately tolerant — it returns `undefined` for an
  * unconfigured port instead of throwing — so the entire WorkGraph live-sync
  * doorbell degraded to "revalidate on activation only", silently, in production,
  * with every unit test green. Nothing in the type system or the test suite could

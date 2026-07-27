@@ -3,7 +3,7 @@ import { markRolledBackDraft } from "./rolled-back-drafts"
 
 // Backend-orchestrated session creation with lifecycle reconciliation.
 //
-// Track 5 of architecture-direction-flow.md asks the frontend to "subscribe
+// This flow requires the frontend to "subscribe
 // first, perform the HTTP fetch, and reconcile events buffered during fetch."
 // `createOpencodeSessionWithLifecycle` does exactly that for draft-backed
 // creates: before the HTTP call fires, it begins listening for a matching

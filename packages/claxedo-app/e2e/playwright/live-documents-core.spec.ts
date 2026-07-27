@@ -8,7 +8,7 @@
  * the same scratch data directory and a new server process.
  *
  * An open editor does NOT live-refresh on an external/agent write — the external-change
- * controller and the `/documents/events` SSE were removed (plan 2026-07-17-004). A
+ * controller and the `/documents/events` SSE were removed. A
  * competing durable write is caught as a CAS conflict on the next save, never a silent
  * loss. The integrated grant journey uses the real `/docs` picker to grant a real Session
  * path, then drives an ordinary bash process against that path before checking the durable
@@ -402,9 +402,9 @@ test.describe.serial("live Documents core backend @live", () => {
     await proveGeometry(page, reopened, testInfo, "real-managed-document-reopened-after-server-restart")
   })
 
-  // Live-refresh of an open editor was intentionally removed (plan 2026-07-17-004):
-  // no `/documents/events` SSE, no external-change controller. A competing durable
-  // write is caught as a CAS conflict on the human's next save, preserving both sides.
+  // Live-refresh of an open editor was intentionally removed: no `/documents/events`
+  // SSE, no external-change controller. A competing durable write is caught as a
+  // CAS conflict on the human's next save, preserving both sides.
   test("a competing durable write is caught as a CAS conflict on save, and a version restores", async ({
     page,
   }, testInfo) => {
@@ -517,8 +517,8 @@ test.describe.serial("live Documents core backend @live", () => {
     const agentEdit = "Heading\n=======\n\nreal agent ordinary bash edit\n"
     await runGrantedPathBash(grantedPath, agentEdit)
     // The agent's bash write-back reaches durable storage, but the open editor no
-    // longer live-refreshes to follow it (external-change removed, plan
-    // 2026-07-17-004) — it still shows the bytes it opened with.
+    // longer live-refreshes to follow it (external-change removed) — it still
+    // shows the bytes it opened with.
     expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
       agentEdit,
     )

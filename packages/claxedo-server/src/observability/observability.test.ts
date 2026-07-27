@@ -4,7 +4,7 @@ import { deploymentModeTag, resolveRelease, sentryInitOptions } from "./sentry-c
 import { initNodeObservability } from "./node"
 
 /**
- * D12 observability gates (ops floor ADR 2026-07-11-016 §4).
+ * D12 observability gates.
  *
  * The load-bearing contract: with no DSN configured (the owner has no Sentry
  * account yet) every entrypoint's observability is a clean disabled no-op —

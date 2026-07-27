@@ -3,7 +3,6 @@ title: "goal: Implement the Claxedo public website"
 type: feat
 status: active
 date: 2026-07-20
-origin: docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md
 deepened: 2026-07-20
 updated: 2026-07-22
 artifact_contract: ce-unified-plan/v1
@@ -17,7 +16,7 @@ execution: code
 
 - **Objective:** Ship one production public site on `claxedo.com` that presents Claxedo as the open cloud workspace for coding agents, converts visitors through exactly two marketing actions—**Open Claxedo** and **Deploy to Cloudflare**—and consolidates product marketing, open architecture, comparisons, framework documentation, and machine-readable discovery under one canonical origin.
 - **Primary implementation target:** `packages/claxedo-web`, the existing Astro application. Framework content migrates from `packages/claxedo-docs`; product and technical evidence comes from the relevant Claxedo and WorkGraph packages rather than being redefined by the website.
-- **Product authority:** This document owns public information architecture, technical delivery, migration, claim governance, and release acceptance. `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md` owns the homepage's section order and working copy. `docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md` supplies the positioning and competitor research baseline. Shipped code and active product contracts remain the authority for capability claims.
+- **Product authority:** This document owns public information architecture, technical delivery, migration, positioning and competitor research, homepage content governance, claim governance, and release acceptance. Shipped code and active product contracts remain the authority for capability claims.
 - **Execution profile:** Implement Units 1–8 in dependency order, keeping every page server-rendered or statically rendered, every public claim evidence-gated, every marketing conversion on one of the two canonical CTA paths, and the existing documentation deployment available until cutover acceptance passes.
 - **Stop conditions:** Stop a publication or cutover when a claim lacks reproducible evidence, a release artifact is missing, a legacy route lacks a verified destination, hosted and self-hosted source parity cannot be substantiated, or active hosting ownership is unknown. Omit or narrow the affected claim while implementation continues elsewhere.
 - **Tail ownership:** The goal is complete only after repository gates, browser acceptance, accessibility and visual review, production redirect/canonical/crawler smoke tests, and post-cutover documentation checks all pass against the deployed release.
@@ -28,7 +27,7 @@ execution: code
 |---|---|---|
 | Public web application | `packages/claxedo-web` with Astro 5 | One production build owns product, download, pricing, comparisons, `/framework`, sitemap, and agent-discovery routes. |
 | Framework documentation | `packages/claxedo-docs` with the current Mintlify IA | Content migrates beneath `/framework` in the Astro application; the old deployment remains only for verified one-hop redirects. |
-| Homepage content | `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md` | Its settled section sequence, evidence-reviewed working copy, proof direction, and publication checks are implemented without introducing another marketing CTA. |
+| Homepage content | This plan's Content Strategy section | Its settled section sequence, evidence-reviewed working copy, proof direction, and publication checks are implemented without introducing another marketing CTA. |
 | Product evidence | `packages/claxedo-app`, `packages/claxedo-desktop`, `packages/claxedo-server`, `packages/workgraph`, public packages, release artifacts, and deployment records | Every material claim points to a current reproducible artifact and carries verification status. |
 | Framework examples | `claxedo-cookbook` and public package documentation | Runnable examples and API claims are rendered from maintained sources or checked against them. |
 | Canonical public origin | Split between `claxedo.com` and `docs.claxedo.com` | All indexable public content resolves canonically on `claxedo.com`; `app.claxedo.com` remains the authenticated application. |
@@ -242,7 +241,7 @@ The site states explicitly that unsigned local desktop operation works without a
 
 ## Competitive Positioning
 
-The competitive landscape is a July 20, 2026 research snapshot from `docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md`. It informs category boundaries, comparison priorities, vocabulary, and proof requirements. Pricing, licenses, traction, product availability, acquisitions, and feature claims require first-party re-verification immediately before publication.
+The competitive landscape is a July 20, 2026 research snapshot captured in this plan's Competitive Positioning section. It informs category boundaries, comparison priorities, vocabulary, and proof requirements. Pricing, licenses, traction, product availability, acquisitions, and feature claims require first-party re-verification immediately before publication.
 
 ### Closest strategic competitors
 
@@ -351,7 +350,7 @@ Each step appears only when the corresponding product behavior can be demonstrat
 
 ## Scope Boundaries
 
-- Billing enforcement, entitlement rules, authentication, subscription prices, and the free launch posture continue to follow `docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md`.
+- Billing enforcement, entitlement rules, authentication, subscription prices, and the free launch posture continue to follow the cloud subscription launch plan.
 - Connected product onboarding continues to follow `docs/plans/2026-07-17-002-feat-onboarding-v1-implementation-plan.md` after a user launches the desktop client or signs into the web application.
 - Framework APIs, npm package names, runtime behavior, and OpenCode engine lineage remain governed by their existing package contracts.
 - The Claxedo name remains the product identity.
@@ -440,7 +439,7 @@ The framework header returns to **Open Claxedo** as its commercial action. Frame
 
 ### Commercial homepage
 
-The working copy deck at `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md` provides the section-by-section homepage wording, product-proof direction, and publication checklist. This implementation goal governs page scope, CTA hierarchy, positioning, claim gates, and delivery; the copy deck governs homepage wording within those boundaries.
+This implementation goal governs page scope, CTA hierarchy, positioning, claim gates, and delivery; the section-by-section homepage wording, product-proof direction, and publication checklist below govern homepage wording within those boundaries.
 
 The homepage is a product-led conversion narrative:
 
@@ -571,6 +570,17 @@ The framework and commercial site should publish authoritative pages around real
 - Honest product comparisons backed by maintained evidence.
 
 Each intent has one canonical page. Marketing summaries link to the detailed source instead of duplicating it. Comparison pages are indexable only after their claims have an owner, update cadence, source links, and a visible last-reviewed date.
+
+## Content boundaries
+
+- "Cloud" names the connected product and deployment model in the headline; product and cloud are not separate products.
+- The site claims MIT licensing only for packages verified by the public license and package manifests.
+- The site explains hosted and self-deployed compositions without claiming production environment parity that has not been demonstrated.
+- Cloudflare is the control plane deployment target. Execution remains on a connected user-controlled machine, server, or sandbox.
+- Deployment prerequisites and operational details live inside the copied prompt rather than a separate homepage section.
+- Framework and download are supporting destinations, not competing hero conversions.
+- The page does not use "More than another chat window," "Discover at the frontier," "Use an integrated harness," "Start here," or "workspace host."
+- The site does not fabricate testimonials, customer logos, performance metrics, or identical structured-chat support for every CLI.
 
 ## Search, AI Discovery, and Machine-Readable Surfaces
 
@@ -756,7 +766,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 
 - Existing centralized external URL and download configuration in `packages/claxedo-web/src/config.ts`.
 - Existing framework documentation truthfulness gate in `packages/claxedo-docs/README.md`.
-- Positioning vocabulary, competitor taxonomy, claim cautions, and initial comparison evidence in `docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md`.
+- Positioning vocabulary, competitor taxonomy, claim cautions, and initial comparison evidence in this plan's Competitive Positioning section.
 - Repository rule to avoid unnecessary destructuring and one-use variables.
 
 **Test scenarios:**
@@ -802,7 +812,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 
 **Approach:**
 
-- Implement `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md` as the homepage content contract. Preserve its chapter order unless a browser-tested composition requires merging adjacent proof, and preserve every claim's publication gate.
+- Implement this plan's Content Strategy section as the homepage content contract. Preserve its chapter order unless a browser-tested composition requires merging adjacent proof, and preserve every claim's publication gate.
 - Lead with “The open cloud workspace for coding agents.” Follow it with the unified architecture explorer, cross-surface continuity, harness neutrality, chat UI and terminal, WorkGraph, Agent Extensions, the principles thesis, and the closing conversion. Deploy controls copy the complete prompt directly.
 - Demonstrate terminal tabs as the immediate compatibility path for any coding-agent CLI while describing supported harnesses in user-facing terms as a chat UI or terminal. Protocol detail belongs in `/framework` rather than a standalone homepage chapter.
 - Give WorkGraph a full product chapter showing Streams, dependent Tasks, execution progress, evidence, and **Needs you**. Use the verified local composition until deployed Cloud acceptance supports hosted proof.
@@ -825,10 +835,10 @@ The release record must identify one commit SHA and retain reproducible artifact
 
 - Existing Astro page/layout composition in `packages/claxedo-web/src/pages/index.astro` and `packages/claxedo-web/src/layouts/Layout.astro`.
 - Existing application URL override behavior in `packages/claxedo-web/src/config.ts`.
-- Subscription launch posture in `docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md`.
-- Homepage section order, working copy, proof direction, and publication checks in `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md`.
+- Subscription launch posture: launch free, per the cloud subscription launch plan.
+- Homepage section order, working copy, proof direction, and publication checks in this plan's Content Strategy section.
 - WorkGraph behavior and proof boundaries in `packages/workgraph/README.md`, `packages/workgraph/PRD.md`, and `packages/claxedo-app/src/features/workgraph/`.
-- Evidence and comparison-page priorities in `docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md`, re-verified against first-party sources before publication.
+- Evidence and comparison-page priorities in this plan's Competitive Positioning section, re-verified against first-party sources before publication.
 
 **Test scenarios:**
 
@@ -882,7 +892,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 
 **Patterns to follow:**
 
-- Competitor taxonomy, launch priorities, and claim cautions in `docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md`.
+- Competitor taxonomy, launch priorities, and claim cautions in this plan's Competitive Positioning section.
 - Canonical content and route contracts from Unit 1.
 - Existing Astro static-route generation patterns in `packages/claxedo-web/src/pages/`.
 
@@ -1148,7 +1158,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 - Review desktop and mobile captures against the documented inspiration synthesis: Matrix OS contributes rhythm, Ona contributes proof hierarchy, and Codex contributes product-image staging. Verification evaluates principles and originality rather than pixel similarity.
 - Audit `/framework` side by side with Flue for the planned navigation model, page density, chapter order, content roles, runnable-proof placement, capability discovery, and documentation handoff. Verify that each mapped Claxedo chapter uses original expression and shipped evidence.
 - Verify claims against current product behavior and active plans before launch.
-- Audit the implemented homepage against `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md`: section order, copy intent, adjacent evidence, WorkGraph behavior, Session-versus-terminal distinction, same-source boundary, and exactly two marketing CTA classes must agree.
+- Audit the implemented homepage against this plan's Content Strategy section: section order, copy intent, adjacent evidence, WorkGraph behavior, Session-versus-terminal distinction, same-source boundary, and exactly two marketing CTA classes must agree.
 - Re-verify every published competitor claim against first-party sources, record the review date and owner, and confirm that stale-page expiry works in the production build.
 - Verify OpenCode engine credit, fork provenance links, current MIT coverage, package publication state, and every claim about synchronization, deployment, or placement against public artifacts.
 - Run a link and asset crawl across the built site.
@@ -1180,7 +1190,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 ## Definition of Done
 
 - `packages/claxedo-web` produces one successful production build containing the commercial routes, `/download`, `/pricing`, current comparisons, `/framework` and its documentation tree, canonical metadata, structured data, sitemap, `robots.txt`, `start.md`, and `llms.txt`.
-- The homepage implements `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md`: “The open cloud workspace for coding agents” leads the page; the unified architecture explorer explains platform, deployment, and workspace boundaries; chat Sessions and agent terminals are first-class; WorkGraph receives a substantive evidence-backed section; and the Cloudflare prompt is complete and copyable.
+- The homepage implements this plan's Content Strategy section: “The open cloud workspace for coding agents” leads the page; the unified architecture explorer explains platform, deployment, and workspace boundaries; chat Sessions and agent terminals are first-class; WorkGraph receives a substantive evidence-backed section; and the Cloudflare prompt is complete and copyable.
 - **Open Claxedo** is the sole primary marketing conversion and targets `app.claxedo.com`. **Deploy to Cloudflare** is the sole secondary marketing conversion and copies the complete agent prompt. Framework, download, architecture, documentation, GitHub, comparison, legal, and release-artifact links remain supporting navigation.
 - `/download` represents every advertised platform with a verified current artifact, explains unsigned local mode and account requirements accurately, and does not imply bundled models, tokens, compute, or sandboxes.
 - `/framework` follows the planned Flue-derived navigation and content progression through original Claxedo copy, examples, diagrams, and components. Guides, reference, packages, cookbook, ecosystem, search, sidebars, page outlines, code blocks, and the copy-prompt fallback all work in the production build.
@@ -1324,14 +1334,11 @@ The release record must identify one commit SHA and retain reproducible artifact
 
 ### Repository
 
-- `docs/brainstorms/2026-07-11-claxedo-positioning-competitors-handoff.md` — origin positioning research, competitor taxonomy, claim ledger, language guide, truth gates, and July 20, 2026 market snapshot.
-- `docs/brainstorms/2026-07-21-claxedo-homepage-copy.md` — working homepage copy, section order, visual-proof direction, and publication checklist governed by this implementation goal.
 - `packages/claxedo-web/src/pages/index.astro` — current deploy-first homepage.
 - `packages/claxedo-web/src/pages/app.astro` — current separate app positioning.
 - `packages/claxedo-web/src/pages/framework.astro` — current framework marketing page.
 - `packages/claxedo-web/src/layouts/Layout.astro` and `packages/claxedo-web/src/styles/site.css` — current public design system.
 - `packages/claxedo-docs/docs.json` and `packages/claxedo-docs/README.md` — current Mintlify IA and truthfulness gate.
-- `docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md` — free launch posture and reserved paid model.
 - `docs/plans/2026-07-17-002-feat-onboarding-v1-implementation-plan.md` — hosted and desktop activation dependency.
 
 ### External

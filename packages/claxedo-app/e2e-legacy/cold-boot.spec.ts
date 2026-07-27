@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 
-// Flow #1 from docs/tech-docs/architecture-direction-flow.md "Real Browser Coverage".
+// Flow #1 (real-browser E2E coverage).
 // Boots the shell from a completely empty browser context and asserts that the
 // shell paints cleanly with no console errors, unhandled rejections, or failed
 // network requests outside the always-noisy Clerk dev origin. Also reuses the

@@ -32,8 +32,10 @@ export async function verifyCredential(
 
   // A stale access token is only a verdict when nothing can renew it. Imported
   // Codex logins ship a refresh token in the same secret, so treating the local
-  // expiry as "expired" was calling working subscriptions dead — see
-  // docs/plans/2026-07-25-002-feat-onboarding-full-page-setup-plan.md §2.1.
+  // expiry as "expired" was calling working subscriptions dead (imported Codex
+  // accounts refresh transparently outside Claxedo; only the local expiry
+  // check, with no attempt to use the co-located refresh token, made them
+  // look permanently dead).
   let material = secret
   let refreshed: RefreshedCredentialSecret | undefined
   if (stale) {

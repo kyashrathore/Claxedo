@@ -6,8 +6,8 @@ export const CONNECTION_TURN_HEADER = "x-claxedo-connection-turn"
 type TurnRecord = {
   sessionId: string
   subject?: string
-  // Tenant the turn belongs to (hosted org partition, design 015 §2
-  // Decision 1): token resolution derives the team partition from THIS org,
+  // Tenant the turn belongs to (hosted org partition): token resolution
+  // derives the team partition from THIS org,
   // never from the deployment-wide null partition, so a turn credential can
   // never unlock another org's team rows — even if a subject id collides.
   orgId?: string

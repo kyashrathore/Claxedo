@@ -3,8 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { normalizeRuntimeLeaseLegacyFields, run } from "../../../../convex/migrations"
 
-// D14 — Convex schema evolution discipline (launch plan 2026-07-11-012 §1 /
-// ADR 016 §5): the MIGRATE step of expand-migrate-contract runs exclusively
+// D14 — Convex schema evolution discipline (ADR 016 §5): the MIGRATE step of expand-migrate-contract runs exclusively
 // through the @convex-dev/migrations component. This test pins the mechanism:
 // the component is registered, migration functions are internal-only, and the
 // retired hand-rolled backfill pattern does not grow back.

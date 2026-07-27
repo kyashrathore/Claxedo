@@ -78,3 +78,46 @@ serving.
 macOS intermittently SIGKILLs the `tsc`/`tsgo` native binaries (exit 137)
 on the primary dev machine. Not a repo issue; re-approve the binaries or
 rely on CI/`bunx tsgo` when it occurs.
+
+## Product (onboarding segments and tenancy, carried from the retired
+onboarding-journey brainstorm)
+
+### 11. Onboarding segment backlog
+The v1 onboarding form is designed around one segment (desktop GUI user
+with a fresh setup) and ignores several others, none of which are tracked
+anywhere else:
+- **CLI/TUI-first dev** — `brew install` → never opens Electron; needs a
+  terminal-first first-run (auth, connect, first turn).
+- **Existing opencode user** — Discover should offer an explicit, celebrated
+  "import from opencode" step that migrates their `auth.json`/config
+  wholesale, rather than treating them like a cold start.
+- **GitLab/other-git private repo** — no PAT/deploy-key path exists for
+  private repos on non-GitHub hosts; a raw private-GitLab URL is a dead end.
+- **Windows user** — the opencode discovery path is Unix-path-only (broken
+  on Windows), and the app ships on Windows (electron-builder nsis target)
+  regardless.
+
+### 12. Provider/sandbox credentials have no org/user partition
+`packages/claxedo-server/src/storage/provider-credential.sql.ts` has no
+org or user column — the table is keyed on `provider_id` alone with no
+tenant scoping, unlike connections (which do have team/personal
+scoping). Consequence: an invited second team member cannot have
+separately-scoped AI/sandbox provider credentials from the rest of their
+org — the "use the team's key, don't redo setup" story is unbuildable for
+provider credentials today, and self-host multi-org tenancy of these
+secrets needs a real fix before team onboarding ships. The security review
+(`docs/plans/2026-07-27-003-claxedo-cloud-security-review.md`, "Hosted vs
+self-host" section) independently flags the same table as a live,
+self-host-reachable gap: in signed multi-org mode any signed-in user from
+any org can list, overwrite, delete, or force-verify another org's
+provider credentials, since the gate only checks `auth.mode !== "signed"`
+with no per-org scoping.
+
+### 13. Competitor onboarding patterns deliberately not adopted
+Recorded so they don't get silently reconsidered: trial credits / free
+requests (there is no house model to subsidize, so this would be a dark
+pattern here); a "one sign-in and you're running" magic flow (impossible
+given Claxedo requires two external accounts — BYO AI keys and BYO
+compute — so honest, guided copy is the intended moat instead); a hosted
+instant playground (the nearest legal substitute is the demo tour plus
+replayed real sessions, offered specifically at the compute sign-up wall).

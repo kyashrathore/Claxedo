@@ -21,7 +21,6 @@ lives in `../AGENTS.md` and is guard-enforced (`src/architecture/ownership.ts`):
 
 This file previously documented the pre-refactor `src/components/` vs
 `src/claxedo-ui/components/` split and their mutual-import debt. That
-topology was dissolved by the 2026-07-12 domain-ownership refactor
-(`docs/plans/2026-07-12-001-refactor-claxedo-app-directory-architecture-plan.md`);
+topology was dissolved by the 2026-07-12 domain-ownership refactor;
 the bidirectional-import problem it described is now structurally impossible
 under the ownership guard. See git history for the old text.

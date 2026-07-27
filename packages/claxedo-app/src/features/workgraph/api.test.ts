@@ -77,7 +77,7 @@ describe("WorkGraph API", () => {
     ])
   })
 
-  // The `/changes` long-poll is GONE (plan 2026-07-17-004): the client holds no
+  // The `/changes` long-poll is GONE: the client holds no
   // socket of its own, so it can no longer starve an ordinary WorkGraph read out
   // of the browser's six-per-origin connection pool. `cursor_invalid` survives
   // only as SNAPSHOT-paging invalidation — covered by the restart tests below.

@@ -2,7 +2,7 @@
 #
 # This deploys ONLY the Worker-safe hosted control plane (src/worker.ts →
 # src/hosted-app.ts). The local Node server (src/server.ts) is unaffected and is
-# never bundled here. See docs/tech-docs/claxedo-server-worker-deployment-plan.md.
+# never bundled here.
 #
 # Build / verify (no Cloudflare account needed):
 #   npx wrangler deploy --dry-run --outdir dist-worker
@@ -22,12 +22,12 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 [observability]
 enabled = true
 
-# D13 sandbox lease reaper (ops floor ADR 2026-07-11-016 §4): drives the
+# D13 sandbox lease reaper: drives the
 # driver-side reconciliation sweep — the `scheduled` handler in src/worker.ts
 # calls sandbox GC and the bounded WorkGraph reconciler. Operators and the
 # deployment smoke can invoke that same reconciler through the rate-limited,
 # selector-free `/internal/workgraph/reconcile` route with
-# CLAXEDO_RUNTIME_ADMIN_TOKEN. Every 15 minutes per the ADR's 10–15 minute
+# CLAXEDO_RUNTIME_ADMIN_TOKEN. Every 15 minutes per the 10–15 minute
 # truth-keeper band, offset from the Convex lease-table sweep (10 minutes,
 # convex/crons.ts) so the lease-side marks generally land before the
 # driver-side destroy pass. Cron Triggers are NOT inherited by environments,
@@ -42,14 +42,14 @@ crons = ["*/15 * * * *"]
 #   CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM (+ optional _NEXT_*),
 #   CLERK_JWT_ISSUER, CLERK_JWKS_URL (+ optional CLERK_JWT_AUDIENCE).
 #
-# Observability (D12, ops floor ADR 2026-07-11-016 §4) — secret:
+# Observability (D12) — secret:
 #   CLAXEDO_SENTRY_DSN — Sentry DSN for the Worker. ABSENT = Sentry no-ops
 #     cleanly (no events, no network); set it once the Sentry project exists.
 # Release tagging (D12): CLAXEDO_RELEASE = git SHA, passed AT DEPLOY TIME by
 # the D11 deploy workflow rather than pinned here:
 #   wrangler deploy --var CLAXEDO_RELEASE:$GITHUB_SHA
 #
-# WP-BILLING (launch plan 012 D4–D6; ADR 2026-07-11-014 + addendum) — Polar
+# WP-BILLING (D4–D6; ADR 2026-07-11-014 + addendum) — Polar
 # config, consumed ONLY by src/billing/** (confinement enforced by
 # src/billing/billing-architecture.test.ts). ABSENT = billing routes fail
 # closed (503), the reconciliation sweep no-ops, and entitlement resolves
@@ -84,9 +84,9 @@ bucket_name = "claxedo-documents"
 name = "WORKGRAPH_SETTLER"
 class_name = "WorkGraphSettler"
 
-# Wakes-v2 per-lane driver (plan 2026-07-17-002 U6). The binding exists on
-# every deploy; behavior is opt-in via CLAXEDO_WAKES_SETTLEMENT=1 (worker.ts),
-# so the namespace can bootstrap dark and staging can flip/roll back freely.
+# Wakes-v2 per-lane driver. The binding exists on every deploy; behavior is
+# opt-in via CLAXEDO_WAKES_SETTLEMENT=1 (worker.ts), so the namespace can
+# bootstrap dark and staging can flip/roll back freely.
 [[durable_objects.bindings]]
 name = "WAKE_LANE"
 class_name = "ClaxedoWakeLane"

@@ -6,8 +6,7 @@
 // two-source-only check in `app/workbench/rail/rail-keyboard-commands.test.ts`,
 // which could only see the rail-registry-vs-workbench pair and was structurally
 // blind to the titlebar and session-command call sites that re-introduced the
-// exact collisions it was written to catch (see the WP-C2 binding-surface
-// inventory, docs/plans/2026-07-11-006).
+// exact collisions it was written to catch.
 //
 // Two classes of source:
 //   * IMPORTED — chords come from a pure production export (rail, layout,

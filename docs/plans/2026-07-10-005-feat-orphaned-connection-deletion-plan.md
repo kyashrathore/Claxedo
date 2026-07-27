@@ -2,9 +2,11 @@
 
 Status: Phase 1 landed; integration seam pending a member-removal path
 Last updated: 2026-07-10
-Prereq reading:
-`docs/plans/2026-07-10-004-feat-connection-scoping-team-personal-plan.md`
-(appendix finding 8b is the source of this task).
+Prereq reading: this task originates from a finding in the (now-retired)
+connection-scoping plan's adversarial review — a personal connection whose
+owner subject is removed becomes undeletable, since owner-mismatch 404s
+every caller and loopback callers are pinned to the team partition, so no
+principal can ever match the row again.
 
 ## Problem
 

@@ -10,7 +10,7 @@ import type * as Events from "@/app/integrations/claxedo-events"
 
 export type DocumentsAppPorts = {
   /**
-   * Central events stream (plan 2026-07-17-004, Wave 2-C) — the `document.changed`
+   * Central events stream — the `document.changed`
    * doorbell that replaced the index surface's own `/documents/events` SSE.
    *
    * REQUIRED as of Wave 3: `app/integrations/feature-ports.ts` (production) and

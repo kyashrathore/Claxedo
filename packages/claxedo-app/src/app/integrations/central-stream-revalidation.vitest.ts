@@ -6,7 +6,7 @@ import { createDocumentIndexController } from "@/features/documents/editor/docum
 import type { DocumentsApi, DocumentSummary } from "@/features/documents/data/documents-api"
 
 /**
- * Central-stream connectedness is the revalidation edge (plan 2026-07-17-004, R4).
+ * Central-stream connectedness is the revalidation edge.
  *
  * These tests compose the REAL shell connectivity accounting
  * (`app/connection/stream-connectivity.ts`) with the REAL feature consumers, in

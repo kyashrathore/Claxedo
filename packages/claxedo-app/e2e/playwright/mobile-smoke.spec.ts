@@ -2,8 +2,7 @@
  * SPEC: Mobile viewport smoke (narrow-width shell contract)
  *
  * PURPOSE — the app ships one codebase for web + mobile, but per the responsive
- * appendix (`docs/plans/2026-07-10-003-claxedo-app-audit-findings-appendix.md`,
- * "responsive" section, health 4/10) genuine mobile usability of the two signature
+ * audit (health 4/10) genuine mobile usability of the two signature
  * multi-surface features (multipane workbench, terminal) has 0% automated coverage —
  * "there is no mobile device project in Playwright and not one E2E test sets a mobile
  * viewport, so none of this is guarded by CI." This spec is that first guard: a small

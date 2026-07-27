@@ -342,7 +342,7 @@ describe("document project scope", () => {
   })
 })
 
-// EC-B6, restated for the doorbell (plan 2026-07-17-004 Wave 2-C). The controller
+// EC-B6, restated for the doorbell. The controller
 // no longer owns a socket, so it no longer backs off or reconnects — the central
 // stream does. What survives is the guarantee that mattered: after the stream
 // drops and recovers, the index revalidates EXACTLY once, covering every nudge

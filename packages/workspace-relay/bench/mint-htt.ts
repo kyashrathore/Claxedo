@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-// Standalone Host Tunnel Token (HTT) minter for the DIAL-IN cloud path
-// (docs/tech-docs/cloudflare-relay-evaluation.md "Dial-in auth flow"). In
+// Standalone Host Tunnel Token (HTT) minter for the DIAL-IN cloud path. In
 // dial-in the sandbox opens ONE outbound tunnel INTO the relay and the relay
 // routes browser clients into channels over it — flipping today's dial-out
 // (relay dials the Daytona preview URL). The host leg is authenticated with an

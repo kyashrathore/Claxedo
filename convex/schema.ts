@@ -42,7 +42,7 @@ export default defineSchema({
     owner_user_id: v.optional(v.id("users")),
     deleted_at: v.optional(v.number()),
     clerk_updated_at: v.optional(v.number()),
-    // ── B1 billing mirror (launch plan 2026-07-11-012 D5; ADR 014 §3) ──
+    // ── B1 billing mirror (D5; ADR 014 §3) ──
     // Polar subscription state mirrored onto the org. ALL fields optional:
     // absent = free tier (fail-closed, invariant I-4), and optional keeps this
     // a pure EXPAND step (docs/tech-docs/convex-schema-evolution.md — no
@@ -549,10 +549,12 @@ export default defineSchema({
     completion_contract: v.any(),
     evidence_ids: v.array(v.string()),
     execution_defaults: v.optional(v.any()),
-    // Approval-gate origin provenance (plan 2026-07-18-003 §8.1). The actor that
-    // materialized the task decides its born state; these fields carry the audit
-    // trail so the UI/archive can attribute agent-created work. Optional and
-    // backfill-free — legacy rows read as unknown origin.
+    // Approval-gate origin provenance. The actor that materialized the task
+    // decides its born state (agent-created tasks start `pending_approval`
+    // i.e. "Staged"; human-created/confirmed tasks start `pending`, already
+    // approved); these fields carry the audit trail so the UI/archive can
+    // attribute agent-created work. Optional and backfill-free — legacy rows
+    // read as unknown origin.
     created_by_actor_type: v.optional(v.string()),
     created_by_actor_id: v.optional(v.string()),
     origin_attempt_id: v.optional(v.string()),
@@ -1134,10 +1136,10 @@ export default defineSchema({
     .index("by_workspace_created", ["workspace_id", "created_at"])
     .index("by_user_created", ["user_id", "created_at"]),
 
-  // @claxedo/wakes durable rows (the Convex `WakeStore` adapter, wakes-v2 plan
-  // 2026-07-17-002 U5). Column names mirror the SQLite store; absent optional
-  // = the port's null. `id` is the engine-generated durable wake id — Convex
-  // `_id` stays internal to this adapter.
+  // @claxedo/wakes durable rows (the Convex `WakeStore` adapter). Column
+  // names mirror the SQLite store; absent optional = the port's null. `id`
+  // is the engine-generated durable wake id — Convex `_id` stays internal to
+  // this adapter.
   wakes: defineTable({
     id: v.string(),
     session_id: v.optional(v.string()),

@@ -349,9 +349,9 @@ export function createHostedWorkGraph(
   const readableExecutionCapabilities = executionCapabilities
     ? {
         ...executionCapabilities,
-        // Plan 2026-07-18-003 §5.2 row 9: a capability refresh can unblock Streams
-        // held by `capability_invalid`, so nudge settlement (and ring live-sync)
-        // after a successful refresh — the drain re-derives readiness and launches.
+        // A capability refresh can unblock Streams held by `capability_invalid`,
+        // so nudge settlement (and ring live-sync) after a successful refresh —
+        // the drain re-derives readiness and launches.
         ...(executionCapabilities.refresh
           ? {
               refresh: async (context: WorkGraphContext, request: ExecutionCapabilitiesReadInput) => {

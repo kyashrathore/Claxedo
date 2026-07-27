@@ -88,8 +88,8 @@ describe("WorkGraph operational telemetry", () => {
     })
   })
 
-  // Cursor telemetry (which classified `/changes` long-poll responses) is gone
-  // (plan 2026-07-17-004): the route was deleted and the doorbell has no response
+  // Cursor telemetry (which classified `/changes` long-poll responses) is gone:
+  // the route was deleted and the doorbell has no response
   // envelope to classify, so HTTP telemetry only classifies connector surfaces now.
   test("observes connector authentication without reading content", async () => {
     const capture = vi.fn()

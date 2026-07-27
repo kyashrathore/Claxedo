@@ -11,8 +11,8 @@ const api = vi.hoisted(() => ({
 }))
 
 // The index reads the `document.changed` doorbell off the central events stream
-// instead of holding its own `/documents/events` SSE (plan 2026-07-17-004 Wave
-// 2-C). Stand in for the events context the app ports would supply.
+// instead of holding its own `/documents/events` SSE. Stand in for the events
+// context the app ports would supply.
 //
 // `centralConnected`, not the aggregate `connected`: the doorbell rides the
 // central stream, so that is the signal the index bridges to its controller.

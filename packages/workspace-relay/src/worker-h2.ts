@@ -1,7 +1,6 @@
 // H2 experiment worker — opener sharding for the Cloudflare-relay
-// re-evaluation (plan docs/plans/2026-07-17-005-relay-cf-reevaluation.md,
-// hypothesis H2). NOT a production entry; the stock worker (src/worker.ts) is
-// untouched.
+// re-evaluation's hypothesis H2. NOT a production entry; the stock worker
+// (src/worker.ts) is untouched.
 //
 // Mechanism under test: Cloudflare Workers cap each invocation at 6 outbound
 // connections simultaneously waiting for response headers, and a cross-provider

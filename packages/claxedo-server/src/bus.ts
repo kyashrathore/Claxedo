@@ -58,7 +58,7 @@ export type SessionLifecycleEvent = {
   ts: number
 }
 
-// Doorbell nudge for WorkGraph live sync (plan 2026-07-17-004).
+// Doorbell nudge for WorkGraph live sync.
 //
 // Publisher: the claxedo-server WorkGraph host, post-commit — after appended
 // `wg_v2_changes` rows become readable — coalesced (~100ms trailing) so a burst
@@ -82,11 +82,11 @@ export type WorkgraphChangedEvent = {
   ts: number
 }
 
-// Doorbell nudge for Documents live sync (plan 2026-07-17-004).
+// Doorbell nudge for Documents live sync.
 //
 // Publisher: the claxedo-server documents backend, from its save paths (see
 // `documents/backend.ts` `publishDocumentEvent`). External-change detection and
-// the per-surface `GET /documents/events` SSE were REMOVED in this plan; this
+// the per-surface `GET /documents/events` SSE were REMOVED; this
 // doorbell on the central events stream is the sole live-sync mechanism.
 // Consumer: claxedo-app `features/documents`, via the central events stream.
 //

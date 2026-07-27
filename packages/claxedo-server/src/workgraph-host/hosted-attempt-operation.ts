@@ -190,7 +190,7 @@ export function createHostedAttemptOperationHandler(input: Readonly<{
   let runtimeKey = input.runtimeKey
   return async (
     request: Request,
-    // Plan 2026-07-18-003 §5.2 row 6: a successful agent-tool operation is a
+    // A successful agent-tool operation is a
     // readiness-changing mutation — nudge the per-request settlement dispatcher so
     // dependent launches drain sub-second instead of waiting for the CF cron. The
     // dispatcher is built at the route where the request `waitUntil` is available,

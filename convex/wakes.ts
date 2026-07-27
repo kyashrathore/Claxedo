@@ -1,5 +1,5 @@
-// Convex half of the @claxedo/wakes `WakeStore` adapter (wakes-v2 plan
-// 2026-07-17-002 U5). Each port operation is a service-token-guarded function;
+// Convex half of the @claxedo/wakes `WakeStore` adapter. Each port
+// operation is a service-token-guarded function;
 // the claxedo-server `ConvexWakeStore` calls these 1:1. Rows are returned in
 // the port's camelCase shape (absent optional = null) so the JS adapter stays
 // a thin transport.

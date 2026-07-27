@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
-// Loadgen for the Cloudflare-relay re-evaluation bench (plan
-// docs/plans/2026-07-17-005-relay-cf-reevaluation.md). Opens N direct + N
-// relayed HTTP/WS pairs against a target, measures the SAME metric set the June
-// evaluation reported (docs/tech-docs/cloudflare-relay-evaluation.md), and
-// emits a JSON artifact plus a markdown row. Direct and relayed are always
-// measured in the same run window so provider/network variance cancels.
+// Loadgen for the Cloudflare-relay re-evaluation bench. Opens N direct + N
+// relayed HTTP/WS pairs against a target, measures the same metric set as the
+// original June Cloudflare-relay evaluation (HTTP/WS p99 overhead vs direct,
+// relayed vs direct WS delivery, connect p95, upstream-open p95, holder setup,
+// upstream failure codes), and emits a JSON artifact plus a markdown row.
+// Direct and relayed are always measured in the same run window so
+// provider/network variance cancels.
 //
 // The relay is exercised through its real workspace routes
 // (/workspaces/<id>/...) with a real Runtime Access Token — no relay code path

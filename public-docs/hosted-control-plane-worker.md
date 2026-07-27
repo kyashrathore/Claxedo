@@ -9,8 +9,9 @@ stays in the local Node server (`src/server.ts`) and is never bundled into the
 Worker.
 
 The Worker entrypoint is `packages/claxedo-server/src/worker.ts`, which serves
-the Worker-safe app from `src/hosted-app.ts`. The design and rationale are in
-`docs/tech-docs/claxedo-server-worker-deployment-plan.md`.
+the Worker-safe app from `src/hosted-app.ts`. It mounts only the hosted
+control-plane route set below — a different, narrower surface than the local
+Node server's routes.
 
 ## Worker API surface
 

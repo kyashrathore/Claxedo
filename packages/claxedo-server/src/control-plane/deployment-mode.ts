@@ -1,7 +1,5 @@
 /**
  * D9 — explicit deployment mode + the ONE global unsigned-local gate.
- * (docs/plans/2026-07-11-012-feat-cloud-subscription-launch-plan.md D9;
- *  docs/plans/2026-07-11-015-wp-tenant-hardening-design.md §4 Decision 3)
  *
  * Today "hosted" is an emergent property of which env vars happen to be set:
  * a hosted deployment that LOSES `CLAXEDO_SIGNED_CLOUD_AUTH` boots green and

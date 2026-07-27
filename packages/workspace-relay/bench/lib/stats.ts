@@ -1,6 +1,6 @@
 // Percentiles, overhead math, and the row-format vocabulary shared by the
-// loadgen and its report writers. The row names deliberately mirror
-// docs/tech-docs/cloudflare-relay-evaluation.md so a re-evaluation report can
+// loadgen and its report writers. The row names deliberately mirror the
+// original June Cloudflare-relay evaluation so a re-evaluation report can
 // be diffed against the June tables field-for-field.
 
 export type Sample = number

@@ -1,5 +1,4 @@
-// D14 — Convex schema evolution discipline (launch plan 2026-07-11-012 §1 /
-// ADR 016 §5): expand-migrate-contract is law, and the MIGRATE step runs
+// D14 — Convex schema evolution discipline (ADR 016 §5): expand-migrate-contract is law, and the MIGRATE step runs
 // exclusively through the @convex-dev/migrations component. The component
 // gives every backfill the four things hand-rolled mutations re-solve badly —
 // batching, resumability, idempotency (a migration never double-runs), and a
@@ -52,7 +51,9 @@ export const backfillWorkGraphCandidateAttention = migrations.define({
   migrateOne: backfillCandidateAttention,
 })
 
-// Approval-gate rollout (plan 2026-07-18-003 §8.2) COMPLETED 2026-07-18: the
+// Approval-gate rollout COMPLETED 2026-07-18: the supervised/autonomous
+// `executionMode` concept was replaced by the durable `pending_approval`
+// ("Staged") task state plus a pause/resume launch gate, and the
 // one-shot migrations `reconcileStreamLifecycleFromExecutionState`,
 // `clearWorkGraphStreamExecutionMode`, `clearWorkGraphAttemptExecutionMode`,
 // plus the recap-removal cleanups `clearWorkGraphRecapFields` /

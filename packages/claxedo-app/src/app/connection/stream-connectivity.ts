@@ -3,8 +3,7 @@ import { createSignal } from "solid-js"
 export type StreamKind = "central" | "workspace"
 
 /**
- * Per-kind connectedness accounting for the Claxedo event streams
- * (plan 2026-07-17-004, Wave 3).
+ * Per-kind connectedness accounting for the Claxedo event streams.
  *
  * WHY THIS IS NOT ONE SIGNAL. `ClaxedoEventsProvider` runs several independent
  * stream targets at once: the CENTRAL control-plane stream plus one relay-backed

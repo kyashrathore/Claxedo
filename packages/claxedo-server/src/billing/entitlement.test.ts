@@ -10,7 +10,7 @@ import {
 } from "./entitlement"
 
 /**
- * D6/B4 entitlement matrix (launch plan 012 I-4; ADR 014 §3/§5): entitlement
+ * D6/B4 entitlement matrix (I-4; ADR 014 §3/§5): entitlement
  * is a pure function of the mirrored org row. active + trialing entitle;
  * past_due entitles within the grace window; absent/free/canceled/unknown
  * fail closed to the free tier — for BOTH capabilities.

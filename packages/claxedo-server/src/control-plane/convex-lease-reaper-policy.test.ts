@@ -3,7 +3,7 @@ import { listNeedingDriverReconciliation, sweepStaleLeases } from "../../../../c
 import crons from "../../../../convex/crons"
 
 // D13 sandbox lease reaper — Convex-side sweep policy
-// (launch plan 2026-07-11-012 §1 / ADR 016 §4 Decision 3).
+// (ADR 016 §4 Decision 3).
 //
 // The sweep is the level-triggered truth-keeper for the lease table: dead
 // in-flight acquires become `unavailable`, heartbeat-silent ready leases

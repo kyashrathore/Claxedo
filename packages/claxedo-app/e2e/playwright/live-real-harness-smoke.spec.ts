@@ -176,8 +176,7 @@
  *     reason string is always a specific, visible sentence naming the missing
  *     binary and how to fix it (`e2e/INVARIANTS.md`'s actual complaint is about
  *     SILENT no-reason skips, e.g. the pre-refactor suite's Tier-L-in-name-only
- *     files that quietly skipped everything with no explanation at all — see
- *     `docs/plans/2026-07-10-001-...-plan.md`'s "Why" section item 1). A harness
+ *     files that quietly skipped everything with no explanation at all). A harness
  *     whose binary IS present but whose real turn genuinely errored would be a hard
  *     failure citation (a `test.fixme`), never silently skipped or downgraded — this
  *     is how behavior 5 (native codex-app-server) was tracked while its `thread not

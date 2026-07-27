@@ -4,7 +4,7 @@ Operational companion to the deploy workflows in `.github/workflows/`
 (`deploy-control-plane.yml`, `deploy-claxedo-app-staging.yml`,
 `deploy-claxedo-app.yml`, `deploy-relay.yml`, `deploy-convex.yml`,
 `deploy-cloudflare-sandbox-worker.yml`, `deploy-worker-migration.yml`) and the
-ops-floor decision record (`docs/plans/2026-07-11-016-wp-ops-floor-design.md`).
+ops-floor deploy-pipeline decisions.
 Every deploy is a git SHA pushed through GitHub Actions; laptop deploys are
 break-glass only. Once its environment is configured, staging deploys are
 automatic; production is always human-gated behind the GitHub environment

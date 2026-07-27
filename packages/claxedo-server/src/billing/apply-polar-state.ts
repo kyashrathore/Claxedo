@@ -1,5 +1,5 @@
 /**
- * applyPolarState — D5's single translation module (launch plan 012 D5,
+ * applyPolarState — D5's single translation module (D5,
  * ADR 014 §3 + addendum): turns a Polar payload (webhook event or
  * reconciliation fetch) into org-field writes through the ONE builder-gated
  * Convex service mutation (convex/billing.ts `applyPolarState`). Nothing else

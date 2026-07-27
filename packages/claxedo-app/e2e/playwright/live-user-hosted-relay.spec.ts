@@ -229,9 +229,9 @@
  *     app, never routes the product itself exposes, and are exercised for TEST
  *     ORCHESTRATION only (driving real lifecycle transitions) — no assertion in this file
  *     is proven BY calling them, only enabled by them.
- *   - [PRODUCT FINDING — corrects the plan doc] `docs/plans/2026-07-10-001-refactor-e2e-20-
- *     spec-consolidation-plan.md`'s spec-25 entry states the investigation "found no role
- *     enforcement at the relay/runtime transport layer." Re-checked against the CURRENT
+ *   - [PRODUCT FINDING — corrects the original e2e-suite consolidation plan] That plan's
+ *     spec-25 entry stated the investigation "found no role enforcement at the
+ *     relay/runtime transport layer." Re-checked against the CURRENT
  *     source for this spec: that is no longer true (or was never true for the relay itself).
  *     `packages/workspace-relay/src/server.ts`'s `roleAllowsRelayRequest` (~line 518) denies
  *     ANY non-GET/HEAD/OPTIONS method for `role === "viewer"` (403 `relay_role_denied`) and

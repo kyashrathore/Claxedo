@@ -4,7 +4,7 @@ import type { BillingStore } from "./billing-store"
 import { signStandardWebhook } from "./standard-webhooks"
 
 /**
- * Worker billing routes (launch plan 012 D4; ADR 014 addendum — Option B):
+ * Worker billing routes (D4; ADR 014 addendum — Option B):
  * webhook signature accept/reject, checkout auth + seat floor + lazy customer
  * linkage, portal. Polar is a structural fake (no live Polar, per S2 gating);
  * the Convex store is a fake of the billing-store port.

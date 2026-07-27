@@ -53,8 +53,8 @@ function requireEnv(name: string) {
 }
 
 /**
- * D12 observability: Sentry on the relay (ops floor ADR
- * docs/plans/2026-07-11-016-wp-ops-floor-design.md §4).
+ * D12 observability: Sentry on the relay (ops-floor decision: Sentry as the
+ * observability floor, chosen for first-party coverage across all runtimes).
  *
  * Gated on `CLAXEDO_RELAY_SENTRY_DSN` (the relay's OWN DSN env — separate
  * Sentry project from the control plane). Absent DSN → `Sentry.init` is never

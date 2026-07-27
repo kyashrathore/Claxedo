@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { initRelayObservability, relaySentryOptions } from "./main"
 
 /**
- * D12 observability gates (ops floor ADR 2026-07-11-016 §4).
+ * D12 observability gates.
  *
  * Load-bearing contract: with no CLAXEDO_RELAY_SENTRY_DSN the relay's
  * observability is a clean disabled no-op — Sentry.init is never reached

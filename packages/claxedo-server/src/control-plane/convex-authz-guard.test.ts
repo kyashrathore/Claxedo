@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
 
-// D8 architecture guard (launch plan 2026-07-11-012 §1, ADR 015 §3).
+// D8 architecture guard.
 //
 // Every exported Convex function must be built from the mandatory builders in
 // `convex/model.ts` (`authedQuery`/`authedMutation` for end-user identity,

@@ -131,7 +131,6 @@ reconcile; unsettled results (sandbox still provisioning) schedule a durable
 retry wake on the same lane. The `WakeLane` DO gives per-tenant serialization
 that is physically guaranteed by the platform; the 15-minute reconcile cron
 remains the universal backstop. See
-`docs/plans/2026-07-17-002-feat-wakes-v2-settlement-plan.md` and
 `packages/claxedo-server/src/wakes-host/`.
 
 Burst coalescing there is **state-aware** (skip creating when a *pending*
@@ -194,9 +193,9 @@ code-grounded walkthrough (source map, lifecycle transitions with their
 implementing functions, the claim SQL, driver internals, consumers, test map,
 extension recipes).
 
-Original v1 design: `docs/plans/2026-07-07-006-feat-wakes.md` (repo root). The
-v2 evolution (async port, sinks, lanes, drivers, Convex store, DO) and the
-settlement migration: `docs/plans/2026-07-17-002-feat-wakes-v2-settlement-plan.md`.
+The original v1 design (durable rows, three trigger types, host seams) evolved
+into v2 (async port, sinks, lanes, drivers, Convex store, DO) as part of
+migrating WorkGraph settlement onto the shared wakes engine described above.
 
 ## License
 

@@ -1,6 +1,6 @@
 name: deploy-control-plane
 
-# D11 (docs/plans/2026-07-11-012, ops floor ADR 2026-07-11-016 §2): push to
+# D11: push to
 # `dev` auto-deploys the hosted control plane to STAGING (Convex first, then
 # the Worker — the unrollbackable unit ships first and must stay
 # backward-compatible), then runs a behavioral smoke that asserts the staging

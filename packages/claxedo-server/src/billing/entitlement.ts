@@ -1,5 +1,5 @@
 /**
- * requireEntitlement — the ONE entitlement predicate (launch plan 012 D6/B4;
+ * requireEntitlement — the ONE entitlement predicate (D6/B4;
  * ADR 014 §3/§5). Entitlement is a pure function of the mirrored org row:
  * no Polar call ever happens at request time, so a Polar outage cannot lock
  * a paying customer out (ADR §3 "why not query-at-request-time").

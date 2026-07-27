@@ -254,7 +254,7 @@ describe("DocumentEditor", () => {
     expect(editor).toHaveTextContent("Paragraph")
   })
 
-  // External-change live-refresh was intentionally removed (plan 2026-07-17-004):
+  // External-change live-refresh was intentionally removed:
   // an open editor no longer follows on-disk writes, and the next save surfaces a
   // CAS conflict instead of silently reloading. The former "clean external edits
   // refresh in place" and "autosave self-event preserves the source editor" cases

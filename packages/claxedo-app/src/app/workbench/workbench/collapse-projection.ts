@@ -2,9 +2,8 @@ import type { PaneRect, WorkbenchState } from "./types"
 
 /**
  * Narrow-viewport breakpoint (Tailwind `md`). Below this canvas width the
- * workbench collapses to a single full-bleed pane and hides the rest (see the
- * WP-C3 collapse design note `2026-07-11-004-wp-c3-workbench-collapse-design.md`
- * §5). This is the TS side of the token; sweeping the ad-hoc CSS literals
+ * workbench collapses to a single full-bleed pane and hides the rest. This
+ * is the TS side of the token; sweeping the ad-hoc CSS literals
  * (420/639/767/900/1200) onto a matching `--bp-md` custom property is a separate
  * C3 consolidation step and is intentionally out of scope for this module.
  */

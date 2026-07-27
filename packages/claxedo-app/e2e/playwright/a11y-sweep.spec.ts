@@ -1,9 +1,8 @@
 /**
  * SPEC: Accessibility (axe-core) sweep across the highest-traffic surfaces
  *
- * PURPOSE — per the a11y appendix
- * (`docs/plans/2026-07-10-003-claxedo-app-audit-findings-appendix.md`, "a11y" section,
- * health 4/10, test spec-grade 2/10): "There is zero automated accessibility testing
+ * PURPOSE — per the a11y audit (health 4/10, test spec-grade 2/10): "There is zero
+ * automated accessibility testing
  * (no axe-core/jest-axe anywhere, only one Escape-key assertion across 28 Playwright
  * specs), so nothing currently prevents regressions as many external contributors touch
  * this code." This spec is that first automated net: it runs axe-core
@@ -11,8 +10,7 @@
  * NEW violation rule that isn't already tracked in the shrink-only baseline
  * (`a11y-baseline.json`). It does not attempt to fix any of the app's real,
  * already-documented a11y gaps (prompt-input popover ARIA, terminal screen-reader
- * support, keyboard-only resize, etc. — see the appendix's own refactor steps for
- * those); it only prevents the currently-known violation set from growing, and forces
+ * support, keyboard-only resize, etc.); it only prevents the currently-known violation set from growing, and forces
  * the baseline itself to shrink the moment a tracked violation is actually fixed.
  *
  * STATE MODEL — `a11y-baseline.json` maps each surface name below to the sorted, unique

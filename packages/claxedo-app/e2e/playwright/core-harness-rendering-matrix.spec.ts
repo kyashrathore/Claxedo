@@ -673,8 +673,8 @@ async function enableReasoningSummaries(page: Page) {
 }
 
 /**
- * SESSION-TIMELINE REDESIGN (2026-07-18, plan `2026-07-17-004`/session-timeline
- * work) — three behaviors this file's assertions now account for, verified against
+ * SESSION-TIMELINE REDESIGN (2026-07-18) — three behaviors this file's
+ * assertions now account for, verified against
  * the live DOM (`message-timeline.tsx`/`message-timeline.data.ts`):
  *  (a) TURN FOLD — an assistant turn with more than a couple of part groups collapses
  *      its middle groups behind a `[data-component="turn-fold"]` toggle ("Worked for …").

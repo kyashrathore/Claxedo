@@ -1,11 +1,10 @@
 # Cloudflare-relay re-evaluation bench — RUNBOOK
 
-Permanent bench tooling for `docs/plans/2026-07-17-005-relay-cf-reevaluation.md`.
-It measures the exact metric set the June evaluation reported
-(`docs/tech-docs/cloudflare-relay-evaluation.md`) — HTTP/WS p99 overhead vs
-direct, relayed vs direct WS delivery, connect p95, upstream-open p95, holder
-setup, upstream failure codes — with the June gates encoded (p99 overhead <
-100ms; zero relayed-WS message loss).
+Permanent bench tooling for the Cloudflare-relay re-evaluation. It measures
+the exact metric set the original June evaluation reported — HTTP/WS p99
+overhead vs direct, relayed vs direct WS delivery, connect p95, upstream-open
+p95, holder setup, upstream failure codes — with the June gates encoded (p99
+overhead < 100ms; zero relayed-WS message loss).
 
 Everything runs from `packages/workspace-relay/`. Reports land in
 `bench/reports/` (gitignored). **Secrets are read from the environment and never

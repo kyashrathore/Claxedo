@@ -1,8 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 
-// Flow #11 from docs/tech-docs/architecture-direction-flow.md "Real Browser
-// Coverage": "Navigate to login/auth gate and return without losing warm
-// Workbench state."
+// Flow #11 (real-browser E2E coverage): "Navigate to login/auth gate and
+// return without losing warm Workbench state."
 //
 // Notes on what this test does and doesn't cover:
 // - VITE_AUTH_ENABLED is baked into the bundle at compile time and is false

@@ -275,7 +275,7 @@ export function workGraphHttpTelemetry(
     await next()
     const latencyMs = now() - startedAt
     // The `/changes` long-poll — and the cursor telemetry derived from its
-    // response envelope — is gone (plan 2026-07-17-004). Live sync is now the
+    // response envelope — is gone. Live sync is now the
     // `workgraph.changed` bus doorbell, which has no HTTP response to classify.
     const surface = path.includes("/webhooks/")
       ? "webhook"

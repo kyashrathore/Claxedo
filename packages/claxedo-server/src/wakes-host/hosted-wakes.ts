@@ -1,5 +1,5 @@
-// Hosted wakes composition for the Cloudflare Worker (wakes-v2 plan
-// 2026-07-17-002 U6/U8): the Convex-backed engine plus the registered sinks.
+// Hosted wakes composition for the Cloudflare Worker: the Convex-backed
+// engine plus the registered sinks.
 // Used inside the WakeLane Durable Object alarm; Worker-safe by construction
 // (no sqlite, no node-only imports).
 //

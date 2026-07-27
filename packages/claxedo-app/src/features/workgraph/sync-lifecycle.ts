@@ -31,7 +31,7 @@ export type WorkGraphEventsApi = {
 }
 
 /**
- * WorkGraph's live-sync lifecycle: doorbell + revalidate (plan 2026-07-17-004).
+ * WorkGraph's live-sync lifecycle: doorbell + revalidate.
  *
  * The canonical snapshot + Attention are re-read whenever the server rings the
  * `workgraph.changed` doorbell on the central events stream, debounced-trailing.

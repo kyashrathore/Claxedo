@@ -269,7 +269,7 @@ describe("connections host", () => {
     }
   })
 
-  // ── D7: hosted org partition (launch plan 012; design 015 §2 Decision 1) ──
+  // ── D7: hosted org partition ──
   // Bearer convention for the fake verifier: "subject@org" carries an org
   // claim; a bare subject is an org-less signed principal.
   const HOSTED_ENV = {
@@ -498,7 +498,7 @@ describe("connections host", () => {
     host.dispose()
   })
 
-  // ── D6/B4: hosted-connections entitlement (choke point #2; launch plan 012,
+  // ── D6/B4: hosted-connections entitlement (choke point #2;
   // ADR 014 §5). Composed hook, consulted after D7 org resolution — free orgs
   // get the typed 402, entitled orgs pass through to the partition logic.
   test("hosted D6: unentitled org gets 402 on the signed surface; entitled org passes", async () => {

@@ -7,7 +7,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 const liveTypeContracts = [
   "features/extensions/data/types.ts",
   "features/session/data/session-lifecycle.ts",
-  // Doorbell event mirrors (plan 2026-07-17-004, Wave 0). Same shape as
+  // Doorbell event mirrors. Same shape as
   // `session-lifecycle.ts` above: the feature owns the event type, the shell
   // folds it into the `ClaxedoEvent` union with a TYPE-ONLY import, so the
   // import graph sees no value edge into them.

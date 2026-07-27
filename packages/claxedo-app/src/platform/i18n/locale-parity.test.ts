@@ -8,7 +8,7 @@ import missingKeysBaseline from "./missing-keys-baseline.json"
 // silently missing a key (falls back to English with no warning), a
 // mistranslated {{placeholder}}, or the locale manifest pointing at a file
 // that no longer exists in this package or in @/ui. None of that used
-// to be tested (see docs/plans/2026-07-10-003 appendix, "i18n" section).
+// to be tested.
 
 const NON_EN_ENTRIES = LOCALE_ENTRIES.filter((entry) => entry.code !== "en")
 const BASELINE = missingKeysBaseline as Record<string, string[]>

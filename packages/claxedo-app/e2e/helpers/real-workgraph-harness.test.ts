@@ -133,7 +133,7 @@ describe("real WorkGraph HTTP harness", () => {
   })
 })
 
-// The `/changes` long-poll is gone (plan 2026-07-17-004), so nothing the harness
+// The `/changes` long-poll is gone, so nothing the harness
 // serves stays open on its own. These teardown properties are still real, so hold
 // a request open the only way left: announce a body and never send it. The server
 // admits the request, parks in `readIncomingBody`, and stays in `activeRequests` —

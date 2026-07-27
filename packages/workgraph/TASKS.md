@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-14
 
-This ledger records delivery status against the personal-first contracts in [PRD.md](./PRD.md), [SPEC.md](./SPEC.md), and [ARCHITECTURE.md](./ARCHITECTURE.md). The dependency-ordered long-running execution plan is [the WorkGraph end-to-end goal](../../docs/plans/2026-07-13-001-goal-execute-workgraph-end-to-end.md).
+This ledger records delivery status against the personal-first contracts in [PRD.md](./PRD.md), [SPEC.md](./SPEC.md), and [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Delivered foundation
 

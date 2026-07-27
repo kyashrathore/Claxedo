@@ -839,7 +839,7 @@ describe("hosted WorkGraph composition", () => {
     }))
   })
 
-  // The `/changes` route is deleted (plan 2026-07-17-004); the Convex-backed change
+  // The `/changes` route is deleted; the Convex-backed change
   // log stays and is read in-process by settlement/wakes/audit, so this asserts the
   // hosted changes query directly instead of through the router.
   test("reads Convex deletion and admission-retry change events from the hosted change log", async () => {

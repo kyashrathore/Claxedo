@@ -3,8 +3,11 @@ import { createSignal } from "solid-js"
 /**
  * Hand-rolled pointer-events drag controller — the single input layer that
  * powers pane/tab/session reorder for mouse, touch, AND pen, replacing the
- * native HTML5 drag-and-drop that never fired on touch devices (WP-C3 touch-DnD
- * decision note `2026-07-11-011-wp-c3-touch-dnd-decision.md`).
+ * native HTML5 drag-and-drop that never fired on touch devices. Hand-rolled
+ * (not a DnD library) because the workbench's drop semantics are bespoke edge
+ * geometry that no generic sortable/collision library models, and the repo
+ * already owns this pointerdown-threshold-move-up pattern elsewhere (WP-C3
+ * touch-DnD decision).
  *
  * Contracts preserved by the rewrite: the workbench `contentId` string is still
  * the payload (formerly the `WORKBENCH_DRAG_MIME` DataTransfer value, now an

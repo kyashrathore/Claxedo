@@ -152,7 +152,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       )
     })
     // NOTE: the document-scoped `/events` SSE (external-change watch lease + change
-    // stream) was REMOVED in plan 2026-07-17-004. External-change detection is
+    // stream) was REMOVED. External-change detection is
     // retired; CAS-at-write (`if-match`) is the correctness floor, and the central
     // `document.changed` doorbell on the claxedoBus carries save notifications.
     .get("/", async (context) => {

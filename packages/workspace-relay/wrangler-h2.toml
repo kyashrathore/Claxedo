@@ -1,8 +1,8 @@
 # Cloudflare Worker config for the H2 opener-sharding EXPERIMENT variant of the
 # Claxedo Workspace Relay (src/worker-h2.ts). Separate entry + separate worker
 # name so the stock relay (wrangler.toml / src/worker.ts) is untouched. Used
-# only by the Cloudflare-relay re-evaluation (plan 2026-07-17-005, hypothesis
-# H2). Tear down after the run — this is not a production deployment.
+# only by the Cloudflare-relay re-evaluation's hypothesis H2. Tear down after
+# the run — this is not a production deployment.
 #
 # Local-first gate (never deploy to discover a failure):
 #   npx wrangler dev -c wrangler-h2.toml            # boots under Miniflare/workerd

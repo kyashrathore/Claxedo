@@ -128,8 +128,8 @@ describe("embedded local WorkGraph v2", () => {
     })
 
     // The ordered change log still persists across compositions — asserted at the
-    // store level now that the client-facing `/changes` route is gone (plan
-    // 2026-07-17-004). Settlement/wakes/audit read this log in-process.
+    // store level now that the client-facing `/changes` route is gone.
+    // Settlement/wakes/audit read this log in-process.
     const reloaded = await reloadedComposition
     const persistedChanges = await reloaded.service.queries.changes.list(await reloaded.resolveContext(
       new Request("http://local/api/workgraph/changes", { headers: { "x-request-id": "request-local" } }),

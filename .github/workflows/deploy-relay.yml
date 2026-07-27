@@ -1,6 +1,6 @@
 name: deploy-relay
 
-# D11 / ops floor ADR (docs/plans/2026-07-11-016 §2.4 R1): drain-then-deploy
+# D11: drain-then-deploy
 # for the workspace relay, with a post-deploy RECONVERGENCE assertion.
 #
 # How drain actually works (verified against the tree — there is no HTTP

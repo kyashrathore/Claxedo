@@ -35,8 +35,8 @@ network, `npx emulate --service github,google` (ports from 4000).
   **token/refresh/revoke** calls (server-side) but NOT `createAuthorizationURL` —
   that URL is handed to the **browser**, so emulation requires real endpoint
   injection, not a fetch wrapper.
-- `impls/google.ts` threads `fetchImpl` but not endpoints. Kit principle (from
-  `2026-07-03-004-feat-connections-framework-plan.md`): **the kit reads no env** —
+- `impls/google.ts` threads `fetchImpl` but not endpoints. Kit principle:
+  **the kit reads no env** —
   hosts supply everything as options. Endpoint overrides must be options, with the
   env read living in `connections-host.ts`.
 - `impls/github.ts:20` — `verify()` hardcodes `https://api.github.com/user`;

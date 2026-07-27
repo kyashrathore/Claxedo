@@ -9,7 +9,7 @@ import type * as Events from "@/app/integrations/claxedo-events"
  *
  * WorkGraph needs exactly one thing from the shell: the central Claxedo events
  * bus, where the server publishes the `workgraph.changed` doorbell that replaced
- * the deleted `GET /api/workgraph/changes` long-poll (plan 2026-07-17-004).
+ * the deleted `GET /api/workgraph/changes` long-poll.
  */
 export type WorkGraphAppPorts = {
   useClaxedoEventsOptional: typeof Events.useClaxedoEventsOptional

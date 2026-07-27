@@ -1,5 +1,5 @@
 /**
- * Polar billing routes for the hosted control plane (launch plan 012 D4 +
+ * Polar billing routes for the hosted control plane (D4 +
  * ADR 014 addendum: Option B — raw `@polar-sh/sdk`, our own webhook route,
  * everything Polar confined to src/billing/**).
  *
