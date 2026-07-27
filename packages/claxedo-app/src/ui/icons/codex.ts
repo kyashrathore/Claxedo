@@ -23,6 +23,8 @@ export type CodexCustomGlyph =
   | "codex-custom-kebab"
   | "codex-custom-magnifying-glass"
   | "codex-custom-magnifying-glass-menu"
+  | "codex-custom-marketplace"
+  | "codex-custom-models"
   | "codex-custom-more-horizontal"
   | "codex-custom-openai"
   | "codex-custom-opencode"
@@ -31,6 +33,7 @@ export type CodexCustomGlyph =
   | "codex-custom-pin"
   | "codex-custom-pin-filled"
   | "codex-custom-pi"
+  | "codex-custom-providers"
   | "codex-custom-send"
   | "codex-custom-stop"
   | "codex-custom-worktree"
@@ -125,11 +128,15 @@ export const CODEX_ICON_ALIASES = {
   magnifying: "codex-custom-magnifying-glass",
   "magnifying-glass": "codex-custom-magnifying-glass",
   "magnifying-glass-menu": "codex-custom-magnifying-glass-menu",
-  marketplace: "codex-20-123",
+  // Marketplace, models and providers all resolved to codex-20-123 — one
+  // sparkle serving three unrelated destinations, so the Settings tab list
+  // showed the same mark for Providers and for Models. The extracted sprite has
+  // no distinct glyph for any of them; each is drawn locally instead.
+  marketplace: "codex-custom-marketplace",
   maximize: "codex-custom-panel-expand",
   mcp: "codex-20-129",
   menu: "codex-20-097",
-  models: "codex-20-123",
+  models: "codex-custom-models",
   monitor: "codex-20-101",
   "more-horizontal": "codex-custom-more-horizontal",
   "new-session": "codex-20-019",
@@ -161,7 +168,7 @@ export const CODEX_ICON_ALIASES = {
   "process-cwd": "codex-20-152",
   "process-name": "codex-20-069",
   prompt: "codex-20-153",
-  providers: "codex-20-123",
+  providers: "codex-custom-providers",
   reload: "codex-20-004",
   reset: "codex-20-078",
   review: "codex-20-071",

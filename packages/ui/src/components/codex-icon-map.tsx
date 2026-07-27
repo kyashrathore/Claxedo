@@ -71,11 +71,16 @@ export const UI_CODEX_ICON_ALIASES = {
   link: "codex-20-129",
   "magnifying-glass": "codex-custom-magnifying-glass",
   "magnifying-glass-menu": "codex-custom-magnifying-glass-menu",
-  marketplace: "codex-20-123",
+  // `marketplace`, `models` and `providers` all aliased codex-20-123 — one
+  // sparkle standing in for three unrelated destinations, so the Settings nav
+  // showed an identical mark for Providers and for Models. The extracted sprite
+  // carries no distinct glyph for any of them, so each is drawn locally; see
+  // `CODEX_CUSTOM_GLYPHS` in ./icon.tsx.
+  marketplace: "codex-custom-marketplace",
   maximize: "codex-custom-panel-expand",
   mcp: "codex-20-129",
   menu: "codex-20-097",
-  models: "codex-20-123",
+  models: "codex-custom-models",
   "new-session": "codex-20-019",
   "new-session-active": "codex-20-019",
   "open-file": "codex-20-098",
@@ -85,7 +90,7 @@ export const UI_CODEX_ICON_ALIASES = {
   plus: "codex-20-006",
   "plus-small": "codex-20-006",
   prompt: "codex-20-153",
-  providers: "codex-20-123",
+  providers: "codex-custom-providers",
   reset: "codex-20-078",
   review: "codex-20-071",
   "review-active": "codex-20-071",
