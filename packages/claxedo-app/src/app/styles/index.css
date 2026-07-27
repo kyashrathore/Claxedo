@@ -194,6 +194,15 @@
    padding, row gap, container padding, and min-width — so switching between
    two adjacent triggers visibly changed the menu's rhythm and width.
    This block pins all three to the same surface and row spec. */
+/* The clamp below is deliberately VIEWPORT-relative, not container-relative.
+   These menus are popper-positioned (see the `[data-popper-positioner]:has(...)`
+   rules in menu-v2.css / select-v2.css), so they float above the pane rather
+   than being laid out or clipped inside it — a 360px menu anchored in a 300px
+   pane is fine, off the right edge of the screen is not. Do not "align" this
+   with the `@container prompt-composer (max-width: 560px)` collapse further
+   down this file: that governs which CONTROLS fit in the dock, this governs
+   where a floating menu lands. Same phrase, "narrow composer", two different
+   boxes. */
 .claxedo-composer-menu.claxedo-composer-menu {
   width: min(360px, calc(100vw - 24px));
   min-width: 0;
