@@ -35,7 +35,8 @@ type WorkspaceScopeButtonsProps = {
   global?: boolean
   canUseTerminal?: boolean
   onNewSession?: () => void
-  onNewTerminal?: (command?: string, title?: string) => void
+  /** Opens the terminal creator; the header has no directory worth guessing. */
+  onNewTerminalDraft?: () => void
   onNewPage?: () => void
   canUseDocuments?: boolean
   onSettings?: () => void
@@ -66,28 +67,21 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         </button>
       </Tooltip>
 
-      <Tooltip value="New Claude Terminal">
+      {/* One terminal button, and it asks before it starts anything. The
+          header's directory is a fallback chain (`sidebarDir() ??
+          focusedPaneWorkspaceDir()`), so the per-agent shortcuts that used to
+          sit here were starting an agent somewhere the user never picked. The
+          creator lists those same agents once a workspace is chosen. */}
+      <Tooltip value="New Terminal">
         <Show when={canUseTerminal()}>
           <button
             type="button"
             class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-            onClick={() => props.onNewTerminal?.(workspaceScopeCommands().claude, "Claude")}
-            aria-label="New Claude Terminal"
+            onClick={() => props.onNewTerminalDraft?.()}
+            aria-label="New Terminal"
+            data-testid="workspace-scope-new-terminal"
           >
-            <Icon name="claude" size="small" />
-          </button>
-        </Show>
-      </Tooltip>
-
-      <Tooltip value="New Codex Terminal">
-        <Show when={canUseTerminal()}>
-          <button
-            type="button"
-            class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-            onClick={() => props.onNewTerminal?.(workspaceScopeCommands().codex, "Codex")}
-            aria-label="New Codex Terminal"
-          >
-            <Icon name="openai" size="small" />
+            <Icon name="terminal" size="small" />
           </button>
         </Show>
       </Tooltip>
@@ -98,32 +92,17 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content class="z-[200]">
-            <Show when={canUseTerminal()}>
-              <DropdownMenu.Item onSelect={() => props.onNewTerminal?.()}>
-                <Icon name="console" size="small" style={{ width: "14px", height: "14px" }} />
-                New Terminal
-              </DropdownMenu.Item>
-            </Show>
+            {/* No terminal entries here any more. "New Terminal" is the button
+                beside this trigger, and the custom commands it used to list are
+                tiles in the creator — where they run somewhere the user picked
+                rather than somewhere the header inferred. */}
             <Show when={props.canUseDocuments === true}>
               <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
                 <Icon name="page" size="small" style={{ width: "14px", height: "14px" }} />
                 New Document
               </DropdownMenu.Item>
-            </Show>
-            <Show when={canUseTerminal() && workspaceScopeCommands().custom.length > 0}>
               <DropdownMenu.Separator />
-              <For each={workspaceScopeCommands().custom}>
-                {(cmd) => (
-                  <Show when={cmd.name && cmd.command}>
-                    <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(cmd.command, cmd.name)}>
-                      <Icon name="console" size="small" style={{ width: "14px", height: "14px" }} />
-                      {cmd.name}
-                    </DropdownMenu.Item>
-                  </Show>
-                )}
-              </For>
             </Show>
-            <DropdownMenu.Separator />
             <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
               <Icon name="settings-gear" size="small" style={{ width: "14px", height: "14px" }} />
               Configure...

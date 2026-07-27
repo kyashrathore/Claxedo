@@ -63,7 +63,7 @@ export function WorkbenchShellHeader(props: {
   onCloseSurface: (contentId: string) => void
   onNewPage: () => void
   onNewSession: () => void
-  onNewTerminal: (command?: string, title?: string) => void
+  onNewTerminalDraft: () => void
   onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void
@@ -136,7 +136,7 @@ export function WorkbenchShellHeader(props: {
           global={props.activeGlobal()}
           canUseTerminal={props.canUseTerminal()}
           onNewSession={props.onNewSession}
-          onNewTerminal={props.onNewTerminal}
+          onNewTerminalDraft={props.onNewTerminalDraft}
           canUseDocuments={props.canUseDocuments === true}
           onNewPage={props.onNewPage}
           onSettings={props.onSettings}

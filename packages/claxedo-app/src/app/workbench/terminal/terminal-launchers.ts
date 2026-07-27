@@ -14,7 +14,7 @@
 import type { TerminalCommands } from "@/features/settings/ui/terminals"
 
 /** Icon key on `ClaxedoIcon`; not every launcher has a vendor mark. */
-export type TerminalLauncherIcon = "console" | "claude" | "openai"
+export type TerminalLauncherIcon = "terminal" | "claude" | "openai"
 
 export type TerminalLauncher = {
   /** Stable across renders so the grid can key on it. */
@@ -40,7 +40,7 @@ const trimmed = (value: string | undefined) => {
  */
 export function terminalLaunchers(commands: TerminalCommands): TerminalLauncher[] {
   const launchers: TerminalLauncher[] = [
-    { id: "shell", name: "Shell", icon: "console" },
+    { id: "shell", name: "Shell", icon: "terminal" },
   ]
 
   const claude = trimmed(commands.claude)
@@ -55,7 +55,7 @@ export function terminalLaunchers(commands: TerminalCommands): TerminalLauncher[
     // The settings pane can hold a half-filled row (it appends a blank one for
     // editing), so a custom entry only becomes a launcher once it has both.
     if (!command || !name) continue
-    launchers.push({ id: `custom:${custom.id}`, name, command, icon: "console", title: name })
+    launchers.push({ id: `custom:${custom.id}`, name, command, icon: "terminal", title: name })
   }
 
   return launchers

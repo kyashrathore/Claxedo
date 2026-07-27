@@ -154,7 +154,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
         class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base"
       >
         <div class="flex items-center gap-2 border-b border-border-weaker-base px-3.5 py-2.5">
-          <ClaxedoIcon name="console" size="small" class="text-icon-weak-base" />
+          <ClaxedoIcon name="terminal" size="small" class="text-icon-weak-base" />
           <span class="text-[12px] font-medium text-text-weak">Start a terminal</span>
           {/* The chips above say WHERE, but a pending "create" is the one choice
               that has not happened yet — so it is restated at the point of

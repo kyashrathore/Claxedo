@@ -4,6 +4,7 @@ import type { ContentMeta } from "../state/index"
 import type { ClaxedoStateApi } from "../state/provider"
 import type { RailWorktreeInfo } from "./rail-project-session-info"
 import { createRailHeaderActions } from "./rail-header-actions"
+import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
 import { useRailHeaderSurfaces } from "./rail-header-surfaces"
 import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
 import { useWorkspacePanelVisualState } from "./workspace-panel-visual-state"
@@ -52,6 +53,12 @@ export function useRailWorkbenchController(input: {
     focusedSurfaceWorkspaceToolsBlocked: terminalBlocked,
     onNewSession: input.onNewSession,
     onNewTerminal: input.onNewTerminal,
+    // Built here rather than drilled in from the shell: opening the creator is
+    // just a surface open, and the controller already holds the state that does
+    // it. Nothing about it needs the pty plumbing `onNewTerminal` carries.
+    onNewTerminalDraft: (workspaceDir) => {
+      input.state.layout.openTerminal(workspaceDir, NEW_TERMINAL_ID, "New Terminal")
+    },
     sidebarDir: input.sidebarDir,
   })
   const panelVisual = useWorkspacePanelVisualState({
@@ -70,6 +77,7 @@ export function useRailWorkbenchController(input: {
     closeSurface: headerSurfaces.closeSurface,
     createHeaderSession: headerActions.createSession,
     createHeaderTerminal: headerActions.createTerminal,
+    createHeaderTerminalDraft: headerActions.createTerminalDraft,
     focusedPanelTarget: panelVisual.focusedPanelTarget,
     hasWorkspacePanelTarget: panelVisual.hasWorkspacePanelTarget,
     registerWorkspacePanelFloatingChrome: panelVisual.registerWorkspacePanelFloatingChrome,

@@ -412,7 +412,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onNewProject={props.onNewProject}
           onDiagnostics={openLocalDiagnostics}
           onNewSession={workbenchController.createHeaderSession}
-          onNewTerminal={workbenchController.createHeaderTerminal}
+          onNewTerminalDraft={workbenchController.createHeaderTerminalDraft}
           onWorkspacePanelFloatingChromeRef={workbenchController.registerWorkspacePanelFloatingChrome}
           onWorkspacePanelShellRef={workbenchController.registerWorkspacePanelShell}
           onWorkspacePanelWorkbenchColumnRef={workbenchController.registerWorkspacePanelWorkbenchColumn}
