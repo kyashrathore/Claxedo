@@ -85,7 +85,6 @@ import { JwksRoutes } from "./control-plane/routes/jwks"
 import { InternalRelayResolverRoutes } from "./routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./routes/internal-relay-local"
 import { BootstrapRoutes } from "./routes/bootstrap"
-import { LivingAppsRoutes } from "./routes/living-apps"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "./relay-provider"
 import { sandboxFetch } from "./sandbox-target-fetch"
@@ -595,7 +594,6 @@ export function createApp(
   // Undefined on self-host → the gate never consults it (byte-identical).
   app.route("/api/claxedo/integrations", connectionsHost.routes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
-  app.route("/api/claxedo/living-apps", LivingAppsRoutes())
   mountLocalOnlyUsageLimits(app, authRouteOptions(services))
   mountControlPlaneChannels(app, {
     services,

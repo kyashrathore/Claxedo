@@ -432,16 +432,6 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/living-apps.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "local living-apps routes (Claxedo local adapter)",
-    reason:
-      "Unit 5 verdict flipped VERIFY→MOVE→DOCUMENT: imports ClaxedoDB from ../storage/db (better-sqlite3 + fs) and ../storage/living-app.sql. SQLite-coupled, so it stays a local control-plane route adapter under routes/.",
-    tests: ["routes/living-apps.test.ts"],
-    routeSamples: ["/api/claxedo/living-apps"],
-  },
-  {
-    area: "route",
     module: "routes/documents.ts",
     status: OwnershipStatus.Canonical,
     owner: "Documents HTTP adapter",

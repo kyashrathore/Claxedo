@@ -436,7 +436,6 @@ describe("control-plane services", () => {
     expect(text).toContain("...authRouteOptions(services),")
     expect(text).toContain("createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),")
     expect(text).toContain("app.route(\"/\", centralControl.app)")
-    expect(text).toContain("app.route(\"/api/claxedo/living-apps\", LivingAppsRoutes())")
   })
 
   test("local composition fails closed at boot when signed auth has no workspace authority", async () => {

@@ -117,7 +117,6 @@ const ROUTE_RULES = [
       "/api/control",
       "/api/workspace",
       "/api/claxedo/network-policy",
-      "/api/claxedo/living-apps",
       "/documents",
       "/api/workgraph",
     ],

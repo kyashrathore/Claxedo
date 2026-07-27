@@ -3,10 +3,11 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover, type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
+import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
+import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/features/session/harness/profile"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
@@ -359,21 +360,29 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const modelDisabled = createMemo(() => {
     return (harness() === "pi" && !!props.modelLocked) || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
+  // Names a model, or says there is none — never reports an error. Failures are
+  // the notice row's job, and this control used to duplicate its wording
+  // ("Unavailable" here AND in the readiness pill AND in the dot's tooltip).
   const modelLabel = createMemo(() => {
     if (modelLoading()) return "Loading models"
-    if (modelOptionsFailed()) return "Unavailable"
     if (picked()) return picked()?.name
     if (selection().draftDefaultState === "saved-model-unavailable") {
       return selection().draftDefaultLabels?.model ?? selection().selectedModel
     }
     if (harness() === "pi" && selection().selectedModel) return selection().selectedModel
-    if (isError()) return "Unavailable"
-    if (!hasModelOptions()) return harness() === "pi" ? "No Pi models available" : selection().configError ?? "Select model"
+    if (!hasModelOptions()) return harness() === "pi" ? "No Pi models available" : "Select model"
     return selection().selectedModel || "Select model"
   })
   const modelTriggerStyle = createMemo(() => {
     const next = style(modelDisabled())
     return next
+  })
+  // Soft, non-actionable reasons the control itself is inert. These stay ON the
+  // control they explain instead of becoming a fifth widget beside it — and they
+  // never escalate to the notice row, which is reserved for things that broke.
+  const modelHint = createMemo(() => {
+    if (harness() === "pi" && props.modelLocked) return "Start a new Pi session to choose a different model"
+    if (isStale() && !modelOptionsFailed()) return "Model list may be outdated"
   })
   const modelTriggerProps = createMemo(() => ({
     variant: "ghost" as const,
@@ -381,22 +390,51 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     disabled: modelDisabled(),
     style: modelTriggerStyle(),
     class: "min-w-0 max-w-[160px] max-md:max-w-[104px] text-13-regular group",
-    "aria-label": "Select harness model",
+    "aria-label": modelHint() ? `Select harness model — ${modelHint()}` : "Select harness model",
+    ...(modelHint() ? { title: modelHint()! } : {}),
     "data-action": "prompt-harness-model",
   }))
-  const modelIssue = createMemo(() => {
-    if (harness() === "pi" && piProviders.error()) return piProviders.error()
-    if (harness() === "pi" && props.modelLocked) return "Start a new Pi session to choose a different model"
-    if (selection().draftDefaultState === "saved-model-unavailable") {
-      const name = selection().draftDefaultLabels?.model ?? selection().selectedModel
-      return `${name || "Saved model"} is unavailable. Reconnect its provider or choose another model.`
+
+  // One row, one message, one action — see `harness-notice.ts` for the ordering.
+  const notice = createMemo<ComposerNotice | undefined>(() => {
+    // A backgrounded pane must not publish over the visible one, and opencode
+    // mode is served by `PromptModelControl` — neither owns this row.
+    if (props.active === false || !selection().isHarnessMode) return undefined
+    const resolved = resolveHarnessNotice({
+      harnessLabel: harnessOptionLabel(harness()),
+      runtimeUnavailable: isError(),
+      optionsFailed: modelOptionsFailed(),
+      noModels: !hasModelOptions() && !modelLoading(),
+      configError: selection().configError,
+      providerError: harness() === "pi" ? piProviders.error() : undefined,
+      savedModelUnavailable:
+        selection().draftDefaultState === "saved-model-unavailable"
+          ? selection().draftDefaultLabels?.model || selection().selectedModel || "Saved model"
+          : undefined,
+      piModelMissing: harness() === "pi" && !!selection().selectedModel && !picked(),
+    })
+    if (!resolved) return undefined
+    const { retry, ...rest } = resolved
+    if (!retry) return rest
+    return {
+      ...rest,
+      action: {
+        label: "Retry",
+        ariaLabel: harness() === "pi" ? "Retry loading Pi models" : "Retry loading harness models",
+        run: () => {
+          if (harness() === "pi") {
+            void piProviders.refresh()
+            return
+          }
+          void props.harnessController.reprobe(scope(), {
+            directory: directory(),
+            sessionId: sessionId(),
+          })
+        },
+      },
     }
-    if (harness() === "pi" && selection().selectedModel && !picked()) return "This Pi model is no longer available; choose another model"
-    const message = selection().configError
-    if (message) return message
-    if (isStale()) return "Model list may be outdated"
   })
-  const modelIssueIsError = createMemo(() => !!selection().configError && !optionsLoading())
+  publishComposerNotice(notice)
 
   return (
     <>
@@ -480,20 +518,13 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         />
       </Show>
 
-      {/* Readiness indicator */}
+      {/* Readiness indicator. Connecting is progress, not a fault, so it stays
+          inline; the settled failure it can escalate into is published to the
+          composer notice row instead. */}
       <Show when={isPolling()}>
         <span class="text-11-regular text-text-weak px-1.5 flex items-center" title="Connecting to agent runtime...">
           <span class="inline-block w-2 h-2 rounded-full bg-text-weak animate-pulse mr-1" />
           Connecting
-        </span>
-      </Show>
-      <Show when={isError()}>
-        <span
-          class="text-11-regular text-text-on-critical-base px-1.5 flex items-center"
-          title="Agent runtime unreachable after timeout"
-        >
-          <span class="inline-block w-2 h-2 rounded-full bg-surface-critical-strong mr-1" />
-          Unavailable
         </span>
       </Show>
 
@@ -531,58 +562,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             <Icon name="chevron-down" size="small" class="shrink-0" />
           </Show>
         </ModelSelectorPopover>
-        <Show when={modelIssue()}>
-          <TooltipV2
-            value={modelIssue()}
-            placement="top"
-            contentClass="max-w-[320px] text-11-regular"
-          >
-            <span
-              role="img"
-              tabIndex={0}
-              class="text-11-regular px-1 outline-none"
-              aria-label={modelIssue()}
-              title={modelIssue()}
-            >
-              <span class={modelIssueIsError()
-                ? "inline-block w-2 h-2 rounded-full bg-surface-critical-strong"
-                : "inline-block w-2 h-2 rounded-full bg-surface-warning-strong"}
-              />
-            </span>
-          </TooltipV2>
-        </Show>
-        <Show when={modelOptionsFailed()}>
-          <Button
-            variant="ghost"
-            size="normal"
-            aria-label={harness() === "pi" ? "Retry loading Pi models" : "Retry loading harness models"}
-            onClick={() => {
-              if (harness() === "pi") {
-                void piProviders.refresh()
-                return
-              }
-              void props.harnessController.reprobe(scope(), {
-                directory: directory(),
-                sessionId: sessionId(),
-              })
-            }}
-          >
-            Retry
-          </Button>
-        </Show>
-      </Show>
-
-      {/* Config error — show when models failed to load entirely */}
-      <Show when={selection().isHarnessMode && selection().configError && selection().models.length === 0}>
-        <span
-          class={
-            optionsLoading()
-              ? "text-11-regular text-text-weak px-1.5"
-              : "text-11-regular text-text-on-critical-base px-1.5"
-          }
-        >
-          {selection().configError}
-        </span>
       </Show>
     </>
   )

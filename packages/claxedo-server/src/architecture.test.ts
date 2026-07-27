@@ -1000,7 +1000,6 @@ describe("harness-scoped resolution", () => {
       // Worker graph).
       "internal-relay-local.ts",
       "internal-relay.ts",
-      "living-apps.ts",
       "local-only-projection.ts",
       "network-policy.ts",
       "opencode-compat-context.ts",
@@ -1055,7 +1054,6 @@ describe("harness-scoped resolution", () => {
       "createCentralControlApp(",
       "CredentialRoutes(",
       "NetworkPolicyRoutes(",
-      "LivingAppsRoutes()",
       "eventsHandler",
       "mountLazyEmbeddedWorkGraph(",
     ]) {

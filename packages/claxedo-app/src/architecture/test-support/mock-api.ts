@@ -1,16 +1,15 @@
 /**
  * Shared `bun.mock.module` fixture for `../api.ts`.
  *
- * API client suites, persist.test.ts,
- * living-apps-api.test.ts) used to hand-copy a full mock of every export of
+ * API client suites (persist.test.ts and friends) used to hand-copy a full mock of every export of
  * `./api` — and their own comments documented a real hazard: Bun's module
  * cache is process-wide across a `bun test` run, so one file's
  * `mock.module("./api", ...)` (or `mock.module("../api", ...)`,
  * or `mock.module("@/platform/api/api", ...)` — all specifier forms
  * resolve to the same absolute file and therefore the same cache slot) can
  * leak into another file and silently swap out its behavior for whatever
- * the last-registered copy implemented. `persist.test.ts` and
- * `living-apps-api.test.ts` each carry a paragraph explaining exactly this.
+ * the last-registered copy implemented. `persist.test.ts` carries a
+ * paragraph explaining exactly this.
  *
  * This fixture kills the hazard at the root: there is now exactly one
  * implementation of the mocked module's pure surface (isDemoMode,

@@ -136,7 +136,9 @@ vi.mock("@/features/session/ui/model/select-model", () => ({
     const items = props.model?.list?.() ?? []
     return (
       <div data-testid="model-selector" data-disabled={props.triggerProps?.disabled ? "true" : "false"}>
-        <div data-testid="model-trigger-content">{props.children}</div>
+        {/* Spread the trigger props onto a real node: the soft "why is this
+            inert" hints now ride the control itself instead of a sibling dot. */}
+        <div data-testid="model-trigger-content" {...props.triggerProps}>{props.children}</div>
         {items.map((item: any) => (
           <button
             data-testid={`model-option-${item.id}`}
@@ -159,6 +161,11 @@ vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
 }))
 
 import { AgentHarnessSelector } from "./agent-harness-selector"
+import {
+  ComposerNoticeProvider,
+  ComposerNoticeRow,
+  createComposerNoticeChannel,
+} from "@/features/session/composer/ui/composer-notice"
 import { harnessStatusPatch } from "@/features/session/harness/store-state"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 
@@ -201,8 +208,21 @@ function harnessController(): HarnessSelectionController {
   }
 }
 
+// Mirrors the real mount: the selector publishes into a channel owned by an
+// ancestor (the new-session screen, or the composer frame) and the row renders
+// there — never beside the controls.
 function TestAgentHarnessSelector(props: Omit<Parameters<typeof AgentHarnessSelector>[0], "harnessController">) {
-  return <AgentHarnessSelector harnessController={harnessController()} {...props} />
+  const channel = createComposerNoticeChannel()
+  return (
+    <ComposerNoticeProvider channel={channel}>
+      <ComposerNoticeRow notice={channel.current()} />
+      <AgentHarnessSelector harnessController={harnessController()} {...props} />
+    </ComposerNoticeProvider>
+  )
+}
+
+function noticeRow(container: HTMLElement) {
+  return container.querySelector("[data-component='composer-notice']")
 }
 
 afterEach(() => {
@@ -414,43 +434,42 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     expect(container.textContent).toContain("Loading models")
   })
 
-  test("surfaces runner config errors through the issue dot tooltip", () => {
+  test("surfaces runner config errors in the notice row, in words, with no hover needed", () => {
     configError = "Authentication required. Please run 'agent login' first."
     optionsStale = true
     models = [{ id: "default", name: "Default (recommended)" }]
     selectedModel = "default"
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const issue = container.querySelector("[aria-label=\"Authentication required. Please run 'agent login' first.\"]") as HTMLElement
+    const row = noticeRow(container)
 
-    expect(issue).not.toBeNull()
-    expect(issue.getAttribute("title")).toBe("Authentication required. Please run 'agent login' first.")
-    expect(container.querySelector("[data-testid='tooltip-v2']")?.getAttribute("data-value")).toBe(
-      "Authentication required. Please run 'agent login' first.",
-    )
-    const trigger = container.querySelector("[data-testid='model-trigger-content']")
-    expect(trigger?.textContent).toContain("Unavailable")
-    expect(trigger?.textContent).not.toContain("Default (recommended)")
+    expect(row).not.toBeNull()
+    expect(row!.getAttribute("data-notice")).toBe("models-failed")
+    expect(row!.getAttribute("data-tone")).toBe("critical")
+    expect(row!.textContent).toContain("Couldn't load Claude models")
+    expect(row!.textContent).toContain("Authentication required. Please run 'agent login' first.")
+    // The reason is readable without hovering anything — the old unlabeled dot
+    // was the only place it existed.
+    expect(container.querySelector("[data-testid='tooltip-v2']")).toBeNull()
   })
 
-  test("surfaces Cursor SDK auth requirements through the issue dot", () => {
+  test("surfaces Cursor SDK auth requirements in the notice row", () => {
+    harnessType = "cursor-sdk"
     configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
     optionsStale = true
     models = []
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const issue = container.querySelector("[aria-label='Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.']") as HTMLElement
+    const row = noticeRow(container)
 
-    expect(issue).not.toBeNull()
-    expect(issue.getAttribute("title")).toBe(
-      "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
-    )
-    expect(container.querySelector("[data-testid='tooltip-v2']")?.getAttribute("data-value")).toBe(
+    expect(row).not.toBeNull()
+    expect(row!.textContent).toContain("Couldn't load Cursor models")
+    expect(row!.textContent).toContain(
       "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
     )
   })
 
-  test("shows unavailable when option discovery fails", () => {
+  test("a failed model list disables the control without restating the error on it", () => {
     configError = "ACP connection closed"
     optionsStale = true
     models = [{ id: "default", name: "Default (recommended)" }]
@@ -461,12 +480,13 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     const selector = container.querySelector("[data-testid='model-selector']")
     expect(selector).not.toBeNull()
     expect(selector!.getAttribute("data-disabled")).toBe("true")
+    // The control names the model it still holds; the row alone reports the fault.
     const trigger = container.querySelector("[data-testid='model-trigger-content']")
-    expect(trigger?.textContent).toContain("Unavailable")
-    expect(trigger?.textContent).not.toContain("Default (recommended)")
+    expect(trigger?.textContent).toContain("Default (recommended)")
+    expect(trigger?.textContent).not.toContain("Unavailable")
   })
 
-  test("keeps an explicit unavailable model slot when runner config fails", () => {
+  test("a dead runtime outranks the option-discovery failure it caused", () => {
     readiness = "error"
     configError = "Failed to load model options"
 
@@ -475,7 +495,13 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     const selector = container.querySelector("[data-testid='model-selector']")
     expect(selector).not.toBeNull()
     expect(selector!.getAttribute("data-disabled")).toBe("true")
-    expect(container.textContent).toContain("Unavailable")
+    const row = noticeRow(container)
+    expect(row!.getAttribute("data-notice")).toBe("runtime-unavailable")
+    expect(row!.textContent).toContain("Claude runtime is unavailable")
+    // The harness e2e specs locate this state by title.
+    expect(row!.getAttribute("title")).toBe("Agent runtime unreachable after timeout")
+    // Exactly one surface reports it, where four used to.
+    expect(container.querySelectorAll("[data-component='composer-notice']")).toHaveLength(1)
   })
 
   test("keeps the selected model label when runner config fails after model resolution", () => {
@@ -490,7 +516,28 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     expect(selector).not.toBeNull()
     expect(selector!.getAttribute("data-disabled")).toBe("true")
     expect(container.textContent).toContain("Default (recommended)")
-    expect(container.textContent).toContain("Unavailable")
+    expect(noticeRow(container)!.textContent).toContain("Claude runtime is unavailable")
+  })
+
+  test("a healthy harness publishes no notice at all", () => {
+    models = [{ id: "default", name: "Default (recommended)" }]
+    selectedModel = "default"
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    expect(noticeRow(container)).toBeNull()
+  })
+
+  test("a merely-stale list stays a hint on the control and never becomes a row", () => {
+    optionsStale = true
+    models = [{ id: "default", name: "Default (recommended)" }]
+    selectedModel = "default"
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    expect(noticeRow(container)).toBeNull()
+    const trigger = container.querySelector("[data-action='prompt-harness-model']")
+    expect(trigger?.getAttribute("title")).toBe("Model list may be outdated")
   })
 
   test("hydrates runner options from explicit pane identity", async () => {
@@ -613,7 +660,11 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     const { container } = render(() => <TestAgentHarnessSelector />)
 
     expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("GPT-5.4 Codex")
-    expect(container.querySelector("[aria-label*='GPT-5.4 Codex is unavailable']")).not.toBeNull()
+    const row = noticeRow(container)
+    expect(row!.getAttribute("data-notice")).toBe("saved-model-unavailable")
+    expect(row!.getAttribute("data-tone")).toBe("warning")
+    expect(row!.textContent).toContain("GPT-5.4 Codex is unavailable")
+    expect(row!.textContent).toContain("Reconnect its provider, or choose another model.")
   })
 
   test("switching to Pi reuses the current OpenCode model when the exact pair is connected", async () => {
@@ -753,7 +804,12 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
 
     expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("true")
     expect(container.textContent).toContain("GPT-5.2")
-    expect(container.querySelector("[aria-label='Start a new Pi session to choose a different model']")).not.toBeNull()
+    // A locked-by-design control explains itself on the control — it is not a
+    // fault, so it must never reach the notice row.
+    const trigger = container.querySelector("[data-testid='model-trigger-content']")
+    expect(trigger?.getAttribute("title")).toBe("Start a new Pi session to choose a different model")
+    expect(trigger?.getAttribute("aria-label")).toContain("Start a new Pi session to choose a different model")
+    expect(noticeRow(container)).toBeNull()
   })
 
   test("an existing non-Pi session keeps its model picker enabled", () => {
@@ -775,8 +831,12 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     piLoading = false
     piError = "catalog unavailable"
     const failed = render(() => <TestAgentHarnessSelector />)
-    expect(failed.container.textContent).toContain("Unavailable")
+    const row = noticeRow(failed.container)
+    expect(row!.textContent).toContain("Couldn't load Pi models")
+    expect(row!.textContent).toContain("catalog unavailable")
+    // Retry lives inside the row it explains, not as a loose button beside it.
     fireEvent.click(failed.getByRole("button", { name: "Retry loading Pi models" }))
+    expect(row!.contains(failed.getByRole("button", { name: "Retry loading Pi models" }))).toBe(true)
     expect(piRefreshCalls).toBe(1)
   })
 

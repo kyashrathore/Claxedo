@@ -16,6 +16,12 @@ import {
   type AtOption,
   type SlashCommand,
 } from "@/features/session/composer/ui/slash-popover"
+import {
+  ComposerNoticeProvider,
+  ComposerNoticeRow,
+  createComposerNoticeChannel,
+  useComposerNoticeChannel,
+} from "@/features/session/composer/ui/composer-notice"
 import { PromptSubmitControl } from "@/features/session/composer/ui/submit-control"
 import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
 import { PromptToolbarControls } from "@/features/session/composer/ui/toolbar-controls"
@@ -157,7 +163,21 @@ export const PromptInputFrame: Component<{
     )
   }
 
+  // The new-session screen hosts the notice row itself, above the
+  // project/worktree context row, so the composer must not open a second
+  // channel there — the nearest provider wins, and an inner one would strand
+  // the outer row empty. Everywhere else (the docked session composer) the
+  // composer card IS the top of the stack, so it hosts the row.
+  const inherited = useComposerNoticeChannel()
+  const own = inherited ? undefined : createComposerNoticeChannel()
+  const notice = () => own?.current()
+
+  // Re-providing the inherited channel is a no-op, and wrapping unconditionally
+  // keeps the subtree inside a Provider element — Solid resolves context through
+  // the owner created at render, so a pre-built JSX tree handed to a Provider
+  // afterwards would never see it.
   return (
+  <ComposerNoticeProvider channel={inherited ?? own!}>
   <div
     ref={props.rootRef}
     classList={{
@@ -188,11 +208,15 @@ export const PromptInputFrame: Component<{
         {props.documentNotice}
       </div>
     </Show>
+    <ComposerNoticeRow notice={notice()} />
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}
       onSubmit={props.handleSubmit}
       classList={{
         "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+        // Overlap the notice row's bottom lip so the two read as one stacked
+        // card, the same way the composer overlaps the context row upstairs.
+        "relative z-10 -mt-2": !!notice(),
         "border-icon-info-active border-dashed": props.draggingType() !== null,
         [props.className ?? ""]: !!props.className,
       }}
@@ -372,5 +396,6 @@ export const PromptInputFrame: Component<{
       </div>
     </DockShellForm>
   </div>
+  </ComposerNoticeProvider>
   )
 }

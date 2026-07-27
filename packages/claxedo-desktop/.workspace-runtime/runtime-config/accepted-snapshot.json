@@ -1,6 +1,6 @@
 {
   "revision": 1,
-  "acceptedAt": "2026-07-25T15:59:53.495Z",
+  "acceptedAt": "2026-07-25T04:17:27.602Z",
   "snapshot": {
     "version": 1,
     "harness": {
@@ -12,6 +12,11 @@
     },
     "auth": {
       "keys": []
+    },
+    "agent_extensions": {
+      "version": 1,
+      "installCount": 0,
+      "installIds": []
     }
   }
 }

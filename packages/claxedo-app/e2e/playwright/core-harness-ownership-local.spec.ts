@@ -73,7 +73,7 @@
  *     `opencode` — the always-available local default — is never `"polling"` and never
  *     `"degraded"`. So a backend `status:"applying"` (still starting up) is DISTINCT
  *     from a hard auth failure: it renders the pulsing "Connecting" pill, not the red
- *     "Unavailable" dot. `AgentHarnessSelector`'s `isPolling()`
+ *     "Unavailable" notice row. `AgentHarnessSelector`'s `isPolling()`
  *     (`src/features/session/ui/controls/agent-harness-selector.tsx:214`), the
  *     composer's `harnessPending()` (`src/features/session/composer/composer.tsx:169-171`,
  *     which feeds `toolbar-controls.tsx`'s `addDisabled`), and `submitBlockReason`'s
@@ -107,22 +107,27 @@
  *   `[data-action="prompt-harness-model"]` — the harness model control (inside
  *     `AgentHarnessSelector`); renders only when `selection().isHarnessMode`
  *     (`harness !== "opencode"`) — text is the resolved model name, "Loading models",
- *     "Unavailable", or "Select model" depending on state
- *     (`agent-harness-selector.tsx:199-206`).
+ *     "No Pi models available", or "Select model" depending on state
+ *     (`agent-harness-selector.tsx`, `modelLabel`). It names a model or says there is
+ *     none; it never reports an error — that is the notice row's job.
  *   Harness `<Select>` trigger — a button showing the current harness's display label
  *     ("OpenCode", "Claude", "Codex", "Cursor", "Pi" — `HARNESS_DISPLAY_NAMES` /
  *     `HARNESS_OPTION_LABELS`, `agent-harness-selector.tsx:10-33`); `disabled` once
  *     `sessionLocked()` is true. ACP and native-SDK variants of the same provider share
  *     a label ("Claude" for both `claude-acp` and `claude-sdk`) but render in different
  *     `<Select>` groups ("ACP" vs "Native SDK") — see HARNESS NOTES for disambiguation.
- *   `[title="Agent runtime unreachable after timeout"]` — the red-dot "Unavailable"
- *     readiness indicator, shown when `isError()` (`readiness === "error"`)
- *     (`agent-harness-selector.tsx:273-281`).
+ *   `[data-component="composer-notice"]` — the composer's ONE error surface, a row
+ *     that peeks above the project/worktree context row (`composer-notice.tsx`,
+ *     published by `AgentHarnessSelector` via `resolveHarnessNotice`). Carries
+ *     `data-notice` (which condition), `data-tone`, the message and the runtime's own
+ *     detail text, and its own `[data-action="composer-notice-action"]` Retry. It
+ *     replaced four separate widgets that used to sit inside the control row.
+ *   `[title="Agent runtime unreachable after timeout"]` — the notice row in its
+ *     `readiness === "error"` state; the title is kept byte-exact for these specs
+ *     (`harness-notice.ts`).
  *   `[title="Connecting to agent runtime..."]` — the pulsing-dot "Connecting" pill,
- *     shown when `isPolling()` (`readiness === "polling"`) — reachable and covered by
- *     BEHAVIORS #6 / #6b.
- *   `[aria-label="<configError message>"]` — the model-issue warning/error tooltip
- *     glyph next to the harness model control (`agent-harness-selector.tsx:311-330`).
+ *     shown when `isPolling()` (`readiness === "polling"`) — still inline, because
+ *     connecting is progress, not a fault. Covered by BEHAVIORS #6 / #6b.
  *   `[data-action="prompt-add"]` — the `+` trigger that opens the flat action menu;
  *     `disabled` while `harnessPending()` (`toolbar-controls.tsx#addDisabled`). The
  *     attachment entry itself is `[data-action="prompt-attach"]` INSIDE that menu.
@@ -155,8 +160,8 @@
  *   4. Pi issues zero `/api/claxedo/agent-config/harness/options` requests, resolves a
  *      concrete model from its configured provider catalog, persists that exact pair
  *      for the next workspace draft, and submits the selected provider/model identity.
- *   5. A workspace hydrated onto an unavailable/auth-error harness renders the red
- *      "Unavailable" indicator with its error message in a tooltip, keeps the submit
+ *   5. A workspace hydrated onto an unavailable/auth-error harness renders exactly one
+ *      notice row stating the failure and its error message in words, keeps the submit
  *      control disabled, and sends zero session/prompt requests even after the user
  *      types and attempts to submit — and the plain-OpenCode model control
  *      (`[data-action="prompt-model"]`) never reappears as a silent fallback. FIXED:
@@ -164,14 +169,14 @@
  *      (`src/claxedo-ui/harness/harness-status-actions.ts`) silently dropped the
  *      failed-harness status against the store's seeded "opencode" placeholder
  *      (indistinguishable from a real user-confirmed selection), so the draft stayed
- *      on OpenCode instead of ever showing Claude/red-dot/etc. The guard now also
+ *      on OpenCode instead of ever showing Claude/the failure row/etc. The guard now also
  *      requires `current.harness !== "opencode"`, which correctly limits protection
  *      to a genuinely confirmed non-opencode harness since "opencode" is the only
  *      value a fresh, never-confirmed scope can seed.
  *   6. A non-`opencode` harness whose backend reports `ready:false` WITHOUT a hard
  *      failure (`status:"applying"`, i.e. still starting up) resolves readiness to
  *      `"polling"`, NOT `"error"` — so the pulsing `[title="Connecting to agent
- *      runtime..."]` pill renders and the red `[title="Agent runtime unreachable after
+ *      runtime..."]` pill renders and the `[title="Agent runtime unreachable after
  *      timeout"]` dot does not. While polling, the harness `<Select>` trigger and the
  *      submit control are both `disabled` (`harness-polling` is deliberately NOT in
  *      `submit-block-reason.ts`'s `ACTIONABLE` set, unlike behavior 5's `harness-error`),
@@ -524,7 +529,7 @@ test.describe("core harness ownership (local) @core", () => {
   })
 
   test(
-    "unavailable/auth-error harness shows the red dot, blocks submit, sends zero requests, never falls back to OpenCode — behavior 5",
+    "unavailable/auth-error harness shows one notice row, blocks submit, sends zero requests, never falls back to OpenCode — behavior 5",
     async ({ page }) => {
       // FIXED: `applyStatus` (src/claxedo-ui/harness/harness-status-actions.ts)
       // used to guard `current?.harness && want !== current.harness` — since
@@ -560,12 +565,27 @@ test.describe("core harness ownership (local) @core", () => {
       // seeded "OpenCode" placeholder.
       await expectHarnessAutoHydrated(page, /^Claude$/)
 
-      // Red-dot "Unavailable" readiness indicator, never the "Connecting" pill.
+      // The settled failure, never the "Connecting" pill.
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
 
-      // The error message surfaces in the model-issue tooltip glyph.
-      await expect(page.locator(`[aria-label="${errorMessage}"]`)).toBeVisible()
+      // ONE surface reports it, above the project/worktree row. This used to be
+      // four widgets side by side inside the control row — an "Unavailable"
+      // readiness pill, the model trigger ALSO reading "Unavailable", an
+      // unlabeled dot holding the only copy of the reason, and a loose Retry
+      // button.
+      const notice = page.locator("[data-component='composer-notice']")
+      await expect(notice).toHaveCount(1)
+      await expect(notice).toHaveAttribute("data-notice", "runtime-unavailable")
+      await expect(notice).toHaveAttribute("data-tone", "critical")
+      // The reason is readable without hovering anything.
+      await expect(notice).toContainText("Claude runtime is unavailable")
+      await expect(notice).toContainText(errorMessage)
+      // Retry lives inside the row it explains.
+      await expect(notice.locator("[data-action='composer-notice-action']")).toBeVisible()
+      // The model control names a model or says there is none — it no longer
+      // restates the error.
+      await expect(page.locator('[data-action="prompt-harness-model"]')).not.toContainText("Unavailable")
 
       // SPEC UPDATED (T5, dev-docs/CLAXEDO_ERROR_PROPOSAL.md §B3/§T5, submit-block-
       // reason.ts): "Blocked ≠ disabled" — actionable reasons (including
@@ -610,7 +630,7 @@ test.describe("core harness ownership (local) @core", () => {
       // during a startup/in-flight probe — distinct from the hard-failure
       // "error" state (which requires an error status/message or a *settled*
       // completed switch response). So the selector renders the pulsing
-      // "Connecting" pill instead of the red "Unavailable" dot.
+      // "Connecting" pill instead of the settled "Unavailable" notice row.
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_polling",
@@ -644,7 +664,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expectHarnessAutoHydrated(page, /^Claude$/)
 
       // The "Connecting" pill is shown while polling — never the red
-      // "Unavailable" dot, which is reserved for a hard/settled failure.
+      // "Unavailable" notice row, which is reserved for a hard/settled failure.
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
 
@@ -712,7 +732,7 @@ test.describe("core harness ownership (local) @core", () => {
       const harnessTrigger = page.getByRole("button", { name: /^Claude$/ }).last()
 
       // Phase 1 — still connecting: pill shown, harness Select trigger disabled
-      // (dimmed), editor stays live/typeable, never the red "Unavailable" dot.
+      // (dimmed), editor stays live/typeable, never the "Unavailable" notice row.
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
       await expect(input).toHaveAttribute("contenteditable", "true")

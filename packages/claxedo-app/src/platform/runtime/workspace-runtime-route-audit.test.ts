@@ -549,18 +549,6 @@ describe("workspace runtime route audit", () => {
     expect(offenders).toEqual([])
   })
 
-  test("production code builds living app routes only through route boundaries", async () => {
-    const offenders: string[] = []
-    for (const file of await files(root)) {
-      if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
-      if (/\/api\/claxedo\/living-apps/.test(text)) {
-        offenders.push(file)
-      }
-    }
-    expect(offenders).toEqual([])
-  })
-
   test("production code builds Documents API routes only through its route boundary", async () => {
     const offenders: string[] = []
     for (const file of await files(root)) {

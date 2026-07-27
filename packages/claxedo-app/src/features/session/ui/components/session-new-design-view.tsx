@@ -16,6 +16,11 @@ import {
   type ContextChipAvatar,
   type ContextChipOption,
 } from "@/features/session/ui/components/session-context-row"
+import {
+  ComposerNoticeProvider,
+  ComposerNoticeRow,
+  createComposerNoticeChannel,
+} from "@/features/session/composer/ui/composer-notice"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { useLayout } from "@/features/session/app-ports"
 import { useSDK } from "@/features/session/app-ports"
@@ -266,7 +271,13 @@ export function NewSessionDesignView(props: {
     return chips
   })
 
+  // Owned here rather than inside the composer so the row can peek out ABOVE
+  // the project/worktree chips — the composer card is two layers down the stack
+  // and cannot render outside itself.
+  const notice = createComposerNoticeChannel()
+
   return (
+    <ComposerNoticeProvider channel={notice}>
     <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
       <div
         class="absolute inset-x-0 flex justify-center px-6"
@@ -282,31 +293,43 @@ export function NewSessionDesignView(props: {
             </div>
           </Show>
           <div>
+            {/* Top of the stack: one row for whatever is currently wrong with
+                the composer's agent. It peeks above the chips exactly the way
+                the chips peek above the composer — see composer-notice.tsx for
+                why this is a channel and not a prop. */}
+            <ComposerNoticeRow notice={notice.current()} />
             {/* The content wrapper is a named inline-size container; the context
                 row's chips truncate against it when the session pane is
                 squeezed. */}
             <Show when={!runtimeMode()}>
-              <SessionContextRow
-                chips={contextChips()}
-                pin={
-                  selfHostedWorkspace()
-                    ? {
-                        slot: "self-hosted-workspace",
-                        label: pinnedWorkspaceName(),
-                        detail: "· Self-hosted · Connected via relay",
-                        compactDetail: "· Self-hosted",
-                      }
-                    : undefined
-                }
-              />
+              <div
+                classList={{
+                  relative: true,
+                  "z-10 -mt-2": !!notice.current(),
+                }}
+              >
+                <SessionContextRow
+                  chips={contextChips()}
+                  pin={
+                    selfHostedWorkspace()
+                      ? {
+                          slot: "self-hosted-workspace",
+                          label: pinnedWorkspaceName(),
+                          detail: "· Self-hosted · Connected via relay",
+                          compactDetail: "· Self-hosted",
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </Show>
-            {/* Lifts the composer over the context row's bottom padding (and
-                above it in paint order) so the two read as one stacked card
-                instead of two separate surfaces. */}
+            {/* Lifts the composer over the row above's bottom padding (and
+                above it in paint order) so they read as one stacked card
+                instead of separate surfaces. */}
             <div
               classList={{
                 relative: true,
-                "z-10 -mt-2": !runtimeMode(),
+                "z-10 -mt-2": !runtimeMode() || !!notice.current(),
               }}
             >
               {props.main ?? props.children}
@@ -315,5 +338,6 @@ export function NewSessionDesignView(props: {
         </div>
       </div>
     </div>
+    </ComposerNoticeProvider>
   )
 }

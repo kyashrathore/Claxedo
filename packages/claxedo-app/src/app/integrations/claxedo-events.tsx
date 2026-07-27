@@ -371,6 +371,10 @@ export function ClaxedoEventsProvider(props: ParentProps) {
       reconnectTimer: null as ReturnType<typeof setTimeout> | null,
       failures: 0,
       lifecycle: "idle" as StreamSyncLifecycleState,
+      // SSE `Last-Event-ID` cursor for THIS target's stream. See the parsing
+      // loop below for why an untracked cursor is a correctness bug, not just
+      // a bandwidth one.
+      lastEventId: null as string | null,
     }
 
     // Per-kind accounting: this stream's bit feeds BOTH the aggregate
@@ -450,8 +454,13 @@ export function ClaxedoEventsProvider(props: ParentProps) {
       // (x-fetch-bypass-throttle is not in its allow-list) — which killed
       // every workspace event stream in the browser and flapped the
       // connection authority ready→reconnecting.
+      const headers = new Headers({ Accept: "text/event-stream" })
+      // Resume from this target's cursor instead of re-reading its log from the
+      // start. Matches the two global-sdk stream loops, which already resume
+      // (`provider.tsx` — `sseJsonStream`'s `onEventId` + `Last-Event-ID`).
+      if (state.lastEventId) headers.set("Last-Event-ID", state.lastEventId)
       void eventStreamFetch(target, {
-        headers: { Accept: "text/event-stream" },
+        headers,
         signal: state.abort.signal,
       }).then(async (res) => {
         if (!res.ok || !res.body) {
@@ -483,8 +492,22 @@ export function ClaxedoEventsProvider(props: ParentProps) {
           const chunks = buffer.split("\n\n")
           buffer = chunks.pop() ?? ""
           for (const chunk of chunks) {
-            const data = chunk.split("\n")
-              .map((line) => line.trim())
+            const lines = chunk.split("\n").map((line) => line.trim())
+            // Advance this stream's `Last-Event-ID` cursor. This is a
+            // CORRECTNESS requirement, not an optimization: `emitEvent` →
+            // `normalizeClaxedoStreamEvent` unwraps `{directory, payload}`
+            // frames, so this reader applies directory events (permission /
+            // question / message) to the shell caches. Both the workspace
+            // runtime (`workspace-runtime/src/routes/events.ts`) and the e2e
+            // mock serve a CURSOR-LESS connection the full retained log, so
+            // without a cursor every reconnect re-applied the entire backlog —
+            // re-upserting `question.asked`/`permission.asked` for requests the
+            // user had already answered and resurrecting their docks.
+            // Short-window replay frames intentionally carry no `id:`, so they
+            // do not advance the cursor and keep being redelivered.
+            const id = lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim()
+            if (id) state.lastEventId = id
+            const data = lines
               .filter((line) => line.startsWith("data:"))
               .map((line) => line.slice("data:".length).trim())
               .join("\n")
