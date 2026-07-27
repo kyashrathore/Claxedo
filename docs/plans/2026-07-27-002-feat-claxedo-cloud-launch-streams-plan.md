@@ -24,12 +24,54 @@ Inherited operating principles (inlined; `docs/plans/goal.md` does not exist on 
 - The owner is **personally fixing the live-tier e2e specs**. Agents must not remove or touch any `live-*` spec or its tier wiring. M-tier is reported working by the owner.
 - **Everything after F4 is deferred** — F5 (backup/DR), F6 (launch checklist), F7 (workspace-persistence status) are out of scope for this pass.
 
+### 0.1b Owner decision — managed sandbox requires usage-based billing (2026-07-28)
+
+**Decision:** if Claxedo provisions sandboxes on **its own** provider account (Cloudflare, Daytona, or any other), that path requires **usage-based billing** before it can be exposed. Until then it stays **behind a flag**.
+
+**Why this resolves the F4 CRITICAL (finding #4, unmetered `POST /api/workspace/create`):** the abuse only bears cost when Claxedo owns the provider account. Flag-gating the managed path off at launch removes the exposure without needing the rate limiter first. The limiter is still worth building (see §0.5), but it stops being a launch blocker.
+
+**The flag already exists, implicitly — no new code required to disable the path.** `sandboxDriver(env)` (`hosted-services.ts:75`) returns `undefined` when no driver credentials are present; `sandboxManager(env)` (`:171`) then returns `undefined`; `services.sandbox.sandboxManager` is absent; and `POST /api/workspace/create` (`hosted-workspace.ts:277-290`) returns **503 `sandbox_driver_unavailable`** with a deliberately precise message. So *simply not provisioning `CLOUDFLARE_SANDBOX_API_TOKEN` / `DAYTONA_API_KEY` on the production Worker* disables managed provisioning entirely and fails closed with an honest error.
+
+Two caveats before relying on it:
+- This is an **absence-of-config** kill switch, not an explicit named flag. It is easy to re-arm by accident — anyone adding the provider secret to the production environment silently enables unmetered provisioning. If it is to be a launch control, it should be an **explicit** flag, tripwired, so enabling it is a deliberate act.
+- It is **all-or-nothing**. There is no per-org or per-plan gate at the driver layer, so it cannot express "managed for pro, BYOK for free" without further work.
+
+**RESOLVED by the BYOK trace — see §0.1c.** Per-user sandbox-provider keys are **not** implemented on hosted and are an explicit non-goal. But a *different* BYO path — user-hosted VM via relay — **is** shipped, so flag-off still leaves Cloud with a working provisioning story.
+
+### 0.1c BYOK trace verdict — the two "BYO" concepts (2026-07-28)
+
+**Verdict: operator credentials.** On Claxedo Cloud today a workspace VM is provisioned with **Claxedo's own** provider keys, held as Worker env secrets and composed into one process-wide driver at boot. There is **no code path** where the hosted control plane reads a user's or org's stored sandbox-provider credential to construct a `SandboxDriver`. Exactly two driver construction sites exist:
+
+| Path | File | Credential source |
+|---|---|---|
+| Local / desktop | `workspace-supervisor-sandbox.ts:397-508` | the user's own (`sandboxDriverAuthAsync`) |
+| Hosted Worker | `control-plane/hosted-services.ts:75-169` | Worker env only |
+
+`sandboxDriverRoutes` is mounted **only** at `routes/workspace.ts:150`, reachable only from the local Node server (`server.ts:575`); `hosted-app.ts` never imports it. The stores behind it are SQLite + a local secret backend, structurally unreachable from a Worker. The per-org hosted credential surface (`hostedOrgCredentials`) is used only by connections/webhooks/workgraph — never by a sandbox driver.
+
+**Two things previously conflated, now separated:**
+- `connectionTurnCredential` is **not** a provider key of any kind. It is 32 random bytes with a 10-minute TTL in a process-local `Map` (`connections-host/turn-credentials.ts:32`), used to decide *which owner's partition of stored connection tokens* a running sandbox may read. It plays no part in provisioning.
+- `SandboxBrokeredSecret` **injects a secret into an already-provisioned sandbox** (usable but unreadable, egress-allowlisted) — it does not select whose infrastructure runs it. Its only production use is a GitHub clone token on the **local** path; hosted `/create` passes no `secrets` at all.
+
+**The fault line, and why intent and implementation appeared to disagree.** The docs use "BYO compute" to mean **user-hosted VM via relay** — the user runs the runtime on their own machine and links it. That **is shipped on hosted** (`routes/hosted-workspace.ts:363,398,467,504` — challenge/register/heartbeat/pause) and involves **no sandbox driver at all**; `:124-133` explicitly refuses to register a cloud workspace as user-hosted, so the two are mutually exclusive. By contrast, "user supplies sandbox-provider API keys to Claxedo Cloud" appears in **no** design doc, and `2026-07-27-004-feat-universal-sandbox-checkpoints-plan.md:35` lists "Hosted (non-BYOK) sandbox operation" under **Non-goals** — i.e. hosted ≡ non-BYOK by design. (The "BYOK-only" note in project memory scopes the *self-host/customer-deployed* case from that same plan's lines 19-22.)
+
+**Launch-relevant copy defect.** Three public strings make the BYO-sandbox claim **about Cloud specifically**, which the shipped hosted code does not do:
+- `packages/claxedo-web/src/pages/pricing.astro:10` — "Claxedo Cloud is free during beta. Bring your own models, compute, **and sandboxes**."
+- `packages/claxedo-web/src/pages/index.astro:37` — "Bring your own AI **and sandbox providers**"
+- `packages/claxedo-web/src/content/competitors.ts:78` — "Free during beta; bring your own provider **+ sandbox**"
+
+`start.md.ts:15` scopes it correctly ("**Local mode** … bring your own models and compute"). Read as "your sandbox-provider account," the three Cloud strings are false; read as the user-hosted-VM path they are defensible but ambiguous. **Owner decision — copy fix vs. unbuilt feature.**
+
+**Recommended launch shape** (coherent with §0.1b): Cloud free, provisioning via the **shipped user-hosted-VM relay path**; managed sandbox on Claxedo's account stays flag-off pending usage-based billing; the three copy strings are tightened to say "bring your own compute" (the shipped meaning) rather than "sandboxes"/"sandbox providers".
+
+**Separate confirmed bug found in passing:** the settings client calls `/api/workspace/providers` expecting `{default_provider, providers}` while the server serves `/drivers` returning `{default_driver, drivers}` (`sandbox-driver-routes.ts:44`). The server rename was deliberate (`architecture.test.ts:920-922`) and the client was never updated; every test mocks the endpoint, so nothing catches it.
+
 ### 0.2 Re-verified state (all probes run 2026-07-27 ~18:00 UTC)
 
 | Fact | Evidence |
 |---|---|
 | `origin/dev` fully pushed | `git rev-list --left-right --count origin/dev...dev` → `0 0` |
-| Staging control plane **live and healthy** | `https://claxedo-control-plane-staging.kanusdlp.workers.dev/api/claxedo/health` → `{"ok":true,"mode":"hosted-control-plane","localExecution":false}`; `/api/claxedo/mode` → `signedAuth:true, authority:true, relay:true, workgraph:true` |
+| Staging control plane **live and healthy** — all four C1 verification endpoints green (base `https://claxedo-control-plane-staging.kanusdlp.workers.dev`) | `/api/claxedo/health` → 200 `{"ok":true,"mode":"hosted-control-plane","localExecution":false}`<br>`/api/claxedo/mode` → 200 `{"signedAuth":true,"authority":true,"relay":true,"relayResolver":true,"runtimeAccessTokenSigner":true,"hostTunnelTokenSigner":true,"deviceLogin":false,"workgraph":true}`<br>`/api/claxedo/compatibility` → 200 `{"ok":true,"schemaVersion":1,"connectionSchemaVersion":1,"tunnelProtocolVersion":1,"expectedTunnelProtocolVersion":1,…}`<br>`/.well-known/jwks.json` → 200, one Ed25519/EdDSA signing key (`kid` `519cdcd2129287ec`) |
 | Staging deploys are continuous, not one-off | Latest dev push (`0bcf5c42`): `deploy-control-plane` ✅, `deploy-claxedo-app-staging` ✅, `claxedo-sandbox-image` ✅. Relay staging worker also live (`claxedo-workspace-relay-staging.kanusdlp.workers.dev`). |
 | Website + docs site live | `claxedo.com` → 200, `docs.claxedo.com` → 200. **But `www.claxedo.com` → 404**, and `redirects.json` `hostingBinding.status` is still `"unbound"` — the live hosting was bound out-of-band and the repo doesn't declare it. No `deploy-claxedo-web`/docs workflow exists in `.github/workflows/`. |
 | CI on `dev` is **still red** | `test.yml` latest run (`0bcf5c42`) failing jobs: `typecheck` (in the separate typecheck.yml run), `unit (linux)`, `unit (windows)`, `local diagnostics release gate`, `e2e (linux 2/12, 4/12, 11/12)` |
