@@ -25,18 +25,17 @@
 .ui-context-card.is-floating {
   padding: 0.6rem 0.6rem 0.5rem;
   border-radius: var(--radius-lg);
-  /* `--shell-surface-context-card` is the semantic role for this surface, so a
-     theme decides what a floating context card looks like. Hardcoding
-     `--surface-raised-stronger-non-alpha` here outranked that role and left the
-     card on a white that no other surface in the app uses. */
-  background: var(--shell-surface-context-card);
-  /* `--shadow-lg-border-base` is the heaviest token in the system — a 1px ring
-     plus five stacked layers out to 80px of blur. That is a page-level modal
-     elevation; this is a small hover card, and beside the menus it sits next to
-     it read as a different design language. Keep a defined edge, drop the pile. */
-  box-shadow:
-    0 0 0 1px var(--border-weak-base),
-    var(--shadow-md);
+  /* `.is-floating` is an OVERLAY — it floats above content the way the composer
+     menus and dropdowns do, so it takes `--overlay-surface`, the role every
+     other floating surface resolves. `--shell-surface-context-card` is for the
+     context card docked in the page; using it here matched the component's name
+     but not its behaviour, and painted the card grey against menus that are
+     white. */
+  background: var(--overlay-surface);
+  /* Same elevation as the composer menus. `--shadow-lg-border-base` is a 1px
+     ring plus five stacked layers out to 80px of blur — a page-modal weight on
+     a small hover card. */
+  box-shadow: var(--v2-elevation-floating);
 }
 
 /* Collapsed, the rail chip carries its own border — drop any variant surface.
