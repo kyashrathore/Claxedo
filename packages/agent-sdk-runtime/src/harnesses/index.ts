@@ -128,7 +128,18 @@ function acp(id: AcpHarnessId, options: AcpFactoryOptions, context: AgentHarness
 const ACP_BIN_NAMES: Record<AcpHarnessId, string> = {
   claude: "claude-agent-acp",
   codex: "codex-acp",
-  cursor: "cursor-agent-acp",
+  /**
+   * `cursor-agent`, not `cursor-agent-acp` — no such binary has ever shipped.
+   * Cursor does not publish a dedicated ACP adapter the way Claude and Codex
+   * do; its CLI hosts the ACP server itself, behind the `acp` subcommand that
+   * `AcpHarnessAdapter.commandArgs` supplies.
+   *
+   * Note the CLI's own help calls it `agent`, and following that would be a
+   * mistake: `agent` is a common enough name to be shadowed on a real PATH (it
+   * is taken by grok's CLI on this machine), so spawning `agent` can silently
+   * start a different vendor's tool. `cursor-agent` is the installed name.
+   */
+  cursor: "cursor-agent",
 }
 
 function defaultAcpBinary(id: AcpHarnessId) {

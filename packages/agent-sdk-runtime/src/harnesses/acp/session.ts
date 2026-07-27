@@ -12,6 +12,7 @@ import type {
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
 import type { AgentPermissionMode, AgentPermissionModeState, AutoLevel } from "../../adapter-contract"
+import type { AcpHarnessId } from "../../harness-types"
 
 type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
@@ -218,34 +219,102 @@ const withLevel = (mode: { id: string; name: string; description?: string }): Ag
 }
 
 /**
- * What an ACP harness offers BEFORE a session exists.
+ * The versions each table in `ACP_KNOWN_MODES` was recorded from.
  *
- * An ACP agent advertises its modes on `session/new`, so on a draft there is
- * genuinely nothing to report — but showing nothing meant the composer fell back
- * to Claxedo's own options, which are then discarded the instant the session
- * starts and the agent's real modes take over. Offering a choice that cannot
- * survive the first message is worse than offering none.
- *
- * So a draft offers the RUNGS instead of ids. These are intents, not agent
- * modes, and `setPermissionMode` resolves each to whatever the agent turns out
- * to advertise. They are the one place in this design where Claxedo names a
- * permission option itself, and the names say what the rung does rather than
- * implying an agent feature.
+ * A hardcoded list of someone else's modes is only true for the build it was
+ * copied from, so the version is part of the data rather than a comment.
+ * `known-modes.test.ts` compares these against the installed packages and fails
+ * on a bump, which turns "the agent changed its modes and we kept showing the
+ * old ones" from a silent drift into a failing test with a fix attached:
+ * `bun run script/permission-probe.ts` and paste the `liveModesFull` output.
  */
-export const ACP_DRAFT_MODES: readonly AgentPermissionMode[] = [
-  { id: "ask", name: "Ask for everything", description: "Every tool call waits for you", level: "ask" },
-  {
-    id: "auto",
-    // Named for the rung's actual promise: everything safe runs, and the danger
-    // tier — shell, network, out-of-project, subagent spawns — still asks. The
-    // previous "Allow edits, ask before risk" described a narrower mode than
-    // this rung resolves to on every agent that reports one.
-    name: "Allow everything except danger",
-    description: "Resolved to this agent's matching mode when the session starts",
-    level: "auto",
-  },
-  { id: "full", name: "Allow everything", description: "Resolved to this agent's most permissive mode", level: "full" },
-]
+export type AcpKnownModeVersion =
+  /** Ships as one of this package's dependencies; the pin is checkable offline. */
+  | { source: "npm"; package: string; version: string }
+  /**
+   * Installed by the user, found on PATH. Checkable only where it is installed,
+   * so the drift test skips rather than fails when it is absent — a CI box
+   * without Cursor must not report a version mismatch it cannot observe.
+   */
+  | { source: "path"; command: string; version: string }
+
+export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, AcpKnownModeVersion>> = {
+  claude: { source: "npm", package: "@agentclientprotocol/claude-agent-acp", version: "0.60.0" },
+  codex: { source: "npm", package: "@agentclientprotocol/codex-acp", version: "1.1.2" },
+  cursor: { source: "path", command: "cursor-agent", version: "2026.07.23-e383d2b" },
+}
+
+/**
+ * What each ACP agent offers, recorded VERBATIM from the live binary.
+ *
+ * An ACP agent does not advertise its modes until `session/new` returns, so on a
+ * draft there is nothing to ask. This table is what a draft shows instead, and
+ * every field in it — id, name, description — is the agent's own, captured by
+ * `script/permission-probe.ts` against the versions above.
+ *
+ * It replaced three rungs Claxedo named itself ("Allow everything except
+ * danger" and friends) which resolved to real ids only once the session began.
+ * Those were the one place this design invented a permission option, and the
+ * cost was that the picker named a policy the agent had never heard of: a user
+ * choosing on a draft was reading Claxedo's vocabulary, then watching the list
+ * change under them on the first message. Real ids mean the draft choice IS the
+ * session choice, with no resolution step and nothing to re-render.
+ *
+ * `withLevel` is applied here rather than baked in, so a draft and a live
+ * session derive the rung from the same `LEVEL_IDS` table. Hardcoding the level
+ * would let the two disagree about the same id — which is the precise bug this
+ * whole change is undoing.
+ *
+ * A harness with no entry here reports nothing on a draft rather than a
+ * plausible guess — inventing a table would recreate exactly the fiction this
+ * replaced.
+ */
+export const ACP_KNOWN_MODES: Partial<Record<AcpHarnessId, readonly AgentPermissionMode[]>> = {
+  claude: [
+    { id: "auto", name: "Auto", description: "Use a model classifier to approve/deny permission prompts" },
+    { id: "default", name: "Manual", description: "Standard behavior, prompts for dangerous operations" },
+    { id: "acceptEdits", name: "Accept Edits", description: "Auto-accept file edit operations" },
+    { id: "plan", name: "Plan Mode", description: "Planning mode, no actual tool execution" },
+    { id: "dontAsk", name: "Don't Ask", description: "Don't prompt for permissions, deny if not pre-approved" },
+    { id: "bypassPermissions", name: "Bypass Permissions", description: "Bypass all permission checks" },
+  ].map(withLevel),
+  codex: [
+    { id: "read-only", name: "Read-only", description: "Requires approval to edit files and run commands." },
+    { id: "agent", name: "Agent", description: "Read and edit files, and run commands." },
+    {
+      id: "agent-full-access",
+      name: "Agent (full access)",
+      description:
+        "Codex can edit files outside this workspace and run commands with network access. Exercise caution when using.",
+    },
+  ].map(withLevel),
+  /**
+   * From `cursor-agent acp` — Cursor's CLI acting as its own ACP server.
+   *
+   * Worth contrasting with `CURSOR_PERMISSION_MODES`, the table the cursor-sdk
+   * harness uses: that one is `review`/`auto-review`/`unsandboxed`, derived from
+   * two `LocalAgentOptions` booleans, and applies only from the NEXT session
+   * because `Agent.create` reads them once. Over ACP the same product exposes
+   * three differently-named modes and honours `session/set_mode` mid-session.
+   * Same vendor, two transports, genuinely different surfaces — neither table is
+   * a stale copy of the other.
+   */
+  cursor: [
+    { id: "agent", name: "Agent", description: "Full agent capabilities with tool access" },
+    { id: "plan", name: "Plan", description: "Read-only mode for planning and designing before implementation" },
+    { id: "ask", name: "Ask", description: "Q&A mode - no edits or command execution" },
+  ].map(withLevel),
+}
+
+/**
+ * The draft list for a harness, and the honest empty answer for one we have
+ * never observed.
+ */
+export function draftPermissionModes(harness: AcpHarnessId): AgentPermissionModeState {
+  const modes = ACP_KNOWN_MODES[harness]
+  if (!modes) return { modes: [], appliesFrom: "next-turn" }
+  return { modes: [...modes], appliesFrom: "next-turn" }
+}
 
 /**
  * The session's permission modes, from whichever channel this agent speaks.
@@ -302,9 +371,12 @@ export async function setPermissionMode(
   sessionId: string,
   modeId: string,
 ): Promise<{ state: ACPState; result: AgentPermissionModeState }> {
-  // A RUNG chosen on a draft resolves here, against what the agent actually
-  // advertised once it started. Falls through to the literal id when nothing
-  // matches, so an agent whose ids happen to be "ask"/"auto"/"full" still works.
+  // LEGACY. Drafts now offer the agent's own ids (`ACP_KNOWN_MODES`), so a fresh
+  // selection needs no resolution. This stays for selections PERSISTED under the
+  // old rung ids: a config written before that change still says `auto`, and on
+  // codex-acp that has to become `agent` or the first write throws on an id the
+  // agent never had. Falls through to the literal id when nothing matches, so
+  // claude-acp — which really does advertise `auto` — takes it directly.
   const resolved = ((): string => {
     if (!["ask", "auto", "full"].includes(modeId)) return modeId
     const advertised = permissionModes(state).modes

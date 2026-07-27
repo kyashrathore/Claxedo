@@ -151,18 +151,47 @@ describe("harness modes are shown in the harness's own words", () => {
 
   /*
    * Auto's description quotes the mode id so a collapsed row can be checked
-   * against the harness's own docs. That only holds when the id IS the
-   * harness's. On an ACP draft it is not: the agent has advertised nothing yet,
-   * so Claxedo substitutes its own intent rungs, and printing `(auto)` there
-   * would lend a placeholder of ours the authority of a harness id.
+   * against the harness's own docs, and that now holds on a DRAFT too.
+   *
+   * It did not used to. An ACP agent advertises nothing until `session/new`, so
+   * Claxedo used to fill a draft with intent rungs of its own naming and this
+   * test asserted the opposite — that `(auto)` was suppressed, because printing
+   * it would lend a placeholder of ours the authority of a harness id. Drafts
+   * now carry the agent's recorded ids (`ACP_KNOWN_MODES`), so the id is real
+   * and hiding it would withhold the one string that makes the row checkable.
+   *
+   * So the invariant is that a draft and a live session describe Auto the SAME
+   * way. This is the direct regression test for the removed `hasSession` branch:
+   * a draft that described its target differently was a draft describing a
+   * different thing, which is what made the list appear to change on the first
+   * message.
+   *
+   * Uses codex-acp's real auto rung, verbatim from the live binary.
    */
-  test("an ACP draft does not quote its rung id as though the agent chose it", () => {
-    const rungs = report({
-      modes: [{ id: "auto", name: "Allow everything except danger", level: "auto" }],
+  test("a draft and a live session describe Auto identically", () => {
+    const codexAcp = report({
+      modes: [{ id: "agent", name: "Agent", description: "Read and edit files, and run commands.", level: "auto" }],
     })
-    const draft = permissionModeOptions({ harness: "claude-acp", report: rungs, hasSession: false })
-    expect(draft.claxedo[0]!.description).toContain("Allow everything except danger")
+    const draft = permissionModeOptions({ harness: "codex-acp", report: codexAcp, hasSession: false })
+    const live = permissionModeOptions({ harness: "codex-acp", report: codexAcp, hasSession: true })
+    expect(draft.claxedo[0]!.description).toBe(live.claxedo[0]!.description)
+    expect(draft.claxedo[0]!.description).toContain("Read and edit files")
+  })
+
+  /*
+   * The id is dropped only when it would repeat the name. claude-agent-acp's
+   * auto rung is literally `{ id: "auto", name: "Auto" }`, and "Auto (auto)"
+   * is noise rather than information.
+   */
+  test("an id identical to the name is not repeated", () => {
+    const claudeAcp = report({
+      modes: [
+        { id: "auto", name: "Auto", description: "Use a model classifier to approve/deny prompts", level: "auto" },
+      ],
+    })
+    const draft = permissionModeOptions({ harness: "claude-acp", report: claudeAcp, hasSession: false })
     expect(draft.claxedo[0]!.description).not.toContain("(auto)")
+    expect(draft.claxedo[0]!.description).toContain("Auto")
   })
 
   test("a real harness id stays quoted, because it names the policy", () => {

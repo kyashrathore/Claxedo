@@ -31,6 +31,18 @@ function acpBinary(name: string, pkg: string) {
   return path.join(path.dirname(pkgJson), rel)
 }
 
+/**
+ * Resolve a binary the harness expects to find on PATH, and fail loudly if it
+ * is absent — a bare command name handed to spawn would surface much later as
+ * an opaque handshake timeout.
+ */
+function pathBinary(name: string) {
+  const dirs = (process.env.PATH ?? "").split(path.delimiter)
+  const hit = dirs.map((dir) => path.join(dir, name)).find((candidate) => fs.existsSync(candidate))
+  if (!hit) throw new Error(`${name} is not on PATH`)
+  return hit
+}
+
 /** Only the model call is redirected here. Everything else runs for real. */
 const MOCK = process.env.MOCK_MODEL_URL ?? "http://127.0.0.1:8899"
 const MODEL_ENV = {
@@ -42,7 +54,16 @@ const MODEL_ENV = {
 
 type Probe = { harness: string; [k: string]: unknown }
 
-async function probeAcp(harness: string, binary: string): Promise<Probe> {
+/**
+ * `harness` is the Claxedo-facing id used for reporting ("codex-acp"); `acpId`
+ * is what `AcpHarnessAdapter` itself takes, which is the bare vendor
+ * ("codex"). Passing the reported id straight through used to look harmless
+ * because everything it fed was cosmetic — until draft modes became
+ * per-harness, at which point the wrong id silently produced an EMPTY draft and
+ * the probe reported a divergence that did not exist. Two parameters, because
+ * they are genuinely two different identifiers.
+ */
+async function probeAcp(harness: string, acpId: "claude" | "codex" | "cursor", binary: string): Promise<Probe> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `probe-${harness}-`))
   const workdir = path.join(tmp, "work")
   fs.mkdirSync(workdir, { recursive: true })
@@ -50,7 +71,7 @@ async function probeAcp(harness: string, binary: string): Promise<Probe> {
 
   const adapter = new AcpHarnessAdapter({
     binary,
-    harness: harness as never,
+    harness: acpId as never,
     storeRoot: path.join(tmp, "store"),
     createStore: (root?: string) => new RuntimeStore(root) as never,
     env: MODEL_ENV as never,
@@ -64,6 +85,11 @@ async function probeAcp(harness: string, binary: string): Promise<Probe> {
     const session = await adapter.createSession(workdir)
     const live = await adapter.listPermissionModes(session.id, workdir)
     out.liveModes = live.modes.map((m) => `${m.id}${m.level ? `:${m.level}` : ""}`)
+    // The full objects, because this probe is how ACP_KNOWN_MODES gets
+    // regenerated when an agent ships a new version. The summary line above is
+    // for reading; this is for copying, and it carries the agent's own `name`
+    // and `description` so the table never has to paraphrase them.
+    out.liveModesFull = live.modes
     out.currentModeId = live.currentModeId
     out.appliesFrom = live.appliesFrom
     if (live.unsupported) out.unsupported = live.unsupported
@@ -220,12 +246,16 @@ async function probeOpencode(_serverUrl: string, directory: string): Promise<Pro
 
 const results: Probe[] = []
 
-for (const [harness, name, pkg] of [
-  ["claude-acp", "claude-agent-acp", "@agentclientprotocol/claude-agent-acp"],
-  ["codex-acp", "codex-acp", "@agentclientprotocol/codex-acp"],
+for (const [harness, acpId, name, pkg] of [
+  ["claude-acp", "claude", "claude-agent-acp", "@agentclientprotocol/claude-agent-acp"],
+  ["codex-acp", "codex", "codex-acp", "@agentclientprotocol/codex-acp"],
+  // Cursor ships no ACP adapter package: its own CLI is the server, reached by
+  // the `acp` subcommand the adapter supplies. `pkg` is empty so `acpBinary`
+  // falls through to a PATH lookup for `cursor-agent`.
+  ["cursor-acp", "cursor", "cursor-agent", ""],
 ] as const) {
   try {
-    results.push(await probeAcp(harness, acpBinary(name, pkg)))
+    results.push(await probeAcp(harness, acpId, pkg ? acpBinary(name, pkg) : pathBinary(name)))
   } catch (error) {
     results.push({ harness, error: `binary unavailable: ${(error as Error).message}` })
   }
@@ -244,10 +274,6 @@ if (OPENCODE_URL) {
 }
 
 // Honest about what was NOT reached, rather than silently reporting five of eight.
-results.push({
-  harness: "cursor-acp",
-  blocked: "the cursor-agent binary is not installed; @cursor/sdk covers cursor-sdk but not the ACP transport",
-})
 results.push({
   harness: "pi",
   blocked: "no policy surface by design — PERMISSION_MECHANISMS marks it claxedo-answers-locally",
