@@ -102,7 +102,7 @@
  *     `[data-slot="session-turn-diff-view"]` only mounts once its accordion item is
  *     expanded (lazy).
  *   The jump-to-bottom button has no stable data-attribute of its own; it is located
- *     via its icon (`use[href="#opencode-icon-arrow-down-to-line"]`) and its visibility
+ *     via its icon (`[data-icon="scroll-to-latest"]`, the theme-independent semantic id)
  *     is controlled by the CSS `opacity`/`pointer-events` of its ancestor wrapper (see
  *     HARNESS/finding notes below for why a testid would help here).
  *   `[data-scrollable]:has([data-slot="session-turn-message-content"])` — the
@@ -712,16 +712,27 @@ async function scrollTimelineToTop(page: Page) {
   }
 }
 
+/**
+ * Found by the SEMANTIC icon id, never by a sprite href.
+ *
+ * `use[href="#opencode-icon-arrow-down-to-line"]` named the opencode theme's
+ * glyph for `scroll-to-latest`; the Codex theme draws the same semantic icon
+ * from an external sprite (`codex-20-012`), so that selector silently matched
+ * nothing and the opacity read came back `null` instead of "0". `data-icon`
+ * carries the semantic name in every theme.
+ */
+const JUMP_TO_BOTTOM_ICON = '[data-icon="scroll-to-latest"]'
+
 async function jumpToBottomOpacity(page: Page) {
-  return page.evaluate(() => {
-    const use = document.querySelector('use[href="#opencode-icon-arrow-down-to-line"]')
-    const box = use?.closest("button")?.parentElement
+  return page.evaluate((selector) => {
+    const icon = document.querySelector(selector)
+    const box = icon?.closest("button")?.parentElement
     return box ? getComputedStyle(box).opacity : null
-  })
+  }, JUMP_TO_BOTTOM_ICON)
 }
 
 function jumpToBottomButton(page: Page) {
-  return page.locator('use[href="#opencode-icon-arrow-down-to-line"]').locator("xpath=ancestor::button[1]")
+  return page.locator(JUMP_TO_BOTTOM_ICON).locator("xpath=ancestor::button[1]")
 }
 
 test.describe("core timeline rendering & scroll (local) @core", () => {

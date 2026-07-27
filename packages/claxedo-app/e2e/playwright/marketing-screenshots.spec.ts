@@ -54,8 +54,12 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
 
     await page.keyboard.press("Control+b")
     await expect(page.locator('[data-testid="compact-switcher"]')).toBeVisible()
-    await page.locator('[data-component="workspace-more-menu"]').first().click()
-    await page.getByRole("menuitem", { name: "New Terminal", exact: true }).click()
+    // "New Terminal" left the dropdown for its own button, which opens the
+    // creator; the shell tile is the plain login shell the screenshot wants.
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').first().click()
+    const launchers = page.locator('[data-component="terminal-new-launchers"]')
+    await expect(launchers).toBeVisible({ timeout: 20_000 })
+    await launchers.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]').first().click()
     const terminal = page.locator('[data-testid="terminal-pane"]').last()
     await expect(terminal).toBeVisible({ timeout: 20_000 })
     await expect(page.locator('[data-testid="compact-switcher-tab"]')).toHaveCount(2)

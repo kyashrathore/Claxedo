@@ -134,11 +134,16 @@
  *     pty resolved + a 120ms activation delay).
  *   `[data-testid="workbench-shell-header"]` — the L1 header strip; contains the
  *     compact switcher and, in `[data-testid="workbench-header-controls"]`, the
- *     `WorkspaceScopeButtons` (`aria-label="New Session"`, `"New Claude Terminal"`,
- *     `"New Codex Terminal"`, and a `[data-component="workspace-more-menu"]` dropdown
- *     with a "New Terminal" / custom-command items) — terminal buttons are omitted
- *     (via `<Show>`, not merely `disabled`) when `canUseTerminal()` is false
- *     (workspace tools blocked or a viewer role).
+ *     `WorkspaceScopeButtons` (`aria-label="New Session"`, one `aria-label="New Terminal"`
+ *     button — `[data-testid="workspace-scope-new-terminal"]` — and a
+ *     `[data-component="workspace-more-menu"]` dropdown holding only "New Document" and
+ *     "Configure..."). The terminal button opens the CREATOR
+ *     (`[data-component="terminal-new-launchers"]`, one
+ *     `[data-slot="terminal-launcher"][data-launcher-id]` tile per configured command)
+ *     rather than starting a pty, because the header's directory is an invisible fallback
+ *     chain; the creator then becomes that same surface's terminal in place. The button is
+ *     omitted (via `<Show>`, not merely `disabled`) when the surface cannot create
+ *     terminals (workspace tools blocked or a viewer role).
  *   Command palette: `mod+shift+p` (or `mod+p`, both route through the `"file.open"`
  *     command's `onSelect`) opens `<DialogSelectFile>` inside `[data-component=
  *     "dialog"]`, rendering `[data-testid="command-palette"]` (files+commands
@@ -228,8 +233,9 @@
  *      showing zero `[data-workbench-content]` panes and a continuously
  *      present `[data-testid="empty"]` state — Playwright round-trips alone are
  *      too coarse to catch a ~100ms replacement, hence the in-page sampler.
- *   16. Header `New Session` / `New Claude Terminal` / `New Codex Terminal` buttons
- *      each open the corresponding surface as the active pane.
+ *   16. The header's `New Session` button opens a draft as the active pane, and its
+ *      `New Terminal` button opens the creator, whose tile starts the terminal in that
+ *      same surface.
  *   17. `mod+shift+p` (and `mod+p`) open the command palette; typing a query and
  *      selecting a matching command entry (e.g. "Toggle Sidebar") dispatches it.
  *   18. `mod+b` toggles the sidebar's visibility. The `<nav>` element itself
@@ -476,6 +482,23 @@ async function dragTabOntoRightEdge(page: Page, tab: Locator, target: Locator) {
  * bare non-owning `/${slug}/session` route). Used by every structural test
  * (divider, focus, snapshot-restore, reload-persistence) that does not itself
  * care about a real conversational turn. */
+/**
+ * Starts a terminal through the CREATOR, which is the only way to start one now.
+ *
+ * The header's `New Claude Terminal` / `New Codex Terminal` quick-launch buttons
+ * were removed: they resolved their directory from a fallback chain the person
+ * clicking could not see, so they started an agent in a workspace nobody picked.
+ * One `New Terminal` button opens the creator instead, and the creator turns THAT
+ * surface into the terminal in place — same content id, so the tab and pane counts
+ * these structural scenarios assert on are unchanged by the switch.
+ */
+async function startTerminalFromCreator(page: Page, preset: "claude" | "codex") {
+  await page.locator('[data-testid="workspace-scope-new-terminal"]').first().click()
+  const launchers = page.locator('[data-component="terminal-new-launchers"]')
+  await expect(launchers).toBeVisible({ timeout: 20_000 })
+  await launchers.locator(`[data-slot="terminal-launcher"][data-launcher-id="${preset}"]`).first().click()
+}
+
 async function buildDraftPlusTerminalSplit(page: Page) {
   // These structural scenarios keep the draft/terminal panes inert (no conversational
   // turn), but the app shell still has to BOOT: `ConnectionGate` polls
@@ -494,7 +517,7 @@ async function buildDraftPlusTerminalSplit(page: Page) {
   await unpinSidebarForSwitcher(page)
   await expect(page.locator('[data-testid="session-content"][data-session-id="new"]')).toBeVisible({ timeout: 20_000 })
 
-  await page.getByRole("button", { name: "New Claude Terminal", exact: true }).first().click()
+  await startTerminalFromCreator(page, "claude")
   await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible({ timeout: 20_000 })
   await expect(switcherTabs(page)).toHaveCount(2, { timeout: 10_000 })
 
@@ -662,7 +685,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await buildDraftPlusTerminalSplit(page)
     // Collapse to a single visible pane while keeping two background surfaces —
     // an MRU hidden surface for the split to reveal (same setup as behavior 8).
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
 
@@ -679,7 +702,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // Collapse to a single pane holding a 3rd surface (New Codex Terminal) so
     // mod+tab has an unambiguous MRU pair to toggle between the two BACKGROUND
     // tabs left over from the split.
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
     await expect(visiblePaneContents(page)).toHaveCount(1)
 
@@ -697,7 +720,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
 
   test("mod+<N> focuses the Nth-most-recently-used surface — behavior 9", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
 
     // Explicitly visit each background tab once to pin a known recency order:
@@ -731,7 +754,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
 
   test("the switcher tab strip preserves stable creation order across focus changes — behavior 10", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
 
     const orderOf = async () => {
@@ -806,7 +829,11 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // timeout is configured) for an element that is now gone, so a "none"
     // poll would hang to the test timeout instead of passing.
     await expect(sessionTab.locator("[data-switcher-status]")).toHaveCount(0, { timeout: 15_000 })
-    await expect(sessionTab.locator("[data-switcher-compact-label]")).toHaveCount(1)
+    // The identity label is `[data-testid="switcher-title"]` — the compact
+    // switcher rewrite folded the old `[data-switcher-compact-label]` span into
+    // the title button, and an assertion on a dead attribute is satisfied by any
+    // DOM at all, so it has to move with it.
+    await expect(sessionTab.locator('[data-testid="switcher-title"]')).toHaveCount(1)
   })
 
   test("switching away from a split and back restores it via the saved snapshot — behavior 13", async ({ page }) => {
@@ -815,7 +842,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
 
     // Navigate away to a THIRD surface — collapses to a single pane, saving a
     // snapshot for both A and B (`saveSnapshotsForCurrentLayout`).
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
     await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
 
@@ -947,12 +974,12 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // mode. The paned-slot scope also lets the second click be pinned as a
     // CHANGE of terminal id rather than "some terminal is on screen".
     const activeTerminal = page.locator('[data-workbench-content][data-pane-id] [data-testid="terminal-pane"]')
-    await page.getByRole("button", { name: "New Claude Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "claude")
     await expect(activeTerminal).toHaveCount(1, { timeout: 20_000 })
     await expect(activeTerminal).toBeVisible()
     const claudeTerminalId = await activeTerminal.getAttribute("data-terminal-id")
 
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(activeTerminal).toHaveCount(1, { timeout: 20_000 })
     await expect
       .poll(() => activeTerminal.getAttribute("data-terminal-id"), { timeout: 20_000 })
@@ -1161,7 +1188,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       .toBe(1)
 
     // Add a second pane (terminal) in the SAME directory/workspace via split.
-    await page.getByRole("button", { name: "New Claude Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "claude")
     await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible({ timeout: 20_000 })
     await expect(switcherTabs(page)).toHaveCount(2, { timeout: 10_000 })
     const draftTab = backgroundTitleButtons(page).first()
@@ -1210,7 +1237,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // background — `refs` climbs to 3 here, verified live, before the
     // close brings it back down to 2 (not 1 — two live surfaces, draft +
     // one terminal, remain after closing just one background tab).
-    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await startTerminalFromCreator(page, "codex")
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
     await expect(backgroundTitleButtons(page)).toHaveCount(2, { timeout: 10_000 })
     await expect

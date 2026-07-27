@@ -62,7 +62,10 @@
  *     `<input type="file" multiple>` sibling receives the file-picker selection. Use
  *     `openAttachPicker()` below rather than clicking it directly.
  *   `[data-action="prompt-submit"]` — send/stop/shell-send button; `data-icon` is `"stop"`
- *     while busy, `"arrow-undo-down"` in shell mode, else `"arrow-up"` (INVARIANTS.md #4).
+ *     while busy, `"arrow-undo-down"` in shell mode, else `"send"` (INVARIANTS.md #4).
+ *     `data-icon` carries the SEMANTIC icon id, which each theme maps to its own glyph
+ *     (the opencode theme draws `send` as its `arrow-up` sprite) — so assert the semantic
+ *     id, never the per-theme sprite name, or the assertion breaks on a theme swap.
  *   Image attachment chips (`image-attachments.tsx`): `img[alt=<filename>]` thumbnail
  *     (only when `mime` starts with `image/`; otherwise a folder-icon fallback), a remove
  *     button `aria-label="Remove attachment"`, clicking the thumbnail opens
@@ -330,7 +333,7 @@ test.describe("core composer modes @core", () => {
 
     await page.keyboard.press("Backspace")
     await expect(editor).not.toHaveClass(/font-mono/)
-    await expect(submit).toHaveAttribute("data-icon", "arrow-up")
+    await expect(submit).toHaveAttribute("data-icon", "send")
   })
 
   test("shell dispatch success clears the editor and resets to normal mode — behavior 4", async ({ page }) => {
@@ -418,7 +421,7 @@ test.describe("core composer modes @core", () => {
 
     await page.keyboard.press("Escape")
 
-    await expect(submit).toHaveAttribute("data-icon", "arrow-up")
+    await expect(submit).toHaveAttribute("data-icon", "send")
     await expect(editor).not.toHaveClass(/font-mono/)
   })
 

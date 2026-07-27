@@ -52,12 +52,21 @@
  *     (`src/claxedo-ui/layouts/workspace-toolbar.tsx`) on every render/click.
  *
  * ANATOMY —
+ *   `[data-testid="workspace-scope-new-terminal"]` (`[aria-label="New Terminal"]`) — the one
+ *     terminal button in the toolbar. It opens the terminal CREATOR rather than starting a
+ *     PTY: the header's directory is a fallback chain (`sidebarDir() ??
+ *     focusedPaneWorkspaceDir()`), so the per-agent quick-launch buttons that used to sit
+ *     here started an agent somewhere the user never picked. Hidden when the surface cannot
+ *     create terminals at all.
+ *   `[data-component="terminal-new-launchers"]` — the creator's launcher grid, rendered once
+ *     a workspace is chosen (prefilled on a workspace route). Each tile is
+ *     `[data-slot="terminal-launcher"][data-launcher-id]`: `shell` (plain login shell,
+ *     always present), then `claude`/`codex` when Settings → Terminals has a command for
+ *     them, then `custom:<id>` per saved custom command. The roster is derived from that one
+ *     settings blob by `terminalLaunchers()`, so it is not a per-surface JSX list any more.
  *   `[data-component="workspace-more-menu"]` — toolbar dropdown trigger ("chevron-down"
- *     next to the Claude/Codex quick-launch buttons); its menu holds "New Terminal", one
- *     item per saved custom command, and "Configure..." (opens Settings → Terminals).
- *   `[aria-label="New Claude Terminal"]` / `[aria-label="New Codex Terminal"]` — the "C"/
- *     "X" quick-launch buttons (hidden when `canUseTerminal()` is false, e.g. read-only
- *     role or global/dashboard view).
+ *     next to the terminal button). It no longer carries any terminal entries; only "New
+ *     Document" (when documents are available) and "Configure..." (Settings → Terminals).
  *   `[data-testid="rail-sidebar-terminal-row"]` — one per open terminal tab, with
  *     `data-terminal-id`, `data-pane-id`/`data-content-id`, `data-active`, `data-pending`.
  *     Contains a status dot `span[data-sidebar-status="working"|"permission"|"done"]`
@@ -77,15 +86,15 @@
  *     `wb.split.split(paneId, edge, contentId)`, creating a real geometric split.
  *
  * BEHAVIORS —
- *   1. The toolbar dropdown's "New Terminal" item creates a plain terminal: `POST
- *      /api/wr/pty` fires with a default numbered title ("Terminal N"), and a pane +
- *      sidebar row mount for it.
- *   2. The "C" quick-launch button creates a terminal whose PTY create body's
+ *   1. The creator's "Shell" tile creates a plain terminal: `POST /api/wr/pty` fires with a
+ *      default numbered title ("Terminal N") and no command, and a pane + sidebar row
+ *      mount for it.
+ *   2. The creator's Claude tile creates a terminal whose PTY create body's
  *      `command`/`args` are the parsed `claude` command from Settings → Terminals
  *      (default `claude --dangerously-skip-permissions`).
- *   3. The "X" quick-launch button does the same for the configured `codex` command.
- *   4. A custom command added and saved in Settings → Terminals appears as a dropdown
- *      item; selecting it creates a terminal whose PTY create body's `initialCommand`
+ *   3. The creator's Codex tile does the same for the configured `codex` command.
+ *   4. A custom command added and saved in Settings → Terminals appears as a creator tile;
+ *      pressing it creates a terminal whose PTY create body's `initialCommand`
  *      (non-agent-binary commands are not split into `command`/`args`) matches the saved
  *      command string, titled with the saved name.
  *   5. Typing into a focused terminal pane forwards the keystrokes to the PTY over the
@@ -619,41 +628,48 @@ async function waitForTerminalMounted(page: Page, ptyId: string) {
   await expect(sidebarTerminalRow(page, ptyId)).toBeVisible({ timeout: 15_000 })
 }
 
-/** Clicks the dropdown's "New Terminal" item and waits for the resulting PTY to mount. */
-async function createPlainTerminal(page: Page, api: PtyApi) {
+/**
+ * Opens the terminal creator and presses one of its launcher tiles.
+ *
+ * Every terminal now starts here. The toolbar dropdown used to carry "New
+ * Terminal" plus a row per configured command, and the header carried Claude
+ * and Codex quick-launch buttons; both resolved their directory from a fallback
+ * chain the person clicking could not see, so they started an agent somewhere
+ * nobody picked. `workspace-scope-new-terminal` opens the creator instead, which
+ * asks WHERE first and then offers the same roster as tiles — so the spec drives
+ * the two-step surface rather than the single-click one it replaced.
+ */
+async function launchFromCreator(page: Page, api: PtyApi, launcher: { id?: string; name?: string }) {
   const before = api.createdIds.length
-  await openToolbarDropdown(page)
-  await page.getByRole("menuitem", { name: "New Terminal" }).click()
+  await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+  const launchers = page.locator('[data-component="terminal-new-launchers"]')
+  await expect(launchers).toBeVisible({ timeout: 15_000 })
+  const tile = launcher.id
+    ? launchers.locator(`[data-slot="terminal-launcher"][data-launcher-id="${launcher.id}"]`)
+    : launchers.locator('[data-slot="terminal-launcher"]').filter({ hasText: launcher.name! })
+  await tile.first().click()
   await expect.poll(() => api.createdIds.length, { timeout: 15_000 }).toBe(before + 1)
   const id = api.createdIds[before]
   await waitForTerminalMounted(page, id)
   return id
+}
+
+/** Presses the creator's "Shell" tile — the plain login shell, no command. */
+async function createPlainTerminal(page: Page, api: PtyApi) {
+  return launchFromCreator(page, api, { id: "shell" })
 }
 
 async function createPresetTerminal(page: Page, api: PtyApi, preset: "claude" | "codex") {
-  const before = api.createdIds.length
-  const label = preset === "claude" ? "New Claude Terminal" : "New Codex Terminal"
-  // `exact: true` is required: the sidebar's per-workspace hover actions expose
-  // their OWN same-role quick-launch buttons with the colliding accessible
-  // name "New Claude terminal in main" / "New Codex terminal in main" (case-
-  // insensitive substring match makes the toolbar's exact "New Claude
-  // Terminal" ambiguous against that longer label otherwise) — confirmed via
-  // a real strict-mode-violation failure, not a hypothetical.
-  await page.getByRole("button", { name: label, exact: true }).click()
-  await expect.poll(() => api.createdIds.length, { timeout: 15_000 }).toBe(before + 1)
-  const id = api.createdIds[before]
-  await waitForTerminalMounted(page, id)
-  return id
+  return launchFromCreator(page, api, { id: preset })
 }
 
+/**
+ * Custom commands get a generated `custom:<id>` launcher id, so match on the
+ * name the user typed in Settings -> Terminals instead — that is also the thing
+ * the test is asserting reached the PTY.
+ */
 async function createCustomTerminal(page: Page, api: PtyApi, name: string) {
-  const before = api.createdIds.length
-  await openToolbarDropdown(page)
-  await page.getByRole("menuitem", { name }).click()
-  await expect.poll(() => api.createdIds.length, { timeout: 15_000 }).toBe(before + 1)
-  const id = api.createdIds[before]
-  await waitForTerminalMounted(page, id)
-  return id
+  return launchFromCreator(page, api, { name })
 }
 
 async function terminalPaintSummary(page: Page, ptyId: string) {
@@ -720,7 +736,7 @@ function contentIdFor(page: Page, ptyId: string) {
 }
 
 test.describe("core terminal panel @core", () => {
-  test("New Terminal creates a plain terminal with a default numbered title — behaviors 1", async ({ page }) => {
+  test("the creator's Shell tile creates a plain terminal with a default numbered title — behaviors 1", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-plain"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -736,7 +752,7 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Terminal/)
   })
 
-  test("the Claude quick-launch button uses the Settings -> Terminals Claude command — behaviors 2", async ({ page }) => {
+  test("the creator's Claude tile uses the Settings -> Terminals Claude command — behaviors 2", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-claude-preset"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
@@ -753,7 +769,7 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Claude/)
   })
 
-  test("the Codex quick-launch button uses the Settings -> Terminals Codex command — behaviors 3", async ({ page }) => {
+  test("the creator's Codex tile uses the Settings -> Terminals Codex command — behaviors 3", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-codex-preset"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)

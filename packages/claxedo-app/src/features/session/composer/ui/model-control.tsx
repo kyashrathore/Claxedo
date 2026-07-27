@@ -95,7 +95,13 @@ export function PromptModelControl(props: {
                 class={buttonClass}
                 style={props.controlStyle()}
                 aria-disabled={props.providerLoading()}
-                aria-label={props.connectRequired() ? props.label() : undefined}
+                // `as="div"` means this is a `role="button"` with no native name,
+                // and the only text inside it is `label()` — which is empty while
+                // the provider list is still loading, leaving an unnamed command
+                // in the composer (axe `aria-command-name`, serious). Fall back to
+                // the tooltip's own wording so the control is named in every
+                // state, not just the connect one.
+                aria-label={props.label() || props.chooseTitle}
                 onClick={() => {
                   if (props.providerLoading()) return
                   if (props.connectRequired()) {

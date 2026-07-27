@@ -419,7 +419,9 @@ async function sendFirstPrompt(page: Page, mock: MockRuntimeHandles, text: strin
  * a send starts from a clean, fully-scrolled-down state.
  */
 async function dismissJumpToBottom(page: Page) {
-  const jump = page.locator('button:has(use[href="#opencode-icon-arrow-down-to-line"])')
+  // Semantic icon id, not a theme's sprite href — the Codex theme draws
+  // `scroll-to-latest` from an external sprite and the old selector matched nothing.
+  const jump = page.locator('button:has([data-icon="scroll-to-latest"])')
   if (await jump.count()) {
     await jump.first().click({ timeout: 2_000 }).catch(() => {})
   }

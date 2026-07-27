@@ -197,7 +197,13 @@ function describeNew(ids: string[], results: AxeResults) {
   return ids
     .map((id) => {
       const violation = results.violations.find((entry) => entry.id === id)
-      return `  - ${id} (${violation?.impact ?? "unknown"}): ${violation?.description ?? ""} [${violation?.nodes.length ?? 0} node(s)] — ${violation?.helpUrl ?? ""}`
+      // The offending NODES, not just the rule id: a rule name alone sends the
+      // next person hunting through a whole page snapshot for the one element
+      // that broke, which is the slowest part of acting on this failure.
+      const nodes = (violation?.nodes ?? [])
+        .map((node) => `\n      • ${node.target.join(" ")} — ${node.html.slice(0, 160)}`)
+        .join("")
+      return `  - ${id} (${violation?.impact ?? "unknown"}): ${violation?.description ?? ""} [${violation?.nodes.length ?? 0} node(s)] — ${violation?.helpUrl ?? ""}${nodes}`
     })
     .join("\n")
 }

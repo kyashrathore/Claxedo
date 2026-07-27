@@ -63,8 +63,20 @@ function HarnessOptionIcon(props: { harness: HarnessType }) {
   return <Icon name="pi" size="small" class="shrink-0" />
 }
 
-// Serves both the trigger (`renderValue`) and the menu rows (`children`), so the
-// harness mark reads the same in either place.
+/**
+ * Renders a MENU ROW only — deliberately not the trigger.
+ *
+ * Kobalte names the trigger with `aria-labelledby` pointing at its own value
+ * span. With a plain string in there Chrome resolves that reference and the
+ * button is named "Claude"; with this markup in there it marks the reference
+ * INVALID and computes an empty name (verified against the running app through
+ * CDP's `Accessibility.getPartialAXTree`, and visible as an axe
+ * `aria-command-name` violation plus a `getByRole("button", { name: /^Claude$/ })`
+ * that matches nothing). The trigger therefore keeps the Select's plain-text
+ * `label`, and the harness mark lives in the rows, where nothing is naming
+ * anything by reference. This is the second time an icon has been put in the
+ * trigger's value renderer and taken the control's name with it, hence the note.
+ */
 function renderHarnessOption(option: HarnessType | undefined) {
   return (
     <Show when={option}>
@@ -545,7 +557,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         contentClass={COMPOSER_HARNESS_MENU_CLASS}
         triggerStyle={harnessTriggerStyle()}
         triggerProps={{ "data-action": "prompt-harness" }}
-        renderValue={renderHarnessOption}
         variant="ghost"
         disabled={harnessDisabled()}
       >

@@ -86,7 +86,7 @@ explicitly in its own SPEC block's INVARIANTS section, with a reason.
    the turn through the default OpenCode runtime instead.
 5. **Submit gating.** The submit control is the single source of truth for "can I send
    right now": `[data-action="prompt-submit"]`'s `data-icon` is `"stop"` while busy and
-   something else (`"arrow-up"` / `"arrow-undo-down"`) when ready; it is `disabled` when
+   something else (`"send"` / `"arrow-undo-down"`) when ready; it is `disabled` when
    gating (missing model/agent, readonly role, readiness polling, etc.) applies. Never
    assert readiness via a fixed `waitForTimeout` sleep — poll the control's actual state.
 

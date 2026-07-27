@@ -485,7 +485,13 @@ test.describe("mobile smoke @core", () => {
       // setup — 2 switcher tabs, 1 visible pane, nothing split yet. Creating the
       // terminal focuses it, backgrounding the draft (mirrors the desktop spec's
       // own ordering).
-      await page.getByRole("button", { name: "New Claude Terminal", exact: true }).first().click()
+      // The header's per-agent quick-launch buttons are gone; one "New Terminal"
+      // button opens the creator, whose tile turns that same surface into the
+      // terminal in place — so this still ends at 2 switcher tabs.
+      await page.locator('[data-testid="workspace-scope-new-terminal"]').first().click()
+      const launchers = page.locator('[data-component="terminal-new-launchers"]')
+      await expect(launchers).toBeVisible({ timeout: 20_000 })
+      await launchers.locator('[data-slot="terminal-launcher"][data-launcher-id="claude"]').first().click()
       await expect(page.locator('[data-testid="terminal-pane"]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[data-testid="compact-switcher-tab"]')).toHaveCount(2, { timeout: 10_000 })
 
