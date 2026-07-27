@@ -538,6 +538,25 @@ html[data-theme="codex"] [data-component="session-composer"] {
  * or dialog there is a bare panel on its shadow alone, which is why the ring is
  * stripped from those above; a card is a card, and takes an edge.
  */
+/*
+ * Positioners opt out of overlay chrome.
+ *
+ * Some overlays exist only to place something that draws its own surface — the
+ * session card sits inside a tooltip whose content is deliberately
+ * `border-none bg-transparent shadow-none`. The Codex rules above carry
+ * `!important` so they can beat each component's own stylesheet, which also
+ * beats that neutralisation, and the result is two strokes a pixel apart: one
+ * from the wrapper, one from the card.
+ */
+/* Class doubled deliberately. `html[data-theme="codex"] [data-component="tooltip"]`
+   scores the same as a single class here, and those rules appear later in the
+   file, so an equal-specificity opt-out would lose on source order alone. */
+html[data-theme="codex"] .theme-overlay-bare.theme-overlay-bare {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 html[data-theme="codex"] .ui-context-card.is-floating,
 html[data-theme="codex"] .session-envcard.is-floating,
 html[data-theme="codex"] [data-slot="switcher-metadata-card"],

@@ -269,7 +269,12 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                   value={<SwitcherMetadataCard item={item} />}
                   placement="bottom-start"
                   openDelay={240}
-                  contentClass="z-[260] p-0 border-none bg-transparent shadow-none"
+                  // `theme-overlay-bare`: this tooltip is a POSITIONER, not a
+                  // surface — the card inside draws the chrome. Codex gives every
+                  // overlay a hairline with `!important`, which beats the
+                  // `shadow-none` utility here and edged the wrapper as well as
+                  // the card, a pixel apart. The marker opts it out.
+                  contentClass="theme-overlay-bare z-[260] p-0 border-none bg-transparent shadow-none"
                   class="flex h-full w-5 shrink-0 items-center"
                 >
                   <button
