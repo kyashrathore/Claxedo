@@ -56,7 +56,15 @@
   [data-slot="popover-description"] {
     padding: 0 12px;
     margin: 0;
-    color: var(--overlay-text-muted);
+    /*
+     * Body copy, so it stays on `--text-base` and does NOT follow
+     * `--overlay-text-muted` with the group labels and disabled rows. The muted
+     * role is a de-emphasis tone sized for secondary marks; pointing a
+     * paragraph at it drops this text under 4.5:1 in 21 of the 38 bundled
+     * themes (oc-2 light 5.02:1 -> 3.23:1, material light 14.69:1 -> 2.59:1).
+     * A popover's description is the thing the popover exists to say.
+     */
+    color: var(--text-base);
 
     font-family: var(--font-family-sans);
     font-size: var(--font-size-small);

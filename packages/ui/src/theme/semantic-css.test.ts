@@ -5,6 +5,21 @@ import { describe, expect, test } from "bun:test"
  * bundled theme (see SEMANTIC_THEME_ROLE_FALLBACKS in resolve.ts), so a
  * floating surface can ask for `--overlay-surface` instead of reaching for a
  * `--codex-*` escape hatch with a generic fallback baked in behind it.
+ *
+ * The rename was NOT free for every declaration, and c02ca9c21b's message
+ * overstated it as "a rename and nothing more". That check compared each role
+ * against its own fallback; it should have compared each role against the token
+ * that actually sat in that declaration's fallback slot. Re-run per declaration
+ * across the 74 non-Codex theme/mode pairs, four of the six move nothing —
+ * content background, item label, item hover, and the muted group/disabled
+ * text are all identical everywhere. Two moved:
+ *
+ *   separator `border-top-color`: `border-weak-base` -> `overlay-border`
+ *     (= `border-base`), different in 74/74. Kept: the content border beside it
+ *     is `overlay-border` too, so the separator was the odd one out.
+ *   popover description: `text-base` -> `overlay-text-muted`, different in
+ *     74/74. NOT kept — it put body copy under 4.5:1 in 21 themes. See the
+ *     comment on that declaration in popover.css.
  */
 const overlayFiles = [
   "../components/context-menu.css",
