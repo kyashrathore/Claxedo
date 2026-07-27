@@ -277,7 +277,7 @@ export function claxedoPermissionModes(input: {
   // "Ask for everything" beside a list that already contains one would put two
   // names on one behaviour, which is the failure this design exists to avoid.
   if ((input.report?.modes.length ?? 0) > 0) return [auto]
-  return [auto, claxedoAskOption(input.harness)]
+  return [auto, claxedoAskOption(input.harness, input.hasSession)]
 }
 
 /**
@@ -302,6 +302,25 @@ export function claxedoPermissionModes(input: {
  * Because the caveat is now attached only at rung 3, it says something true
  * wherever it appears.
  */
+/**
+ * The next-turn caveat, or nothing on a draft.
+ *
+ * opencode's ruleset lands at the START of the next turn — `runLoop` snapshots
+ * the session row once at entry — so on a live session the warning is real and
+ * load-bearing. On a DRAFT it is neither: there is no turn running to keep its
+ * current rules, and the first message creates the session and runs under
+ * exactly this ruleset. Saying "applies from your next message" there tells the
+ * user their choice will be ignored for the very turn it actually governs.
+ *
+ * Same shape as the `next-session` caveat cursor gets, and suppressed for the
+ * same reason — a caveat about an existing session cannot be stated before one
+ * exists.
+ */
+function nextTurnCaveat(hasSession: boolean | undefined) {
+  if (hasSession === false) return {}
+  return { caveat: "Applies from your next message; the turn already running keeps its current rules" }
+}
+
 function claxedoAutoOption(input: {
   harness: HarnessId
   report?: HarnessModeReport
@@ -320,7 +339,7 @@ function claxedoAutoOption(input: {
       // below is that shape in opencode's vocabulary: a catch-all `ask`, then
       // grants for everything safe, leaving bash/network/out-of-project asking.
       description: "Everything runs without asking except shell, network and anything outside the project",
-      caveat: "Applies from your next message; the turn already running keeps its current rules",
+      ...nextTurnCaveat(input.hasSession),
       delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAutoRuleset(), appliesFrom: "next-turn" },
     }
   }
@@ -402,14 +421,14 @@ function autoDescription(input: {
 }
 
 /** The off switch, manufactured only where the harness supplies none. */
-function claxedoAskOption(harness: HarnessId): PermissionModeOption {
+function claxedoAskOption(harness: HarnessId, hasSession?: boolean): PermissionModeOption {
   if (PERMISSION_MECHANISMS[harness].kind === "opencode-session-ruleset") {
     return {
       id: CLAXEDO_ASK_ALWAYS_ID,
       name: "Ask for everything",
       description: "Every tool call waits for you",
       origin: "claxedo",
-      caveat: "Applies from your next message; the turn already running keeps its current rules",
+      ...nextTurnCaveat(hasSession),
       delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAskRuleset(), appliesFrom: "next-turn" },
     }
   }

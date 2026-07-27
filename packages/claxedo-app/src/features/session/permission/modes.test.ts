@@ -176,6 +176,26 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   /*
+   * The next-turn caveat is about a turn that is ALREADY RUNNING, so it cannot be
+   * stated before a session exists. On a draft the first message creates the
+   * session and runs under exactly this ruleset — telling the user it "applies
+   * from your next message" says their choice is ignored for the one turn it
+   * actually governs.
+   *
+   * Same rule as cursor's next-session caveat above, on the opencode path.
+   */
+  test("opencode's next-turn caveat is suppressed on a draft and present on a session", () => {
+    const draft = permissionModeOptions({ harness: "opencode", hasSession: false })
+    for (const option of draft.claxedo) expect(option.caveat, option.id).toBeUndefined()
+
+    const live = permissionModeOptions({ harness: "opencode", hasSession: true })
+    for (const option of live.claxedo) expect(option.caveat, option.id).toMatch(/next message/i)
+    // Both of Claxedo's options carry it, not just Auto — the off switch writes a
+    // ruleset too, so it lands at the same moment.
+    expect(live.claxedo.length).toBe(2)
+  })
+
+  /*
    * Auto's description quotes the mode id so a collapsed row can be checked
    * against the harness's own docs, and that now holds on a DRAFT too.
    *

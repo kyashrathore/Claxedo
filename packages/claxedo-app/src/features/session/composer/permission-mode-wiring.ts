@@ -35,6 +35,17 @@ export function createComposerPermissionModeWiring(input: {
    */
   harness: () => string | undefined
   /**
+   * Why this harness cannot report, when it cannot.
+   *
+   * The draft list is a RECORDED table, not something the agent said — so it
+   * answers just as confidently for a harness that failed to start as for one
+   * that is running. That produced a picker offering "Codex (ACP) · Agent" one
+   * line under "Codex could not start", which is worse than showing nothing:
+   * the modes look like the agent's own report, and choosing one appears to set
+   * a policy that can never be applied because there is no agent to apply it to.
+   */
+  harnessUnavailable?: () => string | undefined
+  /**
    * Both halves of the session client, intersected because this module needs
    * both and they come from different declarations: the transport helpers accept
    * the read client, while the writer port needs `update` for the opencode
@@ -104,6 +115,12 @@ export function createComposerPermissionModeWiring(input: {
   const cache = new Map<string, HarnessModeReport>()
 
   const report = (): HarnessModeReport | undefined => {
+    // Checked BEFORE the fetch result, because the fetch succeeds either way.
+    // The directory-scoped route answers from the recorded table without ever
+    // asking the agent, so a broken harness still returns a full, plausible
+    // list — and a list is the one thing that must not be shown here.
+    const unavailable = input.harnessUnavailable?.()
+    if (unavailable) return answered(unavailable)
     if (resource.error) {
       const detail = resource.error instanceof Error ? resource.error.message : String(resource.error)
       return answered(`Could not load permission modes: ${detail}`)
@@ -195,5 +212,7 @@ export function createComposerPermissionModeWiring(input: {
     autoAccept.toggle()
   }
 
-  return { report, pending, setPending, writer, reportError, selection, onSelectionChange }
+  return { report, pending, setPending, writer, reportError, selection, onSelectionChange,
+    /** Re-exported so the picker's groups can suppress every option, not just the list. */
+    harnessUnavailable: () => input.harnessUnavailable?.() }
 }

@@ -66,6 +66,8 @@ export function createComposerPermissionMode(input: {
    * harness that answered and has nothing.
    */
   report?: Accessor<HarnessModeReport | undefined>
+  /** Set when the harness could not start; suppresses every option. */
+  unavailable?: Accessor<string | undefined>
   selection: Accessor<PermissionSelection | undefined>
   onSelectionChange: (selection: PermissionSelection) => void
   sessionId: Accessor<string | undefined>
@@ -94,6 +96,23 @@ export function createComposerPermissionMode(input: {
 
   const groups = createMemo<PermissionModeGroups | undefined>(() => {
     const harness = input.harness()
+    /*
+     * A harness that could not start gets the REASON and nothing else.
+     *
+     * Not even Claxedo's own two options. They are offered everywhere else
+     * precisely because they work everywhere — but "works everywhere" assumes
+     * there is a turn to apply them to, and here the agent never came up. An
+     * "Auto" row under "codex-acp could not start" is choosable, looks applied,
+     * and changes nothing; showing the error alone is the only honest state.
+     *
+     * Deliberately checked BEFORE the unidentified-harness branch below: that
+     * one is about not yet KNOWING the harness, which is a different and
+     * recoverable situation.
+     */
+    const unavailable = input.unavailable?.()
+    if (unavailable) {
+      return { claxedo: [], harness: { label: harness ? harnessGroupLabel(harness) : "Harness", rows: [], unavailable } }
+    }
     // An UNIDENTIFIED harness still gets Claxedo's own modes. Auto and Manual are
     // ours and work everywhere — only their delivery differs — so withholding them
     // would leave the user with no permission control at all on a session whose

@@ -138,7 +138,30 @@ export function PromptPermissionControl(props: {
                         <MenuV2.Item
                           data-action="permission-modes-expand"
                           closeOnSelect={false}
-                          onSelect={() => setExpanded(true)}
+                          onSelect={() => {
+                            setExpanded(true)
+                            /*
+                             * Move focus onto a row, because this item is about to
+                             * delete itself.
+                             *
+                             * Expanding replaces the Auto row and this control with
+                             * the harness's own rows, so the element the user just
+                             * activated unmounts. Focus then falls to <body>, and
+                             * Kobalte's Escape handler is bound to the menu content —
+                             * so Escape silently stops closing the menu and a
+                             * keyboard user is stuck in it with no way out.
+                             *
+                             * Landing on the CHECKED row rather than the first is
+                             * also the better answer for arrow keys: the user starts
+                             * from what is currently in force instead of the top of a
+                             * list they then have to hunt through.
+                             */
+                            queueMicrotask(() => {
+                              const rows = document.querySelectorAll<HTMLElement>('[role="menuitem"][data-mode]')
+                              const checked = Array.from(rows).find((row) => row.hasAttribute("data-checked"))
+                              ;(checked ?? rows[0])?.focus()
+                            })
+                          }}
                         >
                           <span class="flex w-full items-center justify-between gap-2">
                             <span class="text-[13px] leading-4 text-v2-text-text-faint">

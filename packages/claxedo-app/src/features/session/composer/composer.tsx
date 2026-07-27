@@ -35,7 +35,7 @@ import { registerPromptModeCommands } from "@/features/session/composer/ui/mode-
 import { createPromptEditLoader, createPromptExampleRotation } from "@/features/session/composer/ui/lifecycle"
 import { PromptInputFrame } from "@/features/session/composer/ui/frame"
 import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
-import { promptDesignPlaceholder } from "@/features/session/composer/role-gate"
+import { harnessModesUnavailable, promptDesignPlaceholder } from "@/features/session/composer/role-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
 import { createPanePreferences } from "@/features/session/preferences/pane"
@@ -522,6 +522,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     sessionId: resolvedSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
+    harnessUnavailable: () =>
+      harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
+        configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
     client: sdk.client.session,
     requestFailedTitle: () => language.t("common.requestFailed"),
   })
@@ -569,6 +572,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // storage, and `permissionModeDeliverable` returning true for a harness delivery
     // is the signal that the day has come.
     report: permissionModeWiring.report,
+    unavailable: permissionModeWiring.harnessUnavailable,
     // Selection routing lives in the wiring: which store owns a choice depends on
     // whether the harness has modes of its own.
     selection: () => permissionModeWiring.selection(autoAccept.active()),
