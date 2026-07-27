@@ -65,7 +65,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         role="listbox"
         id={PROMPT_POPOVER_LISTBOX_ID}
         aria-label={props.documentPicker ? "Documents" : props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
-        class="codex-overlay-surface absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
+        class="theme-overlay-surface absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-auto no-scrollbar flex flex-col p-2 rounded-[12px]
                  bg-surface-raised-stronger-non-alpha shadow-[var(--shadow-lg-border-base)]"
         onMouseDown={(e) => e.preventDefault()}

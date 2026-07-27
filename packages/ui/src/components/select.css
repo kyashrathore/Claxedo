@@ -94,12 +94,12 @@
   min-width: 104px;
   max-width: 23rem;
   overflow: hidden;
-  border-radius: var(--codex-radius-overlay, var(--radius-md));
-  border: 1px solid var(--codex-border-overlay, var(--border-weak-base));
+  border-radius: var(--radius-md);
+  border: 1px solid var(--overlay-border);
   background-clip: padding-box;
-  background-color: var(--codex-surface-overlay, var(--surface-raised-stronger-non-alpha));
+  background-color: var(--overlay-surface);
   padding: 4px;
-  box-shadow: var(--codex-shadow-overlay, var(--shadow-xs-border));
+  box-shadow: var(--shadow-xs-border);
   z-index: 60;
 
   &[data-expanded] {
@@ -125,7 +125,7 @@
 
   [data-slot="select-section"] {
     padding: 4px 8px 2px;
-    color: var(--codex-text-overlay-muted, var(--text-weak));
+    color: var(--overlay-text-muted);
     font-family: var(--font-family-sans);
     font-size: var(--font-size-x-small);
     font-weight: var(--font-weight-medium);
@@ -150,17 +150,27 @@
     line-height: var(--line-height-large); /* 166.667% */
     letter-spacing: var(--letter-spacing-normal);
 
-    color: var(--codex-text-overlay, var(--text-strong));
+    /* Body copy — the thing the menu exists to say — so it takes the full-strength
+       overlay role, never the muted one. The muted role is for secondary marks
+       (the group label and the disabled row below). Measured across all 38
+       bundled themes in both schemes: 2/76 pairs sit under 4.5:1 here, the same
+       2 as before the semantic rename, and both are pre-existing
+       (catppuccin-frappe/macchiato in light). */
+    color: var(--overlay-text);
 
     outline: none;
     user-select: none;
 
     &[data-highlighted] {
-      background: var(--codex-surface-overlay-hover, var(--surface-raised-base-hover));
+      background: var(--overlay-surface-hover);
     }
     &[data-disabled] {
-      color: var(--codex-text-overlay-muted, var(--text-weak));
-      background-color: var(--codex-surface-overlay, var(--surface-raised-base));
+      color: var(--overlay-text-muted);
+      /* Paints the panel's own surface over the row, so it must track the panel.
+         The generic token this used to name drifted from it in 73 of the 74
+         non-Codex theme/mode pairs — a disabled row was tinted against its own
+         menu (oc-2 light painted #F3F3F3 onto a #ffffff panel). */
+      background-color: var(--overlay-surface);
       pointer-events: none;
     }
     [data-slot="select-select-item-indicator"] {
@@ -175,7 +185,7 @@
       outline: none;
     }
     &:hover {
-      background: var(--codex-surface-overlay-hover, var(--surface-raised-base-hover));
+      background: var(--overlay-surface-hover);
     }
   }
 }

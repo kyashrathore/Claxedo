@@ -70,6 +70,9 @@ describe("ClaxedoIcon", () => {
         <ClaxedoIcon name="split" />
         <ClaxedoIcon name="unified" />
         <ClaxedoIcon name="worktree" />
+        <ClaxedoIcon name="marketplace" />
+        <ClaxedoIcon name="providers" />
+        <ClaxedoIcon name="models" />
       </>
     ))
 
@@ -85,6 +88,9 @@ describe("ClaxedoIcon", () => {
     expect(view.container.querySelector('use[href="#claxedo-icon-diff-split"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-diff-unified"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-worktree"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href="#claxedo-icon-marketplace"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href="#claxedo-icon-providers"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href="#claxedo-icon-models"]')).toBeTruthy()
   })
 
   test("keeps left and right panel states on their mirrored Codex glyphs", () => {
@@ -136,8 +142,25 @@ describe("ClaxedoIcon", () => {
       </>
     ))
 
-    expect(view.container.querySelector('button[data-icon="reload"]')).toHaveAttribute("data-icon-interaction", "standalone")
+    expect(view.container.querySelector('button[data-icon="reload"]')).toHaveAttribute(
+      "data-icon-interaction",
+      "persistent",
+    )
     expect(view.container.querySelector('use[href$="#codex-20-004"]')).toBeTruthy()
     expect(view.container.querySelector('button[data-icon="sidebar"]')).toHaveAttribute("data-icon-interaction", "binary")
+  })
+
+  // The send arrow sits inside a filled circle and has to stay legible against
+  // it. That takes two halves: the persistent default emitted here, and the
+  // inverse-foreground rule keyed on it in `app/styles/ui-overrides.css`. This
+  // asserts the half this component owns — that a default primary icon button
+  // is still the element that rule selects.
+  test("a default primary icon button matches the inverse-foreground rule", () => {
+    const view = render(() => <ClaxedoIconButton icon="send" variant="primary" aria-label="Send" />)
+    const button = view.container.querySelector('button[data-icon="send"]')
+
+    expect(
+      button?.matches('[data-component="icon-button"][data-variant="primary"][data-icon-interaction="persistent"]'),
+    ).toBe(true)
   })
 })

@@ -30,6 +30,16 @@ const claxedoIcons = {
   pin: `<path d="M6.667 10.417H13.333M8.333 10.417V5H11.667V10.417M10 10.417V16.667" stroke="currentColor" stroke-linecap="square"/>`,
   "pin-filled": `<path d="m8.69891 2.27336c.61298-.91267 1.85279-1.04591 2.67379-.40625l.1582.13867.003.00195 2.4433 2.41504.002.00195c.4266.42675.5579.99704.499 1.50586-.0582.50163-.3073 1.00104-.7187 1.31836l-.0069.00586-.0078.00586-2.415 1.72461c-.1659.11864-.2814.29628-.3223.49609l-.5293 2.59084-.0029.0166-.0039.0156c-.1932.7147-.70508 1.2981-1.36526 1.5254-.68313.2349-1.44732.0609-2.04883-.585l-1.69336-1.6679-2.99316 2.9941c-.20505.2047-.53727.2049-.74219 0-.2047-.2049-.20464-.5372 0-.7422l2.98731-2.9883-1.59571-1.57125c-.58829-.57126-.78754-1.34847-.59179-2.04199.19649-.69522.77364-1.25029 1.60644-1.41308l2.48047-.57227c.19499-.04517.367-.16097.48145-.3252z" fill="currentColor"/>`,
   kebab: `<circle cx="10" cy="5" r="2" fill="currentColor"/><circle cx="10" cy="10" r="2" fill="currentColor"/><circle cx="10" cy="15" r="2" fill="currentColor"/>`,
+  // Navigation marks. The extracted sprite has no distinct glyph for any of
+  // these three, so all three used to alias codex-20-123 — one sparkle standing
+  // in for Marketplace, Models and Providers at once, which made the Settings
+  // tab list unreadable. Drawn locally instead: a shop bag, a sparkle, and a
+  // chip. Geometry matches the same three names in the upstream `icons` table in
+  // `packages/ui/src/components/icon.tsx`, so a callsite renders the same mark
+  // whichever component it reaches for.
+  marketplace: `<path d="M5 6.66667H15L14.1667 16.25H5.83333L5 6.66667Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.5 6.66667V5C7.5 3.61929 8.61929 2.5 10 2.5C11.3807 2.5 12.5 3.61929 12.5 5V6.66667" stroke="currentColor" stroke-linecap="round"/>`,
+  models: `<path fill-rule="evenodd" clip-rule="evenodd" d="M17.5 10C12.2917 10 10 12.2917 10 17.5C10 12.2917 7.70833 10 2.5 10C7.70833 10 10 7.70833 10 2.5C10 7.70833 12.2917 10 17.5 10Z" stroke="currentColor"/>`,
+  providers: `<path d="M10.0001 4.37562V2.875M13 4.37793V2.87793M7.00014 4.37793V2.875M10 17.1279V15.6279M13 17.1279V15.6279M7 17.1279V15.6279M15.625 13.0029H17.125M15.625 7.00293H17.125M15.625 10.0029H17.125M2.875 10.0029H4.375M2.875 13.0029H4.375M2.875 7.00293H4.375M4.375 4.37793H15.625V15.6279H4.375V4.37793ZM12.6241 10.0022C12.6241 11.4519 11.4488 12.6272 9.99908 12.6272C8.54934 12.6272 7.37408 11.4519 7.37408 10.0022C7.37408 8.55245 8.54934 7.3772 9.99908 7.3772C11.4488 7.3772 12.6241 8.55245 12.6241 10.0022Z" stroke="currentColor" stroke-linecap="square"/>`,
   "more-horizontal": `<circle cx="5" cy="10" r="1.6" fill="currentColor"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/><circle cx="15" cy="10" r="1.6" fill="currentColor"/>`,
   "magnifying-glass": `<path d="M15.75 15.75L12.8023 12.8023M14.444 8.34701C14.444 11.4382 11.9382 13.944 8.84701 13.944C5.75587 13.944 3.25 11.4382 3.25 8.34701C3.25 5.25587 5.75587 2.75 8.84701 2.75C11.9382 2.75 14.444 5.25587 14.444 8.34701Z" stroke="currentColor" stroke-linecap="square"/>`,
   "magnifying-glass-menu": `<path d="M2.08325 10.0002H4.58325M2.08325 5.41683H5.41659M2.08325 14.5835H5.41659M16.4583 13.9585L18.7499 16.2502M17.9166 10.0002C17.9166 12.9917 15.4915 15.4168 12.4999 15.4168C9.50838 15.4168 7.08325 12.9917 7.08325 10.0002C7.08325 7.00862 9.50838 4.5835 12.4999 4.5835C15.4915 4.5835 17.9166 7.00862 17.9166 10.0002Z" stroke="currentColor" stroke-linecap="square"/>`,
@@ -117,6 +127,8 @@ const customGlyphs = {
   "codex-custom-kebab": "kebab",
   "codex-custom-magnifying-glass": "magnifying-glass",
   "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
+  "codex-custom-marketplace": "marketplace",
+  "codex-custom-models": "models",
   "codex-custom-more-horizontal": "more-horizontal",
   "codex-custom-openai": "openai",
   "codex-custom-opencode": "opencode",
@@ -125,6 +137,7 @@ const customGlyphs = {
   "codex-custom-pin": "pin",
   "codex-custom-pin-filled": "pin-filled",
   "codex-custom-pi": "pi",
+  "codex-custom-providers": "providers",
   "codex-custom-send": "send",
   "codex-custom-stop": "stop",
   "codex-custom-worktree": "worktree",

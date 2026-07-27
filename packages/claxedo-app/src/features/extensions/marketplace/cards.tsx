@@ -54,11 +54,11 @@ export const MachineSection: Component<{
         <For each={grouped()}>
           {([harness, items]) => (
             <div class="flex flex-col gap-2">
-              <div class="flex items-baseline gap-2 px-1">
+              <div class="flex items-baseline gap-2 px-2">
                 <h3 class="text-[12px] font-medium text-text-base">{HARNESS_LABEL[harness]}</h3>
                 <span class="text-[10px] text-text-weaker">{items.length}</span>
               </div>
-              <div class="grid grid-cols-1 gap-1 lg:grid-cols-2">
+              <div class="marketplace-grid grid gap-0.5">
                 <For each={items}>
                   {(item) => (
                     <MachineCard
@@ -87,18 +87,19 @@ export const MachineCard: Component<{
     return home.replace(/^\/Users\/[^/]+/, "~")
   })
   return (
-    <div class="group/machine relative flex items-center gap-3 rounded-md border border-border-weak-base/30 bg-surface-raised-base/20 px-3 py-2.5 transition-colors hover:border-border-weak-base/60 hover:bg-surface-raised-base/40">
+    // Same flat two-line row shape as ExtensionCard: hover surface only.
+    <div class="marketplace-row group/machine relative flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-base-hover/40">
       <div class="grid size-7 shrink-0 place-items-center rounded bg-surface-base text-[12px] text-text-weak">
         {props.item.kind === "skill" ? "📘" : props.item.kind === "mcp" ? "🔌" : "🧩"}
       </div>
-      <div class="min-w-0 flex-1">
-        <div class="flex items-baseline gap-2">
+      <div class="marketplace-row-lines min-w-0 flex-1">
+        <div class="marketplace-row-line flex items-baseline gap-2">
           <span class="truncate text-[12px] font-medium text-text-strong">{props.item.name}</span>
           <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-[9px] uppercase tracking-wider text-text-weak">
             {props.item.kind === "native-plugin" ? "Plugin" : props.item.kind === "mcp" ? "MCP" : "Skill"}
           </span>
         </div>
-        <div class="mt-0.5 truncate font-mono text-[10px] text-text-weaker">{shortPath()}</div>
+        <div class="marketplace-row-line mt-0.5 truncate font-mono text-[10px] text-text-weaker">{shortPath()}</div>
       </div>
       <span class="flex h-6 shrink-0 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-weak group-hover/machine:hidden">
         <Icon name="check-small" size="small" class="text-icon-success-base" />
@@ -222,7 +223,14 @@ export const ExtensionCard: Component<{
   })
 
   return (
-    <div class="group flex items-start gap-3 rounded-md border border-border-weak-base/30 bg-surface-raised-base/20 px-3.5 py-3 transition-colors hover:border-border-weak-base/70 hover:bg-surface-raised-base/50">
+    // A flat two-line row, not a card: no border, no filled surface. The only
+    // surface is the hover background, which spans the full row. The two lines
+    // are structural, not a hope — line 1 is a no-wrap flex row and line 2 is
+    // clamped to one line, so no entry can grow a third.
+    <div
+      class="marketplace-row group flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-base-hover/40"
+      title={`${sourceLabel()} · ${scopeLabel()} scope`}
+    >
       <div class="grid size-9 shrink-0 place-items-center rounded-md bg-surface-base text-[16px]">
         <Show
           when={props.entry.icon}
@@ -251,33 +259,32 @@ export const ExtensionCard: Component<{
           <span aria-hidden="true">{props.entry.icon}</span>
         </Show>
       </div>
-      <div class="min-w-0 flex-1">
-        <div class="flex items-baseline justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-baseline gap-2">
-              <span class="truncate text-[13px] font-medium text-text-strong">{props.entry.name}</span>
-              <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-[9px] uppercase tracking-wider text-text-weak">
-                {KIND_LABEL[props.entry.kind]}
-              </span>
-            </div>
-            <div class="mt-0.5 line-clamp-1 text-[12px] text-text-weak">{props.entry.description}</div>
-          </div>
-          <InstallButton
-            installed={props.installed}
-            status={props.status}
-            enabled={props.enabled}
-            toggling={props.toggling}
-            onClick={props.onInstall}
-            onUninstall={props.onUninstall}
-            onToggleEnablement={props.onToggleEnablement}
-          />
+      <div class="marketplace-row-lines min-w-0 flex-1">
+        <div class="marketplace-row-line flex items-baseline gap-2">
+          <span class="truncate text-[13px] font-medium text-text-strong">{props.entry.name}</span>
+          <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-[9px] uppercase tracking-wider text-text-weak">
+            {KIND_LABEL[props.entry.kind]}
+          </span>
+          {/* Scope + source used to own a third line. Folded onto the name line
+              and hidden in a narrow pane, where the row's title attribute is
+              the only place they remain. */}
+          <span class="marketplace-row-meta flex min-w-0 items-baseline gap-1.5 text-[10px] text-text-weaker">
+            <span class="shrink-0">{scopeLabel()}</span>
+            <span class="shrink-0 text-text-weaker/60">·</span>
+            <span class="truncate font-mono">{sourceLabel()}</span>
+          </span>
         </div>
-        <div class="mt-1.5 flex items-center gap-1.5 text-[10px] text-text-weaker">
-          <span>{scopeLabel()}</span>
-          <span class="text-text-weaker/60">·</span>
-          <span class="truncate font-mono">{sourceLabel()}</span>
-        </div>
+        <div class="marketplace-row-line mt-0.5 line-clamp-1 text-[12px] text-text-weak">{props.entry.description}</div>
       </div>
+      <InstallButton
+        installed={props.installed}
+        status={props.status}
+        enabled={props.enabled}
+        toggling={props.toggling}
+        onClick={props.onInstall}
+        onUninstall={props.onUninstall}
+        onToggleEnablement={props.onToggleEnablement}
+      />
     </div>
   )
 }

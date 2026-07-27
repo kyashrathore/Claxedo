@@ -167,19 +167,25 @@ function ContextChipPicker(props: { chip: ContextChip }) {
         <Kobalte.Content
           ref={contentRef}
           data-context-chip-picker={chip().slot}
-          class={`${COMPOSER_MENU_CLASS} z-50 flex flex-col overflow-hidden border border-border-base shadow-md outline-none`}
+          // No `border` + `shadow-md` here. Those gave this picker a hard 1px
+          // edge and a shadow that resolved to transparent layers, so beside the
+          // permission menu — which is a MenuV2 and paints
+          // `--v2-elevation-floating` — it read as a different design language.
+          // The elevation token carries its own 0.5px hairline, so the border is
+          // redundant as well as inconsistent.
+          class={`${COMPOSER_MENU_CLASS} z-50 flex flex-col overflow-hidden outline-none`}
           style={{
             "max-height": "min(360px, var(--kb-popper-content-available-height, 360px))",
             /*
-             * Fall back to the FLOATING surface, not a background layer. This
-             * menu is an overlay, so off Codex it has to land on the same
-             * surface every other overlay uses (`DropdownMenu`, `Select`,
-             * `Popover` all fall back to `--surface-raised-stronger-non-alpha`).
-             * `--v2-background-bg-layer-01` is a page layer — on oc-2 light it
-             * is #fafafa against those menus' #ffffff, which is exactly why this
-             * picker read grey while every other menu stayed white.
+             * The FLOATING surface, not a background layer. This menu is an
+             * overlay, so it has to land on the same surface every other
+             * overlay uses — `--overlay-surface` is the semantic role every
+             * theme resolves for `DropdownMenu`, `Select` and `Popover`, and
+             * off Codex it resolves to the generic raised token they already
+             * shared. A page layer such as `--v2-background-bg-layer-01` is
+             * what made this one picker read grey against their white.
              */
-            background: "var(--codex-surface-overlay, var(--surface-raised-stronger-non-alpha))",
+            background: "var(--overlay-surface)",
           }}
           onEscapeKeyDown={(event) => {
             close()
@@ -203,30 +209,6 @@ function ContextChipPicker(props: { chip: ContextChip }) {
             // No sortBy: the caller's order is meaningful (the current project
             // first, `main` before other worktrees) and alphabetising it would
             // scramble that.
-            add={
-              chip().action
-                ? {
-                    // Upstream separates its footer action from the list with a
-                    // 1px rule; `List` renders the add slot inside the last group,
-                    // so the rule is a top border on the slot itself.
-                    class: "mt-1 border-t border-v2-border-border-muted pt-1",
-                    render: () => (
-                      <button
-                        data-slot="context-chip-action"
-                        type="button"
-                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-surface-raised-base hover:text-text-base"
-                        onClick={() => {
-                          close()
-                          chip().action!.onSelect()
-                        }}
-                      >
-                        <Icon name="plus-small" size="small" class="shrink-0" />
-                        <span class="truncate">{chip().action!.label}</span>
-                      </button>
-                    ),
-                  }
-                : undefined
-            }
             onSelect={(option) => {
               close()
               if (option) chip().onSelect(option.value)
@@ -250,6 +232,38 @@ function ContextChipPicker(props: { chip: ContextChip }) {
               </>
             )}
           </List>
+          {/*
+            A SIBLING of `List`, not its `add` slot. The slot renders inside
+            `[data-slot="list-scroll"]`, which carries a scroll-driven
+            `mask: linear-gradient(...)` (see list.css) — so while the list was
+            scrollable this row sat under a 20px fade and dimmed along with the
+            content behind it, hover state included. Out here it is outside the
+            mask and outside the scroll box, so it always renders whole and the
+            list shrinks to make room for it.
+          */}
+          <Show when={chip().action}>
+            {(action) => (
+              <div class="mt-1 shrink-0 border-t border-v2-border-border-muted p-1 pt-1">
+                <button
+                  data-slot="context-chip-action"
+                  type="button"
+                  // `--overlay-surface-hover` rather than a page-layer token: this row
+                  // sits in the same menu as the option rows above it and has to pick up
+                  // the same highlight. `surface-raised-base` is a *resting* surface, and
+                  // against the menu's own white it landed 6 levels lighter than the rows
+                  // — present in the computed style, invisible on screen.
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-[var(--overlay-surface-hover)] hover:text-text-base"
+                  onClick={() => {
+                    close()
+                    action().onSelect()
+                  }}
+                >
+                  <Icon name="plus-small" size="small" class="shrink-0" />
+                  <span class="truncate">{action().label}</span>
+                </button>
+              </div>
+            )}
+          </Show>
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

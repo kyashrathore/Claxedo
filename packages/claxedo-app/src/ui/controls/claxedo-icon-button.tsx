@@ -17,7 +17,13 @@ export function ClaxedoIconButton(props: ComponentProps<"button"> & ClaxedoIconB
       {...rest}
       data-component="icon-button"
       data-icon={props.icon}
-      data-icon-interaction={props["data-icon-interaction"] ?? "standalone"}
+      // An icon button that says nothing about its state is a control that is
+      // always on screen, so it starts at full strength rather than dim. This
+      // also lets a filled `primary` button keep its own inverse foreground —
+      // the `[data-variant="primary"][data-icon-interaction="persistent"]` rule
+      // in `app/styles/ui-overrides.css` only reaches the persistent default,
+      // and without it the send arrow paints the same colour as its circle.
+      data-icon-interaction={props["data-icon-interaction"] ?? "persistent"}
       data-size={split.size || "normal"}
       data-variant={split.variant || "secondary"}
       classList={{

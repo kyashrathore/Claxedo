@@ -32,6 +32,7 @@ import {
 } from "./install-flow"
 import { CategoryButton, sectionTitle } from "./filters"
 import { DiscoveredSection, ExtensionCard, MachineSection } from "./cards"
+import "./marketplace.css"
 
 export const MarketplacePanel: Component<{ directory?: string; request?: typeof fetch }> = (props) => {
   const dialog = useDialog()
@@ -393,10 +394,13 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   }
 
   return (
-    <div class="flex h-full min-h-0 bg-background-base">
-      <div class="mx-auto flex min-h-0 w-full max-w-[1080px] gap-10 px-8 lg:px-12">
-        <aside class="sticky top-0 hidden h-full w-[180px] shrink-0 flex-col gap-0.5 self-start overflow-y-auto pt-12 pb-12 md:flex">
-          <div class="mb-3 px-2 text-[12px] font-medium text-text-weak">Marketplace</div>
+    <div class="marketplace-page flex h-full min-h-0 bg-background-base">
+      <div class="marketplace-layout mx-auto flex min-h-0 w-full max-w-[1080px]">
+        {/* The one and only category list. Narrow panes reflow it into a
+            horizontal chip strip above the content (marketplace.css); they do
+            not render a second copy. */}
+        <aside class="marketplace-sidebar" aria-label="Marketplace categories">
+          <div class="marketplace-sidebar-heading mb-3 px-2 text-[12px] font-medium text-text-weak">Marketplace</div>
           <CategoryButton
             label="Featured"
             active={activeCategory() === "featured"}
@@ -419,7 +423,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
             count={machineItems().length}
             onClick={() => setActiveCategory("on-machine")}
           />
-          <div class="my-3 h-px bg-border-weak-base/20" />
+          <div class="marketplace-sidebar-rule bg-border-weak-base/20" />
           <For each={(catalog()?.categories ?? []).filter((c) => c.id !== "featured")}>
             {(cat) => (
               <CategoryButton
@@ -429,7 +433,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
               />
             )}
           </For>
-          <div class="my-3 h-px bg-border-weak-base/20" />
+          <div class="marketplace-sidebar-rule bg-border-weak-base/20" />
           <button
             type="button"
             class="group flex h-7 items-center gap-1.5 rounded px-2 text-left text-[12px] text-text-weak transition-colors hover:text-text-base disabled:opacity-50"
@@ -442,7 +446,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
           </button>
         </aside>
 
-        <main class="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto pt-12 pb-16">
+        <main class="marketplace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           <label class="flex min-h-11 items-center gap-2.5 rounded-lg border border-border-weak-base/40 bg-surface-raised-base/20 px-3.5 transition-colors focus-within:border-border-weak-base/80">
             <Icon name="magnifying-glass" size="small" class="text-icon-weak-base" />
             <input
@@ -488,11 +492,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
             <Show when={catalog() && !catalog.loading}>
               <Show when={showFeaturedRow()}>
                 <section class="flex flex-col gap-2.5">
-                  <div class="flex items-baseline justify-between">
+                  <div class="flex items-baseline justify-between px-2">
                     <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">Featured</h2>
-                    <span class="text-[11px] text-text-weaker">Hand-picked to start with.</span>
+                    <span class="marketplace-section-detail text-[11px] text-text-weaker">Hand-picked to start with.</span>
                   </div>
-                  <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  <div class="marketplace-grid grid gap-0.5">
                     <For each={featuredEntries()}>
                       {(entry) => (
                         <ExtensionCard
@@ -513,11 +517,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
 
               <Show when={!showFeaturedRow() && activeCategory() !== "on-machine"}>
                 <section class="flex flex-col gap-2.5">
-                  <div class="flex items-baseline justify-between">
+                  <div class="flex items-baseline justify-between px-2">
                     <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">
                       {sectionTitle(activeCategory(), catalog()?.categories ?? [])}
                     </h2>
-                    <span class="text-[11px] text-text-weaker">
+                    <span class="marketplace-section-detail text-[11px] text-text-weaker">
                       {visibleEntries().length} {visibleEntries().length === 1 ? "extension" : "extensions"}
                     </span>
                   </div>
@@ -533,7 +537,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                       </div>
                     }
                   >
-                    <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                    <div class="marketplace-grid grid gap-0.5">
                       <For each={visibleEntries()}>
                         {(entry) => (
                           <ExtensionCard

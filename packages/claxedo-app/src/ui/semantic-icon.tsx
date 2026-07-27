@@ -27,10 +27,12 @@ export const SEMANTIC_ICON = {
   project: "folder",
   /** A git branch. */
   branch: "branch",
-  /** Session isolation — the main local checkout. Codex uses the Worktree
-   *  glyph for this row even when its value is "Main". */
-  isolationLocal: "worktree",
-  /** Session isolation — a dedicated git worktree. */
+  /** Session isolation — the main local checkout. Shares the folder glyph with
+   *  `project` on purpose: both name a directory on disk, and they never appear
+   *  as glyphs on the same surface. `isolationWorktree` is the alternative
+   *  value of this same field, so it must stay a different glyph. */
+  isolationLocal: "folder",
+  /** Session isolation — a dedicated git worktree (a forked-off working tree). */
   isolationWorktree: "worktree",
   /** Session isolation — a remote cloud / user-hosted sandbox. */
   isolationCloud: "server",

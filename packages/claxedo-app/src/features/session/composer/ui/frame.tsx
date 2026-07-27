@@ -180,6 +180,14 @@ export const PromptInputFrame: Component<{
   <ComposerNoticeProvider channel={inherited ?? own!}>
   <div
     ref={props.rootRef}
+    // Load-bearing beyond naming: this is the CSS container ROOT. Its only
+    // consumer is `[data-component="composer-frame"]` in index.css, which sets
+    // `container-name: prompt-composer` — the box the composer's responsive
+    // collapse measures. Rename or drop it and the `@container prompt-composer`
+    // block stops matching entirely: every `.composer-compact-only` mark stays
+    // `display: none` and no control label ever hides, so the toolbar silently
+    // stops collapsing at narrow widths. Nothing catches that — the collapse is
+    // a container query, which jsdom does not resolve.
     data-component="composer-frame"
     classList={{
       "relative size-full flex flex-col gap-0": true,
@@ -212,9 +220,21 @@ export const PromptInputFrame: Component<{
     <ComposerNoticeRow notice={notice()} />
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}
+      // Theming hooks, not geometry. `data-surface` lets a theme paint the
+      // composer as a named shell surface alongside the sidebar and header;
+      // `data-dock-border-underlay` picks the v2 elevation, now carried as
+      // `--dock-shell-visual-shadow` plus a 0.5px ring that masks overlapping
+      // surfaces (see dock-surface.css).
+      data-surface="composer"
+      data-dock-border-underlay="v2"
       onSubmit={props.handleSubmit}
       classList={{
-        "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+        // Deliberately no `shadow-[var(--v2-elevation-raised)]` here. Tailwind
+        // utilities are imported at `layer(utilities)` and dock-surface.css at
+        // `layer(components)`, so the utility would win the `box-shadow`
+        // cascade outright and drop the ring — same elevation, no mask. The
+        // attribute above restores the identical elevation value with it.
+        "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base": true,
         // Overlap the notice row's bottom lip so the two read as one stacked
         // card, the same way the composer overlaps the context row upstairs.
         "relative z-10 -mt-2": !!notice(),

@@ -139,6 +139,8 @@
   --color-border-info-hover: var(--border-info-hover);
   --color-border-info-selected: var(--border-info-selected);
   --color-icon-base: var(--icon-base);
+  --color-icon-interaction-muted: var(--icon-interaction-muted);
+  --color-icon-interaction-strong: var(--icon-interaction-strong);
   --color-icon-hover: var(--icon-hover);
   --color-icon-active: var(--icon-active);
   --color-icon-selected: var(--icon-selected);

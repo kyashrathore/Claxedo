@@ -20,7 +20,11 @@ export function GlobalNavigation(props: {
   const isDocuments = () => path().includes("/page/")
 
   return (
-    <div class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15" data-testid="global-navigation">
+    <div
+      data-testid="global-navigation"
+      data-slot="global-navigation"
+      class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15"
+    >
       <NavigationRow icon="plus-small" label={props.newProjectLabel} onClick={props.onNewProject} />
       <Show when={props.onOpenPages}><NavigationRow icon="page" label="Documents" onClick={props.onOpenPages} active={isDocuments()} testId="sidebar-documents-entry" ariaLabel="Open Documents" /></Show>
       <Show when={props.onOpenMarketplace}><NavigationRow icon="marketplace" label="Marketplace" onClick={props.onOpenMarketplace} active={isMarketplace()} testId="sidebar-marketplace-entry" ariaLabel="Open Marketplace" /></Show>
@@ -43,16 +47,20 @@ function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "mark
       onClick={() => props.onClick?.()}
       aria-label={props.ariaLabel ?? props.label}
     >
-      <span data-icon-interaction="persistent" class="flex size-4 shrink-0 items-center justify-center">
-        <Icon
-          name={props.icon}
-          size="small"
-          class="transition-colors duration-100"
-          classList={{
-            "text-text-strong": props.active,
-            "text-icon-weak-base": !props.active,
-          }}
-        />
+      {/*
+        The interaction attribute IS the color. `data-icon-interaction` paints
+        the wrapper and forces the glyph to `inherit` (see the icon-interaction
+        grammar in app/styles/ui-overrides.css), so a utility class on the Icon
+        cannot win — an unconditional "persistent" here rendered every row's
+        glyph at the emphasized color and flattened the active state. Vary the
+        attribute instead: persistent when this row is the current page, passive
+        otherwise.
+      */}
+      <span
+        data-icon-interaction={props.active ? "persistent" : "passive"}
+        class="flex size-4 shrink-0 items-center justify-center"
+      >
+        <Icon name={props.icon} size="small" class="transition-colors duration-100" />
       </span>
       <span class="min-w-0 truncate leading-4">{props.label}</span>
     </button>

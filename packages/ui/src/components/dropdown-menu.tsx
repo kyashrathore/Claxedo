@@ -68,6 +68,7 @@ function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
     <Kobalte.Content
       {...rest}
       data-component="dropdown-menu-content"
+      data-surface="overlay"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -276,6 +277,7 @@ function DropdownMenuSubContent(props: ParentProps<DropdownMenuSubContentProps>)
     <Kobalte.SubContent
       {...rest}
       data-component="dropdown-menu-sub-content"
+      data-surface="overlay"
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,

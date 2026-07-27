@@ -20,10 +20,23 @@ const spriteSymbols = new Set([...sprite.matchAll(/<symbol id="([^"]+)"/g)].map(
 
 /** The hand-drawn glyphs live inline in the component, so parse its table. */
 const componentSource = readFileSync(new URL("../controls/claxedo-icon.tsx", import.meta.url), "utf8")
+const customGlyphBlock = componentSource.split("const customGlyphs")[1]?.split("} as const")[0] ?? ""
 const customGlyphs = new Set(
-  [...(componentSource.split("const customGlyphs")[1]?.split("} as const")[0] ?? "").matchAll(
-    /"(codex-custom-[a-z0-9-]+)"\s*:/g,
-  )].map((m) => m[1]!),
+  [...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:/g)].map((m) => m[1]!),
+)
+
+/** `codex-custom-*` id -> the key in `claxedoIcons` that actually draws it. */
+const customGlyphTargets = new Map(
+  [...customGlyphBlock.matchAll(/"(codex-custom-[a-z0-9-]+)"\s*:\s*"([a-z0-9-]+)"/g)].map(
+    (m) => [m[1]!, m[2]!] as const,
+  ),
+)
+
+/** The artwork itself: `name: \`<path …>\`` entries in `claxedoIcons`. */
+const drawnGlyphs = new Map(
+  [...(componentSource.split("const claxedoIcons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
+    /^ {2}"?([a-zA-Z0-9-]+)"?:\s*`([^`]*)`/gm,
+  )].map((m) => [m[1]!, m[2]!] as const),
 )
 
 describe("icon library registry", () => {
@@ -88,6 +101,52 @@ describe("resolved glyphs exist as real assets", () => {
         `${icon} -> ${glyph}`,
       ).toBe(true)
     }
+  })
+})
+
+describe("navigation icons are told apart", () => {
+  // These three named three unrelated destinations and all resolved to
+  // codex-20-123, so Settings showed the same sparkle for Providers and for
+  // Models and Marketplace wore it too. Nothing in the generic assertions above
+  // catches that: aliasing many names to one glyph is legal and usually right
+  // (`chevron-*` all share codex-20-001). It is only wrong for names the user
+  // has to choose BETWEEN, which is a judgement the table cannot encode — so it
+  // is pinned here by name.
+  const navigation = ["marketplace", "models", "providers"] as const
+
+  test("each resolves to a different symbol", () => {
+    const resolved = navigation.map((icon) => [icon, codexIconLibrary.resolve(icon)] as const)
+    const ids = resolved.map(([, glyph]) => glyph)
+    expect(new Set(ids).size, resolved.map(([i, g]) => `${i} -> ${g}`).join(", ")).toBe(navigation.length)
+  })
+
+  test("each resolved id is a real, non-empty asset", () => {
+    for (const icon of navigation) {
+      const glyph = codexIconLibrary.resolve(icon)
+
+      if (glyph.startsWith("codex-20-")) {
+        expect(spriteSymbols.has(glyph), `${icon} -> ${glyph} is not a symbol in sprite.svg`).toBe(true)
+        continue
+      }
+
+      // A custom id is only renderable if it is mapped AND the mapping target
+      // carries geometry. An unmapped id silently requests
+      // `sprite.svg#codex-custom-…`, which the extracted sprite does not carry.
+      const target = customGlyphTargets.get(glyph)
+      expect(target, `${icon} -> ${glyph} has no entry in customGlyphs`).toBeTruthy()
+      const markup = drawnGlyphs.get(target!)
+      expect(markup, `${icon} -> ${glyph} -> ${target} is not drawn in claxedoIcons`).toBeTruthy()
+      expect(markup!.includes("<path") || markup!.includes("<circle") || markup!.includes("<rect")).toBe(true)
+    }
+  })
+
+  test("the artwork is distinct, not three copies of one path", () => {
+    const markup = navigation.map((icon) => {
+      const glyph = codexIconLibrary.resolve(icon)
+      const target = customGlyphTargets.get(glyph)
+      return target ? drawnGlyphs.get(target) : glyph
+    })
+    expect(new Set(markup).size).toBe(navigation.length)
   })
 })
 

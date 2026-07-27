@@ -63,6 +63,23 @@ function HarnessOptionIcon(props: { harness: HarnessType }) {
   return <Icon name="pi" size="small" class="shrink-0" />
 }
 
+// Serves both the trigger (`renderValue`) and the menu rows (`children`), so the
+// harness mark reads the same in either place.
+function renderHarnessOption(option: HarnessType | undefined) {
+  return (
+    <Show when={option}>
+      {(value) => (
+        <span class="flex min-w-0 items-center gap-2">
+          <HarnessOptionIcon harness={value()} />
+          <span data-slot="composer-control-label" class="truncate">
+            {harnessOptionLabel(value())}
+          </span>
+        </span>
+      )}
+    </Show>
+  )
+}
+
 type Item = {
   id: string
   name: string
@@ -528,9 +545,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         contentClass={COMPOSER_HARNESS_MENU_CLASS}
         triggerStyle={harnessTriggerStyle()}
         triggerProps={{ "data-action": "prompt-harness" }}
+        renderValue={renderHarnessOption}
         variant="ghost"
         disabled={harnessDisabled()}
-      />
+      >
+        {renderHarnessOption}
+      </Select>
       <Show when={harnessSwitching()}>
         <span
           aria-hidden="true"

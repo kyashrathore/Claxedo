@@ -26,18 +26,28 @@ export function PromptSubmitControl(props: {
   stopLabel: string
   readOnlyLabel: string
 }) {
-  // Explain-on-intent (T5 §B3): actionable block reasons leave the button
-  // clickable-but-dimmed. A click flashes the reason forced-open — this is the
-  // click/touch fallback for users where hover never fires. The reason is also
-  // the tooltip's hover value, so pointer users see it on hover already.
+  // Resolve-on-intent (T5 §B3): actionable block reasons leave the button
+  // clickable-but-dimmed. Missing-model and missing-provider clicks open their
+  // remedy directly; runtime failures flash the reason as the click/touch
+  // fallback for users where hover never fires.
   const [flash, setFlash] = createSignal(false)
   let timer: ReturnType<typeof setTimeout> | undefined
   const clearTimer = () => {
     if (timer) clearTimeout(timer)
     timer = undefined
   }
-  const explain = () => {
-    if (!props.block()?.actionable) return
+  const explain: JSX.EventHandler<HTMLButtonElement, MouseEvent> = (event) => {
+    const block = props.block()
+    if (!block?.actionable) return
+    event.preventDefault()
+    if (block.reason === "no-model") {
+      props.onChooseModel()
+      return
+    }
+    if (block.reason === "no-credential") {
+      props.onConnectAI()
+      return
+    }
     setFlash(true)
     clearTimer()
     timer = setTimeout(() => setFlash(false), 3200)

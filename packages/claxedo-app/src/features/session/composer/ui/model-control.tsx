@@ -41,6 +41,19 @@ export function PromptModelControl(props: {
   variantLabel: (value: string) => string
   onVariantSelect: (value: string) => void
 }) {
+  // Rendered in two places that `Select` keeps deliberately separate: the menu
+  // ROW (`children`) and the trigger's selected VALUE (`renderValue`). Here they
+  // are the same shape, so both slots get the same callback — but both must be
+  // passed, because the trigger no longer falls back to the row renderer.
+  const renderVariant = (value: string | undefined) => (
+    <span class="flex min-w-0 items-center gap-1.5">
+      <Icon name="sliders" size="small" class="composer-compact-only shrink-0" />
+      <span data-slot="composer-control-label" class="truncate">
+        {props.variantLabel(value ?? "default")}
+      </span>
+    </span>
+  )
+
   const buttonClass =
     "min-w-0 max-w-[220px] max-md:max-w-[128px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-base group"
 
@@ -147,16 +160,10 @@ export function PromptModelControl(props: {
               triggerStyle={props.controlStyle()}
               contentClass={COMPOSER_COMPACT_MENU_CLASS}
               triggerProps={{ "data-action": "prompt-model-variant" }}
+              renderValue={renderVariant}
               variant="ghost"
             >
-              {(value) => (
-                <span class="flex min-w-0 items-center gap-1.5">
-                  <Icon name="sliders" size="small" class="composer-compact-only shrink-0" />
-                  <span data-slot="composer-control-label" class="truncate">
-                    {props.variantLabel(value ?? "default")}
-                  </span>
-                </span>
-              )}
+              {renderVariant}
             </Select>
           </TooltipKeybind>
         </Show>

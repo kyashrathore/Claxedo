@@ -15,10 +15,20 @@
 
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
+  // Declared before any stylesheet loads so the UA paints its canvas, form
+  // controls and scrollbars in the right scheme on the very first frame. The
+  // cached-CSS branch below only runs for non-default themes, so this cannot
+  // live there.
+  document.documentElement.style.colorScheme = mode
 
-  // Update theme-color meta tag to match app color scheme
+  // Update theme-color meta tags to match app color scheme. Documents that
+  // declare a light and a dark variant have more than one, and only updating
+  // the first left the other reporting the previous scheme's color.
+  var background = isDark ? "#131010" : "#F8F7F7"
   var metas = document.querySelectorAll("meta[name='theme-color']")
-  if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#131010" : "#F8F7F7")
+  for (var index = 0; index < metas.length; index++) {
+    metas[index].setAttribute("content", background)
+  }
 
   if (themeId === "oc-2") return
 
