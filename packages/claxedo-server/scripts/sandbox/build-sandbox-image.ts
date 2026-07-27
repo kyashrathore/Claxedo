@@ -161,12 +161,19 @@ export function packWorkspaceRuntime(outDir: string, exec: Exec = defaultExec) {
  * terminal CLI, but it can lag that contract and fall through to its HTML app
  * shell. Shipping this checkout's compiled server binary keeps the workspace
  * runtime and its proxied Session API on one content-addressed build.
+ *
+ * This build used to pass `--skip-embed-web-ui`. That flag did more than keep
+ * the binary off an app shell: the embed path it skipped pointed at upstream's
+ * `packages/app`, which the hard fork removed, so any build without the flag
+ * died on ENOENT. The fork no longer embeds a web UI at all, so the flag is
+ * gone from packages/opencode/script/build.ts and the binary is UI-less by
+ * default.
  */
 export function buildSandboxOpenCodeBinary(outDir: string, exec: Exec = defaultExec) {
   if (process.platform !== "linux" || process.arch !== "x64") {
     throw new Error("sandbox OpenCode binary builds require a linux/x64 builder")
   }
-  exec("bun", ["run", "build", "--", "--single", "--skip-install", "--skip-embed-web-ui"], {
+  exec("bun", ["run", "build", "--", "--single", "--skip-install"], {
     cwd: opencodeRoot(),
     env: {
       ...process.env,

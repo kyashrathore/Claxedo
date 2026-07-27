@@ -22,33 +22,27 @@ const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
-const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 
-const createEmbeddedWebUIBundle = async () => {
-  console.log(`Building Web UI to embed in the binary`)
-  const appDir = path.join(import.meta.dirname, "../../app")
-  const dist = path.join(appDir, "dist")
-  await $`OPENCODE_CHANNEL=${Script.channel} bun run --cwd ${appDir} build`
-  const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
-    .map((file) => file.replaceAll("\\", "/"))
-    .filter((file) => !file.endsWith(".map"))
-    .sort()
-  const imports = files.map((file, i) => {
-    const spec = path.relative(dir, path.join(dist, file)).replaceAll("\\", "/")
-    return `import file_${i} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`
-  })
-  const entries = files.map((file, i) => `  ${JSON.stringify(file)}: file_${i},`)
-  return [
-    `// Import all files as file_$i with type: "file"`,
-    ...imports,
-    `// Export with original mappings`,
-    `export default {`,
-    ...entries,
-    `}`,
-  ].join("\n")
-}
-
-const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+// This fork does not embed a web UI in the binary.
+//
+// Upstream bundled `packages/app` into a generated `opencode-web-ui.gen.ts`
+// module and served it from `/`. That package does not exist here — the hard
+// fork replaced it with `packages/claxedo-app`, which is a different product:
+// it bakes its Clerk keys and `VITE_CLAXEDO_SERVER_URL` in at build time and
+// ships as its own site (.github/workflows/deploy-claxedo-app.yml), so it is
+// not a drop-in for the binary's UI route.
+//
+// Nothing consumed the embedded bundle either. The desktop app builds through
+// `build:node`, whose script/build-node.ts already stubs the same module out,
+// and the sandbox image built this script with `--skip-embed-web-ui` precisely
+// so the binary would not serve an app shell
+// (packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts). The bundle
+// therefore only ever broke `bun run build`.
+//
+// With no generated module, the dynamic `import("opencode-web-ui.gen.ts")` in
+// src/server/shared/ui.ts rejects, `embeddedUI()` resolves to null, and the UI
+// route proxies upstream — exactly what the `--skip-embed-web-ui` builds have
+// always shipped.
 
 const allTargets: {
   os: string
@@ -189,8 +183,8 @@ for (const item of targets) {
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
-    files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    files: {},
+    entrypoints: ["./src/index.ts", parserWorker, workerPath],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       OPENCODE_VERSION: `'${Script.version}'`,
