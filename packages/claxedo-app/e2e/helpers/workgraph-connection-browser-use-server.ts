@@ -57,6 +57,11 @@ const opencode = spawn(
       XDG_CONFIG_HOME: path.join(directory, "xdg-config"),
       XDG_DATA_HOME: path.join(directory, "xdg-data"),
       OPENCODE_DISABLE_AUTOSHARE: "true",
+      // Same hermetic-boot guard as real-workgraph-harness.ts: with a fresh
+      // XDG_CACHE_HOME and no baked models snapshot (source run), the engine would
+      // otherwise fetch models.dev during startup, and until that lands the catalog
+      // is empty and the config-defined fake provider cannot resolve.
+      OPENCODE_DISABLE_MODELS_FETCH: "true",
     },
     stdio: ["ignore", "pipe", "pipe"],
   },
