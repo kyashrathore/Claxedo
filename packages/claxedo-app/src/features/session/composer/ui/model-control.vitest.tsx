@@ -52,7 +52,11 @@ describe("PromptModelControl", () => {
     const view = render(() => <PromptModelControl {...baseProps({ showVariantSelector: () => false })} />)
 
     const modelTrigger = view.container.querySelector('[data-action="prompt-model"]')!
-    expect(modelTrigger.querySelectorAll('[data-component="icon"]')).toHaveLength(1)
+    // The compact-mode `brain` mark is always in the DOM (CSS reveals it); the
+    // chevron is the one that moves, so count it by name rather than counting
+    // every icon in the trigger.
+    expect(modelTrigger.querySelectorAll('[data-icon="brain"]')).toHaveLength(1)
+    expect(modelTrigger.querySelectorAll('[data-icon="chevron-down"]')).toHaveLength(1)
     expect(view.container.querySelector('[data-action="prompt-model-variant"]')).toBeNull()
   })
 
@@ -60,12 +64,27 @@ describe("PromptModelControl", () => {
     const view = render(() => <PromptModelControl {...baseProps({ showVariantSelector: () => true })} />)
 
     const modelTrigger = view.container.querySelector('[data-action="prompt-model"]')!
-    expect(modelTrigger.querySelectorAll('[data-component="icon"]')).toHaveLength(0)
+    expect(modelTrigger.querySelectorAll('[data-icon="brain"]')).toHaveLength(1)
+    expect(modelTrigger.querySelectorAll('[data-icon="chevron-down"]')).toHaveLength(0)
 
     const variantTrigger = view.container.querySelector('[data-action="prompt-model-variant"]')!
     expect(variantTrigger).not.toBeNull()
     expect(variantTrigger.textContent).toContain("Default")
-    expect(variantTrigger.querySelectorAll('[data-component="icon"]')).toHaveLength(1)
+    expect(variantTrigger.querySelectorAll('[data-icon="sliders"]')).toHaveLength(1)
+    expect(variantTrigger.querySelectorAll('[data-icon="chevron-down"]')).toHaveLength(1)
+  })
+
+  // `Select` renders `children` for menu rows and `renderValue` for the trigger,
+  // and the trigger does NOT fall back to `children`. Passing only `children`
+  // silently drops the compact-mode mark and the label slot from the trigger.
+  test("the effort trigger keeps its compact mark and label slot, not bare text", () => {
+    const view = render(() => <PromptModelControl {...baseProps({ showVariantSelector: () => true })} />)
+
+    const variantTrigger = view.container.querySelector('[data-action="prompt-model-variant"]')!
+    const label = variantTrigger.querySelector('[data-slot="composer-control-label"]')
+    expect(label).not.toBeNull()
+    expect(label!.textContent).toBe("Default")
+    expect(variantTrigger.querySelector('[data-icon="sliders"]')).not.toBeNull()
   })
 
   test("harness mode hides the model and effort halves together", () => {
