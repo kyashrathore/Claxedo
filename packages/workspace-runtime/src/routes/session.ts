@@ -122,10 +122,28 @@ export function SessionRoutes(
   },
 ) {
   const eventHub = options?.eventHub ?? createRuntimeEventHub()
+  /**
+   * The harness a request names, or undefined when it names none.
+   *
+   * A string that does NOT resolve is a 400 rather than undefined, and that
+   * distinction is the whole point. Falling through to undefined makes the
+   * caller's adapter resolve from the DIRECTORY instead — the last harness
+   * selected there — so a request naming an unrecognised harness was answered
+   * with a different harness's data and no indication of the substitution.
+   * `/permission/modes` made that visible: asking for one harness returned
+   * another's permission modes, which the picker then displayed under the name
+   * that had been asked for. Showing one harness's policy under another's label
+   * is exactly the confusion this whole surface exists to prevent, so an
+   * unrecognised name fails instead of being quietly reinterpreted.
+   */
   function requestedHarness(c: {
     req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined }
   }) {
-    return normalizeHarnessIdentity(c.req.query("harness") ?? c.req.query("runner") ?? undefined)
+    const raw = c.req.query("harness") ?? c.req.query("runner") ?? undefined
+    if (raw === undefined) return undefined
+    const identity = normalizeHarnessIdentity(raw)
+    if (!identity) throw new HTTPException(400, { message: `Unknown harness "${raw}"` })
+    return identity
   }
   return createSessionRoutes({
     resolveAdapter: async (c, input) => {

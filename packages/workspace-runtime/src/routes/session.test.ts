@@ -137,6 +137,44 @@ describe("session prompt route", () => {
     ])
   })
 
+  /**
+   * A harness name that does not resolve used to fall through to undefined,
+   * which made the adapter resolve from the DIRECTORY — the last harness
+   * selected there. On `/permission/modes` that meant asking for one harness
+   * and being handed another's permission modes, with nothing in the reply
+   * saying so, which the picker then rendered under the name it had asked for.
+   */
+  it("rejects a harness it does not recognise instead of answering for another one", async () => {
+    const directory = process.cwd()
+    const seen: Array<string | undefined> = []
+    const app = SessionRoutes((input) => {
+      seen.push(input?.harness ? `${input.harness.id}:${input.harness.access}` : undefined)
+      return {
+        ...adapter({}),
+        listPermissionModes: async () => ({
+          modes: [{ id: "read-only", name: "Read-only" }],
+          appliesFrom: "next-turn" as const,
+        }),
+      }
+    })
+
+    const bogus = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}&harness=not-a-harness`)
+    expect(bogus.status).toBe(400)
+    // The adapter must never have been asked for — an answer that reached the
+    // adapter at all is an answer that could be returned to the caller.
+    expect(seen).toEqual([])
+
+    // A name it does recognise still resolves, and an absent one still means
+    // "no preference" rather than an error.
+    const known = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}&harness=codex-acp`)
+    expect(known.status).toBe(200)
+    expect(seen).toEqual(["codex:acp"])
+
+    const unqualified = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}`)
+    expect(unqualified.status).toBe(200)
+    expect(seen).toEqual(["codex:acp", undefined])
+  })
+
   it("excludes archived sessions by default and includes them with ?archived=true", async () => {
     const directory = process.cwd()
     const app = SessionRoutes(() => ({
