@@ -36,7 +36,12 @@ describe("GlobalNavigation", () => {
 
   test("marks the nav item matching the current route as the current page", () => {
     renderAt("/workgraph")
-    expect(screen.getByRole("button", { name: "Open WorkGraph" })).toHaveAttribute("aria-current", "page")
-    expect(screen.getByRole("button", { name: "Open Marketplace" })).not.toHaveAttribute("aria-current")
+    const workgraph = screen.getByRole("button", { name: "Open WorkGraph" })
+    const marketplace = screen.getByRole("button", { name: "Open Marketplace" })
+
+    expect(workgraph).toHaveAttribute("aria-current", "page")
+    expect(workgraph.querySelector("[data-icon-interaction]")).toHaveAttribute("data-icon-interaction", "persistent")
+    expect(marketplace).not.toHaveAttribute("aria-current")
+    expect(marketplace.querySelector("[data-icon-interaction]")).toHaveAttribute("data-icon-interaction", "passive")
   })
 })
