@@ -150,6 +150,34 @@ review tab close routes through `closeReviewWorkspaceTab`; focused tests pass.
 clean; the `semantic-icon.tsx` `isolationLocal`/`isolationWorktree` collision from
 the source branch is NOT adopted — those two must stay visually distinct.
 
+## 4a. Decisions taken during the port
+
+- **`packages/ui/script/extract-codex-icons.ts` is NOT ported.** It hardcodes
+  `/Applications/ChatGPT.app/Contents/Resources/app.asar` and unpacks the
+  renderer bundle — it *is* the extraction step invariant 1 exists to flag.
+  The `generate:codex-icons` package script is therefore also left out, since it
+  would point at a file that does not exist here. Porting the script is a
+  deliberate owner decision, not a mechanical carry.
+- **`src/assets/icons/codex/*` stays out of `@claxedo/ui`'s published `files`.**
+  Consequence, recorded rather than fixed: consumers installing from npm get no
+  codex sprite, and `codex-20-*` names resolve to the upstream fallback. The fix
+  is either shipping extracted artwork or replacing it — owner's call.
+- **`bun.lock` is committed** with the `ajv` devDependency. Three CI workflows
+  run `bun install --frozen-lockfile`; a `package.json`-only change breaks them.
+- **The `Select` trigger no longer falls back to `children`** (A3, `7661f2e064`).
+  A ported test asserts this deliberately. Callsites that relied on the fallback
+  are fixed at the callsite, not by restoring the fallback.
+
+### Cross-group item: the send-arrow contrast fix is split
+
+Source commit `a3b03f4829` has three parts that land in three different groups:
+the click-resolution behavior (B2, done), the
+`[data-variant="primary"][data-icon-interaction="persistent"]` CSS rule (B1),
+and the `data-icon-interaction` default flip in `claxedo-icon-button.tsx` (C3).
+**The regression it fixes is not repaired until all three land**, and the
+symptom only reappears once C3 flips the default. Do not close this out on B2's
+commit alone.
+
 ## 5. Known open item
 
 The source branch's last recorded request — the archive icon staying invisible on
