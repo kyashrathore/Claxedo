@@ -330,7 +330,7 @@ Tasks: decide — add a genuine `schedule:` cron with the live credentials and h
 #### F1 — Stand up the production environment — **L**
 **Why:** `gh api` confirms no `production` environment exists. There is no promote gate, no production secrets, and production has never been deployed. This is the hard gate on launch day.
 
-Tasks: create the `production` GitHub Environment with required reviewers; provision production secrets (Cloudflare, Convex, Clerk, Polar, Sentry) **separate from staging**; document the account boundary so no staging credential reaches prod; run one supervised `promote-production`.
+Tasks: create the `production` GitHub Environment with required reviewers; provision production secrets (Cloudflare, Convex, Clerk, Polar, PostHog (`CLAXEDO_POSTHOG_KEY`, `POSTHOG_CLI_TOKEN`)) **separate from staging**; document the account boundary so no staging credential reaches prod; run one supervised `promote-production`.
 
 **DoD:** `gh api repos/kyashrathore/Claxedo/environments` lists `production` with protection rules; one human-approved promote completes; the production URL passes a health check and one real end-to-end signup, with a named on-call owner.
 **Depends on:** A1, C3.
@@ -375,9 +375,9 @@ Tasks: confirm Convex point-in-time recovery for the production deployment; conf
 #### F6 — Launch-day safety checklist — **S**
 **Why:** Small items that are cheap now and expensive on launch day.
 
-Tasks: audit production Convex for any org seeded `plan='pro'` during testing (would silently grant paid entitlements); confirm `CLAXEDO_SENTRY_DSN` is provisioned for the production worker/server/relay (absent DSN is a *silent* no-op by design); confirm PostHog keys for the production app build — note the frontend has **no Sentry at all** by deliberate design (`analytics.ts:43` replaces it), so PostHog is the sole frontend crash-visibility path and must be configured *and watched*.
+Tasks: audit production Convex for any org seeded `plan='pro'` during testing (would silently grant paid entitlements); confirm `CLAXEDO_POSTHOG_KEY` is provisioned for the production worker/server/relay and `VITE_POSTHOG_KEY` is provisioned for the production app build, and that PostHog Error Tracking is the sole crash-visibility path for every runtime.
 
-**DoD:** no non-test org has `plan='pro'` in production; a deliberately-triggered test error reaches the Sentry dashboard (server) and the PostHog dashboard (app).
+**DoD:** no non-test org has `plan='pro'` in production; a deliberately-triggered test error from each runtime (app, server, Worker, relay) appears as an issue in PostHog Error Tracking — configured *and watched* by the named owner (§7.2).
 **Depends on:** F1.
 
 #### F7 — Confirm persistent cloud workspaces status — **S**
@@ -444,7 +444,7 @@ Independent, start anytime: B1 (AGENTS.md), B3 (links), D5 (pnpm-workspace), F7 
 These block real streams. None can be resolved from the code:
 
 1. **Who owns hosting/edge for `claxedo.com` and `docs.claxedo.com`?** `redirects.json` is explicitly `"unbound"` pending this. **Blocks B6, and B6 blocks all remaining doc work.**
-2. **Who owns analytics, and which provider?** Named in the website plan as a hard prerequisite for deployed verification.
+2. **Who owns analytics, and which provider?** Named in the website plan as a hard prerequisite for deployed verification. Provider: PostHog, per `2026-07-28-001-feat-posthog-observability-plan.md` (single stack for product analytics + error tracking). Remaining: name the human owner.
 3. **Is `public-docs/` an internal ops tree or a public source?** Blocks B2, which blocks B4 and B5.
 4. **What happens to draft releases `v0.0.60/61/62`?** Delete, finish, or supersede — needed before F2 cuts a new one.
 5. **Ship onboarding v1 behind the flag, or launch on the legacy setup card?** Depends on F3's verification result.
