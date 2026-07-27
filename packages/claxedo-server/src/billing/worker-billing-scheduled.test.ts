@@ -63,7 +63,7 @@ describe("worker scheduled billing sweep", () => {
 
     // F17: a persistently-failing sandbox GC must NOT starve the billing
     // downgrade-recovery path — the two sweeps are isolated. The GC failure is
-    // still re-thrown so the cron run records as failed (reaches Sentry).
+    // still re-thrown so the cron run records as failed (and becomes an issue).
     await expect(
       worker.scheduled(controller, { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret" }, runtimeCtx()),
     ).rejects.toThrow("501")

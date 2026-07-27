@@ -7,10 +7,10 @@ import type { ControlPlaneServices } from "./control-plane/services"
  * the Hono app (`app.fetch(request, env, ctx)`), otherwise `waitUntil`-backed
  * background work (telemetry, lifecycle touch) is cancelled after the response.
  *
- * D12: the entrypoint is wrapped with @sentry/cloudflare's `withSentry`,
- * which proxies the ExecutionContext to instrument `waitUntil`. The contract
- * under test is therefore behavioral — `waitUntil` calls made on the ctx the
- * app receives must reach the runtime's real ctx — not object identity.
+ * The handler is exported plainly — no vendor wrapper stands between the
+ * runtime and the app — so the request, the env bindings, and the ctx reach the
+ * app unchanged. Error reporting is explicit instead (see the final describe:
+ * exceptions leave over the same fetch transport as analytics).
  */
 
 const appFetch = vi.fn(async () => new Response("ok"))
@@ -85,13 +85,11 @@ describe("worker entrypoint", () => {
       { waitUntil: (p: Promise<unknown>) => void },
     ]
     expect(gotRequest).toBe(request)
-    // withSentry proxies env as well; the bindings must pass through intact.
     expect(gotEnv).toEqual(env)
     expect(createHostedApp.mock.calls[0]?.[1]?.documentsBackend).toBeDefined()
     expect((createHostedApp.mock.calls[0]?.[1]?.documentsBackend as { agentOpen?: unknown }).agentOpen).toBeTypeOf("function")
-    // withSentry proxies ctx (and wraps the tracked promise; the SDK itself
-    // may also register waitUntil work): assert a waitUntil call on the ctx
-    // the app received reaches the runtime's ctx.
+    // waitUntil calls made on the ctx the app received must reach the runtime's
+    // ctx, or background work is cancelled at the response.
     const callsBefore = ctx.waitUntil.mock.calls.length
     gotCtx.waitUntil(Promise.resolve())
     expect(ctx.waitUntil.mock.calls.length).toBe(callsBefore + 1)
@@ -237,5 +235,91 @@ describe("worker entrypoint", () => {
     }
     workspaceRole = "viewer"
     await expect(reauthorizeJob(input)).rejects.toThrow("write access")
+  })
+})
+
+/**
+ * Error tracking in the Worker is explicit: no wrapper catches route throws for
+ * us, so the entrypoint reports them itself over the same fetch transport
+ * analytics uses. `posthog-node` is a forbidden Worker import, which is why
+ * these assertions inspect a raw POST body rather than an SDK call.
+ *
+ * The seam sink is registered once per module instance from the first
+ * invocation's env, hence `vi.resetModules()` before each case.
+ */
+describe("worker error reporting", () => {
+  async function freshWorker() {
+    vi.resetModules()
+    return (await import("./worker")).default
+  }
+
+  function captureCalls(spy: ReturnType<typeof vi.fn>) {
+    return spy.mock.calls.filter(([url]) => String(url).endsWith("/capture/"))
+  }
+
+  test("a thrown route error POSTs exactly one $exception when a key is configured", async () => {
+    const fetchSpy = vi.fn(async () => new Response("ok"))
+    vi.stubGlobal("fetch", fetchSpy)
+    appFetch.mockImplementationOnce(async () => {
+      throw new Error("route blew up")
+    })
+    const worker = await freshWorker()
+    const work: Promise<unknown>[] = []
+    const ctx = { waitUntil: vi.fn((p: Promise<unknown>) => work.push(p)), passThroughOnException: vi.fn() }
+
+    await expect(
+      worker.fetch(
+        new Request("http://cp.test/api/claxedo/health"),
+        {
+          CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+          CLAXEDO_POSTHOG_KEY: "phc_worker",
+          CLAXEDO_DEPLOYMENT_MODE: "hosted",
+          CLAXEDO_RELEASE: "sha123",
+        } as never,
+        ctx as never,
+      ),
+    ).rejects.toThrow("route blew up")
+    // The capture rides waitUntil so it outlives the (failed) response.
+    await Promise.all(work)
+
+    const calls = captureCalls(fetchSpy)
+    expect(calls).toHaveLength(1)
+    const body = JSON.parse((calls[0]![1] as RequestInit).body as string)
+    expect(body.api_key).toBe("phc_worker")
+    expect(body.event).toBe("$exception")
+    expect(body.distinct_id).toBe("system")
+    expect(body.properties.unit).toBe("worker")
+    expect(body.properties.deployment_mode).toBe("hosted")
+    expect(body.properties.release).toBe("sha123")
+    expect(body.properties.source).toBe("worker_fetch")
+    expect(body.properties.$exception_list[0].value).toBe("route blew up")
+
+    vi.unstubAllGlobals()
+    appFetch.mockImplementation(async () => new Response("ok"))
+  })
+
+  test("with no key configured the same failure makes ZERO network calls", async () => {
+    const fetchSpy = vi.fn(async () => new Response("ok"))
+    vi.stubGlobal("fetch", fetchSpy)
+    appFetch.mockImplementationOnce(async () => {
+      throw new Error("route blew up")
+    })
+    const worker = await freshWorker()
+    const work: Promise<unknown>[] = []
+    const ctx = { waitUntil: vi.fn((p: Promise<unknown>) => work.push(p)), passThroughOnException: vi.fn() }
+
+    await expect(
+      worker.fetch(
+        new Request("http://cp.test/api/claxedo/health"),
+        { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test" } as never,
+        ctx as never,
+      ),
+    ).rejects.toThrow("route blew up")
+    await Promise.all(work)
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+    appFetch.mockImplementation(async () => new Response("ok"))
   })
 })

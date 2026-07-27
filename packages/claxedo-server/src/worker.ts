@@ -12,25 +12,25 @@
  *
  * The local Node server lives in `server.ts` and is unaffected by this file.
  *
- * D12 observability: the handler is wrapped
- * with `@sentry/cloudflare`'s `withSentry`
- * (https://docs.sentry.io/platforms/javascript/guides/cloudflare/ — requires
- * the `nodejs_compat` flag for AsyncLocalStorage, which wrangler.toml already
- * sets). Options come from env bindings via sentryInitOptions: absent
- * CLAXEDO_SENTRY_DSN → `enabled: false`, the SDK sends nothing (clean no-op
- * until the Sentry account exists). Release = git SHA (CLAXEDO_RELEASE,
- * passed by the D11 deploy workflow); events are tagged unit=worker +
- * deployment_mode.
+ * Observability: error reporting is explicit, not a wrapper. `posthog-node` is
+ * on the Worker's forbidden-import list, so exceptions leave over the same
+ * fetch transport as analytics (control-plane/worker-telemetry.ts) and every
+ * escape route is covered by hand: Hono's `onError` for route throws, the
+ * composition guard below for boot failures, and a try/catch around `scheduled`
+ * for cron failures. Options come from env bindings via observabilityOptions:
+ * absent CLAXEDO_POSTHOG_KEY → no sink is registered at all and the seam stays
+ * a clean no-op (no network). Release = git SHA (CLAXEDO_RELEASE, passed by the
+ * D11 deploy workflow); events carry unit=worker + deployment_mode.
  */
 
 import type { ExecutionContext, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
-import * as Sentry from "@sentry/cloudflare"
 import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedControlPlane, type HostedWorkerEnv } from "./control-plane/hosted-services"
+import { workerErrorCapture } from "./control-plane/worker-telemetry"
 import { createHostedApp, type HostedAppOverrides } from "./hosted-app"
 import { runScheduledBillingReconciliation } from "./billing/reconcile"
 import { reportError, setErrorReporterSink } from "./observability/report"
-import { sentryInitOptions } from "./observability/sentry-config"
+import { observabilityOptions, type ObservabilityEnv } from "./observability/config"
 import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
 import { skipOverlappingReconcile } from "./workgraph-host/reconcile-serialize"
 import type { WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
@@ -80,18 +80,37 @@ type WorkerEnv = Record<string, unknown> & {
   CLAXEDO_WAKES_SETTLEMENT?: string
 }
 
-// D12: route reportError/reportPaymentError (the payment page-class hook the
-// billing routes call) into the request's Sentry scope. withSentry runs the
-// handler inside AsyncLocalStorage context, so captureException here lands on
-// the current request's event. With no DSN the client is disabled and
-// captureException is a documented no-op — no network.
-setErrorReporterSink((error, context) => {
-  Sentry.withScope((scope) => {
-    scope.setTags(context.tags)
-    if (Object.keys(context.extra).length > 0) scope.setExtras(context.extra)
-    Sentry.captureException(error)
+// The Worker has no module-scope env: bindings arrive per invocation, so the
+// seam sink is registered on the first fetch/scheduled call and then left
+// alone. Registration is skipped entirely when no key is configured — a
+// missing sink is report.ts's own no-op path, which keeps the self-host
+// promise (no key ⇒ no network) true without a second guard.
+let errorReporterRegistered = false
+
+// The capture POST must outlive the response, and only the current invocation
+// owns an ExecutionContext. The sink is synchronous (report.ts's contract), so
+// the in-flight promise is handed to whichever waitUntil is current.
+let currentWaitUntil: ((promise: Promise<unknown>) => void) | undefined
+
+function ensureErrorReporter(env: WorkerEnv): void {
+  if (errorReporterRegistered) return
+  errorReporterRegistered = true
+  const options = observabilityOptions(env as unknown as ObservabilityEnv, "worker")
+  if (!options.enabled) return
+  const { captureException } = workerErrorCapture(env as unknown as ObservabilityEnv)
+  setErrorReporterSink((error, context) => {
+    // Product-plane identity when a call site knows it; the ops-plane "system"
+    // principal otherwise. An exception with no request behind it (cron, boot)
+    // genuinely has no user.
+    const distinctId = context.tags.user_id || "system"
+    const promise = captureException(error, distinctId, {
+      ...options.tags,
+      ...context.tags,
+      ...context.extra,
+    })
+    currentWaitUntil?.(promise)
   })
-})
+}
 
 let cached: {
   app: Hono
@@ -188,10 +207,10 @@ function buildApp(env: WorkerEnv): Hono {
       }) as unknown as NonNullable<HostedAppOverrides["documentsBackend"]>,
     } : {}),
   })
-  // D12: Hono converts route exceptions into 500s internally, so they never
-  // escape to withSentry — report them here, keeping Hono's default response
-  // behavior (HTTPException responses pass through unreported; they are
-  // deliberate 4xx/5xx, not error-tracker material). Guarded because tests
+  // Hono converts route exceptions into 500s internally, so they never reach
+  // the entrypoint's own catch — report them here, keeping Hono's default
+  // response behavior (HTTPException responses pass through unreported; they
+  // are deliberate 4xx/5xx, not error-tracker material). Guarded because tests
   // stub createHostedApp with a bare { fetch } object.
   if (typeof app.onError === "function") {
     app.onError((err, c) => {
@@ -247,111 +266,135 @@ type ScheduledController = { cron: string; scheduledTime: number }
 
 const handler = {
   async fetch(request: Request, env: WorkerEnv, ctx?: ExecutionContext): Promise<Response> {
+    ensureErrorReporter(env)
+    currentWaitUntil = ctx ? (promise: Promise<unknown>) => ctx.waitUntil(promise) : undefined
     let app: Hono
     try {
       app = buildApp(env)
     } catch (err) {
       if (err instanceof HostedWorkerCompositionError) {
         // A misconfigured hosted deploy is exactly the incident nobody sees
-        // without error tracking; Sentry groups the flood into one issue.
+        // without error tracking; one issue groups the whole flood.
         reportError(err, { tags: { source: "worker_composition" } })
         return compositionErrorResponse(err)
       }
+      reportError(err, { tags: { source: "worker_boot" } })
       throw err
     }
-    // Pass the ExecutionContext through so routes can `waitUntil` background
-    // work (telemetry, lifecycle touch) past the response.
-    return app.fetch(request, env, ctx)
+    try {
+      // Pass the ExecutionContext through so routes can `waitUntil` background
+      // work (telemetry, lifecycle touch) past the response.
+      return await app.fetch(request, env, ctx)
+    } catch (err) {
+      // Hono's onError already reported anything a route threw; reaching here
+      // means the app shell itself failed, which nothing else would record.
+      reportError(err, { tags: { source: "worker_fetch" }, extra: { path: new URL(request.url).pathname, method: request.method } })
+      throw err
+    }
   },
 
-  // D13 reaper, driver-side half (ops floor ADR 016 §4 Decision 3): the Cron
-  // Trigger in wrangler.toml drives the EXISTING sandbox GC path — a synthetic
-  // request to the admin route, authorized with the same admin token — so the
-  // scheduled sweep and the manual break-glass curl exercise the exact same
-  // code (`sandboxManager.garbageCollect()`, including its telemetry capture).
-  // The Convex-side half (lease-table sweep) runs in convex/crons.ts. Every
-  // failure here (missing config, missing token, non-2xx GC) THROWS so the
-  // cron invocation is recorded as failed and reaches Sentry via withSentry —
-  // a silently-dead reaper is the failure mode this design exists to avoid.
+  // A cron invocation has no request and no route handler, so a throw is its
+  // ONLY failure signal: this wrapper is the single place a failed cron becomes
+  // an issue, and it re-throws so Cloudflare still records the run as failed.
   async scheduled(controller: ScheduledController, env: WorkerEnv, ctx?: ExecutionContext): Promise<void> {
-    // The every-minute staging lane settles only durable WorkGraph control
-    // effects (deletion finalization, execution placement) so clients observe
-    // command outcomes within their live sync window. The heavier sandbox GC
-    // and billing sweeps stay on the 15-minute lane below.
-    if (controller?.cron === "* * * * *") {
-      buildApp(env)
-      const runtime = cached!.workGraphRuntime
-      if (!runtime) return
-      const tenants = await runtime.listStaleTenants()
-      if (tenants.length === 0) return
-      if (!env.WORKGRAPH_SETTLER) {
-        throw new Error("WorkGraph settlement backstop requires WORKGRAPH_SETTLER")
-      }
-      if (!ctx) {
-        throw new Error("WorkGraph settlement backstop requires a Worker ExecutionContext")
-      }
-      await Promise.all(tenants.map((tenant) => dispatchCloudflareSettlement(env.WORKGRAPH_SETTLER!, tenant)))
-      return
-    }
-    const hostedEnv = env as unknown as HostedWorkerEnv
-    // F17 (adversarial review): the sandbox GC sweep and the billing
-    // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
-    // starve the billing sweep (the downgrade-recovery + deleted-org "bills
-    // forever" paths). Each runs under its own try/catch; the GC failure is
-    // captured and RE-THROWN after billing runs so the cron invocation is still
-    // recorded as failed and reaches Sentry via withSentry (a silently-dead
-    // reaper is the money leak this design exists to avoid).
-    let gcError: unknown
+    ensureErrorReporter(env)
+    currentWaitUntil = ctx ? (promise: Promise<unknown>) => ctx.waitUntil(promise) : undefined
     try {
-      const app = buildApp(env)
-      const token = hostedEnv.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
-      if (!token) {
-        throw new Error("Sandbox reconciliation cron requires CLAXEDO_RUNTIME_ADMIN_TOKEN")
-      }
-      const response = await app.fetch(
-        new Request("https://control-plane.cron.internal/internal/sandbox-manager/gc", {
-          method: "POST",
-          headers: { authorization: `Bearer ${token}` },
-        }),
-        env,
-        ctx,
-      )
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "")
-        throw new Error(`Sandbox reconciliation cron failed: ${response.status} ${detail}`.trim())
-      }
+      await runScheduled(controller, env, ctx)
     } catch (err) {
-      gcError = err
+      reportError(err, {
+        tags: { source: "worker_scheduled", reason: "cron_failed" },
+        extra: { cron: controller?.cron ?? "" },
+      })
+      throw err
     }
-
-    // D5 billing reconciliation sweep (ADR 014 §3): re-fetch Polar customer
-    // state for orgs the Convex cron flagged as stale and re-apply it through
-    // the single writer. Runs INDEPENDENTLY of the GC outcome above. Already
-    // throw-free (a billing hiccup pages via reportPaymentError and the Convex
-    // flag persists for the next run); wrapped anyway so a future throw here
-    // cannot mask the GC failure. No-op when CLAXEDO_POLAR_ACCESS_TOKEN is
-    // absent (billing not deployed).
-    try {
-      await runScheduledBillingReconciliation(hostedEnv)
-    } catch (err) {
-      reportError(err, { tags: { source: "worker_scheduled", reason: "billing_sweep_failed" } })
-    }
-
-    try {
-      const app = buildApp(env)
-      void app
-      await cached!.workGraphReconcile?.()
-    } catch (err) {
-      reportError(err, { tags: { source: "worker_scheduled", reason: "workgraph_reconcile_failed" } })
-      if (!gcError) gcError = err
-    }
-
-    // Surface the GC failure now that billing has had its independent run.
-    if (gcError) throw gcError
   },
 }
 
-export default Sentry.withSentry(
-  (env: WorkerEnv) => sentryInitOptions(env as unknown as HostedWorkerEnv, "worker"),
-  handler,
-)
+// D13 reaper, driver-side half (ops floor ADR 016 §4 Decision 3): the Cron
+// Trigger in wrangler.toml drives the EXISTING sandbox GC path — a synthetic
+// request to the admin route, authorized with the same admin token — so the
+// scheduled sweep and the manual break-glass curl exercise the exact same code
+// (`sandboxManager.garbageCollect()`, including its telemetry capture). The
+// Convex-side half (lease-table sweep) runs in convex/crons.ts. Every failure
+// here (missing config, missing token, non-2xx GC) THROWS so the cron
+// invocation is recorded as failed — a silently-dead reaper is the failure mode
+// this design exists to avoid.
+async function runScheduled(controller: ScheduledController, env: WorkerEnv, ctx?: ExecutionContext): Promise<void> {
+  // The every-minute staging lane settles only durable WorkGraph control
+  // effects (deletion finalization, execution placement) so clients observe
+  // command outcomes within their live sync window. The heavier sandbox GC
+  // and billing sweeps stay on the 15-minute lane below.
+  if (controller?.cron === "* * * * *") {
+    buildApp(env)
+    const runtime = cached!.workGraphRuntime
+    if (!runtime) return
+    const tenants = await runtime.listStaleTenants()
+    if (tenants.length === 0) return
+    if (!env.WORKGRAPH_SETTLER) {
+      throw new Error("WorkGraph settlement backstop requires WORKGRAPH_SETTLER")
+    }
+    if (!ctx) {
+      throw new Error("WorkGraph settlement backstop requires a Worker ExecutionContext")
+    }
+    await Promise.all(tenants.map((tenant) => dispatchCloudflareSettlement(env.WORKGRAPH_SETTLER!, tenant)))
+    return
+  }
+  const hostedEnv = env as unknown as HostedWorkerEnv
+  // F17 (adversarial review): the sandbox GC sweep and the billing
+  // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
+  // starve the billing sweep (the downgrade-recovery + deleted-org "bills
+  // forever" paths). Each runs under its own try/catch; the GC failure is
+  // captured and RE-THROWN after billing runs so the cron invocation is still
+  // recorded as failed and reported by the scheduled wrapper (a silently-dead
+  // reaper is the money leak this design exists to avoid).
+  let gcError: unknown
+  try {
+    const app = buildApp(env)
+    const token = hostedEnv.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
+    if (!token) {
+      throw new Error("Sandbox reconciliation cron requires CLAXEDO_RUNTIME_ADMIN_TOKEN")
+    }
+    const response = await app.fetch(
+      new Request("https://control-plane.cron.internal/internal/sandbox-manager/gc", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+      ctx,
+    )
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "")
+      throw new Error(`Sandbox reconciliation cron failed: ${response.status} ${detail}`.trim())
+    }
+  } catch (err) {
+    gcError = err
+  }
+
+  // D5 billing reconciliation sweep (ADR 014 §3): re-fetch Polar customer
+  // state for orgs the Convex cron flagged as stale and re-apply it through
+  // the single writer. Runs INDEPENDENTLY of the GC outcome above. Already
+  // throw-free (a billing hiccup pages via reportPaymentError and the Convex
+  // flag persists for the next run); wrapped anyway so a future throw here
+  // cannot mask the GC failure. No-op when CLAXEDO_POLAR_ACCESS_TOKEN is
+  // absent (billing not deployed).
+  try {
+    await runScheduledBillingReconciliation(hostedEnv)
+  } catch (err) {
+    reportError(err, { tags: { source: "worker_scheduled", reason: "billing_sweep_failed" } })
+  }
+
+  try {
+    const app = buildApp(env)
+    void app
+    await cached!.workGraphReconcile?.()
+  } catch (err) {
+    reportError(err, { tags: { source: "worker_scheduled", reason: "workgraph_reconcile_failed" } })
+    if (!gcError) gcError = err
+  }
+
+  // Surface the GC failure now that billing has had its independent run.
+  if (gcError) throw gcError
+}
+
+export default handler
