@@ -1043,7 +1043,8 @@ async function startOnce(
 
   const env: Record<string, string> = {
     ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
-    ...buildSafeEnv(resolvePortTemplates(config.env || {}, pm), { customPrefix: "CLAXEDO" }),
+    // Operator-configured process env: explicit (see SafeEnvSource).
+    ...buildSafeEnv(resolvePortTemplates(config.env || {}, pm), { customPrefix: "CLAXEDO", source: "explicit" }),
     OPENCODE_TERMINAL: "1",
     OPENCODE_PROCESS: config.name,
     OPENCODE_PROCESS_ID: configId,
@@ -1077,7 +1078,7 @@ async function startOnce(
       if (isFlag(config.port.inject)) {
         fullCommand = `${fullCommand} ${config.port.inject} ${assignedPort}`
       } else {
-        Object.assign(env, buildSafeEnv({ [config.port.inject]: String(assignedPort) }, { customPrefix: "CLAXEDO" }))
+        Object.assign(env, buildSafeEnv({ [config.port.inject]: String(assignedPort) }, { customPrefix: "CLAXEDO", source: "explicit" }))
       }
     }
 

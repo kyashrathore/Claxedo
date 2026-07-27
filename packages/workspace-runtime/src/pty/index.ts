@@ -477,7 +477,9 @@ export namespace Pty {
     const { previousPtyId: _prevPty, ...inputEnv } = input.env || {}
     const env = {
       ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
-      ...buildSafeEnv(inputEnv, { customPrefix: "CLAXEDO" }),
+      // Caller-supplied PTY env: explicit, so not subject to the ambient
+      // CLAXEDO_ allowlist (see SafeEnvSource).
+      ...buildSafeEnv(inputEnv, { customPrefix: "CLAXEDO", source: "explicit" }),
       ...shellEnv.env,
       TERM: "xterm-256color",
       // Describe OUR terminal, not whatever launched the desktop app. These

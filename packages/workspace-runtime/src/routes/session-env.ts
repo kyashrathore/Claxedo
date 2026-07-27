@@ -291,7 +291,8 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         detached: process.platform !== "win32",
         env: {
           ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
-          ...buildSafeEnv(envValue(body.env), { customPrefix: "CLAXEDO" }),
+          // Request-supplied env: explicit (see SafeEnvSource).
+          ...buildSafeEnv(envValue(body.env), { customPrefix: "CLAXEDO", source: "explicit" }),
         },
         stdio: ["ignore", "pipe", "pipe"],
       })
