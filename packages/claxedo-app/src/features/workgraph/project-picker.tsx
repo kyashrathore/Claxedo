@@ -82,6 +82,12 @@ export function ProjectPicker(props: {
       class="workgraph-chip-select max-w-[200px] justify-start text-text-base"
       valueClass="truncate text-13-regular text-text-weak"
       triggerProps={{ "aria-label": "Project directory" }}
+      // `children` renders menu rows; `renderValue` renders the trigger, and the
+      // trigger does not fall back to `children`. Both need the path tooltip:
+      // labels are basenames, so two recent projects both called `app` are
+      // indistinguishable without it — and the trigger is where the text is
+      // truncated and where the aria-label is a static "Project directory".
+      renderValue={(option) => <span title={option?.title}>{option?.label}</span>}
     >
       {(option) => <span title={option?.title}>{option?.label}</span>}
     </Select>
