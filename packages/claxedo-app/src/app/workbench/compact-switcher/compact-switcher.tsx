@@ -114,15 +114,12 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
       // `bg-v2-background-bg-layer-01` is a PAGE layer — it is what made this
       // card read grey against the white menus beside it. The elevation token
       // carries its own 0.5px ring, so the border goes with it.
-      // `--v2-elevation-raised` minus its ring, written out from the same alpha
-      // tokens so it still follows the theme.
-      //
-      // Every `--v2-elevation-*` token ends with `0 0 0 0.5px var(--v2-alpha-dark-12)`.
-      // That layer is a hairline in everything but name — it is why this card
-      // still looked bordered after its `border` class was removed, and it is the
-      // same ring stripped from the composer menus in Codex. The two drop layers
-      // are `raised`, one step below the `floating` the menus carry.
-      class="w-[320px] rounded-lg bg-[var(--overlay-surface)] p-3 shadow-[0_2px_4px_0_var(--v2-alpha-dark-4),0_1px_2px_-1px_var(--v2-alpha-dark-8)]"
+      // `raised`, one step below the `floating` the composer menus carry — this
+      // is a hover card the size of a tooltip. The token's own 0.5px ring stays:
+      // themes that edge their surfaces should edge this one too. Codex is the
+      // theme that wants no hairline, and it strips the ring in its own layer
+      // (see ui-overrides.css) rather than every theme losing it here.
+      class="w-[320px] rounded-lg bg-[var(--overlay-surface)] p-3 shadow-[var(--v2-elevation-raised)]"
     >
       <div class="mb-2.5 flex items-center gap-2.5">
         <ProjectAvatar

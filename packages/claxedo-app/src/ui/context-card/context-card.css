@@ -25,8 +25,23 @@
 .ui-context-card.is-floating {
   padding: 0.6rem 0.6rem 0.5rem;
   border-radius: var(--radius-lg);
-  background: var(--surface-raised-stronger-non-alpha);
-  box-shadow: var(--shadow-lg-border-base);
+  /*
+   * `--overlay-surface`, because floating IS an overlay — the same role the
+   * menus, dropdowns and the switcher card resolve.
+   * `--surface-raised-stronger-non-alpha` happens to be #ffffff in the default
+   * themes, so this looked right, but it is a page-raised token: in Codex dark
+   * it lands on #141414 while every menu beside it paints #2d2d2d.
+   */
+  background: var(--overlay-surface);
+  /*
+   * `--v2-elevation-raised`, ring and all. `--shadow-lg-border-base` was a
+   * literal `0 0 0 1px` ring plus five stacked layers out to 80px of blur — a
+   * page-modal weight on a small card — but its hairline was not the mistake.
+   * Themes that edge their surfaces should keep edging this one; only Codex
+   * wants no hairline, and it strips the ring in its own layer
+   * (see ui-overrides.css) rather than every theme losing it here.
+   */
+  box-shadow: var(--v2-elevation-raised);
 }
 
 /* Collapsed, the rail chip carries its own border — drop any variant surface.

@@ -224,6 +224,13 @@
    */
   border: 0;
   box-shadow: var(--v2-elevation-floating);
+  /*
+   * One surface too, for the same reason. MenuV2 paints
+   * `--v2-background-bg-layer-01` — a PAGE layer — so the permission menu came
+   * up grey next to pickers resolving `--overlay-surface`. Codex hides this by
+   * rebinding the v2 tokens on the component root; every other theme shows it.
+   */
+  background: var(--overlay-surface);
 }
 
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact {
