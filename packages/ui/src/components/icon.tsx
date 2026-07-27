@@ -273,9 +273,12 @@ const CODEX_CUSTOM_GLYPHS = {
   "codex-custom-folder": "folder",
   "codex-custom-magnifying-glass": "magnifying-glass",
   "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
+  "codex-custom-marketplace": "marketplace",
+  "codex-custom-models": "models",
   "codex-custom-more-horizontal": "more-horizontal",
   "codex-custom-panel-expand": "panel-expand",
   "codex-custom-panel-restore": "panel-restore",
+  "codex-custom-providers": "providers",
   "codex-custom-stop": "stop",
 } as const satisfies Record<string, keyof typeof icons>
 
