@@ -20,10 +20,35 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-# bun-ci-base-v3 snapshot (Hetzner image ID 412360550):
-# ubuntu 26.04 + bun 1.3.14 + node 22 + python3 + umask 022 in bashrc +
-# npx->bunx shim + playwright chromium (os-release spoofed to 24.04 for it) +
-# warm bun install cache. Refresh with ./script/cbx-rebake.
-export CRABBOX_HETZNER_IMAGE="${CRABBOX_HETZNER_IMAGE:-412360550}"
+# bun-ci-base-v4 snapshot (Hetzner image ID 413282893), rebaked 2026-07-27 from
+# STOCK ubuntu 24.04 on a 160GB box: bun 1.3.14 (the `packageManager` pin, exact)
+# + node 22 + python3 + npx->bunx shim + playwright chromium + warm bun install
+# cache, with umask 022 applied through login.defs/pam_umask/BASH_ENV rather than
+# bashrc (a non-interactive `bash -c` returns before bashrc's body runs).
+# Refresh with ./script/cbx-rebake --from-stock — see that script for why the
+# plain rebake path can only ever keep the disk floor it inherited.
+export CRABBOX_HETZNER_IMAGE="${CRABBOX_HETZNER_IMAGE:-413282893}"
+
+# A Hetzner snapshot inherits the DISK SIZE of the server it was taken on, and
+# Hetzner refuses to boot it on any type with a smaller disk:
+#   http 422 {"code":"service_error","message":"image disk is bigger than server type disk"}
+# So the image's disk is a FLOOR on every box, and crabbox's own default (cpx22,
+# 80GB) is below it. Pass a type that clears the floor — 8 vCPU matches the
+# `--workers=8` the e2e shard runner uses.
+CRABBOX_TYPE="${CRABBOX_TYPE:-cpx42}"
+
+# fsn1 has had ZERO server types available for a while (`/v1/datacenters` ->
+# `server_types.available` is empty there), and crabbox defaults to it, so every
+# warmup dies on `http 412 resource_unavailable / error during placement`.
+# nbg1 and hel1 both have stock. Check availability before changing this:
+#   curl -H "Authorization: Bearer $HETZNER_TOKEN" https://api.hetzner.cloud/v1/datacenters
+export CRABBOX_HETZNER_LOCATION="${CRABBOX_HETZNER_LOCATION:-nbg1}"
+
+# Only `warmup`/`prewarm` provision a server; `run`/`stop`/`list` reject --type.
+case "${1:-}" in
+  warmup | prewarm)
+    exec crabbox "$1" --type "$CRABBOX_TYPE" "${@:2}"
+    ;;
+esac
 
 exec crabbox "$@"
