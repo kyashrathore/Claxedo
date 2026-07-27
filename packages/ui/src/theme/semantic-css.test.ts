@@ -10,6 +10,7 @@ const overlayFiles = [
   "../components/context-menu.css",
   "../components/dropdown-menu.css",
   "../components/popover.css",
+  "../components/select.css",
 ]
 
 /*
