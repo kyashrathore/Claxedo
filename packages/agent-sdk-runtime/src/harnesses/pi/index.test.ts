@@ -225,89 +225,50 @@ describe("PiHarnessAdapter", () => {
     }))
   })
 
-  test("supports permission checkpoints before continuing a turn", async () => {
+  /*
+   * Pi has no permission path, and the capability says so.
+   *
+   * Its tools run in `just-bash` over an `InMemoryFs` (`createVirtualSessionEnv`),
+   * so a command mutates a JavaScript object and there is nothing to gate. The
+   * two port members stay because the contract requires them; both are inert, and
+   * `respondPermission` must tolerate an id it never issued rather than throw.
+   */
+  test("raises no permission requests, and answers none", async () => {
     const adapter = new PiHarnessAdapter()
-    const session = await adapter.createSession(undefined, "Hybrid")
-    const iterator = adapter.sendMessage(session.id, prompt({
-      parts: [{ type: "text", text: "permission: bash\nexec: printf approved" }],
-    }), undefined)[Symbol.asyncIterator]()
-
-    expect(await nextEvent(iterator, "session-status")).toMatchObject({ type: "session-status", status: "busy" })
-    expect(await nextEvent(iterator, "permission.asked")).toMatchObject({
-      type: "permission.asked",
-      properties: {
-        id: `${session.id}:perm_1`,
-        sessionID: session.id,
-        tool: "bash",
-      },
-    })
-    expect(await adapter.listPermissions(undefined)).toMatchObject([{
-      id: `${session.id}:perm_1`,
-      sessionID: session.id,
-    }])
-
-    await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
-    const rest = []
-    for await (const event of { [Symbol.asyncIterator]: () => iterator }) rest.push(event)
-
-    expect(rest.map((event) => event.type)).toEqual(["text-delta", "session-status", "finish"])
-    expect(rest[0]).toMatchObject({ type: "text-delta", delta: "approved" })
-    expect(await adapter.listPermissions(undefined)).toEqual([])
-  })
-
-  test("denies permission checkpoints without running the command", async () => {
-    const adapter = new PiHarnessAdapter()
-    const session = await adapter.createSession(undefined, "Hybrid")
-    const iterator = adapter.sendMessage(session.id, prompt({
-      parts: [{ type: "text", text: "permission: bash\nexec: printf denied" }],
-    }), undefined)[Symbol.asyncIterator]()
-
-    await nextEvent(iterator, "permission.asked")
-    await adapter.respondPermission(`${session.id}:perm_1`, "deny", undefined)
-    const rest = []
-    for await (const event of { [Symbol.asyncIterator]: () => iterator }) rest.push(event)
-
-    expect(rest.map((event) => event.type)).toEqual(["text-delta", "session-status", "finish"])
-    expect(rest[0]).toMatchObject({ type: "text-delta", delta: "Permission denied." })
-  })
-
-  test("does not reuse permission ids after a prompt resolves", async () => {
-    const adapter = new PiHarnessAdapter()
-    const session = await adapter.createSession(undefined, "Hybrid")
-    const first = adapter.sendMessage(session.id, prompt({
-      parts: [{ type: "text", text: "permission: bash\nexec: printf first" }],
-    }), undefined)[Symbol.asyncIterator]()
-
-    expect(await nextEvent(first, "permission.asked")).toMatchObject({ properties: { id: `${session.id}:perm_1` } })
-    await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
-    for await (const _event of { [Symbol.asyncIterator]: () => first }) {}
-
-    const second = adapter.sendMessage(session.id, prompt({
-      parts: [{ type: "text", text: "permission: bash\nexec: printf second" }],
-    }), undefined)[Symbol.asyncIterator]()
-
-    expect(await nextEvent(second, "permission.asked")).toMatchObject({ properties: { id: `${session.id}:perm_2` } })
-    await adapter.respondPermission(`${session.id}:perm_2`, "deny", undefined)
-    for await (const _event of { [Symbol.asyncIterator]: () => second }) {}
-  })
-
-  test("auto-denies permission checkpoints after timeout", async () => {
-    const adapter = new PiHarnessAdapter({ permissionTimeoutMs: 1 })
     const session = await adapter.createSession(undefined, "Hybrid")
     const events = await collect(adapter.sendMessage(session.id, prompt({
-      parts: [{ type: "text", text: "permission: bash\nexec: printf timed-out" }],
+      parts: [{ type: "text", text: "exec: printf ran" }],
     }), undefined))
 
-    expect(events.map((event) => event.type)).toEqual([
-      "message.updated",
-      "message.part.updated",
-      "session-status",
-      "permission.asked",
-      "text-delta",
-      "session-status",
-      "finish",
-    ])
-    expect(events[4]).toMatchObject({ type: "text-delta", delta: "Permission denied." })
+    expect(events.map((event) => event.type)).not.toContain("permission.asked")
+    expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "ran" }))
+    expect(await adapter.listPermissions(undefined)).toEqual([])
+    await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
+    expect(adapter.readHarnessCapabilities(session.id).permissions).toBe(false)
+  })
+
+  /*
+   * `permission:` is ordinary prompt text now.
+   *
+   * It used to be a magic prefix that raised a request and blocked the turn on an
+   * answer — a gate that only existed when the prompt happened to opt into it,
+   * while every other prompt ran unchecked. Pinned so the prefix cannot quietly
+   * regain meaning.
+   */
+  test("a prompt beginning with permission: is not a checkpoint", async () => {
+    const adapter = new PiHarnessAdapter()
+    const session = await adapter.createSession(undefined, "Hybrid")
+    const iterator = adapter.sendMessage(session.id, prompt({
+      // One token: `printf` renders only the format operand, so a spaced string
+      // would assert on shell behaviour rather than on the prefix being inert.
+      parts: [{ type: "text", text: "exec: printf permission:bash" }],
+    }), undefined)[Symbol.asyncIterator]()
+
+    const rest = []
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) rest.push(event)
+
+    expect(rest.map((event) => event.type)).not.toContain("permission.asked")
+    expect(rest).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "permission:bash" }))
   })
 
   test("runs a real model turn through the configured backend", async () => {

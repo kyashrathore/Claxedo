@@ -164,6 +164,26 @@ describe("currentModeId survives merges", () => {
     const first = merge(init(null), { modes: { currentModeId: "a", availableModes: [{ id: "a", name: "A" }] } })
     expect(merge(first, { configOptions: [] }).currentModeId).toBe("a")
   })
+
+  /*
+   * The shape `process.ts` builds when an agent sends `current_mode_update`.
+   *
+   * `session/set_mode` returns nothing, so a write records the requested id
+   * optimistically; this notification is the only thing that corrects it when the
+   * agent kept a different mode. The handler has to re-send `availableModes`
+   * alongside the new `currentModeId`, because `merge` treats a `modes` payload as
+   * authoritative for both fields and would otherwise blank the advertised list.
+   */
+  test("an agent-initiated mode change corrects the optimistic id without dropping the list", () => {
+    const available = [{ id: "plan", name: "Plan" }, { id: "code", name: "Code" }]
+    const optimistic = merge(init(null), { modes: { currentModeId: "code", availableModes: available } })
+    expect(optimistic.currentModeId).toBe("code")
+
+    const corrected = merge(optimistic, { modes: { availableModes: optimistic.modes, currentModeId: "plan" } })
+    expect(corrected.currentModeId).toBe("plan")
+    expect(corrected.modes.map((mode) => mode.id)).toEqual(["plan", "code"])
+    expect(permissionModes(corrected).currentModeId).toBe("plan")
+  })
 })
 
 /**

@@ -5,6 +5,7 @@ import {
   defaultPermissionSelection,
   findPermissionModeOption,
   permissionModeOptions,
+  unidentifiedHarnessModes,
   type HarnessModeReport,
   type PermissionModeOption,
   type PermissionSelection,
@@ -116,14 +117,16 @@ export function createComposerPermissionMode(input: {
     // An UNIDENTIFIED harness still gets Claxedo's own modes. Auto and Manual are
     // ours and work everywhere — only their delivery differs — so withholding them
     // would leave the user with no permission control at all on a session whose
-    // harness we merely failed to name. `pi` is the archetype for "Claxedo answers
-    // locally, the harness enforces nothing", which is exactly the safe behaviour
-    // for an unknown harness: it can never produce a ruleset write to the wrong
-    // engine. The harness group is empty and says the harness is unidentified.
+    // harness we merely failed to name. They are locally-answered, so neither can
+    // produce a ruleset write to the wrong engine.
+    //
+    // This used to be spelled `permissionModeOptions({ harness: "pi" })`, pi being
+    // the one harness that then fell to local answering. That coupling broke when
+    // pi stopped offering options at all — and it was always indirect: the case
+    // wants the rung that assumes nothing about the harness, not whatever pi does.
     if (!harness) {
-      const safe = permissionModeOptions({ harness: "pi", report: { modes: [], appliesFrom: "next-turn" } })
       return {
-        claxedo: safe.claxedo.map(row),
+        claxedo: unidentifiedHarnessModes().map(row),
         harness: { label: "Harness", rows: [], unavailable: "Still identifying this session's harness" },
       }
     }

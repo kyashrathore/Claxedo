@@ -1,14 +1,10 @@
 {
   "state": "applied",
-  "revision": 155,
-  "acceptedAt": "2026-07-27T08:56:29.374Z",
-  "updatedAt": "2026-07-27T08:56:29.385Z",
+  "revision": 702,
+  "acceptedAt": "2026-07-27T11:17:12.292Z",
+  "updatedAt": "2026-07-27T11:17:12.302Z",
   "harness": {
-    "id": "claude",
-    "access": "acp",
-    "connection": {
-      "kind": "process",
-      "binary": "/Users/yashvardhansingh/test/opencode/packages/workspace-runtime/node_modules/.bin/claude-agent-acp"
-    }
+    "id": "pi",
+    "access": "native"
   }
 }

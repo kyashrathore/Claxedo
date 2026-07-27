@@ -46,7 +46,6 @@ type PiFactoryOptions = ProcessObservedFactoryOptions & {
     sessionId: string
     directory: string | undefined
   }) => PiSessionPlacement | Promise<PiSessionPlacement>)
-  permissionTimeoutMs?: number
 }
 type AgentHarnessFactoryContext = {
   store: AgentRuntimeStoreWithRecovery

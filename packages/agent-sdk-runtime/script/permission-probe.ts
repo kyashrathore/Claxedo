@@ -284,7 +284,8 @@ if (OPENCODE_URL) {
 // Honest about what was NOT reached, rather than silently reporting five of eight.
 results.push({
   harness: "pi",
-  blocked: "no policy surface by design — PERMISSION_MECHANISMS marks it claxedo-answers-locally",
+  blocked:
+    "no policy surface by design — PERMISSION_MECHANISMS marks it sandboxed-no-policy: pi's tools run in just-bash over an InMemoryFs, so there is nothing to gate",
 })
 
 console.log(JSON.stringify(results, null, 1))

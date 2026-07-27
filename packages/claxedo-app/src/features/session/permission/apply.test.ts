@@ -90,8 +90,10 @@ describe("applyPermissionMode — opencode", () => {
 describe("applyPermissionMode — the other deliveries", () => {
   test("local answering sends nothing and says so", async () => {
     const { client, calls } = writer()
-    // ACP and pi both resolve Auto to local answering.
-    for (const harness of ["claude-acp", "codex-acp", "cursor-acp", "cursor-sdk", "pi"] as const) {
+    // Every harness that reports no auto rung of its own resolves Auto to local
+    // answering. (`pi` used to be listed here and no longer offers any option —
+    // its tools run in just-bash, so there is nothing to answer for.)
+    for (const harness of ["claude-acp", "codex-acp", "cursor-acp", "cursor-sdk"] as const) {
       const result = await applyPermissionMode({
         delivery: permissive(harness).delivery,
         sessionID: "ses_1",
@@ -163,7 +165,9 @@ describe("permissionModeDeliverable stays pinned to applyPermissionMode", () => 
   // failure `not-wired` exists to expose. Walk every kind and require agreement.
   const ALL: PermissionModeDelivery[] = [
     permissive("opencode").delivery,
-    permissive("pi").delivery,
+    // Any harness with no auto rung of its own reaches the locally-answered
+    // delivery. Was `pi`, which now contributes no options at all.
+    permissive("cursor-sdk").delivery,
     { kind: "harness-permission-mode", modeId: "auto", appliesFrom: "next-turn" },
   ]
 

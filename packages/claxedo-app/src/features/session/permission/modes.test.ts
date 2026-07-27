@@ -8,6 +8,7 @@ import {
   DANGER_GATED_PERMISSIONS,
   IN_PROJECT_WRITE_PERMISSIONS,
   SAFE_READ_PERMISSIONS,
+  SANDBOXED_NO_POLICY_REASON,
   claxedoPermissionModes,
   defaultPermissionSelection,
   findPermissionModeOption,
@@ -21,6 +22,17 @@ const report = (input: Partial<HarnessModeReport> = {}): HarnessModeReport => ({
   appliesFrom: "next-turn",
   ...input,
 })
+
+/**
+ * Every harness that HAS a policy surface — i.e. all but the sandboxed ones.
+ *
+ * Derived from the mechanism table rather than hardcoded, so adding another
+ * sandboxed harness cannot silently leave these loops asserting that it offers
+ * options it does not.
+ */
+const POLICY_HARNESS_IDS = HARNESS_IDS.filter(
+  (id) => PERMISSION_MECHANISMS[id].kind !== "sandboxed-no-policy",
+)
 
 const THREE_MODES: HarnessModeReport = report({
   modes: [
@@ -44,7 +56,7 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   test("Claxedo contributes exactly one option, and it is called Auto", () => {
-    for (const harness of HARNESS_IDS) {
+    for (const harness of POLICY_HARNESS_IDS) {
       // With a reporting harness there is a list below to switch to, so Auto is
       // the only thing Claxedo adds.
       const options = claxedoPermissionModes({ harness, report: THREE_MODES })
@@ -53,12 +65,35 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   test("a harness reporting nothing also gets an off switch", () => {
-    for (const harness of HARNESS_IDS) {
+    for (const harness of POLICY_HARNESS_IDS) {
       // Nothing to switch TO otherwise — Auto alone would be a one-item picker
       // with no way back.
       const options = claxedoPermissionModes({ harness })
       expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
     }
+  })
+
+  /*
+   * pi is the exception to both tests above, and deliberately so.
+   *
+   * Its tools cannot reach anything real — `harnesses/pi/index.ts:176` defaults
+   * the session env to just-bash over an InMemoryFs — so there is no policy for
+   * an option to express. Offering "Auto" there previously meant flipping a
+   * browser-local boolean that gated a permission request pi only emits when the
+   * prompt literally starts with `permission:`; every other prompt executed
+   * unchecked. The control described a policy that did not exist.
+   */
+  test("a sandboxed harness gets no options at all, and says why", () => {
+    expect(claxedoPermissionModes({ harness: "pi" })).toEqual([])
+    expect(claxedoPermissionModes({ harness: "pi", report: THREE_MODES })).toEqual([])
+    expect(harnessPermissionModes({ harness: "pi", report: THREE_MODES }).modes).toEqual([])
+    expect(harnessPermissionModes({ harness: "pi" }).unavailable).toBe(SANDBOXED_NO_POLICY_REASON)
+    // Names both facts, so an empty menu never reads as broken or still loading.
+    expect(SANDBOXED_NO_POLICY_REASON).toMatch(/just-bash/i)
+    expect(SANDBOXED_NO_POLICY_REASON).toMatch(/cloud/i)
+    // Never the loading or the not-reported copy: pi is not slow and will not
+    // report later.
+    expect(SANDBOXED_NO_POLICY_REASON).not.toMatch(/loading|has not reported/i)
   })
 
   test("Auto resolves to whoever actually enforces it", () => {
@@ -80,8 +115,10 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(claudeAuto!.caveat).toBeUndefined()
 
     // Only with neither does Claxedo answer locally — and only there does the
-    // caveat saying so appear.
-    const [localAuto] = claxedoPermissionModes({ harness: "pi" })
+    // caveat saying so appear. `cursor-sdk` stands in for that rung: not
+    // opencode, and reporting no auto mode. (pi used to be the example here and
+    // can no longer be — it offers no options at all.)
+    const [localAuto] = claxedoPermissionModes({ harness: "cursor-sdk" })
     expect(localAuto!.delivery.kind).toBe("claxedo-auto-answer")
     expect(localAuto!.caveat).toMatch(/harness enforces nothing/i)
   })
@@ -90,7 +127,7 @@ describe("harness modes are shown in the harness's own words", () => {
     // The bug this replaces: every non-opencode harness fell to local answering,
     // so seven harnesses claimed nothing was enforced while their own auto rung
     // sat unused in the report.
-    for (const harness of HARNESS_IDS) {
+    for (const harness of POLICY_HARNESS_IDS) {
       const [auto] = claxedoPermissionModes({ harness, report: THREE_MODES })
       expect(auto!.caveat ?? "", harness).not.toMatch(/harness enforces nothing/i)
     }
@@ -104,10 +141,10 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(loading.unavailable).toMatch(/loading/i)
 
     const unsupported = harnessPermissionModes({
-      harness: "pi",
-      report: report({ unsupported: "Pi has no permission modes of its own" }),
+      harness: "cursor-sdk",
+      report: report({ unsupported: "Cursor reports no modes over this transport" }),
     })
-    expect(unsupported.unavailable).toBe("Pi has no permission modes of its own")
+    expect(unsupported.unavailable).toBe("Cursor reports no modes over this transport")
 
     const empty = harnessPermissionModes({ harness: "claude-acp", report: report() })
     expect(empty.unavailable).toMatch(/has not reported/i)
@@ -315,7 +352,7 @@ describe("Claxedo's own options, where nothing else enforces", () => {
   // Everywhere else Claxedo answers in-process: nothing is enforced and the
   // grants die with the app. The row must admit that.
   test("off opencode, the permissive option says Claxedo is the one answering", () => {
-    for (const harness of HARNESS_IDS.filter((id) => id !== "opencode")) {
+    for (const harness of POLICY_HARNESS_IDS.filter((id) => id !== "opencode")) {
       const option = claxedoPermissionModes({ harness }).find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
       expect(option.delivery.kind, harness).toBe("claxedo-auto-answer")
       expect(option.caveat, harness).toMatch(/Claxedo answers/i)

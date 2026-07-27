@@ -740,48 +740,40 @@ describe("createCentralSessionRuntime", () => {
     }))
   })
 
-  test("answers central Pi permission checkpoints through session routes", async () => {
+  /*
+   * Pi raises no permission checkpoints, so this pins the ROUTES rather than a
+   * gate: a turn runs to completion without one, and `/permission` stays empty.
+   *
+   * Pi's tools run in `just-bash` over an `InMemoryFs`, so there is nothing to
+   * gate. This used to drive a `permission:` prompt prefix that raised a request
+   * and blocked the turn; that path is gone, and its absence is what this asserts.
+   */
+  test("central Pi turns complete without a permission checkpoint", async () => {
     const runtime = createCentralSessionRuntime(services())
     const session = await runtime.createHybridSession({ title: "Permissioned" })
-    const permissionSeen = new Promise<void>((resolve) => {
-      runtime.eventHub.subscribeGlobal((event) => {
-        if (event.payload.type === "permission.asked") resolve()
-      })
+    let sawPermission = false
+    runtime.eventHub.subscribeGlobal((event) => {
+      if (event.payload.type === "permission.asked") sawPermission = true
     })
 
-    const message = runtime.routes.request(`http://127.0.0.1/session/${session.id}/message`, {
+    const response = await runtime.routes.request(`http://127.0.0.1/session/${session.id}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        parts: [{ type: "text", text: "permission: bash\nexec: printf approved" }],
+        parts: [{ type: "text", text: "exec: printf approved" }],
         messageID: "user-permission",
         agent: "pi",
         model: { providerID: "pi", modelID: "virtual" },
       }),
     })
-    await permissionSeen
 
-    const permissions = await runtime.routes.request("http://127.0.0.1/permission")
-    await expect(permissions.json()).resolves.toMatchObject([{
-      id: `${session.id}:perm_1`,
-      sessionID: session.id,
-      tool: "bash",
-    }])
-
-    const reply = await runtime.routes.request(
-      `http://127.0.0.1/session/${session.id}/permissions/${encodeURIComponent(`${session.id}:perm_1`)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response: "once" }),
-      },
-    )
-    const response = await message
-
-    expect(reply.status).toBe(200)
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
       parts: [expect.objectContaining({ text: "approved" })],
     })
+    expect(sawPermission).toBe(false)
+
+    const permissions = await runtime.routes.request("http://127.0.0.1/permission")
+    await expect(permissions.json()).resolves.toEqual([])
   })
 })

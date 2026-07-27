@@ -4,7 +4,6 @@ import {
   buildUserMessage,
   messagePartUpdated,
   messageUpdated,
-  permissionAsked,
   sessionError,
   type CompatPart,
 } from "../../compat-events"
@@ -57,11 +56,6 @@ type PiSession = {
   env: SessionEnv
   config: SessionConfig
   messages: AgentMessageRow[]
-  permissions: Map<string, {
-    row: AgentPermissionRow
-    resolve: (decision: "allow_once" | "allow_always" | "deny" | "reject_always") => void
-  }>
-  permissionSeq: number
   active?: AbortController
   /** Live pi Agent for model-backed turns; lazily created at first model turn. */
   agent?: Agent
@@ -79,7 +73,6 @@ export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   }) => PiSessionPlacement | Promise<PiSessionPlacement>)
   runStore?: RunStore<AgentRuntimeStreamEvent>
   eventHub?: RuntimeEventHub
-  permissionTimeoutMs?: number
   /**
    * Optional model backend (real pi turns). Resolved lazily per turn so
    * credential rotation is picked up. When absent or resolving to undefined,
@@ -149,15 +142,6 @@ function putMessage(session: PiSession, message: AgentMessageRow) {
   ]
 }
 
-function permissionPrompt(input: string) {
-  const match = input.match(/^permission:\s*([^\n]+)(?:\n([\s\S]*))?$/i)
-  if (!match?.[1]) return
-  return {
-    tool: match[1].trim(),
-    rest: match[2]?.trim() ?? "",
-  }
-}
-
 function runtimeEvent(input: AgentRuntimeStreamEvent): input is AgentRuntimeEvent {
   return !("properties" in input)
 }
@@ -168,7 +152,6 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   private defaultPlacement: NonNullable<PiAdapterOptions["defaultPlacement"]> | undefined
   private runStore: RunStore<AgentRuntimeStreamEvent>
   private eventHub: RuntimeEventHub | undefined
-  private permissionTimeoutMs: number
   private modelBackend: PiModelBackendResolver | undefined
   private processObserver: AgentProcessObserver | undefined
 
@@ -177,7 +160,6 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     this.defaultPlacement = options.defaultPlacement
     this.runStore = options.runStore ?? createMemoryRunStore()
     this.eventHub = options.eventHub
-    this.permissionTimeoutMs = options.permissionTimeoutMs ?? 5 * 60 * 1000
     this.modelBackend = options.modelBackend
     this.processObserver = options.processObserver
   }
@@ -284,8 +266,6 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       ),
       config: defaultConfig(),
       messages: [],
-      permissions: new Map(),
-      permissionSeq: 0,
       processOwnerId,
       processObservation,
     })
@@ -385,7 +365,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       abort: true,
       reconnect: true,
       replay: true,
-      permissions: true,
+      // Pi raises no permission requests, so the auto-accept command that gates
+      // on this would toggle something with nothing to answer.
+      permissions: false,
       questions: false,
       todos: false,
       commands: false,
@@ -435,46 +417,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         if (prompt) yield emit(messagePartUpdated(textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })))
       }
       yield emit({ type: "session-status", status: "busy" })
-      const prompt = promptText(input.parts)
-      const permission = permissionPrompt(prompt)
-      let permissionDenied = false
-      if (permission) {
-        const permId = `${id}:perm_${session.permissionSeq + 1}`
-        session.permissionSeq += 1
-        let resolveDecision!: (decision: "allow_once" | "allow_always" | "deny" | "reject_always") => void
-        const decision = new Promise<"allow_once" | "allow_always" | "deny" | "reject_always">((resolve) => {
-          resolveDecision = resolve
-        })
-        const row = {
-          id: permId,
-          sessionID: id,
-          tool: permission.tool,
-          title: `Allow ${permission.tool}`,
-          permission: permission.tool,
-          patterns: permission.rest ? [permission.rest] : [],
-          metadata: { source: "pi" },
-          always: [],
-          time: { created: Date.now() },
-        } satisfies AgentPermissionRow
-        session.permissions.set(permId, { row, resolve: resolveDecision })
-        const abortPermission = () => resolveDecision("deny")
-        abort.signal.addEventListener("abort", abortPermission, { once: true })
-        yield emit(permissionAsked(row as never))
-        const timeout = setTimeout(() => resolveDecision("deny"), this.permissionTimeoutMs)
-        timeout.unref?.()
-        const reply = await decision.finally(() => {
-          clearTimeout(timeout)
-          abort.signal.removeEventListener("abort", abortPermission)
-        })
-        session.permissions.delete(permId)
-        permissionDenied = reply === "deny" || reply === "reject_always"
-      }
-      const executable = permissionDenied ? "" : permission?.rest || prompt
+      const executable = promptText(input.parts)
       const command = text(executable.match(/^\/?bash\s+([\s\S]+)/)?.[1]) ?? text(executable.match(/^exec:\s*([\s\S]+)/i)?.[1])
-      if (permissionDenied) {
-        assistantText = "Permission denied."
-        yield emit({ type: "text-delta", delta: assistantText })
-      } else if (command) {
+      if (command) {
         const result = await session.env.exec(command, { signal: abort.signal })
         const output = result.stdout || result.stderr || `exit ${result.exitCode}`
         if (output) {
@@ -587,23 +532,20 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return []
   }
 
-  /** Pi runs in-process with no workspace of its own, so `directory` is accepted (the port passes it) and ignored. */
+  /**
+   * Pi never asks. Its tools run in `just-bash` over an `InMemoryFs` — see
+   * `createVirtualSessionEnv` — so there is nothing to gate and no request to
+   * raise. Both members stay because the port requires them.
+   */
   async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermissionRow[]> {
-    return [...this.sessions.values()].flatMap((session) => [...session.permissions.values()].map((item) => item.row))
+    return []
   }
 
   async respondPermission(
-    permId: string,
-    decision: "allow_once" | "allow_always" | "deny" | "reject_always",
+    _permId: string,
+    _decision: "allow_once" | "allow_always" | "deny" | "reject_always",
     _directory?: RuntimeDirectory,
-  ) {
-    for (const session of this.sessions.values()) {
-      const pending = session.permissions.get(permId)
-      if (!pending) continue
-      pending.resolve(decision)
-      return
-    }
-  }
+  ) {}
 
   async listQuestions(): Promise<AgentQuestionRow[]> {
     return []

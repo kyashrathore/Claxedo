@@ -252,6 +252,17 @@ export const CLAXEDO_ALLOW_SAFE_ID = "claxedo-allow-safe"
 export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
 
 /**
+ * The whole picker, for a harness whose tools cannot reach anything real.
+ *
+ * States the two facts that make a permission mode unnecessary rather than
+ * merely absent, so nobody reads the empty menu as something being broken or
+ * still loading. See `sandboxed-no-policy` in mechanisms.ts for the file:line
+ * evidence behind both clauses.
+ */
+export const SANDBOXED_NO_POLICY_REASON =
+  "No permission mode applies — Pi's shell is simulated (just-bash, in memory) and its tools run in Pi's cloud, so nothing reaches your machine."
+
+/**
  * Claxedo's own two options, for the harnesses that have no modes of their own.
  *
  * Named for WHAT THEY DO rather than for a tier. There is deliberately no "Auto"
@@ -270,6 +281,11 @@ export function claxedoPermissionModes(input: {
   report?: HarnessModeReport
   hasSession?: boolean
 }): readonly PermissionModeOption[] {
+  // A harness whose tools cannot reach anything real gets NO options, not even
+  // Claxedo's own. Offering one would put a choosable control over a policy that
+  // does not exist — the same defect as offering "Auto" under a harness that
+  // failed to start. `SANDBOXED_NO_POLICY_REASON` is shown in its place.
+  if (PERMISSION_MECHANISMS[input.harness].kind === "sandboxed-no-policy") return []
   const auto = claxedoAutoOption(input)
   // An off switch only has to be manufactured when the harness offers nothing to
   // switch TO. Everywhere else the harness's own modes sit directly below Auto
@@ -372,8 +388,25 @@ function claxedoAutoOption(input: {
     }
   }
 
+  return localAnswerAutoOption()
+}
+
+/**
+ * Rung 3: Claxedo answers the safe permissions itself.
+ *
+ * Extracted so the unidentified-harness path can reach it WITHOUT naming a
+ * harness. That path used to build its options by calling
+ * `permissionModeOptions({ harness: "pi" })` — pi being, at the time, the one
+ * harness that reached this rung. That coupling broke the moment pi stopped
+ * offering options at all, and it was always a misuse: the unknown-harness case
+ * wants "the rung that assumes nothing about the harness", which is this one,
+ * not "whatever pi happens to do".
+ */
+function localAnswerAutoOption(): PermissionModeOption {
   return {
-    ...base,
+    id: CLAXEDO_ALLOW_SAFE_ID,
+    name: "Auto",
+    origin: "claxedo",
     // Same shape as every other rung — CLAXEDO_AUTO_ANSWERS is exactly the
     // complement of DANGER_GATED_PERMISSIONS — but answered locally, which is
     // what the caveat is for.
@@ -381,6 +414,18 @@ function claxedoAutoOption(input: {
     caveat: "Claxedo answers these prompts on your behalf; the harness enforces nothing",
     delivery: CLAXEDO_LOCAL_AUTO,
   }
+}
+
+/**
+ * What to offer while the session's harness is still unidentified.
+ *
+ * Both options are Claxedo's own and assume nothing about the harness, so
+ * neither can produce a ruleset write to the wrong engine. Withholding them
+ * would leave a user with no permission control at all on a session whose
+ * harness we merely failed to name yet.
+ */
+export function unidentifiedHarnessModes(): readonly PermissionModeOption[] {
+  return [localAnswerAutoOption(), localAnswerAskOption()]
 }
 
 /**
@@ -432,6 +477,11 @@ function claxedoAskOption(harness: HarnessId, hasSession?: boolean): PermissionM
       delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAskRuleset(), appliesFrom: "next-turn" },
     }
   }
+  return localAnswerAskOption()
+}
+
+/** The off switch where Claxedo, not the harness, is the one answering. */
+function localAnswerAskOption(): PermissionModeOption {
   return {
     id: CLAXEDO_ASK_ALWAYS_ID,
     name: "Ask for everything",
@@ -478,6 +528,14 @@ export function harnessPermissionModes(input: {
 }): HarnessPermissionModes {
   const label = HARNESS_LABELS[input.harness]
   const report = input.report
+
+  // Checked FIRST, ahead of the loading and empty-report branches, because
+  // neither is true here: this harness is not slow to answer and has not merely
+  // failed to report — it has no policy surface and needs none. Saying "has not
+  // reported any permission modes" would imply it might later.
+  if (PERMISSION_MECHANISMS[input.harness].kind === "sandboxed-no-policy") {
+    return { modes: [], unavailable: SANDBOXED_NO_POLICY_REASON }
+  }
 
   // Not yet fetched. Genuinely transient, and distinct from every case below.
   if (!report) return { modes: [], unavailable: `Loading ${label}'s permission modes…` }

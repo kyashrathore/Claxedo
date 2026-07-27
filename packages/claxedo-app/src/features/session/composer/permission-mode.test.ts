@@ -10,6 +10,13 @@ import {
 } from "@/features/session/permission/modes"
 import type { HarnessId } from "@/platform/identity/session-ref"
 
+/**
+ * Every harness whose own modes the picker renders.
+ *
+ * `pi` is deliberately absent: its tools run in just-bash over an in-memory
+ * filesystem, so it has no policy surface and the picker shows a reason instead
+ * of rows. It is covered by its own test below rather than by these loops.
+ */
 const ALL: HarnessId[] = [
   "opencode",
   "claude-sdk",
@@ -18,7 +25,6 @@ const ALL: HarnessId[] = [
   "codex-app-server",
   "cursor-acp",
   "cursor-sdk",
-  "pi",
 ]
 
 const REPORTED: HarnessModeReport = {

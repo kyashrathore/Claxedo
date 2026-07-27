@@ -81,7 +81,16 @@ export function PromptPermissionControl(props: {
         // drill-down, not a preference worth persisting across openings.
         onOpenChange={(open) => !open && setExpanded(false)}
       >
-        <Tooltip placement="top" value={props.current()?.description ?? props.label}>
+        {/*
+          Falls back to the REASON before the generic label. On a harness with no
+          modes the trigger has no description to show, and "Permissions" alone
+          invites a click that opens a menu with nothing to pick — saying why on
+          hover answers the question without one.
+        */}
+        <Tooltip
+          placement="top"
+          value={props.current()?.description ?? props.groups()?.harness.unavailable ?? props.label}
+        >
           <MenuV2.Trigger
             data-action="prompt-permission-mode"
             data-mode={props.current()?.id ?? ""}
@@ -129,10 +138,29 @@ export function PromptPermissionControl(props: {
                       <For each={groups().claxedo}>
                         {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
                       </For>
+                      {/*
+                        A REASON is prose, not a row.
+
+                        This was a `MenuV2.Item disabled`, and menu items are a
+                        fixed-height single line by contract — so a sentence
+                        explaining why a harness offers nothing was clipped
+                        mid-word and collided with the composer beneath it. It is
+                        rendered as a padded paragraph instead: no row height, no
+                        hover affordance and no focus stop, because there is
+                        nothing here to choose.
+
+                        `border-t` only when a group sits above it, so the state
+                        where this is the WHOLE menu (pi) is a clean note rather
+                        than a fragment under a stray rule.
+                      */}
                       <Show when={groups().harness.rows.length > 0} fallback={
-                        <MenuV2.Item disabled>
-                          <span class="text-v2-text-text-faint">{groups().harness.unavailable}</span>
-                        </MenuV2.Item>
+                        <p
+                          data-slot="permission-modes-unavailable"
+                          class="text-balance px-2.5 py-2 text-[12px] leading-[1.45] text-v2-text-text-faint"
+                          classList={{ "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 }}
+                        >
+                          {groups().harness.unavailable}
+                        </p>
                       }>
                         <MenuV2.Separator />
                         <MenuV2.Item

@@ -143,11 +143,41 @@ export class ACPProcess {
           kind,
           hasListener: this.sessionListeners.has(params.sessionId),
         })
-        // Always cache config options (even without a per-session listener)
+        // Both mode channels fold back into ACPState here, BEFORE the listener
+        // check — an agent can change its own mode with no per-session listener
+        // registered, and dropping that leaves the cached state asserting a mode
+        // the agent has already left.
         if (params.update?.sessionUpdate === "config_option_update") {
           const opts = (params.update as { configOptions: SessionConfigOption[] }).configOptions
           this.remember(params.sessionId, { configOptions: opts })
           log.info("ACP sessionUpdate: cached config options", { count: opts.length })
+        }
+        /*
+         * The legacy channel's counterpart, and the correction `setPermissionMode`
+         * depends on.
+         *
+         * `session/set_mode` returns nothing, so that write records the requested
+         * id optimistically and relies on the agent's own notification to correct
+         * it when the agent kept something else — a plan-mode exit, or a mode
+         * clamped because a model change shrank `availableModes`. Without this the
+         * optimistic value is never revisited and the picker reports a mode the
+         * agent is not in.
+         *
+         * Agents on the config channel are already covered by the branch above;
+         * this is what an agent advertising only `availableModes` sends.
+         */
+        if (params.update?.sessionUpdate === "current_mode_update") {
+          const currentModeId = (params.update as { currentModeId?: string }).currentModeId
+          if (currentModeId) {
+            // Shaped as a `modes` payload because `merge` reads `currentModeId`
+            // from that field; `availableModes` is carried through unchanged so
+            // the advertised list is not dropped by the update.
+            const state = this.state(params.sessionId)
+            this.remember(params.sessionId, {
+              modes: { availableModes: state.modes, currentModeId },
+            })
+            log.info("ACP sessionUpdate: agent changed mode", { sessionId: params.sessionId, currentModeId })
+          }
         }
         const listener = this.sessionListeners.get(params.sessionId)
         if (!listener) {

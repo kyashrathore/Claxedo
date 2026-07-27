@@ -25,7 +25,7 @@
   padding: 2px 8px;
   border: 1px solid var(--codex-border-overlay, var(--border-weak-base, rgba(0, 0, 0, 0.07)));
 
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--codex-shadow-overlay, var(--shadow-md));
   pointer-events: none !important;
   /* transition: all 150ms ease-out; */
   /* transform: translate3d(0, 0, 0); */
