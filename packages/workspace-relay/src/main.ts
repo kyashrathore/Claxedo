@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import * as Sentry from "@sentry/bun"
+import { PostHog } from "posthog-node"
 import {
   createRemoteJWKSet,
   exportJWK,
@@ -53,23 +53,27 @@ function requireEnv(name: string) {
 }
 
 /**
- * D12 observability: Sentry on the relay (ops-floor decision: Sentry as the
- * observability floor, chosen for first-party coverage across all runtimes).
+ * W2c (2026-07-28-001): PostHog is the relay's error sink, replacing the
+ * per-vendor Sentry wiring the D12 ops-floor decision put here — PostHog now
+ * carries error tracking for every runtime behind one distinct_id space.
  *
- * Gated on `CLAXEDO_RELAY_SENTRY_DSN` (the relay's OWN DSN env — separate
- * Sentry project from the control plane). Absent DSN → `Sentry.init` is never
- * called: zero SDK overhead, zero network — the documented no-op posture, safe
- * before the Sentry account exists. Release = git SHA passed by the D11
- * deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA` accepted as alias); events are
- * tagged unit=relay + deployment_mode (absent → "self-host", mirroring D9's
- * default). Tracing stays off (ADR: it is where Sentry gets expensive).
+ * Gated on `CLAXEDO_POSTHOG_KEY` (`POSTHOG_KEY` accepted as a fallback — the
+ * same unprefixed name claxedo-server's posthog.ts already reads). Absent key
+ * → no `PostHog` client is ever constructed: zero SDK overhead, zero network,
+ * the same no-op posture the DSN-gated Sentry code had. Host defaults to
+ * `https://us.i.posthog.com` (the canonical ingest host — NOT the legacy
+ * `app.posthog.com` default some SDKs ship). Release = git SHA passed by the
+ * D11 deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA` accepted as alias);
+ * captures are tagged unit=relay + deployment_mode (absent → "self-host",
+ * mirroring D9's default).
  *
- * The relay is a Bun process (`Bun.serve`), so this uses `@sentry/bun` —
- * Sentry's Bun-native SDK with the same init-gated pattern as @sentry/node
- * (https://docs.sentry.io/platforms/javascript/guides/bun/).
+ * `posthog-node` runs fine on Bun (`Bun.serve`), unlike the Cloudflare
+ * Worker, which keeps it off its import graph entirely (see worker.ts).
  */
 export type RelayObservabilityEnv = {
-  CLAXEDO_RELAY_SENTRY_DSN?: string | undefined
+  CLAXEDO_POSTHOG_KEY?: string | undefined
+  POSTHOG_KEY?: string | undefined
+  CLAXEDO_POSTHOG_HOST?: string | undefined
   CLAXEDO_RELEASE?: string | undefined
   GIT_SHA?: string | undefined
   CLAXEDO_DEPLOYMENT_MODE?: string | undefined
@@ -77,50 +81,68 @@ export type RelayObservabilityEnv = {
   [key: string]: string | undefined
 }
 
-export type RelaySentryOptions = {
-  dsn: string
+export type RelayTelemetryOptions = {
+  key: string
+  host: string
   release?: string
-  tracesSampleRate: 0
-  initialScope: { tags: { unit: "relay"; deployment_mode: string } }
+  tags: { unit: "relay"; deployment_mode: string }
 }
 
 /**
- * Pure env → Sentry options resolver. `undefined` = DSN absent = do NOT init
- * (no client, no network). Exported for tests.
+ * Pure env → PostHog options resolver. `undefined` = key absent = do NOT
+ * construct a client (no client, no network). Exported for tests.
  */
-export function relaySentryOptions(env: RelayObservabilityEnv): RelaySentryOptions | undefined {
-  const dsn = clean(env.CLAXEDO_RELAY_SENTRY_DSN)
-  if (!dsn) return undefined
+export function relayTelemetryOptions(env: RelayObservabilityEnv): RelayTelemetryOptions | undefined {
+  const key = clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
+  if (!key) return undefined
   const release = clean(env.CLAXEDO_RELEASE) ?? clean(env.GIT_SHA)
   return {
-    dsn,
+    key,
+    host: clean(env.CLAXEDO_POSTHOG_HOST) ?? "https://us.i.posthog.com",
     ...(release ? { release } : {}),
-    tracesSampleRate: 0,
-    initialScope: {
-      tags: {
-        unit: "relay",
-        deployment_mode: clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "self-host",
-      },
+    tags: {
+      unit: "relay",
+      deployment_mode: clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "self-host",
     },
   }
 }
 
+// The PostHog client is an explicit object (unlike Sentry's implicit global
+// client), so reportFatal needs somewhere to find the one instance
+// initRelayObservability constructed. Stays undefined when the key is absent
+// — that's the no-client guarantee the key-absent tests assert on.
+let relayPostHogClient: PostHog | undefined
+let relayPostHogTags: Record<string, string> = {}
+
 export function initRelayObservability(env: RelayObservabilityEnv = process.env): { enabled: boolean } {
-  const options = relaySentryOptions(env)
+  const options = relayTelemetryOptions(env)
   if (!options) return { enabled: false }
-  Sentry.init(options)
+  relayPostHogClient = new PostHog(options.key, { host: options.host })
+  relayPostHogTags = { ...options.tags, ...(options.release ? { release: options.release } : {}) }
   return { enabled: true }
 }
 
 /**
  * Capture-and-flush used by the fatal handlers and the startup catch. With no
- * initialized client (DSN absent) both calls are documented no-ops. Never
- * throws — observability must not preempt the exit path.
+ * initialized client (key absent) this is a documented no-op. Never throws —
+ * observability must not preempt the exit path.
+ *
+ * `distinctId: "system"` mirrors the ops-plane convention: process-fatal
+ * events carry no user identity. `client.flush()` has no built-in timeout
+ * (unlike `Sentry.flush(ms)`), so it races a 2s timer; the flush promise's
+ * rejection is swallowed even when the timer wins the race, so a slow network
+ * failure that resolves after the timeout never surfaces as a second
+ * unhandledRejection mid-shutdown.
  */
-async function reportFatalToSentry(error: unknown): Promise<void> {
+export async function reportFatal(error: unknown): Promise<void> {
   try {
-    Sentry.captureException(error)
-    await Sentry.flush(2000)
+    const client = relayPostHogClient
+    if (!client) return
+    client.captureException(error, "system", relayPostHogTags)
+    await Promise.race([
+      client.flush().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ])
   } catch {
     // Never let error reporting block shutdown.
   }
@@ -518,9 +540,9 @@ export type FatalProcessHandlerOptions = {
   log?: (message: string) => void
   register?: boolean
   /**
-   * D12: error-tracker hook, invoked (and awaited) before teardown so a fatal
-   * crash reaches Sentry before the process exits. Failures are logged and
-   * never block the exit path. Defaults to none (tests, DSN-absent runs).
+   * W2c: error-tracker hook, invoked (and awaited) before teardown so a fatal
+   * crash reaches PostHog before the process exits. Failures are logged and
+   * never block the exit path. Defaults to none (tests, key-absent runs).
    */
   report?: (error: unknown, source: "uncaughtException" | "unhandledRejection") => void | Promise<void>
   stopServer?: () => Promise<void> | void
@@ -581,12 +603,12 @@ export function installFatalProcessHandlers(options: FatalProcessHandlerOptions)
 }
 
 async function main() {
-  // D12: Sentry first — everything after this (env validation exits report
+  // W2c: PostHog first — everything after this (env validation exits report
   // their reason on stderr already; runtime errors are the tracker's job).
-  // No-op unless CLAXEDO_RELAY_SENTRY_DSN is set.
+  // No-op unless CLAXEDO_POSTHOG_KEY (or POSTHOG_KEY) is set.
   const observability = initRelayObservability(process.env)
   if (observability.enabled) {
-    console.log("[workspace-relay] sentry error tracking enabled")
+    console.log("[workspace-relay] posthog error tracking enabled")
   }
 
   const validation = validateProductionEnv({
@@ -753,9 +775,9 @@ async function main() {
     drain: handler.drain,
     directory,
     log: (message) => console.error(message),
-    // D12: fatal crashes are exactly the events a solo operator never sees in
-    // a log buffer — flush them to Sentry (no-op when no DSN) before exiting.
-    report: (error) => reportFatalToSentry(error),
+    // W2c: fatal crashes are exactly the events a solo operator never sees in
+    // a log buffer — flush them to PostHog (no-op when no key) before exiting.
+    report: (error) => reportFatal(error),
     stopServer: async () => {
       server.stop(true)
       syntheticProbe?.stop()
@@ -769,9 +791,9 @@ async function main() {
 if (import.meta.main) {
   main().catch(async (err) => {
     console.error("[workspace-relay] startup failed:", err)
-    // D12: startup failures past env validation (which exits itself) should
-    // reach the error tracker too. No-op without a DSN.
-    await reportFatalToSentry(err)
+    // W2c: startup failures past env validation (which exits itself) should
+    // reach the error tracker too. No-op without a key.
+    await reportFatal(err)
     process.exit(1)
   })
 }
