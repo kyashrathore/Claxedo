@@ -471,14 +471,22 @@ test.describe("core permission ruleset delivery @core", () => {
           + "two controls over one behaviour with no way to tell which wins",
       ).toEqual([])
       expect(offered.length, "the harness must contribute at least one mode of its own").toBeGreaterThan(0)
-      await page.keyboard.press("Escape")
-      // Wait for the menu to actually GO, not just for Escape to be sent.
+      // Dismiss by toggling the TRIGGER, not with Escape, and wait for the menu to
+      // actually go.
       //
-      // An open Kobalte menu marks the rest of the page aria-hidden, so while it is
-      // up every composer control loses its accessible name at once — including the
-      // prompt box the positive control below types into. Continuing on a still-open
-      // menu therefore fails on a `getByRole` for the textbox, which reads as the
-      // composer being broken rather than as the menu never having closed.
+      // This matters because an open Kobalte menu marks the rest of the page
+      // aria-hidden: while it is up, every composer control loses its accessible
+      // name at once, including the prompt box the positive control below types
+      // into. A still-open menu therefore fails later on a `getByRole` for the
+      // textbox, which reads as the composer being broken rather than as the menu
+      // never having closed — which is exactly how this spec failed.
+      //
+      // Escape is deliberately not used. It dismisses reliably on a draft but was
+      // observed leaving the menu up on a SESSION page, which renders two composers
+      // and so two of these triggers. That looks like a real quirk of the
+      // two-composer layout rather than anything this spec is about, and a test
+      // should not depend on it to get back to typing.
+      await control.click()
       await expect(page.locator('[role="menuitem"][data-mode]')).toHaveCount(0, { timeout: 10_000 })
 
       // POSITIVE CONTROL (authoring rule #3): a request that DID reach the mock after
