@@ -263,8 +263,24 @@
   color: var(--icon-interaction-strong);
 }
 
-/* Filled primary icon buttons define their own inverse foreground. Persistent
-   interaction emphasis must not repaint that glyph with the shell icon color. */
+/*
+ * Filled primary icon buttons define their own inverse foreground. Persistent
+ * interaction emphasis must not repaint that glyph with the shell icon color.
+ *
+ * DO NOT DELETE THIS RULE. `ClaxedoIconButton` defaults to
+ * `data-icon-interaction="persistent"`, so without this the rule above paints
+ * a filled primary button `--icon-interaction-strong` — and the
+ * `color: inherit !important` two rules up then forces the glyph to follow it,
+ * beating the button's own inverse utility class. The composer send arrow ends
+ * up the same color as the circle it sits on. That is invisible, not merely
+ * wrong, and since this grammar is no longer scoped to Codex it happens in
+ * every theme.
+ *
+ * No test catches it. A cascade conflict needs a real style resolver, and the
+ * component-level vitests assert only what the component owns — they stay
+ * green while the arrow disappears. This is a rendered-pixels check; it belongs
+ * in the visual pass, on the composer, not just on shell surfaces.
+ */
 [data-component="icon-button"][data-variant="primary"][data-icon-interaction="persistent"] {
   color: var(--v2-icon-icon-inverse);
 }
