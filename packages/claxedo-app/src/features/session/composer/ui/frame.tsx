@@ -180,6 +180,14 @@ export const PromptInputFrame: Component<{
   <ComposerNoticeProvider channel={inherited ?? own!}>
   <div
     ref={props.rootRef}
+    // Load-bearing beyond naming: this is the CSS container ROOT. Its only
+    // consumer is `[data-component="composer-frame"]` in index.css, which sets
+    // `container-name: prompt-composer` — the box the composer's responsive
+    // collapse measures. Rename or drop it and the `@container prompt-composer`
+    // block stops matching entirely: every `.composer-compact-only` mark stays
+    // `display: none` and no control label ever hides, so the toolbar silently
+    // stops collapsing at narrow widths. Nothing catches that — the collapse is
+    // a container query, which jsdom does not resolve.
     data-component="composer-frame"
     classList={{
       "relative size-full flex flex-col gap-0": true,
