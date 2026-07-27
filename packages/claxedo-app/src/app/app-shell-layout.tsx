@@ -48,6 +48,13 @@ import {
 import { createShellLayoutState } from "./layout/state"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
 import { DialogProcessDiagnostics } from "../features/processes/ui"
+import {
+  TerminalWorkspaceProvisioningProvider,
+  type TerminalWorkspaceProvisioning,
+} from "./workbench/terminal/terminal-workspace-provisioning"
+
+/** See the note on the same alias in `workbench/terminal/terminal-new-view.tsx`. */
+type WorkspaceDirectoryRef = string
 import "./styles/ui-overrides.css"
 
 export type AppShellLayoutProps = ParentProps<{
@@ -128,6 +135,18 @@ export type AppShellLayoutProps = ParentProps<{
    * @param title - Optional title for the terminal surface (e.g., "Claude", "Codex")
    */
   onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
+
+  /**
+   * Provision a workspace for the project owning `workspaceDir` and resolve to
+   * the created directory, without opening anything in it. Supplied to the
+   * terminal creator (which opens a terminal there itself) through context,
+   * because the creator renders inside a pane rather than in the rail's prop
+   * drill path.
+   */
+  onCreateWorkspace?: (input: {
+    directory: WorkspaceDirectoryRef
+    kind: "local" | "cloud"
+  }) => Promise<WorkspaceDirectoryRef | undefined>
 
   /**
    * Callback to create a new page
@@ -297,7 +316,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   function workspacePanelWidth() {
     return shellLayout.workspacePanelWidth()
   }
+
+  const terminalWorkspaceProvisioning: TerminalWorkspaceProvisioning = {
+    createWorkspace: async (input) => (await props.onCreateWorkspace?.(input)) ?? undefined,
+  }
   return (
+    <TerminalWorkspaceProvisioningProvider value={terminalWorkspaceProvisioning}>
     <div class="flex flex-col w-full h-full bg-background-base overflow-hidden" data-claxedo>
       {/* Desktop window chrome spacer - for macOS traffic lights / Windows title bar */}
 
@@ -421,6 +445,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
         )}
       </div>
     </div>
+    </TerminalWorkspaceProvisioningProvider>
   )
 }
 

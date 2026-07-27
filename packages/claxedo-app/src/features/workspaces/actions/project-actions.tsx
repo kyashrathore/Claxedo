@@ -172,6 +172,12 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     project: ProjectItem,
     onProgress?: (step: string, message?: string) => void,
     workspaceName?: string,
+    /**
+     * Callers that own what opens in the new workspace (the terminal creator
+     * opens a terminal there) pass `openSession: false`, so provisioning does
+     * not race them by opening a session surface and navigating to it first.
+     */
+    opts?: { openSession?: boolean },
   ): Promise<WorkspaceBarItem | undefined> => {
     const worktree = project.worktree
     const baseUrl = getDefaultBaseUrl()
@@ -251,8 +257,10 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         canDelete: true,
       } satisfies WorkspaceBarItem
       props.state.workspace.recordAccess(project.id, result.workspaceId)
-      const tabId = openProjectSessionSurface(dir)
-      if (tabId) nav(workspaceSessionRoute(dir), "new-workspace-created", { projectId: project.id, created: dir, tabId })
+      if (opts?.openSession !== false) {
+        const tabId = openProjectSessionSurface(dir)
+        if (tabId) nav(workspaceSessionRoute(dir), "new-workspace-created", { projectId: project.id, created: dir, tabId })
+      }
       return item
     } catch (err) {
       onProgress?.("error", err instanceof Error ? err.message : "Failed to create cloud workspace")
@@ -262,6 +270,36 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       unsubProvision?.()
     }
     return undefined
+  }
+
+  /**
+   * Provision a workspace for the project owning `directory` and resolve to the
+   * created directory, WITHOUT opening anything in it.
+   *
+   * `handleNewLocalWorkspace` / `handleNewCloudWorkspace` both end by opening a
+   * session surface and navigating to it, which is the right default for the
+   * sidebar's "add workspace" affordances and wrong for any caller that already
+   * knows what belongs in the new workspace. The terminal creator is the first
+   * such caller: it provisions on launch and then opens a terminal there.
+   *
+   * Resolves undefined when the flow fails — the underlying handlers raise their
+   * own toast, so callers should stop rather than report a second error.
+   */
+  const createWorkspaceDirectory = async (input: {
+    directory: WorkspaceDirectoryRef
+    kind: "local" | "cloud"
+    workspaceName?: string
+    onProgress?: (step: string, message?: string) => void
+  }): Promise<WorkspaceDirectoryRef | undefined> => {
+    const project = findProjectForWorkspace(props.projects, input.directory)
+    if (!project) return undefined
+    const created = input.kind === "cloud"
+      ? await handleNewCloudWorkspace(project, input.onProgress, input.workspaceName, { openSession: false })
+      : await createLocalWorkspace(props, project, {
+          onProgress: input.onProgress,
+          workspaceName: input.workspaceName,
+        })
+    return created?.directory
   }
 
   const handleSettings = () => {
@@ -451,6 +489,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     handleNewProject,
     handleNewLocalWorkspace,
     handleNewCloudWorkspace,
+    createWorkspaceDirectory,
     handleSettings,
     handleHelp,
     handleDeleteWorkspace,

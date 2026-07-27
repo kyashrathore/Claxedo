@@ -583,7 +583,18 @@ async function installSeededSession(page: Page, rows: Array<{ info: AnyInfo; par
   // pattern — DOES swallow query-string characters) instead of this route.
   await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
   await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
-  await page.route(`**/session/${SESSION_ID}**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
+  // Bound to the session ROW only — deliberately NOT `**/session/${SESSION_ID}**`.
+  // A trailing `**` compiles to `(.*)`, so that pattern also swallows every
+  // SUB-resource of the session, including `GET /session/:id/permission-mode`,
+  // which the composer fetches on every mount since the per-harness mode picker
+  // landed. Answered with the session row instead of a mode report, the picker
+  // read `modes` off a body that has none — which used to throw during render and
+  // take the whole shell into the ErrorBoundary, so `[data-claxedo]` never
+  // appeared and all nine tests here died in `gotoSession`. Two patterns for the
+  // same reason the `**/session` pair above needs two: a bare literal pattern
+  // requires an exact end-of-URL match, and the app appends `?directory=...`.
+  await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
+  await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: messageBody }))
   return mock
 }
@@ -658,7 +669,18 @@ async function installMutableSession(
   // block above.
   await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
   await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill({ status: 200, contentType: "application/json", body: listBody }) : route.fallback()))
-  await page.route(`**/session/${SESSION_ID}**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
+  // Bound to the session ROW only — deliberately NOT `**/session/${SESSION_ID}**`.
+  // A trailing `**` compiles to `(.*)`, so that pattern also swallows every
+  // SUB-resource of the session, including `GET /session/:id/permission-mode`,
+  // which the composer fetches on every mount since the per-harness mode picker
+  // landed. Answered with the session row instead of a mode report, the picker
+  // read `modes` off a body that has none — which used to throw during render and
+  // take the whole shell into the ErrorBoundary, so `[data-claxedo]` never
+  // appeared and all nine tests here died in `gotoSession`. Two patterns for the
+  // same reason the `**/session` pair above needs two: a bare literal pattern
+  // requires an exact end-of-URL match, and the app appends `?directory=...`.
+  await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
+  await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows) }))
   await page.route("**/session/status**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ [SESSION_ID]: { type: status } }) }))
   return {

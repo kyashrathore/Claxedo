@@ -465,6 +465,16 @@ export function harnessPermissionModes(input: {
 
   if (report.unsupported) return { modes: [], unavailable: report.unsupported }
 
+  // A 200 whose body is not actually a mode report — a proxy error page, a
+  // server mid-deploy, a mis-scoped route — must degrade to "unavailable" here.
+  // `readJson` does no shape validation, so without this guard the `.length`
+  // below throws during the composer's render, and a render-time throw takes
+  // the whole app shell into the ErrorBoundary: the user gets a blank "Something
+  // went wrong" page instead of one control that could not load.
+  if (!Array.isArray(report.modes)) {
+    return { modes: [], unavailable: `${label} returned an unreadable permission-mode report` }
+  }
+
   if (report.modes.length === 0) {
     return { modes: [], unavailable: `${label} has not reported any permission modes for this session` }
   }
@@ -534,7 +544,11 @@ export function defaultPermissionSelection(input: {
   report?: HarnessModeReport
 }): PermissionSelection {
   const report = input.report
-  if (report && report.modes.length > 0) {
+  // `Array.isArray` for the same reason as `harnessPermissionModes` above: this
+  // runs inside the composer's `selection` memo, so an unreadable report would
+  // throw during render and take the whole shell into the ErrorBoundary rather
+  // than degrading this one control.
+  if (report && Array.isArray(report.modes) && report.modes.length > 0) {
     const current = report.currentModeId
       ? report.modes.find((mode) => mode.id === report.currentModeId)
       : undefined

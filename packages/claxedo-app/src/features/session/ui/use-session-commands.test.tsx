@@ -484,6 +484,15 @@ describe("Claxedo behavior", async () => {
     terminalQueueCalls.length = 0
     terminalCloseCalls.length = 0
     focusInputCalls = 0
+    // `focusComposerWhenReady` gives up (without running its fallback) when
+    // something other than BODY already holds focus, on the theory that the
+    // user moved it. bun runs every test file in one process and one document,
+    // so a node another file focused and never blurred would silently turn the
+    // focus-handoff assertion below into a no-op — it failed exactly that way
+    // under Linux file ordering. Hand each test a clean document.
+    const active = document.activeElement
+    if (active instanceof HTMLElement) active.blur()
+    document.body.innerHTML = ""
     composerFocus.schedule = (run) => run()
     promptSets.length = 0
     navigateCalls.length = 0

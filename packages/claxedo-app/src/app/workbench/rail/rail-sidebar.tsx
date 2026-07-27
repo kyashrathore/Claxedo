@@ -16,6 +16,7 @@ import { For, Show, Switch, Match, createMemo, createSignal, onCleanup, onMount,
 import { GlobalNavigation } from "./global-navigation"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
+import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -1468,10 +1469,25 @@ export function RailSidebar(props: RailSidebarProps) {
     project: ProjectItem
     workspaceDir: string
     label: string
+    /**
+     * Which header this row is. A `workspace` header names exactly one
+     * directory, so its buttons can spawn straight into it. A `project` header
+     * spans every worktree in the project and only has `projectActionDirectory()`
+     * — a fallback guess (`activeDirectory ?? directories()[0] ?? worktree`) the
+     * user never made and cannot see. So the project header offers no
+     * spawn-in-place shortcuts at all; its one terminal button opens the creator,
+     * which asks where before starting anything.
+     */
+    scope: "project" | "workspace"
   }) => {
     const [sharing, setSharing] = createSignal(false)
     const createTerminal = (command?: string, title?: string) => {
       props.onNewTerminal?.(input.workspaceDir, command, title)
+    }
+    // Opened directly rather than through `onNewTerminal`: the creator is a
+    // surface, not a pty, so it needs none of that action's pty plumbing.
+    const openTerminalCreator = () => {
+      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal")
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
     const shareTarget = createMemo(() => localWorkspaceShareTarget({
@@ -1533,45 +1549,61 @@ export function RailSidebar(props: RailSidebarProps) {
             <Icon name="plus-small" size="small" />
           </button>
         </Tooltip>
-        <Tooltip placement="top" value="New terminal">
+        <Tooltip placement="top" value={input.scope === "project" ? "New terminal…" : "New terminal"}>
           <button
             type="button"
             class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-            aria-label={`New terminal in ${input.label}`}
+            aria-label={
+              input.scope === "project"
+                ? `New terminal in ${input.label}…`
+                : `New terminal in ${input.label}`
+            }
+            data-testid="rail-new-terminal"
+            data-scope={input.scope}
             onClick={(e) => {
               e.stopPropagation()
+              if (input.scope === "project") {
+                openTerminalCreator()
+                return
+              }
               createTerminal()
             }}
           >
             <Icon name="terminal" size="small" />
           </button>
         </Tooltip>
-        <Tooltip placement="top" value="New Claude terminal">
-          <button
-            type="button"
-            class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-            aria-label={`New Claude terminal in ${input.label}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              createTerminal(getTerminalCommands().claude, "Claude")
-            }}
-          >
-            <Icon name="claude" size="small" />
-          </button>
-        </Tooltip>
-        <Tooltip placement="top" value="New Codex terminal">
-          <button
-            type="button"
-            class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
-            aria-label={`New Codex terminal in ${input.label}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              createTerminal(getTerminalCommands().codex, "Codex")
-            }}
-          >
-            <Icon name="openai" size="small" />
-          </button>
-        </Tooltip>
+        {/* Agent shortcuts are workspace-header only. On a project header they
+            would spawn an agent into the guessed directory, which is the exact
+            failure the creator exists to prevent — there, the creator lists the
+            same agents once a workspace has actually been chosen. */}
+        <Show when={input.scope === "workspace"}>
+          <Tooltip placement="top" value="New Claude terminal">
+            <button
+              type="button"
+              class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+              aria-label={`New Claude terminal in ${input.label}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                createTerminal(getTerminalCommands().claude, "Claude")
+              }}
+            >
+              <Icon name="claude" size="small" />
+            </button>
+          </Tooltip>
+          <Tooltip placement="top" value="New Codex terminal">
+            <button
+              type="button"
+              class="flex items-center justify-center size-6 rounded-sm text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+              aria-label={`New Codex terminal in ${input.label}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                createTerminal(getTerminalCommands().codex, "Codex")
+              }}
+            >
+              <Icon name="openai" size="small" />
+            </button>
+          </Tooltip>
+        </Show>
         <DropdownMenu onOpenChange={handleRailMenuOpenChange}>
           <DropdownMenu.Trigger
             aria-label={`More options for ${input.label}`}
@@ -2045,7 +2077,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 </span>
               </Show>
             </div>
-            <HeaderActions project={section.project} workspaceDir={section.workspaceDir} label={section.label} />
+            <HeaderActions project={section.project} workspaceDir={section.workspaceDir} label={section.label} scope="workspace" />
           </div>
         </div>
 
@@ -2298,6 +2330,7 @@ export function RailSidebar(props: RailSidebarProps) {
             project={section.project}
             workspaceDir={projectActionDirectory()}
             label={projectActionLabel()}
+            scope="project"
           />
         </div>
         <Show when={open()}>

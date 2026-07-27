@@ -114,6 +114,32 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(empty.unavailable).not.toMatch(/loading/i)
   })
 
+  // A 200 carrying something that is not a mode report has to degrade to a
+  // fourth empty state, not throw. This runs inside the composer's render, so a
+  // throw here does not break one control — it takes the whole shell into the
+  // ErrorBoundary and the user gets a blank "Something went wrong" page. That
+  // is not hypothetical: a mis-scoped e2e route served the session row on
+  // `/session/:id/permission-mode` and blanked the app on every seeded session.
+  test("an unreadable report degrades instead of throwing", () => {
+    // Built by parsing a JSON body rather than casting an object literal: that
+    // is exactly how the bad value reaches this function in production —
+    // `readJson` hands back whatever the response contained, unvalidated.
+    const unreadable: HarnessModeReport = JSON.parse(`{"appliesFrom":"next-turn"}`)
+    const malformed = harnessPermissionModes({ harness: "claude-sdk", report: unreadable })
+
+    expect(malformed.modes).toEqual([])
+    expect(malformed.unavailable).toMatch(/unreadable/i)
+  })
+
+  // Same body, the other entry point on the same render path. Guarding only
+  // `harnessPermissionModes` left this one still able to blank the app.
+  test("an unreadable report falls back to a Claxedo default instead of throwing", () => {
+    const unreadable: HarnessModeReport = JSON.parse(`{"appliesFrom":"next-turn"}`)
+    const selection = defaultPermissionSelection({ harness: "claude-sdk", report: unreadable })
+
+    expect(selection.kind).toBe("claxedo")
+  })
+
   // Cursor's options are read by Agent.create, so a change cannot reach the
   // session on screen. Every row has to say so or the picker is wrong by a whole
   // session lifetime.

@@ -176,7 +176,9 @@ export function createComposerPermissionModeWiring(input: {
    */
   const selection = (autoAcceptActive: boolean): PermissionSelection | undefined => {
     const current = report()
-    if (current && current.modes.length > 0) return pending()
+    // `Array.isArray` for the same reason as `harnessPermissionModes`: a 200
+    // that is not a mode report would otherwise throw here during render.
+    if (current && Array.isArray(current.modes) && current.modes.length > 0) return pending()
     return { kind: "claxedo", modeId: autoAcceptActive ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID }
   }
 

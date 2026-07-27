@@ -122,6 +122,7 @@ const terminalThunks: Thunks<TerminalAppPorts> = {
   NavigationStatusDot: lazy("@/app/workbench/navigation/navigation-row", "NavigationStatusDot"),
   workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),
+  TerminalNewView: lazy("@/app/workbench/terminal/terminal-new-view", "TerminalNewView"),
 }
 
 const settingsThunks: Thunks<SettingsAppPorts> = {

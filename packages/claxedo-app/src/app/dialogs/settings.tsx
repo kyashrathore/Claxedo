@@ -1,5 +1,5 @@
 // Claxedo adds mobile settings navigation and Claxedo-owned terminal and sandbox tabs.
-import { Component, createSignal, onCleanup, onMount } from "solid-js"
+import { Component, createSignal } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -12,7 +12,6 @@ import { SettingsModels } from "@/features/settings/ui/models"
 import { SettingsTerminals } from "@/features/settings/ui/terminals"
 import { SettingsConnections } from "@/features/settings/ui/connections"
 import { SandboxSettingsSection } from "@/features/settings/ui/sandbox-section"
-import { BP_SM } from "@/ui/controls/breakpoints"
 import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
 import { useServer } from "@/app/connection/server"
@@ -26,61 +25,10 @@ export const DialogSettings: Component = () => {
   const remoteAccess = useRemoteAccessController({ serverUrl: server.url })
   const [active, setActive] = createSignal("general")
   const [mobile, setMobile] = createSignal(false)
-  let root!: HTMLDivElement
-  let box: HTMLElement | undefined
-  let x = 0
-  let y = 0
-  let move: ((event: PointerEvent) => void) | undefined
-  let stop: (() => void) | undefined
-
-  const paint = () => {
-    if (!box) return
-    box.style.transform = `translate(${x}px, ${y}px)`
-  }
-
-  const drag = (event: PointerEvent) => {
-    if (window.innerWidth < BP_SM) return
-    if (!box) return
-    const ox = event.clientX - x
-    const oy = event.clientY - y
-    move = (next) => {
-      x = next.clientX - ox
-      y = next.clientY - oy
-      paint()
-    }
-    stop = () => {
-      if (move) window.removeEventListener("pointermove", move)
-      if (stop) window.removeEventListener("pointerup", stop)
-      move = undefined
-      stop = undefined
-    }
-    window.addEventListener("pointermove", move)
-    window.addEventListener("pointerup", stop)
-    event.preventDefault()
-  }
-
-  onMount(() => {
-    box = root.closest("[data-slot='dialog-container']") as HTMLElement | undefined
-  })
-
-  onCleanup(() => {
-    if (move) window.removeEventListener("pointermove", move)
-    if (stop) window.removeEventListener("pointerup", stop)
-  })
 
   return (
-    <Dialog size="x-large" transition class="flex-1" aria-label={language.t("sidebar.settings")}>
-      <div ref={root} class="flex flex-col h-full min-h-0">
-        <div class="flex items-center justify-center h-8 shrink-0 border-b border-border-weak-base/60 max-sm:hidden">
-          <button
-            type="button"
-            class="flex items-center justify-center h-6 w-full cursor-grab active:cursor-grabbing"
-            onPointerDown={drag}
-            aria-label="Move settings dialog"
-          >
-            <span class="h-1.5 w-12 rounded-full bg-border-weak-base/80" />
-          </button>
-        </div>
+    <Dialog size="x-large" transition class="flex-1 claxedo-settings-dialog" aria-label={language.t("sidebar.settings")}>
+      <div class="flex flex-col h-full min-h-0">
         <div class="hidden h-10 shrink-0 items-center justify-between border-b border-border-weak-base/60 px-3 max-sm:flex">
           <span class="text-[13px] font-medium text-text-base">Settings</span>
           <button
