@@ -149,6 +149,31 @@ describe("harness modes are shown in the harness's own words", () => {
     for (const mode of live.harness.modes) expect(mode.caveat, mode.id).toMatch(/next .* agent/i)
   })
 
+  /*
+   * Auto's description quotes the mode id so a collapsed row can be checked
+   * against the harness's own docs. That only holds when the id IS the
+   * harness's. On an ACP draft it is not: the agent has advertised nothing yet,
+   * so Claxedo substitutes its own intent rungs, and printing `(auto)` there
+   * would lend a placeholder of ours the authority of a harness id.
+   */
+  test("an ACP draft does not quote its rung id as though the agent chose it", () => {
+    const rungs = report({
+      modes: [{ id: "auto", name: "Allow everything except danger", level: "auto" }],
+    })
+    const draft = permissionModeOptions({ harness: "claude-acp", report: rungs, hasSession: false })
+    expect(draft.claxedo[0]!.description).toContain("Allow everything except danger")
+    expect(draft.claxedo[0]!.description).not.toContain("(auto)")
+  })
+
+  test("a real harness id stays quoted, because it names the policy", () => {
+    // codex's id IS its sandbox policy, which is the whole reason for quoting.
+    const codex = report({
+      modes: [{ id: "workspace-write", name: "Workspace write", level: "auto" }],
+    })
+    const draft = permissionModeOptions({ harness: "codex-app-server", report: codex, hasSession: false })
+    expect(draft.claxedo[0]!.description).toContain("(workspace-write)")
+  })
+
   test("a next-turn harness adds no session caveat", () => {
     const { modes } = harnessPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     for (const mode of modes) expect(mode.caveat, mode.id).toBeUndefined()

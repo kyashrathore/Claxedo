@@ -340,7 +340,7 @@ function claxedoAutoOption(input: {
        * harness's own sentence follows, because a name we wrote could drift from
        * behaviour and a name the harness reported cannot.
        */
-      description: autoDescription(input.harness, harnessAuto),
+      description: autoDescription({ harness: input.harness, mode: harnessAuto, hasSession: input.hasSession }),
       // See `harnessPermissionModes` — nothing to exclude on a draft.
       ...(input.report!.appliesFrom === "next-session" && input.hasSession !== false
         ? { caveat: `Applies to the next ${HARNESS_LABELS[input.harness]} agent, not this session` }
@@ -375,11 +375,31 @@ function claxedoAutoOption(input: {
  * sandbox policy outright. Someone reading a collapsed Auto row can therefore
  * check it against the harness's own docs without expanding anything.
  */
-function autoDescription(
-  harness: HarnessId,
-  mode: { id: string; name: string; description?: string },
-): string {
-  const target = mode.name.toLowerCase() === mode.id.toLowerCase() ? mode.id : `${mode.name} (${mode.id})`
+function autoDescription(input: {
+  harness: HarnessId
+  mode: { id: string; name: string; description?: string }
+  hasSession?: boolean
+}): string {
+  const { harness, mode } = input
+
+  /*
+   * The id is quoted only when it is the HARNESS's id.
+   *
+   * On an ACP draft it is not. An ACP agent advertises its modes on
+   * `session/new`, so before that Claxedo substitutes its own intent rungs
+   * (`ask`/`auto`/`full`) — the one place in this design where we name a
+   * permission option ourselves. Printing `(auto)` there would borrow the
+   * authority of a harness id for a placeholder of ours, which is the exact
+   * confusion the quoted id exists to prevent. The rung's own description
+   * already says it resolves on the first message, so that carries the line.
+   */
+  const rungNotRealId =
+    input.hasSession === false && PERMISSION_MECHANISMS[harness].kind === "acp-session-mode"
+  const target =
+    rungNotRealId || mode.name.toLowerCase() === mode.id.toLowerCase()
+      ? mode.name
+      : `${mode.name} (${mode.id})`
+
   const head = `${HARNESS_LABELS[harness]} · ${target}`
   return mode.description ? `${head} — ${mode.description}` : head
 }
