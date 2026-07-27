@@ -213,7 +213,7 @@ export function ModelSelectorPopover(props: {
           // `w-72`/`p-2` only apply when no caller has taken over sizing: a
           // Tailwind utility lives in @layer utilities and would beat the
           // caller's own width/padding rules.
-          class={`codex-overlay-surface codex-model-picker ${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
+          class={`theme-overlay-surface codex-model-picker ${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
           onEscapeKeyDown={(event) => {
             close("escape")
             event.preventDefault()

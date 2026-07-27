@@ -62,6 +62,7 @@ function SessionNavigationItem(props: {
       <NavigationRow
         data={{
           "data-testid": "rail-sidebar-session-row",
+          "data-slot": "session-navigation-row",
           "data-session-id": props.row.source.sessionId,
           "data-session-ref": props.row.source.sessionRef,
           "data-workspace-dir": props.row.directory,
@@ -110,7 +111,7 @@ function SessionNavigationItem(props: {
         <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
             data-slot="session-navigation-time"
-            class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100"
+            class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 group-focus-within/session:opacity-0 transition-opacity duration-100"
             classList={{
               "text-text-base/70": props.row.active,
               "text-text-weaker": !props.row.active,
@@ -125,7 +126,7 @@ function SessionNavigationItem(props: {
             data-icon-interaction="row-action"
             aria-label={`Archive ${props.row.title}`}
             disabled={archiving()}
-            class="absolute inset-0 pointer-events-auto flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
+            class="absolute inset-0 pointer-events-auto flex items-center justify-end opacity-0 group-hover/session:opacity-100 focus-visible:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()

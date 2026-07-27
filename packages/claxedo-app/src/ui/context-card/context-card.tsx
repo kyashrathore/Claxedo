@@ -64,6 +64,7 @@ export function ContextCard(props: {
        key would strip an identically-named class a consumer passed via
        `class`. */
     <aside
+      data-surface="context-card"
       class={`ui-context-card ${variantClass()} ${props.collapsed ? "is-collapsed" : ""} ${props.class ?? ""}`}
       aria-label={props.ariaLabel}
     >

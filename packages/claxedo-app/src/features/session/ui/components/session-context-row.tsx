@@ -171,15 +171,15 @@ function ContextChipPicker(props: { chip: ContextChip }) {
           style={{
             "max-height": "min(360px, var(--kb-popper-content-available-height, 360px))",
             /*
-             * Fall back to the FLOATING surface, not a background layer. This
-             * menu is an overlay, so off Codex it has to land on the same
-             * surface every other overlay uses (`DropdownMenu`, `Select`,
-             * `Popover` all fall back to `--surface-raised-stronger-non-alpha`).
-             * `--v2-background-bg-layer-01` is a page layer — on oc-2 light it
-             * is #fafafa against those menus' #ffffff, which is exactly why this
-             * picker read grey while every other menu stayed white.
+             * The FLOATING surface, not a background layer. This menu is an
+             * overlay, so it has to land on the same surface every other
+             * overlay uses — `--overlay-surface` is the semantic role every
+             * theme resolves for `DropdownMenu`, `Select` and `Popover`, and
+             * off Codex it resolves to the generic raised token they already
+             * shared. A page layer such as `--v2-background-bg-layer-01` is
+             * what made this one picker read grey against their white.
              */
-            background: "var(--codex-surface-overlay, var(--surface-raised-stronger-non-alpha))",
+            background: "var(--overlay-surface)",
           }}
           onEscapeKeyDown={(event) => {
             close()

@@ -1610,7 +1610,7 @@ export function MessageTimeline(props: {
               }}
             />
             <div
-              class="codex-overlay-surface fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
+              class="theme-overlay-surface fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
               style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
             >
               <button
