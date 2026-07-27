@@ -21,9 +21,11 @@ Two constraints shape the design:
 - **Zero added configuration wherever possible.** A customer must not be asked
   to supply object storage for a provider that can already capture natively.
 
-This plan completes [Persistent Cloud Workspaces](./2026-07-23-002-feat-persistent-cloud-workspaces-plan.md).
-That plan's `U6` landed the freeze/capture/restore state machine; this one makes
-it true for all seven drivers and closes the defects found reviewing it.
+This plan completes Persistent Cloud Workspaces
+(`2026-07-23-002-feat-persistent-cloud-workspaces-plan`, retired from the tracked
+tree; recover it from git history). That plan's `U6` landed the
+freeze/capture/restore state machine; this one makes it true for all seven drivers
+and closes the defects found reviewing it.
 
 ## Non-goals
 
@@ -449,8 +451,8 @@ Implementation order: `C0` → `C1` → (`C2`, `C4`, `C5`, `C6`, `C7` in paralle
 
 ## Inherited quality bars
 
-From [Persistent Cloud Workspaces](./2026-07-23-002-feat-persistent-cloud-workspaces-plan.md)
-and standing repo practice:
+From Persistent Cloud Workspaces (`2026-07-23-002`, retired) and standing repo
+practice:
 
 - **Strangler/additive.** The existing native path keeps working throughout.
   No phase lands a window where a driver that captures today cannot.

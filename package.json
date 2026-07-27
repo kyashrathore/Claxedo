@@ -18,6 +18,7 @@
     "sso": "aws sso login --sso-session=opencode --no-browser",
     "test": "echo 'do not run tests from root' && exit 1",
     "web:dev:local": "bun ./script/web-dev-local.ts",
+    "docs:check-links": "bun ./script/check-doc-links.ts",
     "examples:verify": "bun ./script/verify-examples.ts",
     "examples:smoke:hosted-team": "bun ./script/smoke-hosted-team-example.ts",
     "examples:smoke:local": "bun ./script/smoke-local-examples.ts",

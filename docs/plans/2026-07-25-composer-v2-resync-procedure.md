@@ -1,7 +1,7 @@
 # Composer v2: upstream re-sync procedure + recorded vendor point
 
 - **Date:** 2026-07-25
-- **Plan:** [`docs/plans/2026-07-25-005-feat-composer-v2-migration-plan.md`](../2026-07-25-005-feat-composer-v2-migration-plan.md) — evidence for **T0.4** (churn measurement) and the deliverable for **T6.1** (documented re-sync procedure + recorded vendor point).
+- **Plan:** [`docs/plans/2026-07-25-005-feat-composer-v2-migration-plan.md`](./2026-07-25-005-feat-composer-v2-migration-plan.md) — evidence for **T0.4** (churn measurement) and the deliverable for **T6.1** (documented re-sync procedure + recorded vendor point).
 - **Scope:** the upstream tree `packages/session-ui/src/v2/components/prompt-input/**` and its two app-side wiring files.
 - **All measurements taken against the local `upstream` remote at `refs/remotes/upstream/dev`, fetched 2026-07-25.** No fetch was performed while writing this doc; every number is reproducible from the recorded SHAs.
 
