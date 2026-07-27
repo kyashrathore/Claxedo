@@ -1432,19 +1432,56 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         { id: "unsandboxed", name: "Unsandboxed", level: "full" },
       ],
     },
-    // ACP agents advertise on session/new, so a DRAFT gets the rungs.
-    acp: {
+    /**
+     * ACP agents advertise on session/new, so a DRAFT is answered from the
+     * runtime's recorded tables (`ACP_KNOWN_MODES`) — the agents' OWN ids and
+     * names, captured from the live binaries.
+     *
+     * These used to be three rungs Claxedo named itself ("Ask for everything"
+     * and friends). Mirroring the real tables matters more than it looks: a spec
+     * asserting on rows is asserting on THIS object, so a fixture carrying a
+     * vocabulary the runtime no longer produces would keep passing while the
+     * product showed something else entirely.
+     *
+     * Note each vendor's ACP list differs from its SDK list above — same product,
+     * two transports, genuinely different surfaces.
+     */
+    "claude-acp": {
       modes: [
-        { id: "ask", name: "Ask for everything", level: "ask" },
-        { id: "auto", name: "Allow everything except danger", level: "auto" },
-        { id: "full", name: "Allow everything", level: "full" },
+        { id: "auto", name: "Auto", level: "auto" },
+        { id: "default", name: "Manual", level: "ask" },
+        { id: "acceptEdits", name: "Accept Edits" },
+        { id: "plan", name: "Plan Mode" },
+        { id: "dontAsk", name: "Don't Ask" },
+        { id: "bypassPermissions", name: "Bypass Permissions", level: "full" },
+      ],
+    },
+    "codex-acp": {
+      modes: [
+        { id: "read-only", name: "Read-only", level: "ask" },
+        { id: "agent", name: "Agent", level: "auto" },
+        { id: "agent-full-access", name: "Agent (full access)", level: "full" },
+      ],
+    },
+    "cursor-acp": {
+      modes: [
+        { id: "agent", name: "Agent", level: "auto" },
+        { id: "plan", name: "Plan" },
+        { id: "ask", name: "Ask", level: "ask" },
       ],
     },
   }
   const modeTableFor = (harness: string) => {
     if (harness === "opencode") return MODES_BY_HARNESS.opencode!
-    if (harness.endsWith("-acp")) return MODES_BY_HARNESS.acp!
-    return MODES_BY_HARNESS[harness.replace(/-sdk|-app-server$/, "")] ?? MODES_BY_HARNESS.acp!
+    // Each ACP agent has its own table now, so no `-acp` fallback: an unknown one
+    // must surface as a missing fixture rather than silently borrow another
+    // agent's modes, which is the exact bug this feature exists to prevent.
+    if (harness.endsWith("-acp")) {
+      const table = MODES_BY_HARNESS[harness]
+      if (!table) throw new Error(`mock-runtime: no permission modes recorded for ${harness}`)
+      return table
+    }
+    return MODES_BY_HARNESS[harness.replace(/-sdk|-app-server$/, "")] ?? MODES_BY_HARNESS.opencode!
   }
   const modeState = (harness: string) => {
     const table = modeTableFor(harness)

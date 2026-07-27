@@ -266,7 +266,10 @@ async function runCase(input: {
   const out: Outcome = { mode: input.mode.id, level: input.mode.level ?? "-", asked: false, wrote: false }
   try {
     const session = await adapter.createSession(workdir)
-    await adapter.setPermissionMode(session.id, input.mode.id, workdir)
+    // SKIP_SET_MODE isolates cause from effect. If the harness's own untouched
+    // default behaves the same as every mode we set, then the finding is about
+    // the harness's baseline rather than about our write reaching it.
+    if (!process.env.SKIP_SET_MODE) await adapter.setPermissionMode(session.id, input.mode.id, workdir)
 
     const iterator = adapter.sendMessage(
       session.id,
