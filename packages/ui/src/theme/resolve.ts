@@ -1,5 +1,40 @@
 import type { ColorValue, DesktopTheme, HexColor, ResolvedTheme, ThemeVariant } from "./types"
-import { blend, generateNeutralScale, generateScale, hexToOklch, hexToRgb, shift, withAlpha } from "./color"
+import { blend, contrastRatio, generateNeutralScale, generateScale, hexToOklch, shift, withAlpha } from "./color"
+
+/*
+ * Semantic roles the shell paints with. A theme may override any of them; when
+ * it does not, the role falls back to the generic token named here. Every
+ * fallback must be a token the main resolve loop always assigns, otherwise the
+ * role resolves to `undefined` and is emitted as the literal string
+ * "undefined" in the generated CSS. `semantic.test.ts` enforces that.
+ */
+export const SEMANTIC_THEME_ROLE_FALLBACKS = {
+  "shell-surface-sidebar": "background-stronger",
+  "shell-surface-header": "background-base",
+  "shell-surface-composer": "surface-raised-base",
+  "shell-surface-context-card": "surface-raised-base",
+  "settings-surface-content": "background-base",
+  "settings-surface-card": "surface-raised-base",
+  "control-surface": "surface-inset-base",
+  "control-surface-active": "surface-raised-strong",
+  "control-border": "border-base",
+  "row-surface-hover": "surface-base-hover",
+  "row-surface-selected": "surface-base-active",
+  "tab-surface-selected": "surface-inset-base",
+  "overlay-surface": "surface-raised-stronger-non-alpha",
+  "overlay-surface-hover": "surface-raised-base-hover",
+  "overlay-surface-input": "surface-inset-base",
+  "overlay-text": "text-strong",
+  "overlay-text-muted": "text-weak",
+  "overlay-icon": "icon-base",
+  "overlay-icon-muted": "icon-weak-base",
+  "icon-interaction-muted": "icon-base",
+  "icon-interaction-strong": "icon-strong-base",
+  "shell-border-sidebar": "border-weak-base",
+  "shell-border-header": "border-weak-base",
+  "composer-border": "border-base",
+  "overlay-border": "border-base",
+} as const
 
 export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): ResolvedTheme {
   const colors = getColors(variant)
@@ -93,22 +128,10 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   const infob = info[isDark ? 6 : 4]
   const infow = info[isDark ? 5 : 3]
   const infos = info[10]
-  const lum = (hex: HexColor) => {
-    const rgb = hexToRgb(hex)
-    const lift = (v: number) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))
-    return 0.2126 * lift(rgb.r) + 0.7152 * lift(rgb.g) + 0.0722 * lift(rgb.b)
-  }
-  const hit = (a: HexColor, b: HexColor) => {
-    const x = lum(a)
-    const y = lum(b)
-    const light = Math.max(x, y)
-    const dark = Math.min(x, y)
-    return (light + 0.05) / (dark + 0.05)
-  }
   const on = (fill: HexColor) => {
     const light = "#ffffff" as HexColor
     const dark = "#000000" as HexColor
-    return hit(light, fill) > hit(dark, fill) ? light : dark
+    return contrastRatio(light, fill) > contrastRatio(dark, fill) ? light : dark
   }
 
   const tokens: ResolvedTheme = {}
@@ -430,6 +453,18 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     tokens[key] = value
   }
 
+  for (const [role, fallback] of Object.entries(SEMANTIC_THEME_ROLE_FALLBACKS)) {
+    if (role in overrides) continue
+    const value = tokens[fallback]
+    /*
+     * Defensive: a fallback that the main loop somehow did not assign would be
+     * written out as the string "undefined". Leaving the role unset instead
+     * lets the stylesheet's own `var(--role, fallback)` default take over.
+     */
+    if (value === undefined) continue
+    tokens[role] = value
+  }
+
   if (colors.compact && "text-weak" in overrides && !("text-weaker" in overrides)) {
     const weak = tokens["text-weak"]
     if (weak.startsWith("#")) {
@@ -437,6 +472,71 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     } else {
       tokens["text-weaker"] = weak
     }
+  }
+
+  /*
+   * Pick the first candidate that clears 3:1 against every opaque surface the
+   * role is painted on. Falls back to black-or-white on the first surface when
+   * nothing in the ladder is legible everywhere.
+   */
+  const contrastForeground = (backgrounds: (ColorValue | undefined)[], candidates: (ColorValue | undefined)[]) => {
+    const surfaces = backgrounds.map(getHex).filter((value): value is HexColor => value !== undefined)
+    const options = candidates.filter((value): value is ColorValue => value !== undefined)
+    if (surfaces.length === 0) return options[0]
+    return (
+      options.find((candidate) => {
+        const foreground = getHex(candidate)
+        return foreground && surfaces.every((background) => contrastRatio(foreground, background) >= 3)
+      }) ?? on(surfaces[0])
+    )
+  }
+
+  const shellSurfaces = [
+    tokens["shell-surface-sidebar"],
+    tokens["shell-surface-header"],
+    tokens["shell-surface-composer"],
+    tokens["shell-surface-context-card"],
+  ]
+
+  if (!("icon-interaction-muted" in overrides)) {
+    tokens["icon-interaction-muted"] =
+      contrastForeground(shellSurfaces, [
+        tokens["icon-weak-base"],
+        ...neutral.slice(isDark ? 5 : 6),
+        tokens["icon-base"],
+        tokens["text-weak"],
+        tokens["text-base"],
+        tokens["icon-strong-base"],
+      ]) ?? tokens["icon-interaction-muted"]
+  }
+  if (!("icon-interaction-strong" in overrides)) {
+    tokens["icon-interaction-strong"] =
+      contrastForeground(shellSurfaces, [
+        tokens["icon-strong-base"],
+        tokens["text-strong"],
+        tokens["icon-base"],
+        tokens["text-base"],
+      ]) ?? tokens["icon-interaction-strong"]
+  }
+  if (!("overlay-icon-muted" in overrides)) {
+    tokens["overlay-icon-muted"] =
+      contrastForeground(
+        [tokens["overlay-surface"]],
+        [
+          tokens["icon-weak-base"],
+          ...neutral.slice(isDark ? 5 : 6),
+          tokens["icon-base"],
+          tokens["text-weak"],
+          tokens["text-base"],
+        ],
+      ) ?? tokens["overlay-icon-muted"]
+  }
+  if (!("overlay-icon" in overrides)) {
+    tokens["overlay-icon"] =
+      contrastForeground(
+        [tokens["overlay-surface"]],
+        [tokens["icon-base"], tokens["icon-strong-base"], tokens["text-base"], tokens["text-strong"]],
+      ) ?? tokens["overlay-icon"]
   }
 
   if (colors.compact) {
