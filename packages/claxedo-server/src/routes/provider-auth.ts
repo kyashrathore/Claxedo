@@ -6,6 +6,7 @@ import {
   ProviderAuthError,
   type ProviderAuthService,
 } from "../provider-auth/service"
+import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "./control-plane-route-auth"
 import { errorBody } from "./http"
 
 const authorizeBody = z.object({
@@ -18,7 +19,7 @@ const callbackBody = z.object({
   code: z.string().optional(),
 })
 
-type ProviderAuthRouteOptions = {
+type ProviderAuthRouteOptions = ControlPlaneRouteAuthOptions & {
   service?: ProviderAuthService
   /**
    * Answered by a LATER-registered `/provider/auth` when this returns true.
@@ -43,10 +44,27 @@ function authError(error: unknown) {
   return errorBody("provider_auth_failed", error instanceof Error ? error.message : String(error))
 }
 
+/**
+ * Gated because a control-plane router with no per-route verification is open
+ * the moment signed auth is enabled — and here there is more at stake than a
+ * read surface. `route-ownership.ts` puts `/provider` in the AgentConfigRegistry domain next
+ * to `/api/claxedo/agent-config` and `/api/claxedo/credentials`, both of which
+ * are gated; this router was the one that was not. The OAuth callback below
+ * calls `deleteCredentialsByProvider` + `putCredential`, so in signed mode an
+ * unauthenticated caller could wipe a box's provider credentials and write its
+ * own in their place — pointing the box's LLM traffic at an attacker-controlled
+ * account. See `control-plane-route-auth.ts` for why the global guard does not
+ * cover this posture.
+ */
 export function ProviderAuthRoutes(services: ControlPlaneServices, options: ProviderAuthRouteOptions = {}) {
   const service = options.service ?? createProviderAuthService(services.credentials)
 
   return new Hono()
+    // Registered BEFORE the routes below, so it runs first for every
+    // `/provider/*` request — including one the handler defers with `next()`.
+    // The fall-through therefore reaches the compat route already authenticated
+    // rather than around the gate. `provider-auth-defer-gate.test.ts` pins that.
+    .use("/provider/*", controlPlaneRouteAuth(options))
     .get("/provider/auth", async (c, next) => {
       const harness = c.req.query("harness") ?? c.req.query("runner") ?? undefined
       if (await options.deferToHarnessRoute?.(harness)) return next()

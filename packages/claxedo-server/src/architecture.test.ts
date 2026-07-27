@@ -977,6 +977,9 @@ describe("harness-scoped resolution", () => {
       "agent-config-mcp-routes.ts",
       "agent-config.ts",
       "bootstrap.ts",
+      // Shared per-route bearer gate for control-plane routers with no
+      // finer-grained authorization of their own (provider-auth).
+      "control-plane-route-auth.ts",
       "credential.ts",
       "documents.ts",
       "event-visibility.ts",
@@ -1043,7 +1046,15 @@ describe("harness-scoped resolution", () => {
       "JwksRoutes(process.env)",
       "InternalRelayResolverRoutes(",
       "BootstrapRoutes(",
-      "ProviderAuthRoutes(",
+      // This carries its auth wiring in the token on purpose. It was mounted
+      // bare — `ProviderAuthRoutes(services)` — which is safe only while the
+      // box is unsigned, because `unsignedLocalRequestGuard` steps aside as
+      // soon as signed auth is enabled and expects per-route verification to
+      // take over. Pin the spread through so dropping it fails here: the
+      // options object also carries `deferToHarnessRoute`, so match the
+      // spread itself rather than the whole call, which would break every
+      // time an unrelated option is added alongside it.
+      "...authRouteOptions(services),",
       "RemoteAccessRoutes({",
       "OpenCodeCompatRoutes(",
       "workspaceRuntimeProxy",

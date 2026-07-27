@@ -401,6 +401,7 @@ export function createApp(
     }),
   )
   app.route("/", ProviderAuthRoutes(services, {
+    ...authRouteOptions(services),
     // Only when the OpenCode-compat routes are actually mounted below; with
     // local execution off nothing else serves `/provider/auth`, and deferring
     // would turn the registry's answer into a 404.
