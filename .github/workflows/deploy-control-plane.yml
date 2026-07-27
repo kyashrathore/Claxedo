@@ -39,6 +39,26 @@ name: deploy-control-plane
 #   WORKGRAPH_SMOKE_TOOLS_JSON — exact JSON array of tool IDs used by the no-op Task
 # The smoke targets this public repository at github.sha, proving the deployed
 # commit through the same per-Stream repository contract used by the product.
+#
+# Worker observability (D12; plan 2026-07-28-001) — PostHog carries both
+# product analytics and error tracking for the Worker. This is Worker-level
+# config, not a GitHub Actions secret/var: it is set directly against the
+# Worker with `wrangler secret put` / packages/claxedo-server/wrangler.toml
+# `[vars]`, the same way every other Worker secret documented above this
+# line is managed, so this workflow does not plumb it.
+#   CLAXEDO_POSTHOG_KEY    — Worker secret (`wrangler secret put --env <env>
+#                             CLAXEDO_POSTHOG_KEY`). Absent = no sink
+#                             registered: no events, no exceptions, no
+#                             network call.
+#   CLAXEDO_POSTHOG_HOST   — optional Worker var, ingest host override
+#                             (defaults to https://us.i.posthog.com).
+#   CLAXEDO_TELEMETRY_MODE — must be exactly "on" for either plane to send —
+#                             a hard double opt-in (mode "on" AND a key
+#                             present, or nothing sends). REQUIRED alongside
+#                             CLAXEDO_POSTHOG_KEY for production telemetry:
+#                             the key alone is not enough, and its absence
+#                             fails silent — the deploy stays green with
+#                             telemetry quietly off.
 
 on:
   push:

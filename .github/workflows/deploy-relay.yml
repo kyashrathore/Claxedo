@@ -34,6 +34,22 @@ name: deploy-relay
 # Environment-scoped variables:
 #   CLAXEDO_RELAY_FLY_APP — Fly app name (e.g. claxedo-workspace-relay-staging
 #                           on staging, claxedo-workspace-relay on production)
+#
+# Relay observability (D12; plan 2026-07-28-001) — PostHog carries both
+# product analytics and error tracking for the relay. These are Fly runtime
+# secrets (`fly secrets set NAME=value --app <app>`), not GitHub Actions
+# secrets — this workflow has no need for their values and does not plumb
+# them, the same way every other relay runtime secret is handled today:
+#   CLAXEDO_POSTHOG_KEY    — absent = no sink registered: no events, no
+#                             exceptions, no network call.
+#   CLAXEDO_POSTHOG_HOST   — optional, ingest host override (defaults to
+#                             https://us.i.posthog.com).
+#   CLAXEDO_TELEMETRY_MODE — must be exactly "on" for either plane to send —
+#                             a hard double opt-in (mode "on" AND a key
+#                             present, or nothing sends). REQUIRED alongside
+#                             CLAXEDO_POSTHOG_KEY for production telemetry:
+#                             its absence fails silent — the deploy stays
+#                             green with telemetry quietly off.
 
 on:
   workflow_dispatch:
