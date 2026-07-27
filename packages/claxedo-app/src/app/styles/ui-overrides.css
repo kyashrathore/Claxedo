@@ -415,7 +415,21 @@ html[data-theme="codex"] {
    * Dark washes are scaled the way the app scales its own `--shadow` between
    * schemes (#0000001a -> #0003); only the light values are extracted.
    */
-  --codex-elevation-stroke: 0 0 0 0.5px light-dark(rgb(0 0 0 / 0.12), rgb(255 255 255 / 0.16));
+  /*
+   * Two strokes, because the app has two.
+   *
+   * Elevation carries `--color-border-heavy` (12% of the foreground in light,
+   * #ffffff29 in dark); overlays carry `--shadow-hairline-color`, which is a
+   * flat 10% in both schemes:
+   *
+   *   --shadow-hairline-color: #0000001a / #ffffff1a
+   *   --shadow-hairline-width: .5px
+   *
+   * Two percent apart on a half-pixel line, and the dark ends diverge by more —
+   * 16% against 10% — which is the half worth keeping separate.
+   */
+  --codex-elevation-stroke: 0 0 0 0.5px light-dark(#0000001f, #ffffff29);
+  --codex-shadow-hairline: 0 0 0 0.5px light-dark(#0000001a, #ffffff1a);
   --codex-elevation-card: var(--codex-elevation-stroke), 0 3px 7.5px light-dark(#0000000a, #00000029),
     0 0 20px light-dark(#0000000d, #00000033);
   --codex-shadow-sidebar-edge: var(--codex-elevation-stroke), 0 3px 7.5px light-dark(#00000008, #00000021),
@@ -589,7 +603,7 @@ html[data-theme="codex"] .codex-overlay-surface {
    * thickness at full opacity, so removing it outright overshot in the other
    * direction. The `border: 0` below stays, because the edge is this stroke now.
    */
-  box-shadow: var(--codex-shadow-overlay), var(--codex-elevation-stroke) !important;
+  box-shadow: var(--codex-shadow-overlay), var(--codex-shadow-hairline) !important;
   /*
    * No hairline. Each of these components draws its own
    * `border: 1px solid var(--overlay-border)`, and `--codex-shadow-overlay` is
