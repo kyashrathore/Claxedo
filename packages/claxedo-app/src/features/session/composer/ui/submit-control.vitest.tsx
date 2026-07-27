@@ -1,0 +1,93 @@
+import { cleanup, fireEvent, render } from "@solidjs/testing-library"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
+
+vi.mock("@opencode-ai/ui/tooltip", () => ({
+  Tooltip: (props: { children: unknown }) => <>{props.children}</>,
+}))
+
+import { PromptSubmitControl } from "./submit-control"
+
+afterEach(cleanup)
+
+const block = (reason: SubmitBlock["reason"], copy: string): SubmitBlock => ({
+  reason,
+  copy,
+  actionable: true,
+})
+
+function renderControl(input: {
+  block?: SubmitBlock | null
+  onChooseModel?: () => void
+  onConnectAI?: () => void
+}) {
+  const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
+  const view = render(() => (
+    <form onSubmit={submit}>
+      <PromptSubmitControl
+        stage={() => undefined}
+        busy={() => false}
+        onCancel={() => {}}
+        onRetry={() => undefined}
+        booting={() => false}
+        working={() => false}
+        blank={() => false}
+        tip={() => "Send"}
+        bootText={() => "Starting"}
+        mode={() => "normal"}
+        disabled={() => false}
+        excludeFromTab={() => false}
+        block={() => input.block ?? null}
+        onConnectAI={input.onConnectAI ?? (() => {})}
+        onChooseModel={input.onChooseModel ?? (() => {})}
+        readOnlyBlocked={() => false}
+        sendLabel="Send"
+        stopLabel="Stop"
+        readOnlyLabel="Read-only"
+      />
+    </form>
+  ))
+  return { ...view, submit }
+}
+
+describe("PromptSubmitControl", () => {
+  test("opens the model picker directly when the missing-model block is actionable", () => {
+    const onChooseModel = vi.fn()
+    const view = renderControl({
+      block: block("no-model", "Choose a model to continue"),
+      onChooseModel,
+    })
+
+    fireEvent.click(view.getByRole("button", { name: "Choose a model to continue" }))
+
+    expect(onChooseModel).toHaveBeenCalledOnce()
+    expect(view.submit).not.toHaveBeenCalled()
+  })
+
+  test("opens provider connection directly when the missing-credential block is actionable", () => {
+    const onConnectAI = vi.fn()
+    const view = renderControl({
+      block: block("no-credential", "Connect an AI provider to continue"),
+      onConnectAI,
+    })
+
+    fireEvent.click(view.getByRole("button", { name: "Connect an AI provider to continue" }))
+
+    expect(onConnectAI).toHaveBeenCalledOnce()
+    expect(view.submit).not.toHaveBeenCalled()
+  })
+
+  // The filled circle carries its own inverse foreground; the glyph must not be
+  // repainted with the shell icon color. This asserts only what this component
+  // owns — the variant and the inverse class. The matching guard against a
+  // `data-icon-interaction="persistent"` hover rule overriding it lives in
+  // `app/styles/ui-overrides.css`, not here.
+  test("renders the submit glyph inside an inverse primary action", () => {
+    const view = renderControl({})
+    const submit = view.getByRole("button", { name: "Send" })
+
+    expect(submit).toHaveAttribute("data-variant", "primary")
+    expect(submit.className).toContain("text-v2-icon-icon-inverse")
+    expect(submit.querySelector('[data-icon="send"] use')).toHaveAttribute("href", "#claxedo-icon-send")
+  })
+})

@@ -82,8 +82,18 @@ export function createComposerSubmitBlockWiring(deps: {
       ? deps.harnessSelectionController.setModel(deps.scope(), model, { directory: deps.harnessDirectory(), sessionId: deps.resolvedSessionId() })
       : deps.local.model.set(model),
   })
-  // Reuse the model picker already rendered in this composer's toolbar.
-  const openModelPicker = () => deps.rootEl()?.querySelector<HTMLElement>('[data-action="prompt-model"]')?.click()
+  // Reuse whichever model picker this composer rendered. Harness modes own a
+  // separate control from OpenCode's, but both resolve the same no-model action.
+  // Two separate lookups, not one multi-selector `querySelector`: that resolves
+  // by document order, not selector order, so it cannot express a preference.
+  const openModelPicker = () => {
+    const root = deps.rootEl()
+    if (!root) return
+    const picker =
+      root.querySelector<HTMLElement>('[data-action="prompt-harness-model"]') ??
+      root.querySelector<HTMLElement>('[data-action="prompt-model"]')
+    picker?.click()
+  }
 
   return { roleSubmitBlocked, submitBlock, submitInertBlocked, openAIConnect, openModelPicker }
 }
