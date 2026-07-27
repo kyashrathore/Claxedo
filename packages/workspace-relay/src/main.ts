@@ -53,14 +53,13 @@ function requireEnv(name: string) {
 }
 
 /**
- * W2c (2026-07-28-001): PostHog is the relay's error sink, replacing the
- * per-vendor Sentry wiring the D12 ops-floor decision put here — PostHog now
+ * W2c (2026-07-28-001): PostHog is the relay's error sink — one vendor
  * carries error tracking for every runtime behind one distinct_id space.
  *
  * Gated on `CLAXEDO_POSTHOG_KEY` (`POSTHOG_KEY` accepted as a fallback — the
  * same unprefixed name claxedo-server's posthog.ts already reads). Absent key
- * → no `PostHog` client is ever constructed: zero SDK overhead, zero network,
- * the same no-op posture the DSN-gated Sentry code had. Host defaults to
+ * → no `PostHog` client is ever constructed: zero SDK overhead, zero network —
+ * a clean no-op safe to ship before the telemetry account exists. Host defaults to
  * `https://us.i.posthog.com` (the canonical ingest host — NOT the legacy
  * `app.posthog.com` default some SDKs ship). Release = git SHA passed by the
  * D11 deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA` accepted as alias);
@@ -107,8 +106,8 @@ export function relayTelemetryOptions(env: RelayObservabilityEnv): RelayTelemetr
   }
 }
 
-// The PostHog client is an explicit object (unlike Sentry's implicit global
-// client), so reportFatal needs somewhere to find the one instance
+// The PostHog client is an explicit object with no ambient global, so
+// reportFatal needs somewhere to find the one instance
 // initRelayObservability constructed. Stays undefined when the key is absent
 // — that's the no-client guarantee the key-absent tests assert on.
 let relayPostHogClient: PostHog | undefined
@@ -128,8 +127,8 @@ export function initRelayObservability(env: RelayObservabilityEnv = process.env)
  * observability must not preempt the exit path.
  *
  * `distinctId: "system"` mirrors the ops-plane convention: process-fatal
- * events carry no user identity. `client.flush()` has no built-in timeout
- * (unlike `Sentry.flush(ms)`), so it races a 2s timer; the flush promise's
+ * events carry no user identity. `client.flush()` has no built-in timeout,
+ * so it races a 2s timer; the flush promise's
  * rejection is swallowed even when the timer wins the race, so a slow network
  * failure that resolves after the timeout never surfaces as a second
  * unhandledRejection mid-shutdown.
