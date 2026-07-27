@@ -89,6 +89,7 @@ packages/workspace-runtime-bundle.tar.gz
 *.tar.gz
 *.zip
 *.dmg
+*.pkg
 *.AppImage
 *.deb
 *.rpm
