@@ -6,7 +6,7 @@ description: "What Claxedo collects, what it doesn't, and how to remove your dat
 
 # Privacy Policy
 
-> Effective date: 2026-07-19
+> Effective date: 2026-07-28
 
 Claxedo is a free, open-source (MIT) coding-agent workspace built by a small team. This page explains, in plain language, what data the software touches and who else can see it. If anything here is unclear, [open a GitHub issue](https://github.com/kyashrathore/Claxedo/issues) and ask.
 
@@ -28,7 +28,19 @@ You only enter hosted mode by signing in and opting into it.
 
 ## Telemetry (opt-in, off by default)
 
-Claxedo can integrate with [PostHog](https://posthog.com) for product analytics and [Sentry](https://sentry.io) for error reporting. Both are **opt-in by deployment configuration**. If no keys are configured — which is the default — these integrations are a complete no-op: nothing is sent, no network calls are made. A build with keys configured is the only build that sends anything.
+Claxedo can integrate with [PostHog](https://posthog.com) for both product analytics and error tracking — it's the only telemetry vendor Claxedo uses. Telemetry is **opt-in by deployment configuration**, and self-hosted deployments default to off.
+
+When telemetry is turned on, two kinds of data can be sent:
+
+- **Feature events** — which parts of the product get used, tagged with your user and organization identifiers so we can tell how many people rely on a feature.
+- **Exception reports** — crash and error details, including stack traces, so bugs can be found and fixed.
+
+What is never sent: your prompts, source text, credentials, or repository contents. File paths from your workspace are never sent as literal text — only a file's extension plus a one-way hash of the path, which cannot be turned back into the original path. If a session comes in through an external channel (Slack, Telegram, and so on), that channel's user id is hashed before it's sent — never sent raw.
+
+Two controls decide whether any of this happens, and either one is enough to turn telemetry off:
+
+- **`CLAXEDO_TELEMETRY_MODE=off`** disables telemetry outright, even if a key is configured — this is checked before Claxedo ever looks for a key.
+- **If no keys are configured — which is the default** — this integration is a complete no-op: nothing is sent, no network calls are made. A build with keys configured, running in `on` mode, is the only build that sends anything.
 
 ## Payments
 

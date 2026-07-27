@@ -163,6 +163,26 @@ Cloudflare Worker shape and its full required/optional matrix are documented in
 `public-docs/hosted-control-plane-worker.md`; the operational deploy and
 rollback doctrine is in `public-docs/deploy-runbook.md`.
 
+## Telemetry
+
+Telemetry defaults to **off** here — a self-hosted instance sends nothing unless
+you turn it on. PostHog is Claxedo's only telemetry vendor, covering both
+product analytics and error tracking.
+
+Set these as Fly secrets (`fly secrets set NAME=value --app <app>`) to turn it
+on:
+
+| Name                                         | Purpose                                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `CLAXEDO_TELEMETRY_MODE`                     | `on` or `off`. Checked before key presence — `off` (the self-host default) means no telemetry no matter what else is set. |
+| `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST` | Your PostHog project key and host. Inert while `CLAXEDO_TELEMETRY_MODE` is unset or `off`.                                |
+
+Enabling it sends feature-usage events and exception reports tagged with your
+user and organization identifiers — never prompts, source text, credentials,
+repository contents, or literal file paths (paths are reduced to an extension
+plus a one-way hash). Full data posture: the
+[privacy policy](https://claxedo.com/privacy).
+
 ## Rollback
 
 A Fly rollback is itself a deploy: find the last good image with

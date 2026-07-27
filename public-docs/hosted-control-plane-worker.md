@@ -89,6 +89,7 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 | Daytona driver                                          | `DAYTONA_API_KEY`, `CLAXEDO_DAYTONA_SNAPSHOT`                                                                         |
 | fetch-bridge driver                                     | `CLAXEDO_SANDBOX_DRIVER_URL` — explicit-only: requires `CLAXEDO_SANDBOX_DRIVER=fetch`, never auto-selected so a stray URL can't become the hidden model |
 | `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker (Phase A)                                                                                         |
+| `CLAXEDO_TELEMETRY_MODE`                                | `on`/`off` — checked before key presence; self-host default is off                                                    |
 | `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST`           | optional telemetry (fetch-based)                                                                                      |
 
 Additional knobs — per-region relay endpoints, request rate-limit caps,
