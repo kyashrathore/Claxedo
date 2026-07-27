@@ -304,6 +304,8 @@ test.describe.serial("live Documents core backend @live", () => {
     await page.goto(indexUrl())
     await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible({ timeout: 30_000 })
     await page.getByRole("button", { name: "New document" }).click()
+    // The index-level create asks which project owns the document first.
+    await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
 
     const title = page.getByRole("textbox", { name: "Document name" })
     const rich = page.getByRole("textbox", { name: "Document rich editor" })
@@ -363,6 +365,8 @@ test.describe.serial("live Documents core backend @live", () => {
       return request.method() === "POST" && new URL(response.url()).pathname === "/documents" && response.ok()
     })
     await page.getByRole("button", { name: "New document" }).click()
+    // The index-level create asks which project owns the document first.
+    await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
     createdDocument = (await (await createdResponse).json()) as DocumentSummary
 
