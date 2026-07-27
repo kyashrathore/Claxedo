@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Permission Picker — Call Trace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper:   #f3ede0;
+      --paper-2: #ece4d2;
+      --ink:     #1c1812;
+      --ink-2:   #4a4034;
+      --ink-3:   #8a7e6c;
+      --ink-4:   #b8ad99;
+      --accent:  #a85a18;
+      --accent-soft: #d9a36b;
+      --rule:    #cdc1a8;
+      --hover:   #e8dfc7;
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper:   #15130f;
+        --paper-2: #1d1a14;
+        --ink:     #ece4d0;
+        --ink-2:   #c0b59a;
+        --ink-3:   #8c8169;
+        --ink-4:   #54493a;
+        --accent:  #e08c3f;
+        --accent-soft: #a25b1e;
+        --rule:    #2f2a1f;
+        --hover:   #221d15;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      background:
+        radial-gradient(900px 500px at 85% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+        var(--paper);
+      color: var(--ink);
+      font-family: var(--serif);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--ink); }
+
+    .page {
+      width: min(980px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 22px 0 80px;
+    }
+
+    .masthead {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding-bottom: 10px;
+    }
+    .kicker {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .kicker::before { content: "§ "; opacity: .55; }
+    .title {
+      margin: 0;
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 22px;
+      line-height: 1.15;
+      letter-spacing: -0.005em;
+    }
+    .title em { font-style: italic; color: var(--accent); font-weight: 500; }
+    .tagline {
+      margin: 0;
+      color: var(--ink-3);
+      font-style: italic;
+      font-size: 13.5px;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      margin-top: 6px;
+      padding: 8px 0;
+      background: linear-gradient(to bottom, var(--paper) 80%, color-mix(in srgb, var(--paper) 0%, transparent));
+      backdrop-filter: blur(6px);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      align-items: center;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+    .ghost {
+      appearance: none;
+      background: transparent;
+      border: 1px dashed var(--rule);
+      color: var(--ink-2);
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    .ghost:hover { border-color: var(--accent); color: var(--accent); border-style: solid; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+    .legend {
+      margin-left: auto;
+      display: inline-flex;
+      gap: 12px;
+      color: var(--ink-3);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+    }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 999px;
+      margin-right: 5px;
+      vertical-align: middle;
+      background: var(--ink-4);
+    }
+
+    .outline {
+      margin-top: 12px;
+      font-family: var(--mono);
+      font-size: 13.5px;
+      line-height: 1.55;
+    }
+    .node { position: relative; padding-left: 20px; }
+    .node .node { padding-left: 20px; }
+
+    .row {
+      display: grid;
+      grid-template-columns: 24px 1fr auto auto;
+      align-items: baseline;
+      gap: 10px;
+      padding: 3px 6px 3px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: background .12s ease;
+    }
+    .row:hover { background: var(--hover); }
+    .node.pinned > .row { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+    .chev-hit {
+      width: 24px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      flex: none;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background .12s ease;
+    }
+    .chev-hit:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+    .copy-btn {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--ink-3);
+      width: 22px; height: 20px;
+      border-radius: 4px;
+      padding: 0;
+      cursor: pointer;
+      display: inline-grid;
+      place-items: center;
+      opacity: 0;
+      transform: translateY(1px);
+      transition: opacity .12s ease, color .12s, border-color .12s, background .12s;
+    }
+    .row:hover .copy-btn,
+    .copy-btn:focus-visible,
+    .node.pinned > .row .copy-btn { opacity: 1; }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+    .copy-btn.copied { color: var(--accent); border-color: var(--accent); opacity: 1; }
+    .copy-btn svg { display: block; }
+
+    .chev {
+      width: 14px; height: 14px;
+      position: relative;
+      transform: translateY(2px);
+      flex: none;
+    }
+    .chev::before {
+      content: "";
+      position: absolute;
+      inset: 0; margin: auto;
+      width: 0; height: 0;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      border-left: 5px solid var(--ink-3);
+      transform-origin: 35% 50%;
+      transition: transform .18s ease;
+    }
+    .node.open > .row .chev::before { transform: rotate(90deg); }
+    .node.leaf > .row .chev::before { border-left-color: transparent; }
+    .node.leaf > .row .chev::after {
+      content: "";
+      position: absolute;
+      left: 4px; top: 50%;
+      width: 6px; height: 1px;
+      background: var(--ink-4);
+    }
+
+    .label { min-width: 0; overflow: hidden; }
+    .name {
+      font-family: var(--mono);
+      font-weight: 500;
+      color: var(--ink);
+      font-size: 13.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .name .dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 999px;
+      margin-right: 8px;
+      transform: translateY(-1px);
+      background: var(--ink-4);
+    }
+
+    .src {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--ink-3);
+      white-space: nowrap;
+      padding-left: 12px;
+    }
+    .src .lno { color: var(--accent); opacity: .9; }
+
+    .detail {
+      display: grid;
+      gap: 5px;
+      margin: 1px 0 6px 24px;
+      padding: 2px 0 6px 0;
+      color: var(--ink-2);
+      font-family: var(--serif);
+      font-size: 14.5px;
+      line-height: 1.55;
+      max-width: 64ch;
+    }
+    .detail p { margin: 0; }
+    .detail .calls {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--ink-3);
+      letter-spacing: 0.02em;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 6px;
+      align-items: baseline;
+    }
+    .detail .calls .lbl {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 9.5px;
+      color: var(--ink-4);
+      margin-right: 2px;
+    }
+    .call-chip {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--ink-2);
+      background: var(--paper-2);
+      padding: 1px 6px;
+      border-radius: 3px;
+      border: 1px solid transparent;
+    }
+    button.call-chip {
+      cursor: pointer;
+      color: var(--ink);
+      border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    button.call-chip:hover {
+      background: color-mix(in srgb, var(--accent) 12%, var(--paper-2));
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    button.call-chip::after {
+      content: " ↗";
+      color: var(--ink-4);
+      font-size: 10px;
+      margin-left: 1px;
+    }
+    button.call-chip:hover::after { color: var(--accent); }
+
+    .detail .summary { color: var(--ink); }
+    .detail .callout { font-style: italic; color: var(--ink-2); font-size: 14px; }
+    .detail .callout strong {
+      font-style: normal;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-right: 8px;
+    }
+
+    .children {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows .22s ease;
+      overflow: hidden;
+    }
+    .children > .inner { min-height: 0; }
+    .node.open > .children { grid-template-rows: 1fr; }
+    .node:not(.open) > .detail { display: none; }
+
+    .card-scrim {
+      position: fixed;
+      inset: 0;
+      background: color-mix(in srgb, #000 18%, transparent);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+      z-index: 19;
+    }
+    body.card-open .card-scrim { opacity: 1; pointer-events: auto; }
+
+    .card {
+      position: fixed;
+      top: 18px; right: 18px; bottom: 18px;
+      width: min(420px, calc(100vw - 36px));
+      background: var(--paper-2);
+      border: 1px solid var(--rule);
+      border-radius: 10px;
+      box-shadow: 0 16px 48px rgba(0,0,0,.18);
+      padding: 22px 24px 26px;
+      overflow: auto;
+      transform: translateX(calc(100% + 36px));
+      transition: transform .28s cubic-bezier(.22,.61,.36,1);
+      z-index: 20;
+    }
+    body.card-open .card { transform: none; }
+
+    .card-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .card-head .name-wrap { flex: 1; min-width: 0; }
+    .card-kind {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .card-name {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--ink);
+      margin: 0;
+      word-break: break-word;
+    }
+    .card-src { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+    .card-src .lno { color: var(--accent); }
+
+    .card-close {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--rule);
+      color: var(--ink-3);
+      width: 26px; height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+      transition: color .15s, border-color .15s;
+    }
+    .card-close:hover { color: var(--accent); border-color: var(--accent); }
+
+    .card-section { margin-top: 14px; }
+    .card-section h4 {
+      margin: 0 0 6px;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+    }
+    .card-section p {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--ink);
+    }
+    .card-section .callout-body { font-style: italic; color: var(--ink-2); }
+    .card .calls { display: flex; flex-wrap: wrap; gap: 5px 6px; }
+
+    .card-actions { margin-top: 22px; display: flex; gap: 8px; }
+    .card-actions .ghost { font-size: 10.5px; padding: 5px 12px; }
+
+    @keyframes flash {
+      0%   { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+      100% { background: transparent; }
+    }
+    .node.flash > .row { animation: flash 1.4s ease-out; }
+
+    @media (max-width: 720px) {
+      .row { grid-template-columns: 14px 1fr; }
+      .src { grid-column: 2; padding-left: 0; margin-top: 2px; }
+      .legend { display: none; }
+      .card {
+        top: auto; right: 0; left: 0; bottom: 0;
+        width: 100%;
+        max-height: 75vh;
+        border-radius: 12px 12px 0 0;
+        transform: translateY(100%);
+      }
+      body.card-open .card { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="masthead">
+      <span class="kicker">pi harness · permission picker · call trace</span>
+      <h1 class="title">The picker that <em>never reaches pi</em></h1>
+      <p class="tagline">From the shield button to just-bash — and the regex on your prompt that decides whether a permission exists at all.</p>
+    </div>
+
+    <div class="toolbar" role="toolbar" aria-label="Trace controls">
+      <button class="ghost" id="expandAll">expand all</button>
+      <button class="ghost" id="collapseAll">collapse all</button>
+      <div class="legend" id="legend" aria-label="Kind legend"></div>
+    </div>
+
+    <div class="outline" id="outline" aria-label="Code trace outline"></div>
+  </main>
+
+  <div class="card-scrim" id="cardScrim"></div>
+  <aside class="card" id="card" aria-hidden="true" aria-label="Function detail"></aside>
+
+  <script>
+    // ─── data (filled by skill) ───────────────────────────────────
+    const TRACE = [{"src": "permission-control.tsx:37", "kind": "surface", "name": "PromptPermissionControl()", "calls": ["props.groups()", "props.onSelect()", "ModeRow()"], "summary": "Renders the shield button and its menu. Every row's label, description and caveat comes from the option object, never from a table in the app.", "callout": "For pi, groups().harness.rows is empty, so only Claxedo's two manufactured rows render. data-mode on the trigger is therefore always a Claxedo id, never a pi id.", "children": [{"src": "composer.tsx:562", "kind": "derive", "name": "createComposerPermissionMode()", "calls": ["onSelectionChange()", "applyPermissionMode()", "permissionModeOptions()"], "summary": "The derivation layer. Turns the harness report plus the current selection into menu rows, and routes a click to whichever store owns that option.", "children": [{"src": "permission-mode-wiring.ts:64", "kind": "io", "name": "createResource(fetch)", "calls": ["fetchSessionPermissionModesByTransport()"], "summary": "Asks the runtime what this harness reports for this session. Two-argument form on purpose so a draft becoming a session re-fetches.", "callout": "For pi the answer is an empty modes array every time. The network round trip still happens; it just can never return anything actionable."}, {"src": "modes.ts:268", "kind": "derive", "name": "claxedoPermissionModes()", "calls": ["claxedoAutoOption()", "claxedoAskOption()"], "summary": "Because pi's report is empty, BOTH Claxedo options are manufactured here rather than only Auto.", "children": [{"src": "modes.ts:324", "kind": "derive", "name": "claxedoAutoOption()", "calls": ["PERMISSION_MECHANISMS[]"], "summary": "Resolves Auto to whoever actually enforces it: opencode's ruleset, then any harness mode at level 'auto', then Claxedo answering locally.", "callout": "mechanisms.ts:176 declares pi as claxedo-answers-locally, and pi reports no auto rung, so Auto falls to rung 3 and carries the caveat 'the harness enforces nothing'. That sentence is true for pi and for no other harness."}]}, {"src": "permission-mode-wiring.ts:203", "kind": "fork", "name": "onSelectionChange()", "calls": ["autoAccept.toggle()", "setPending()"], "summary": "The fork in the road. A harness-owned selection sets pending and waits for the runtime to confirm; a Claxedo-owned selection flips a local boolean and stops.", "callout": "For pi every selection is kind:'claxedo', so the setPending branch is unreachable and nothing is ever sent.", "children": [{"src": "auto-accept.ts", "kind": "store", "name": "autoAccept.toggle()", "calls": [], "summary": "Writes a per-session (or per-directory) boolean into app state. This is the entire persisted result of choosing a mode on pi."}]}, {"src": "apply.ts:130", "kind": "deliver", "name": "applyPermissionMode()", "calls": [], "summary": "The delivery switch. For claxedo-auto-answer it returns { kind: 'answered-locally' } and sends nothing at all.", "callout": "permissionModeDeliverable() still returns true for this kind (apply.ts:82) \u2014 the mode IS in force, it is just in force inside the browser."}]}, {"src": "permission.tsx:140", "kind": "runtime", "name": "shouldAutoRespond()", "calls": ["autoRespondsPermission()"], "summary": "Fires whenever a permission event arrives from any harness, and decides whether Claxedo answers it without showing a dialog.", "children": [{"src": "permission-auto-respond.ts:92", "kind": "runtime", "name": "autoRespondsPermission()", "calls": ["sessionLineage()", "isAutoApprovablePermission()"], "summary": "Two independent conditions, both required: the switch is on for this session, an ancestor, or the directory; and the permission type is on the allowlist.", "children": [{"src": "permission-auto-respond.ts:27", "kind": "runtime", "name": "isAutoApprovablePermission()", "calls": [], "summary": "Scans four tiers: read/glob/grep/list/lsp, search/think, question, edit/todowrite. Anything unlisted asks the user.", "callout": "An allowlist rather than a denylist, deliberately: opencode's permission namespace has an open tail, so a denylist would silently auto-approve every future tool. pi's 'tool' is arbitrary prompt text, so nearly everything pi emits falls through to a dialog."}]}, {"src": "permission.tsx", "kind": "io", "name": "respond({ response: 'always' })", "calls": ["resolve()"], "summary": "Sends the decision back over HTTP to the runtime, which resolves the promise the pi turn is blocked on."}]}]}, {"src": "pi/index.ts:439", "kind": "harness", "name": "permissionPrompt(prompt)", "calls": ["permissionAsked()", "resolve()"], "summary": "Where pi's permission request actually comes from: a regex, /^permission:\\s*([^\\n]+)(?:\\n([\\s\\S]*))?$/i, run against the user's prompt text.", "callout": "THE SURPRISE. pi does not intercept tool calls at all. A permission request exists only when the user's message literally begins with 'permission:', and the 'tool' is whatever text follows on that line.", "children": [{"src": "pi/index.ts:472", "kind": "harness", "name": "const executable = ...", "calls": ["session.env.exec()"], "summary": "Denial is implemented by blanking the string that would have been executed.", "callout": "With no 'permission:' prefix, permission is undefined and permissionDenied stays false, so line 478 executes with no permission check whatsoever. The gate is opt-in by whoever wrote the prompt.", "children": [{"src": "virtual-session-env.ts:45", "kind": "sandbox", "name": "bash.exec()", "calls": ["InMemoryFs"], "summary": "just-bash: a simulated bash interpreter over an in-memory filesystem, constructed with defenseInDepth: true.", "callout": "pi/index.ts:176 defaults createEnv to this, and pi/index.ts:303 sets toolSandbox: { kind: 'virtual' }. So the thing being gated has no real effects to gate. If anything ever injects a real session env through that seam, every conclusion in this trace inverts."}]}]}];
+    const KIND_COLORS = {"surface": "#a85a18", "derive": "#4f7cac", "io": "#2f7d5f", "fork": "#8b5cf6", "store": "#b08900", "deliver": "#c2410c", "runtime": "#6b21a8", "harness": "#b91c1c", "sandbox": "#0f766e"};
+    // ──────────────────────────────────────────────────────────────
+
+    const DEFAULT_PALETTE = ["#a85a18", "#4f7cac", "#7a8b3a", "#8a4a7a", "#3e7d6b", "#c08a2a", "#6b5b8a"];
+    const kinds = Object.keys(KIND_COLORS || {});
+    const colorFor = (k) => (KIND_COLORS && KIND_COLORS[k]) || DEFAULT_PALETTE[kinds.indexOf(k) % DEFAULT_PALETTE.length] || "var(--ink-4)";
+
+    // inject per-kind dot colors
+    {
+      const css = kinds.map(k => `.node[data-kind="${k}"] > .row .name .dot { background: ${colorFor(k)}; }`).join("\n");
+      const s = document.createElement("style"); s.textContent = css; document.head.appendChild(s);
+    }
+    // render legend
+    {
+      const lg = document.getElementById("legend");
+      kinds.forEach(k => {
+        const sp = document.createElement("span");
+        sp.textContent = k;
+        sp.style.setProperty("--dot", colorFor(k));
+        const dotCss = document.createElement("style");
+        dotCss.textContent = `.legend .k-${k}::before { background: ${colorFor(k)}; }`;
+        document.head.appendChild(dotCss);
+        sp.className = "k-" + k;
+        lg.appendChild(sp);
+      });
+    }
+
+    const ICON_COPY  = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="8" height="11" rx="1.5"/><path d="M6 3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1"/></svg>';
+    const ICON_CHECK = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>';
+
+    function buildPrompt(node) {
+      const lines = [`Continue the trace from \`${node.name}\` at \`${node.src || "<unknown>"}\`.`, ""];
+      if (node.summary) lines.push(`Known so far: ${node.summary}`);
+      if (node.calls && node.calls.length) lines.push(`Direct calls: ${node.calls.join(", ")}`);
+      if (node.callout) lines.push(`Prior note: ${node.callout}`);
+      lines.push("");
+      lines.push("Open the file at this location and follow each call. Produce a nested arrow-trace with file:line refs, a one-line gist, and callouts (surprises, coupling, edge cases) per row. Stop at natural boundaries (network call, render, side effect). Don't invent — if a path isn't in a file you read, say so.");
+      return lines.join("\n");
+    }
+
+    async function copyPrompt(node, btn) {
+      const text = buildPrompt(node);
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (_) {}
+        document.body.removeChild(ta);
+      }
+      btn.classList.add("copied");
+      btn.innerHTML = ICON_CHECK;
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => { btn.classList.remove("copied"); btn.innerHTML = ICON_COPY; }, 1200);
+    }
+
+    const shortenFile = (file) => file.length <= 18 ? file : file.slice(0, 8) + "…" + file.slice(-7);
+    const splitSrc = (src) => { const i = src.lastIndexOf(":"); return i >= 0 ? { file: src.slice(0, i), line: src.slice(i + 1) } : { file: src, line: "" }; };
+    const el = (tag, props = {}, ...children) => {
+      const n = document.createElement(tag);
+      for (const [k, v] of Object.entries(props)) {
+        if (k === "class") n.className = v;
+        else if (k === "dataset") Object.assign(n.dataset, v);
+        else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+        else if (v !== undefined && v !== null) n.setAttribute(k, v);
+      }
+      for (const c of children) {
+        if (c == null) continue;
+        n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+      }
+      return n;
+    };
+
+    const nodeIndex = new Map();
+    const nodeDom = new Map();
+    const bareName = (s) => {
+      let x = s.replace(/\([^)]*\)/g, "").trim();
+      x = x.replace(/^new\s+/, "");
+      const dot = x.lastIndexOf(".");
+      if (dot >= 0) x = x.slice(dot + 1);
+      const sp = x.lastIndexOf(" ");
+      if (sp >= 0) x = x.slice(sp + 1);
+      return x.toLowerCase();
+    };
+    (function indexAll(nodes) {
+      for (const n of nodes) {
+        nodeIndex.set(bareName(n.name), n);
+        if (n.children) indexAll(n.children);
+      }
+    })(TRACE);
+
+    // ─── hover target tracking ───────────────────────────────────
+    // The currently "intended" node. Closes happen via a delayed sweep
+    // that only touches open, unpinned nodes NOT on the target's
+    // ancestor/descendant chain. Passing the cursor over rows never
+    // closes anything; only landing on a new chevron does.
+    let currentTarget = null;
+    let sweepTimer = null;
+    const SWEEP_DELAY = 450;
+
+    function setTarget(node) {
+      currentTarget = node;
+      clearTimeout(sweepTimer);
+      sweepTimer = setTimeout(sweepOpen, SWEEP_DELAY);
+    }
+
+    function sweepOpen() {
+      const target = currentTarget;
+      document.querySelectorAll(".node.open").forEach(n => {
+        if (n.classList.contains("pinned")) return;
+        if (target && (n.contains(target) || target.contains(n))) return;
+        n.classList.remove("open");
+      });
+    }
+
+    function makeCallChip(callStr) {
+      const target = nodeIndex.get(bareName(callStr));
+      if (target) {
+        const b = el("button", { class: "call-chip", type: "button" }, callStr);
+        b.addEventListener("click", (e) => { e.stopPropagation(); openCard(target); });
+        return b;
+      }
+      return el("code", { class: "call-chip" }, callStr);
+    }
+
+    function renderNode(node) {
+      const hasKids = node.children && node.children.length;
+      const wrap = el("div", { class: "node" + (hasKids ? "" : " leaf"), dataset: { kind: node.kind || "" } });
+      const { file, line } = splitSrc(node.src || "");
+
+      const row = el("div", { class: "row", role: "button", tabindex: "0" });
+      const chevHit = el("div", { class: "chev-hit", "aria-hidden": "true" });
+      chevHit.appendChild(el("span", { class: "chev" }));
+      row.appendChild(chevHit);
+
+      const label = el("div", { class: "label" });
+      const name = el("div", { class: "name" });
+      name.appendChild(el("span", { class: "dot" }));
+      name.appendChild(document.createTextNode(node.name));
+      label.appendChild(name);
+      row.appendChild(label);
+
+      if (file) {
+        const src = el("div", { class: "src" });
+        src.appendChild(document.createTextNode(shortenFile(file)));
+        if (line) {
+          src.appendChild(document.createTextNode(":"));
+          src.appendChild(el("span", { class: "lno" }, line));
+        }
+        row.appendChild(src);
+      }
+
+      const copy = el("button", {
+        class: "copy-btn", type: "button",
+        "aria-label": "Copy explore-from-here prompt",
+        title: "Copy prompt to explore from this node"
+      });
+      copy.innerHTML = ICON_COPY;
+      copy.addEventListener("click", (e) => { e.stopPropagation(); copyPrompt(node, copy); });
+      row.appendChild(copy);
+
+      wrap.appendChild(row);
+
+      const detail = el("div", { class: "detail" });
+      if (node.calls && node.calls.length) {
+        const calls = el("p", { class: "calls" });
+        calls.appendChild(el("span", { class: "lbl" }, "calls"));
+        node.calls.forEach(c => calls.appendChild(makeCallChip(c)));
+        detail.appendChild(calls);
+      }
+      if (node.summary) detail.appendChild(el("p", { class: "summary" }, node.summary));
+      if (node.callout) {
+        const co = el("p", { class: "callout" });
+        co.appendChild(el("strong", {}, "note"));
+        co.appendChild(document.createTextNode(node.callout));
+        detail.appendChild(co);
+      }
+      wrap.appendChild(detail);
+
+      if (hasKids) {
+        const kids = el("div", { class: "children" });
+        const inner = el("div", { class: "inner" });
+        node.children.forEach(c => inner.appendChild(renderNode(c)));
+        kids.appendChild(inner);
+        wrap.appendChild(kids);
+      }
+
+      let openT;
+      const HOVER_OPEN = 80;
+      chevHit.addEventListener("mouseenter", () => {
+        clearTimeout(sweepTimer);
+        if (wrap.classList.contains("open")) { setTarget(wrap); return; }
+        openT = setTimeout(() => {
+          wrap.classList.add("open");
+          setTarget(wrap);
+        }, HOVER_OPEN);
+      });
+      chevHit.addEventListener("mouseleave", () => { clearTimeout(openT); });
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".call-chip")) return;
+        const willPin = !wrap.classList.contains("pinned");
+        wrap.classList.toggle("pinned", willPin);
+        wrap.classList.toggle("open", willPin);
+        if (e.altKey) {
+          wrap.querySelectorAll(".node").forEach(n => {
+            n.classList.toggle("pinned", willPin);
+            n.classList.toggle("open", willPin);
+          });
+        }
+        if (willPin) setTarget(wrap);
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); }
+        if (e.key === "ArrowRight") { wrap.classList.add("open"); wrap.classList.add("pinned"); }
+        if (e.key === "ArrowLeft")  { wrap.classList.remove("open"); wrap.classList.remove("pinned"); }
+      });
+
+      nodeDom.set(node, wrap);
+      return wrap;
+    }
+
+    const out = document.getElementById("outline");
+    TRACE.forEach(t => out.appendChild(renderNode(t)));
+    out.firstElementChild?.classList.add("open");
+    out.firstElementChild?.classList.add("pinned");
+
+    out.addEventListener("mouseleave", () => {
+      currentTarget = null;
+      clearTimeout(sweepTimer);
+      sweepTimer = setTimeout(sweepOpen, 800);
+    });
+    out.addEventListener("mouseenter", () => { clearTimeout(sweepTimer); });
+
+    const cardEl = document.getElementById("card");
+    const scrimEl = document.getElementById("cardScrim");
+
+    function openCard(node) {
+      cardEl.innerHTML = "";
+      const { file, line } = splitSrc(node.src || "");
+
+      const head = el("div", { class: "card-head" });
+      const nameWrap = el("div", { class: "name-wrap" });
+      if (node.kind) nameWrap.appendChild(el("div", { class: "card-kind" }, node.kind));
+      nameWrap.appendChild(el("h3", { class: "card-name" }, node.name));
+      if (file) {
+        const cs = el("div", { class: "card-src" });
+        cs.appendChild(document.createTextNode(file));
+        if (line) {
+          cs.appendChild(document.createTextNode(":"));
+          cs.appendChild(el("span", { class: "lno" }, line));
+        }
+        nameWrap.appendChild(cs);
+      }
+      head.appendChild(nameWrap);
+      const closeBtn = el("button", { class: "card-close", "aria-label": "Close" }, "×");
+      closeBtn.addEventListener("click", closeCard);
+      head.appendChild(closeBtn);
+      cardEl.appendChild(head);
+
+      if (node.calls && node.calls.length) {
+        const sec = el("div", { class: "card-section" });
+        sec.appendChild(el("h4", {}, "calls"));
+        const list = el("div", { class: "calls" });
+        node.calls.forEach(c => list.appendChild(makeCallChip(c)));
+        sec.appendChild(list);
+        cardEl.appendChild(sec);
+      }
+      if (node.summary) {
+        const sec = el("div", { class: "card-section" });
+        sec.appendChild(el("h4", {}, "summary"));
+        sec.appendChild(el("p", {}, node.summary));
+        cardEl.appendChild(sec);
+      }
+      if (node.callout) {
+        const sec = el("div", { class: "card-section" });
+        sec.appendChild(el("h4", {}, "note"));
+        sec.appendChild(el("p", { class: "callout-body" }, node.callout));
+        cardEl.appendChild(sec);
+      }
+      const actions = el("div", { class: "card-actions" });
+      const showBtn = el("button", { class: "ghost" }, "show in trace");
+      showBtn.addEventListener("click", () => { revealInTrace(node); });
+      actions.appendChild(showBtn);
+      cardEl.appendChild(actions);
+
+      document.body.classList.add("card-open");
+      cardEl.setAttribute("aria-hidden", "false");
+    }
+
+    function closeCard() {
+      document.body.classList.remove("card-open");
+      cardEl.setAttribute("aria-hidden", "true");
+    }
+    scrimEl.addEventListener("click", closeCard);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCard(); });
+
+    function revealInTrace(node) {
+      const dom = nodeDom.get(node);
+      if (!dom) return;
+      let p = dom.parentElement;
+      while (p && p !== out) {
+        if (p.classList.contains("node")) { p.classList.add("open"); p.classList.add("pinned"); }
+        p = p.parentElement;
+      }
+      dom.classList.add("open"); dom.classList.add("pinned");
+      closeCard();
+      dom.scrollIntoView({ behavior: "smooth", block: "center" });
+      dom.classList.remove("flash"); void dom.offsetWidth; dom.classList.add("flash");
+    }
+
+    document.getElementById("expandAll").addEventListener("click", () => {
+      document.querySelectorAll(".node").forEach(n => { n.classList.add("open"); n.classList.add("pinned"); });
+    });
+    document.getElementById("collapseAll").addEventListener("click", () => {
+      document.querySelectorAll(".node").forEach(n => { n.classList.remove("open"); n.classList.remove("pinned"); });
+      out.firstElementChild?.classList.add("open");
+      out.firstElementChild?.classList.add("pinned");
+    });
+  </script>
+</body>
+</html>
