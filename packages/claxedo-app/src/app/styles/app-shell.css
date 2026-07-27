@@ -170,6 +170,61 @@
   }
 }
 
+/* ─── Settings dialog: roomier surface + readable backdrop ─── */
+
+/* The shared `x-large` box is shared with other dialogs, so the settings surface
+   opts into its own, larger box instead of widening `x-large` for everyone.
+   `.claxedo-settings-dialog` lands on [data-slot="dialog-content"] (Dialog's
+   `class` prop), so the container is matched through it. */
+[data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-settings-dialog)
+  > [data-slot="dialog-container"] {
+  width: min(calc(100vw - 32px), 1120px);
+  height: min(calc(100vh - 72px), 860px);
+}
+
+/* Kobalte portals the overlay as a sibling of the dialog layer, so the settings
+   backdrop is selected from their shared <body> ancestor. The shared 0.2 alpha
+   is invisible against the dark app chrome; this dims and blurs enough to read
+   the dialog as modal. */
+body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"] {
+  background-color: hsl(from var(--background-base) h s l / 0.6);
+  backdrop-filter: blur(3px);
+  /* Match the dialog's own 150ms in / 100ms out so the backdrop and the panel
+     move as one surface instead of the dim snapping ahead of the box. */
+  animation: claxedoSettingsBackdropHide 100ms ease-in forwards;
+}
+
+body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+  [data-component="dialog-overlay"][data-expanded] {
+  animation: claxedoSettingsBackdropShow 150ms ease-out;
+}
+
+@keyframes claxedoSettingsBackdropShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes claxedoSettingsBackdropHide {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"],
+  body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+    [data-component="dialog-overlay"][data-expanded] {
+    animation: none;
+  }
+}
+
 /* ─── Settings dialog: mobile drill-down layout ─── */
 
 /* Back button hidden by default (desktop) */
@@ -177,7 +232,7 @@
   display: none;
 }
 
-/* --bp-sm complement (639 = below BP_SM) — pairs with settings.tsx's innerWidth < BP_SM free-drag gate. */
+/* --bp-sm complement (639 = below BP_SM) — pairs with settings.tsx's `max-sm:` mobile header. */
 @media (max-width: 639px) {
   /* Single column on mobile */
   .settings-dialog {
