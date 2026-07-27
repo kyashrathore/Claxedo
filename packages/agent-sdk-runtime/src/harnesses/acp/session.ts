@@ -228,20 +228,23 @@ const withLevel = (mode: { id: string; name: string; description?: string }): Ag
  * old ones" from a silent drift into a failing test with a fix attached:
  * `bun run script/permission-probe.ts` and paste the `liveModesFull` output.
  */
-export type AcpKnownModeVersion =
-  /** Ships as one of this package's dependencies; the pin is checkable offline. */
-  | { source: "npm"; package: string; version: string }
-  /**
-   * Installed by the user, found on PATH. Checkable only where it is installed,
-   * so the drift test skips rather than fails when it is absent — a CI box
-   * without Cursor must not report a version mismatch it cannot observe.
-   */
-  | { source: "path"; command: string; version: string }
-
-export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, AcpKnownModeVersion>> = {
-  claude: { source: "npm", package: "@agentclientprotocol/claude-agent-acp", version: "0.60.0" },
-  codex: { source: "npm", package: "@agentclientprotocol/codex-acp", version: "1.1.2" },
-  cursor: { source: "path", command: "cursor-agent", version: "2026.07.23-e383d2b" },
+/**
+ * Only the agents WE ship can be version-pinned.
+ *
+ * claude-agent-acp and codex-acp are dependencies of this package, so every
+ * install resolves the same build and a mismatch is a real, checkable fact.
+ * Cursor is not here on purpose: `cursor-agent` is installed by the user and
+ * updates itself, so its version differs per machine and asserting one would
+ * fail on other people's laptops for no reason — the pin would be measuring the
+ * developer's install, not the code.
+ *
+ * What covers Cursor instead is `rememberLiveModes`: its table is a seed used
+ * only until that user's own agent has answered once, after which their real
+ * list is what a draft shows.
+ */
+export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, { package: string; version: string }>> = {
+  claude: { package: "@agentclientprotocol/claude-agent-acp", version: "0.60.0" },
+  codex: { package: "@agentclientprotocol/codex-acp", version: "1.1.2" },
 }
 
 /**
@@ -250,7 +253,17 @@ export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, AcpKnownModeV
  * An ACP agent does not advertise its modes until `session/new` returns, so on a
  * draft there is nothing to ask. This table is what a draft shows instead, and
  * every field in it — id, name, description — is the agent's own, captured by
- * `script/permission-probe.ts` against the versions above.
+ * `script/permission-probe.ts` from a real binary.
+ *
+ * It is a SEED, not a claim about the agent the user is running. For claude and
+ * codex the two coincide, because this package pins those versions. For cursor
+ * they need not: `cursor-agent` is user-installed and self-updating, so a build
+ * newer than the one recorded here may have added or renamed a mode. That
+ * exposure is bounded in two ways — `rememberLiveModes` replaces this list with
+ * the user's own the first time their agent answers, and a live session always
+ * supersedes it regardless. What can never happen is the failure this replaced:
+ * every entry is an id some build of the agent really advertised, never one
+ * Claxedo made up.
  *
  * It replaced three rungs Claxedo named itself ("Allow everything except
  * danger" and friends) which resolved to real ids only once the session began.
@@ -307,11 +320,50 @@ export const ACP_KNOWN_MODES: Partial<Record<AcpHarnessId, readonly AgentPermiss
 }
 
 /**
- * The draft list for a harness, and the honest empty answer for one we have
- * never observed.
+ * The modes a live session actually reported, per harness, learned at runtime.
+ *
+ * This is what makes a hardcoded table safe for an agent we do not ship. The
+ * table above is only ever a guess about the user's build; the moment their own
+ * agent answers, that guess is replaced by fact and never consulted again for
+ * that harness. So a Cursor release that renames a mode costs at most one
+ * draft's worth of staleness, and only before the user has run it once.
+ *
+ * Deliberately process-local rather than persisted. Writing it to the store
+ * would need a new port member across every store implementation, and the value
+ * is small: the seed is already close, and the first session of a run corrects
+ * it. A wrong entry surviving a restart would also be worse than no entry —
+ * this way the memory can never outlive the process that observed it.
+ */
+const liveModesSeen = new Map<AcpHarnessId, readonly AgentPermissionMode[]>()
+
+/**
+ * Record what a live session reported, so later drafts stop guessing.
+ *
+ * Empty lists are ignored: an agent that has a mode channel but has not
+ * populated it yet reports `[]`, and treating that as "this agent has no modes"
+ * would erase a good seed on a transient state.
+ */
+export function rememberLiveModes(harness: AcpHarnessId, state: AgentPermissionModeState) {
+  if (state.modes.length === 0) return
+  liveModesSeen.set(harness, state.modes)
+}
+
+/** Test seam — the map is process-global, so suites must be able to reset it. */
+export function forgetLiveModes() {
+  liveModesSeen.clear()
+}
+
+/**
+ * What to show before a session exists: this user's own list if their agent has
+ * ever answered, the recorded seed otherwise, and nothing at all for a harness
+ * we have neither observed nor recorded.
+ *
+ * `currentModeId` is deliberately never carried over from the remembered state.
+ * It named the mode of some OTHER session, and a draft claiming it as current
+ * would be the same species of lie this file exists to remove.
  */
 export function draftPermissionModes(harness: AcpHarnessId): AgentPermissionModeState {
-  const modes = ACP_KNOWN_MODES[harness]
+  const modes = liveModesSeen.get(harness) ?? ACP_KNOWN_MODES[harness]
   if (!modes) return { modes: [], appliesFrom: "next-turn" }
   return { modes: [...modes], appliesFrom: "next-turn" }
 }

@@ -67,7 +67,7 @@ import type {
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
-import { draftPermissionModes, extractAgents } from "./session"
+import { draftPermissionModes, extractAgents, rememberLiveModes } from "./session"
 import { acpPermissionRequest, permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
 import { firstTurnErrorData } from "../../first-turn-error"
@@ -1351,7 +1351,11 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     // unchanged. An agent we have never probed reports nothing rather than a
     // plausible-looking guess.
     if (!agentSessionId || !proc?.alive) return draftPermissionModes(this.harnessId())
-    return proc.permissionModes(agentSessionId)
+    const state = proc.permissionModes(agentSessionId)
+    // Teach later drafts what this user's agent actually offers, so the recorded
+    // seed stops being consulted for a build it may not describe.
+    rememberLiveModes(this.harnessId(), state)
+    return state
   }
 
   async setPermissionMode(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState> {

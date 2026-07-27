@@ -1,9 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { createRequire } from "node:module"
-import { execFileSync } from "node:child_process"
-import fs from "node:fs"
-import path from "node:path"
-import { ACP_KNOWN_MODES, ACP_KNOWN_MODE_VERSIONS, draftPermissionModes } from "./session"
+import {
+  ACP_KNOWN_MODES,
+  ACP_KNOWN_MODE_VERSIONS,
+  draftPermissionModes,
+  forgetLiveModes,
+  rememberLiveModes,
+} from "./session"
 
 const require_ = createRequire(import.meta.url)
 
@@ -14,6 +17,10 @@ const require_ = createRequire(import.meta.url)
  * catch a hand-edit that reintroduces a Claxedo-invented option.
  */
 describe("ACP known modes", () => {
+  // The learned map is process-global, so a test that populates it would
+  // otherwise change what every later test sees.
+  afterEach(forgetLiveModes)
+
   const staleMessage = (harness: string, name: string, installed: string, pinned: string) =>
     `${name} is ${installed}, but ${harness}'s modes were recorded from ${pinned}. ` +
     `Re-run \`bun run script/permission-probe.ts\` and paste its liveModesFull into ACP_KNOWN_MODES, ` +
@@ -21,38 +28,22 @@ describe("ACP known modes", () => {
     `that a new agent build may have added, removed, or renamed a mode, and a draft that shows the ` +
     `old list is showing a permission the running agent does not have.`
 
-  test("the pinned npm-shipped agents are the versions we recorded", () => {
+  test("the agents this package ships are the versions we recorded", () => {
     for (const [harness, pin] of Object.entries(ACP_KNOWN_MODE_VERSIONS)) {
-      if (pin.source !== "npm") continue
       const meta = require_(`${pin.package}/package.json`) as { version: string }
       expect(meta.version, staleMessage(harness, pin.package, meta.version, pin.version)).toBe(pin.version)
     }
   })
 
   /**
-   * PATH-installed agents can only be checked where they are installed. A CI box
-   * without Cursor must not fail on a version it cannot observe, so this skips —
-   * and says so — rather than passing silently, which would read as a check that
-   * ran.
+   * Only agents shipped as dependencies can be pinned, because only those
+   * resolve to the same build for everyone. `cursor-agent` is user-installed and
+   * self-updating, so pinning it would assert the developer's laptop and fail on
+   * everybody else's; `rememberLiveModes` covers it instead.
    */
-  test("the pinned PATH-installed agents are the versions we recorded, where present", () => {
-    for (const [harness, pin] of Object.entries(ACP_KNOWN_MODE_VERSIONS)) {
-      if (pin.source !== "path") continue
-      const found = (process.env.PATH ?? "")
-        .split(path.delimiter)
-        .map((dir) => path.join(dir, pin.command))
-        .find((candidate) => fs.existsSync(candidate))
-      if (!found) {
-        console.log(`  skipped: ${pin.command} is not on PATH, so ${harness}'s pin cannot be checked here`)
-        continue
-      }
-      const installed = execFileSync(found, ["--version"], { encoding: "utf8" }).trim()
-      expect(installed, staleMessage(harness, pin.command, installed, pin.version)).toBe(pin.version)
-    }
-  })
-
-  test("every pinned harness has a table, and every table is pinned", () => {
-    expect(Object.keys(ACP_KNOWN_MODES).sort()).toEqual(Object.keys(ACP_KNOWN_MODE_VERSIONS).sort())
+  test("every pinned harness is one this package ships", () => {
+    const shipped = ["claude", "codex"]
+    expect(Object.keys(ACP_KNOWN_MODE_VERSIONS).sort()).toEqual(shipped)
   })
 
   /**
@@ -73,11 +64,17 @@ describe("ACP known modes", () => {
     }
   })
 
+  /**
+   * All three ACP harnesses currently have a seed, so this drives the fallback
+   * with a synthetic id rather than looping over the real ones and asserting
+   * nothing. The branch is what a fourth ACP harness would land in before anyone
+   * probes it, and it must show an empty list rather than borrow another
+   * agent's.
+   */
   test("a harness with no recorded table reports nothing rather than a guess", () => {
-    const unrecorded = (["claude", "codex", "cursor"] as const).filter((id) => !ACP_KNOWN_MODES[id])
-    for (const harness of unrecorded) {
-      expect(draftPermissionModes(harness)).toEqual({ modes: [], appliesFrom: "next-turn" })
-    }
+    const unprobed = "some-future-acp-agent" as unknown as keyof typeof ACP_KNOWN_MODES
+    expect(ACP_KNOWN_MODES[unprobed]).toBeUndefined()
+    expect(draftPermissionModes(unprobed)).toEqual({ modes: [], appliesFrom: "next-turn" })
   })
 
   test("drafts carry the levels the live list would derive", () => {
@@ -96,5 +93,41 @@ describe("ACP known modes", () => {
     for (const [harness, modes] of Object.entries(ACP_KNOWN_MODES)) {
       expect(modes!.filter((mode) => mode.level === "auto").length, harness).toBe(1)
     }
+  })
+
+  /**
+   * The seed is a guess about the user's build; their own agent is fact. These
+   * cover the handover, which is what makes an unpinnable agent like Cursor safe
+   * to seed at all.
+   */
+  describe("learning from the user's own agent", () => {
+    const live = { modes: [{ id: "invented-by-a-newer-build", name: "Newer" }], appliesFrom: "next-turn" } as const
+
+    test("a remembered list replaces the recorded seed", () => {
+      expect(draftPermissionModes("cursor").modes.map((mode) => mode.id)).toEqual(["agent", "plan", "ask"])
+      rememberLiveModes("cursor", { ...live, modes: [...live.modes] })
+      expect(draftPermissionModes("cursor").modes.map((mode) => mode.id)).toEqual(["invented-by-a-newer-build"])
+    })
+
+    test("an empty report does not erase a good seed", () => {
+      // An agent with a mode channel that has not populated it yet reports [].
+      // Treating that as "no modes" would throw away a usable seed.
+      rememberLiveModes("cursor", { modes: [], appliesFrom: "next-turn" })
+      expect(draftPermissionModes("cursor").modes.map((mode) => mode.id)).toEqual(["agent", "plan", "ask"])
+    })
+
+    test("a draft never claims another session's current mode", () => {
+      rememberLiveModes("cursor", { ...live, modes: [...live.modes], currentModeId: "invented-by-a-newer-build" })
+      expect(draftPermissionModes("cursor").currentModeId).toBeUndefined()
+    })
+
+    test("learning is per harness", () => {
+      rememberLiveModes("cursor", { ...live, modes: [...live.modes] })
+      expect(draftPermissionModes("codex").modes.map((mode) => mode.id)).toEqual([
+        "read-only",
+        "agent",
+        "agent-full-access",
+      ])
+    })
   })
 })

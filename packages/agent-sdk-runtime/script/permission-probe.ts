@@ -107,6 +107,14 @@ async function probeAcp(harness: string, acpId: "claude" | "codex" | "cursor", b
     } else {
       out.note = "no alternative mode to switch to"
     }
+
+    // The draft AFTER a session has reported. `rememberLiveModes` should have
+    // replaced the hardcoded seed with this user's own list, which is the whole
+    // mechanism protecting agents we cannot version-pin — so it is checked
+    // against a real agent rather than only in unit tests.
+    out.draftModesAfterSession = (await adapter.listPermissionModes("", workdir)).modes.map(
+      (m) => `${m.id}${m.level ? `:${m.level}` : ""}`,
+    )
   } catch (error) {
     out.error = (error as Error).message.slice(0, 400)
   } finally {
