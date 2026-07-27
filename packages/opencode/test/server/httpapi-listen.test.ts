@@ -293,7 +293,12 @@ describe("HttpApi Server.listen", () => {
       return true
     }) as typeof process.stderr.write
     try {
-      const response = await Server.Default().app.request("/status")
+      // `/doc` is a real route. This used to request `/status`, which is not
+      // routed — it fell through to the UI catch-all, which proxied
+      // https://app.opencode.ai/status and returned that host's 200. The proxy
+      // is gone (see src/server/shared/ui.ts), and with it this test's silent
+      // dependency on a live third-party request during the unit suite.
+      const response = await Server.Default().app.request("/doc")
       expect(response.status).toBe(200)
     } finally {
       process.stderr.write = original
