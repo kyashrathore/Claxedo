@@ -74,6 +74,18 @@ describe("harness modes are shown in the harness's own words", () => {
     }
   })
 
+  test("a malformed mode report reads as no modes, never a render throw", () => {
+    // `readJson` does no shape validation: a proxy error page or a server
+    // mid-deploy can 200 a body with no `modes` array. That must degrade
+    // exactly like an empty report — this function runs in a composer render
+    // memo, and a throw there takes the whole shell into the ErrorBoundary.
+    const malformed = {} as HarnessModeReport
+    for (const harness of POLICY_HARNESS_IDS) {
+      const options = claxedoPermissionModes({ harness, report: malformed })
+      expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
+    }
+  })
+
   /*
    * pi is the exception to both tests above, and deliberately so.
    *
