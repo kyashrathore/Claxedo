@@ -21,10 +21,13 @@
  * STATUS, so a green-looking run is not mistaken for a proof:
  *   claude-acp  reaches the model and raises real permission requests, but every
  *               mode raises the SAME one — see the note on `enforced` below.
- *   codex-acp   not yet reachable. It authenticates through ~/.codex/auth.json
- *               in ChatGPT mode and ignores OPENAI_BASE_URL, so the mock is never
- *               called (`modelCalls: 0`). Needs a custom `model_provider` with a
- *               `base_url` passed via `-c` before it can be measured.
+ *   codex-acp   reachable, via the `model_providers.mock` override in
+ *               `extraArgs` — it authenticates through ~/.codex/auth.json in
+ *               ChatGPT mode and ignores OPENAI_BASE_URL, so a provider override
+ *               is the only way in without touching the user's real config.
+ *               Result: no mode gates. With ESCAPE_TARGET set, a model-requested
+ *               shell command wrote OUTSIDE the workspace, unprompted, under
+ *               `read-only` as well as `agent-full-access`.
  *   cursor-acp  not attempted; its endpoint is proprietary.
  */
 import { createRequire } from "node:module"
@@ -61,6 +64,64 @@ const MOCK = `http://127.0.0.1:${PORT}`
 let modelCalls = 0
 
 const TOOL_INPUT = (file: string) => ({ file_path: file, content: "hi\n" })
+/**
+ * codex's write path is a shell command, not a Write tool. Under a read-only
+ * sandbox the command is blocked by the OS rather than by a prompt, which is the
+ * enforcement this probe is trying to observe: same call, one mode lets the file
+ * appear and another does not.
+ */
+const OPENAI_TOOL = process.env.OPENAI_TOOL ?? "exec_command"
+const OPENAI_ARGS = () => ({
+  cmd: process.env.ESCAPE_TARGET
+    ? `printf hi > ${JSON.stringify(process.env.ESCAPE_TARGET)}`
+    : `printf hi > ${JSON.stringify(currentTarget)}`,
+})
+/**
+ * Optional second target OUTSIDE the workspace.
+ *
+ * Distinguishes two very different failures that look identical from inside the
+ * project: a sandbox that is active but set to the wrong mode, versus no sandbox
+ * at all. Every codex mode permits writes somewhere; none of them permits writing
+ * outside the workspace unprompted, so a file appearing here means the policy is
+ * not being enforced rather than being enforced loosely.
+ */
+const ESCAPE = process.env.ESCAPE_TARGET
+
+/**
+ * The OpenAI chat-completions half.
+ *
+ * codex does not read ANTHROPIC_BASE_URL and, in ChatGPT auth mode, ignores
+ * OPENAI_BASE_URL too — it has to be pointed here with a `model_providers.*`
+ * override, which speaks this wire format rather than Anthropic's.
+ */
+function responsesReply(body: Record<string, unknown>) {
+  const seen = JSON.stringify(body.input ?? [])
+  const done = seen.includes("function_call_output")
+  const item = done
+    ? { type: "message", id: `msg_${modelCalls}`, role: "assistant", status: "completed", content: [{ type: "output_text", text: "Done." }] }
+    : {
+        type: "function_call",
+        id: `fc_${modelCalls}`,
+        call_id: `call_${modelCalls}`,
+        name: OPENAI_TOOL,
+        arguments: JSON.stringify(OPENAI_ARGS()),
+        status: "completed",
+      }
+  const response = {
+    id: `resp_${modelCalls}`,
+    object: "response",
+    status: "completed",
+    model: body.model ?? "mock",
+    output: [item],
+    usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+  }
+  const sse = [
+    `event: response.created\ndata: ${JSON.stringify({ type: "response.created", response: { ...response, status: "in_progress", output: [] } })}\n\n`,
+    `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item })}\n\n`,
+    `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response })}\n\n`,
+  ].join("")
+  return new Response(sse, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } })
+}
 
 function mockServer(targetFile: () => string) {
   return Bun.serve({
@@ -69,7 +130,21 @@ function mockServer(targetFile: () => string) {
     async fetch(req) {
       if (req.method !== "POST") return new Response("ok")
       modelCalls += 1
+      const url = new URL(req.url)
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
+      if (process.env.DUMP_MODEL_REQUEST) {
+        const names = (body.tools as Array<Record<string, any>> | undefined)?.map(
+          (t) => t.name ?? t.function?.name,
+        )
+        console.error(`  [mock] ${url.pathname} tools=${JSON.stringify(names)?.slice(0, 200)}`)
+        const want = (body.tools as Array<Record<string, any>> | undefined)?.find(
+          (t) => (t.name ?? t.function?.name) === OPENAI_TOOL,
+        )
+        if (want) console.error(`  [mock] ${OPENAI_TOOL} schema=${JSON.stringify(want).slice(0, 900)}`)
+      }
+      // OpenAI chat-completions shape, for harnesses pointed here by a custom
+      // model provider rather than an Anthropic base-url override.
+      if (url.pathname.includes("responses")) return responsesReply(body)
       const msgs = JSON.stringify(body.messages ?? [])
       // Once the tool result comes back, stop; otherwise the agent loops forever
       // re-requesting the same write and the turn never ends on its own.
@@ -135,7 +210,28 @@ type Outcome = {
    */
   modelCalls?: number
   askDetail?: string
+  /** Set only when ESCAPE_TARGET is configured: did a write outside the workspace land? */
+  escaped?: boolean
   detail?: string
+}
+
+/**
+ * Config overrides that point a harness at the mock.
+ *
+ * claude takes a base-url env var and needs none of this. codex resolves its
+ * endpoint from ~/.codex/auth.json in ChatGPT mode, so the only way to redirect
+ * it without touching the user's real config is a per-launch provider override.
+ */
+function extraArgs(harness: "claude" | "codex" | "cursor"): string[] {
+  if (harness !== "codex") return []
+  return [
+    "-c", "model_provider=mock",
+    "-c", 'model_providers.mock.name="mock"',
+    "-c", `model_providers.mock.base_url="${MOCK}/v1"`,
+    "-c", 'model_providers.mock.wire_api="responses"',
+    "-c", 'model_providers.mock.env_key="OPENAI_API_KEY"',
+    "-c", 'model_providers.mock.requires_openai_auth=false',
+  ]
 }
 
 async function runCase(input: {
@@ -158,6 +254,7 @@ async function runCase(input: {
     harness: input.harness as never,
     storeRoot: path.join(tmp, "store"),
     createStore: (root?: string) => new RuntimeStore(root) as never,
+    ...(extraArgs(input.harness).length ? { args: extraArgs(input.harness) } : {}),
     env: {
       ANTHROPIC_BASE_URL: MOCK,
       ANTHROPIC_API_KEY: "probe-key",
@@ -221,6 +318,10 @@ async function runCase(input: {
 
   // Read AFTER dispose, so a write racing the teardown is still counted.
   out.wrote = fs.existsSync(target)
+  if (ESCAPE) {
+    out.escaped = fs.existsSync(ESCAPE)
+    try { fs.rmSync(ESCAPE, { force: true }) } catch {}
+  }
   out.modelCalls = modelCalls - callsBefore
   try { fs.rmSync(tmp, { recursive: true, force: true }) } catch {}
   return out
@@ -254,6 +355,7 @@ for (const entry of HARNESSES.filter((e) => !ONLY || e.harness === ONLY)) {
     harness: entry.harness as never,
     storeRoot: path.join(tmp, "store"),
     createStore: (root?: string) => new RuntimeStore(root) as never,
+    ...(extraArgs(entry.harness).length ? { args: extraArgs(entry.harness) } : {}),
     env: { ANTHROPIC_BASE_URL: MOCK, ANTHROPIC_API_KEY: "k", OPENAI_BASE_URL: MOCK, OPENAI_API_KEY: "k" } as never,
   })
   let modes: readonly AgentPermissionMode[] = []
