@@ -177,6 +177,11 @@ on:
 | `CLAXEDO_TELEMETRY_MODE`                     | `on` or `off`. Checked before key presence — `off` (the self-host default) means no telemetry no matter what else is set. |
 | `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST` | Your PostHog project key and host. Inert while `CLAXEDO_TELEMETRY_MODE` is unset or `off`.                                |
 
+If you build the web app bundle yourself, the client-side switch and key are
+the build-time variables `VITE_CLAXEDO_TELEMETRY_MODE`, `VITE_POSTHOG_KEY`, and
+`VITE_POSTHOG_HOST` — same semantics, applied at build rather than at runtime
+(Vite only exposes `VITE_`-prefixed variables to client code).
+
 Enabling it sends feature-usage events and exception reports tagged with your
 user and organization identifiers — never prompts, source text, credentials,
 repository contents, or literal file paths (paths are reduced to an extension
