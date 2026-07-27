@@ -2286,6 +2286,7 @@ export function RailSidebar(props: RailSidebarProps) {
       <div data-testid="project-group" data-project-id={section.project.id} class="flex flex-col gap-0.5">
         <div
           data-testid="project-header"
+          data-slot="project-header"
           data-active={active() ? "true" : "false"}
           class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
           onClick={() => {
@@ -2414,6 +2415,7 @@ export function RailSidebar(props: RailSidebarProps) {
       <div data-testid="workspace-project-group" data-project-id={group.project.id} class="flex flex-col gap-0.5">
         <div
           data-testid="workspace-project-header"
+          data-slot="project-header"
           data-active={active() ? "true" : "false"}
           class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
           onClick={() => {
@@ -2487,6 +2489,7 @@ export function RailSidebar(props: RailSidebarProps) {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       data-testid="rail-sidebar"
+      data-surface="sidebar"
       aria-label={language.t("sidebar.nav.projectsAndSessions")}
     >
       <div

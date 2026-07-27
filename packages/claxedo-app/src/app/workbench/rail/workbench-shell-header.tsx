@@ -89,6 +89,7 @@ export function WorkbenchShellHeader(props: {
   return (
     <div
       data-testid="workbench-shell-header"
+      data-surface="header"
       data-window-drag-region
       class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
       classList={{
