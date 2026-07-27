@@ -44,6 +44,7 @@ import { groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
 import { MessageTimeline } from "@/features/session/ui/message-timeline"
+import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 import { useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { SessionComposerRegion, createSessionComposerState } from "@/features/session/ui/composer/index"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
@@ -617,8 +618,6 @@ export default function SessionPage() {
   )
   const firstTurnOnboarding = createFirstTurnOnboarding({
     directory: dir,
-    completedTurns: () => directorySessions().filter((session) => session.lastTurn?.status === "completed").length,
-    sentTurns: () => userMessages().length + directorySessions().filter((session) => session.id !== sessionID() && session.lastTurn).length,
     messages,
     cloud: () => resolvedWorkspaceKind() === "cloud",
     onStartNewSession: () => navigateSession(),
@@ -1381,17 +1380,7 @@ export default function SessionPage() {
                   <Show
                     keyed
                     when={timelineMountSessionKey({ messagesReady: messagesReady(), sessionKey: sessionKey() })}
-                    fallback={
-                      <div class="flex h-full items-start justify-center px-4 pt-12 text-text-weak">
-                        <div
-                          class="flex h-20 w-full max-w-[720px] items-center justify-center gap-2 rounded-md border border-border-weak-base bg-background-base/60"
-                          data-testid="session-messages-loading"
-                        >
-                          <div class="size-4 shrink-0 animate-spin rounded-full border border-border-base border-t-transparent" />
-                          <span class="text-13-regular text-text-weak">Loading session</span>
-                        </div>
-                      </div>
-                    }
+                    fallback={<SessionTimelineSkeleton centered={centered()} />}
                   >
                     {(_id) => (
                       <MessageTimeline
@@ -1510,11 +1499,7 @@ export default function SessionPage() {
               activeTurn={sessionController.activeTurn}
               beforeInput={
                 <>
-                  <SessionHealthPeek
-                    directory={dir}
-                    sessionId={sessionID}
-                    fallback={firstTurnOnboarding.beforeInput()}
-                  />
+                  <SessionHealthPeek directory={dir} sessionId={sessionID} />
                   <SessionConnectionLine workspaceId={signedWorkspaceId} />
                 </>
               }

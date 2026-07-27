@@ -175,7 +175,7 @@ configureDocumentsAppPorts({
 
 // WorkGraph consumes exactly one shell capability: the central Claxedo events
 // bus, where the server rings the `workgraph.changed` doorbell that replaced the
-// deleted `GET /api/workgraph/changes` long-poll (plan 2026-07-17-004).
+// deleted `GET /api/workgraph/changes` long-poll.
 configureWorkGraphAppPorts({
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
 })
@@ -211,5 +211,8 @@ configureWorkspacesAppPorts({
   useDirectorySessionCacheActions: SessionCache.useDirectorySessionCacheActions,
   CloudStartupView: CloudStartup.CloudStartupView,
   WorkspaceAccessDeniedView: CloudStartup.WorkspaceAccessDeniedView,
+  WorkspaceStateShell: CloudStartup.WorkspaceStateShell,
+  WorkspaceStateNote: CloudStartup.WorkspaceStateNote,
+  WorkspaceStateButton: CloudStartup.WorkspaceStateButton,
   isForbiddenConnectionError: CloudStartup.isForbiddenConnectionError,
 })

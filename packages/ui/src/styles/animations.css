@@ -1,6 +1,17 @@
 :root {
   --animate-pulse: pulse-opacity 2s ease-in-out infinite;
   --animate-pulse-scale: pulse-scale 1.2s ease-in-out infinite;
+  /* Tailwind's default theme is wiped by `--*: initial` in styles/tailwind/index.css,
+     which takes `spin` (and its keyframes) with it. Every `animate-spin` in the app
+     was therefore a static ring — the class resolved to `animation: none`. Redeclare
+     it here, next to the pulse it sits beside, and re-export it from that @theme. */
+  --animate-spin: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse-opacity {

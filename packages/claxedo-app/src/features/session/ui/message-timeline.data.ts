@@ -397,7 +397,7 @@ export namespace Timeline {
           // Attach the recovery class on every turn, not just index 0. The class is
           // position-independent (regex/wire-stamped), the renderer mounts the card
           // purely on its presence, and retry is registered on every submit. The
-          // firstTurnRecovery param survives for starter-prompt/telemetry gating.
+          // firstTurnRecovery param survives for telemetry gating.
           recoveryClass: sessionRecoveryClass(error),
         }),
       )

@@ -1,6 +1,13 @@
 import { Match, Show, Switch, createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { CloudStartupView, WorkspaceAccessDeniedView, useClaxedoEventsOptional } from "@/features/workspaces/app-ports"
+import {
+  CloudStartupView,
+  WorkspaceAccessDeniedView,
+  WorkspaceStateButton,
+  WorkspaceStateNote,
+  WorkspaceStateShell,
+  useClaxedoEventsOptional,
+} from "@/features/workspaces/app-ports"
 import {
   acquireWorkspaceConnection,
   retryWorkspaceConnection,
@@ -59,31 +66,35 @@ export function WorkspaceOfflineView(props: {
     if (err.includes(copy().detail) || err.startsWith(`${copy().title}.`)) return
     return err
   }
+  // Same column as the connecting pipeline it replaces (WorkspaceStateShell), so
+  // a failed connect reads as the same pane changing state rather than a
+  // different screen: the eyebrow, title and detail stay where they were and the
+  // raw error takes the slot the live log had.
   return (
-    <div data-component="workspace-offline" data-testid="workspace-offline" class="flex size-full items-center justify-center px-6 py-10">
-      <div class="flex w-full max-w-[460px] flex-col items-center text-center">
-        <Icon name="warning" size="large" class="text-text-on-critical-base" />
-        <div class="mt-3 text-[18px] font-medium leading-6 text-text-strong">{copy().title}</div>
-        <div class="mt-1 max-w-[420px] text-13-regular text-text-weak">{copy().detail}</div>
-        <Show when={extraError()}>
-          {(err) => (
-            <div class="mt-3 max-w-[420px] text-12-regular text-text-on-critical-base/80 break-words">{err()}</div>
-          )}
-        </Show>
+    <WorkspaceStateShell
+      component="workspace-offline"
+      testId="workspace-offline"
+      tone="critical"
+      eyebrow="Workspace runtime"
+      title={copy().title}
+      detail={copy().detail}
+      actions={
         <Show when={!props.terminal && props.onRetry}>
-          <div class="mt-5 flex justify-center">
-            <button
-              type="button"
-              data-testid="workspace-offline-retry"
-              class="inline-flex h-8 items-center rounded-md border border-border-weak-base/55 bg-background-base px-3 text-12-regular text-text-base hover:bg-surface-base-hover/40"
-              onClick={() => props.onRetry?.()}
-            >
-              Retry
-            </button>
-          </div>
+          <WorkspaceStateButton testId="workspace-offline-retry" onClick={() => props.onRetry?.()}>
+            Retry
+          </WorkspaceStateButton>
         </Show>
-      </div>
-    </div>
+      }
+    >
+      <Show when={extraError()}>
+        {(err) => (
+          <WorkspaceStateNote tone="critical">
+            <Icon name="warning" size="small" class="mt-0.5 shrink-0 text-icon-base" />
+            <span class="min-w-0 break-words font-mono text-[11px] leading-5 text-text-strong">{err()}</span>
+          </WorkspaceStateNote>
+        )}
+      </Show>
+    </WorkspaceStateShell>
   )
 }
 

@@ -189,6 +189,9 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   ),
   CloudStartupView: lazy("@/features/session/ui/components/cloud-startup-view", "CloudStartupView"),
   WorkspaceAccessDeniedView: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceAccessDeniedView"),
+  WorkspaceStateShell: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceStateShell"),
+  WorkspaceStateNote: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceStateNote"),
+  WorkspaceStateButton: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceStateButton"),
   isForbiddenConnectionError: lazy("@/features/session/ui/components/cloud-startup-view", "isForbiddenConnectionError"),
 }
 

@@ -16,6 +16,14 @@
       "port": 4444
     },
     {
+      "name": "claxedo-app-verify",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PORT=4446", "bun", "run", "dev"],
+      "cwd": "packages/claxedo-app",
+      "port": 4446,
+      "autoPort": false
+    },
+    {
       "name": "claxedo-server",
       "runtimeExecutable": "env",
       "runtimeArgs": ["CLAXEDO_WORKGRAPH_REPOSITORY=/Users/yashvardhansingh/test/opencode", "npm", "run", "dev"],

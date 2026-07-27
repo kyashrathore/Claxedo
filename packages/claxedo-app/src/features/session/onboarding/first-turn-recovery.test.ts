@@ -4,16 +4,9 @@ import {
   sessionRecoveryClass,
   firstTurnOutcome,
   firstTurnFunnelEvents,
-  shouldShowStarterPrompts,
 } from "./first-turn-recovery"
 
 describe("first-turn recovery", () => {
-  test("starter prompts are visible only until the first prompt is sent", () => {
-    expect(shouldShowStarterPrompts({ completedTurns: 0, sentTurns: 0 })).toBe(true)
-    expect(shouldShowStarterPrompts({ completedTurns: 0, sentTurns: 1 })).toBe(false)
-    expect(shouldShowStarterPrompts({ completedTurns: 1, sentTurns: 1 })).toBe(false)
-  })
-
   test.each([
     ["credential", "Reconnect provider"],
     ["harness", "Try again"],

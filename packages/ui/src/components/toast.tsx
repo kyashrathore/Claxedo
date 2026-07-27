@@ -54,6 +54,27 @@ function ToastTitle(props: ToastTitleProps & ComponentProps<"div">) {
   return <Kobalte.Title data-slot="toast-title" {...props} />
 }
 
+/**
+ * Heading line, optionally led by a monochrome severity glyph.
+ *
+ * Severity used to live in the card's border colour. A single red hairline on an
+ * otherwise neutral card reads as decoration rather than meaning, and it was the
+ * only chroma on screen; a glyph beside the title says the same thing in the
+ * surface's own ink.
+ */
+function ToastTitleRow(props: { icon?: IconProps["name"]; children: JSX.Element }) {
+  return (
+    <div data-slot="toast-title-row">
+      <Show when={props.icon}>
+        <span data-slot="toast-title-icon" aria-hidden="true">
+          <Icon name={props.icon!} size="small" />
+        </span>
+      </Show>
+      {props.children}
+    </div>
+  )
+}
+
 function ToastDescription(props: ToastDescriptionProps & ComponentProps<"div">) {
   return <Kobalte.Description data-slot="toast-description" {...props} />
 }
@@ -87,6 +108,7 @@ function ToastProgressFill(props: ComponentProps<typeof Kobalte.ProgressFill>) {
 export const Toast = Object.assign(ToastRoot, {
   Region: ToastRegion,
   Icon: ToastIcon,
+  TitleRow: ToastTitleRow,
   Content: ToastContent,
   Title: ToastTitle,
   Description: ToastDescription,
@@ -99,6 +121,12 @@ export const Toast = Object.assign(ToastRoot, {
 export { toaster }
 
 export type ToastVariant = "default" | "success" | "error" | "loading"
+
+/** Severity glyphs for the heading — monochrome; the surface stays neutral. */
+const VARIANT_ICON: Partial<Record<ToastVariant, IconProps["name"]>> = {
+  error: "warning",
+  success: "check-small",
+}
 
 export interface ToastAction {
   label: string
@@ -129,7 +157,9 @@ export function showToast(options: ToastOptions | string) {
       </Show>
       <Toast.Content>
         <Show when={opts.title}>
-          <Toast.Title>{opts.title}</Toast.Title>
+          <Toast.TitleRow icon={VARIANT_ICON[opts.variant ?? "default"]}>
+            <Toast.Title>{opts.title}</Toast.Title>
+          </Toast.TitleRow>
         </Show>
         <Show when={opts.description}>
           <Toast.Description>{opts.description}</Toast.Description>

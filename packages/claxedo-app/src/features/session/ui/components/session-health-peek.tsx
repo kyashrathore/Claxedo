@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, type Accessor } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
@@ -22,18 +22,15 @@ export const HARNESS_HEALTH_POLL_INTERVAL_MS = 20_000
  * gate (`harnessReadyForSubmit` returns false on "degraded"). Muted anatomy
  * (§2): one line, no fill, no rail — a 16px `--icon-warning-base` glyph + text +
  * a small secondary button. Renders nothing (zero chrome / zero layout shift) on
- * a healthy session, showing `fallback` (the starter prompts) instead.
+ * a healthy session.
  *
  * Reactivity gotcha (§2 constraint 6): the `beforeInput` slot is a plain
  * `JSX.Element` evaluated once, so the health subscription and the standing poll
- * live *inside* this component (as `StarterPromptChips` does), never in the
- * caller's synchronous body.
+ * live *inside* this component, never in the caller's synchronous body.
  */
 export function SessionHealthPeek(props: {
   directory: Accessor<string | undefined>
   sessionId: Accessor<string | undefined>
-  /** Shown when the harness is healthy (e.g. the starter-prompt chips). Peek wins. */
-  fallback?: JSX.Element
   /** Test seam: override the standing poll cadence. */
   intervalMs?: number
 }) {
@@ -69,17 +66,10 @@ export function SessionHealthPeek(props: {
     onCleanup(() => clearInterval(id))
   })
 
-  // Precedence is explicit: the peek wins, the fallback (starter prompts) shows
-  // only on a healthy harness. They are near-mutually-exclusive already
-  // (starter prompts require zero sent turns), but a brand-new session whose
-  // harness is already degraded would otherwise render both.
   return (
-    <>
-      <Show when={degraded()}>
-        <HealthPeekRow onCheckAgain={probe} />
-      </Show>
-      <Show when={!degraded()}>{props.fallback}</Show>
-    </>
+    <Show when={degraded()}>
+      <HealthPeekRow onCheckAgain={probe} />
+    </Show>
   )
 }
 

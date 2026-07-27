@@ -35,6 +35,9 @@ export type WorkspacesAppPorts = {
   useDirectorySessionCacheActions: typeof SessionCache.useDirectorySessionCacheActions
   CloudStartupView: typeof CloudStartup.CloudStartupView
   WorkspaceAccessDeniedView: typeof CloudStartup.WorkspaceAccessDeniedView
+  WorkspaceStateShell: typeof CloudStartup.WorkspaceStateShell
+  WorkspaceStateNote: typeof CloudStartup.WorkspaceStateNote
+  WorkspaceStateButton: typeof CloudStartup.WorkspaceStateButton
   isForbiddenConnectionError: typeof CloudStartup.isForbiddenConnectionError
 }
 
@@ -74,4 +77,7 @@ export const realDirectory = bind("realDirectory")
 export const useDirectorySessionCacheActions = bind("useDirectorySessionCacheActions")
 export const CloudStartupView = bind("CloudStartupView")
 export const WorkspaceAccessDeniedView = bind("WorkspaceAccessDeniedView")
+export const WorkspaceStateShell = bind("WorkspaceStateShell")
+export const WorkspaceStateNote = bind("WorkspaceStateNote")
+export const WorkspaceStateButton = bind("WorkspaceStateButton")
 export const isForbiddenConnectionError = bind("isForbiddenConnectionError")

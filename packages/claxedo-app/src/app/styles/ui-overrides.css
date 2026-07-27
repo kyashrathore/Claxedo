@@ -110,6 +110,34 @@
 }
 
 /*
+ * Timeline loading skeleton (session-timeline-skeleton.tsx). The bars are tinted
+ * from the muted text role rather than a surface token so they stay legible on
+ * every theme's page background, and each one carries its own animation-delay so
+ * the breathe reads as a wave down the column instead of a single flat blink.
+ */
+.session-skeleton-bar {
+  background: color-mix(in oklab, var(--text-weak) 16%, transparent);
+  animation: session-skeleton-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes session-skeleton-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-skeleton-bar {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/*
  * Semantic application surfaces
  *
  * These rules are theme-agnostic. Every role they name resolves for every

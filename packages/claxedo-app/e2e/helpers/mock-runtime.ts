@@ -360,11 +360,9 @@ export type MockRuntimeOptions = {
   /**
    * What the mock workspace's file-browser surface (`/find/file`, `/find`,
    * `/file`, `/file/content`) reports. Defaults to `DEFAULT_WORKSPACE_FILES` — a
-   * tiny but REAL tree (a README with an `# H1` heading, a source file carrying a
-   * `TODO`), because the alternative default (empty everything) leaves the
-   * onboarding starter-prompt signals permanently blank and a regression in them
-   * indistinguishable from the steady state. Pass `[]` for a genuinely empty
-   * workspace.
+   * tiny but REAL tree, because the alternative default (empty everything) makes a
+   * regression in any file-browser surface indistinguishable from the steady
+   * state. Pass `[]` for a genuinely empty workspace.
    */
   workspaceFiles?: { path: string; content: string }[]
   /** `PATCH /session/:id/config` returns a non-2xx (500 — a simulated adapter/transport blowup). */
@@ -631,13 +629,12 @@ export const BIG_PICKLE: HarnessModelOption = { id: "big-pickle-1", name: "Big P
  * The mock workspace's files, as served by `/find/file`, `/find`, `/file` and
  * `/file/content` (see `MockRuntimeOptions.workspaceFiles`).
  *
- * Deliberately NOT empty. `starter-prompts-query.ts` fires all three of those routes
- * on every session mount and wraps each in `.catch(() => [])`, so an empty (or
- * escaping-to-the-dev-server) answer degrades silently to `{files: [], todos: []}` —
- * which `createStarterPrompts` still turns into three chips, just the generic
- * fallback third one. That is why the escape was invisible for so long. This fixture
- * carries exactly the two signals the feature branches on: an `# H1` README heading
- * (highest-priority branch, `repoPrompt`) and a `TODO` line (second branch).
+ * Deliberately NOT empty. Callers of these routes wrap them in `.catch(() => [])`,
+ * so an empty (or escaping-to-the-dev-server) answer degrades silently into
+ * "the workspace happens to have no files" rather than into a visible failure —
+ * which is how a whole-origin routing gap once stayed invisible here. The fixture
+ * carries a README with an `# H1` heading and a source file with a `TODO` line so
+ * both content shapes are exercised.
  */
 export const DEFAULT_WORKSPACE_FILES: { path: string; content: string }[] = [
   { path: "README.md", content: "# Mock Runtime\n\nA fixture workspace served by e2e/helpers/mock-runtime.ts.\n" },
@@ -1797,10 +1794,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   //
   // These were mocked only on the cloud lane (`${base}/file**`, `${base}/find**`,
   // registered inside `if (cloud)`), so on the primary origin they escaped to the
-  // dev server. `starter-prompts-query.ts` fires `find.files` -> `GET /find/file`,
-  // `file.read` -> `GET /file/content` and `find.text` -> `GET /find` on EVERY
-  // session mount, and wraps each one in `.catch(() => [])` — so the escape
-  // presented as "the workspace happens to be empty" rather than as a failure.
+  // dev server. Their callers wrap each request in `.catch(() => [])`, so the
+  // escape presented as "the workspace happens to be empty" rather than as a
+  // failure.
   //
   // CONTRACTS, all read from the routes the app actually talks to
   // (claxedo-server/src/routes/opencode-compat.ts:67-89, which delegate to

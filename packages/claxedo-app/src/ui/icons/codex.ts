@@ -148,7 +148,7 @@ export const CODEX_ICON_ALIASES = {
   "outline-copy": "codex-custom-copy",
   "outline-dots": "codex-custom-more-horizontal",
   "outline-reset": "codex-20-078",
-  "outline-share": "codex-20-082",
+  "outline-share": "codex-20-083",
   "outline-sliders": "codex-20-079",
   "outline-square-arrow": "codex-20-055",
   "outline-xmark": "codex-20-121",
@@ -179,7 +179,10 @@ export const CODEX_ICON_ALIASES = {
   selector: "codex-20-001",
   settings: "codex-20-051",
   "settings-gear": "codex-20-051",
-  share: "codex-20-082",
+  // Kept in step with packages/ui's table (codex-icon-map.test.ts enforces it):
+  // 082 is the warning triangle, 083 the share arrow. Both share aliases pointed
+  // at the triangle and `warning` at 081, an invisible glyph.
+  share: "codex-20-083",
   shield: "codex-20-116",
   sidebar: "codex-20-034",
   "sidebar-active": "codex-20-035",
@@ -199,7 +202,7 @@ export const CODEX_ICON_ALIASES = {
   "terminal-square": "codex-20-050",
   trash: "codex-20-080",
   unified: "codex-custom-diff-unified",
-  warning: "codex-20-081",
+  warning: "codex-20-082",
   "window-cursor": "codex-20-109",
   workgraph: "codex-20-129",
   workspace: "codex-20-032",

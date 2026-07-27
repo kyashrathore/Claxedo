@@ -17,6 +17,28 @@ vi.mock("../../../app/integrations/claxedo-events", () => ({
 vi.mock("@/features/workspaces/app-ports", () => ({
   CloudStartupView: () => <div data-testid="workspace-connecting" />,
   WorkspaceAccessDeniedView: () => <div data-testid="workspace-offline" />,
+  // The offline view composes these three, so the mock has to carry them or the
+  // whole `offline` branch throws before it can be asserted on.
+  WorkspaceStateShell: (props: {
+    testId: string
+    title: string
+    detail?: string
+    actions?: unknown
+    children?: unknown
+  }) => (
+    <div data-testid={props.testId}>
+      <div>{props.title}</div>
+      <div>{props.detail}</div>
+      {props.children as never}
+      {props.actions as never}
+    </div>
+  ),
+  WorkspaceStateNote: (props: { children?: unknown }) => <div>{props.children as never}</div>,
+  WorkspaceStateButton: (props: { testId?: string; onClick: () => void; children?: unknown }) => (
+    <button type="button" data-testid={props.testId} onClick={() => props.onClick()}>
+      {props.children as never}
+    </button>
+  ),
   useClaxedoEventsOptional: () => undefined,
 }))
 

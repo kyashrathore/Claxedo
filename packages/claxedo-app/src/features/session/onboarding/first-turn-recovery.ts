@@ -21,10 +21,6 @@ const recoveries = {
   unknown: { kind: "unknown", title: "That turn didn't complete", description: "Something went wrong and no more detail was reported.", label: "Try again" },
 } as const satisfies Record<SessionErrorClass, { kind: SessionErrorClass; title: string; description: string; label: string }>
 
-export function shouldShowStarterPrompts(input: { completedTurns: number; sentTurns: number }) {
-  return input.completedTurns === 0 && input.sentTurns === 0
-}
-
 export function sessionRecovery(kind: SessionErrorClass) {
   return recoveries[kind]
 }

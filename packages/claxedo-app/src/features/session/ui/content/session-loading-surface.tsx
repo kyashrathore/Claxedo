@@ -1,4 +1,5 @@
 import type { ContentMeta } from "@/features/session/app-ports"
+import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 
 type SessionLoadingSurfaceProps = {
   meta: ContentMeta
@@ -32,12 +33,7 @@ export function SessionLoadingSurface(props: SessionLoadingSurfaceProps) {
         data-session-rendered-user-count="0"
         data-session-info-title={title()}
       >
-        <div class="flex size-full items-center justify-center px-6 text-text-weak">
-          <div class="flex items-center gap-2">
-            <div class="size-4 shrink-0 animate-spin rounded-full border border-border-base border-t-transparent" />
-            <div class="text-13-regular text-text-weak">Loading session</div>
-          </div>
-        </div>
+        <SessionTimelineSkeleton />
       </div>
     </div>
   )

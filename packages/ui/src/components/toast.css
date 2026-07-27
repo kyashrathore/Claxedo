@@ -42,8 +42,13 @@
 
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-weak-base);
-  background: var(--surface-float-base);
-  color: var(--text-invert-base);
+  /* Theme-tracking, NOT `--surface-float-base`: that token is hardcoded #161616 in
+     every theme (see styles/theme.css), so the toast stayed a dark card on the
+     light themes while everything around it turned white. The `--text-invert-*`
+     roles it paired with flip meaning between schemes, which is why the copy went
+     from readable to near-invisible depending on the theme. */
+  background: var(--surface-raised-stronger-non-alpha);
+  color: var(--text-base);
   box-shadow: var(--shadow-md);
 
   [data-slot="toast-inner"] {
@@ -77,8 +82,10 @@
     border-color: var(--border-success-base);
   }
 
+  /* No coloured edge for errors: the heading icon carries it, and a red hairline
+     was the only chroma on an otherwise monochrome surface. */
   &[data-variant="error"] {
-    border-color: var(--border-critical-base);
+    border-color: var(--border-weak-base);
   }
 
   &[data-variant="loading"] {
@@ -92,8 +99,7 @@
     justify-content: center;
 
     [data-component="icon"] {
-      color: var(--text-invert-stronger);
-      /* color: var(--icon-invert-base); */
+      color: var(--icon-base);
     }
   }
 
@@ -113,8 +119,24 @@
     }
   }
 
+  [data-slot="toast-title-row"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+
+    [data-slot="toast-title-icon"] {
+      flex-shrink: 0;
+      display: flex;
+
+      [data-slot="icon-svg"] {
+        color: var(--icon-base);
+      }
+    }
+  }
+
   [data-slot="toast-title"] {
-    color: var(--text-invert-strong);
+    color: var(--text-strong);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -131,7 +153,7 @@
   }
 
   [data-slot="toast-description"] {
-    color: var(--text-invert-base);
+    color: var(--text-weak);
     text-wrap-style: pretty;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -165,7 +187,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 
-    color: var(--text-invert-weak);
+    color: var(--text-weak);
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
@@ -177,7 +199,7 @@
     }
 
     &:first-child {
-      color: var(--text-invert-strong);
+      color: var(--text-strong);
     }
   }
 
@@ -191,7 +213,7 @@
 
     &:hover:not(:disabled),
     &:focus-visible:not(:disabled) {
-      background-color: var(--surface-float-base-hover);
+      background-color: var(--surface-base-hover);
 
       [data-slot="icon-svg"] {
         color: var(--icon-hover);

@@ -97,7 +97,11 @@ export const UI_CODEX_ICON_ALIASES = {
   selector: "codex-20-001",
   server: "codex-20-127",
   "settings-gear": "codex-20-051",
-  share: "codex-20-082",
+  // 082 is the warning triangle and 083 the share arrow — verified by rendering
+  // both symbols from the sprite. The map had each name pointing one symbol early,
+  // so `warning` resolved to 081 (two diagonal strokes hardcoded to an undefined
+  // `var(--gray-300)`, i.e. invisible) and `share` drew the triangle.
+  share: "codex-20-083",
   shield: "codex-20-116",
   sidebar: "codex-20-034",
   "sidebar-active": "codex-20-035",
@@ -113,7 +117,7 @@ export const UI_CODEX_ICON_ALIASES = {
   "terminal-active": "codex-20-050",
   "terminal-square": "codex-20-050",
   trash: "codex-20-080",
-  warning: "codex-20-081",
+  warning: "codex-20-082",
   "window-cursor": "codex-20-109",
   workgraph: "codex-20-129",
 } as const

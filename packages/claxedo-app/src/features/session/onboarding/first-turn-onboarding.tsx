@@ -1,37 +1,21 @@
-import { createComputed, createMemo, on, type Accessor } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
+import { createComputed, on, type Accessor } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { loadAIConnectDialog, loadSelectProviderDialog, useFirstTurnFunnel, useSDK } from "@/features/session/app-ports"
+import { loadAIConnectDialog, loadSelectProviderDialog, useFirstTurnFunnel } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { usePrompt, type Prompt } from "@/features/session/providers/prompt"
+import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
 import type { RuntimeDirectory } from "@/platform/runtime/agent/placement-table"
-import { StarterPromptChips } from "./starter-prompt-chips"
-import { createStarterPrompts } from "./starter-prompts"
-import { starterPromptQuery } from "./starter-prompts-query"
-import { firstTurnFunnelEvents, shouldShowStarterPrompts, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
+import { firstTurnFunnelEvents, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
 
 export function createFirstTurnOnboarding(input: {
   directory: Accessor<RuntimeDirectory>
-  completedTurns: Accessor<number>
-  sentTurns: Accessor<number>
   messages: Accessor<FirstTurnMessage[]>
   cloud: Accessor<boolean>
   onStartNewSession?: () => void
 }) {
-  const sdk = useSDK()
   const local = useLocal()
-  const prompt = usePrompt()
   const dialog = useDialog()
   const funnel = useFirstTurnFunnel()
-  const signals = useQuery(() => ({
-    ...starterPromptQuery({ client: sdk.client, directory: input.directory() }),
-    enabled: !!input.directory(),
-  }))
-  const prompts = createMemo(() => {
-    if (!signals.data || !shouldShowStarterPrompts({ completedTurns: input.completedTurns(), sentTurns: input.sentTurns() })) return
-    return createStarterPrompts(signals.data)
-  })
   let retry: PromptRetryAction | undefined
   const emitted = new Set<string>()
   createComputed(on(input.messages, (messages) => {
@@ -77,12 +61,6 @@ export function createFirstTurnOnboarding(input: {
   }
 
   return {
-    beforeInput: () => (
-      <StarterPromptChips
-        prompts={prompts()}
-        onSelect={(text) => prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)}
-      />
-    ),
     recover,
     registerRetry(next?: PromptRetryAction) {
       retry = next

@@ -40,12 +40,14 @@
 /* The squeeze animates: the gutter padding transitions on the elements that
    carry it, so chat and composer slide smoothly instead of jumping. */
 .session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
+.session-envcard-shell [data-session-timeline-loading],
 .session-envcard-shell [data-component="session-prompt-dock"] {
   transition: padding-right 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell [data-session-timeline-loading],
   .session-envcard-shell [data-component="session-prompt-dock"] {
     transition: none;
   }
@@ -56,14 +58,20 @@
    card actually being mounted (`:has`) so visibility has one source of truth;
    the collapsed rail only needs a sliver. The composer dock gets the SAME
    inset so it stays centered on the squeezed chat column — never on the full
-   pane. */
+   pane. So does the loading placeholder that stands in for the timeline before
+   messages land (`[data-session-timeline-loading]`, session-timeline-skeleton.tsx):
+   it replaces the scroll viewport rather than living inside it, so without its
+   own rule it centres on the full pane and the column visibly jumps left the
+   moment the real messages arrive. */
 @media (min-width: 769px) {
   .session-envcard-shell:has(.session-envcard) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard) [data-session-timeline-loading],
   .session-envcard-shell:has(.session-envcard) [data-component="session-prompt-dock"] {
     padding-right: 16.4rem;
   }
 
   .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-loading],
   .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
     padding-right: 3.6rem;
   }
