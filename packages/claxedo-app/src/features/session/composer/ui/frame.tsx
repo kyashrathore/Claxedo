@@ -212,6 +212,12 @@ export const PromptInputFrame: Component<{
     <ComposerNoticeRow notice={notice()} />
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}
+      // Theming hooks, not geometry. `data-surface` lets a theme paint the
+      // composer as a named shell surface alongside the sidebar and header;
+      // `data-dock-border-underlay` picks the v2 elevation ring. Both are inert
+      // until the matching rules land in ui-overrides.css / dock-surface.css.
+      data-surface="composer"
+      data-dock-border-underlay="v2"
       onSubmit={props.handleSubmit}
       classList={{
         "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
