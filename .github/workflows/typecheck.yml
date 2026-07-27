@@ -28,6 +28,19 @@ jobs:
       # blanket `turbo build` or `typecheck: dependsOn ^build` — keep the
       # heavy app/binary builds (opencode, claxedo-app, desktop, web) out of
       # this job.
+      #
+      # `opencode#build` was also outright BROKEN from the hard fork until
+      # 2026-07-28 (it built a `packages/app` the fork had deleted), so any
+      # graph that reached it failed on a build error rather than on tests.
+      # That is fixed — but keep the scoping anyway: the script cross-compiles
+      # 12 Bun single-file executables, measured at ~5 min and 1.4 GB of
+      # `dist/**` (which turbo would then try to cache), and its own
+      # `bun install --os="*" --cpu="*"` rewrites packages/opencode/package.json,
+      # dirtying the tree. `opencode` reaches this graph through
+      # @claxedo/server -> @opencode-ai/sdk-next -> opencode, so a generic
+      # `test`/`typecheck` task with `dependsOn: ["^build"]` pulls it back in.
+      # Make `opencode#build` cheap (a `build:single` script turbo can target)
+      # before dropping these filters.
       - name: Build dist-resolved workspace packages
         run: >-
           bun turbo build
