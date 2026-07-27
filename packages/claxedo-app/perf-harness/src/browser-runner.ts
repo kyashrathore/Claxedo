@@ -903,7 +903,15 @@ const warnedUnmatchedPaths = new Set<string>()
 // stream calm for the whole measured flow instead of hot-looping on an
 // instantly-closed JSON body. The heartbeat frame carries no `id:` line on
 // purpose — replay-style frames must not advance Last-Event-ID cursors.
-const SSE_IDLE_HOLD_MS = 4_000
+//
+// The hold is deliberately LONGER than any measured interaction window (the
+// e2e mock drains at 4s; here a 4s cadence let a reconnect resolve inside
+// measured windows every few seconds, feeding random microtask work into the
+// frame-pair gates' tails). 25s keeps every reconnect resolution outside the
+// measurement while staying under claxedo-events' 45s heartbeat watchdog;
+// the global SDK's 15s pending-fetch watchdog aborts its held reconnects
+// early, which its loop treats as a silent, backoff-growing retry by design.
+const SSE_IDLE_HOLD_MS = 25_000
 const SSE_HEARTBEAT_BODY = `data: ${JSON.stringify({ type: "heartbeat" })}\n\n`
 
 function sseStreamPath(pathName: string) {
