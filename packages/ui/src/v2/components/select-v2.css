@@ -13,9 +13,9 @@
   overflow: hidden;
   z-index: 60;
   pointer-events: auto;
-  background: var(--codex-surface-overlay, var(--v2-background-bg-layer-01));
-  border-radius: var(--codex-radius-overlay, 6px);
-  box-shadow: var(--codex-shadow-overlay, var(--v2-elevation-floating));
+  background: var(--v2-background-bg-layer-01);
+  border-radius: 6px;
+  box-shadow: var(--v2-elevation-floating);
   transform-origin: top center;
   animation: select-v2-content-in 120ms ease-out;
 }
@@ -258,14 +258,14 @@
 }
 
 [data-slot="select-v2-listbox"] [data-component="menu-v2-item"] {
-  --menu-v2-fg: var(--codex-text-overlay, var(--v2-text-text-base));
-  --menu-v2-fg-muted: var(--codex-text-overlay-muted, var(--v2-text-text-faint));
-  --menu-v2-fg-subtle: var(--codex-text-overlay-muted, var(--v2-text-text-muted));
-  --menu-v2-icon: var(--codex-icon-overlay, var(--v2-icon-icon-base));
+  --menu-v2-fg: var(--v2-text-text-base);
+  --menu-v2-fg-muted: var(--v2-text-text-faint);
+  --menu-v2-fg-subtle: var(--v2-text-text-muted);
+  --menu-v2-icon: var(--v2-icon-icon-base);
   --menu-v2-accent: var(--v2-text-text-accent);
   --menu-v2-badge-bg: var(--v2-background-bg-layer-02);
   --menu-v2-badge-border: var(--v2-border-border-base);
-  --menu-v2-hover: var(--codex-surface-overlay-hover, var(--v2-overlay-simple-overlay-hover));
+  --menu-v2-hover: var(--v2-overlay-simple-overlay-hover);
 }
 
 /* Listbox uses data-selected; menu item CSS uses data-checked — mirror accent */
