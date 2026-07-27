@@ -1013,6 +1013,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     turn: number
   }) {
     await wait(timings.busy)
+    // The SSE frame and the LIVE `GET /session/status` map are two halves of the
+    // same fact and have to move together — see `setSessionStatus`'s own note.
+    // Emitting `busy` while the status route still reports the session settled
+    // makes the mock contradict itself, and the app is right to believe the
+    // route: it reconciles against it and drops back to idle. That is what made
+    // `staleBusy` unrepresentable — the turn it models as "server said busy and
+    // never said idle" was being settled by the mock's own status route a beat
+    // later, so the composer lost its Stop button while the session was, by the
+    // scenario's own terms, still running.
+    setSessionStatus(SESSION_ID, { type: "busy" })
     emit({ type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } })
 
     await wait(timings.pending)
@@ -1084,9 +1094,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       properties: { sessionID: SESSION_ID, info: messages.find((row) => row.info.id === input.assistantID)!.info },
     })
 
+    // Deliberately NOT settled in the live map either: a stale-busy server is one
+    // that never reports the turn finished by ANY route, which is the whole point
+    // of the scenario. Settling here would reproduce the contradiction above.
     if (options.staleBusy) return // idle deliberately never sent
 
     await wait(timings.idle + (options.delayedIdleMs ?? 0))
+    setSessionStatus(SESSION_ID)
     emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
   }
 
