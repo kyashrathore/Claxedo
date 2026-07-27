@@ -481,11 +481,18 @@ test.describe("core permission ruleset delivery @core", () => {
       // textbox, which reads as the composer being broken rather than as the menu
       // never having closed — which is exactly how this spec failed.
       //
-      // Escape is deliberately not used. It dismisses reliably on a draft but was
-      // observed leaving the menu up on a SESSION page, which renders two composers
-      // and so two of these triggers. That looks like a real quirk of the
-      // two-composer layout rather than anything this spec is about, and a test
-      // should not depend on it to get back to typing.
+      // Toggling the trigger rather than pressing Escape is about being
+      // unambiguous, NOT about Escape being broken — it is not.
+      //
+      // A session page renders two composers and therefore two of these triggers,
+      // so `[role="menuitem"]` is a document-wide count that can include a menu
+      // this spec never opened. Asserting on that count after a keypress reads a
+      // global signal to answer a local question. Toggling the same `control`
+      // locator that opened the menu closes exactly what was opened.
+      //
+      // Recorded because I got this wrong: I read the count as proof Escape had
+      // failed, while the trigger in the same snapshot reported aria-expanded
+      // false. The trigger was right and I discarded it.
       await control.click()
       await expect(page.locator('[role="menuitem"][data-mode]')).toHaveCount(0, { timeout: 10_000 })
 
