@@ -60,6 +60,7 @@ import {
   processTabId,
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
+import { closeReviewWorkspaceTab } from "./review-close"
 
 function ReviewWorkspaceProcessSection(props: { processId: string; directory: string; active: boolean }) {
   const processPane = useProcessPane()
@@ -433,11 +434,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        if (id === REVIEW_TAB_ID) {
-          claxedoState.workspacePanel.close()
-          return
-        }
-        closeTab(id)
+        closeReviewWorkspaceTab({
+          id,
+          closePanel: claxedoState.workspacePanel.close,
+          closeTab,
+        })
       }}
       aria-label={label}
     />
