@@ -1,27 +1,60 @@
 import { describe, expect, test } from "bun:test"
 import codexThemeJson from "./themes/codex.json"
+import { contrastRatio } from "./color"
 import { resolveTheme } from "./resolve"
-import type { DesktopTheme } from "./types"
+import type { DesktopTheme, HexColor } from "./types"
 
-describe("Codex shell surfaces", () => {
+/*
+ * Codex names the semantic shell roles rather than a private `codex-*` family,
+ * so the shell stylesheet can be written once for every theme. These are the
+ * approved values, read from the shipped Codex app.
+ */
+const approved = {
+  light: {
+    "shell-surface-sidebar": "#f3f3f3",
+    "shell-surface-header": "#f7f7f7",
+    "shell-surface-composer": "#ffffff",
+    "shell-surface-context-card": "#f7f7f7",
+    "overlay-surface": "#ffffff",
+    "overlay-surface-input": "#00000014",
+    "tab-surface-selected": "#ededed",
+    "overlay-text": "#171717",
+    "overlay-text-muted": "#6f6f6f",
+    "overlay-border": "#e0e0e0",
+    "row-surface-hover": "#0000000a",
+    "row-surface-selected": "#0000000f",
+    "composer-border": "#d8d8d8",
+  },
+  dark: {
+    "shell-surface-sidebar": "#282828",
+    "shell-surface-header": "#171717",
+    "shell-surface-composer": "#2d2d2d",
+    "shell-surface-context-card": "#242424",
+    "overlay-surface": "#2d2d2d",
+    "overlay-surface-input": "#ffffff0f",
+    "tab-surface-selected": "#242424",
+    "overlay-text": "#f2f2f2",
+    "overlay-text-muted": "#bdbdbd",
+    "overlay-border": "#414141",
+    "row-surface-hover": "#343434",
+    "row-surface-selected": "#3a3a3a",
+    "composer-border": "#3b3b3b",
+  },
+} as const
+
+describe("Codex theme", () => {
   const theme = resolveTheme(codexThemeJson as DesktopTheme)
 
-  test("provides coherent light surfaces", () => {
-    expect(theme.light).toMatchObject({
-      "codex-surface-sidebar": "#f3f3f3",
-      "codex-surface-header": "#f7f7f7",
-      "codex-surface-composer": "#ffffff",
-      "codex-surface-overlay": "#ffffff",
-      "codex-surface-overlay-input": "#00000014",
-      "codex-radius-overlay": "10px",
-      "codex-surface-tab-selected": "#ededed",
-      "codex-text-overlay": "#1f1f1f",
-      "codex-text-overlay-muted": "#777777",
-      "codex-border-overlay": "#e0e0e0",
-      "codex-surface-row-hover": "#0000000a",
-      "codex-surface-row-selected": "#0000000f",
-      "codex-border-composer": "#d8d8d8",
-    })
+  test("matches the approved light and dark semantic palette", () => {
+    expect(theme.light).toMatchObject(approved.light)
+    expect(theme.dark).toMatchObject(approved.dark)
+  })
+
+  test("keeps overlay text readable in both variants", () => {
+    expect(contrast(approved.light["overlay-text"], approved.light["overlay-surface"])).toBeGreaterThanOrEqual(7)
+    expect(contrast(approved.dark["overlay-text"], approved.dark["overlay-surface"])).toBeGreaterThanOrEqual(7)
+    expect(contrast(approved.light["overlay-text-muted"], approved.light["overlay-surface"])).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(approved.dark["overlay-text-muted"], approved.dark["overlay-surface"])).toBeGreaterThanOrEqual(4.5)
   })
 
   /*
@@ -37,35 +70,16 @@ describe("Codex shell surfaces", () => {
   })
 
   /*
-   * Elevation is calibrated against Codex's own scale, read from the shipped
-   * app: `--elevation-200-geo` (0 2px 4px -1px) at 8% light / 20% dark for
-   * raised surfaces, `--shadow` (0 10px 15px -3px, 0 4px 6px -4px) at 10% / 20%
-   * for overlays, and a sidebar ambient down at 3-5%. These are quiet on
-   * purpose — the hairline carries the edge, not the shadow.
-   */
-  test("matches the Codex elevation scale", () => {
-    expect(theme.light).toMatchObject({
-      "codex-shadow-raised": "0 2px 4px -1px #00000014",
-      "codex-shadow-overlay": "0 10px 15px -3px #0000001a, 0 4px 6px -4px #0000001a",
-      "codex-shadow-sidebar-edge": "inset -14px 0 14px -14px #0000001a",
-    })
-    expect(theme.dark).toMatchObject({
-      "codex-shadow-raised": "0 2px 4px -1px #00000033",
-      "codex-shadow-overlay": "0 10px 15px -3px #00000033, 0 4px 6px -4px #00000033",
-      "codex-shadow-sidebar-edge": "inset -14px 0 14px -14px #00000040",
-    })
-  })
-
-  /*
    * Codex's own tooltip is NOT inverted: the shipped app defines
    * `--tooltip-background-color: var(--color-surface-elevated)` (gray-0, i.e.
    * white in light) with `--tooltip-text-color: var(--color-text)`. Its dark
    * chip is a separate "compact" variant we do not have. So tooltips follow the
    * overlay family with everything else that floats, and the inverted family is
-   * left serving toasts alone.
+   * left serving toasts alone — which is why it survives the rename to semantic
+   * roles: there is no semantic role for "inverted chip".
    */
-  test("keeps light-mode floating surfaces light", () => {
-    expect(theme.light["codex-surface-overlay"]).toBe("#ffffff")
+  test("keeps light-mode floating surfaces light and toasts inverted", () => {
+    expect(theme.light["overlay-surface"]).toBe("#ffffff")
     expect(theme.light).toMatchObject({
       "codex-surface-inverted": "#1f1f1f",
       "codex-surface-inverted-hover": "#343434",
@@ -79,19 +93,6 @@ describe("Codex shell surfaces", () => {
 
   test("preserves the verified dark surfaces", () => {
     expect(theme.dark).toMatchObject({
-      "codex-surface-sidebar": "#282828",
-      "codex-surface-header": "#171717",
-      "codex-surface-composer": "#2d2d2d",
-      "codex-surface-overlay": "#2d2d2d",
-      "codex-surface-overlay-input": "#ffffff0f",
-      "codex-radius-overlay": "10px",
-      "codex-surface-tab-selected": "#242424",
-      "codex-text-overlay": "#f2f2f2",
-      "codex-text-overlay-muted": "#bdbdbd",
-      "codex-border-overlay": "#414141",
-      "codex-surface-row-hover": "#343434",
-      "codex-surface-row-selected": "#3a3a3a",
-      "codex-border-composer": "#3b3b3b",
       "border-base": "#3b3b3b",
       "border-weak-base": "#333333",
       "border-weaker-base": "#2a2a2a",
@@ -110,6 +111,24 @@ describe("Codex shell surfaces", () => {
       "codex-icon-inverted": "#dedede",
       "codex-icon-inverted-muted": "#a3a3a3",
     })
-    expect(theme.dark["codex-surface-inverted"]).toBe(theme.dark["codex-surface-overlay"])
+    expect(theme.dark["codex-surface-inverted"]).toBe(theme.dark["overlay-surface"])
+  })
+
+  /*
+   * Elevation is calibrated against Codex's own scale, but a box-shadow is a
+   * geometry-plus-color string and `desktop-theme.schema.json` constrains
+   * override values to colors. The scale therefore lives in the Codex CSS layer
+   * (`ui-overrides.css`), and the theme must not smuggle it back in here.
+   */
+  test("keeps non-color values out of the theme overrides", () => {
+    for (const scheme of ["light", "dark"] as const) {
+      for (const [role, value] of Object.entries(codexThemeJson[scheme].overrides)) {
+        expect(value, `${scheme}/${role}`).toMatch(/^(#[0-9a-fA-F]{3,8}|var\(--[a-z0-9-]+\))$/)
+      }
+    }
   })
 })
+
+function contrast(a: HexColor, b: HexColor) {
+  return contrastRatio(a, b)
+}
