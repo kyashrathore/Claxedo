@@ -537,10 +537,27 @@ html[data-theme="codex"] [data-component="tooltip-v2"],
  * tests assert, so nothing caught it.
  */
 html[data-theme="codex"] [data-component="select-content"],
+/*
+ * The composer menus reach here too. Outside Codex they paint
+ * `--v2-elevation-floating`, which carries its own 0.5px ring — correct there,
+ * but in Codex that ring is the hairline the shipped app does not have, and the
+ * project/worktree pickers are Kobalte popovers rather than one of the
+ * primitives named above, so nothing else in this list catches them.
+ */
+html[data-theme="codex"] .claxedo-composer-menu,
 html[data-theme="codex"] .theme-overlay-surface,
 html[data-theme="codex"] .codex-overlay-surface {
   border-radius: var(--codex-radius-overlay) !important;
   box-shadow: var(--codex-shadow-overlay) !important;
+  /*
+   * No hairline. Each of these components draws its own
+   * `border: 1px solid var(--overlay-border)`, and `--codex-shadow-overlay` is
+   * two drop layers with no ring of its own — so in Codex the edge was a hard
+   * 1px line where the shipped app has none. Removed rather than made
+   * transparent: several of these set `background-clip: padding-box`, so a
+   * transparent border would show the backdrop through the edge.
+   */
+  border: 0 !important;
 }
 
 /*

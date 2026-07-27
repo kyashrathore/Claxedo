@@ -89,7 +89,12 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
   return (
     <div
       data-slot="switcher-metadata-card"
-      class="w-[320px] rounded-lg border border-border-base bg-v2-background-bg-layer-01 p-3 shadow-md"
+      // This card floats above content, so it takes the overlay surface and the
+      // same elevation as the composer menus and dropdowns.
+      // `bg-v2-background-bg-layer-01` is a PAGE layer — it is what made this
+      // card read grey against the white menus beside it. The elevation token
+      // carries its own 0.5px ring, so the border goes with it.
+      class="w-[320px] rounded-lg bg-[var(--overlay-surface)] p-3 shadow-[var(--v2-elevation-floating)]"
     >
       <div class="mb-3 flex items-start gap-3">
         <ProjectAvatar
