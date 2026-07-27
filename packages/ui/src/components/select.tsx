@@ -19,6 +19,7 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   contentClass?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   children?: (item: T | undefined) => JSX.Element
+  renderValue?: (item: T) => JSX.Element
   triggerStyle?: JSX.CSSProperties
   triggerVariant?: "settings"
   triggerProps?: Record<string, string | number | boolean | undefined>
@@ -41,6 +42,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
     "onHighlight",
     "onOpenChange",
     "children",
+    "renderValue",
     "triggerStyle",
     "triggerVariant",
     "triggerProps",
@@ -154,7 +156,11 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
           {(state) => {
             const selected = state.selectedOption() ?? local.current
             if (!selected) return local.placeholder || ""
-            if (local.children) return local.children(selected)
+            // `children` renders a MENU ROW; the trigger shows the selected
+            // VALUE. They are different shapes (a row may carry hover affordances,
+            // descriptions or indicators the trigger must not inherit), so a
+            // caller that wants a custom trigger asks for it explicitly.
+            if (local.renderValue) return local.renderValue(selected)
             if (local.label) return local.label(selected)
             return selected as string
           }}
