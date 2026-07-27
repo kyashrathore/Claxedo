@@ -79,17 +79,20 @@ describe("reading ACP permission modes", () => {
     const { modes } = permissionModes(state({ cfg: [SELECT_MODE] as never }))
     expect(modes.find((mode) => mode.id === "default")?.level).toBe("ask")
     expect(modes.find((mode) => mode.id === "bypassPermissions")?.level).toBe("full")
-    // `acceptEdits` IS the auto rung: allow edits, still prompt for commands.
-    expect(modes.find((mode) => mode.id === "acceptEdits")?.level).toBe("auto")
+    // `acceptEdits` is NOT the auto rung. The rung means full access with the
+    // danger tier gated; auto-accepting edits while prompting on every command
+    // is neither full access nor automatic, so it carries no rung and stays
+    // selectable on its own merits.
+    expect(modes.find((mode) => mode.id === "acceptEdits")?.level).toBeUndefined()
   })
 
   test("id matching ignores case and separators", () => {
     const variants = {
       ...SELECT_MODE,
-      options: [{ value: "accept_edits", name: "A" }, { value: "FULL-ACCESS", name: "B" }],
+      options: [{ value: "Auto_Edit", name: "A" }, { value: "FULL-ACCESS", name: "B" }],
     }
     const { modes } = permissionModes(state({ cfg: [variants] as never }))
-    expect(modes.find((mode) => mode.id === "accept_edits")?.level).toBe("auto")
+    expect(modes.find((mode) => mode.id === "Auto_Edit")?.level).toBe("auto")
     expect(modes.find((mode) => mode.id === "FULL-ACCESS")?.level).toBe("full")
   })
 
@@ -160,5 +163,65 @@ describe("currentModeId survives merges", () => {
   test("a merge that carries no modes leaves the current one alone", () => {
     const first = merge(init(null), { modes: { currentModeId: "a", availableModes: [{ id: "a", name: "A" }] } })
     expect(merge(first, { configOptions: [] }).currentModeId).toBe("a")
+  })
+})
+
+/**
+ * Level inference, pinned against what the LIVE binaries actually advertise.
+ *
+ * These id lists are not guesses. They are what `claude-agent-acp` and
+ * `codex-acp` reported when spawned by `script/permission-probe.ts`, which
+ * creates a real session and reads the agent's own mode list.
+ */
+describe("rung inference matches the live agents", () => {
+  const modesFor = (ids: string[]) =>
+    permissionModes(
+      state({
+        cfg: [
+          {
+            id: "mode",
+            type: "select",
+            name: "Mode",
+            category: "mode",
+            currentValue: ids[0],
+            options: ids.map((id) => ({ value: id, name: id })),
+          },
+        ] as never,
+      }),
+    ).modes
+
+  test("codex-acp's three modes each land on a rung", () => {
+    // Live output: read-only, agent, agent-full-access. Before this, `agent` and
+    // `agent-full-access` were both untagged, so codex-acp had NO auto rung and
+    // Claxedo's Auto fell through to answering prompts locally on a harness that
+    // enforces perfectly well.
+    const modes = modesFor(["read-only", "agent", "agent-full-access"])
+    expect(modes.map((m) => `${m.id}:${m.level ?? "none"}`)).toEqual([
+      "read-only:ask",
+      "agent:auto",
+      "agent-full-access:full",
+    ])
+  })
+
+  test("claude-acp's classifier IS the auto rung", () => {
+    // Live output includes both a bare `auto` (the classifier) and `acceptEdits`.
+    // The rung means full access with the danger tier gated: the classifier
+    // approves the safe tiers and escalates risky ones, which is that promise;
+    // `acceptEdits` prompts on every command, which is not.
+    const modes = modesFor(["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"])
+    const byId = Object.fromEntries(modes.map((m) => [m.id, m.level]))
+    expect(byId["auto"]).toBe("auto")
+    expect(byId["acceptEdits"]).toBeUndefined()
+    expect(byId["default"]).toBe("ask")
+    expect(byId["bypassPermissions"]).toBe("full")
+  })
+
+  test("exactly one auto rung exists per agent, or Auto cannot resolve", () => {
+    for (const ids of [
+      ["read-only", "agent", "agent-full-access"],
+      ["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"],
+    ]) {
+      expect(modesFor(ids).filter((m) => m.level === "auto")).toHaveLength(1)
+    }
   })
 })

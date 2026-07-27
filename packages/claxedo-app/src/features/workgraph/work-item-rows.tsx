@@ -1,5 +1,5 @@
 import type { AttemptDto, CommandResult, OutcomeDto, WorkItemDto } from "@claxedo/workgraph/contracts"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createSignal, For, Match, Switch, type Accessor, type JSX, Show } from "solid-js"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
 

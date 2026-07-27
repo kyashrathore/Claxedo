@@ -19,8 +19,8 @@ export function planModeAgents(names: readonly string[]) {
 /**
  * The composer's `+` control, matched to upstream's v2 prompt-input menu
  * (`session-ui/src/v2/components/prompt-input/index.tsx#PromptInputV2AddMenu`):
- * a FLAT list of four actions with right-aligned keyboard hints, no group
- * headers and no inline descriptions.
+ * four actions under the compact "Add" group heading with right-aligned
+ * keyboard hints and no inline descriptions.
  *
  *   Images and files   ⌘U    opens the native file chooser
  *   Commands           /     opens the `/` popover on an empty query
@@ -99,27 +99,30 @@ export function PromptAddMenu(props: {
             class={`${COMPOSER_MENU_CLASS} overflow-y-auto`}
             style={{ "max-height": "min(420px, var(--kb-popper-content-available-height, 420px))" }}
           >
-            <MenuV2.Item
-              data-action="prompt-attach"
-              shortcut={props.attachKeybind || undefined}
-              onSelect={props.onAttach}
-            >
-              <span class="truncate">{props.attachLabel}</span>
-            </MenuV2.Item>
-            <MenuV2.Item data-action="prompt-commands" shortcut="/" onSelect={props.onCommands}>
-              <span class="truncate">{props.commandsLabel}</span>
-            </MenuV2.Item>
-            <MenuV2.Item data-action="prompt-context" shortcut="@" onSelect={props.onContext}>
-              <span class="truncate">{props.contextLabel}</span>
-            </MenuV2.Item>
-            {/* An Item, not a CheckboxItem: entering shell mode fades the whole
-                toolbar to `pointer-events: none` (see createPromptToolbarMotion),
-                so this menu is unreachable once shell mode is on. A checkbox that
-                can be ticked but never unticked would be a lie — Escape and
-                backspace-on-empty are what exit. */}
-            <MenuV2.Item data-action="prompt-shell-mode" shortcut="!" onSelect={props.onEnterShell}>
-              <span class="truncate">{props.shellLabel}</span>
-            </MenuV2.Item>
+            <MenuV2.Group>
+              <MenuV2.GroupLabel>Add</MenuV2.GroupLabel>
+              <MenuV2.Item
+                data-action="prompt-attach"
+                shortcut={props.attachKeybind || undefined}
+                onSelect={props.onAttach}
+              >
+                <span class="truncate">{props.attachLabel}</span>
+              </MenuV2.Item>
+              <MenuV2.Item data-action="prompt-commands" shortcut="/" onSelect={props.onCommands}>
+                <span class="truncate">{props.commandsLabel}</span>
+              </MenuV2.Item>
+              <MenuV2.Item data-action="prompt-context" shortcut="@" onSelect={props.onContext}>
+                <span class="truncate">{props.contextLabel}</span>
+              </MenuV2.Item>
+              {/* An Item, not a CheckboxItem: entering shell mode fades the whole
+                  toolbar to `pointer-events: none` (see createPromptToolbarMotion),
+                  so this menu is unreachable once shell mode is on. A checkbox that
+                  can be ticked but never unticked would be a lie — Escape and
+                  backspace-on-empty are what exit. */}
+              <MenuV2.Item data-action="prompt-shell-mode" shortcut="!" onSelect={props.onEnterShell}>
+                <span class="truncate">{props.shellLabel}</span>
+              </MenuV2.Item>
+            </MenuV2.Group>
             <Show when={planAgents()}>
               {(agents) => (
                 <>

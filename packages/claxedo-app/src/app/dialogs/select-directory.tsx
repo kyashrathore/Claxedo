@@ -12,6 +12,7 @@ import { useLayout } from "@/app/providers/layout"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { cachedDirectoryChildrenRequest } from "@/platform/query/directory-search-cache"
+import { ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import {
   claxedoBootstrapUrl,
   workspaceRuntimeFilePath,
@@ -313,7 +314,21 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   }
 
   return (
-    <Dialog title={props.title ?? language.t("command.project.open")}>
+    <Dialog
+      title={props.title ?? language.t("command.project.open")}
+      class="codex-directory-picker codex-overlay-surface"
+      action={
+        <button
+          type="button"
+          data-slot="directory-dialog-close"
+          aria-label={language.t("common.close")}
+          class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent p-0 leading-none text-icon-weak-base transition-[background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base focus-visible:bg-surface-base-hover focus-visible:text-icon-strong-base focus-visible:outline-none"
+          onClick={() => dialog.close()}
+        >
+          <ClaxedoIconV2 name="close-small" size="small" />
+        </button>
+      }
+    >
       <List
         search={{ placeholder: language.t("dialog.directory.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.directory.empty")}

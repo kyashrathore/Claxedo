@@ -83,6 +83,8 @@ export async function fetchSessionPermissionModesByTransport(input: {
   client: SessionClient
   directory: AgentRuntimeDirectory
   sessionID: string
+  /** The harness being asked about — see the port doc; required on a draft. */
+  harness?: string
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string

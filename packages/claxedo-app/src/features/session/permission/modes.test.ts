@@ -43,14 +43,56 @@ describe("harness modes are shown in the harness's own words", () => {
     for (const mode of modes) expect(mode.origin).toBe("harness")
   })
 
-  test("nothing in the picker calls a mode \"Auto\" on Claxedo's behalf", () => {
+  test("Claxedo contributes exactly one option, and it is called Auto", () => {
     for (const harness of HARNESS_IDS) {
-      for (const option of claxedoPermissionModes(harness)) {
-        // Claxedo's own options are named for what they do. "Auto" named an
-        // abstraction and meant something different on every harness.
-        expect(option.name, harness).not.toMatch(/^auto$/i)
-        expect(option.name, harness).not.toMatch(/^manual$/i)
-      }
+      // With a reporting harness there is a list below to switch to, so Auto is
+      // the only thing Claxedo adds.
+      const options = claxedoPermissionModes({ harness, report: THREE_MODES })
+      expect(options.map((option) => option.name), harness).toEqual(["Auto"])
+    }
+  })
+
+  test("a harness reporting nothing also gets an off switch", () => {
+    for (const harness of HARNESS_IDS) {
+      // Nothing to switch TO otherwise — Auto alone would be a one-item picker
+      // with no way back.
+      const options = claxedoPermissionModes({ harness })
+      expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
+    }
+  })
+
+  test("Auto resolves to whoever actually enforces it", () => {
+    // opencode writes its own ruleset.
+    const [opencodeAuto] = claxedoPermissionModes({ harness: "opencode", report: THREE_MODES })
+    expect(opencodeAuto!.delivery.kind).toBe("opencode-session-ruleset")
+
+    // A harness reporting an auto rung has that rung forwarded verbatim, so the
+    // HARNESS enforces the result rather than Claxedo answering prompts.
+    const [claudeAuto] = claxedoPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
+    expect(claudeAuto!.delivery).toMatchObject({ kind: "harness-permission-mode", modeId: "auto" })
+    // Auto is collapsed by default, so this line is the only thing most people
+    // read about what their session runs under. It has to name the CONCRETE
+    // target — the harness, the mode id actually written, and the harness's own
+    // sentence — not a paraphrase that could drift from behaviour.
+    expect(claudeAuto!.description).toContain("Claude")
+    expect(claudeAuto!.description).toContain("auto")
+    expect(claudeAuto!.description).toContain("A classifier decides")
+    expect(claudeAuto!.caveat).toBeUndefined()
+
+    // Only with neither does Claxedo answer locally — and only there does the
+    // caveat saying so appear.
+    const [localAuto] = claxedoPermissionModes({ harness: "pi" })
+    expect(localAuto!.delivery.kind).toBe("claxedo-auto-answer")
+    expect(localAuto!.caveat).toMatch(/harness enforces nothing/i)
+  })
+
+  test("the local-answering caveat never appears on a harness that enforces", () => {
+    // The bug this replaces: every non-opencode harness fell to local answering,
+    // so seven harnesses claimed nothing was enforced while their own auto rung
+    // sat unused in the report.
+    for (const harness of HARNESS_IDS) {
+      const [auto] = claxedoPermissionModes({ harness, report: THREE_MODES })
+      expect(auto!.caveat ?? "", harness).not.toMatch(/harness enforces nothing/i)
     }
   })
 
@@ -112,23 +154,100 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(delivery.appliesFrom).toBe("next-session")
   })
 
+  /*
+   * A draft has no session, so there is nothing for a next-session change to be
+   * excluded FROM. The caveat read "applies to the next agent, not this session"
+   * on a composer where no session existed — describing a distinction that had
+   * no second term. The first message creates the session and runs under exactly
+   * the chosen mode, so on a draft the choice is simply in force.
+   */
+  test("a next-session harness stays silent on a draft", () => {
+    const cursor = report({
+      modes: [{ id: "auto-review", name: "Auto-review", level: "auto" }],
+      appliesFrom: "next-session",
+    })
+    const draft = permissionModeOptions({ harness: "cursor-sdk", report: cursor, hasSession: false })
+    expect(draft.claxedo[0]!.caveat).toBeUndefined()
+    for (const mode of draft.harness.modes) expect(mode.caveat, mode.id).toBeUndefined()
+
+    const live = permissionModeOptions({ harness: "cursor-sdk", report: cursor, hasSession: true })
+    expect(live.claxedo[0]!.caveat).toMatch(/next .* agent/i)
+    for (const mode of live.harness.modes) expect(mode.caveat, mode.id).toMatch(/next .* agent/i)
+  })
+
+  /*
+   * Auto's description quotes the mode id so a collapsed row can be checked
+   * against the harness's own docs, and that now holds on a DRAFT too.
+   *
+   * It did not used to. An ACP agent advertises nothing until `session/new`, so
+   * Claxedo used to fill a draft with intent rungs of its own naming and this
+   * test asserted the opposite — that `(auto)` was suppressed, because printing
+   * it would lend a placeholder of ours the authority of a harness id. Drafts
+   * now carry the agent's recorded ids (`ACP_KNOWN_MODES`), so the id is real
+   * and hiding it would withhold the one string that makes the row checkable.
+   *
+   * So the invariant is that a draft and a live session describe Auto the SAME
+   * way. This is the direct regression test for the removed `hasSession` branch:
+   * a draft that described its target differently was a draft describing a
+   * different thing, which is what made the list appear to change on the first
+   * message.
+   *
+   * Uses codex-acp's real auto rung, verbatim from the live binary.
+   */
+  test("a draft and a live session describe Auto identically", () => {
+    const codexAcp = report({
+      modes: [{ id: "agent", name: "Agent", description: "Read and edit files, and run commands.", level: "auto" }],
+    })
+    const draft = permissionModeOptions({ harness: "codex-acp", report: codexAcp, hasSession: false })
+    const live = permissionModeOptions({ harness: "codex-acp", report: codexAcp, hasSession: true })
+    expect(draft.claxedo[0]!.description).toBe(live.claxedo[0]!.description)
+    expect(draft.claxedo[0]!.description).toContain("Read and edit files")
+  })
+
+  /*
+   * The id is dropped only when it would repeat the name. claude-agent-acp's
+   * auto rung is literally `{ id: "auto", name: "Auto" }`, and "Auto (auto)"
+   * is noise rather than information.
+   */
+  test("an id identical to the name is not repeated", () => {
+    const claudeAcp = report({
+      modes: [
+        { id: "auto", name: "Auto", description: "Use a model classifier to approve/deny prompts", level: "auto" },
+      ],
+    })
+    const draft = permissionModeOptions({ harness: "claude-acp", report: claudeAcp, hasSession: false })
+    expect(draft.claxedo[0]!.description).not.toContain("(auto)")
+    expect(draft.claxedo[0]!.description).toContain("Auto")
+  })
+
+  test("a real harness id stays quoted, because it names the policy", () => {
+    // codex's id IS its sandbox policy, which is the whole reason for quoting.
+    const codex = report({
+      modes: [{ id: "workspace-write", name: "Workspace write", level: "auto" }],
+    })
+    const draft = permissionModeOptions({ harness: "codex-app-server", report: codex, hasSession: false })
+    expect(draft.claxedo[0]!.description).toContain("(workspace-write)")
+  })
+
   test("a next-turn harness adds no session caveat", () => {
     const { modes } = harnessPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     for (const mode of modes) expect(mode.caveat, mode.id).toBeUndefined()
   })
 })
 
-describe("the two groups are mutually exclusive", () => {
-  // Showing both would put two controls over one behaviour in a single menu with
-  // no way to tell which wins — and the harness's own are strictly better,
-  // because they are enforced where the tools actually run.
-  test("a harness with modes contributes them and Claxedo contributes nothing", () => {
+describe("Auto sits above the harness's own modes", () => {
+  // These are no longer mutually exclusive, and the reason the old rule existed
+  // still holds: two controls over one behaviour with no way to tell which wins
+  // is unreadable. What resolves it is that Auto is not a competing control — it
+  // forwards the harness's own auto rung, so picking Auto and picking that rung
+  // from the list below are the same write.
+  test("a harness with modes contributes them, with Auto above", () => {
     const options = permissionModeOptions({ harness: "claude-sdk", report: THREE_MODES })
-    expect(options.claxedo).toEqual([])
+    expect(options.claxedo.map((option) => option.name)).toEqual(["Auto"])
     expect(options.harness.modes).toHaveLength(3)
   })
 
-  test("a harness with no modes falls back to Claxedo's own", () => {
+  test("a harness with no modes still gets Auto, plus an off switch", () => {
     const options = permissionModeOptions({ harness: "opencode", report: report() })
     expect(options.harness.modes).toEqual([])
     expect(options.claxedo.map((option) => option.id)).toEqual([CLAXEDO_ALLOW_SAFE_ID, CLAXEDO_ASK_ALWAYS_ID])
@@ -148,7 +267,7 @@ describe("Claxedo's own options, where nothing else enforces", () => {
   // opencode has rules rather than modes, so Claxedo writes them. The ordering is
   // load-bearing: evaluate() takes the LAST matching rule.
   test("allow-safe puts the catch-all first and grants after it", () => {
-    const option = claxedoPermissionModes("opencode").find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
+    const option = claxedoPermissionModes({ harness: "opencode" }).find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
     const delivery = option.delivery
     if (delivery.kind !== "opencode-session-ruleset") throw new Error("expected a ruleset")
     expect(delivery.ruleset[0]).toEqual({ permission: "*", pattern: "*", action: "ask" })
@@ -164,7 +283,7 @@ describe("Claxedo's own options, where nothing else enforces", () => {
   // this sent nothing, the engine would stay permissive while the picker read
   // "ask for everything" — a security regression invisible from the UI.
   test("ask-always genuinely withdraws rather than sending nothing", () => {
-    const option = claxedoPermissionModes("opencode").find((row) => row.id === CLAXEDO_ASK_ALWAYS_ID)!
+    const option = claxedoPermissionModes({ harness: "opencode" }).find((row) => row.id === CLAXEDO_ASK_ALWAYS_ID)!
     const delivery = option.delivery
     if (delivery.kind !== "opencode-session-ruleset") throw new Error("expected a ruleset")
     expect(delivery.ruleset.every((rule) => rule.action === "ask")).toBe(true)
@@ -177,7 +296,7 @@ describe("Claxedo's own options, where nothing else enforces", () => {
   // grants die with the app. The row must admit that.
   test("off opencode, the permissive option says Claxedo is the one answering", () => {
     for (const harness of HARNESS_IDS.filter((id) => id !== "opencode")) {
-      const option = claxedoPermissionModes(harness).find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
+      const option = claxedoPermissionModes({ harness }).find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
       expect(option.delivery.kind, harness).toBe("claxedo-auto-answer")
       expect(option.caveat, harness).toMatch(/Claxedo answers/i)
     }
@@ -195,10 +314,13 @@ describe("choosing a default", () => {
     expect(selection).toEqual({ kind: "harness", modeId: "default" })
   })
 
-  test("with no current mode reported, the auto rung is chosen", () => {
+  test("with no current mode reported, Auto is chosen", () => {
+    // The auto rung is still what runs; it is NAMED Auto rather than by the
+    // harness's word for it, because the picker shows Auto as a collapsed label
+    // over exactly that mode. Selecting both would read as two states.
     expect(defaultPermissionSelection({ harness: "claude-sdk", report: THREE_MODES })).toEqual({
-      kind: "harness",
-      modeId: "auto",
+      kind: "claxedo",
+      modeId: CLAXEDO_ALLOW_SAFE_ID,
     })
   })
 

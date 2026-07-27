@@ -1,5 +1,5 @@
 import { For, Show, createMemo } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { WorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 export type CloudLog = WorkspaceRuntimeLog
 

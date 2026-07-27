@@ -1,11 +1,11 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover, type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
-import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
+import { COMPOSER_HARNESS_MENU_CLASS, COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/features/session/harness/profile"
@@ -45,6 +45,22 @@ function harnessOptionGroup(input: HarnessType) {
   if (input === "claude-acp" || input === "codex-acp" || input === "cursor-acp") return "ACP"
   if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
   return "Direct"
+}
+
+function HarnessOptionIcon(props: { harness: HarnessType }) {
+  if (props.harness === "claude-acp" || props.harness === "claude-sdk") {
+    return <Icon name="claude" size="small" class="shrink-0" />
+  }
+  if (props.harness === "codex-acp" || props.harness === "codex-app-server") {
+    return <Icon name="openai" size="small" class="shrink-0" />
+  }
+  if (props.harness === "cursor-acp" || props.harness === "cursor-sdk") {
+    return <Icon name="cursor" size="small" class="shrink-0" />
+  }
+  if (props.harness === "opencode") {
+    return <Icon name="opencode" size="small" class="shrink-0" />
+  }
+  return <Icon name="pi" size="small" class="shrink-0" />
 }
 
 type Item = {
@@ -389,7 +405,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     size: "normal" as const,
     disabled: modelDisabled(),
     style: modelTriggerStyle(),
-    class: "min-w-0 max-w-[160px] max-md:max-w-[104px] text-13-regular group",
+    // `composer-harness-model` is styling from the icon work; the modelHint
+    // aria-label/title are the concurrent session's — it names WHICH model, which
+    // is strictly better than the bare label, so both sides are kept.
+    class: "composer-harness-model min-w-0 max-w-[160px] max-md:max-w-[104px] text-13-regular group",
     "aria-label": modelHint() ? `Select harness model — ${modelHint()}` : "Select harness model",
     ...(modelHint() ? { title: modelHint()! } : {}),
     "data-action": "prompt-harness-model",
@@ -504,9 +523,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
             setSwitchingHarness((current) => current === r ? undefined : current)
           })
         }}
-        class="min-w-0 max-w-[120px] max-md:max-w-[112px]"
+        class="min-w-[112px] max-w-[140px] max-md:min-w-[104px] max-md:max-w-[112px]"
         valueClass={harnessDisabled() ? "truncate text-13-regular text-text-weak" : "truncate text-13-regular"}
+        contentClass={COMPOSER_HARNESS_MENU_CLASS}
         triggerStyle={harnessTriggerStyle()}
+        triggerProps={{ "data-action": "prompt-harness" }}
         variant="ghost"
         disabled={harnessDisabled()}
       />
@@ -543,13 +564,15 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           triggerAs={Button}
           triggerProps={modelTriggerProps()}
         >
+          <Icon name="brain" size="small" class="composer-compact-only shrink-0 text-v2-icon-icon-base" />
           <Show when={picked()?.provider.id && !modelUnavailable() && !modelOptionsFailed()}>
             <ProviderIcon
               id={picked()!.provider.id}
-              class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+              class="composer-model-provider size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
             />
           </Show>
           <span
+            data-slot="composer-control-label"
             class={
               modelDisabled()
                 ? "truncate text-13-regular text-text-weak"

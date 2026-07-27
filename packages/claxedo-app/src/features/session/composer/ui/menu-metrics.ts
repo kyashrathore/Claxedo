@@ -11,3 +11,5 @@
  * see `.claxedo-composer-menu` in src/app/styles/index.css.
  */
 export const COMPOSER_MENU_CLASS = "claxedo-composer-menu"
+export const COMPOSER_COMPACT_MENU_CLASS = `${COMPOSER_MENU_CLASS} claxedo-composer-menu-compact`
+export const COMPOSER_HARNESS_MENU_CLASS = `${COMPOSER_MENU_CLASS} claxedo-composer-menu-harness`

@@ -93,8 +93,19 @@ const mode = (id: string, name: string, description: string, level?: AutoLevel):
  */
 export const CLAUDE_PERMISSION_MODES: readonly AgentPermissionMode[] = [
   mode("default", "Default", "Standard behavior, prompts for dangerous operations", "ask"),
-  mode("acceptEdits", "Accept edits", "Auto-accept file edit operations", "auto"),
-  mode("auto", "Auto", "Use a model classifier to approve/deny permission prompts"),
+  mode("acceptEdits", "Accept edits", "Auto-accept file edit operations"),
+  /**
+   * The `auto` rung, because Claxedo's Auto means FULL ACCESS WITH THE DANGER
+   * TIER STILL GATED — not "edits only".
+   *
+   * `acceptEdits` carried this before and it was the wrong shape: it
+   * auto-accepts edits and then prompts on every Bash and MCP call, which is
+   * neither full access nor automatic. Anthropic's classifier mode approves the
+   * safe tiers outright and escalates genuinely risky actions, which is the
+   * definition this rung is for — and it is also the mode Anthropic themselves
+   * call "auto".
+   */
+  mode("auto", "Auto", "Use a model classifier to approve/deny permission prompts", "auto"),
   mode("plan", "Plan", "Planning mode, no actual tool execution"),
   mode("dontAsk", "Don't ask", "Don't prompt for permissions, deny if not pre-approved"),
   mode("bypassPermissions", "Bypass permissions", "Bypass all permission checks", "full"),

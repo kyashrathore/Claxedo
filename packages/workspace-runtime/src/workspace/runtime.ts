@@ -193,13 +193,31 @@ const NATIVE_HARNESS_ADAPTERS = {
 const HARNESS_BINARY_FALLBACKS: Partial<Record<string, () => string>> = {
   "claude:acp": () => defaultAcpBinary("claude-agent-acp"),
   "codex:acp": () => defaultAcpBinary("codex-acp"),
-  "cursor:acp": () => "agent",
+  /**
+   * `cursor-agent`, NOT `agent`.
+   *
+   * Cursor's own help calls the command `agent`, and this used to follow it —
+   * which is unsafe on a real PATH, because `agent` is a generic enough name for
+   * another vendor to take. On a machine with grok's CLI installed it resolves
+   * to `~/.grok/bin/agent`, so this fallback silently spawned a different
+   * product and the ACP handshake failed with nothing pointing at the cause.
+   * `cursor-agent` is the name Cursor actually installs.
+   */
+  "cursor:acp": () => "cursor-agent",
   "codex:native": () => "codex",
 }
 
+/**
+ * Cursor's `acp` subcommand is deliberately NOT here.
+ *
+ * It used to be, alongside the binary name above — and a subcommand and the
+ * binary it belongs to, maintained as two entries in two tables, is how they
+ * drift. It now lives in `AcpHarnessAdapter.commandArgs`, next to the harness
+ * id that decides it, so every caller that spawns the adapter gets it including
+ * ones that never pass through this file.
+ */
 const ACP_ARGS: Partial<Record<AgentHarnessId, string[]>> = {
   codex: ["-c", "service_tier=\"fast\""],
-  cursor: ["acp"],
 }
 
 export const ACP_REMOTE_TRANSPORT_FLAG = "WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT"

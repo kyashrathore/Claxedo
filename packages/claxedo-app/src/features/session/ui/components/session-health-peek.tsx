@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 

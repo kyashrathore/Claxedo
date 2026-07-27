@@ -137,7 +137,9 @@
 /* ── Sections (Environment / Subagents / Browser stacks) ── */
 
 .ui-context-card-section {
+  margin-top: 0.35rem;
   padding-top: 0.55rem;
+  border-top: 0.5px solid var(--border-weak-base);
 }
 
 .ui-context-card-section-label {
@@ -157,8 +159,9 @@
   width: 100%;
   align-items: center;
   gap: 0.6rem;
-  min-height: 2rem;
-  padding: 0.25rem 0.35rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0 0.35rem;
   border-radius: var(--radius-md);
   text-align: left;
 }

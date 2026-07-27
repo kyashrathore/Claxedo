@@ -1,6 +1,19 @@
-import { onMount, splitProps, type ComponentProps } from "solid-js"
+import { createSignal, onMount, Show, splitProps, type ComponentProps } from "solid-js"
+// ⚠️ Licence risk — see the note in ./codex-icons.tsx. `Icon` below renders
+// artwork extracted from the proprietary ChatGPT desktop app. Known, accepted
+// for now. `OpenCodeIcon` is the original upstream set and carries no such risk,
+// so it is the fallback if this ever has to be pulled.
+import { codexIconSprite } from "./codex-icons"
+import { UI_CODEX_ICON_ALIASES, UI_CODEX_ICON_TRANSFORMS } from "./codex-icon-map"
 
 const icons = {
+  // Ported from claxedo-app's ClaxedoIcon so the two components render the same
+  // mark for the same name. They were drawn there and only there, which is why
+  // the shared Icon used to fall back to numbered sprite glyphs for `expand`,
+  // `collapse`, `maximize` and `dot-grid` and quietly disagree with the app.
+  "panel-expand": `<path d="M4.33496 11C4.33496 10.6327 4.63273 10.335 5 10.335C5.36727 10.335 5.66504 10.6327 5.66504 11V14.335H9L9.13379 14.3486C9.43692 14.4106 9.66504 14.6786 9.66504 15C9.66504 15.3214 9.43692 15.5894 9.13379 15.6514L9 15.665H5C4.63273 15.665 4.33496 15.3673 4.33496 15V11ZM14.335 9V5.66504H11C10.6327 5.66504 10.335 5.36727 10.335 5C10.335 4.63273 10.6327 4.33496 11 4.33496H15L15.1338 4.34863C15.4369 4.41057 15.665 4.67857 15.665 5V9C15.665 9.36727 15.3673 9.66504 15 9.66504C14.6327 9.66504 14.335 9.36727 14.335 9Z" fill="currentColor"/>`,
+  "panel-restore": `<g transform="scale(1.25)"><path d="M6.1664 8.80845C6.7325 8.80845 7.1918 9.26774 7.1918 9.83384V13.3338C7.19155 13.6236 6.9562 13.8592 6.6664 13.8592C6.37672 13.8591 6.14126 13.6235 6.14101 13.3338V10.5936L2.70547 14.0379C2.50071 14.243 2.16753 14.2435 1.9623 14.0389C1.75709 13.8342 1.75665 13.501 1.96133 13.2957L5.39101 9.85923H2.6664C2.37672 9.85909 2.14126 9.6235 2.14101 9.33384C2.14101 9.04397 2.37657 8.80858 2.6664 8.80845H6.1664Z" fill="currentColor"/><path d="M13.2943 1.96274C13.4989 1.75743 13.8311 1.75731 14.0365 1.96177C14.2419 2.16637 14.243 2.49854 14.0385 2.70395L10.6127 6.14145H13.3334C13.6233 6.14145 13.8588 6.37689 13.8588 6.66684C13.8587 6.95674 13.6233 7.19223 13.3334 7.19223H9.8334C9.26734 7.19223 8.80807 6.73288 8.80801 6.16684V2.66684C8.80801 2.37689 9.04345 2.14145 9.3334 2.14145C9.62335 2.14145 9.85879 2.37689 9.85879 2.66684V5.41098L13.2943 1.96274Z" fill="currentColor"/></g>`,
+  "more-horizontal": `<circle cx="5" cy="10" r="1.6" fill="currentColor"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/><circle cx="15" cy="10" r="1.6" fill="currentColor"/>`,
   "align-right": `<path d="M12.292 6.04167L16.2503 9.99998L12.292 13.9583M2.91699 9.99998H15.6253M17.0837 3.75V16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "arrow-up": `<path fill-rule="evenodd" clip-rule="evenodd" d="M9.99991 2.24121L16.0921 8.33343L15.2083 9.21731L10.6249 4.63397V17.5001H9.37492V4.63398L4.7916 9.21731L3.90771 8.33343L9.99991 2.24121Z" fill="currentColor"/>`,
   "arrow-left": `<path d="M8.33464 4.58398L2.91797 10.0007L8.33464 15.4173M3.33464 10.0007H17.0846" stroke="currentColor" stroke-linecap="square"/>`,
@@ -158,7 +171,7 @@ export interface IconProps extends ComponentProps<"svg"> {
   size?: "small" | "normal" | "medium" | "large"
 }
 
-export function Icon(props: IconProps) {
+export function OpenCodeIcon(props: IconProps) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
   onMount(ensureSprite)
 
@@ -179,4 +192,95 @@ export function Icon(props: IconProps) {
       </svg>
     </div>
   )
+}
+
+export type IconLibrary = "codex" | "opencode"
+
+const [iconLibrary, setIconLibrary] = createSignal<IconLibrary>("codex")
+
+/**
+ * Which glyph set `Icon` renders.
+ *
+ * This exists because `Icon` is the shared export that every consumer of this
+ * package reaches for, so hard-wiring it to one library leaves those callsites
+ * with no way out. It is a signal rather than a module constant so that flipping
+ * it takes effect on already-mounted icons — which matters if it ever has to be
+ * flipped in a hurry (see the licence note in ./codex-icons.tsx).
+ */
+export { iconLibrary, setIconLibrary }
+
+/**
+ * Codex glyph for a name, or undefined when the set has no equivalent.
+ *
+ * The alias table covers a SUBSET of `icons`: several entries there exist only
+ * to be pointed at by a `codex-custom-*` id and are never requested by their own
+ * name. Indexing through a widened record is therefore correct rather than lazy
+ * — an unmapped name is a real, handled case that falls back to the upstream set.
+ */
+function codexGlyphFor(name: IconProps["name"]) {
+  const aliases = UI_CODEX_ICON_ALIASES as Record<string, string | undefined>
+  const glyph = aliases[name]
+  if (!glyph) return undefined
+  return { glyph, custom: CODEX_CUSTOM_GLYPHS[glyph as keyof typeof CODEX_CUSTOM_GLYPHS] }
+}
+
+export function Icon(props: IconProps) {
+  const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
+  // Resolution must not throw. This is the shared icon component — an
+  // exception here unmounts whatever tree is rendering it, turning a missing
+  // alias into a blank screen. The upstream set is keyed by the same names and
+  // is always complete, so it is a total fallback.
+  const resolved = () => (iconLibrary() === "codex" ? codexGlyphFor(local.name) : undefined)
+
+  onMount(ensureSprite)
+
+  return (
+    <Show when={resolved()} fallback={<OpenCodeIcon {...props} />}>
+      {(codex) => (
+        <div data-component="icon" data-icon={local.name} data-library="codex" data-size={local.size || "normal"}>
+          <svg
+            data-slot="icon-svg"
+            classList={{
+              ...local.classList,
+              [local.class ?? ""]: !!local.class,
+            }}
+            fill="none"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            {...others}
+          >
+            <use
+              href={codex().custom ? `#${symbol(codex().custom!)}` : `${codexIconSprite}#${codex().glyph}`}
+              transform={codexTransform(local.name)}
+            />
+          </svg>
+        </div>
+      )}
+    </Show>
+  )
+}
+
+/**
+ * Codex ids that have no numbered sprite symbol and are drawn by the local
+ * sprite in this file instead. A Record, not a lookup chain: a missing entry
+ * would resolve to `sprite.svg#codex-custom-x`, which does not exist, and
+ * render an invisible icon silently.
+ */
+const CODEX_CUSTOM_GLYPHS = {
+  "codex-custom-check": "check",
+  "codex-custom-close-small": "close-small",
+  "codex-custom-copy": "copy",
+  "codex-custom-folder": "folder",
+  "codex-custom-magnifying-glass": "magnifying-glass",
+  "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
+  "codex-custom-more-horizontal": "more-horizontal",
+  "codex-custom-panel-expand": "panel-expand",
+  "codex-custom-panel-restore": "panel-restore",
+  "codex-custom-stop": "stop",
+} as const satisfies Record<string, keyof typeof icons>
+
+function codexTransform(name: IconProps["name"]) {
+  if (name in UI_CODEX_ICON_TRANSFORMS) {
+    return UI_CODEX_ICON_TRANSFORMS[name as keyof typeof UI_CODEX_ICON_TRANSFORMS]
+  }
 }

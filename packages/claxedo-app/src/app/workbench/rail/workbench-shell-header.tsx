@@ -30,9 +30,11 @@ export function WorkspacePanelChrome(props: {
       <Show when={props.workspacePanelOpen() && props.allowFullWidth !== false}>
         <button
           type="button"
+          data-icon-interaction="binary"
           class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
           aria-label={props.workspacePanelFullWidth() ? "Restore workspace panel width" : "Maximize workspace panel"}
           title={props.workspacePanelFullWidth() ? "Restore workspace panel width" : "Maximize workspace panel"}
+          aria-pressed={props.workspacePanelFullWidth()}
           onClick={props.onToggleFullWidth}
         >
           <Icon name={props.workspacePanelFullWidth() ? "collapse" : "expand"} size="small" />
@@ -41,6 +43,7 @@ export function WorkspacePanelChrome(props: {
       <button
         type="button"
         data-testid="workspace-panel-toggle"
+        data-icon-interaction="binary"
         class="relative flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
         aria-label={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
         title={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
@@ -104,6 +107,8 @@ export function WorkbenchShellHeader(props: {
             <button
               type="button"
               aria-label="Show Sidebar"
+              aria-pressed="false"
+              data-icon-interaction="binary"
               class="relative z-[90] hidden size-6 shrink-0 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base md:flex"
               onMouseEnter={(event) => {
                 if ((event.relatedTarget as HTMLElement | null)?.closest?.('[data-testid="rail-sidebar"]')) return

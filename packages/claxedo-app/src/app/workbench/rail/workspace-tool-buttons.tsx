@@ -1,10 +1,10 @@
 import { Show } from "solid-js"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { SemanticIcon, type SemanticIconConcept } from "@/ui/semantic-icon"
 import type { WorkspacePanelNavigator } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 
 type WorkspacePanelButtonProps = {
-  icon: "file-tree" | "code-lines" | "console" | "branch"
+  concept: SemanticIconConcept
   label: string
   active: boolean
   attention?: boolean
@@ -16,12 +16,8 @@ function WorkspacePanelButton(props: WorkspacePanelButtonProps) {
     <Tooltip value={props.active ? `Close ${props.label}` : `Open ${props.label}`}>
       <button
         type="button"
-        class="relative flex size-6 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-        classList={{
-          // One-of-N navigator: the selected member carries a persistent fill
-          // slightly stronger than hover so "which one is open" reads clearly.
-          "bg-surface-base-active text-text-base": props.active,
-        }}
+        data-icon-interaction="binary"
+        class="relative flex size-6 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base [&_[data-slot=icon-svg]]:!size-3.5"
         aria-label={props.active ? `Close ${props.label}` : `Open ${props.label}`}
         aria-pressed={props.active ? "true" : "false"}
         onClick={props.onClick}
@@ -29,7 +25,7 @@ function WorkspacePanelButton(props: WorkspacePanelButtonProps) {
         <Show when={props.attention}>
           <span class="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-surface-critical-strong" />
         </Show>
-        <Icon name={props.icon} size="small" />
+        <SemanticIcon concept={props.concept} size="small" />
       </button>
     </Tooltip>
   )
@@ -51,14 +47,14 @@ export function WorkspaceToolButtons(props: {
           single unit, matching the browser toolbar clusters. */}
       <div class="flex items-center gap-0.5">
         <WorkspacePanelButton
-          icon="file-tree"
+          concept="files"
           label="Files"
           active={props.filesActive}
           onClick={() => props.onToggle("files")}
         />
         <Show when={props.showChanges}>
           <WorkspacePanelButton
-            icon="branch"
+            concept="changes"
             label="Changes"
             active={props.changesActive === true}
             onClick={() => props.onToggle("changes")}
@@ -66,7 +62,7 @@ export function WorkspaceToolButtons(props: {
         </Show>
         <Show when={props.showProcesses}>
           <WorkspacePanelButton
-            icon="console"
+            concept="processes"
             label="Processes"
             active={props.processesActive === true}
             attention={props.processesAttention}

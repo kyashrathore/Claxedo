@@ -26,9 +26,15 @@ export const CLAUDE_SDK_PERMISSION_MODES = [
   "plan",
   "dontAsk",
   // First-class classifier-gated mode (the "auto mode" Anthropic documents):
-  // auto-approves safe tiers and escalates only genuinely risky actions. This is
-  // what Claxedo's Auto maps to — NOT `acceptEdits`, which only covers edits and
-  // still prompts for Bash/MCP.
+  // auto-approves safe tiers and escalates only genuinely risky actions.
+  //
+  // Claxedo's Auto does NOT map here, despite what this comment used to claim.
+  // Both implementations agree against it: `CLAUDE_PERMISSION_MODES` leaves this
+  // id unlevelled and tags `acceptEdits` as the `auto` rung, and the ACP table
+  // excludes a bare `auto` for the stated reason that a classifier can approve
+  // COMMANDS as well as edits, while the rung means "edits yes, risk asks".
+  // A classifier mode stays fully selectable — it is just not what gets chosen
+  // for someone by default.
   "auto",
 ] as const
 

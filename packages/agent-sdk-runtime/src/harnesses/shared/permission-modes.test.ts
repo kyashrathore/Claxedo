@@ -16,14 +16,14 @@ describe("PermissionModeSelection", () => {
   const selection = () => new PermissionModeSelection(CLAUDE_PERMISSION_MODES, "next-turn")
 
   test("the auto rung is the default before anyone chooses", () => {
-    expect(selection().currentId("ses_1")).toBe("acceptEdits")
+    expect(selection().currentId("ses_1")).toBe("auto")
   })
 
   test("sessions do not share a selection", () => {
     const modes = selection()
     modes.set("ses_1", "plan")
     expect(modes.currentId("ses_1")).toBe("plan")
-    expect(modes.currentId("ses_2")).toBe("acceptEdits")
+    expect(modes.currentId("ses_2")).toBe("auto")
   })
 
   // Storing an id the harness will later refuse produces a picker that reads as
@@ -31,7 +31,7 @@ describe("PermissionModeSelection", () => {
   test("an unknown id throws instead of being stored", () => {
     const modes = selection()
     expect(() => modes.set("ses_1", "not-a-mode")).toThrow(/unknown permission mode/i)
-    expect(modes.currentId("ses_1")).toBe("acceptEdits")
+    expect(modes.currentId("ses_1")).toBe("auto")
   })
 
   test("state carries appliesFrom so the picker can say when it lands", () => {
@@ -41,7 +41,7 @@ describe("PermissionModeSelection", () => {
   })
 })
 
-describe("the auto rung means allow edits, ask before risk", () => {
+describe("the auto rung means full access with the danger tier gated", () => {
   // The rung is a promise about behaviour, so exactly one mode per harness may
   // carry it — otherwise which one becomes the default is list-order trivia.
   test("each harness table has exactly one auto rung", () => {
@@ -54,11 +54,19 @@ describe("the auto rung means allow edits, ask before risk", () => {
     }
   })
 
-  // Claude's classifier mode can approve COMMANDS, not just edits, so it is not
-  // the rung even though its id is literally "auto". `acceptEdits` is.
-  test("Claude's rung is acceptEdits, not the classifier", () => {
-    expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.level === "auto")?.id).toBe("acceptEdits")
-    expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.id === "auto")?.level).toBeUndefined()
+  /*
+   * The rung is the classifier, not `acceptEdits`.
+   *
+   * This assertion used to say the opposite, on the reasoning that a classifier
+   * "can approve commands as well as edits". That inverted the definition:
+   * `acceptEdits` auto-accepts edits and then prompts on every Bash and MCP
+   * call, which is neither full access nor automatic, while the classifier
+   * approves the safe tiers and escalates genuinely risky ones — which is what
+   * the rung promises. It is also the mode Anthropic themselves call "auto".
+   */
+  test("Claude's rung is the classifier, not acceptEdits", () => {
+    expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.level === "auto")?.id).toBe("auto")
+    expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.id === "acceptEdits")?.level).toBeUndefined()
   })
 
   test("Codex's rung is the workspace sandbox, which asks outside it", () => {

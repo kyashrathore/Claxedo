@@ -1,0 +1,1396 @@
+{
+  "source": "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+  "rendererAsset": "webview/assets/app-initial-BHB6SClA.js",
+  "canvas": "20x20",
+  "sourceCount": 154,
+  "uniqueGeometryCount": 150,
+  "unresolvedValueCount": 0,
+  "icons": [
+    {
+      "id": "codex-20-001",
+      "file": "codex-20-001.svg",
+      "hash": "7d53fd6a9f80",
+      "duplicateOf": null,
+      "sourceOffset": 1043162,
+      "sourceSymbol": "Zm",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-002",
+      "file": "codex-20-002.svg",
+      "hash": "f057fdcf3d4e",
+      "duplicateOf": null,
+      "sourceOffset": 1067585,
+      "sourceSymbol": "mh",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-003",
+      "file": "codex-20-003.svg",
+      "hash": "8e04d0d2c8af",
+      "duplicateOf": null,
+      "sourceOffset": 1068330,
+      "sourceSymbol": "U9e",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-004",
+      "file": "codex-20-004.svg",
+      "hash": "a814135024f6",
+      "duplicateOf": null,
+      "sourceOffset": 1069728,
+      "sourceSymbol": "gh",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-005",
+      "file": "codex-20-005.svg",
+      "hash": "fc989d219b52",
+      "duplicateOf": null,
+      "sourceOffset": 1071202,
+      "sourceSymbol": "vh",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-006",
+      "file": "codex-20-006.svg",
+      "hash": "5a725532977b",
+      "duplicateOf": null,
+      "sourceOffset": 1072291,
+      "sourceSymbol": "Sh",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-007",
+      "file": "codex-20-007.svg",
+      "hash": "d0beb4a3c5be",
+      "duplicateOf": null,
+      "sourceOffset": 1219863,
+      "sourceSymbol": "Iit",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-008",
+      "file": "codex-20-008.svg",
+      "hash": "2ff5984d8426",
+      "duplicateOf": null,
+      "sourceOffset": 1221263,
+      "sourceSymbol": "sg",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-009",
+      "file": "codex-20-009.svg",
+      "hash": "d07dddd261f6",
+      "duplicateOf": null,
+      "sourceOffset": 1223361,
+      "sourceSymbol": "Hit",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-010",
+      "file": "codex-20-010.svg",
+      "hash": "43e4eaff316a",
+      "duplicateOf": null,
+      "sourceOffset": 1224886,
+      "sourceSymbol": "Git",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-011",
+      "file": "codex-20-011.svg",
+      "hash": "24a37076aaef",
+      "duplicateOf": null,
+      "sourceOffset": 2246931,
+      "sourceSymbol": "ob",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-012",
+      "file": "codex-20-012.svg",
+      "hash": "12dc62f8b988",
+      "duplicateOf": null,
+      "sourceOffset": 3695166,
+      "sourceSymbol": "jk",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-013",
+      "file": "codex-20-013.svg",
+      "hash": "d05125f20904",
+      "duplicateOf": null,
+      "sourceOffset": 3815378,
+      "sourceSymbol": "DA",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-014",
+      "file": "codex-20-014.svg",
+      "hash": "4bc56fa9dfbd",
+      "duplicateOf": null,
+      "sourceOffset": 3832109,
+      "sourceSymbol": "UDr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-015",
+      "file": "codex-20-015.svg",
+      "hash": "7936fb27b8aa",
+      "duplicateOf": null,
+      "sourceOffset": 3833789,
+      "sourceSymbol": "KDr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-016",
+      "file": "codex-20-016.svg",
+      "hash": "e6617ebe3761",
+      "duplicateOf": null,
+      "sourceOffset": 3834986,
+      "sourceSymbol": "YDr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-017",
+      "file": "codex-20-017.svg",
+      "hash": "427d6d4fb3fe",
+      "duplicateOf": null,
+      "sourceOffset": 3835970,
+      "sourceSymbol": "QDr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-018",
+      "file": "codex-20-018.svg",
+      "hash": "2d39d49ea88d",
+      "duplicateOf": null,
+      "sourceOffset": 3839336,
+      "sourceSymbol": "iOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-019",
+      "file": "codex-20-019.svg",
+      "hash": "e09e5c1287cd",
+      "duplicateOf": null,
+      "sourceOffset": 3845493,
+      "sourceSymbol": "pOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-020",
+      "file": "codex-20-020.svg",
+      "hash": "51326b8e7dc6",
+      "duplicateOf": null,
+      "sourceOffset": 3847266,
+      "sourceSymbol": "gOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-021",
+      "file": "codex-20-021.svg",
+      "hash": "71ed11325254",
+      "duplicateOf": null,
+      "sourceOffset": 3848914,
+      "sourceSymbol": "yOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-022",
+      "file": "codex-20-022.svg",
+      "hash": "1a3203193e91",
+      "duplicateOf": null,
+      "sourceOffset": 3851924,
+      "sourceSymbol": "SOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-023",
+      "file": "codex-20-023.svg",
+      "hash": "24a37076aaef",
+      "duplicateOf": "codex-20-011",
+      "sourceOffset": 3854126,
+      "sourceSymbol": "TOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-024",
+      "file": "codex-20-024.svg",
+      "hash": "5692c26e25e7",
+      "duplicateOf": null,
+      "sourceOffset": 3855734,
+      "sourceSymbol": "OOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-025",
+      "file": "codex-20-025.svg",
+      "hash": "bbfd0e607d40",
+      "duplicateOf": null,
+      "sourceOffset": 3862007,
+      "sourceSymbol": "BOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-026",
+      "file": "codex-20-026.svg",
+      "hash": "4ca2074074c7",
+      "duplicateOf": null,
+      "sourceOffset": 3869645,
+      "sourceSymbol": "YOr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-027",
+      "file": "codex-20-027.svg",
+      "hash": "7435b5387388",
+      "duplicateOf": null,
+      "sourceOffset": 3878397,
+      "sourceSymbol": "ikr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-028",
+      "file": "codex-20-028.svg",
+      "hash": "cd2a41c06459",
+      "duplicateOf": null,
+      "sourceOffset": 3886473,
+      "sourceSymbol": "gkr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-029",
+      "file": "codex-20-029.svg",
+      "hash": "3b11d99ad425",
+      "duplicateOf": null,
+      "sourceOffset": 3889585,
+      "sourceSymbol": "ykr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-030",
+      "file": "codex-20-030.svg",
+      "hash": "2119a99c971e",
+      "duplicateOf": null,
+      "sourceOffset": 3892463,
+      "sourceSymbol": "Skr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-031",
+      "file": "codex-20-031.svg",
+      "hash": "22087ac071fd",
+      "duplicateOf": null,
+      "sourceOffset": 3902161,
+      "sourceSymbol": "Vkr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-032",
+      "file": "codex-20-032.svg",
+      "hash": "f0c5ab9a2694",
+      "duplicateOf": null,
+      "sourceOffset": 3968978,
+      "sourceSymbol": "sFr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-033",
+      "file": "codex-20-033.svg",
+      "hash": "392e98c7f685",
+      "duplicateOf": null,
+      "sourceOffset": 4001601,
+      "sourceSymbol": "Lj",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-034",
+      "file": "codex-20-034.svg",
+      "hash": "b0741deb8603",
+      "duplicateOf": null,
+      "sourceOffset": 4003415,
+      "sourceSymbol": "ELr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-035",
+      "file": "codex-20-035.svg",
+      "hash": "4926cb47a8d9",
+      "duplicateOf": null,
+      "sourceOffset": 4006078,
+      "sourceSymbol": "kLr",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-036",
+      "file": "codex-20-036.svg",
+      "hash": "a696abdc19d6",
+      "duplicateOf": null,
+      "sourceOffset": 4514629,
+      "sourceSymbol": "g9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-037",
+      "file": "codex-20-037.svg",
+      "hash": "4d80d6964c6a",
+      "duplicateOf": null,
+      "sourceOffset": 4515722,
+      "sourceSymbol": "iP",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-038",
+      "file": "codex-20-038.svg",
+      "hash": "a6593665f122",
+      "duplicateOf": null,
+      "sourceOffset": 4516463,
+      "sourceSymbol": "b9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-039",
+      "file": "codex-20-039.svg",
+      "hash": "6028f6963462",
+      "duplicateOf": null,
+      "sourceOffset": 4524745,
+      "sourceSymbol": "k9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-040",
+      "file": "codex-20-040.svg",
+      "hash": "df0d84c1516f",
+      "duplicateOf": null,
+      "sourceOffset": 4525995,
+      "sourceSymbol": "M9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-041",
+      "file": "codex-20-041.svg",
+      "hash": "a6593665f122",
+      "duplicateOf": "codex-20-038",
+      "sourceOffset": 4526820,
+      "sourceSymbol": "F9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-042",
+      "file": "codex-20-042.svg",
+      "hash": "f9e06278226e",
+      "duplicateOf": null,
+      "sourceOffset": 4527743,
+      "sourceSymbol": "R9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-043",
+      "file": "codex-20-043.svg",
+      "hash": "006f8646a675",
+      "duplicateOf": null,
+      "sourceOffset": 4528961,
+      "sourceSymbol": "V9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-044",
+      "file": "codex-20-044.svg",
+      "hash": "b0a242f27831",
+      "duplicateOf": null,
+      "sourceOffset": 4537700,
+      "sourceSymbol": "X9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-045",
+      "file": "codex-20-045.svg",
+      "hash": "32c0bc138b4a",
+      "duplicateOf": null,
+      "sourceOffset": 4539021,
+      "sourceSymbol": "$9r",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-046",
+      "file": "codex-20-046.svg",
+      "hash": "13b8a8186a75",
+      "duplicateOf": null,
+      "sourceOffset": 4542092,
+      "sourceSymbol": "sei",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-047",
+      "file": "codex-20-047.svg",
+      "hash": "d5917f49d771",
+      "duplicateOf": null,
+      "sourceOffset": 4553279,
+      "sourceSymbol": "iti",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-048",
+      "file": "codex-20-048.svg",
+      "hash": "99f6130d330c",
+      "duplicateOf": null,
+      "sourceOffset": 4558835,
+      "sourceSymbol": "Lti",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-049",
+      "file": "codex-20-049.svg",
+      "hash": "7e656dfc1248",
+      "duplicateOf": null,
+      "sourceOffset": 4568048,
+      "sourceSymbol": "Jti",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-050",
+      "file": "codex-20-050.svg",
+      "hash": "705142db9588",
+      "duplicateOf": null,
+      "sourceOffset": 5460291,
+      "sourceSymbol": "PL",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-051",
+      "file": "codex-20-051.svg",
+      "hash": "49be9e9b78d1",
+      "duplicateOf": null,
+      "sourceOffset": 5868804,
+      "sourceSymbol": "bR",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-052",
+      "file": "codex-20-052.svg",
+      "hash": "584b90334cd0",
+      "duplicateOf": null,
+      "sourceOffset": 5871583,
+      "sourceSymbol": "dUi",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-053",
+      "file": "codex-20-053.svg",
+      "hash": "f7a7229b2cb1",
+      "duplicateOf": null,
+      "sourceOffset": 5929881,
+      "sourceSymbol": "iz",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-054",
+      "file": "codex-20-054.svg",
+      "hash": "5e145727d79b",
+      "duplicateOf": null,
+      "sourceOffset": 5960957,
+      "sourceSymbol": "Sz",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-055",
+      "file": "codex-20-055.svg",
+      "hash": "2db7ea455a4a",
+      "duplicateOf": null,
+      "sourceOffset": 6115623,
+      "sourceSymbol": "aB",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-056",
+      "file": "codex-20-056.svg",
+      "hash": "0c26fe5f96df",
+      "duplicateOf": null,
+      "sourceOffset": 6117035,
+      "sourceSymbol": "lB",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-057",
+      "file": "codex-20-057.svg",
+      "hash": "519a43e7ccd0",
+      "duplicateOf": null,
+      "sourceOffset": 6164139,
+      "sourceSymbol": "_B",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-058",
+      "file": "codex-20-058.svg",
+      "hash": "f64cc276f75c",
+      "duplicateOf": null,
+      "sourceOffset": 6168277,
+      "sourceSymbol": "$6i",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-059",
+      "file": "codex-20-059.svg",
+      "hash": "f47a2c2ab33b",
+      "duplicateOf": null,
+      "sourceOffset": 6168871,
+      "sourceSymbol": "n8i",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-060",
+      "file": "codex-20-060.svg",
+      "hash": "1e9d05c590ce",
+      "duplicateOf": null,
+      "sourceOffset": 6274890,
+      "sourceSymbol": "sta",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-061",
+      "file": "codex-20-061.svg",
+      "hash": "d513ff305f98",
+      "duplicateOf": null,
+      "sourceOffset": 6275523,
+      "sourceSymbol": "uta",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-062",
+      "file": "codex-20-062.svg",
+      "hash": "dabc7642362c",
+      "duplicateOf": null,
+      "sourceOffset": 6276805,
+      "sourceSymbol": "sV",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-063",
+      "file": "codex-20-063.svg",
+      "hash": "778c944ef7b9",
+      "duplicateOf": null,
+      "sourceOffset": 6279353,
+      "sourceSymbol": "pta",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-064",
+      "file": "codex-20-064.svg",
+      "hash": "656987770b0f",
+      "duplicateOf": null,
+      "sourceOffset": 6283772,
+      "sourceSymbol": "yta",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-065",
+      "file": "codex-20-065.svg",
+      "hash": "3edd772abe87",
+      "duplicateOf": null,
+      "sourceOffset": 6286045,
+      "sourceSymbol": "Sta",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-066",
+      "file": "codex-20-066.svg",
+      "hash": "26e768ed245c",
+      "duplicateOf": null,
+      "sourceOffset": 6318017,
+      "sourceSymbol": "Gna",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-067",
+      "file": "codex-20-067.svg",
+      "hash": "f6da15caedd3",
+      "duplicateOf": null,
+      "sourceOffset": 6652505,
+      "sourceSymbol": "Spa",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-068",
+      "file": "codex-20-068.svg",
+      "hash": "e4bba2382c91",
+      "duplicateOf": null,
+      "sourceOffset": 6653222,
+      "sourceSymbol": "Tpa",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-069",
+      "file": "codex-20-069.svg",
+      "hash": "45ddfb83ce68",
+      "duplicateOf": null,
+      "sourceOffset": 6846419,
+      "sourceSymbol": "xU",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-070",
+      "file": "codex-20-070.svg",
+      "hash": "7b982a037d5b",
+      "duplicateOf": null,
+      "sourceOffset": 7507259,
+      "sourceSymbol": "FW",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-071",
+      "file": "codex-20-071.svg",
+      "hash": "27b73b8bacee",
+      "duplicateOf": null,
+      "sourceOffset": 8338617,
+      "sourceSymbol": "wbo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-072",
+      "file": "codex-20-072.svg",
+      "hash": "1cd8c8cd634e",
+      "duplicateOf": null,
+      "sourceOffset": 8376119,
+      "sourceSymbol": "tCo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-073",
+      "file": "codex-20-073.svg",
+      "hash": "2f0db136461f",
+      "duplicateOf": null,
+      "sourceOffset": 8376541,
+      "sourceSymbol": "iCo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-074",
+      "file": "codex-20-074.svg",
+      "hash": "c249b1402eea",
+      "duplicateOf": null,
+      "sourceOffset": 8382961,
+      "sourceSymbol": "zCo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-075",
+      "file": "codex-20-075.svg",
+      "hash": "1f19ba79d4a5",
+      "duplicateOf": null,
+      "sourceOffset": 8392363,
+      "sourceSymbol": "Cwo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-076",
+      "file": "codex-20-076.svg",
+      "hash": "735f1e474bcf",
+      "duplicateOf": null,
+      "sourceOffset": 8393534,
+      "sourceSymbol": "Ewo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-077",
+      "file": "codex-20-077.svg",
+      "hash": "dfe609a19202",
+      "duplicateOf": null,
+      "sourceOffset": 8481407,
+      "sourceSymbol": "kko",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-078",
+      "file": "codex-20-078.svg",
+      "hash": "e4a1ea1f442d",
+      "duplicateOf": null,
+      "sourceOffset": 8502695,
+      "sourceSymbol": "LAo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-079",
+      "file": "codex-20-079.svg",
+      "hash": "49356a3eca18",
+      "duplicateOf": null,
+      "sourceOffset": 8573086,
+      "sourceSymbol": "tNo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-080",
+      "file": "codex-20-080.svg",
+      "hash": "64c09d28a346",
+      "duplicateOf": null,
+      "sourceOffset": 8574623,
+      "sourceSymbol": "Xq",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-081",
+      "file": "codex-20-081.svg",
+      "hash": "860006939069",
+      "duplicateOf": null,
+      "sourceOffset": 8641433,
+      "sourceSymbol": null,
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-082",
+      "file": "codex-20-082.svg",
+      "hash": "6c9aceb42b7d",
+      "duplicateOf": null,
+      "sourceOffset": 8673691,
+      "sourceSymbol": "zFo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-083",
+      "file": "codex-20-083.svg",
+      "hash": "dac3436cc0b7",
+      "duplicateOf": null,
+      "sourceOffset": 8679813,
+      "sourceSymbol": "aIo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-084",
+      "file": "codex-20-084.svg",
+      "hash": "8e0667d7ba70",
+      "duplicateOf": null,
+      "sourceOffset": 8686093,
+      "sourceSymbol": "bIo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-085",
+      "file": "codex-20-085.svg",
+      "hash": "491093498ebd",
+      "duplicateOf": null,
+      "sourceOffset": 8688329,
+      "sourceSymbol": "CIo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-086",
+      "file": "codex-20-086.svg",
+      "hash": "9584d3894883",
+      "duplicateOf": null,
+      "sourceOffset": 8691141,
+      "sourceSymbol": "EIo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-087",
+      "file": "codex-20-087.svg",
+      "hash": "30aa7a5dacce",
+      "duplicateOf": null,
+      "sourceOffset": 8864055,
+      "sourceSymbol": "DHo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-088",
+      "file": "codex-20-088.svg",
+      "hash": "3753052db81d",
+      "duplicateOf": null,
+      "sourceOffset": 8865159,
+      "sourceSymbol": "AHo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-089",
+      "file": "codex-20-089.svg",
+      "hash": "c3e8f5410d61",
+      "duplicateOf": null,
+      "sourceOffset": 8938409,
+      "sourceSymbol": "sKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-090",
+      "file": "codex-20-090.svg",
+      "hash": "6266c287ef72",
+      "duplicateOf": null,
+      "sourceOffset": 8940358,
+      "sourceSymbol": "uKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-091",
+      "file": "codex-20-091.svg",
+      "hash": "0b21c70fb308",
+      "duplicateOf": null,
+      "sourceOffset": 8957529,
+      "sourceSymbol": "kKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-092",
+      "file": "codex-20-092.svg",
+      "hash": "26cb0d9351c5",
+      "duplicateOf": null,
+      "sourceOffset": 8959658,
+      "sourceSymbol": "MKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-093",
+      "file": "codex-20-093.svg",
+      "hash": "34bf7650aab7",
+      "duplicateOf": null,
+      "sourceOffset": 8961406,
+      "sourceSymbol": "FKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-094",
+      "file": "codex-20-094.svg",
+      "hash": "3c9d4c8c6015",
+      "duplicateOf": null,
+      "sourceOffset": 8962971,
+      "sourceSymbol": "RKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-095",
+      "file": "codex-20-095.svg",
+      "hash": "26cb0d9351c5",
+      "duplicateOf": "codex-20-092",
+      "sourceOffset": 8965125,
+      "sourceSymbol": "VKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-096",
+      "file": "codex-20-096.svg",
+      "hash": "26cb0d9351c5",
+      "duplicateOf": "codex-20-092",
+      "sourceOffset": 8966873,
+      "sourceSymbol": "WKo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-097",
+      "file": "codex-20-097.svg",
+      "hash": "8f2477a1aa2f",
+      "duplicateOf": null,
+      "sourceOffset": 8971584,
+      "sourceSymbol": "uqo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-098",
+      "file": "codex-20-098.svg",
+      "hash": "928e02f19c68",
+      "duplicateOf": null,
+      "sourceOffset": 9061355,
+      "sourceSymbol": "VZo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-099",
+      "file": "codex-20-099.svg",
+      "hash": "34b8368f1758",
+      "duplicateOf": null,
+      "sourceOffset": 9084890,
+      "sourceSymbol": "xQo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-100",
+      "file": "codex-20-100.svg",
+      "hash": "b30dda714819",
+      "duplicateOf": null,
+      "sourceOffset": 9092707,
+      "sourceSymbol": "LQo",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-101",
+      "file": "codex-20-101.svg",
+      "hash": "89adad11630b",
+      "duplicateOf": null,
+      "sourceOffset": 9425518,
+      "sourceSymbol": "fos",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-102",
+      "file": "codex-20-102.svg",
+      "hash": "d2316662bfe9",
+      "duplicateOf": null,
+      "sourceOffset": 9463070,
+      "sourceSymbol": "fcs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-103",
+      "file": "codex-20-103.svg",
+      "hash": "caea71cf6d42",
+      "duplicateOf": null,
+      "sourceOffset": 9476191,
+      "sourceSymbol": "Dcs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-104",
+      "file": "codex-20-104.svg",
+      "hash": "cc8e24132654",
+      "duplicateOf": null,
+      "sourceOffset": 9477963,
+      "sourceSymbol": "Acs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-105",
+      "file": "codex-20-105.svg",
+      "hash": "802f2113b029",
+      "duplicateOf": null,
+      "sourceOffset": 9629613,
+      "sourceSymbol": "Lhs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-106",
+      "file": "codex-20-106.svg",
+      "hash": "e86b2fcb9ae1",
+      "duplicateOf": null,
+      "sourceOffset": 9728678,
+      "sourceSymbol": "sSs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-107",
+      "file": "codex-20-107.svg",
+      "hash": "fee135b9ec14",
+      "duplicateOf": null,
+      "sourceOffset": 9805065,
+      "sourceSymbol": "xEs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-108",
+      "file": "codex-20-108.svg",
+      "hash": "e626b2b783bd",
+      "duplicateOf": null,
+      "sourceOffset": 9811073,
+      "sourceSymbol": "sDs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-109",
+      "file": "codex-20-109.svg",
+      "hash": "2614b77a53df",
+      "duplicateOf": null,
+      "sourceOffset": 9962464,
+      "sourceSymbol": "Qjs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-110",
+      "file": "codex-20-110.svg",
+      "hash": "8a1f9338704b",
+      "duplicateOf": null,
+      "sourceOffset": 9986456,
+      "sourceSymbol": "OMs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-111",
+      "file": "codex-20-111.svg",
+      "hash": "4f6fea9b63c7",
+      "duplicateOf": null,
+      "sourceOffset": 9987715,
+      "sourceSymbol": "jMs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-112",
+      "file": "codex-20-112.svg",
+      "hash": "e48cd14b7cfc",
+      "duplicateOf": null,
+      "sourceOffset": 9994451,
+      "sourceSymbol": "PMs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-113",
+      "file": "codex-20-113.svg",
+      "hash": "852adbb70fd4",
+      "duplicateOf": null,
+      "sourceOffset": 9999793,
+      "sourceSymbol": "LMs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-114",
+      "file": "codex-20-114.svg",
+      "hash": "a0fd502505d2",
+      "duplicateOf": null,
+      "sourceOffset": 10005927,
+      "sourceSymbol": "BMs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-115",
+      "file": "codex-20-115.svg",
+      "hash": "9e80f7726678",
+      "duplicateOf": null,
+      "sourceOffset": 10018503,
+      "sourceSymbol": "iNs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-116",
+      "file": "codex-20-116.svg",
+      "hash": "e2b7261f777f",
+      "duplicateOf": null,
+      "sourceOffset": 10020554,
+      "sourceSymbol": "DQ",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-117",
+      "file": "codex-20-117.svg",
+      "hash": "0e9b688fff56",
+      "duplicateOf": null,
+      "sourceOffset": 10022059,
+      "sourceSymbol": "OQ",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-118",
+      "file": "codex-20-118.svg",
+      "hash": "cbedf727144f",
+      "duplicateOf": null,
+      "sourceOffset": 10336272,
+      "sourceSymbol": "mUs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-119",
+      "file": "codex-20-119.svg",
+      "hash": "58f36ffb1f49",
+      "duplicateOf": null,
+      "sourceOffset": 10357534,
+      "sourceSymbol": "_$",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-120",
+      "file": "codex-20-120.svg",
+      "hash": "4a09d7919ffc",
+      "duplicateOf": null,
+      "sourceOffset": 10386665,
+      "sourceSymbol": "kGs",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-121",
+      "file": "codex-20-121.svg",
+      "hash": "c4fe5c4eb318",
+      "duplicateOf": null,
+      "sourceOffset": 10446267,
+      "sourceSymbol": "w$",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-122",
+      "file": "codex-20-122.svg",
+      "hash": "36135a760d16",
+      "duplicateOf": null,
+      "sourceOffset": 10607565,
+      "sourceSymbol": "G0s",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-123",
+      "file": "codex-20-123.svg",
+      "hash": "d213630d1caa",
+      "duplicateOf": null,
+      "sourceOffset": 10693342,
+      "sourceSymbol": "L4s",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-124",
+      "file": "codex-20-124.svg",
+      "hash": "319ebea4d122",
+      "duplicateOf": null,
+      "sourceOffset": 10720870,
+      "sourceSymbol": "m6s",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-125",
+      "file": "codex-20-125.svg",
+      "hash": "0d56cee0d4c0",
+      "duplicateOf": null,
+      "sourceOffset": 10999185,
+      "sourceSymbol": "Ycc",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-126",
+      "file": "codex-20-126.svg",
+      "hash": "9935a130fc2c",
+      "duplicateOf": null,
+      "sourceOffset": 11005418,
+      "sourceSymbol": "nlc",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-127",
+      "file": "codex-20-127.svg",
+      "hash": "74caff21e9ee",
+      "duplicateOf": null,
+      "sourceOffset": 11288824,
+      "sourceSymbol": "AIc",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-128",
+      "file": "codex-20-128.svg",
+      "hash": "b6648596133c",
+      "duplicateOf": null,
+      "sourceOffset": 11403725,
+      "sourceSymbol": "iUc",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-129",
+      "file": "codex-20-129.svg",
+      "hash": "2ec86fc667bc",
+      "duplicateOf": null,
+      "sourceOffset": 11406134,
+      "sourceSymbol": "sUc",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-130",
+      "file": "codex-20-130.svg",
+      "hash": "27ae20716e53",
+      "duplicateOf": null,
+      "sourceOffset": 11623092,
+      "sourceSymbol": "m3",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-131",
+      "file": "codex-20-131.svg",
+      "hash": "d69d79fcd8b3",
+      "duplicateOf": null,
+      "sourceOffset": 11829788,
+      "sourceSymbol": "h5c",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-132",
+      "file": "codex-20-132.svg",
+      "hash": "a128c89e97e7",
+      "duplicateOf": null,
+      "sourceOffset": 11925998,
+      "sourceSymbol": "Lel",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-133",
+      "file": "codex-20-133.svg",
+      "hash": "d73f3f9a2540",
+      "duplicateOf": null,
+      "sourceOffset": 11928346,
+      "sourceSymbol": "Bel",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-134",
+      "file": "codex-20-134.svg",
+      "hash": "ebeff2ddaaeb",
+      "duplicateOf": null,
+      "sourceOffset": 11930679,
+      "sourceSymbol": "Uel",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-135",
+      "file": "codex-20-135.svg",
+      "hash": "acfae871312c",
+      "duplicateOf": null,
+      "sourceOffset": 11933021,
+      "sourceSymbol": "Kel",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-136",
+      "file": "codex-20-136.svg",
+      "hash": "71469bdd2aff",
+      "duplicateOf": null,
+      "sourceOffset": 11935401,
+      "sourceSymbol": "Yel",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-137",
+      "file": "codex-20-137.svg",
+      "hash": "52d2cc36ce93",
+      "duplicateOf": null,
+      "sourceOffset": 11937713,
+      "sourceSymbol": "Qel",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-138",
+      "file": "codex-20-138.svg",
+      "hash": "cfd58481a518",
+      "duplicateOf": null,
+      "sourceOffset": 11940128,
+      "sourceSymbol": "ttl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-139",
+      "file": "codex-20-139.svg",
+      "hash": "62cd30a4e3df",
+      "duplicateOf": null,
+      "sourceOffset": 12241311,
+      "sourceSymbol": "Zcl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-140",
+      "file": "codex-20-140.svg",
+      "hash": "7a2f4cca6769",
+      "duplicateOf": null,
+      "sourceOffset": 12365370,
+      "sourceSymbol": "Efl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-141",
+      "file": "codex-20-141.svg",
+      "hash": "3ea555a36bf2",
+      "duplicateOf": null,
+      "sourceOffset": 12587000,
+      "sourceSymbol": "KFl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-142",
+      "file": "codex-20-142.svg",
+      "hash": "090f01b23b49",
+      "duplicateOf": null,
+      "sourceOffset": 12615795,
+      "sourceSymbol": "yLl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-143",
+      "file": "codex-20-143.svg",
+      "hash": "b64ab4659a4c",
+      "duplicateOf": null,
+      "sourceOffset": 12618233,
+      "sourceSymbol": "SLl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-144",
+      "file": "codex-20-144.svg",
+      "hash": "e7423f33cf22",
+      "duplicateOf": null,
+      "sourceOffset": 12635643,
+      "sourceSymbol": "K8",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-145",
+      "file": "codex-20-145.svg",
+      "hash": "b3c4c6271bd1",
+      "duplicateOf": null,
+      "sourceOffset": 12764599,
+      "sourceSymbol": "IHl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-146",
+      "file": "codex-20-146.svg",
+      "hash": "03464ebcce0b",
+      "duplicateOf": null,
+      "sourceOffset": 12781685,
+      "sourceSymbol": "TUl",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-147",
+      "file": "codex-20-147.svg",
+      "hash": "4c13c73df745",
+      "duplicateOf": null,
+      "sourceOffset": 12908548,
+      "sourceSymbol": "$ql",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-148",
+      "file": "codex-20-148.svg",
+      "hash": "850a57758ba7",
+      "duplicateOf": null,
+      "sourceOffset": 13122075,
+      "sourceSymbol": "m1l",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-149",
+      "file": "codex-20-149.svg",
+      "hash": "4957c993f216",
+      "duplicateOf": null,
+      "sourceOffset": 13369983,
+      "sourceSymbol": "Snu",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-150",
+      "file": "codex-20-150.svg",
+      "hash": "3a868b4db646",
+      "duplicateOf": null,
+      "sourceOffset": 13459690,
+      "sourceSymbol": "nau",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-151",
+      "file": "codex-20-151.svg",
+      "hash": "08f9e0a9e794",
+      "duplicateOf": null,
+      "sourceOffset": 13460667,
+      "sourceSymbol": "aau",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-152",
+      "file": "codex-20-152.svg",
+      "hash": "77be0e48c4b2",
+      "duplicateOf": null,
+      "sourceOffset": 13504516,
+      "sourceSymbol": "_su",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-153",
+      "file": "codex-20-153.svg",
+      "hash": "24b68b7d509e",
+      "duplicateOf": null,
+      "sourceOffset": 13518500,
+      "sourceSymbol": "Bsu",
+      "unresolvedValues": 0
+    },
+    {
+      "id": "codex-20-154",
+      "file": "codex-20-154.svg",
+      "hash": "a43e1ea2b55b",
+      "duplicateOf": null,
+      "sourceOffset": 13714048,
+      "sourceSymbol": "ngu",
+      "unresolvedValues": 0
+    }
+  ]
+}

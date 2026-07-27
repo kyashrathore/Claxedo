@@ -1,6 +1,6 @@
 import { Show, type Accessor, type Component, type JSX } from "solid-js"
 import { DockShellForm } from "@opencode-ai/ui/dock-surface"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import type { PickerState } from "@/features/session/ui/model/select-model"
 import { DialogSelectModelUnpaid } from "@/features/session/ui/model/select-model-unpaid"
@@ -180,6 +180,7 @@ export const PromptInputFrame: Component<{
   <ComposerNoticeProvider channel={inherited ?? own!}>
   <div
     ref={props.rootRef}
+    data-component="composer-frame"
     classList={{
       "relative size-full flex flex-col gap-0": true,
       "_max-h-[320px]": !props.newSession(),
@@ -303,7 +304,7 @@ export const PromptInputFrame: Component<{
           </div>
         </div>
       </div>
-      <div class="flex h-11 items-center gap-1 px-2">
+      <div data-slot="composer-toolbar" class="flex h-11 items-center gap-1 px-2">
         <PromptToolbarControls
           fileAttachmentInput={() => (
             <input

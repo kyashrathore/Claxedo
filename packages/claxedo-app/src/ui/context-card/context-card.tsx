@@ -1,5 +1,5 @@
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Show, type JSX } from "solid-js"
 import "./context-card.css"
 
@@ -76,6 +76,7 @@ export function ContextCard(props: {
             {props.collapsedContent}
             <button
               type="button"
+              data-icon-interaction="subdued"
               class="ui-context-card-rail-item ui-context-card-rail-expand"
               aria-label={props.collapsedLabel ?? `Expand ${props.label}`}
               onClick={() => props.onToggleCollapse?.()}
@@ -112,6 +113,7 @@ export function ContextCard(props: {
               exists when onToggleCollapse is given, close when onClose is. */}
           <Show when={props.onToggleCollapse}>
             <IconButton
+              data-icon-interaction="subdued"
               variant="ghost"
               size="small"
               icon="chevron-double-right"
@@ -121,6 +123,7 @@ export function ContextCard(props: {
           </Show>
           <Show when={props.onClose}>
             <IconButton
+              data-icon-interaction="subdued"
               variant="ghost"
               size="small"
               icon="close"
@@ -158,7 +161,11 @@ export function ContextCardRow(props: {
   const body = (
     <>
       <Show when={props.glyph}>
-        <span class="ui-context-card-row-glyph" aria-hidden="true">
+        <span
+          data-icon-interaction={props.onSelect ? "persistent" : "passive"}
+          class="ui-context-card-row-glyph"
+          aria-hidden="true"
+        >
           {props.glyph}
         </span>
       </Show>

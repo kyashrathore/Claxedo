@@ -66,18 +66,17 @@ export type ContextChip = {
 }
 
 function ChipAvatar(props: { avatar: ContextChipAvatar }) {
-  // Deliberately does NOT forward `avatar.variant`: project squares stay
-  // monochromatic in this app. `ProjectAvatar` defaults to `--v2-avatar-bg-gray`
-  // when no `data-variant` is set, so dropping the prop IS the monochrome
-  // rendering -- there is no separate "mono" variant to opt into.
-  //
-  // Upstream tints each square with the project's assigned colour, which reads as
-  // a status signal here: the chip row sits directly above the composer next to
-  // genuinely stateful controls, and a saturated square competes with them for
-  // attention while encoding nothing the label does not already say. So
-  // `ContextChipAvatar` carries no `variant` at all — the colour is not accepted
-  // and quietly dropped, it is simply not part of this contract.
-  return <ProjectAvatar data-slot="context-chip-avatar" fallback={props.avatar.fallback} src={props.avatar.src} />
+  // Project marks are neutral outlines. A filled or tinted square reads as a
+  // status signal beside the composer's genuinely stateful controls, while the
+  // monogram already identifies the project without one.
+  return (
+    <ProjectAvatar
+      data-slot="context-chip-avatar"
+      fallback={props.avatar.fallback}
+      src={props.avatar.src}
+      variant="outline"
+    />
+  )
 }
 
 function ContextChipPicker(props: { chip: ContextChip }) {
@@ -167,8 +166,12 @@ function ContextChipPicker(props: { chip: ContextChip }) {
       <Kobalte.Portal>
         <Kobalte.Content
           ref={contentRef}
-          class={`${COMPOSER_MENU_CLASS} z-50 flex flex-col overflow-hidden border border-border-base bg-surface-raised-stronger-non-alpha shadow-md outline-none`}
-          style={{ "max-height": "min(360px, var(--kb-popper-content-available-height, 360px))" }}
+          data-context-chip-picker={chip().slot}
+          class={`${COMPOSER_MENU_CLASS} z-50 flex flex-col overflow-hidden border border-border-base shadow-md outline-none`}
+          style={{
+            "max-height": "min(360px, var(--kb-popper-content-available-height, 360px))",
+            background: "var(--codex-surface-overlay, var(--v2-background-bg-layer-01))",
+          }}
           onEscapeKeyDown={(event) => {
             close()
             event.preventDefault()

@@ -17,6 +17,7 @@ export function ClaxedoIconButton(props: ComponentProps<"button"> & ClaxedoIconB
       {...rest}
       data-component="icon-button"
       data-icon={props.icon}
+      data-icon-interaction={props["data-icon-interaction"] ?? "standalone"}
       data-size={split.size || "normal"}
       data-variant={split.variant || "secondary"}
       classList={{

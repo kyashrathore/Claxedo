@@ -2,7 +2,7 @@ import { useFile } from "@/app/providers/file"
 import { encodeFilePath } from "@/platform/files/path"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
 import {
   createEffect,
   createMemo,
@@ -491,8 +491,8 @@ export default function FileTree(props: {
                       kinds={kinds()}
                       marks={marks()}
                     >
-                      <div class="size-4 flex items-center justify-center text-icon-weak">
-                        <Icon name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
+                      <div class="flex size-4 items-center justify-center text-icon-weak-base transition-colors group-hover/filetree:text-icon-base">
+                        <IconV2 name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
                       </div>
                     </FileTreeNode>
                   </Collapsible.Trigger>

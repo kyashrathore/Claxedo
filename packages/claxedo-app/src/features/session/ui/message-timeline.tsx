@@ -34,8 +34,8 @@ import {
 } from "@/ui/session-kit"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
@@ -1610,7 +1610,7 @@ export function MessageTimeline(props: {
               }}
             />
             <div
-              class="fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
+              class="codex-overlay-surface fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
               style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
             >
               <button
@@ -1657,25 +1657,17 @@ export function MessageTimeline(props: {
         }}
       >
         <button
-          class="pointer-events-auto flex items-center justify-center w-10 h-8 bg-transparent border-none cursor-pointer p-0 group"
+          class="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-border-weaker-base bg-surface-raised-stronger-non-alpha text-text-base cursor-pointer p-0 transition-colors hover:border-border-weak-base"
           aria-label={language.t("session.timeline.scrollToBottom")}
           onClick={props.onResumeScroll}
         >
-          <div
-            class="flex items-center justify-center w-8 h-6 rounded-[6px] border border-border-weaker-base bg-[color-mix(in_srgb,var(--surface-raised-stronger-non-alpha)_80%,transparent)] backdrop-blur-[0.75px] transition-colors group-hover:border-[var(--border-weak-base)] group-hover:[--icon-base:var(--icon-hover)]"
-            style={{
-              "box-shadow":
-                "0 51px 60px 0 rgba(0,0,0,0.10), 0 15px 18px 0 rgba(0,0,0,0.12), 0 6.386px 7.513px 0 rgba(0,0,0,0.12), 0 2.31px 2.717px 0 rgba(0,0,0,0.20)",
-            }}
-          >
-            <Show when={sessionStatus().type === "busy"} fallback={<Icon name="arrow-down-to-line" size="small" />}>
-              <span class="tl-dot-wave" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </Show>
-          </div>
+          <Show when={sessionStatus().type === "busy"} fallback={<Icon name="scroll-to-latest" size="large" />}>
+            <span class="tl-dot-wave" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </Show>
         </button>
       </div>
       <ScrollView
@@ -1821,7 +1813,7 @@ export function MessageTimeline(props: {
                         />
                         <DropdownMenu.Portal>
                           <DropdownMenu.Content
-                            style={{ "min-width": "104px" }}
+                            style={{ "min-width": "160px" }}
                             onCloseAutoFocus={(event) => {
                               if (title.pendingRename) {
                                 event.preventDefault()
@@ -1836,15 +1828,18 @@ export function MessageTimeline(props: {
                                 setTitle("menuOpen", false)
                               }}
                             >
+                              <Icon name="edit" size="small" />
                               <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
                             <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
+                              <Icon name="archive" size="small" />
                               <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
                             <DropdownMenu.Separator />
                             <DropdownMenu.Item
                               onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
                             >
+                              <Icon name="trash" size="small" />
                               <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
                           </DropdownMenu.Content>

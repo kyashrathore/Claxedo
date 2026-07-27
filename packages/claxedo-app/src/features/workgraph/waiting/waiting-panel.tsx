@@ -1,5 +1,5 @@
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { toWaitingRow, type WaitingRowView } from "./waiting-source"
 

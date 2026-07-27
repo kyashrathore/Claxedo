@@ -76,7 +76,7 @@ export function PromptToolbarControls(props: {
   const addDisabled = () => props.mode() !== "normal" || props.harnessPending()
 
   return (
-    <div class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+    <div data-slot="composer-controls" class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
       <PromptAddMenu
         fileAttachmentInput={props.fileAttachmentInput}
         disabled={addDisabled}
@@ -107,7 +107,7 @@ export function PromptToolbarControls(props: {
         label={props.approveTitle}
         onSelect={props.onPermissionSelect}
       />
-      <div class="ml-auto flex min-w-0 items-center gap-1">
+      <div data-slot="composer-selection-controls" class="ml-auto flex min-w-0 items-center gap-1">
         <Show when={props.harnessController()}>
           {(controller) => (
             <AgentHarnessSelector

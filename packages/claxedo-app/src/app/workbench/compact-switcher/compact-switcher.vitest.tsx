@@ -59,6 +59,13 @@ describe("CompactSwitcher", () => {
 
     expect(screen.getByRole("button", { name: "Build fix" })).not.toHaveAttribute("aria-current")
     expect(screen.getByRole("button", { name: "Dev server" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getAllByTestId("compact-switcher-tab")[0].querySelector('[data-slot="workbench-tab"]')).not.toHaveAttribute(
+      "data-selected",
+    )
+    expect(screen.getAllByTestId("compact-switcher-tab")[1].querySelector('[data-slot="workbench-tab"]')).toHaveAttribute(
+      "data-selected",
+      "true",
+    )
   })
 
   test("renders item status dots", () => {
@@ -94,13 +101,12 @@ describe("CompactSwitcher", () => {
     })
   })
 
-  test("renders fixed project and workspace prefix labels without grouping tabs", () => {
+  test("renders project avatars as the metadata hover targets without grouping tabs", () => {
     render(() => <CompactSwitcher items={items} />)
 
     const icons = screen.getAllByTestId("switcher-identity")
     expect(icons).toHaveLength(2)
-    expect(icons[0].querySelector("[data-switcher-compact-label]")?.textContent).toBe("c/m")
-    expect(icons[0].querySelector("[data-switcher-expanded-label]")).toBeNull()
+    expect(icons[0].querySelector("[data-switcher-project-avatar]")).toHaveTextContent("C")
     expect(screen.queryByText("+2")).not.toBeInTheDocument()
   })
 

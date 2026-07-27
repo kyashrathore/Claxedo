@@ -115,6 +115,8 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
         data-claxedo-compact-touch
         aria-label={props.mobileSidebarOpen() ? "Close navigation sidebar" : "Open navigation sidebar"}
         aria-expanded={props.mobileSidebarOpen()}
+        aria-pressed={props.mobileSidebarOpen()}
+        data-icon-interaction="binary"
         class="md:hidden fixed left-1 top-[3px] z-[110] flex h-8 w-8 items-center justify-center rounded bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
         onClick={() => (props.mobileSidebarOpen() ? props.closeMobileSidebar() : props.openMobileSidebar())}
       >

@@ -12,7 +12,7 @@ import { Portal } from "solid-js/web"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -112,7 +112,7 @@ function RefPickerField(props: {
           </svg>
         </button>
         <Show when={open() && hasResults()}>
-          <div class="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border-weak-base bg-background-base shadow-lg">
+          <div class="codex-overlay-surface absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border-weak-base bg-background-base shadow-lg">
             <Show when={filtered().branches.length > 0}>
               <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Branches</div>
               <For each={filtered().branches.slice(0, 15)}>
@@ -198,29 +198,6 @@ export function ReviewToolbar(props: ReviewToolbarProps) {
   )
 }
 
-// Single diff-view toggle glyph (inline so it can reflect state without a new
-// sprite entry). Two plain bars in currentColor to match the monochrome icon
-// set: two stacked rows for unified, two side-by-side columns for split. Sized
-// to fill the 16px box so it reads at the same weight as the neighbouring icons.
-function DiffViewToggleIcon(props: { split: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <Show
-        when={props.split}
-        fallback={
-          <>
-            <rect x="1.75" y="4" width="12.5" height="2.4" rx="0.85" />
-            <rect x="1.75" y="9.6" width="12.5" height="2.4" rx="0.85" />
-          </>
-        }
-      >
-        <rect x="4" y="1.75" width="2.4" height="12.5" rx="0.85" />
-        <rect x="9.6" y="1.75" width="2.4" height="12.5" rx="0.85" />
-      </Show>
-    </svg>
-  )
-}
-
 // The view controls live at the far right of the review header, immediately left
 // of the Files/Changes/Processes navigator. They portal into reviewControlsSlot
 // (rendered by the L2 strip beside the navigator) so their position is fixed
@@ -241,22 +218,25 @@ function ReviewToolbarControls(props: {
       <Tooltip value={expandLabel()} placement="bottom" gutter={4}>
         <button
           type="button"
-          class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors"
+          data-icon-interaction="binary"
+          class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={expandLabel()}
+          aria-pressed={props.allExpanded}
           onClick={props.onToggleAllDiffs}
         >
-          <Icon name={props.allExpanded ? "collapse" : "expand"} size="small" />
+          <Icon name={props.allExpanded ? "collapse-all" : "expand-all"} size="small" />
         </button>
       </Tooltip>
       <Tooltip value={viewLabel()} placement="bottom" gutter={4}>
         <button
           type="button"
-          class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors"
+          data-icon-interaction="binary"
+          class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={viewLabel()}
           aria-pressed={props.diffStyle === "split"}
           onClick={() => props.onSetDiffStyle(props.diffStyle === "split" ? "unified" : "split")}
         >
-          <DiffViewToggleIcon split={props.diffStyle === "split"} />
+          <Icon name={props.diffStyle === "split" ? "unified" : "split"} size="small" />
         </button>
       </Tooltip>
     </div>
@@ -312,7 +292,7 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
             class: "flex items-center gap-1.5 h-7 px-2 text-12-medium text-text-base hover:bg-surface-base-hover rounded-md transition-[background-color,color,transform] active:scale-[0.96]",
             title: props.scopeLabel,
           }}
-          class="w-[280px] [&_[data-slot=popover-body]]:p-2"
+          class="codex-overlay-surface w-[280px] [&_[data-slot=popover-body]]:p-2"
         >
           <div class="flex flex-col gap-2">
             <div class="px-1.5 pt-1 text-11-medium text-text-weak">Review source</div>

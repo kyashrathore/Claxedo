@@ -43,7 +43,7 @@ function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "mark
       onClick={() => props.onClick?.()}
       aria-label={props.ariaLabel ?? props.label}
     >
-      <span class="flex size-4 shrink-0 items-center justify-center">
+      <span data-icon-interaction="persistent" class="flex size-4 shrink-0 items-center justify-center">
         <Icon
           name={props.icon}
           size="small"

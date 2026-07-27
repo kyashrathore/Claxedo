@@ -64,10 +64,10 @@ const rowFor = (control: ReturnType<typeof createComposerPermissionMode>, id: st
   )
 
 describe("what the picker offers", () => {
-  test("a reporting harness contributes its own rows and no Claxedo rows", () => {
+  test("a reporting harness contributes its own rows, with Auto above them", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "claude-acp", report: REPORTED })
-      expect(control.groups()!.claxedo).toEqual([])
+      expect(control.groups()!.claxedo.map((row) => row.option.name)).toEqual(["Auto"])
       expect(control.groups()!.harness.rows.map((row) => row.option.name)).toEqual([
         "Default",
         "Auto-review",
@@ -200,10 +200,10 @@ describe("what shows as current", () => {
     })
   })
 
-  test("with nothing stored and no reported current, the auto rung is shown", () => {
+  test("with nothing stored and no reported current, Auto is shown", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "claude-acp", report: REPORTED })
-      expect(control.current()?.id).toBe("auto")
+      expect(control.current()?.name).toBe("Auto")
       dispose()
     })
   })

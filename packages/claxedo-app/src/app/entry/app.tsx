@@ -103,13 +103,33 @@ function ClaxedoAppShellHost(props: ParentProps) {
   return AppShell ? <AppShell>{props.children}</AppShell> : null
 }
 
+/**
+ * Wait one frame before revealing the shell, but never wait forever.
+ *
+ * The frame exists to avoid revealing a half-laid-out shell. The timeout exists
+ * because `requestAnimationFrame` does not fire at all in a hidden document —
+ * browsers suspend it for background tabs and occluded windows. The previous
+ * fallback only covered rAF being ABSENT, so when it was present-but-suspended
+ * this promise never settled, `claxedoAppShellPainted` stayed false, and the
+ * blocking splash covered the app indefinitely. Loading while backgrounded was
+ * enough to reproduce it; it self-heals on focus, which is why it reads as a
+ * mystery rather than a hang.
+ *
+ * Racing the two is safe: the timeout only wins when no frame is coming, and in
+ * that case there is nothing to smooth over.
+ */
+const LAYOUT_REVEAL_TIMEOUT_MS = 250
+
 function waitForLayoutRevealFrame() {
   return new Promise<void>((resolve) => {
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => resolve())
-      return
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      resolve()
     }
-    setTimeout(resolve, 0)
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(done)
+    setTimeout(done, typeof requestAnimationFrame === "function" ? LAYOUT_REVEAL_TIMEOUT_MS : 0)
   })
 }
 

@@ -37,13 +37,24 @@ describe("WorkspaceToolButtons", () => {
       />
     ))
 
-    expect(screen.getByRole("button", { name: "Open Files" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Close Changes" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("button", { name: "Open Processes" })).toBeTruthy()
+    const files = screen.getByRole("button", { name: "Open Files" })
+    const changes = screen.getByRole("button", { name: "Close Changes" })
+    const processes = screen.getByRole("button", { name: "Open Processes" })
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Files" }))
-    fireEvent.click(screen.getByRole("button", { name: "Close Changes" }))
-    fireEvent.click(screen.getByRole("button", { name: "Open Processes" }))
+    expect(files.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-057$/)
+    expect(changes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-120$/)
+    expect(processes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-050$/)
+    expect(files.className).toContain("!size-3.5")
+    expect(files).toHaveAttribute("data-icon-interaction", "binary")
+    expect(files).toHaveAttribute("aria-pressed", "false")
+    expect(changes).toHaveAttribute("data-icon-interaction", "binary")
+    expect(changes).toHaveAttribute("aria-pressed", "true")
+    expect(changes.className).not.toContain("bg-surface-base-active")
+    expect(processes).toHaveAttribute("aria-pressed", "false")
+
+    fireEvent.click(files)
+    fireEvent.click(changes)
+    fireEvent.click(processes)
 
     expect(onToggle).toHaveBeenNthCalledWith(1, "files")
     expect(onToggle).toHaveBeenNthCalledWith(2, "changes")

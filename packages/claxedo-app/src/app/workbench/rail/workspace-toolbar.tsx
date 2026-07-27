@@ -100,13 +100,13 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
           <DropdownMenu.Content class="z-[200]">
             <Show when={canUseTerminal()}>
               <DropdownMenu.Item onSelect={() => props.onNewTerminal?.()}>
-                <Icon name="console" size="small" class="mr-2" />
+                <Icon name="console" size="small" style={{ width: "14px", height: "14px" }} />
                 New Terminal
               </DropdownMenu.Item>
             </Show>
             <Show when={props.canUseDocuments === true}>
               <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
-                <Icon name="page" size="small" class="mr-2" />
+                <Icon name="page" size="small" style={{ width: "14px", height: "14px" }} />
                 New Document
               </DropdownMenu.Item>
             </Show>
@@ -116,7 +116,7 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
                 {(cmd) => (
                   <Show when={cmd.name && cmd.command}>
                     <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(cmd.command, cmd.name)}>
-                      <Icon name="console" size="small" class="mr-2" />
+                      <Icon name="console" size="small" style={{ width: "14px", height: "14px" }} />
                       {cmd.name}
                     </DropdownMenu.Item>
                   </Show>
@@ -125,7 +125,7 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
             </Show>
             <DropdownMenu.Separator />
             <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
-              <Icon name="settings-gear" size="small" class="mr-2" />
+              <Icon name="settings-gear" size="small" style={{ width: "14px", height: "14px" }} />
               Configure...
             </DropdownMenu.Item>
           </DropdownMenu.Content>

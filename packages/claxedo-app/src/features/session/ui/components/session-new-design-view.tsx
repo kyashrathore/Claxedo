@@ -7,9 +7,9 @@ import { Show, createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
 import { getFilename } from "@/lib/path"
-import { Icon } from "@opencode-ai/ui/icon"
-import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
+import { SemanticIcon } from "@/ui/semantic-icon"
 import {
   SessionContextRow,
   type ContextChip,
@@ -211,6 +211,7 @@ export function NewSessionDesignView(props: {
         label: projectLabel(projectRoot()),
         ariaLabel: "Project",
         search: { placeholder: "Search projects" },
+        groupLabel: "Projects",
         emptyMessage: "No projects",
         current: projectRoot(),
         options: projects().map<ContextChipOption>((value) => ({
@@ -234,7 +235,7 @@ export function NewSessionDesignView(props: {
 
     chips.push({
       slot: "context-chip-environment",
-      icon: <ClaxedoIcon name={props.workspaceKind === "cloud" ? "cloud" : "laptop"} size="small" />,
+      icon: <Icon name={props.workspaceKind === "cloud" ? "cloud" : "laptop"} size="small" />,
       label: environmentLabel(props.workspaceKind),
       ariaLabel: "Workspace environment",
       emptyMessage: "No environments",
@@ -249,10 +250,9 @@ export function NewSessionDesignView(props: {
     chips.push({
       slot: "context-chip-worktree",
       icon: (
-        <Icon
-          name={creatingWorkspace() && props.workspaceKind === "cloud" ? "cloud-upload" : "branch"}
-          size="small"
-        />
+        creatingWorkspace() && props.workspaceKind === "cloud"
+          ? <Icon name="cloud-upload" size="small" />
+          : <SemanticIcon concept="isolationWorktree" size="small" />
       ),
       label: creatingWorkspace() ? createActionLabel() : (currentWorktree() ? worktreeLabel(currentWorktree()!) : ""),
       ariaLabel: "Workspace",

@@ -1,4 +1,4 @@
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { ComponentProps } from "solid-js"
 
 type IconName = ComponentProps<typeof Icon>["name"]
@@ -15,10 +15,10 @@ type IconSize = ComponentProps<typeof Icon>["size"]
  * inline at the call site.
  */
 export const SEMANTIC_ICON = {
-  /** The workspace's pending diff — the panel's Review/Changes tab (boxed ±). */
-  changes: "review",
-  /** File browsing — the panel's Files tab. The page glyph, never the folder. */
-  files: "file",
+  /** The workspace's pending diff — Codex's document-and-branch Changes glyph. */
+  changes: "changes",
+  /** File browsing — Codex's overlapping-folder explorer glyph. */
+  files: "folders",
   /** Running processes — the panel's Processes tab. */
   processes: "console",
   /** An interactive terminal. */
@@ -27,12 +27,11 @@ export const SEMANTIC_ICON = {
   project: "folder",
   /** A git branch. */
   branch: "branch",
-  /** Session isolation — the main local checkout. Shares the folder glyph with
-   *  `project` on purpose: both name a directory on disk, and they never appear
-   *  as glyphs on the same surface. */
-  isolationLocal: "folder",
-  /** Session isolation — a dedicated git worktree (a forked-off working tree). */
-  isolationWorktree: "fork",
+  /** Session isolation — the main local checkout. Codex uses the Worktree
+   *  glyph for this row even when its value is "Main". */
+  isolationLocal: "worktree",
+  /** Session isolation — a dedicated git worktree. */
+  isolationWorktree: "worktree",
   /** Session isolation — a remote cloud / user-hosted sandbox. */
   isolationCloud: "server",
   /** A source repository hosted on GitHub. */

@@ -5,7 +5,7 @@ import type {
   WorkItemDto,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { createSignal, For, type JSX, Show } from "solid-js"
 import { SemanticIcon } from "@/ui/semantic-icon"

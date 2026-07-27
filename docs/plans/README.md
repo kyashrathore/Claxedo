@@ -1,13 +1,18 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-07-21
+Last updated: 2026-07-26
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
+- [Codex theme and semantic surface cleanup](./2026-07-26-001-refactor-codex-theme-clean-transplant-plan.md)
+  - Active plan for reconstructing the Codex visual exploration on local `dev`
+    through a theme-neutral shell and overlay contract, a standalone Codex
+    theme, semantic icon commits, cross-theme verification, and separately
+    accepted product refinements.
 - [Claxedo public website strategy](./2026-07-20-001-feat-claxedo-website-strategy-plan.md)
   - Repository implementation and local launch acceptance are complete. The
     production cutover remains active pending a named hosting/edge owner,

@@ -1,5 +1,5 @@
 import { createMemo, For, Show, type Component } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
   DISCOVERY_LABEL,
   HARNESS_LABEL,

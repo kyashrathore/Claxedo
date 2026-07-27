@@ -12,6 +12,7 @@ import type {
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
 import type { AgentPermissionMode, AgentPermissionModeState, AutoLevel } from "../../adapter-contract"
+import type { AcpHarnessId } from "../../harness-types"
 
 type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
@@ -157,14 +158,44 @@ export function merge(state: ACPState, meta: Meta): ACPState {
 const LEVEL_IDS: Record<AutoLevel, readonly string[]> = {
   ask: ["default", "ask", "readonly", "askalways", "manual"],
   /**
-   * Edit-accepting ids only. A bare `auto` is deliberately ABSENT even though
-   * several agents use it: on Claude it names the model classifier, which can
-   * approve commands as well as edits, and this rung is specifically "allow
-   * reads and edits, ASK before anything risky". A classifier mode stays fully
-   * selectable — it just is not what gets chosen for someone by default.
+   * The rung means FULL ACCESS WITH THE DANGER TIER STILL GATED — everything
+   * safe runs, and shell, network, out-of-project and subagent spawns still ask.
+   *
+   * A bare `auto` used to be excluded here on the reasoning that a classifier
+   * "can approve commands as well as edits", with `acceptedits` carrying the
+   * rung instead. That inverted the definition: `acceptEdits` auto-accepts edits
+   * and then prompts on every Bash call, which is neither full access nor
+   * automatic, while a classifier approving the safe tiers and escalating risky
+   * ones is exactly what this rung describes.
+   *
+   * `acceptedits` is deliberately NOT here any more. Agents advertising both —
+   * claude-agent-acp reports `auto` and `acceptEdits` — would otherwise expose
+   * two auto rungs, and Auto resolves by finding exactly one.
    */
-  auto: ["acceptedits", "autoedit", "autoaccept", "editauto"],
-  full: ["fullaccess", "bypasspermissions", "yolo", "dangerfullaccess", "bypass"],
+  auto: [
+    "auto",
+    "autoedit",
+    "autoaccept",
+    "editauto",
+    // codex-acp's middle rung. Confirmed against the live binary, which reports
+    // exactly `read-only`, `agent`, `agent-full-access`: `agent` is workspace-write
+    // — edits inside the project run, network and anything outside it still ask —
+    // which is this rung's definition. Untagged, codex-acp had NO auto rung, so
+    // Claxedo's Auto fell through to answering prompts locally on a harness that
+    // enforces perfectly well.
+    "agent",
+    "workspacewrite",
+  ],
+  full: [
+    "fullaccess",
+    "bypasspermissions",
+    "yolo",
+    "dangerfullaccess",
+    "bypass",
+    // Also from the live codex-acp list. `agentfullaccess` does not match the
+    // bare `fullaccess` entry above, so it was landing untagged.
+    "agentfullaccess",
+  ],
 }
 
 const normalizeId = (id: string) => id.toLowerCase().replace(/[-_\s]/g, "")
@@ -188,30 +219,154 @@ const withLevel = (mode: { id: string; name: string; description?: string }): Ag
 }
 
 /**
- * What an ACP harness offers BEFORE a session exists.
+ * The versions each table in `ACP_KNOWN_MODES` was recorded from.
  *
- * An ACP agent advertises its modes on `session/new`, so on a draft there is
- * genuinely nothing to report — but showing nothing meant the composer fell back
- * to Claxedo's own options, which are then discarded the instant the session
- * starts and the agent's real modes take over. Offering a choice that cannot
- * survive the first message is worse than offering none.
- *
- * So a draft offers the RUNGS instead of ids. These are intents, not agent
- * modes, and `setPermissionMode` resolves each to whatever the agent turns out
- * to advertise. They are the one place in this design where Claxedo names a
- * permission option itself, and the names say what the rung does rather than
- * implying an agent feature.
+ * A hardcoded list of someone else's modes is only true for the build it was
+ * copied from, so the version is part of the data rather than a comment.
+ * `known-modes.test.ts` compares these against the installed packages and fails
+ * on a bump, which turns "the agent changed its modes and we kept showing the
+ * old ones" from a silent drift into a failing test with a fix attached:
+ * `bun run script/permission-probe.ts` and paste the `liveModesFull` output.
  */
-export const ACP_DRAFT_MODES: readonly AgentPermissionMode[] = [
-  { id: "ask", name: "Ask for everything", description: "Every tool call waits for you", level: "ask" },
-  {
-    id: "auto",
-    name: "Allow edits, ask before risk",
-    description: "Resolved to this agent's matching mode when the session starts",
-    level: "auto",
-  },
-  { id: "full", name: "Allow everything", description: "Resolved to this agent's most permissive mode", level: "full" },
-]
+/**
+ * Only the agents WE ship can be version-pinned.
+ *
+ * claude-agent-acp and codex-acp are dependencies of this package, so every
+ * install resolves the same build and a mismatch is a real, checkable fact.
+ * Cursor is not here on purpose: `cursor-agent` is installed by the user and
+ * updates itself, so its version differs per machine and asserting one would
+ * fail on other people's laptops for no reason — the pin would be measuring the
+ * developer's install, not the code.
+ *
+ * What covers Cursor instead is `rememberLiveModes`: its table is a seed used
+ * only until that user's own agent has answered once, after which their real
+ * list is what a draft shows.
+ */
+export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, { package: string; version: string }>> = {
+  claude: { package: "@agentclientprotocol/claude-agent-acp", version: "0.60.0" },
+  codex: { package: "@agentclientprotocol/codex-acp", version: "1.1.2" },
+}
+
+/**
+ * What each ACP agent offers, recorded VERBATIM from the live binary.
+ *
+ * An ACP agent does not advertise its modes until `session/new` returns, so on a
+ * draft there is nothing to ask. This table is what a draft shows instead, and
+ * every field in it — id, name, description — is the agent's own, captured by
+ * `script/permission-probe.ts` from a real binary.
+ *
+ * It is a SEED, not a claim about the agent the user is running. For claude and
+ * codex the two coincide, because this package pins those versions. For cursor
+ * they need not: `cursor-agent` is user-installed and self-updating, so a build
+ * newer than the one recorded here may have added or renamed a mode. That
+ * exposure is bounded in two ways — `rememberLiveModes` replaces this list with
+ * the user's own the first time their agent answers, and a live session always
+ * supersedes it regardless. What can never happen is the failure this replaced:
+ * every entry is an id some build of the agent really advertised, never one
+ * Claxedo made up.
+ *
+ * It replaced three rungs Claxedo named itself ("Allow everything except
+ * danger" and friends) which resolved to real ids only once the session began.
+ * Those were the one place this design invented a permission option, and the
+ * cost was that the picker named a policy the agent had never heard of: a user
+ * choosing on a draft was reading Claxedo's vocabulary, then watching the list
+ * change under them on the first message. Real ids mean the draft choice IS the
+ * session choice, with no resolution step and nothing to re-render.
+ *
+ * `withLevel` is applied here rather than baked in, so a draft and a live
+ * session derive the rung from the same `LEVEL_IDS` table. Hardcoding the level
+ * would let the two disagree about the same id — which is the precise bug this
+ * whole change is undoing.
+ *
+ * A harness with no entry here reports nothing on a draft rather than a
+ * plausible guess — inventing a table would recreate exactly the fiction this
+ * replaced.
+ */
+export const ACP_KNOWN_MODES: Partial<Record<AcpHarnessId, readonly AgentPermissionMode[]>> = {
+  claude: [
+    { id: "auto", name: "Auto", description: "Use a model classifier to approve/deny permission prompts" },
+    { id: "default", name: "Manual", description: "Standard behavior, prompts for dangerous operations" },
+    { id: "acceptEdits", name: "Accept Edits", description: "Auto-accept file edit operations" },
+    { id: "plan", name: "Plan Mode", description: "Planning mode, no actual tool execution" },
+    { id: "dontAsk", name: "Don't Ask", description: "Don't prompt for permissions, deny if not pre-approved" },
+    { id: "bypassPermissions", name: "Bypass Permissions", description: "Bypass all permission checks" },
+  ].map(withLevel),
+  codex: [
+    { id: "read-only", name: "Read-only", description: "Requires approval to edit files and run commands." },
+    { id: "agent", name: "Agent", description: "Read and edit files, and run commands." },
+    {
+      id: "agent-full-access",
+      name: "Agent (full access)",
+      description:
+        "Codex can edit files outside this workspace and run commands with network access. Exercise caution when using.",
+    },
+  ].map(withLevel),
+  /**
+   * From `cursor-agent acp` — Cursor's CLI acting as its own ACP server.
+   *
+   * Worth contrasting with `CURSOR_PERMISSION_MODES`, the table the cursor-sdk
+   * harness uses: that one is `review`/`auto-review`/`unsandboxed`, derived from
+   * two `LocalAgentOptions` booleans, and applies only from the NEXT session
+   * because `Agent.create` reads them once. Over ACP the same product exposes
+   * three differently-named modes and honours `session/set_mode` mid-session.
+   * Same vendor, two transports, genuinely different surfaces — neither table is
+   * a stale copy of the other.
+   */
+  cursor: [
+    { id: "agent", name: "Agent", description: "Full agent capabilities with tool access" },
+    { id: "plan", name: "Plan", description: "Read-only mode for planning and designing before implementation" },
+    { id: "ask", name: "Ask", description: "Q&A mode - no edits or command execution" },
+  ].map(withLevel),
+}
+
+/**
+ * The modes a live session actually reported, per harness, learned at runtime.
+ *
+ * This is what makes a hardcoded table safe for an agent we do not ship. The
+ * table above is only ever a guess about the user's build; the moment their own
+ * agent answers, that guess is replaced by fact and never consulted again for
+ * that harness. So a Cursor release that renames a mode costs at most one
+ * draft's worth of staleness, and only before the user has run it once.
+ *
+ * Deliberately process-local rather than persisted. Writing it to the store
+ * would need a new port member across every store implementation, and the value
+ * is small: the seed is already close, and the first session of a run corrects
+ * it. A wrong entry surviving a restart would also be worse than no entry —
+ * this way the memory can never outlive the process that observed it.
+ */
+const liveModesSeen = new Map<AcpHarnessId, readonly AgentPermissionMode[]>()
+
+/**
+ * Record what a live session reported, so later drafts stop guessing.
+ *
+ * Empty lists are ignored: an agent that has a mode channel but has not
+ * populated it yet reports `[]`, and treating that as "this agent has no modes"
+ * would erase a good seed on a transient state.
+ */
+export function rememberLiveModes(harness: AcpHarnessId, state: AgentPermissionModeState) {
+  if (state.modes.length === 0) return
+  liveModesSeen.set(harness, state.modes)
+}
+
+/** Test seam — the map is process-global, so suites must be able to reset it. */
+export function forgetLiveModes() {
+  liveModesSeen.clear()
+}
+
+/**
+ * What to show before a session exists: this user's own list if their agent has
+ * ever answered, the recorded seed otherwise, and nothing at all for a harness
+ * we have neither observed nor recorded.
+ *
+ * `currentModeId` is deliberately never carried over from the remembered state.
+ * It named the mode of some OTHER session, and a draft claiming it as current
+ * would be the same species of lie this file exists to remove.
+ */
+export function draftPermissionModes(harness: AcpHarnessId): AgentPermissionModeState {
+  const modes = liveModesSeen.get(harness) ?? ACP_KNOWN_MODES[harness]
+  if (!modes) return { modes: [], appliesFrom: "next-turn" }
+  return { modes: [...modes], appliesFrom: "next-turn" }
+}
 
 /**
  * The session's permission modes, from whichever channel this agent speaks.
@@ -268,9 +423,12 @@ export async function setPermissionMode(
   sessionId: string,
   modeId: string,
 ): Promise<{ state: ACPState; result: AgentPermissionModeState }> {
-  // A RUNG chosen on a draft resolves here, against what the agent actually
-  // advertised once it started. Falls through to the literal id when nothing
-  // matches, so an agent whose ids happen to be "ask"/"auto"/"full" still works.
+  // LEGACY. Drafts now offer the agent's own ids (`ACP_KNOWN_MODES`), so a fresh
+  // selection needs no resolution. This stays for selections PERSISTED under the
+  // old rung ids: a config written before that change still says `auto`, and on
+  // codex-acp that has to become `agent` or the first write throws on an id the
+  // agent never had. Falls through to the literal id when nothing matches, so
+  // claude-acp — which really does advertise `auto` — takes it directly.
   const resolved = ((): string => {
     if (!["ask", "auto", "full"].includes(modeId)) return modeId
     const advertised = permissionModes(state).modes

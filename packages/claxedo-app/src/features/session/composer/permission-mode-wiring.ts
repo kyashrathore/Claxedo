@@ -62,6 +62,12 @@ export function createComposerPermissionModeWiring(input: {
           client: input.client,
           directory: source.directory,
           sessionID: source.sessionID,
+          // Was in the KEY but not in the REQUEST. Invalidation worked, so a
+          // harness switch refetched — and then asked the runtime a question
+          // with no harness in it, which the directory-scoped route answers for
+          // whatever harness the directory defaults to. The picker showed one
+          // harness's name over another harness's modes.
+          ...(source.harness ? { harness: source.harness } : {}),
         })
       ).data,
   )

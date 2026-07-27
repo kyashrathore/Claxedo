@@ -2,7 +2,7 @@
 
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"

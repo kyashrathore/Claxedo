@@ -4,8 +4,8 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { RadioGroup } from "@opencode-ai/ui/radio-group"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
@@ -576,7 +576,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                                   </Match>
                                 </Switch>
                                 <span data-slot="session-review-diff-chevron">
-                                  <Icon name="chevron-down" size="small" />
+                                  <IconV2 name="chevron-down" size="small" />
                                 </span>
                               </div>
                             </div>

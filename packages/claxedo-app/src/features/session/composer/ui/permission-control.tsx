@@ -1,10 +1,16 @@
-import { For, Show, type Accessor, type JSX } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 import type { PermissionModeGroups, PermissionModeRow } from "@/features/session/composer/permission-mode"
-import type { PermissionModeOption } from "@/features/session/permission/modes"
+import {
+  CLAXEDO_ASK_ALWAYS_ID,
+  type PermissionModeOption,
+} from "@/features/session/permission/modes"
+// `ClaxedoIconV2` renders a BARE <svg>; `ClaxedoIcon` wraps it in a div. The
+// menu's indicator contract styles `[data-slot="menu-v2-item-indicator"] > svg`,
+// so the wrapped variant leaves the check unstyled — visible on every row.
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/claxedo-icon"
 
 /**
  * The composer's permission-mode picker.
@@ -44,9 +50,37 @@ export function PromptPermissionControl(props: {
   const triggerText = () => props.current()?.name ?? "Permissions"
   const shieldActive = () => props.current() !== undefined
 
+  const [expanded, setExpanded] = createSignal(false)
+
+  /**
+   * Auto's concrete target, so the expanded list can show it as the selection.
+   *
+   * Auto is a LABEL over a harness mode, not a mode of its own — expanding must
+   * therefore reveal which row it stood for, not clear the selection. Reading
+   * the id straight off the delivery keeps this honest: it is the same id the
+   * write would send, so the check cannot claim a different row than the one
+   * Auto would actually apply.
+   */
+  const resolvedCurrent = () => {
+    const selected = props.current()
+    if (!selected) return undefined
+    if (selected.origin !== "claxedo") return selected
+    const delivery = selected.delivery
+    if (delivery.kind !== "harness-permission-mode") return selected
+    const rows = props.groups()?.harness.rows ?? []
+    return rows.find((row) => row.option.id === delivery.modeId)?.option ?? selected
+  }
+
   return (
     <Show when={props.enabled()}>
-      <MenuV2 placement="top-start" gutter={8} fitViewport>
+      <MenuV2
+        placement="top-start"
+        gutter={8}
+        fitViewport
+        // Reopening should start collapsed again — the expanded list is a
+        // drill-down, not a preference worth persisting across openings.
+        onOpenChange={(open) => !open && setExpanded(false)}
+      >
         <Tooltip placement="top" value={props.current()?.description ?? props.label}>
           <MenuV2.Trigger
             data-action="prompt-permission-mode"
@@ -67,11 +101,11 @@ export function PromptPermissionControl(props: {
               size="small"
               class="shrink-0"
               classList={{
-                "text-v2-icon-icon-accent": shieldActive(),
+                "text-v2-icon-icon-base": shieldActive(),
                 "text-v2-icon-icon-muted": !shieldActive(),
               }}
             />
-            <span class="truncate max-md:hidden">{triggerText()}</span>
+            <span data-slot="composer-control-label" class="truncate">{triggerText()}</span>
           </MenuV2.Trigger>
         </Tooltip>
         <MenuV2.Portal>
@@ -81,46 +115,57 @@ export function PromptPermissionControl(props: {
           >
             <Show when={props.groups()} fallback={<MenuV2.Item disabled>Resolving harness…</MenuV2.Item>}>
               {(groups) => (
-                <>
-                  {/*
-                    The Claxedo group is EMPTY whenever the harness has modes of
-                    its own — the two sets are mutually exclusive by design. So
-                    the heading and its separator have to be conditional, or a
-                    harness-backed session shows a "Claxedo" label with nothing
-                    under it, which reads as a list that failed to load.
-                  */}
-                  <Show when={groups().claxedo.length > 0}>
-                    <MenuV2.Group>
-                      <MenuV2.GroupLabel>Claxedo</MenuV2.GroupLabel>
+                <Show
+                  when={expanded()}
+                  fallback={
+                    /*
+                      COLLAPSED — the default, and for most people the only view.
+                      Auto alone, because Auto is not a competing option: it IS
+                      whichever harness mode is in force, wearing one word. Its
+                      description names the concrete target, so the collapsed row
+                      is a complete answer rather than a teaser.
+                    */
+                    <>
                       <For each={groups().claxedo}>
-                        {(item) => (
-                          <ModeRow row={item} current={props.current} onSelect={props.onSelect} />
-                        )}
+                        {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
                       </For>
-                    </MenuV2.Group>
-                    <MenuV2.Separator />
-                  </Show>
-                  <MenuV2.Group>
-                    <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
-                    <Show
-                      when={groups().harness.rows.length > 0}
-                      fallback={
-                        // The reason, not an empty group. "cursor-sdk exposes no
-                        // permission controls" is information; a blank list is a bug
-                        // report waiting to happen.
+                      <Show when={groups().harness.rows.length > 0} fallback={
                         <MenuV2.Item disabled>
                           <span class="text-v2-text-text-faint">{groups().harness.unavailable}</span>
                         </MenuV2.Item>
-                      }
-                    >
-                      <For each={groups().harness.rows}>
-                        {(item) => (
-                          <ModeRow row={item} current={props.current} onSelect={props.onSelect} />
-                        )}
-                      </For>
-                    </Show>
+                      }>
+                        <MenuV2.Separator />
+                        <MenuV2.Item
+                          data-action="permission-modes-expand"
+                          closeOnSelect={false}
+                          onSelect={() => setExpanded(true)}
+                        >
+                          <span class="flex w-full items-center justify-between gap-2">
+                            <span class="text-[13px] leading-4 text-v2-text-text-faint">
+                              {groups().harness.rows.length} more {groups().harness.label} modes
+                            </span>
+                            <BareIcon name="chevron-down" size="small" class="shrink-0 opacity-60" />
+                          </span>
+                        </MenuV2.Item>
+                      </Show>
+                    </>
+                  }
+                >
+                  {/*
+                    EXPANDED — Auto is GONE, deliberately. It was only ever a
+                    label over one of these rows, so showing both would put the
+                    same choice on screen twice under two names with no way to
+                    tell which won. The row Auto resolved to is the one carrying
+                    the check, which is what makes the swap legible rather than
+                    a reset.
+                  */}
+                  <MenuV2.Group>
+                    <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
+                    <For each={groups().harness.rows}>
+                      {(item) => <ModeRow row={item} current={resolvedCurrent} onSelect={props.onSelect} />}
+                    </For>
                   </MenuV2.Group>
-                </>
+                </Show>
               )}
             </Show>
           </MenuV2.Content>
@@ -130,6 +175,32 @@ export function PromptPermissionControl(props: {
   )
 }
 
+/**
+ * The three strings a mode row shows.
+ *
+ * Extracted and exported because this is exactly where the regression happened:
+ * `caveat` was quietly dropped from the assembled parts while `modes.ts` kept
+ * producing it and `modes.test.ts` kept asserting it existed, so the suite
+ * stayed green while the warning stopped reaching anyone. As a pure function it
+ * can be tested without standing up a portal-rendered menu.
+ *
+ * - `detail`   — what the mode does, plus why it is unavailable if it is.
+ * - `caveat`   — the condition that can withdraw it. Rendered separately and
+ *                never clamped: on the local-answering path this is the line
+ *                that says the harness enforces nothing.
+ * - `tooltip`  — everything, because `detail` is clamped to two lines and a
+ *                truncated `blockedReason` is unreadable exactly when it matters.
+ */
+export function permissionRowText(row: PermissionModeRow) {
+  const detail = [row.option.description, row.blockedReason].filter(Boolean).join(" — ")
+  const caveat = row.option.caveat
+  return {
+    detail,
+    caveat,
+    tooltip: [detail, caveat].filter(Boolean).join(" — ") || row.option.name,
+  }
+}
+
 function ModeRow(props: {
   row: PermissionModeRow
   current: Accessor<PermissionModeOption | undefined>
@@ -137,30 +208,91 @@ function ModeRow(props: {
 }) {
   const option = () => props.row.option
   const selected = () => props.current()?.id === option().id
-  // What this maps to in the harness, and any condition that can withdraw it. This
-  // is the "learn more" content, inline rather than behind a second affordance.
-  const detail = () => {
-    const parts = [option().description, props.row.blockedReason, option().caveat].filter(Boolean)
-    return parts.join(" — ")
-  }
+  const text = () => permissionRowText(props.row)
+  const detail = () => text().detail
+  const caveat = () => text().caveat
+  const tooltip = () => text().tooltip
 
   return (
-    <Tooltip placement="right" value={detail() || option().name}>
+    <Tooltip placement="right" value={tooltip()}>
       <MenuV2.Item
+        data-permission-mode-row
         data-mode={option().id}
         data-what={option().delivery.kind}
         data-selectable={props.row.selectable ? "true" : "false"}
+        /*
+         * `data-checked` is the menu's own selected convention — it already
+         * drives weight and accent colour in menu-v2.css. This row was styling
+         * selection by tinting the leading glyph from `icon-muted` to
+         * `icon-base`, which is a barely-visible grey shift on a 14px icon, so
+         * every row read the same. Opting into the existing contract gives the
+         * check, the weight and the colour together.
+         */
+        data-checked={selected() ? "true" : undefined}
+        aria-checked={selected()}
+        class="w-full"
         disabled={!props.row.selectable}
         onSelect={() => props.row.selectable && props.onSelect(option())}
       >
-        <span class="flex min-w-0 items-center gap-1.5">
+        <span class="flex w-full min-w-0 items-start gap-2">
           <Icon
-            name="check"
+            name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
             size="small"
-            class="shrink-0"
-            classList={{ "opacity-0": !selected(), "text-v2-icon-icon-accent": selected() }}
+            /*
+             * `mt-0.5` optically centres a 14px glyph against the 16px label
+             * line — geometric centring sits it a touch high.
+             */
+            class="mt-0.5 shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
+            classList={{
+              "text-v2-icon-icon-base": selected(),
+              "text-v2-icon-icon-muted": !selected(),
+            }}
           />
-          <span class="truncate">{option().name}</span>
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span data-slot="menu-v2-item-content" class="text-[13px] leading-4 text-v2-text-text-base">
+              {option().name}
+            </span>
+            <Show when={detail()}>
+              <span
+                data-slot="permission-mode-description"
+                class="line-clamp-2 whitespace-normal text-[11px] leading-[15px] text-v2-text-text-faint"
+              >
+                {detail()}
+              </span>
+            </Show>
+            <Show when={caveat()}>
+              <span
+                data-slot="permission-mode-caveat"
+                class="whitespace-normal text-[11px] leading-[15px]"
+                // The composer is v2 UI, so this is the v2 warning foreground.
+                // Not `--text-danger`: that token is not defined by the theme
+                // layer these menus render under, so it silently resolves to
+                // inherited body text and the caveat stops reading as a warning.
+                style={{ color: "var(--v2-state-fg-warning)" }}
+              >
+                {caveat()}
+              </span>
+            </Show>
+          </span>
+          {/*
+            Trailing rather than leading, because the leading slot already
+            carries the shield/hand glyph that says what KIND of mode this is.
+            Two marks on the left would compete; kind on the left and state on
+            the right keeps each answering one question.
+
+            Always mounted, never conditionally rendered: the 16px slot holds
+            the row's width steady between states, and the check can animate in
+            rather than appearing. Rows are multi-line, so it pins to the first
+            line instead of centring against the whole block.
+          */}
+          <span
+            data-slot="menu-v2-item-indicator"
+            data-checked={selected() ? "true" : undefined}
+            aria-hidden="true"
+            class="mt-0.5 shrink-0"
+          >
+            <BareIcon name="check-small" size="small" />
+          </span>
         </span>
       </MenuV2.Item>
     </Tooltip>

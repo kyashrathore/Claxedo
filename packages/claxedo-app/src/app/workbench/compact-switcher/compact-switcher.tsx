@@ -3,6 +3,7 @@ import type { SwitcherItem } from "./switcher-items"
 import { useDragSource } from "../workbench/index"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 
 const ACTIVE_SCROLL_DELAY_MS = 120
 const SWITCH_COMMIT_DELAY_MS = 48
@@ -13,24 +14,6 @@ export type CompactSwitcherProps = {
   onClose?: (contentId: string) => void
   onDragStart?: (contentId: string) => void
   onDragEnd?: () => void
-}
-
-function compactLabel(label: string | undefined, fallback: string) {
-  const value = label?.trim().replace(/\s+/g, "") || fallback
-  return value.slice(0, 1).toLowerCase()
-}
-
-function workspaceLabel(item: SwitcherItem) {
-  const label = item.workspaceLabel ?? item.workspaceDir?.split("/").filter(Boolean).at(-1) ?? "Global"
-  return compactLabel(label, "Global")
-}
-
-function projectLabel(item: SwitcherItem) {
-  return compactLabel(item.projectLabel ?? item.workspaceDir?.split("/").filter(Boolean).at(-1), "Global")
-}
-
-function identityLabel(item: SwitcherItem) {
-  return `${projectLabel(item)}/${workspaceLabel(item)}`
 }
 
 function fallback(value: string | undefined, empty = "Not available") {
@@ -65,23 +48,22 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean }) {
     <span
       aria-hidden="true"
       data-testid="switcher-identity"
-      class="flex h-full w-5 shrink-0 items-center text-[10px] font-medium leading-none text-text-weaker transition-opacity duration-100"
+      class="relative flex h-full w-5 shrink-0 items-center justify-center text-text-weaker transition-opacity duration-100"
       classList={{
-        "justify-center opacity-100": hasVisibleStatus(props.item),
-        "justify-start opacity-30 group-hover:opacity-55 group-focus-within:opacity-55":
-          !hasVisibleStatus(props.item) && !props.active,
-        "justify-start opacity-55": !hasVisibleStatus(props.item) && props.active,
+        "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
+        "opacity-100": props.active,
       }}
     >
-      <Show
-        when={hasVisibleStatus(props.item)}
-        fallback={
-          <span data-switcher-compact-label class="whitespace-nowrap">
-            {identityLabel(props.item)}
-          </span>
-        }
-      >
-        <StatusDot status={props.item.status} />
+      <ProjectAvatar
+        data-switcher-project-avatar
+        fallback={fallback(props.item.projectLabel, "Global")}
+        variant="outline"
+        class="size-4 shrink-0"
+      />
+      <Show when={hasVisibleStatus(props.item)}>
+        <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
+          <StatusDot status={props.item.status} />
+        </span>
       </Show>
     </span>
   )
@@ -105,11 +87,16 @@ function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; val
 
 function SwitcherMetadataCard(props: { item: SwitcherItem }) {
   return (
-    <div class="w-[320px] rounded-lg border border-border-weak-base/70 bg-background-base/95 p-3 shadow-[0_18px_44px_rgba(0,0,0,0.42)] backdrop-blur">
+    <div
+      data-slot="switcher-metadata-card"
+      class="w-[320px] rounded-lg border border-border-base bg-v2-background-bg-layer-01 p-3 shadow-md"
+    >
       <div class="mb-3 flex items-start gap-3">
-        <div class="flex size-9 shrink-0 items-center justify-center rounded-md border border-border-weak-base/55 bg-surface-base-hover/50 text-[11px] font-semibold text-text-weak">
-          {identityLabel(props.item)}
-        </div>
+        <ProjectAvatar
+          fallback={fallback(props.item.projectLabel, "Global")}
+          variant="outline"
+          class="size-9 shrink-0"
+        />
         <div class="min-w-0 flex-1">
           <div class="truncate text-[13px] font-semibold text-text-base">
             {fallback(props.item.title, "Untitled session")}
@@ -219,8 +206,6 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
       class="flex h-full min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1"
       style={{
         "scrollbar-width": "none",
-        "mask-image": "linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent)",
-        "-webkit-mask-image": "linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent)",
       }}
     >
       <For each={items()}>
@@ -234,6 +219,8 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
               }}
             >
               <div
+                data-slot="workbench-tab"
+                data-selected={item.active ? "true" : undefined}
                 class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-[12px] leading-none transition-[background-color,color] duration-100"
                 classList={{
                   "bg-surface-base-hover text-text-base":
@@ -306,7 +293,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                 <button
                   type="button"
                   aria-label={`Close ${item.title}`}
-                  class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
+                  class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-full border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
                   classList={{
                     "opacity-65": item.active,
                   }}

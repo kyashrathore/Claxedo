@@ -8,6 +8,7 @@ import catppuccinThemeJson from "./themes/catppuccin.json"
 import catppuccinFrappeThemeJson from "./themes/catppuccin-frappe.json"
 import catppuccinMacchiatoThemeJson from "./themes/catppuccin-macchiato.json"
 import cobalt2ThemeJson from "./themes/cobalt2.json"
+import codexThemeJson from "./themes/codex.json"
 import cursorThemeJson from "./themes/cursor.json"
 import draculaThemeJson from "./themes/dracula.json"
 import everforestThemeJson from "./themes/everforest.json"
@@ -46,6 +47,7 @@ export const catppuccinTheme = catppuccinThemeJson as DesktopTheme
 export const catppuccinFrappeTheme = catppuccinFrappeThemeJson as DesktopTheme
 export const catppuccinMacchiatoTheme = catppuccinMacchiatoThemeJson as DesktopTheme
 export const cobalt2Theme = cobalt2ThemeJson as DesktopTheme
+export const codexTheme = codexThemeJson as DesktopTheme
 export const cursorTheme = cursorThemeJson as DesktopTheme
 export const draculaTheme = draculaThemeJson as DesktopTheme
 export const everforestTheme = everforestThemeJson as DesktopTheme
@@ -85,6 +87,7 @@ export const DEFAULT_THEMES: Record<string, DesktopTheme> = {
   "catppuccin-frappe": catppuccinFrappeTheme,
   "catppuccin-macchiato": catppuccinMacchiatoTheme,
   cobalt2: cobalt2Theme,
+  codex: codexTheme,
   cursor: cursorTheme,
   dracula: draculaTheme,
   everforest: everforestTheme,

@@ -642,23 +642,32 @@ export function createAgentRuntimeClient(options: {
      * fallback that silently answered `[]` would make an unreachable route look
      * like a harness with nothing to offer.
      */
-    async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
+    async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string; harness?: string }) {
       const init = { cache: "no-store" as const, headers: { Accept: "application/json" } }
       // A DRAFT has no session, so it asks the directory-scoped route instead of
       // showing nothing until after the first message. Same payload either way;
       // the difference is only which harness state can answer — a draft gets the
       // static list where one exists, and an ACP agent honestly reports none
       // until it has been asked.
+      //
+      // `harness` is REQUIRED on the draft path, not decoration. A draft has no
+      // session for the route to resolve an adapter from, so without it the
+      // runtime falls back to the directory's default harness and answers for
+      // THAT one — while the picker labels the group with the harness the
+      // composer actually targets. The visible symptom was a group headed
+      // "Codex" reading "opencode has no permission modes of its own".
+      const harnessQuery = input.harness ? `&harness=${encodeURIComponent(input.harness)}` : ""
       const res = input.sessionID
         ? await fetchRuntimeSession({
           sessionID: input.sessionID,
           directory: input.directory,
           suffix: "/permission-mode",
+          ...(input.harness ? { query: { harness: input.harness } } : {}),
           init,
         })
         : await fetchRuntimePath({
           directory: input.directory,
-          path: `/permission/modes?directory=${encodeURIComponent(input.directory)}`,
+          path: `/permission/modes?directory=${encodeURIComponent(input.directory)}${harnessQuery}`,
           init,
         })
       return { data: await readJson<AgentRuntimePermissionModeState>(res) }

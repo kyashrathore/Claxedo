@@ -89,23 +89,22 @@
     linear-gradient(rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04)), var(--surface-raised-stronger-non-alpha);
 }
 
-/* Head + section labels step up one level (weak → base) so the card's framing
-   text is legible rather than nearly dissolved into the surface. */
+/* Framing labels stay visibly subordinate to both metadata and actions. */
 .session-envcard .ui-context-card-label,
 .session-envcard .ui-context-card-section-label {
-  color: var(--text-base);
+  color: var(--text-weaker);
+  font-weight: 400;
 }
 
-/* Row text — both the icon-led facts and the nav labels — uses the strong text
-   token for crisp, Codex-like legibility. */
-.session-envcard .ui-context-card-row-label {
+/* Clickable rows are the card's primary foreground. */
+.session-envcard .ui-context-card-row.is-selectable .ui-context-card-row-label {
   color: var(--text-strong);
 }
 
-/* Information rows are icon-led (the glyph carries the field), so the row text
-   is just the value — at the strong weight to match the nav rows above. */
+/* Information rows are intentionally quieter than navigation controls. */
+.session-envcard .ui-context-card-row:not(.is-selectable) .ui-context-card-row-label,
 .session-envcard-value {
-  color: var(--text-strong);
+  color: var(--text-base);
 }
 
 /* The Repository row's trailing "opens externally" glyph is a quiet affordance,

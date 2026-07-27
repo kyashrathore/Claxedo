@@ -1532,6 +1532,7 @@ export function RailSidebar(props: RailSidebarProps) {
 
     return (
       <div
+        data-icon-interaction="row-actions"
         class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
         onClick={(e: MouseEvent) => e.stopPropagation()}
       >
@@ -1568,7 +1569,7 @@ export function RailSidebar(props: RailSidebarProps) {
               createTerminal()
             }}
           >
-            <span class="font-mono text-[12px] leading-none" aria-hidden="true">›</span>
+            <Icon name="terminal" size="small" />
           </button>
         </Tooltip>
         {/* Agent shortcuts are workspace-header only. On a project header they
@@ -2294,7 +2295,13 @@ export function RailSidebar(props: RailSidebarProps) {
         >
           <div class="flex items-center gap-1.5 min-w-0 flex-1">
             <span
+              data-icon-interaction="binary"
+              data-icon-state={open() ? "open" : "closed"}
               class="size-4 shrink-0 flex items-center justify-center relative" role="button" tabIndex={0}
+              classList={{
+                "text-text-strong": active(),
+                "text-text-base/85": !active(),
+              }}
               aria-label={open() ? "Collapse project" : "Expand project"} aria-expanded={open()}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
@@ -2303,18 +2310,9 @@ export function RailSidebar(props: RailSidebarProps) {
               onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
             >
               <Icon
-                name="folder-open"
+                name={open() ? "folder-open" : "folder"}
                 size="small"
-                class="shrink-0 absolute inset-0 m-auto group-hover/header:opacity-0 transition-[opacity,color] duration-100"
-                classList={{
-                  "text-text-strong": active(),
-                  "text-icon-weak-base": !active(),
-                }}
-              />
-              <Icon
-                name={open() ? "chevron-down" : "chevron-right"}
-                size="small"
-                class="text-icon-weak-base/60 shrink-0 absolute inset-0 m-auto opacity-0 group-hover/header:opacity-100 transition-opacity duration-100"
+                class="shrink-0 absolute inset-0 m-auto transition-colors duration-100"
               />
             </span>
             <span
@@ -2425,7 +2423,13 @@ export function RailSidebar(props: RailSidebarProps) {
         >
           <div class="flex items-center gap-1.5 min-w-0 flex-1">
             <span
+              data-icon-interaction="binary"
+              data-icon-state={open() ? "open" : "closed"}
               class="size-4 shrink-0 flex items-center justify-center relative" role="button" tabIndex={0}
+              classList={{
+                "text-text-strong": active(),
+                "text-text-base/85": !active(),
+              }}
               aria-label={open() ? "Collapse project" : "Expand project"} aria-expanded={open()}
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
@@ -2434,18 +2438,9 @@ export function RailSidebar(props: RailSidebarProps) {
               onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
             >
               <Icon
-                name="folder-open"
+                name={open() ? "folder-open" : "folder"}
                 size="small"
-                class="shrink-0 absolute inset-0 m-auto group-hover/header:opacity-0 transition-[opacity,color] duration-100"
-                classList={{
-                  "text-text-strong": active(),
-                  "text-icon-weak-base": !active(),
-                }}
-              />
-              <Icon
-                name={open() ? "chevron-down" : "chevron-right"}
-                size="small"
-                class="text-icon-weak-base/60 shrink-0 absolute inset-0 m-auto opacity-0 group-hover/header:opacity-100 transition-opacity duration-100"
+                class="shrink-0 absolute inset-0 m-auto transition-colors duration-100"
               />
             </span>
             <span
@@ -2502,11 +2497,13 @@ export function RailSidebar(props: RailSidebarProps) {
           <Tooltip placement="bottom" value="Hide Sidebar">
             <div class="max-md:hidden shrink-0">
               <IconButton
-                icon="layout-left-partial"
+                icon="layout-left-full"
                 variant="ghost"
                 class="h-7 w-7 rounded-md text-icon-weak-base hover:text-icon-base"
                 onClick={props.onToggleSidebar}
                 aria-label="Hide Sidebar"
+                aria-pressed="true"
+                data-icon-interaction="binary"
                 data-testid="sidebar-toggle"
               />
             </div>
@@ -2541,7 +2538,7 @@ export function RailSidebar(props: RailSidebarProps) {
               </div>
             }
           >
-            <div class="px-4 pt-1 pb-1 text-[11px] font-medium uppercase tracking-normal text-text-weaker">
+            <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-[11px] font-medium uppercase tracking-normal text-text-weaker">
               {view().group === "project" ? "Projects" : "Workspaces"}
             </div>
             <For each={globals().map((section) => section.id)}>

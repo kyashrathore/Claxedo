@@ -1,5 +1,5 @@
 import { type Accessor, type JSX, Show, createEffect, createSignal, onCleanup } from "solid-js"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
@@ -122,14 +122,10 @@ export function PromptSubmitControl(props: {
             disabled={props.disabled()}
             tabIndex={props.excludeFromTab() ? -1 : undefined}
             onClick={explain}
-            icon={props.busy() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "arrow-up"}
+            icon={props.busy() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
             variant="primary"
-            class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] transition-opacity duration-150 disabled:opacity-50"
+            class="size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"
             classList={{ "opacity-50": actionable() }}
-            style={{
-              "background-image":
-                "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
-            }}
             aria-label={
               props.busy()
                 ? props.stopLabel

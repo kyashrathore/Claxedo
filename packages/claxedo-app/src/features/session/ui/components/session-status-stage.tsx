@@ -24,7 +24,7 @@
 // ever submitted from this composer instance).
 import { Match, Show, Switch } from "solid-js"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 
 export type SessionStatusStage = "redispatch" | "pending" | "long" | "failed" | undefined
 

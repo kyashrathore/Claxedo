@@ -1,5 +1,5 @@
 import { Match, Show, Switch, createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { CloudStartupView, WorkspaceAccessDeniedView, useClaxedoEventsOptional } from "@/features/workspaces/app-ports"
 import {
   acquireWorkspaceConnection,

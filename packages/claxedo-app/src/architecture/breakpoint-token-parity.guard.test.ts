@@ -78,11 +78,19 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
       token: "BP_MD",
       forbidden: [/<=?\s*767\b/],
     },
-    {
-      file: "app/dialogs/settings.tsx",
-      token: "BP_SM",
-      forbidden: [/<\s*640\b/],
-    },
+    /*
+     * `app/dialogs/settings.tsx` used to be listed here and no longer is.
+     *
+     * This guard exists to stop a JS viewport COMPARISON drifting from the CSS
+     * breakpoint by hard-coding the pixel value. The settings dialog stopped
+     * doing the comparison — its small-viewport branch is now a `max-sm:` class,
+     * so Tailwind owns the number and there is nothing left to keep in parity.
+     *
+     * Kept as a comment rather than deleted silently: the entry asserted the file
+     * still contained `BP_SM`, so once the rewrite landed the guard failed on a
+     * file that had become correct. A guard that fails for doing the right thing
+     * gets muted by whoever hits it next, which costs the rows that still matter.
+     */
     {
       file: "features/workspaces/ui/panel/workspace-panel.tsx",
       token: "BP_SM",

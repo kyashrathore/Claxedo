@@ -425,6 +425,57 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ])
   })
 
+  /**
+   * Cursor is the only ACP harness whose binary is a general CLI rather than a
+   * dedicated adapter: `cursor-agent` alone opens an interactive TUI, and
+   * `cursor-agent acp` is what speaks the protocol. Getting this wrong does not
+   * error — it hands a TUI a pipe and the handshake hangs — so it is asserted
+   * rather than left to a launch that happens to work.
+   *
+   * The dedupe case is not hypothetical: the subcommand used to be supplied by
+   * workspace-runtime's own `ACP_ARGS` table, and configs written against that
+   * still pass it.
+   */
+  const launchArgs = (harness: "cursor" | "claude", args?: string[]) => {
+    const seen: string[][] = []
+    const transport: ACPTransport = {
+      kind: "stdio",
+      stream: { readable: new ReadableStream(), writable: new WritableStream() },
+      metadata: { transport: "fake" },
+      alive: true,
+      dispose() {},
+    }
+    const item = new AcpHarnessAdapter({
+      binary: "bin",
+      harness,
+      ...(args ? { args } : {}),
+      store: {} as AcpRuntimeStore,
+      createTransport(input) {
+        seen.push(input.args)
+        return transport
+      },
+    })
+    const proc = (item as unknown as { make: () => { dispose: () => void } }).make()
+    proc.dispose()
+    return seen[0]
+  }
+
+  test("cursor is launched through its acp subcommand", () => {
+    expect(launchArgs("cursor")).toEqual(["acp"])
+  })
+
+  test("cursor's subcommand leads caller args rather than trailing them", () => {
+    expect(launchArgs("cursor", ["--foo"])).toEqual(["acp", "--foo"])
+  })
+
+  test("a caller that already passes acp does not get it twice", () => {
+    expect(launchArgs("cursor", ["acp"])).toEqual(["acp"])
+  })
+
+  test("no other harness gains a subcommand", () => {
+    expect(launchArgs("claude")).toEqual([])
+  })
+
   test("registers direct ACP harness, probe, and MCP lifecycles without launch secrets", () => {
     const sentinel = "acp-observer-sentinel"
     const descriptors: AgentProcessDescriptor[] = []

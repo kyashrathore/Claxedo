@@ -67,7 +67,7 @@ import type {
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
-import { ACP_DRAFT_MODES, extractAgents } from "./session"
+import { draftPermissionModes, extractAgents, rememberLiveModes } from "./session"
 import { acpPermissionRequest, permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
 import { firstTurnErrorData } from "../../first-turn-error"
@@ -488,9 +488,26 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
+  /**
+   * `cursor` prepends its `acp` SUBCOMMAND, which is not optional and not a
+   * caller's choice.
+   *
+   * Claude and Codex ship dedicated adapter binaries that speak ACP the moment
+   * they start. Cursor does not: `cursor-agent` is a general CLI whose default
+   * behaviour is an interactive TUI, and `cursor-agent acp` is the hidden
+   * subcommand that turns it into an ACP server. Spawning it without the
+   * subcommand gets a TUI on a pipe, which hangs the handshake rather than
+   * failing — so this leads `options.args` instead of being merged with them,
+   * and a caller passing args cannot displace it.
+   */
   private commandArgs() {
-    if (this.harnessId() !== "codex" || !this.currentModel || this.currentModel === "default") return this.options.args ?? []
-    return [...(this.options.args ?? []), "-c", `model="${this.currentModel}"`]
+    const supplied = this.options.args ?? []
+    // Skipped when the caller already leads with it, so a config or host that
+    // still supplies `acp` explicitly gets one subcommand rather than two.
+    const subcommand = this.harnessId() === "cursor" && supplied[0] !== "acp" ? ["acp"] : []
+    const args = [...subcommand, ...supplied]
+    if (this.harnessId() !== "codex" || !this.currentModel || this.currentModel === "default") return args
+    return [...args, "-c", `model="${this.currentModel}"`]
   }
 
   private async getOrSpawnProcessForKey(key: ACPProcessKey, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
@@ -1329,10 +1346,16 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     directory = requireWorkspaceDirectory(directory)
     const agentSessionId = this.store.getAgentSessionId(sessionId)
     const proc = this.entryForSession(sessionId)?.proc
-    // No agent session yet: offer the rungs so a draft still has a real choice.
-    // They resolve to this agent's own mode ids on the first turn.
-    if (!agentSessionId || !proc?.alive) return { modes: [...ACP_DRAFT_MODES], appliesFrom: "next-turn" }
-    return proc.permissionModes(agentSessionId)
+    // No agent session yet: show what this agent version is KNOWN to offer, by
+    // its own ids and names, so the draft choice survives the first message
+    // unchanged. An agent we have never probed reports nothing rather than a
+    // plausible-looking guess.
+    if (!agentSessionId || !proc?.alive) return draftPermissionModes(this.harnessId())
+    const state = proc.permissionModes(agentSessionId)
+    // Teach later drafts what this user's agent actually offers, so the recorded
+    // seed stops being consulted for a build it may not describe.
+    rememberLiveModes(this.harnessId(), state)
+    return state
   }
 
   async setPermissionMode(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState> {

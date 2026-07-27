@@ -5,7 +5,7 @@ import { createStore } from "solid-js/store"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders } from "@/platform/query/provider-list"
 import { Button } from "@opencode-ai/ui/button"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
@@ -213,7 +213,7 @@ export function ModelSelectorPopover(props: {
           // `w-72`/`p-2` only apply when no caller has taken over sizing: a
           // Tailwind utility lives in @layer utilities and would beat the
           // caller's own width/padding rules.
-          class={`${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
+          class={`codex-overlay-surface codex-model-picker ${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
           onEscapeKeyDown={(event) => {
             close("escape")
             event.preventDefault()
@@ -244,7 +244,7 @@ export function ModelSelectorPopover(props: {
                   <IconButton
                     icon="plus-small"
                     variant="ghost"
-                    iconSize="normal"
+                    iconSize="small"
                     class="size-6"
                     aria-label={language.t("command.provider.connect")}
                     onClick={handleConnectProvider}
@@ -254,7 +254,7 @@ export function ModelSelectorPopover(props: {
                   <IconButton
                     icon="sliders"
                     variant="ghost"
-                    iconSize="normal"
+                    iconSize="small"
                     class="size-6"
                     aria-label={language.t("dialog.model.manage")}
                     onClick={handleManage}
