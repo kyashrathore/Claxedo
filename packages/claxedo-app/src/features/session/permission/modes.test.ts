@@ -70,7 +70,13 @@ describe("harness modes are shown in the harness's own words", () => {
     // HARNESS enforces the result rather than Claxedo answering prompts.
     const [claudeAuto] = claxedoPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     expect(claudeAuto!.delivery).toMatchObject({ kind: "harness-permission-mode", modeId: "auto" })
-    expect(claudeAuto!.description).toBe("A classifier decides")
+    // Auto is collapsed by default, so this line is the only thing most people
+    // read about what their session runs under. It has to name the CONCRETE
+    // target — the harness, the mode id actually written, and the harness's own
+    // sentence — not a paraphrase that could drift from behaviour.
+    expect(claudeAuto!.description).toContain("Claude")
+    expect(claudeAuto!.description).toContain("auto")
+    expect(claudeAuto!.description).toContain("A classifier decides")
     expect(claudeAuto!.caveat).toBeUndefined()
 
     // Only with neither does Claxedo answer locally — and only there does the

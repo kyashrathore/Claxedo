@@ -321,9 +321,18 @@ function claxedoAutoOption(input: { harness: HarnessId; report?: HarnessModeRepo
   if (harnessAuto) {
     return {
       ...base,
-      // The harness's own words for what its auto mode does, so this cannot
-      // drift from the behaviour. Only the label above it is ours.
-      description: harnessAuto.description ?? `Runs ${harnessAuto.name} in this harness`,
+      /**
+       * Names the CONCRETE policy, not a paraphrase of it.
+       *
+       * Auto is collapsed by default, so for most people this line is the only
+       * thing they will ever read about what their session is running under. It
+       * therefore has to say which mode it resolved to by the harness's own id —
+       * on Codex that id IS the sandbox policy (`workspace-write`,
+       * `read-only`, `full-access`), so quoting it is quoting the policy. The
+       * harness's own sentence follows, because a name we wrote could drift from
+       * behaviour and a name the harness reported cannot.
+       */
+      description: autoDescription(input.harness, harnessAuto),
       ...(input.report!.appliesFrom === "next-session"
         ? { caveat: `Applies to the next ${HARNESS_LABELS[input.harness]} agent, not this session` }
         : {}),
@@ -341,6 +350,26 @@ function claxedoAutoOption(input: { harness: HarnessId; report?: HarnessModeRepo
     caveat: "Claxedo answers these prompts on your behalf; the harness enforces nothing",
     delivery: CLAXEDO_LOCAL_AUTO,
   }
+}
+
+/**
+ * The line Auto shows when it resolves to a harness mode.
+ *
+ * `Codex · workspace-write — Runs commands inside the workspace without asking;
+ * escalates outside it`
+ *
+ * The id is quoted deliberately rather than only the display name: it is the
+ * string the harness is actually configured with, and on Codex it names the
+ * sandbox policy outright. Someone reading a collapsed Auto row can therefore
+ * check it against the harness's own docs without expanding anything.
+ */
+function autoDescription(
+  harness: HarnessId,
+  mode: { id: string; name: string; description?: string },
+): string {
+  const target = mode.name.toLowerCase() === mode.id.toLowerCase() ? mode.id : `${mode.name} (${mode.id})`
+  const head = `${HARNESS_LABELS[harness]} · ${target}`
+  return mode.description ? `${head} — ${mode.description}` : head
 }
 
 /** The off switch, manufactured only where the harness supplies none. */

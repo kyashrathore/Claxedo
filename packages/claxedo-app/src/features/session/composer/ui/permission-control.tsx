@@ -1,4 +1,4 @@
-import { For, Show, type Accessor, type JSX } from "solid-js"
+import { createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
@@ -50,9 +50,37 @@ export function PromptPermissionControl(props: {
   const triggerText = () => props.current()?.name ?? "Permissions"
   const shieldActive = () => props.current() !== undefined
 
+  const [expanded, setExpanded] = createSignal(false)
+
+  /**
+   * Auto's concrete target, so the expanded list can show it as the selection.
+   *
+   * Auto is a LABEL over a harness mode, not a mode of its own — expanding must
+   * therefore reveal which row it stood for, not clear the selection. Reading
+   * the id straight off the delivery keeps this honest: it is the same id the
+   * write would send, so the check cannot claim a different row than the one
+   * Auto would actually apply.
+   */
+  const resolvedCurrent = () => {
+    const selected = props.current()
+    if (!selected) return undefined
+    if (selected.origin !== "claxedo") return selected
+    const delivery = selected.delivery
+    if (delivery.kind !== "harness-permission-mode") return selected
+    const rows = props.groups()?.harness.rows ?? []
+    return rows.find((row) => row.option.id === delivery.modeId)?.option ?? selected
+  }
+
   return (
     <Show when={props.enabled()}>
-      <MenuV2 placement="top-start" gutter={8} fitViewport>
+      <MenuV2
+        placement="top-start"
+        gutter={8}
+        fitViewport
+        // Reopening should start collapsed again — the expanded list is a
+        // drill-down, not a preference worth persisting across openings.
+        onOpenChange={(open) => !open && setExpanded(false)}
+      >
         <Tooltip placement="top" value={props.current()?.description ?? props.label}>
           <MenuV2.Trigger
             data-action="prompt-permission-mode"
@@ -87,46 +115,57 @@ export function PromptPermissionControl(props: {
           >
             <Show when={props.groups()} fallback={<MenuV2.Item disabled>Resolving harness…</MenuV2.Item>}>
               {(groups) => (
-                <>
-                  {/*
-                    The Claxedo group is EMPTY whenever the harness has modes of
-                    its own — the two sets are mutually exclusive by design. So
-                    the heading and its separator have to be conditional, or a
-                    harness-backed session shows a "Claxedo" label with nothing
-                    under it, which reads as a list that failed to load.
-                  */}
-                  <Show when={groups().claxedo.length > 0}>
-                    <MenuV2.Group>
-                      <MenuV2.GroupLabel>Claxedo</MenuV2.GroupLabel>
+                <Show
+                  when={expanded()}
+                  fallback={
+                    /*
+                      COLLAPSED — the default, and for most people the only view.
+                      Auto alone, because Auto is not a competing option: it IS
+                      whichever harness mode is in force, wearing one word. Its
+                      description names the concrete target, so the collapsed row
+                      is a complete answer rather than a teaser.
+                    */
+                    <>
                       <For each={groups().claxedo}>
-                        {(item) => (
-                          <ModeRow row={item} current={props.current} onSelect={props.onSelect} />
-                        )}
+                        {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
                       </For>
-                    </MenuV2.Group>
-                    <MenuV2.Separator />
-                  </Show>
-                  <MenuV2.Group>
-                    <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
-                    <Show
-                      when={groups().harness.rows.length > 0}
-                      fallback={
-                        // The reason, not an empty group. "cursor-sdk exposes no
-                        // permission controls" is information; a blank list is a bug
-                        // report waiting to happen.
+                      <Show when={groups().harness.rows.length > 0} fallback={
                         <MenuV2.Item disabled>
                           <span class="text-v2-text-text-faint">{groups().harness.unavailable}</span>
                         </MenuV2.Item>
-                      }
-                    >
-                      <For each={groups().harness.rows}>
-                        {(item) => (
-                          <ModeRow row={item} current={props.current} onSelect={props.onSelect} />
-                        )}
-                      </For>
-                    </Show>
+                      }>
+                        <MenuV2.Separator />
+                        <MenuV2.Item
+                          data-action="permission-modes-expand"
+                          closeOnSelect={false}
+                          onSelect={() => setExpanded(true)}
+                        >
+                          <span class="flex w-full items-center justify-between gap-2">
+                            <span class="text-[13px] leading-4 text-v2-text-text-faint">
+                              {groups().harness.rows.length} more {groups().harness.label} modes
+                            </span>
+                            <BareIcon name="chevron-down" size="small" class="shrink-0 opacity-60" />
+                          </span>
+                        </MenuV2.Item>
+                      </Show>
+                    </>
+                  }
+                >
+                  {/*
+                    EXPANDED — Auto is GONE, deliberately. It was only ever a
+                    label over one of these rows, so showing both would put the
+                    same choice on screen twice under two names with no way to
+                    tell which won. The row Auto resolved to is the one carrying
+                    the check, which is what makes the swap legible rather than
+                    a reset.
+                  */}
+                  <MenuV2.Group>
+                    <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
+                    <For each={groups().harness.rows}>
+                      {(item) => <ModeRow row={item} current={resolvedCurrent} onSelect={props.onSelect} />}
+                    </For>
                   </MenuV2.Group>
-                </>
+                </Show>
               )}
             </Show>
           </MenuV2.Content>
