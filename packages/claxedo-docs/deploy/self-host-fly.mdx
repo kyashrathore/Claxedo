@@ -145,6 +145,27 @@ repository directory local WorkGraph execution and background Sessions use)
 and `CLAXEDO_DATA_DIR` (already set to `/data` by the generated config, backed
 by the `claxedo_data` volume).
 
+## Telemetry
+
+A self-hosted instance sends **no telemetry by default**. PostHog is Claxedo's
+only telemetry vendor — product analytics and error tracking both — so there
+is exactly one integration to leave off or turn on.
+
+Opting in is a mode switch plus your PostHog credentials, set like any other
+secret (`fly secrets set NAME=value --app <app>`):
+
+| Variable                                      | Effect                                                                                                                                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAXEDO_TELEMETRY_MODE`                      | `on` or `off`. Checked before key presence — while it is unset or `off` (the self-host default), nothing is sent regardless of what keys exist.        |
+| `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST` | Your PostHog project key and host. Inert until the mode switch is `on`.                                                                                |
+
+With telemetry on, the instance sends feature-usage events and exception
+reports, tagged with your user and organization identifiers. It never sends
+prompts, source text, credentials, repository contents, or literal file paths
+— a path is reduced to its extension plus a one-way hash before it leaves the
+machine. The [privacy policy](https://claxedo.com/privacy) states the full
+data posture.
+
 <Card title="Hosted control plane (Cloudflare)" href="/deploy/hosted-control-plane" icon="tower-control">
   The alternative hosted path — deploy the control plane as a Cloudflare
   Worker instead of a long-lived Fly machine.
