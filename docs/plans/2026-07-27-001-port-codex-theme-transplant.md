@@ -192,5 +192,32 @@ Per group as stated above, plus a final pass on the port branch:
 - app typecheck clean
 - `packages/ui` theme tests pass
 - focused vitest for every file group that has one
-- Codex light, Codex dark, and one non-Codex theme rendered and visually checked
-  before this branch is offered for merge
+
+### 6.1 The render pass — six specific items
+
+This is not a spot-check. Six changes on this branch are invisible to every test
+in the repo, and three of them cannot be seen in Codex at all, so the non-Codex
+theme slot is their ONLY coverage. One owner runs this once, at the end, against
+a dev server serving THIS worktree — `.claude/launch.json`'s `claxedo-app` entry
+points at port 4444, which the main checkout already occupies with `dev`.
+
+| # | what to look at | where it is visible | raised by |
+|---|---|---|---|
+| 1 | Composer send arrow, filled primary button. If the guard rule is ever lost the arrow paints its circle's colour — invisible — and every vitest stays green. | all 38 themes | B2 |
+| 2 | Composer elevation ring, 0.5px mask. Went from inert to live; the unlayered Codex rule overrides it, so Codex shows nothing. | **non-Codex only** | C1 |
+| 3 | Hand-authored picker shells — model picker, Review source, composer suggestions, document filters, timeline menu, directory dialog — now paint `--overlay-surface`. | all themes | B1 |
+| 4 | `data-icon-interaction` grammar, de-scoped from Codex to every theme. | all themes | B1 |
+| 5 | Menu separators a step darker (`border-weak-base` → `overlay-border`), 74/74 pairs. | **non-Codex only** | B1/A3 |
+| 6 | Composer below **560px** container width: the effort control must read as a lone `sliders` glyph, no text, no chevron. Invisible at default width. | theme-independent | C1 |
+
+### 6.2 Why this branch wants a second reviewer
+
+Three agents independently shipped a check structured so it could not see the
+problem it was meant to catch: a CSS layer silently beating a rule, a
+role-vs-fallback comparison that was self-consistent by construction, and unit
+tests that stay green while the thing they guard disappears. Each was caught by a
+peer re-deriving the result independently — none by the author. One had already
+regressed 21 themes below WCAG AA before it was found.
+
+The theme layer's failure mode is invisible to unit tests AND to the author.
+Weight that when deciding how much of this branch gets reviewed before merge.
