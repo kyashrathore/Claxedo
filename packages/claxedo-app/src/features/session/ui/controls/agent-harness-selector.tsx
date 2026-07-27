@@ -489,18 +489,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         triggerProps={{ "data-action": "prompt-harness" }}
         variant="ghost"
         disabled={harnessDisabled()}
-      >
-        {(option) => (
-          <Show when={option}>
-            {(value) => (
-              <span class="flex min-w-0 items-center gap-2">
-                <HarnessOptionIcon harness={value()} />
-                <span data-slot="composer-control-label" class="truncate">{harnessOptionLabel(value())}</span>
-              </span>
-            )}
-          </Show>
-        )}
-      </Select>
+      />
       <Show when={harnessSwitching()}>
         <span
           aria-hidden="true"

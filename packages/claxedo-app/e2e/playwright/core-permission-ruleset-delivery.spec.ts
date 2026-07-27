@@ -447,24 +447,27 @@ test.describe("core permission ruleset delivery @core", () => {
       await expect(page.getByRole("button", { name: harnessCase.label }).last()).toBeVisible({ timeout: 20_000 })
       expect(mock.requests.sessionUpdateBodies).toHaveLength(0)
 
-      // The Claxedo options are ABSENT here, and that is the current mechanism by
-      // which no ruleset can be written — stronger than the old claim.
+      // Claxedo offers EXACTLY ONE option here — Auto — and it is a pointer at one
+      // of the harness's own modes rather than a second policy engine.
       //
-      // This test used to flip Claxedo's Auto/Manual on these harnesses and assert
-      // silence. That premise died when the picker switched to harness-native modes:
-      // a harness reporting its own modes contributes them INSTEAD of Claxedo's, so
-      // there is nothing to toggle. The old version failed with
-      // `Expected "claxedo-manual" / Received "auto"` — it was reading the harness's
-      // own mode where it expected a Claxedo one.
+      // This assertion has now been wrong in both directions, which is why it spells
+      // out the contract rather than a count. It first flipped Claxedo's Auto/Manual
+      // on these harnesses and asserted silence; that died when the picker switched
+      // to harness-native modes. It was then rewritten to demand NO Claxedo option at
+      // all, which died when Auto became the collapsed default on every harness. What
+      // has been constant is the thing worth pinning: whatever Claxedo shows must not
+      // be a rival control that could write a ruleset behind the harness's back.
       const control = await approveSwitch(page)
       await control.click()
       await expect(page.locator('[role="menuitem"][data-mode]').first()).toBeVisible({ timeout: 20_000 })
+      const expand = page.locator('[data-action="permission-modes-expand"]')
+      if (await expand.count()) await expand.first().click()
       const offered = await page
         .locator('[role="menuitem"][data-mode]')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-mode") ?? ""))
       expect(
-        offered.filter((id) => id.startsWith("claxedo-")),
-        `${harnessCase.harness} reports its own modes, so Claxedo's must not be offered alongside them — `
+        offered.filter((id) => id.startsWith("claxedo-") && id !== "claxedo-allow-safe"),
+        `${harnessCase.harness} reports its own modes, so Auto is the only thing Claxedo may add — `
           + "two controls over one behaviour with no way to tell which wins",
       ).toEqual([])
       expect(offered.length, "the harness must contribute at least one mode of its own").toBeGreaterThan(0)

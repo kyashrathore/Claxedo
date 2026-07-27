@@ -53,10 +53,25 @@ const rows = (page: Page) => page.locator('[role="menuitem"][data-mode]')
  * about the full list, so expanding is part of opening for these specs. Without
  * this they read one row and conclude the harness reported one mode.
  */
-async function openPicker(page: Page) {
+/** Open the menu and leave it COLLAPSED, which is how it opens for a user. */
+async function openPickerCollapsed(page: Page) {
   const control = trigger(page).last()
   await expect(control).toBeVisible({ timeout: 20_000 })
   await control.click()
+  await expect(rows(page).first()).toBeVisible({ timeout: 10_000 })
+  return control
+}
+
+/**
+ * Open the picker AND expand it.
+ *
+ * The menu opens showing only Auto plus a control that reveals the harness's own
+ * modes — Auto is a pointer at one of them, so collapsed is a summary rather
+ * than a list. Every assertion about the full list needs the expansion, and
+ * without it a spec reads one row and concludes the harness reported one mode.
+ */
+async function openPicker(page: Page) {
+  const control = await openPickerCollapsed(page)
   const expand = page.locator('[data-action="permission-modes-expand"]')
   if (await expand.count()) await expand.first().click()
   await expect(rows(page).first()).toBeVisible({ timeout: 10_000 })
@@ -102,16 +117,37 @@ test.describe("@core permission picker — the harness's own modes", () => {
     {
       harness: "claude-acp",
       ids: ["auto", "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"],
-      label: /Accept Edits/i,
+      // `label` is the AUTO rung — the mode Auto actually points at — and the
+      // pattern names the harness too, so the row cannot satisfy it by echoing
+      // the word "Auto" back at itself.
+      label: /Claude.*Auto/i,
     },
-    { harness: "codex-acp", ids: ["read-only", "agent", "agent-full-access"], label: /Agent \(full access\)/i },
-    { harness: "cursor-acp", ids: ["agent", "plan", "ask"], label: /^Plan$/i },
+    { harness: "codex-acp", ids: ["read-only", "agent", "agent-full-access"], label: /Codex.*Agent/i },
+    { harness: "cursor-acp", ids: ["agent", "plan", "ask"], label: /Cursor.*Agent/i },
   ]
 
   for (const item of DRAFT_CASES) {
     test(`${item.harness}: a draft shows the harness's modes, all selectable — behaviors 1,2`, async ({ page }) => {
       await seedDraft(page, item.harness)
-      await openPicker(page)
+
+      /*
+       * Collapsed first, because that is the only thing most people read.
+       *
+       * The trigger says "Auto" for every harness — Claxedo contributes exactly
+       * one named option and it is a POINTER at whichever of the harness's own
+       * modes enforces the danger-gated rung. This spec used to assert the
+       * trigger showed that rung's name directly, which stopped being true when
+       * the picker collapsed to Auto; the guarantee moved rather than
+       * disappeared, so it is asserted in its new place: the row must name the
+       * concrete target, or "Auto" is a word with nothing behind it.
+       */
+      await openPickerCollapsed(page)
+      await expect(trigger(page).last()).toHaveText(/^Auto$/i)
+      await expect(rows(page).and(page.locator('[data-mode="claxedo-allow-safe"]')).first()).toContainText(item.label)
+
+      const expand = page.locator('[data-action="permission-modes-expand"]')
+      await expect(expand, "the harness's own modes must be reachable").toHaveCount(1)
+      await expand.first().click()
 
       expect(await rowIds(page)).toEqual(item.ids)
 
@@ -129,8 +165,6 @@ test.describe("@core permission picker — the harness's own modes", () => {
       await expect(page.getByText(/Loading .*permission modes/i)).toHaveCount(0)
       await expect(page.getByText("Claxedo", { exact: true })).toHaveCount(0)
 
-      // The auto rung is the default: allow reads and edits, ask before anything risky.
-      await expect(trigger(page).last()).toHaveText(item.label)
     })
   }
 
