@@ -45,35 +45,17 @@ const trigger = (page: Page) => page.locator('[data-action="prompt-permission-mo
 const rows = (page: Page) => page.locator('[role="menuitem"][data-mode]')
 
 /**
- * Open the picker AND expand it.
+ * Open the picker.
  *
- * The menu opens collapsed, showing only the Auto row plus a control that
- * reveals the harness's own modes — Auto is a pointer at one of them, so the
- * collapsed state is a summary rather than a list. Every assertion below is
- * about the full list, so expanding is part of opening for these specs. Without
- * this they read one row and conclude the harness reported one mode.
+ * One flat list, no disclosure. The menu used to open on a single collapsed
+ * Claxedo "Auto" row with the harness's real modes behind a "N more …" control,
+ * and these specs each had to expand before they could read a list — a step that
+ * existed only because Auto was a label over one of the rows it was hiding.
  */
-/** Open the menu and leave it COLLAPSED, which is how it opens for a user. */
-async function openPickerCollapsed(page: Page) {
+async function openPicker(page: Page) {
   const control = trigger(page).last()
   await expect(control).toBeVisible({ timeout: 20_000 })
   await control.click()
-  await expect(rows(page).first()).toBeVisible({ timeout: 10_000 })
-  return control
-}
-
-/**
- * Open the picker AND expand it.
- *
- * The menu opens showing only Auto plus a control that reveals the harness's own
- * modes — Auto is a pointer at one of them, so collapsed is a summary rather
- * than a list. Every assertion about the full list needs the expansion, and
- * without it a spec reads one row and concludes the harness reported one mode.
- */
-async function openPicker(page: Page) {
-  const control = await openPickerCollapsed(page)
-  const expand = page.locator('[data-action="permission-modes-expand"]')
-  if (await expand.count()) await expand.first().click()
   await expect(rows(page).first()).toBeVisible({ timeout: 10_000 })
   return control
 }
@@ -94,18 +76,30 @@ test.describe("@core permission picker — the harness's own modes", () => {
   // also the only moment the choice can govern the first turn — so it is asserted first
   // and hardest. Every row must be selectable: a row that renders but cannot be chosen is
   // the second bug this feature shipped with.
-  const DRAFT_CASES: { harness: Harness; ids: string[]; label: RegExp }[] = [
+  /**
+   * `auto` is the rung the runtime reports at `level: "auto"`, and `label` is
+   * the name it must show ON THE TRIGGER — the harness's own word for it, never
+   * "Auto" unless the harness itself says "Auto".
+   */
+  const DRAFT_CASES: { harness: Harness; ids: string[]; auto: string; label: RegExp }[] = [
     {
       harness: "claude-sdk",
       ids: ["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"],
-      label: /Accept edits/i,
+      auto: "acceptEdits",
+      label: /^Accept edits$/i,
     },
     {
       harness: "codex-app-server",
       ids: ["read-only", "workspace-write", "untrusted", "full-access"],
-      label: /Workspace write/i,
+      auto: "workspace-write",
+      label: /^Workspace write$/i,
     },
-    { harness: "cursor-sdk", ids: ["review", "auto-review", "unsandboxed"], label: /Auto-review/i },
+    {
+      harness: "cursor-sdk",
+      ids: ["review", "auto-review", "unsandboxed"],
+      auto: "auto-review",
+      label: /^Auto-review$/i,
+    },
     // ACP agents advertise on session/new, so a draft is answered from the runtime's
     // recorded table for that agent — its OWN ids, not three rungs Claxedo named. The
     // draft choice is therefore the session choice, with nothing to re-resolve when the
@@ -117,39 +111,41 @@ test.describe("@core permission picker — the harness's own modes", () => {
     {
       harness: "claude-acp",
       ids: ["auto", "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"],
-      // `label` is the AUTO rung — the mode Auto actually points at — and the
-      // pattern names the harness too, so the row cannot satisfy it by echoing
-      // the word "Auto" back at itself.
-      label: /Claude.*Auto/i,
+      // claude-agent-acp's rung is literally `{ id: "auto", name: "Auto" }`, so
+      // "Auto" on the trigger here is the AGENT's word, not Claxedo's.
+      auto: "auto",
+      label: /^Auto$/i,
     },
-    { harness: "codex-acp", ids: ["read-only", "agent", "agent-full-access"], label: /Codex.*Agent/i },
-    { harness: "cursor-acp", ids: ["agent", "plan", "ask"], label: /Cursor.*Agent/i },
+    { harness: "codex-acp", ids: ["read-only", "agent", "agent-full-access"], auto: "agent", label: /^Agent$/i },
+    { harness: "cursor-acp", ids: ["agent", "plan", "ask"], auto: "agent", label: /^Agent$/i },
   ]
 
   for (const item of DRAFT_CASES) {
     test(`${item.harness}: a draft shows the harness's modes, all selectable — behaviors 1,2`, async ({ page }) => {
       await seedDraft(page, item.harness)
 
+      await openPicker(page)
+
       /*
-       * Collapsed first, because that is the only thing most people read.
+       * The trigger names the harness's OWN rung, and the whole list is on
+       * screen at once.
        *
-       * The trigger says "Auto" for every harness — Claxedo contributes exactly
-       * one named option and it is a POINTER at whichever of the harness's own
-       * modes enforces the danger-gated rung. This spec used to assert the
-       * trigger showed that rung's name directly, which stopped being true when
-       * the picker collapsed to Auto; the guarantee moved rather than
-       * disappeared, so it is asserted in its new place: the row must name the
-       * concrete target, or "Auto" is a word with nothing behind it.
+       * Both used to be false: the menu opened on a single Claxedo row called
+       * "Auto" that merely pointed at the rung below, with the real list behind
+       * a "N more …" disclosure. The trigger therefore read "Auto" on every
+       * harness — including Claude, whose own list contains a row named "Auto"
+       * that this was NOT selecting. Asserting the harness's word is what makes
+       * the label checkable against the row carrying the check.
        */
-      await openPickerCollapsed(page)
-      await expect(trigger(page).last()).toHaveText(/^Auto$/i)
-      await expect(rows(page).and(page.locator('[data-mode="claxedo-allow-safe"]')).first()).toContainText(item.label)
-
-      const expand = page.locator('[data-action="permission-modes-expand"]')
-      await expect(expand, "the harness's own modes must be reachable").toHaveCount(1)
-      await expand.first().click()
-
+      await expect(trigger(page).last()).toHaveText(item.label)
       expect(await rowIds(page)).toEqual(item.ids)
+      await expect(
+        page.locator(`[role="menuitem"][data-mode="${item.auto}"][data-checked]`),
+        "the row in force must be the one the trigger names",
+      ).toHaveCount(1)
+      // No collapsed summary survives anywhere.
+      await expect(page.locator('[data-action="permission-modes-expand"]')).toHaveCount(0)
+      await expect(page.locator('[data-mode="claxedo-allow-safe"]')).toHaveCount(0)
 
       // No row may be blocked. `data-selectable` is written from
       // `permissionModeDeliverable`, so this fails the moment a delivery is offered

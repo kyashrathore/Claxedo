@@ -447,27 +447,26 @@ test.describe("core permission ruleset delivery @core", () => {
       await expect(page.getByRole("button", { name: harnessCase.label }).last()).toBeVisible({ timeout: 20_000 })
       expect(mock.requests.sessionUpdateBodies).toHaveLength(0)
 
-      // Claxedo offers EXACTLY ONE option here — Auto — and it is a pointer at one
-      // of the harness's own modes rather than a second policy engine.
+      // Claxedo offers NOTHING here: this harness reports its own modes, so the
+      // picker is that list and nothing else.
       //
       // This assertion has now been wrong in both directions, which is why it spells
       // out the contract rather than a count. It first flipped Claxedo's Auto/Manual
       // on these harnesses and asserted silence; that died when the picker switched
-      // to harness-native modes. It was then rewritten to demand NO Claxedo option at
-      // all, which died when Auto became the collapsed default on every harness. What
-      // has been constant is the thing worth pinning: whatever Claxedo shows must not
-      // be a rival control that could write a ruleset behind the harness's back.
+      // to harness-native modes. It was then relaxed to allow one Claxedo "Auto"
+      // sitting above the list as a collapsed label, and that row has since been
+      // removed — it duplicated whichever rung it pointed at. What has been constant
+      // is the thing worth pinning: nothing Claxedo shows may be a rival control that
+      // could write a ruleset behind the harness's back.
       const control = await approveSwitch(page)
       await control.click()
       await expect(page.locator('[role="menuitem"][data-mode]').first()).toBeVisible({ timeout: 20_000 })
-      const expand = page.locator('[data-action="permission-modes-expand"]')
-      if (await expand.count()) await expand.first().click()
       const offered = await page
         .locator('[role="menuitem"][data-mode]')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-mode") ?? ""))
       expect(
-        offered.filter((id) => id.startsWith("claxedo-") && id !== "claxedo-allow-safe"),
-        `${harnessCase.harness} reports its own modes, so Auto is the only thing Claxedo may add — `
+        offered.filter((id) => id.startsWith("claxedo-")),
+        `${harnessCase.harness} reports its own modes, so the picker is that list alone — `
           + "two controls over one behaviour with no way to tell which wins",
       ).toEqual([])
       expect(offered.length, "the harness must contribute at least one mode of its own").toBeGreaterThan(0)

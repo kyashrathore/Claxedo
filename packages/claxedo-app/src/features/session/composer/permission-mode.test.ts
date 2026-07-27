@@ -70,10 +70,10 @@ const rowFor = (control: ReturnType<typeof createComposerPermissionMode>, id: st
   )
 
 describe("what the picker offers", () => {
-  test("a reporting harness contributes its own rows, with Auto above them", () => {
+  test("a reporting harness contributes its own rows, and Claxedo none", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "claude-acp", report: REPORTED })
-      expect(control.groups()!.claxedo.map((row) => row.option.name)).toEqual(["Auto"])
+      expect(control.groups()!.claxedo).toEqual([])
       expect(control.groups()!.harness.rows.map((row) => row.option.name)).toEqual([
         "Default",
         "Auto-review",
@@ -206,10 +206,13 @@ describe("what shows as current", () => {
     })
   })
 
-  test("with nothing stored and no reported current, Auto is shown", () => {
+  test("with nothing stored and no reported current, the auto rung is shown", () => {
     createRoot((dispose) => {
+      // The harness's own name for it, because that is the row the picker
+      // renders. Naming it "Auto" would name a row that no longer exists.
       const { control } = harness({ harness: "claude-acp", report: REPORTED })
-      expect(control.current()?.name).toBe("Auto")
+      expect(control.current()?.id).toBe("auto")
+      expect(control.current()?.name).toBe("Auto-review")
       dispose()
     })
   })

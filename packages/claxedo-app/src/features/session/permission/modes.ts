@@ -5,34 +5,30 @@ import { HARNESS_LABELS, PERMISSION_MECHANISMS } from "@/features/session/permis
  * Permission modes, named by whoever enforces them.
  *
  * The harness's OWN modes — its ids, its names, its descriptions, fetched per
- * session from the runtime, which reads them off the installed SDK.
+ * session from the runtime, which reads them off the installed SDK. Where a
+ * harness reports any, they are the WHOLE picker and Claxedo names nothing.
  *
- * Above them sits exactly ONE Claxedo-owned option, "Auto". Selecting any
- * harness mode below is how you leave it; an "Ask for everything" is
- * manufactured only for a harness that reports no modes at all, so that there is
- * always something to switch to.
+ * Claxedo's own two options ("Auto", "Ask for everything") appear only where the
+ * harness reports none, so that a picker is never empty on a harness that still
+ * has a real policy to set.
  *
- * Two earlier designs failed here. The first invented five abstract modes and
- * mapped them onto every harness, naming capabilities that did not exist. The
- * second removed Claxedo's options entirely wherever the harness reported any of
- * its own — which sounds principled and was worse in practice: the single option
- * most people want disappeared precisely on the harnesses best equipped to
- * enforce it, and survived only where it had to be faked by answering prompts
- * locally.
+ * Three designs have been tried here and the reasoning is worth keeping. The
+ * first invented five abstract modes and mapped them onto every harness, naming
+ * capabilities that did not exist. The third put a single Claxedo "Auto" above
+ * every harness's own list as a collapsed LABEL over whichever rung enforced it.
+ * That reads well in the abstract and was noise in practice: on a harness whose
+ * own auto rung is literally called "Auto" — Claude's classifier — the label
+ * duplicated the row it pointed at, so the menu opened on a summary of one of
+ * its own hidden rows and made the real list a click away for no gain.
  *
- * What makes one "Auto" honest now is that it is a LABEL, not a mode. It always
- * resolves to whoever actually enforces the behaviour — opencode's ruleset, or
- * the harness's own `level: "auto"` rung forwarded verbatim, or, only where
- * neither exists, Claxedo answering the safe permissions itself. The earlier
- * objection was that "Auto" meant materially different things on different
- * harnesses while wearing one word. It still resolves differently; the fix is
- * that each rung carries the description and caveat of the mechanism it landed
- * on, so the word is a shorthand for the row beneath it rather than a claim of
- * its own. See `claxedoAutoOption`.
+ * So the second design is the one that stands: the two groups are mutually
+ * exclusive. A harness either enforces its own modes, in which case those are
+ * what the user picks from, or it enforces none, in which case Claxedo's do the
+ * work. Nothing sits above a list summarising it.
  *
- * The rule that survives both: a name the user reads must come from whoever
- * enforces the behaviour. Names we write can drift from what the harness does;
- * names the harness reports cannot.
+ * The rule that survives all of them: a name the user reads must come from
+ * whoever enforces the behaviour. Names we write can drift from what the harness
+ * does; names the harness reports cannot.
  */
 
 
@@ -265,16 +261,10 @@ export const SANDBOXED_NO_POLICY_REASON =
 /**
  * Claxedo's own two options, for the harnesses that have no modes of their own.
  *
- * Named for WHAT THEY DO rather than for a tier. There is deliberately no "Auto"
- * anywhere in this file any more: "Auto" named a Claxedo abstraction and told the
- * user nothing about what would actually happen, while meaning something
- * materially different on each harness — a persisted engine ruleset in one place,
- * Claxedo answering prompts in-process in another. Two things that differ in who
- * enforces them and whether they survive the app closing should not share a word.
- *
  * These appear ONLY where the harness has nothing of its own. Everywhere else the
  * harness's own names are shown, because a name we did not write cannot drift
- * from what the harness does.
+ * from what the harness does — and a Claxedo option beside a harness's own list
+ * is a second control over one behaviour with no way to tell which wins.
  */
 export function claxedoPermissionModes(input: {
   harness: HarnessId
@@ -283,41 +273,18 @@ export function claxedoPermissionModes(input: {
 }): readonly PermissionModeOption[] {
   // A harness whose tools cannot reach anything real gets NO options, not even
   // Claxedo's own. Offering one would put a choosable control over a policy that
-  // does not exist — the same defect as offering "Auto" under a harness that
+  // does not exist — the same defect as offering an option under a harness that
   // failed to start. `SANDBOXED_NO_POLICY_REASON` is shown in its place.
   if (PERMISSION_MECHANISMS[input.harness].kind === "sandboxed-no-policy") return []
-  const auto = claxedoAutoOption(input)
-  // An off switch only has to be manufactured when the harness offers nothing to
-  // switch TO. Everywhere else the harness's own modes sit directly below Auto
-  // and selecting one of them is how you leave it — Claxedo inventing a second
-  // "Ask for everything" beside a list that already contains one would put two
-  // names on one behaviour, which is the failure this design exists to avoid.
-  if ((input.report?.modes.length ?? 0) > 0) return [auto]
-  return [auto, claxedoAskOption(input.harness, input.hasSession)]
+  // The harness reported modes, so it enforces its own policy and the picker is
+  // its list alone. Claxedo previously added an "Auto" row above it that merely
+  // pointed at whichever of those rows carried `level: "auto"` — on Claude that
+  // row is itself named "Auto", so the menu opened showing a paraphrase of a row
+  // it was hiding.
+  if ((input.report?.modes.length ?? 0) > 0) return []
+  return [claxedoAutoOption(input), claxedoAskOption(input.harness, input.hasSession)]
 }
 
-/**
- * Auto: Claxedo's single contribution to the picker.
- *
- * It is a LABEL over whichever mechanism actually enforces "let the safe things
- * through", resolved per harness in this order:
- *
- *   1. opencode      — a session-scoped ruleset written to the engine.
- *   2. any harness reporting a mode at `level: "auto"` — that mode's own id,
- *      forwarded verbatim. Claude's classifier, Cursor's Auto-review, and every
- *      ACP agent's auto rung all land here, and the HARNESS enforces the result.
- *   3. anything left — Claxedo answers the safe permissions itself.
- *
- * Rung 2 is the one that was missing, and its absence is why this mattered.
- * `claxedoPermissionModes` used to branch on opencode alone, so all seven other
- * harnesses fell to rung 3 and had their prompts answered locally — including
- * Claude and Codex, whose own enforcement was sitting right there in the report,
- * unused. The caveat about nothing being enforced was therefore shown on seven
- * harnesses while being true of one.
- *
- * Because the caveat is now attached only at rung 3, it says something true
- * wherever it appears.
- */
 /**
  * The next-turn caveat, or nothing on a draft.
  *
@@ -337,20 +304,20 @@ function nextTurnCaveat(hasSession: boolean | undefined) {
   return { caveat: "Applies from your next message; the turn already running keeps its current rules" }
 }
 
-function claxedoAutoOption(input: {
-  harness: HarnessId
-  report?: HarnessModeReport
-  hasSession?: boolean
-}): PermissionModeOption {
-  const base = {
-    id: CLAXEDO_ALLOW_SAFE_ID,
-    name: "Auto",
-    origin: "claxedo" as const,
-  }
-
+/**
+ * Auto, for a harness that reported no modes of its own.
+ *
+ * Two mechanisms only, because this is never reached when the harness has a
+ * policy surface: opencode writes a session-scoped ruleset to the engine, and
+ * everything else falls to Claxedo answering the safe permissions itself. The
+ * caveat saying nothing is enforced therefore appears exactly where it is true.
+ */
+function claxedoAutoOption(input: { harness: HarnessId; hasSession?: boolean }): PermissionModeOption {
   if (PERMISSION_MECHANISMS[input.harness].kind === "opencode-session-ruleset") {
     return {
-      ...base,
+      id: CLAXEDO_ALLOW_SAFE_ID,
+      name: "Auto",
+      origin: "claxedo" as const,
       // Auto means full access with the DANGER TIER still gated. The ruleset
       // below is that shape in opencode's vocabulary: a catch-all `ask`, then
       // grants for everything safe, leaving bash/network/out-of-project asking.
@@ -360,39 +327,11 @@ function claxedoAutoOption(input: {
     }
   }
 
-  const harnessAuto = input.report?.modes.find((mode) => mode.level === "auto")
-  if (harnessAuto) {
-    return {
-      ...base,
-      /**
-       * Names the CONCRETE policy, not a paraphrase of it.
-       *
-       * Auto is collapsed by default, so for most people this line is the only
-       * thing they will ever read about what their session is running under. It
-       * therefore has to say which mode it resolved to by the harness's own id —
-       * on Codex that id IS the sandbox policy (`workspace-write`,
-       * `read-only`, `full-access`), so quoting it is quoting the policy. The
-       * harness's own sentence follows, because a name we wrote could drift from
-       * behaviour and a name the harness reported cannot.
-       */
-      description: autoDescription({ harness: input.harness, mode: harnessAuto }),
-      // See `harnessPermissionModes` — nothing to exclude on a draft.
-      ...(input.report!.appliesFrom === "next-session" && input.hasSession !== false
-        ? { caveat: `Applies to the next ${HARNESS_LABELS[input.harness]} agent, not this session` }
-        : {}),
-      delivery: {
-        kind: "harness-permission-mode",
-        modeId: harnessAuto.id,
-        appliesFrom: input.report!.appliesFrom,
-      },
-    }
-  }
-
   return localAnswerAutoOption()
 }
 
 /**
- * Rung 3: Claxedo answers the safe permissions itself.
+ * Claxedo answers the safe permissions itself.
  *
  * Extracted so the unidentified-harness path can reach it WITHOUT naming a
  * harness. That path used to build its options by calling
@@ -426,43 +365,6 @@ function localAnswerAutoOption(): PermissionModeOption {
  */
 export function unidentifiedHarnessModes(): readonly PermissionModeOption[] {
   return [localAnswerAutoOption(), localAnswerAskOption()]
-}
-
-/**
- * The line Auto shows when it resolves to a harness mode.
- *
- * `Codex · workspace-write — Runs commands inside the workspace without asking;
- * escalates outside it`
- *
- * The id is quoted deliberately rather than only the display name: it is the
- * string the harness is actually configured with, and on Codex it names the
- * sandbox policy outright. Someone reading a collapsed Auto row can therefore
- * check it against the harness's own docs without expanding anything.
- */
-function autoDescription(input: {
-  harness: HarnessId
-  mode: { id: string; name: string; description?: string }
-}): string {
-  const { harness, mode } = input
-
-  /*
-   * The id is always the HARNESS's id, on a draft as much as on a session.
-   *
-   * This used to be suppressed for ACP drafts, because an ACP agent does not
-   * advertise its modes until `session/new` and Claxedo filled the gap with
-   * intent rungs of its own — printing `(auto)` for one would have borrowed the
-   * authority of a harness id for a placeholder. Those rungs are gone: a draft
-   * now shows the agent's recorded ids (`ACP_KNOWN_MODES`), so the id is real
-   * and suppressing it would hide the one string that lets someone check the
-   * row against the harness's own docs.
-   *
-   * Skipped only when the name and id are the same word, where `Auto (auto)`
-   * would be noise.
-   */
-  const target = mode.name.toLowerCase() === mode.id.toLowerCase() ? mode.name : `${mode.name} (${mode.id})`
-
-  const head = `${HARNESS_LABELS[harness]} · ${target}`
-  return mode.description ? `${head} — ${mode.description}` : head
 }
 
 /** The off switch, manufactured only where the harness supplies none. */
@@ -600,11 +502,9 @@ export function permissionModeOptions(input: {
   hasSession?: boolean
 }): { claxedo: readonly PermissionModeOption[]; harness: HarnessPermissionModes } {
   const harness = harnessPermissionModes(input)
-  // Auto is ALWAYS present, and the harness's own modes always sit below it.
-  // Previously Claxedo contributed nothing whenever the harness reported modes,
-  // which meant the one option most people want was missing precisely on the
-  // harnesses best able to enforce it, and present only where it had to be
-  // faked locally — exactly backwards.
+  // Exactly one of these is non-empty. `claxedoPermissionModes` returns nothing
+  // once the harness has reported modes of its own, so the picker never renders
+  // a Claxedo row above a list that already contains the mode it would apply.
   return { claxedo: claxedoPermissionModes(input), harness }
 }
 
@@ -630,11 +530,11 @@ export function defaultPermissionSelection(input: {
       ? report.modes.find((mode) => mode.id === report.currentModeId)
       : undefined
     const chosen = current ?? report.modes.find((mode) => mode.level === "auto") ?? report.modes[0]!
-    // When the mode in force IS the auto rung, name it "Auto" rather than the
-    // harness's own word for it. Auto is a collapsed label over that same mode —
-    // showing both a top-level "Auto" and a selected harness row that means the
-    // identical thing would read as two different states.
-    if (chosen.level === "auto") return { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID }
+    // Always the harness's own id, including for the auto rung. This used to
+    // return Claxedo's id when the rung was `auto`, because a Claxedo "Auto" row
+    // then stood in front of the list and both being selected would have read as
+    // two states. That row is gone, so naming the rung anything but the harness's
+    // own word for it would now name a row the picker does not contain.
     return { kind: "harness", modeId: chosen.id }
   }
   return { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID }

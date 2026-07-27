@@ -1,4 +1,4 @@
-import { createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { For, Show, type Accessor, type JSX } from "solid-js"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
@@ -15,13 +15,21 @@ import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/cl
 /**
  * The composer's permission-mode picker.
  *
- * Two groups, and the split is the design: `Claxedo` holds the one mode we own
- * (Auto), `<Harness>` holds whatever that harness advertises, IN THE HARNESS'S OWN
- * WORDS. An earlier design mapped a single five-mode vocabulary onto every harness
- * and was dropped as lossy by construction — cursor-sdk has no permission surface at
- * all, pi cannot restrict ahead of time, Codex has no plan mode — so it named
- * capabilities that did not exist. Showing the harness's own names means the picker
- * cannot lie about what a mode does, because it is not paraphrasing.
+ * ONE flat list, and which list it is depends on who enforces: a harness that
+ * advertises modes contributes all of them, IN THE HARNESS'S OWN WORDS, and
+ * Claxedo contributes nothing; a harness that advertises none gets Claxedo's own
+ * two options instead. An earlier design mapped a single five-mode vocabulary onto
+ * every harness and was dropped as lossy by construction — cursor-sdk has no
+ * permission surface at all, pi cannot restrict ahead of time, Codex has no plan
+ * mode — so it named capabilities that did not exist. Showing the harness's own
+ * names means the picker cannot lie about what a mode does, because it is not
+ * paraphrasing.
+ *
+ * A later design opened on a single collapsed Claxedo "Auto" row with the
+ * harness's real modes behind a "N more …" disclosure. It is gone: Auto was only
+ * ever a label over whichever row carried `level: "auto"`, and on Claude that row
+ * is itself named "Auto" — so the menu opened on a paraphrase of a row it was
+ * hiding, and put the actual list one click away for nothing.
  *
  * Three states are surfaced rather than hidden, because each is a different thing
  * and collapsing them is how a user comes to believe a policy is active when it is
@@ -45,42 +53,14 @@ export function PromptPermissionControl(props: {
   label: string
   onSelect: (option: PermissionModeOption) => void
 }) {
-  // Deliberately not "Auto" when unresolved: a stored mode the harness stopped
-  // advertising must not wear Auto's label while a different selection is stored.
+  // Deliberately not a mode name when unresolved: a stored mode the harness
+  // stopped advertising must not wear another row's label.
   const triggerText = () => props.current()?.name ?? "Permissions"
   const shieldActive = () => props.current() !== undefined
 
-  const [expanded, setExpanded] = createSignal(false)
-
-  /**
-   * Auto's concrete target, so the expanded list can show it as the selection.
-   *
-   * Auto is a LABEL over a harness mode, not a mode of its own — expanding must
-   * therefore reveal which row it stood for, not clear the selection. Reading
-   * the id straight off the delivery keeps this honest: it is the same id the
-   * write would send, so the check cannot claim a different row than the one
-   * Auto would actually apply.
-   */
-  const resolvedCurrent = () => {
-    const selected = props.current()
-    if (!selected) return undefined
-    if (selected.origin !== "claxedo") return selected
-    const delivery = selected.delivery
-    if (delivery.kind !== "harness-permission-mode") return selected
-    const rows = props.groups()?.harness.rows ?? []
-    return rows.find((row) => row.option.id === delivery.modeId)?.option ?? selected
-  }
-
   return (
     <Show when={props.enabled()}>
-      <MenuV2
-        placement="top-start"
-        gutter={8}
-        fitViewport
-        // Reopening should start collapsed again — the expanded list is a
-        // drill-down, not a preference worth persisting across openings.
-        onOpenChange={(open) => !open && setExpanded(false)}
-      >
+      <MenuV2 placement="top-start" gutter={8} fitViewport>
         {/*
           Falls back to the REASON before the generic label. On a harness with no
           modes the trigger has no description to show, and "Permissions" alone
@@ -124,99 +104,57 @@ export function PromptPermissionControl(props: {
           >
             <Show when={props.groups()} fallback={<MenuV2.Item disabled>Resolving harness…</MenuV2.Item>}>
               {(groups) => (
-                <Show
-                  when={expanded()}
-                  fallback={
-                    /*
-                      COLLAPSED — the default, and for most people the only view.
-                      Auto alone, because Auto is not a competing option: it IS
-                      whichever harness mode is in force, wearing one word. Its
-                      description names the concrete target, so the collapsed row
-                      is a complete answer rather than a teaser.
-                    */
-                    <>
-                      <For each={groups().claxedo}>
+                <>
+                  {/*
+                    Claxedo's own options, which exist ONLY where the harness
+                    reported none — so this and the harness group below never
+                    render together, and no group label is needed to tell them
+                    apart.
+                  */}
+                  <For each={groups().claxedo}>
+                    {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
+                  </For>
+                  {/*
+                    A REASON is prose, not a row.
+
+                    This was a `MenuV2.Item disabled`, and menu items are a
+                    fixed-height single line by contract — so a sentence
+                    explaining why a harness offers nothing was clipped mid-word
+                    and collided with the composer beneath it. It is rendered as
+                    a padded paragraph instead: no row height, no hover
+                    affordance and no focus stop, because there is nothing here
+                    to choose.
+
+                    `border-t` only when a group sits above it, so the state
+                    where this is the WHOLE menu (pi) is a clean note rather
+                    than a fragment under a stray rule.
+                  */}
+                  <Show
+                    when={groups().harness.rows.length > 0}
+                    fallback={
+                      <p
+                        data-slot="permission-modes-unavailable"
+                        class="text-balance px-2.5 py-2 text-[12px] leading-[1.45] text-v2-text-text-faint"
+                        classList={{ "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 }}
+                      >
+                        {groups().harness.unavailable}
+                      </p>
+                    }
+                  >
+                    {/*
+                      The label names WHOSE vocabulary these rows are in, which
+                      is the one thing the rows themselves cannot say: they carry
+                      the harness's names verbatim, so without a heading there is
+                      nothing on screen tying "Accept edits" to Claude.
+                    */}
+                    <MenuV2.Group>
+                      <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
+                      <For each={groups().harness.rows}>
                         {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
                       </For>
-                      {/*
-                        A REASON is prose, not a row.
-
-                        This was a `MenuV2.Item disabled`, and menu items are a
-                        fixed-height single line by contract — so a sentence
-                        explaining why a harness offers nothing was clipped
-                        mid-word and collided with the composer beneath it. It is
-                        rendered as a padded paragraph instead: no row height, no
-                        hover affordance and no focus stop, because there is
-                        nothing here to choose.
-
-                        `border-t` only when a group sits above it, so the state
-                        where this is the WHOLE menu (pi) is a clean note rather
-                        than a fragment under a stray rule.
-                      */}
-                      <Show when={groups().harness.rows.length > 0} fallback={
-                        <p
-                          data-slot="permission-modes-unavailable"
-                          class="text-balance px-2.5 py-2 text-[12px] leading-[1.45] text-v2-text-text-faint"
-                          classList={{ "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 }}
-                        >
-                          {groups().harness.unavailable}
-                        </p>
-                      }>
-                        <MenuV2.Separator />
-                        <MenuV2.Item
-                          data-action="permission-modes-expand"
-                          closeOnSelect={false}
-                          onSelect={() => {
-                            setExpanded(true)
-                            /*
-                             * Move focus onto a row, because this item is about to
-                             * delete itself.
-                             *
-                             * Expanding replaces the Auto row and this control with
-                             * the harness's own rows, so the element the user just
-                             * activated unmounts. Focus then falls to <body>, and
-                             * Kobalte's Escape handler is bound to the menu content —
-                             * so Escape silently stops closing the menu and a
-                             * keyboard user is stuck in it with no way out.
-                             *
-                             * Landing on the CHECKED row rather than the first is
-                             * also the better answer for arrow keys: the user starts
-                             * from what is currently in force instead of the top of a
-                             * list they then have to hunt through.
-                             */
-                            queueMicrotask(() => {
-                              const rows = document.querySelectorAll<HTMLElement>('[role="menuitem"][data-mode]')
-                              const checked = Array.from(rows).find((row) => row.hasAttribute("data-checked"))
-                              ;(checked ?? rows[0])?.focus()
-                            })
-                          }}
-                        >
-                          <span class="flex w-full items-center justify-between gap-2">
-                            <span class="text-[13px] leading-4 text-v2-text-text-faint">
-                              {groups().harness.rows.length} more {groups().harness.label} modes
-                            </span>
-                            <BareIcon name="chevron-down" size="small" class="shrink-0 opacity-60" />
-                          </span>
-                        </MenuV2.Item>
-                      </Show>
-                    </>
-                  }
-                >
-                  {/*
-                    EXPANDED — Auto is GONE, deliberately. It was only ever a
-                    label over one of these rows, so showing both would put the
-                    same choice on screen twice under two names with no way to
-                    tell which won. The row Auto resolved to is the one carrying
-                    the check, which is what makes the swap legible rather than
-                    a reset.
-                  */}
-                  <MenuV2.Group>
-                    <MenuV2.GroupLabel>{groups().harness.label}</MenuV2.GroupLabel>
-                    <For each={groups().harness.rows}>
-                      {(item) => <ModeRow row={item} current={resolvedCurrent} onSelect={props.onSelect} />}
-                    </For>
-                  </MenuV2.Group>
-                </Show>
+                    </MenuV2.Group>
+                  </Show>
+                </>
               )}
             </Show>
           </MenuV2.Content>
