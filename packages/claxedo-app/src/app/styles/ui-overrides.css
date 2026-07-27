@@ -526,7 +526,12 @@ html[data-theme="codex"] [data-component="session-composer"] {
  */
 html[data-theme="codex"] .ui-context-card.is-floating,
 html[data-theme="codex"] .session-envcard.is-floating,
-html[data-theme="codex"] [data-slot="switcher-metadata-card"] {
+html[data-theme="codex"] [data-slot="switcher-metadata-card"],
+/* The collapsed rail chip is the same card at 2.5rem wide — it drew its own
+   1px solid border and had no Codex rule, so it kept a full-weight edge while
+   everything around it moved to the 0.5px stroke. */
+html[data-theme="codex"] .ui-context-card-rail {
+  border: 0 !important;
   box-shadow: var(--codex-elevation-card);
 }
 
@@ -574,7 +579,17 @@ html[data-theme="codex"] .claxedo-composer-menu,
 html[data-theme="codex"] .theme-overlay-surface,
 html[data-theme="codex"] .codex-overlay-surface {
   border-radius: var(--codex-radius-overlay) !important;
-  box-shadow: var(--codex-shadow-overlay) !important;
+  /*
+   * Drop PLUS the 0.5px stroke, which is how the shipped app composes an
+   * overlay: `box-shadow: var(--shadow), var(--shadow-hairline)`, where
+   * `--shadow-hairline` is `0 0 0 .5px #0000001a`.
+   *
+   * These surfaces are not edgeless there — what was wrong before was the
+   * WEIGHT. Each component drew its own 1px solid `--overlay-border`, twice the
+   * thickness at full opacity, so removing it outright overshot in the other
+   * direction. The `border: 0` below stays, because the edge is this stroke now.
+   */
+  box-shadow: var(--codex-shadow-overlay), var(--codex-elevation-stroke) !important;
   /*
    * No hairline. Each of these components draws its own
    * `border: 1px solid var(--overlay-border)`, and `--codex-shadow-overlay` is
