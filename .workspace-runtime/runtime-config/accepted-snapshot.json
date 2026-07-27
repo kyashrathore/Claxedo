@@ -1,10 +1,10 @@
 {
-  "revision": 702,
-  "acceptedAt": "2026-07-27T11:17:12.292Z",
+  "revision": 1309,
+  "acceptedAt": "2026-07-27T13:17:01.255Z",
   "snapshot": {
     "version": 1,
     "harness": {
-      "id": "pi",
+      "id": "opencode",
       "access": "native"
     },
     "mcp": {

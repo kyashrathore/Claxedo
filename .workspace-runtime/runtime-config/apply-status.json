@@ -1,10 +1,10 @@
 {
   "state": "applied",
-  "revision": 702,
-  "acceptedAt": "2026-07-27T11:17:12.292Z",
-  "updatedAt": "2026-07-27T11:17:12.302Z",
+  "revision": 1309,
+  "acceptedAt": "2026-07-27T13:17:01.255Z",
+  "updatedAt": "2026-07-27T13:17:01.261Z",
   "harness": {
-    "id": "pi",
+    "id": "opencode",
     "access": "native"
   }
 }
