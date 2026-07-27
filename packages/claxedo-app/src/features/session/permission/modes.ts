@@ -311,7 +311,10 @@ function claxedoAutoOption(input: { harness: HarnessId; report?: HarnessModeRepo
   if (PERMISSION_MECHANISMS[input.harness].kind === "opencode-session-ruleset") {
     return {
       ...base,
-      description: "Reads and in-project edits run without asking; commands and network still ask",
+      // Auto means full access with the DANGER TIER still gated. The ruleset
+      // below is that shape in opencode's vocabulary: a catch-all `ask`, then
+      // grants for everything safe, leaving bash/network/out-of-project asking.
+      description: "Everything runs without asking except shell, network and anything outside the project",
       caveat: "Applies from your next message; the turn already running keeps its current rules",
       delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAutoRuleset(), appliesFrom: "next-turn" },
     }
@@ -346,7 +349,10 @@ function claxedoAutoOption(input: { harness: HarnessId; report?: HarnessModeRepo
 
   return {
     ...base,
-    description: "Reads and in-project edits run without asking; commands and network still ask",
+    // Same shape as every other rung — CLAXEDO_AUTO_ANSWERS is exactly the
+    // complement of DANGER_GATED_PERMISSIONS — but answered locally, which is
+    // what the caveat is for.
+    description: "Everything runs without asking except shell, network and anything outside the project",
     caveat: "Claxedo answers these prompts on your behalf; the harness enforces nothing",
     delivery: CLAXEDO_LOCAL_AUTO,
   }

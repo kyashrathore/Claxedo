@@ -157,14 +157,22 @@ export function merge(state: ACPState, meta: Meta): ACPState {
 const LEVEL_IDS: Record<AutoLevel, readonly string[]> = {
   ask: ["default", "ask", "readonly", "askalways", "manual"],
   /**
-   * Edit-accepting ids only. A bare `auto` is deliberately ABSENT even though
-   * several agents use it: on Claude it names the model classifier, which can
-   * approve commands as well as edits, and this rung is specifically "allow
-   * reads and edits, ASK before anything risky". A classifier mode stays fully
-   * selectable — it just is not what gets chosen for someone by default.
+   * The rung means FULL ACCESS WITH THE DANGER TIER STILL GATED — everything
+   * safe runs, and shell, network, out-of-project and subagent spawns still ask.
+   *
+   * A bare `auto` used to be excluded here on the reasoning that a classifier
+   * "can approve commands as well as edits", with `acceptedits` carrying the
+   * rung instead. That inverted the definition: `acceptEdits` auto-accepts edits
+   * and then prompts on every Bash call, which is neither full access nor
+   * automatic, while a classifier approving the safe tiers and escalating risky
+   * ones is exactly what this rung describes.
+   *
+   * `acceptedits` is deliberately NOT here any more. Agents advertising both —
+   * claude-agent-acp reports `auto` and `acceptEdits` — would otherwise expose
+   * two auto rungs, and Auto resolves by finding exactly one.
    */
   auto: [
-    "acceptedits",
+    "auto",
     "autoedit",
     "autoaccept",
     "editauto",

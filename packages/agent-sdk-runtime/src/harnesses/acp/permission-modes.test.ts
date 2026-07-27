@@ -79,17 +79,20 @@ describe("reading ACP permission modes", () => {
     const { modes } = permissionModes(state({ cfg: [SELECT_MODE] as never }))
     expect(modes.find((mode) => mode.id === "default")?.level).toBe("ask")
     expect(modes.find((mode) => mode.id === "bypassPermissions")?.level).toBe("full")
-    // `acceptEdits` IS the auto rung: allow edits, still prompt for commands.
-    expect(modes.find((mode) => mode.id === "acceptEdits")?.level).toBe("auto")
+    // `acceptEdits` is NOT the auto rung. The rung means full access with the
+    // danger tier gated; auto-accepting edits while prompting on every command
+    // is neither full access nor automatic, so it carries no rung and stays
+    // selectable on its own merits.
+    expect(modes.find((mode) => mode.id === "acceptEdits")?.level).toBeUndefined()
   })
 
   test("id matching ignores case and separators", () => {
     const variants = {
       ...SELECT_MODE,
-      options: [{ value: "accept_edits", name: "A" }, { value: "FULL-ACCESS", name: "B" }],
+      options: [{ value: "Auto_Edit", name: "A" }, { value: "FULL-ACCESS", name: "B" }],
     }
     const { modes } = permissionModes(state({ cfg: [variants] as never }))
-    expect(modes.find((mode) => mode.id === "accept_edits")?.level).toBe("auto")
+    expect(modes.find((mode) => mode.id === "Auto_Edit")?.level).toBe("auto")
     expect(modes.find((mode) => mode.id === "FULL-ACCESS")?.level).toBe("full")
   })
 
@@ -200,14 +203,15 @@ describe("rung inference matches the live agents", () => {
     ])
   })
 
-  test("claude-acp keeps its classifier mode off the auto rung", () => {
-    // Live output includes both a bare `auto` (the classifier, which can approve
-    // COMMANDS) and `acceptEdits`. The rung means "edits yes, risk asks", so it
-    // is acceptEdits that carries it — deliberately, see LEVEL_IDS.
+  test("claude-acp's classifier IS the auto rung", () => {
+    // Live output includes both a bare `auto` (the classifier) and `acceptEdits`.
+    // The rung means full access with the danger tier gated: the classifier
+    // approves the safe tiers and escalates risky ones, which is that promise;
+    // `acceptEdits` prompts on every command, which is not.
     const modes = modesFor(["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"])
     const byId = Object.fromEntries(modes.map((m) => [m.id, m.level]))
-    expect(byId["acceptEdits"]).toBe("auto")
-    expect(byId["auto"]).toBeUndefined()
+    expect(byId["auto"]).toBe("auto")
+    expect(byId["acceptEdits"]).toBeUndefined()
     expect(byId["default"]).toBe("ask")
     expect(byId["bypassPermissions"]).toBe("full")
   })
