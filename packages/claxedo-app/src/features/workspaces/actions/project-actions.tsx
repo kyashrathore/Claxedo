@@ -15,7 +15,7 @@ import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/dom
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
 import { getAuthToken } from "@/platform/auth/auth-client"
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
@@ -437,7 +437,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }
 
   const handleDeleteWorkspace = (workspace: WorkspaceItem) => {
-    phCapture("workspace_delete_initiated", { is_cloud: workspace.isCloud, is_main: workspace.isMain })
+    phCapture("workspace_delete_initiated", { ...identityProps(), surface: "workspaces", is_cloud: workspace.isCloud, is_main: workspace.isMain })
     void props.dialog.show(() => (
       <DialogDeleteWorkspace
         directory={workspace.directory}
@@ -465,7 +465,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }
 
   const handleRemoveProject = (project: ProjectItem) => {
-    phCapture("project_removed")
+    phCapture("project_removed", { ...identityProps(), surface: "workspaces" })
     const current = props.activeProjectId()
     for (const dir of [project.worktree, ...(project.sandboxes ?? [])]) {
       purgeWorkspaceState(dir)

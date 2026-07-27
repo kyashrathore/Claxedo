@@ -15,7 +15,13 @@ import { MemoryRouter } from "@solidjs/router"
 import { useTheme } from "@opencode-ai/ui/theme"
 
 import { desktopApi, hasDesktopApi } from "./api"
-import { initPostHog, capture as phCapture } from "@/platform/telemetry/analytics"
+import {
+  initPostHog,
+  capture as phCapture,
+  identityProps,
+  resolveDeploymentMode,
+  setDeploymentMode,
+} from "@/platform/telemetry/analytics"
 import { ConfigProvider } from "@/app/providers"
 import { getAuthToken, getDefaultConfig, initClaxedo } from "@claxedo/app"
 import { configureApiRuntime } from "@/platform/api/api"
@@ -161,7 +167,15 @@ function bootstrapDesktop() {
     return undefined
   })()
 
-  phCapture("app_launched", { platform: "desktop", version: pkg.version, os })
+  // The desktop renderer knows its plane synchronously — no provider mount needed.
+  setDeploymentMode(resolveDeploymentMode({ platform: "desktop", authEnabled: config.authEnabled === true }))
+  phCapture("app_launched", {
+    ...identityProps(),
+    surface: "app_shell",
+    platform: "desktop",
+    version: pkg.version,
+    os,
+  })
 
   const originalGetComputedStyle = window.getComputedStyle
   window.getComputedStyle = ((elt: Element, pseudoElt?: string | null) => {

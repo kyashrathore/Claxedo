@@ -45,6 +45,10 @@ const params = {
 let sessionInfo: { id: string; revert?: { messageID: string }; share?: { url?: string } } = { id: "session-1" }
 let fileTreeToggles = 0
 let mockClaxedoState: any
+let activeTab: string | undefined
+let filePathFromTab: (tab: string) => string | undefined = () => undefined
+let fileSelectedLines: (path: string) => unknown = () => undefined
+const captured: Array<{ event: string; properties: Record<string, unknown> }> = []
 const reviewPanelCalls: unknown[] = []
 const terminalOpenCalls: unknown[] = []
 const terminalQueueCalls: unknown[] = []
@@ -148,8 +152,8 @@ mock.module("@/features/session/ui/dialogs/fork", () => ({
 mock.module("@/app/providers/file", () => ({
   useFile: () => ({
     get: () => undefined,
-    pathFromTab: () => undefined,
-    selectedLines: () => undefined,
+    pathFromTab: (tab: string) => filePathFromTab(tab),
+    selectedLines: (path: string) => fileSelectedLines(path),
   }),
   selectionFromLines: () => ({ startLine: 1, endLine: 1 }),
 }))
@@ -167,7 +171,7 @@ mock.module("@/app/providers/layout", () => ({
   }),
   useLayout: () => ({
     tabs: () => ({
-      active: () => undefined,
+      active: () => activeTab,
       close: () => undefined,
     }),
     view: () => undefined,
@@ -292,7 +296,10 @@ mock.module("@/app/workbench/state", () => ({
 }))
 
 mock.module("@/platform/telemetry/analytics", () => ({
-  capture: () => undefined,
+  capture: (event: string, properties: Record<string, unknown>) => {
+    captured.push({ event, properties })
+  },
+  identityProps: () => ({ org_id: "anon", user_id: "anon", deployment_mode: "self-host" }),
 }))
 
 mock.module("@opencode-ai/ui/toast", () => ({
@@ -318,6 +325,10 @@ describe("upstream contract", async () => {
     setSessionInfo({ id: "session-1" })
     fileTreeToggles = 0
     mockClaxedoState = undefined
+    activeTab = undefined
+    filePathFromTab = () => undefined
+    fileSelectedLines = () => undefined
+    captured.length = 0
     reviewPanelCalls.length = 0
     terminalOpenCalls.length = 0
     terminalQueueCalls.length = 0
@@ -479,6 +490,10 @@ describe("Claxedo behavior", async () => {
     setSessionInfo({ id: "session-1" })
     fileTreeToggles = 0
     mockClaxedoState = undefined
+    activeTab = undefined
+    filePathFromTab = () => undefined
+    fileSelectedLines = () => undefined
+    captured.length = 0
     reviewPanelCalls.length = 0
     terminalOpenCalls.length = 0
     terminalQueueCalls.length = 0
@@ -522,6 +537,25 @@ describe("Claxedo behavior", async () => {
     })
     return new Map(commands.map((command) => [command.id, command]))
   }
+
+  test("context.addSelection reports an extension and a hash, never the path", () => {
+    const path = "/Users/ada/work/secret-client/src/features/billing/invoice.tsx"
+    activeTab = "file:invoice"
+    filePathFromTab = () => path
+    fileSelectedLines = () => ({ start: 3, end: 9 })
+
+    collectCommands().get("context.addSelection")?.onSelect()
+
+    const event = captured.find((entry) => entry.event === "context_selection_added")
+    expect(event?.properties.extension).toBe("tsx")
+    expect(typeof event?.properties.path_hash).toBe("string")
+    expect(event?.properties.path).toBeUndefined()
+    // No value may carry a path fragment, a directory name, or the basename.
+    const values = Object.values(event?.properties ?? {}).map(String)
+    expect(values.some((value) => value.includes("/"))).toBe(false)
+    expect(values.some((value) => value.includes("invoice"))).toBe(false)
+    expect(values.some((value) => value.includes("secret-client"))).toBe(false)
+  })
 
   test("new session hands focus to the composer after navigating", () => {
     const byId = collectCommands()

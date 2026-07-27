@@ -18,7 +18,7 @@ import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/platform/api/api"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { useClaxedoState } from "@/features/session/app-ports"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { useClaxedoEventsOptional } from "@/features/session/app-ports"
@@ -650,6 +650,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         const activePanes = claxedoState?.wb.state.panes.length ?? 0
         const activeTabs = claxedoState?.meta.all().length ?? 0
         phCapture("prompt_sent", {
+          ...identityProps(), surface: "composer",
           mode,
           agent,
           model_id: model.modelID,

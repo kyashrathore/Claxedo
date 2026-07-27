@@ -64,14 +64,16 @@ import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
-import { capture as captureTelemetry } from "@/platform/telemetry/analytics"
+import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
 
 function useOnboardingFunnel() {
   const platform = usePlatform()
   const config = Config.useConfigOptional()
   return createOnboardingFunnel({
     deployment: platform.platform === "desktop" || config?.sandboxEnabled ? "hosted" : "self-host",
-    capture: captureTelemetry,
+    // `step_done` carries its own `surface` and overrides the default below.
+    capture: (name, properties) =>
+      captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
   })
 }
 

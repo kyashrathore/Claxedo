@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
 import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
@@ -35,7 +35,7 @@ export function createPromptAbort(input: {
     const directory = input.sessionDirectory?.() ?? input.defaultDirectory
     const client = input.clientForDirectory(directory)
 
-    phCapture("prompt_aborted")
+    phCapture("prompt_aborted", { ...identityProps(), surface: "composer" })
     dispatchSessionTodoEvent({ event: { type: "session.todo", source: "server", sessionID, todos: [] } })
     setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "server" })
 

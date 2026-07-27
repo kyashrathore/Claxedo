@@ -28,7 +28,7 @@ import {
 } from "@/features/onboarding"
 import { SetupShell } from "@/features/onboarding/setup-shell"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { capture as captureTelemetry } from "@/platform/telemetry/analytics"
+import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
 import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 
@@ -51,7 +51,9 @@ export function OnboardingEmptyState(props: {
   const machineId = () => `${platform.platform}:${server.url}`
   const funnel = createMemo(() => createOnboardingFunnel({
     deployment: surface() === "self-host" ? "self-host" : "hosted",
-    capture: captureTelemetry,
+    // `step_done` carries its own `surface` and overrides the default below.
+    capture: (name, properties) =>
+      captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
   }))
   const remoteAccess = useRemoteAccessController({ serverUrl: server.url, emit: funnel().emit })
   const [selectedStep, setSelectedStep] = createSignal<OnboardingStepId>()

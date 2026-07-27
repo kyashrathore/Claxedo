@@ -24,7 +24,7 @@ import {
 } from "@/platform/settings/provider"
 import { playSoundById, SOUND_OPTIONS } from "@/platform/notifications/sound"
 import { requestNotificationPermission } from "@/platform/notifications/notification-permission"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { AccountSettingsSection } from "@/features/settings/ui/account-section"
 import { Can } from "@/platform/auth/role"
 import { Link } from "@/features/settings/app-ports"
@@ -86,7 +86,7 @@ export const SettingsGeneral: Component = () => {
   const check = () => {
     if (!platform.checkUpdate) return
     setStore("checking", true)
-    phCapture("update_checked")
+    phCapture("update_checked", { ...identityProps(), surface: "settings" })
 
     void platform
       .checkUpdate()
@@ -106,7 +106,7 @@ export const SettingsGeneral: Component = () => {
               {
                 label: language.t("toast.update.action.installRestart"),
                 onClick: async () => {
-                  phCapture("update_installed", { version: result.version })
+                  phCapture("update_installed", { ...identityProps(), surface: "settings", version: result.version })
                   await platform.updateAndRestart!()
                 },
               },
@@ -192,7 +192,7 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => o.label}
                 onSelect={(option) => {
                   if (!option) return
-                  phCapture("setting_changed", { setting: "language", value: option.value })
+                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "language", value: option.value })
                   language.setLocale(option.value)
                 }}
                 variant="secondary"
@@ -214,7 +214,7 @@ export const SettingsGeneral: Component = () => {
                   hideLabel
                   checked={settings.general.showReasoningSummaries()}
                   onChange={(checked) => {
-                    phCapture("setting_changed", { setting: "show_reasoning_summaries", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "show_reasoning_summaries", value: checked })
                     settings.general.setShowReasoningSummaries(checked)
                   }}
                 >
@@ -232,7 +232,7 @@ export const SettingsGeneral: Component = () => {
                   hideLabel
                   checked={settings.general.shellToolPartsExpanded()}
                   onChange={(checked) => {
-                    phCapture("setting_changed", { setting: "shell_tool_parts_expanded", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "shell_tool_parts_expanded", value: checked })
                     settings.general.setShellToolPartsExpanded(checked)
                   }}
                 >
@@ -250,7 +250,7 @@ export const SettingsGeneral: Component = () => {
                   hideLabel
                   checked={settings.general.editToolPartsExpanded()}
                   onChange={(checked) => {
-                    phCapture("setting_changed", { setting: "edit_tool_parts_expanded", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "edit_tool_parts_expanded", value: checked })
                     settings.general.setEditToolPartsExpanded(checked)
                   }}
                 >
@@ -272,7 +272,7 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => o.label}
                 onSelect={(option) => {
                   if (!option) return
-                  phCapture("setting_changed", { setting: "followup", value: option.value })
+                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "followup", value: option.value })
                   settings.general.setFollowup(option.value)
                 }}
                 variant="secondary"
@@ -449,7 +449,7 @@ export const SettingsGeneral: Component = () => {
                   onChange={(checked) => {
                     setScreenReaderModePreference(checked)
                     setScreenReaderTerminal(checked)
-                    phCapture("setting_changed", { setting: "terminal_screen_reader_mode", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "terminal_screen_reader_mode", value: checked })
                   }}
                 >
                   {language.t("settings.general.row.screenReaderTerminal.title")}
@@ -473,7 +473,7 @@ export const SettingsGeneral: Component = () => {
                   hideLabel
                   checked={settings.notifications.agent()}
                   onChange={(checked) => {
-                    phCapture("setting_changed", { setting: "notification_agent", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "notification_agent", value: checked })
                     settings.notifications.setAgent(checked)
                     // Request browser notification permission from THIS user
                     // gesture only — never from turn completion (see
@@ -496,7 +496,7 @@ export const SettingsGeneral: Component = () => {
                   hideLabel
                   checked={settings.notifications.permissions()}
                   onChange={(checked) => {
-                    phCapture("setting_changed", { setting: "notification_permissions", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "notification_permissions", value: checked })
                     settings.notifications.setPermissions(checked)
                   }}
                 >
@@ -514,7 +514,7 @@ export const SettingsGeneral: Component = () => {
                   hideLabel
                   checked={settings.notifications.errors()}
                   onChange={(checked) => {
-                    phCapture("setting_changed", { setting: "notification_errors", value: checked })
+                    phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "notification_errors", value: checked })
                     settings.notifications.setErrors(checked)
                     // See settings-notifications-agent above.
                     if (checked) void requestNotificationPermission()
@@ -549,7 +549,7 @@ export const SettingsGeneral: Component = () => {
                 }}
                 onSelect={(option) => {
                   if (!option) return
-                  phCapture("setting_changed", { setting: "sound_agent", value: option.id })
+                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "sound_agent", value: option.id })
                   settings.sounds.setAgent(option.id)
                   playDemoSound(option.id)
                 }}
@@ -576,7 +576,7 @@ export const SettingsGeneral: Component = () => {
                 }}
                 onSelect={(option) => {
                   if (!option) return
-                  phCapture("setting_changed", { setting: "sound_permissions", value: option.id })
+                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "sound_permissions", value: option.id })
                   settings.sounds.setPermissions(option.id)
                   playDemoSound(option.id)
                 }}
@@ -603,7 +603,7 @@ export const SettingsGeneral: Component = () => {
                 }}
                 onSelect={(option) => {
                   if (!option) return
-                  phCapture("setting_changed", { setting: "sound_errors", value: option.id })
+                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "sound_errors", value: option.id })
                   settings.sounds.setErrors(option.id)
                   playDemoSound(option.id)
                 }}

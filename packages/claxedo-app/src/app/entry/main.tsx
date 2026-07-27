@@ -12,7 +12,13 @@ import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken } from "@/platform/auth/auth-client"
 import { authFetch } from "@/platform/api/api"
-import { initPostHog, capture as phCapture } from "@/platform/telemetry/analytics"
+import {
+  initPostHog,
+  capture as phCapture,
+  identityProps,
+  resolveDeploymentMode,
+  setDeploymentMode,
+} from "@/platform/telemetry/analytics"
 import { isDemoMode, isEmbedMode } from "@/platform/api/api"
 import { ConfigProvider } from "../providers/config"
 import { ClaxedoEventsProvider } from "../integrations/claxedo-events"
@@ -25,7 +31,15 @@ initClaxedo(config)
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {
   initPostHog()
-  phCapture("app_launched", { platform: "web", version: "cloud" })
+  // This entry is the web build; the desktop renderer resolves its own plane
+  // once PlatformProvider mounts (TelemetryIdentityRecorder).
+  setDeploymentMode(resolveDeploymentMode({ platform: "web", authEnabled: config.authEnabled === true }))
+  phCapture("app_launched", {
+    ...identityProps(),
+    surface: "app_shell",
+    platform: "web",
+    version: "cloud",
+  })
 }
 
 const root = document.getElementById("root")

@@ -51,6 +51,7 @@ import { installQueryPersister } from "@/platform/query/persister"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
+import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
 // last-known session rows while the local server refresh runs in the background.
@@ -369,6 +370,7 @@ function AuthenticatedProviders(props: ParentProps) {
 
   return (
     <PrincipalProvider authEnabled={config?.authEnabled === true}>
+      <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       <CloudAuthGate>
         <Show when={config?.authEnabled} fallback={props.children}>
