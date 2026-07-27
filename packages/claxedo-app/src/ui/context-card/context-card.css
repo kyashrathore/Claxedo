@@ -25,17 +25,8 @@
 .ui-context-card.is-floating {
   padding: 0.6rem 0.6rem 0.5rem;
   border-radius: var(--radius-lg);
-  /* `.is-floating` is an OVERLAY — it floats above content the way the composer
-     menus and dropdowns do, so it takes `--overlay-surface`, the role every
-     other floating surface resolves. `--shell-surface-context-card` is for the
-     context card docked in the page; using it here matched the component's name
-     but not its behaviour, and painted the card grey against menus that are
-     white. */
-  background: var(--overlay-surface);
-  /* Same elevation as the composer menus. `--shadow-lg-border-base` is a 1px
-     ring plus five stacked layers out to 80px of blur — a page-modal weight on
-     a small hover card. */
-  box-shadow: var(--v2-elevation-floating);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-lg-border-base);
 }
 
 /* Collapsed, the rail chip carries its own border — drop any variant surface.
