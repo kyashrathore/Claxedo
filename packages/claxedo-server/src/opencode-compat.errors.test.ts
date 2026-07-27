@@ -163,7 +163,14 @@ describe("opencode compat error model", () => {
       200,
     ])
     await expect(provider.json()).resolves.toEqual({ all: [], default: {}, connected: [] })
-    await expect(providerAuth.json()).resolves.toEqual({})
+    // Provider auth degrades to the control plane's OWN methods rather than to
+    // an empty map: those are serviced by the credential registry and stay
+    // usable while the engine is down. Only the engine's provider catalog
+    // (anthropic OAuth, github-copilot, …) is lost with it.
+    await expect(providerAuth.json()).resolves.toMatchObject({
+      "claude-acp": [expect.objectContaining({ type: "api" })],
+      "codex-acp": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
+    })
     await expect(config.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
     await expect(globalConfig.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
     await expect(configProviders.json()).resolves.toEqual({ providers: [], default: {} })

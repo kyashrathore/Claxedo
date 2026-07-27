@@ -2,6 +2,7 @@ import { defaultHarness, loadUserConfig } from "../agent-config"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode-engine"
 import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./opencode-compat-proxy"
 import { piProviderCatalog } from "../pi-provider-catalog"
+import { providerAuthMethods } from "../provider-auth/service"
 
 export async function resolveHarnessId(override?: string) {
   if (override) return override
@@ -42,32 +43,43 @@ export async function providerBody(harnessOverride: string | undefined, options:
 }
 
 export async function providerAuthBody(harnessOverride?: string) {
-  if (harnessOverride === "pi") {
+  // Resolve BEFORE comparing. An absent `?harness=` means "no preference", not
+  // "not opencode" — comparing the raw override answered every unqualified
+  // request with the ACP catalog even when opencode is the configured harness,
+  // so the opencode engine's OAuth methods never reached the connect dialog.
+  const harnessId = await resolveHarnessId(harnessOverride)
+  if (harnessId === "pi") {
     return {
       anthropic: [{ type: "api", label: "API Key" }],
       openai: [{ type: "api", label: "API Key" }],
     }
   }
-  if (harnessOverride !== "opencode") {
-    return {
-      "claude-acp": [{ type: "api", label: "API Key" }],
-      "codex-acp": [{ type: "api", label: "API Key" }],
-      "cursor-acp": [{ type: "api", label: "API Key" }],
-      "claude-sdk": [{ type: "api", label: "API Key" }],
-      "codex-app-server": [{ type: "api", label: "API Key" }],
-    }
-  }
-  return safe("provider auth", () => ({}), async () => {
+  // One source of truth with the control-plane route rather than a second,
+  // slightly-different literal (this one used to omit `openai` and to flatten
+  // codex-acp's OAuth method down to an API key).
+  const base = providerAuthMethods() as Record<string, unknown>
+  if (harnessId !== "opencode") return base
+  // Overlay the engine's catalog rather than replacing the base with it: an
+  // engine that is unreachable must degrade to the methods the control plane
+  // can still service, not to an empty map that leaves the connect dialog with
+  // nothing but its own "API Key" fallback.
+  return safe("provider auth", () => base, async () => {
     const res = await opencodeRequest(new Request(new URL("/provider/auth", OPENCODE_INTERNAL_BASE), {
       signal: AbortSignal.timeout(5_000),
     }))
     if (!res.ok) throw new Error(`provider auth fetch failed: ${res.status}`)
-    return res.json()
+    return { ...base, ...await res.json() as Record<string, unknown> }
   })
 }
 
 export async function configProvidersBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
-  if (harnessOverride !== "opencode") return emptyConfigProviders()
+  // Same resolve-before-compare rule as `providerBody`/`globalConfigBody` (and
+  // the copy of this function in `routes/bootstrap.ts`, which already had it):
+  // an unqualified `/config/providers` served an EMPTY catalog on an opencode
+  // default harness, so every client that reads its model list that way — the
+  // TUI model dialog among them — had nothing to list.
+  const harnessId = await resolveHarnessId(harnessOverride)
+  if (harnessId !== "opencode") return emptyConfigProviders()
   if (opencodeCompatDisabled(options)) return emptyConfigProviders()
   options.onOpencodeAccess?.()
   return safe("config providers", emptyConfigProviders, async () => {

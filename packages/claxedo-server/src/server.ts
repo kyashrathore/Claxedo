@@ -28,6 +28,8 @@ import { AgentConfigRoutes } from "./routes/agent-config"
 import { SessionMetaRoutes } from "./routes/session-meta"
 import { WorkspaceRoutes } from "./routes/workspace"
 import { OpenCodeCompatRoutes } from "./routes/opencode-compat"
+import { resolveHarnessId } from "./routes/opencode-compat-provider-config"
+import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "./proxy"
 import { configureOpencodeMcpSync } from "./opencode-mcp-sync"
 import {
@@ -398,7 +400,20 @@ export function createApp(
       ...authRouteOptions(services),
     }),
   )
-  app.route("/", ProviderAuthRoutes(services))
+  app.route("/", ProviderAuthRoutes(services, {
+    // Only when the OpenCode-compat routes are actually mounted below; with
+    // local execution off nothing else serves `/provider/auth`, and deferring
+    // would turn the registry's answer into a 404.
+    ...(services.localExecution.enabled
+      ? {
+          deferToHarnessRoute: async (harness) =>
+            // Normalize first so the legacy aliases (`?runner=`, `claude-acp`,
+            // …) resolve the same way the compat routes resolve them; an
+            // absent or unrecognised name falls back to the configured default.
+            await resolveHarnessId(harness ? normalizeHarnessIdentity(harness)?.id : undefined) === "opencode",
+        }
+      : {}),
+  }))
   const remoteAccessRelayUrl = services.relay.relayUrl ?? Object.values(services.relay.relayUrls ?? {})[0]
   const remoteAccessSigner = services.relay.hostTunnelTokenSigner
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
