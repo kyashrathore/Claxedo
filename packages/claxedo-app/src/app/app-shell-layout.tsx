@@ -229,6 +229,11 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     client: globalSDK.client,
     closeTerminal: (terminalId) => terminal?.close(terminalId),
     emptyDraftDirectory: emptyDraft.emptyDraftDirectory,
+    // On a global surface (WorkGraph, Marketplace, Global chat) nothing is
+    // focused on a workspace, so the terminal creator would have no directory to
+    // open against. Seed it with the active one, else the first project — the
+    // creator shows the choice as a chip and lets the user change it.
+    fallbackWorkspaceDir: () => props.activeDirectory ?? props.projects[0]?.worktree,
     focusedPaneWorkspaceDir: sidebarSelection.focusedPaneWorkspaceDir,
     onLastFocusedSurfaceClosed: emptyDraft.blockNextAutoOpen,
     onNewSession: props.onNewSession,
@@ -403,7 +408,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
           canUseDocuments={props.canUseDocuments}
-          canUseTerminal={workbenchController.canUseTerminal}
+          canCreateTerminal={workbenchController.canCreateTerminal}
           emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
           focusedPanelTarget={workbenchController.focusedPanelTarget}
           hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}

@@ -59,7 +59,7 @@ export function WorkspacePanelChrome(props: {
 export function WorkbenchShellHeader(props: {
   activeGlobal: () => boolean
   canUseDocuments?: boolean
-  canUseTerminal: () => boolean
+  canCreateTerminal: () => boolean
   onCloseSurface: (contentId: string) => void
   onNewPage: () => void
   onNewSession: () => void
@@ -134,7 +134,7 @@ export function WorkbenchShellHeader(props: {
       <div data-testid="workbench-header-controls" class="flex shrink-0 items-center gap-1">
         <WorkspaceScopeButtons
           global={props.activeGlobal()}
-          canUseTerminal={props.canUseTerminal()}
+          canCreateTerminal={props.canCreateTerminal()}
           onNewSession={props.onNewSession}
           onNewTerminalDraft={props.onNewTerminalDraft}
           canUseDocuments={props.canUseDocuments === true}

@@ -15,7 +15,7 @@ type RailWorkbenchShellState = ReturnType<typeof useClaxedoState>
 export type RailWorkbenchShellProps = {
   activeGlobal: Accessor<boolean>
   canUseDocuments?: boolean
-  canUseTerminal: Accessor<boolean>
+  canCreateTerminal: Accessor<boolean>
   children?: JSX.Element
   emptyDraftDirectory: Accessor<string | undefined>
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
@@ -78,7 +78,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
         <Show when={props.projectsCount() > 0}>
           <WorkbenchShellHeader
             activeGlobal={props.activeGlobal}
-            canUseTerminal={props.canUseTerminal}
+            canCreateTerminal={props.canCreateTerminal}
             canUseDocuments={props.canUseDocuments}
             onCloseSurface={props.onCloseSurface}
             onFloatingChromeRef={props.onWorkspacePanelFloatingChromeRef}

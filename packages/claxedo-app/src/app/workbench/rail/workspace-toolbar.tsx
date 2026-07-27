@@ -33,7 +33,8 @@ type WorkspaceBarProps = {
 
 type WorkspaceScopeButtonsProps = {
   global?: boolean
-  canUseTerminal?: boolean
+  /** Role permits starting terminals. NOT a surface check — see the creator. */
+  canCreateTerminal?: boolean
   onNewSession?: () => void
   /** Opens the terminal creator; the header has no directory worth guessing. */
   onNewTerminalDraft?: () => void
@@ -53,7 +54,9 @@ function workspaceScopeCommands() {
 }
 
 export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
-  const canUseTerminal = () => props.canUseTerminal !== false && !props.global
+  // Shown on global surfaces (WorkGraph, Marketplace, Global chat) too: there
+  // is no workspace there, and asking for one is exactly what the creator does.
+  const canCreateTerminal = () => props.canCreateTerminal !== false
   return (
     <div class={`flex shrink-0 items-center gap-0.5 ${props.class ?? ""}`}>
       <Tooltip value="New Session">
@@ -73,7 +76,7 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
           sit here were starting an agent somewhere the user never picked. The
           creator lists those same agents once a workspace is chosen. */}
       <Tooltip value="New Terminal">
-        <Show when={canUseTerminal()}>
+        <Show when={canCreateTerminal()}>
           <button
             type="button"
             class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"

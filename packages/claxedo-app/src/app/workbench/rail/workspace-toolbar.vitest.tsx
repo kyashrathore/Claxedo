@@ -5,10 +5,10 @@ import { WorkspaceScopeButtons } from "./workspace-toolbar"
 afterEach(() => cleanup())
 
 describe("WorkspaceScopeButtons", () => {
-  test("hides terminal controls when the focused session has no workspace backing", () => {
+  test("hides the terminal control only when the role forbids terminals", () => {
     render(() => (
       <WorkspaceScopeButtons
-        canUseTerminal={false}
+        canCreateTerminal={false}
         onNewSession={() => undefined}
         onNewTerminalDraft={() => undefined}
       />
@@ -18,11 +18,31 @@ describe("WorkspaceScopeButtons", () => {
     expect(screen.queryByRole("button", { name: "New Terminal" })).toBeNull()
   })
 
+  /**
+   * Regression: the control used to be gated on the focused surface having a
+   * workspace, which hid it on WorkGraph, Marketplace and Global chat — the
+   * surfaces where "which workspace?" is most worth asking. Having no workspace
+   * is what the creator is for, not a reason to withhold the way to open it.
+   */
+  test("keeps the terminal control on global surfaces that have no workspace", () => {
+    const onNewTerminalDraft = vi.fn()
+    render(() => (
+      <WorkspaceScopeButtons
+        global
+        onNewSession={() => undefined}
+        onNewTerminalDraft={onNewTerminalDraft}
+      />
+    ))
+
+    fireEvent.click(screen.getByRole("button", { name: "New Terminal" }))
+    expect(onNewTerminalDraft).toHaveBeenCalledTimes(1)
+  })
+
   test("the terminal control opens the creator instead of starting a pty", () => {
     const onNewTerminalDraft = vi.fn()
     render(() => (
       <WorkspaceScopeButtons
-        canUseTerminal
+        canCreateTerminal
         onNewSession={() => undefined}
         onNewTerminalDraft={onNewTerminalDraft}
       />
@@ -42,7 +62,7 @@ describe("WorkspaceScopeButtons", () => {
   test("offers no shortcut that starts an agent in the inferred directory", () => {
     render(() => (
       <WorkspaceScopeButtons
-        canUseTerminal
+        canCreateTerminal
         onNewSession={() => undefined}
         onNewTerminalDraft={() => undefined}
       />

@@ -18,6 +18,8 @@ export function useRailWorkbenchController(input: {
   client: HeaderSurfaceInput["client"]
   closeTerminal?: (terminalId: string) => void | Promise<unknown>
   emptyDraftDirectory: Accessor<string | undefined>
+  /** Last-resort directory for the terminal creator when no workspace is focused. */
+  fallbackWorkspaceDir?: () => string | undefined
   focusedPaneWorkspaceDir: (paneId: string | undefined) => string | undefined
   onLastFocusedSurfaceClosed?: () => void
   onNewSession?: (workspaceDir?: string, paneId?: string) => void
@@ -59,6 +61,10 @@ export function useRailWorkbenchController(input: {
     onNewTerminalDraft: (workspaceDir) => {
       input.state.layout.openTerminal(workspaceDir, NEW_TERMINAL_ID, "New Terminal")
     },
+    // Only used when nothing is focused on a workspace at all (a global surface
+    // such as WorkGraph or Marketplace). It seeds the creator's project chip;
+    // the user re-points it from there, which is the whole point of the surface.
+    fallbackWorkspaceDir: input.fallbackWorkspaceDir,
     sidebarDir: input.sidebarDir,
   })
   const panelVisual = useWorkspacePanelVisualState({
@@ -73,7 +79,16 @@ export function useRailWorkbenchController(input: {
   })
 
   return {
-    canUseTerminal: () => !terminalBlocked(),
+    /**
+     * Whether the terminal CONTROL may be offered — a role question only.
+     *
+     * Deliberately not `!terminalBlocked()`: that also folds in
+     * `focusedSurfaceWorkspaceToolsBlocked()`, which means "the surface you are
+     * looking at has no workspace" (WorkGraph, Marketplace, Global chat). That
+     * is the question the creator exists to answer, so it is a reason to open
+     * the creator, not a reason to hide the button that opens it.
+     */
+    canCreateTerminal: () => input.roleBlocksTerminal?.() !== true,
     closeSurface: headerSurfaces.closeSurface,
     createHeaderSession: headerActions.createSession,
     createHeaderTerminal: headerActions.createTerminal,
