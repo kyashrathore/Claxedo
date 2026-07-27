@@ -9,6 +9,7 @@ import { defineIconLibrary } from "@/ui/icons/registry"
 
 type CodexSpriteGlyph = `codex-20-${string}`
 export type CodexCustomGlyph =
+  | "codex-custom-check"
   | "codex-custom-claude"
   | "codex-custom-close-small"
   | "codex-custom-copy"
@@ -48,8 +49,11 @@ export const CODEX_ICON_ALIASES = {
   branch: "codex-20-037",
   "bubble-5": "codex-20-153",
   "bullet-list": "codex-20-097",
-  check: "codex-20-139",
-  "check-small": "codex-20-139",
+  // The extracted sprite has NO plain checkmark — codex-20-139 is a
+  // circle-based checklist glyph shared with `checklist`/`task`. A tick is
+  // two line segments and is drawn locally instead.
+  check: "codex-custom-check",
+  "check-small": "codex-custom-check",
   checklist: "codex-20-139",
   "chevron-double-left": "codex-20-001",
   "chevron-double-right": "codex-20-001",

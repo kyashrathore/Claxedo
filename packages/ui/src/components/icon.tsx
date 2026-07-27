@@ -267,6 +267,7 @@ export function Icon(props: IconProps) {
  * render an invisible icon silently.
  */
 const CODEX_CUSTOM_GLYPHS = {
+  "codex-custom-check": "check",
   "codex-custom-close-small": "close-small",
   "codex-custom-copy": "copy",
   "codex-custom-folder": "folder",

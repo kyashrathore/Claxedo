@@ -126,8 +126,35 @@
     color: var(--menu-v2-icon);
   }
 
-  [data-slot="menu-v2-item-indicator"]:not([data-checked]) > svg {
-    visibility: hidden;
+  /*
+   * The check animates in rather than blinking, and the slot keeps its 16px
+   * either way so rows never reflow between states.
+   *
+   * `opacity + scale + blur` rather than `visibility`, because visibility gives
+   * no interpolation — the mark simply appeared. Checked is driven from either
+   * the indicator itself or the item, since both spellings are in use.
+   */
+  [data-slot="menu-v2-item-indicator"] > svg {
+    opacity: 0;
+    scale: 0.25;
+    filter: blur(4px);
+    transition-property: opacity, scale, filter;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  [data-slot="menu-v2-item-indicator"][data-checked] > svg,
+  &[data-checked] [data-slot="menu-v2-item-indicator"] > svg {
+    opacity: 1;
+    scale: 1;
+    filter: blur(0px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="menu-v2-item-indicator"] > svg {
+      transition-duration: 0ms;
+      filter: none;
+    }
   }
 
   [data-slot="menu-v2-item-chevron"] {

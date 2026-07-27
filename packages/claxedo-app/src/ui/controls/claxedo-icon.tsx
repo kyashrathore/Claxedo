@@ -16,6 +16,7 @@ import {
 import { openCodeIconLibrary } from "@/ui/icons/opencode"
 
 const claxedoIcons = {
+  check: `<path d="M5 11.9657L8.37838 14.7529L15 5.83398" stroke="currentColor" stroke-linecap="square"/>`,
   "close-small": `<path d="M6.75 6.75L13.25 13.25M13.25 6.75L6.75 13.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   copy: `<rect x="7" y="6.5" width="8.5" height="8.5" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M12.5 4.5H6.5C5.39543 4.5 4.5 5.39543 4.5 6.5V12.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   send: `<path d="M10 15.5V4.5M5.75 8.75L10 4.5L14.25 8.75" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
@@ -102,6 +103,7 @@ function ensureSprite() {
 }
 
 const customGlyphs = {
+  "codex-custom-check": "check",
   "codex-custom-claude": "claude",
   "codex-custom-close-small": "close-small",
   "codex-custom-copy": "copy",

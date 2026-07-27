@@ -7,7 +7,10 @@ import {
   CLAXEDO_ASK_ALWAYS_ID,
   type PermissionModeOption,
 } from "@/features/session/permission/modes"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+// `ClaxedoIconV2` renders a BARE <svg>; `ClaxedoIcon` wraps it in a div. The
+// menu's indicator contract styles `[data-slot="menu-v2-item-indicator"] > svg`,
+// so the wrapped variant leaves the check unstyled — visible on every row.
+import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/claxedo-icon"
 
 /**
  * The composer's permission-mode picker.
@@ -178,22 +181,38 @@ function ModeRow(props: {
         data-mode={option().id}
         data-what={option().delivery.kind}
         data-selectable={props.row.selectable ? "true" : "false"}
+        /*
+         * `data-checked` is the menu's own selected convention — it already
+         * drives weight and accent colour in menu-v2.css. This row was styling
+         * selection by tinting the leading glyph from `icon-muted` to
+         * `icon-base`, which is a barely-visible grey shift on a 14px icon, so
+         * every row read the same. Opting into the existing contract gives the
+         * check, the weight and the colour together.
+         */
+        data-checked={selected() ? "true" : undefined}
+        aria-checked={selected()}
         class="w-full"
         disabled={!props.row.selectable}
         onSelect={() => props.row.selectable && props.onSelect(option())}
       >
-        <span class="flex min-w-0 items-start gap-2">
+        <span class="flex w-full min-w-0 items-start gap-2">
           <Icon
             name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
             size="small"
-            class="mt-0.5 shrink-0"
+            /*
+             * `mt-0.5` optically centres a 14px glyph against the 16px label
+             * line — geometric centring sits it a touch high.
+             */
+            class="mt-0.5 shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
             classList={{
               "text-v2-icon-icon-base": selected(),
               "text-v2-icon-icon-muted": !selected(),
             }}
           />
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-[13px] leading-4 text-v2-text-text-base">{option().name}</span>
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span data-slot="menu-v2-item-content" class="text-[13px] leading-4 text-v2-text-text-base">
+              {option().name}
+            </span>
             <Show when={detail()}>
               <span
                 data-slot="permission-mode-description"
@@ -215,6 +234,25 @@ function ModeRow(props: {
                 {caveat()}
               </span>
             </Show>
+          </span>
+          {/*
+            Trailing rather than leading, because the leading slot already
+            carries the shield/hand glyph that says what KIND of mode this is.
+            Two marks on the left would compete; kind on the left and state on
+            the right keeps each answering one question.
+
+            Always mounted, never conditionally rendered: the 16px slot holds
+            the row's width steady between states, and the check can animate in
+            rather than appearing. Rows are multi-line, so it pins to the first
+            line instead of centring against the whole block.
+          */}
+          <span
+            data-slot="menu-v2-item-indicator"
+            data-checked={selected() ? "true" : undefined}
+            aria-hidden="true"
+            class="mt-0.5 shrink-0"
+          >
+            <BareIcon name="check-small" size="small" />
           </span>
         </span>
       </MenuV2.Item>
