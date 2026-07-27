@@ -209,6 +209,21 @@
   max-width: calc(100vw - 24px);
   padding: 4px;
   border-radius: 8px;
+  /*
+   * One elevation for every composer menu. These four surfaces are built on
+   * three different primitives — MenuV2 for the permission menu, a Kobalte
+   * popover for the project/worktree pickers, Select for harness and model —
+   * and each brought its own chrome: MenuV2 paints `--v2-elevation-floating`
+   * with no border, the pickers had a hard 1px border and a `shadow-md` that
+   * resolved to transparent layers, and Select has a 1px border with the
+   * hairline `--shadow-xs-border`. Side by side in the same toolbar they read
+   * as three design languages. MenuV2's treatment is the reference; the token
+   * carries its own 0.5px ring, which is why the border goes rather than
+   * being restyled. Codex re-states this in its own layer with `!important`
+   * (see ui-overrides.css), so this is the non-Codex definition.
+   */
+  border: 0;
+  box-shadow: var(--v2-elevation-floating);
 }
 
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact {
