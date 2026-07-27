@@ -4,12 +4,12 @@
  * its own posthog-js init/capture path; duplicating that here would double
  * every renderer-side event.
  *
- * Gated on key presence so a self-built or key-less desktop run makes zero
- * client construction and zero network calls, matching the key-absent
- * no-op contract the other runtimes' observability tests enforce
- * (packages/claxedo-server/src/observability/observability.test.ts).
- * `CLAXEDO_TELEMETRY_MODE` is a later, separate gate (plan W3) layered on
- * top of every sink including this one — not implemented here.
+ * Sending requires two independent opt-ins — `CLAXEDO_TELEMETRY_MODE=on` AND
+ * a PostHog key — so a self-built, key-less, or simply un-opted-in desktop
+ * run makes zero client construction and zero network calls. This matches the
+ * contract the other runtimes' observability tests enforce
+ * (packages/claxedo-server/src/observability/observability.test.ts); a
+ * Claxedo-distributed build turns telemetry on explicitly at package time.
  */
 import { PostHog } from "posthog-node"
 
@@ -34,11 +34,24 @@ function clean(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+/** Only `on` permits sending, matched case-insensitively after trimming;
+ *  `off`, unset, and anything unrecognized all mean off. Mirrors
+ *  claxedo-server's observability/config.ts telemetryEnabled — the desktop
+ *  main process reads process.env directly rather than importing the server
+ *  package, so the rule is restated here rather than shared. */
+function telemetryEnabled(env: NodeJS.ProcessEnv): boolean {
+  return clean(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() === "on"
+}
+
 /** CLAXEDO_POSTHOG_KEY first; POSTHOG_KEY is the unprefixed fallback shared
  *  with the server/relay sinks so one project key works across runtimes.
- *  Exported so the key-precedence gate is directly testable — the value
- *  otherwise only surfaces as an opaque SDK-internal field on the client. */
+ *  The mode is checked BEFORE either name, so a build that has not opted in
+ *  resolves to `undefined` and every downstream branch treats it exactly like
+ *  an unconfigured one.
+ *  Exported so the gate is directly testable — the value otherwise only
+ *  surfaces as an opaque SDK-internal field on the client. */
 export function resolveKey(env: NodeJS.ProcessEnv): string | undefined {
+  if (!telemetryEnabled(env)) return undefined
   return clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
 }
 
@@ -62,7 +75,8 @@ export function resolveBaseProperties(env: NodeJS.ProcessEnv = process.env): Tel
 }
 
 /**
- * Builds the fatal-capture client, or nothing at all without a key. No
+ * Builds the fatal-capture client, or nothing at all unless the build both
+ * opted in and carries a key (resolveKey folds both into one answer). No
  * `personalApiKey` is ever passed, so the SDK never starts a feature-flag
  * poller; `enableExceptionAutocapture` is deliberately left unset so this
  * module's own `process.on` wiring is the single source of fatal handling

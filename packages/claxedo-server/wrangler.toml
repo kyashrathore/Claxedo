@@ -43,15 +43,19 @@ crons = ["*/15 * * * *"]
 #   CLERK_JWT_ISSUER, CLERK_JWKS_URL (+ optional CLERK_JWT_AUDIENCE).
 #
 # Observability (D12) — one vendor carries product analytics AND error
-# tracking, so one key configures both planes. Secret:
-#   CLAXEDO_POSTHOG_KEY — PostHog project key for the Worker. ABSENT = no sink
-#     is registered at all (no events, no exceptions, no network), which is the
-#     self-host default and the promise public-docs/privacy makes.
+# tracking, so one key configures both planes. Sending takes TWO opt-ins and
+# both are required; any other combination registers no sink at all (no events,
+# no exceptions, no network), which is the default everywhere.
+# Public var:
+#   CLAXEDO_TELEMETRY_MODE — `on` is the only value that permits sending
+#     (case-insensitive). Checked BEFORE the key, so `off`/unset silences the
+#     Worker whatever secrets it holds. Cloud deploys set it explicitly.
+# Secret:
+#   CLAXEDO_POSTHOG_KEY — PostHog project key for the Worker. Inert on its own
+#     while the mode is anything but `on`.
 # Public var (optional):
 #   CLAXEDO_POSTHOG_HOST — ingest host override for the EU region or a
 #     self-hosted PostHog. Defaults to https://us.i.posthog.com.
-# CLAXEDO_TELEMETRY_MODE (on|off), the named kill-switch checked BEFORE key
-# presence, arrives in a follow-up stream and will be documented here with it.
 # Release tagging (D12): CLAXEDO_RELEASE = git SHA, passed AT DEPLOY TIME by
 # the D11 deploy workflow rather than pinned here:
 #   wrangler deploy --var CLAXEDO_RELEASE:$GITHUB_SHA

@@ -56,20 +56,23 @@ function requireEnv(name: string) {
  * W2c (2026-07-28-001): PostHog is the relay's error sink — one vendor
  * carries error tracking for every runtime behind one distinct_id space.
  *
- * Gated on `CLAXEDO_POSTHOG_KEY` (`POSTHOG_KEY` accepted as a fallback — the
- * same unprefixed name claxedo-server's posthog.ts already reads). Absent key
- * → no `PostHog` client is ever constructed: zero SDK overhead, zero network —
- * a clean no-op safe to ship before the telemetry account exists. Host defaults to
- * `https://us.i.posthog.com` (the canonical ingest host — NOT the legacy
- * `app.posthog.com` default some SDKs ship). Release = git SHA passed by the
- * D11 deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA` accepted as alias);
- * captures are tagged unit=relay + deployment_mode (absent → "self-host",
- * mirroring D9's default).
+ * Sending requires two independent opt-ins: `CLAXEDO_TELEMETRY_MODE=on` AND
+ * `CLAXEDO_POSTHOG_KEY` (`POSTHOG_KEY` accepted as a fallback — the same
+ * unprefixed name claxedo-server's posthog.ts already reads). Any other
+ * combination → no `PostHog` client is ever constructed: zero SDK overhead,
+ * zero network — a clean no-op safe to ship before the telemetry account
+ * exists. Host defaults to `https://us.i.posthog.com` (the canonical ingest
+ * host — NOT the legacy `app.posthog.com` default some SDKs ship). Release =
+ * git SHA passed by the D11 deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA`
+ * accepted as alias); captures are tagged unit=relay + deployment_mode
+ * (absent → "self-host", mirroring D9's default).
  *
  * `posthog-node` runs fine on Bun (`Bun.serve`), unlike the Cloudflare
  * Worker, which keeps it off its import graph entirely (see worker.ts).
  */
 export type RelayObservabilityEnv = {
+  /** Only `on` permits sending, matched case-insensitively after trimming. */
+  CLAXEDO_TELEMETRY_MODE?: string | undefined
   CLAXEDO_POSTHOG_KEY?: string | undefined
   POSTHOG_KEY?: string | undefined
   CLAXEDO_POSTHOG_HOST?: string | undefined
@@ -88,10 +91,14 @@ export type RelayTelemetryOptions = {
 }
 
 /**
- * Pure env → PostHog options resolver. `undefined` = key absent = do NOT
- * construct a client (no client, no network). Exported for tests.
+ * Pure env → PostHog options resolver. `undefined` = do NOT construct a client
+ * (no client, no network), which is the answer unless BOTH opt-ins are
+ * present. The mode is read before the key so that a deployment which has not
+ * said `on` stays silent no matter which keys reach its environment.
+ * Exported for tests.
  */
 export function relayTelemetryOptions(env: RelayObservabilityEnv): RelayTelemetryOptions | undefined {
+  if (clean(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() !== "on") return undefined
   const key = clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
   if (!key) return undefined
   const release = clean(env.CLAXEDO_RELEASE) ?? clean(env.GIT_SHA)
@@ -108,8 +115,8 @@ export function relayTelemetryOptions(env: RelayObservabilityEnv): RelayTelemetr
 
 // The PostHog client is an explicit object with no ambient global, so
 // reportFatal needs somewhere to find the one instance
-// initRelayObservability constructed. Stays undefined when the key is absent
-// — that's the no-client guarantee the key-absent tests assert on.
+// initRelayObservability constructed. Stays undefined unless both opt-ins are
+// present — that's the no-client guarantee those tests assert on.
 let relayPostHogClient: PostHog | undefined
 let relayPostHogTags: Record<string, string> = {}
 
@@ -604,7 +611,7 @@ export function installFatalProcessHandlers(options: FatalProcessHandlerOptions)
 async function main() {
   // W2c: PostHog first — everything after this (env validation exits report
   // their reason on stderr already; runtime errors are the tracker's job).
-  // No-op unless CLAXEDO_POSTHOG_KEY (or POSTHOG_KEY) is set.
+  // No-op unless CLAXEDO_TELEMETRY_MODE=on AND a key is set.
   const observability = initRelayObservability(process.env)
   if (observability.enabled) {
     console.log("[workspace-relay] posthog error tracking enabled")

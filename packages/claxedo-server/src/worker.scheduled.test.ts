@@ -136,7 +136,8 @@ describe("worker scheduled error reporting", () => {
     await expect(
       worker.scheduled(
         controller,
-        { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret", CLAXEDO_POSTHOG_KEY: "phc_worker" },
+        // Sending takes both opt-ins (W3): the mode plus the key.
+        { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret", CLAXEDO_TELEMETRY_MODE: "on", CLAXEDO_POSTHOG_KEY: "phc_worker" },
         ctx,
       ),
     ).rejects.toThrow("500")

@@ -4,8 +4,17 @@ import { exceptionIdentity, parseStackFrames, workerErrorCapture, workerTelemetr
 /**
  * The Worker cannot use `posthog-node` (forbidden import), so its `$exception`
  * payload is assembled by hand. These gates hold that hand-rolled shape and the
- * key-absent no-network contract it shares with the analytics sink.
+ * no-network contract both sinks share: sending takes CLAXEDO_TELEMETRY_MODE=on
+ * AND a key, and `fetch` is the whole transport, so a fetch spy sees everything
+ * either sink could possibly send.
  */
+
+/** Both opt-ins, spread into the env a test wants to reach the network. */
+const ON = { CLAXEDO_TELEMETRY_MODE: "on" } as const
+
+/** Shaped like a genuine PostHog project key, so the mode gate is provably
+ *  what silences these envs rather than an obviously-invalid key. */
+const REAL_KEY = "phc_0123456789abcdefghijklmnopqrstuvwxyzABCD"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -62,15 +71,28 @@ describe("exceptionIdentity", () => {
 })
 
 describe("workerTelemetry", () => {
-  test("key absent → zero network", () => {
+  test("opted in but key absent → zero network", () => {
     const spy = fetchSpy()
-    workerTelemetry({}).capture("user_1", "thing.happened", { a: 1 })
+    workerTelemetry({ ...ON }).capture("user_1", "thing.happened", { a: 1 })
     expect(spy).not.toHaveBeenCalled()
   })
 
-  test("key present → one POST to /capture/ with the event payload", () => {
+  test("mode off + a real-looking key → zero network", () => {
     const spy = fetchSpy()
-    workerTelemetry({ CLAXEDO_POSTHOG_KEY: "phc_w" }).capture("user_1", "thing.happened", { a: 1 })
+    workerTelemetry({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY })
+      .capture("user_1", "thing.happened", { a: 1 })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test("mode unset + a real-looking key → zero network", () => {
+    const spy = fetchSpy()
+    workerTelemetry({ CLAXEDO_POSTHOG_KEY: REAL_KEY }).capture("user_1", "thing.happened", { a: 1 })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test("both opt-ins → one POST to /capture/ with the event payload", () => {
+    const spy = fetchSpy()
+    workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" }).capture("user_1", "thing.happened", { a: 1 })
     expect(spy).toHaveBeenCalledTimes(1)
     const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe("https://us.i.posthog.com/capture/")
@@ -84,18 +106,32 @@ describe("workerTelemetry", () => {
 })
 
 describe("workerErrorCapture", () => {
-  test("key absent → zero network, and the promise still resolves", async () => {
+  test("opted in but key absent → zero network, and the promise still resolves", async () => {
     const spy = fetchSpy()
-    await workerErrorCapture({}).captureException(new Error("boom"), "system", { unit: "worker" })
+    await workerErrorCapture({ ...ON }).captureException(new Error("boom"), "system", { unit: "worker" })
     expect(spy).not.toHaveBeenCalled()
   })
 
-  test("key present → exactly one $exception POST carrying the exception list and tags", async () => {
+  test("mode off + a real-looking key → zero network, and the promise still resolves", async () => {
+    const spy = fetchSpy()
+    await workerErrorCapture({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY })
+      .captureException(new Error("boom"), "system", { unit: "worker" })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test("mode unset + a real-looking key → zero network, and the promise still resolves", async () => {
+    const spy = fetchSpy()
+    await workerErrorCapture({ CLAXEDO_POSTHOG_KEY: REAL_KEY })
+      .captureException(new Error("boom"), "system", { unit: "worker" })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test("both opt-ins → exactly one $exception POST carrying the exception list and tags", async () => {
     const spy = fetchSpy()
     const error = new Error("route blew up")
     error.stack = "Error: route blew up\n    at handleRequest (/app/src/routes/x.ts:12:7)"
 
-    await workerErrorCapture({ CLAXEDO_POSTHOG_KEY: "phc_w", CLAXEDO_POSTHOG_HOST: "https://eu.i.posthog.com" })
+    await workerErrorCapture({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w", CLAXEDO_POSTHOG_HOST: "https://eu.i.posthog.com" })
       .captureException(error, "user_7", { unit: "worker", page_class: "payment" })
 
     expect(spy).toHaveBeenCalledTimes(1)
@@ -128,7 +164,7 @@ describe("workerErrorCapture", () => {
       throw new Error("network down")
     }))
     await expect(
-      workerErrorCapture({ CLAXEDO_POSTHOG_KEY: "phc_w" }).captureException(new Error("boom"), "system"),
+      workerErrorCapture({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" }).captureException(new Error("boom"), "system"),
     ).resolves.toBeUndefined()
   })
 })

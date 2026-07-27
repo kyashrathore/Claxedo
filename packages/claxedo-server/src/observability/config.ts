@@ -8,16 +8,24 @@
  * forbidden-import list — the Worker feeds these options into a fetch-based
  * sink, the Node server feeds them into the shared `posthog-node` client.
  *
- * Key-absent contract: with no PostHog key the returned options carry
- * `enabled: false` and no key. Every caller treats that as "never initialize,
- * register no sink" — the self-host promise (no keys configured ⇒ nothing is
- * sent, no network calls) is a property of this branch.
+ * Sending requires TWO independent opt-ins: `CLAXEDO_TELEMETRY_MODE=on` AND a
+ * PostHog key. Anything else — mode off, mode unset, key absent — yields
+ * options carrying `enabled: false` and no key, and every caller treats that as
+ * "never initialize, register no sink". Both halves of the deployer-facing
+ * promise (a deployment sends only when it says `on`; no keys configured ⇒
+ * nothing is sent, no network calls) are properties of that one branch.
+ *
+ * `resolveTelemetryKey` is the single place both opt-ins are applied, which is
+ * what makes them total: posthog.ts, observability/node.ts,
+ * control-plane/worker-telemetry.ts and worker.ts's sink registration all
+ * resolve their key through this module and inherit the gate.
  */
 
 export type ObservabilityUnit = "worker" | "server" | "relay"
 
 export type ObservabilityEnv = {
-  /** Project key for this unit. Absent → observability is a disabled no-op. */
+  /** Project key for this unit. Absent → observability is a disabled no-op,
+   *  and a key alone never enables it; see telemetryEnabled below. */
   CLAXEDO_POSTHOG_KEY?: string | undefined
   /** Unprefixed alias, honored second (predates the CLAXEDO_ prefix). */
   POSTHOG_KEY?: string | undefined
@@ -31,6 +39,8 @@ export type ObservabilityEnv = {
   GIT_SHA?: string | undefined
   /** D9 deployment mode; absent = self-host (mirrors deployment-mode.ts). */
   CLAXEDO_DEPLOYMENT_MODE?: string | undefined
+  /** The named switch. Only `on` permits sending; see telemetryEnabled below. */
+  CLAXEDO_TELEMETRY_MODE?: string | undefined
   /** Accept process.env / HostedWorkerEnv verbatim (extra keys are ignored). */
   [key: string]: string | undefined
 }
@@ -63,11 +73,34 @@ export function deploymentModeTag(env: ObservabilityEnv): string {
 }
 
 /**
- * The single key both telemetry planes read. The unprefixed alias keeps
- * existing self-host deployments (which set POSTHOG_KEY/POSTHOG_HOST as a
- * pair) working unchanged.
+ * `CLAXEDO_TELEMETRY_MODE=on` — the named switch, matched case-insensitively
+ * after trimming. `on` is the sole value that permits sending; `off`, unset,
+ * and any unrecognized value all mean off.
+ *
+ * Off is the default so that telemetry is something a deployment opts into by
+ * saying so, rather than something it acquires by side effect. A key alone is
+ * a configuration detail that can arrive through a shared secret store or a
+ * copied env file; `on` is a deliberate statement, and requiring both keeps
+ * the deployer-facing promise ("a build running in `on` mode is the only build
+ * that sends anything") literally true.
+ */
+export function telemetryEnabled(env: ObservabilityEnv): boolean {
+  return clean(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() === "on"
+}
+
+/**
+ * The single key both telemetry planes read, and the single place both opt-ins
+ * are enforced. `CLAXEDO_POSTHOG_KEY` wins; the unprefixed `POSTHOG_KEY` is
+ * accepted as an alias so one project key can be shared across runtimes.
+ *
+ * The switch is checked BEFORE either key name, so any mode other than `on`
+ * resolves to the same `undefined` an unconfigured deployment produces and
+ * every downstream sink takes its existing key-absent branch — no client, no
+ * network. Ordering is the contract, not a detail: reading the key first would
+ * let a configured key outrank the deployment's own stated posture.
  */
 export function resolveTelemetryKey(env: ObservabilityEnv): string | undefined {
+  if (!telemetryEnabled(env)) return undefined
   return clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
 }
 
@@ -78,7 +111,8 @@ export function resolveTelemetryHost(env: ObservabilityEnv): string {
 }
 
 export type ObservabilityOptions = {
-  /** false ⇔ no key configured ⇔ never initialize, register no sink. */
+  /** true ⇔ mode is `on` AND a key is configured. false ⇒ never initialize,
+   *  register no sink. */
   enabled: boolean
   key?: string
   host: string

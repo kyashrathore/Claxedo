@@ -56,6 +56,22 @@ let identityOrgId = ANONYMOUS_ID
 // build is treated as self-host, the plane with the strictest posture.
 let deployment: DeploymentMode = "self-host"
 
+/**
+ * The named switch, in the only form the browser can see it: Vite exposes
+ * `VITE_`-prefixed variables to client code and nothing else, so the app reads
+ * `VITE_CLAXEDO_TELEMETRY_MODE` where the server-side runtimes read
+ * `CLAXEDO_TELEMETRY_MODE`. Same rule either side of the prefix — only `on`
+ * permits sending, matched case-insensitively after trimming.
+ *
+ * Vite inlines `import.meta.env` at build time, so in a real bundle this
+ * collapses to a constant and the whole init path drops out of an opted-out
+ * build. It stays a function so a test can restub the value between module
+ * loads.
+ */
+function telemetryEnabled(): boolean {
+  return String(import.meta.env.VITE_CLAXEDO_TELEMETRY_MODE ?? "").trim().toLowerCase() === "on"
+}
+
 function loadPostHog() {
   if (import.meta.env.DEV) return Promise.resolve(undefined)
   if (posthog) return Promise.resolve(posthog)
@@ -72,7 +88,10 @@ function flush() {
 }
 
 function enqueue(run: (client: typeof import("posthog-js").default) => void) {
-  if (!initialized) return
+  // An opted-out build drops rather than queues: the queue only ever drains
+  // through a client this build never constructs, so anything pushed here
+  // would accumulate for the lifetime of the page.
+  if (!telemetryEnabled() || !initialized) return
   if (ready && posthog) {
     run(posthog)
     return
@@ -83,6 +102,10 @@ function enqueue(run: (client: typeof import("posthog-js").default) => void) {
 export function initPostHog() {
   // Never send analytics from dev builds
   if (import.meta.env.DEV) return
+  // The switch is read before the key: sending takes two opt-ins, and a build
+  // that did not say `on` stays silent whatever key was compiled into it.
+  // `initialized` deliberately stays false, so every enqueue below drops too.
+  if (!telemetryEnabled()) return
   const key = import.meta.env.VITE_POSTHOG_KEY
   if (!key || initialized) return
   initialized = true
