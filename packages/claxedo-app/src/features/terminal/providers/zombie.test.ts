@@ -22,10 +22,12 @@ const LEGACY_KEY = `${RAW_SCOPE}:workspace:terminal`
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?zombie-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)) }
+const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?zombie-restore`)) }
 
 afterAll(() => {
   mock.module("@/platform/api/api", () => realApiModule)
   mock.module("@/platform/persistence/persist", () => realPersistModule)
+  mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
 // Mock persisted() to use our in-memory storage instead of localStorage
