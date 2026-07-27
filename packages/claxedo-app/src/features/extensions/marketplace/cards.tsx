@@ -58,7 +58,7 @@ export const MachineSection: Component<{
                 <h3 class="text-[12px] font-medium text-text-base">{HARNESS_LABEL[harness]}</h3>
                 <span class="text-[10px] text-text-weaker">{items.length}</span>
               </div>
-              <div class="grid grid-cols-1 gap-1 lg:grid-cols-2">
+              <div class="marketplace-grid grid gap-1">
                 <For each={items}>
                   {(item) => (
                     <MachineCard
@@ -222,7 +222,7 @@ export const ExtensionCard: Component<{
   })
 
   return (
-    <div class="group flex items-start gap-3 rounded-md border border-border-weak-base/30 bg-surface-raised-base/20 px-3.5 py-3 transition-colors hover:border-border-weak-base/70 hover:bg-surface-raised-base/50">
+    <div class="marketplace-extension-card group flex items-start gap-3 rounded-md border border-border-weak-base/30 bg-surface-raised-base/20 px-3.5 py-3 transition-colors hover:border-border-weak-base/70 hover:bg-surface-raised-base/50">
       <div class="grid size-9 shrink-0 place-items-center rounded-md bg-surface-base text-[16px]">
         <Show
           when={props.entry.icon}
@@ -252,7 +252,7 @@ export const ExtensionCard: Component<{
         </Show>
       </div>
       <div class="min-w-0 flex-1">
-        <div class="flex items-baseline justify-between gap-3">
+        <div class="marketplace-card-header flex items-baseline justify-between gap-3">
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline gap-2">
               <span class="truncate text-[13px] font-medium text-text-strong">{props.entry.name}</span>
@@ -300,7 +300,7 @@ export const InstallButton: Component<{
     <Show
       when={!isInstalled()}
       fallback={
-        <div class="group/install relative flex shrink-0">
+        <div class="marketplace-install-control group/install relative flex shrink-0">
           <span
             class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base group-hover/install:hidden"
             classList={{ "text-text-weak": isDisabled() }}
@@ -349,7 +349,7 @@ export const InstallButton: Component<{
     >
       <button
         type="button"
-        class="h-7 shrink-0 rounded-md border border-border-weak-base/40 bg-surface-base px-3 text-[11px] font-medium text-text-base outline-none transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover focus:outline-none disabled:opacity-60"
+        class="marketplace-install-control h-7 shrink-0 rounded-md border border-border-weak-base/40 bg-surface-base px-3 text-[11px] font-medium text-text-base outline-none transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover focus:outline-none disabled:opacity-60"
         onClick={(event) => {
           event.stopPropagation()
           props.onClick()
