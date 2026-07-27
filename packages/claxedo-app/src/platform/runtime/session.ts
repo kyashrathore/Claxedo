@@ -56,6 +56,13 @@ export type SessionBackend = {
     directory: AgentRuntimeDirectory
     sessionID: string
     sessionRef?: SessionRef
+    /**
+     * The harness the caller is asking ABOUT. Load-bearing on a draft, where
+     * there is no session for the route to resolve an adapter from: omit it and
+     * the runtime answers for the directory's default harness instead of the
+     * one the composer targets.
+     */
+    harness?: string
   }) => Promise<{ data?: AgentRuntimePermissionModeState }>
   setPermissionMode: (input: {
     directory: AgentRuntimeDirectory
