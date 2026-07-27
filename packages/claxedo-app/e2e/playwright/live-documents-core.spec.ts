@@ -316,8 +316,10 @@ test.describe.serial("live Documents core backend @live", () => {
     await page.keyboard.type("Live rich typing")
     await page.keyboard.press("Enter")
     await page.keyboard.type("Second paragraph")
-    await expect(page.getByRole("status")).toContainText(/Unsaved changes|Saving/)
-    await expect(page.getByRole("status")).toContainText("Saved", { timeout: 20_000 })
+    // Scoped like the helpers above: a toast also carries role=status, so the
+    // bare role query is ambiguous the moment any toast is on screen.
+    await expect(page.getByRole("status").filter({ hasText: /Unsaved changes|Saving/ })).toBeVisible()
+    await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible({ timeout: 20_000 })
     expect(await rich.evaluate((element) => document.activeElement === element)).toBe(true)
     const richHandleAfterSave = await rich.elementHandle()
     if (!richHandleAfterSave) throw new Error("Live rich editor disappeared after autosave")
