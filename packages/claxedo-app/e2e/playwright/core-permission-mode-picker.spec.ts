@@ -83,7 +83,7 @@ test.describe("@core permission picker — the harness's own modes", () => {
     // ACP agents advertise on session/new, so a draft gets the RUNGS. They are intents,
     // resolved to the agent's real ids at session start — without them the draft fell back
     // to Claxedo's options, which are discarded the instant the session opens.
-    { harness: "claude-acp", ids: ["ask", "auto", "full"], label: /Allow edits, ask before risk/i },
+    { harness: "claude-acp", ids: ["ask", "auto", "full"], label: /Allow everything except danger/i },
   ]
 
   for (const item of DRAFT_CASES) {

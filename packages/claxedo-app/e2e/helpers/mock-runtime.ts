@@ -1436,7 +1436,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     acp: {
       modes: [
         { id: "ask", name: "Ask for everything", level: "ask" },
-        { id: "auto", name: "Allow edits, ask before risk", level: "auto" },
+        { id: "auto", name: "Allow everything except danger", level: "auto" },
         { id: "full", name: "Allow everything", level: "full" },
       ],
     },

@@ -268,6 +268,7 @@ export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
 export function claxedoPermissionModes(input: {
   harness: HarnessId
   report?: HarnessModeReport
+  hasSession?: boolean
 }): readonly PermissionModeOption[] {
   const auto = claxedoAutoOption(input)
   // An off switch only has to be manufactured when the harness offers nothing to
@@ -301,7 +302,11 @@ export function claxedoPermissionModes(input: {
  * Because the caveat is now attached only at rung 3, it says something true
  * wherever it appears.
  */
-function claxedoAutoOption(input: { harness: HarnessId; report?: HarnessModeReport }): PermissionModeOption {
+function claxedoAutoOption(input: {
+  harness: HarnessId
+  report?: HarnessModeReport
+  hasSession?: boolean
+}): PermissionModeOption {
   const base = {
     id: CLAXEDO_ALLOW_SAFE_ID,
     name: "Auto",
@@ -336,7 +341,8 @@ function claxedoAutoOption(input: { harness: HarnessId; report?: HarnessModeRepo
        * behaviour and a name the harness reported cannot.
        */
       description: autoDescription(input.harness, harnessAuto),
-      ...(input.report!.appliesFrom === "next-session"
+      // See `harnessPermissionModes` — nothing to exclude on a draft.
+      ...(input.report!.appliesFrom === "next-session" && input.hasSession !== false
         ? { caveat: `Applies to the next ${HARNESS_LABELS[input.harness]} agent, not this session` }
         : {}),
       delivery: {
@@ -431,6 +437,8 @@ export type HarnessPermissionModes = {
 export function harnessPermissionModes(input: {
   harness: HarnessId
   report?: HarnessModeReport
+  /** See `permissionModeOptions`. Suppresses next-session caveats on a draft. */
+  hasSession?: boolean
 }): HarnessPermissionModes {
   const label = HARNESS_LABELS[input.harness]
   const report = input.report
@@ -451,7 +459,9 @@ export function harnessPermissionModes(input: {
       name: mode.name,
       ...(mode.description ? { description: mode.description } : {}),
       origin: "harness" as const,
-      ...(report.appliesFrom === "next-session"
+      // Suppressed on a draft: there is no "this session" for the change to be
+      // excluded from, and the first message will run under exactly this mode.
+      ...(report.appliesFrom === "next-session" && input.hasSession !== false
         ? { caveat: `Applies to the next ${label} agent, not this session` }
         : {}),
       delivery: {
@@ -475,6 +485,15 @@ export function harnessPermissionModes(input: {
 export function permissionModeOptions(input: {
   harness: HarnessId
   report?: HarnessModeReport
+  /**
+   * Whether a session actually exists yet.
+   *
+   * Only `next-session` caveats care, and they care a lot: "applies to the next
+   * agent, not this session" is meaningless on a DRAFT, where there is no this
+   * session to be excluded from. The first message creates the session and picks
+   * the mode up, so on a draft the choice is simply in force.
+   */
+  hasSession?: boolean
 }): { claxedo: readonly PermissionModeOption[]; harness: HarnessPermissionModes } {
   const harness = harnessPermissionModes(input)
   // Auto is ALWAYS present, and the harness's own modes always sit below it.

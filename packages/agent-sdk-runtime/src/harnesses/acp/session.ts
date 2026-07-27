@@ -236,7 +236,11 @@ export const ACP_DRAFT_MODES: readonly AgentPermissionMode[] = [
   { id: "ask", name: "Ask for everything", description: "Every tool call waits for you", level: "ask" },
   {
     id: "auto",
-    name: "Allow edits, ask before risk",
+    // Named for the rung's actual promise: everything safe runs, and the danger
+    // tier — shell, network, out-of-project, subagent spawns — still asks. The
+    // previous "Allow edits, ask before risk" described a narrower mode than
+    // this rung resolves to on every agent that reports one.
+    name: "Allow everything except danger",
     description: "Resolved to this agent's matching mode when the session starts",
     level: "auto",
   },

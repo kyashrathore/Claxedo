@@ -108,7 +108,15 @@ export function createComposerPermissionMode(input: {
         harness: { label: "Harness", rows: [], unavailable: "Still identifying this session's harness" },
       }
     }
-    const options = permissionModeOptions({ harness, report: input.report?.() })
+    // A DRAFT has no session id yet. That matters for `next-session` harnesses
+    // (cursor): "applies to the next agent, not this session" is meaningless
+    // before a session exists, and actively wrong — the first message creates
+    // the session and runs under exactly this mode.
+    const options = permissionModeOptions({
+      harness,
+      report: input.report?.(),
+      hasSession: !!input.sessionId(),
+    })
     return {
       claxedo: options.claxedo.map(row),
       harness: {

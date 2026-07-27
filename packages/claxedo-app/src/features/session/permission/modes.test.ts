@@ -128,6 +128,27 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(delivery.appliesFrom).toBe("next-session")
   })
 
+  /*
+   * A draft has no session, so there is nothing for a next-session change to be
+   * excluded FROM. The caveat read "applies to the next agent, not this session"
+   * on a composer where no session existed — describing a distinction that had
+   * no second term. The first message creates the session and runs under exactly
+   * the chosen mode, so on a draft the choice is simply in force.
+   */
+  test("a next-session harness stays silent on a draft", () => {
+    const cursor = report({
+      modes: [{ id: "auto-review", name: "Auto-review", level: "auto" }],
+      appliesFrom: "next-session",
+    })
+    const draft = permissionModeOptions({ harness: "cursor-sdk", report: cursor, hasSession: false })
+    expect(draft.claxedo[0]!.caveat).toBeUndefined()
+    for (const mode of draft.harness.modes) expect(mode.caveat, mode.id).toBeUndefined()
+
+    const live = permissionModeOptions({ harness: "cursor-sdk", report: cursor, hasSession: true })
+    expect(live.claxedo[0]!.caveat).toMatch(/next .* agent/i)
+    for (const mode of live.harness.modes) expect(mode.caveat, mode.id).toMatch(/next .* agent/i)
+  })
+
   test("a next-turn harness adds no session caveat", () => {
     const { modes } = harnessPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     for (const mode of modes) expect(mode.caveat, mode.id).toBeUndefined()
