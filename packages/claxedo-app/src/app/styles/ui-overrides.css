@@ -497,19 +497,19 @@ html[data-theme="codex"] [data-component="session-composer"] {
 }
 
 /*
- * The context/environment card is a FLOATING surface, not a docked one.
+ * The context/environment and session cards keep a hairline in Codex.
  *
- * It used to carry `inset 0 0 0 1px var(--composer-border)` with the header and
- * project chips above, on the reasoning that they are all raised surfaces. They
- * are not the same thing: those sit IN the page and an inset edge is what
- * separates them from it, while this card floats above the page, where the same
- * edge just reads as a hairline border around a popover — the one the menus,
- * pickers and switcher card have all had taken off.
+ * The shipped Codex app edges these cards — a 1px border plus a soft raised
+ * shadow — and they are not the same surface as the menus. A dropdown, select
+ * or dialog there is a bare panel on its shadow alone, which is why the ring is
+ * stripped from those above; a card is a card, and takes an edge.
  */
 html[data-theme="codex"] .ui-context-card.is-floating,
 html[data-theme="codex"] .session-envcard.is-floating,
 html[data-theme="codex"] [data-slot="switcher-metadata-card"] {
-  box-shadow: var(--codex-shadow-raised);
+  box-shadow:
+    inset 0 0 0 1px var(--composer-border),
+    var(--codex-shadow-raised);
 }
 
 /*
