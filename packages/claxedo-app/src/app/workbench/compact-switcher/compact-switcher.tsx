@@ -69,17 +69,37 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean }) {
   )
 }
 
-function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; value: string }) {
+function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; value?: string }) {
+  const value = () => props.value?.trim()
   return (
-    <div class="grid grid-cols-[20px_76px_minmax(0,1fr)] items-center gap-2">
-      <span class="flex size-5 items-center justify-center rounded bg-surface-base-hover/45 text-icon-weak-base">
+    <div class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
+      {/*
+        No chip behind the glyph. Five filled squares stacked down a 320px card
+        were the loudest thing in it, and they encode what the label beside them
+        already says — the icon is here to help the eye find a row, not to be a
+        second label.
+      */}
+      <span class="flex items-center justify-center text-icon-weak-base">
         <Icon name={props.icon} size="small" />
       </span>
-      <span class="text-[10px] font-medium uppercase tracking-[0.08em] text-text-weaker">
-        {props.label}
-      </span>
-      <span class="min-w-0 truncate text-[12px] font-medium text-text-base">
-        {props.value}
+      {/*
+        Sentence case, not tracked micro-caps. At 10px with 0.08em tracking
+        "WORKSPACE" only just cleared its 76px column — one longer word, or any
+        of the other fifteen locales, and it truncated. Sentence case at 11px is
+        narrower, quieter, and leaves the value as the thing being read.
+      */}
+      <span class="text-[11px] text-text-weaker">{props.label}</span>
+      <span
+        class="min-w-0 truncate text-[12px]"
+        classList={{
+          "text-text-base": !!value(),
+          // Absence is not a value. An em dash says "nothing here" without
+          // spending a full phrase on it, twice, in a five-row card.
+          "text-text-weaker": !value(),
+        }}
+        title={value() || undefined}
+      >
+        {value() || "—"}
       </span>
     </div>
   )
@@ -94,29 +114,37 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
       // `bg-v2-background-bg-layer-01` is a PAGE layer — it is what made this
       // card read grey against the white menus beside it. The elevation token
       // carries its own 0.5px ring, so the border goes with it.
-      class="w-[320px] rounded-lg bg-[var(--overlay-surface)] p-3 shadow-[var(--v2-elevation-floating)]"
+      // `raised`, not `floating`: one step down the same elevation scale. This
+      // is a hover card the size of a tooltip, and the floating step is what the
+      // composer menus use — it read as a heavier object than it is.
+      class="w-[320px] rounded-lg bg-[var(--overlay-surface)] p-3 shadow-[var(--v2-elevation-raised)]"
     >
-      <div class="mb-3 flex items-start gap-3">
+      <div class="mb-2.5 flex items-center gap-2.5">
         <ProjectAvatar
           fallback={fallback(props.item.projectLabel, "Global")}
           variant="outline"
-          class="size-9 shrink-0"
+          class="size-8 shrink-0"
         />
         <div class="min-w-0 flex-1">
-          <div class="truncate text-[13px] font-semibold text-text-base">
+          <div class="truncate text-[13px] font-semibold leading-tight text-text-base">
             {fallback(props.item.title, "Untitled session")}
           </div>
-          <div class="mt-0.5 truncate text-[11px] text-text-weaker">
+          <div class="mt-1 truncate text-[11px] leading-tight text-text-weaker">
             {fallback(props.item.projectLabel, "Global")} · {fallback(props.item.workspaceLabel, "Global")}
           </div>
         </div>
       </div>
 
-      <div class="space-y-2">
+      {/*
+        `gap-y-0.5` on 20px rows, not `space-y-2`. The rows are a scan target,
+        so an even, tight rhythm reads as one block; 8px gaps made five short
+        rows look like five separate things.
+      */}
+      <div class="grid gap-y-0.5">
         <MetadataRow icon="folder" label="Project" value={fallback(props.item.projectLabel, "Global")} />
-        <MetadataRow icon="link" label="Git Repo" value={fallback(props.item.gitRepo)} />
-        <MetadataRow icon="branch" label="Branch" value={fallback(props.item.gitBranch)} />
-        <MetadataRow icon="file-tree" label="Worktree" value={fallback(props.item.workspaceDir ?? props.item.projectWorktree)} />
+        <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
+        <MetadataRow icon="branch" label="Branch" value={props.item.gitBranch} />
+        <MetadataRow icon="file-tree" label="Worktree" value={props.item.workspaceDir ?? props.item.projectWorktree} />
         <MetadataRow icon="laptop" label="Workspace" value={fallback(props.item.workspaceLabel, "Global")} />
       </div>
     </div>
