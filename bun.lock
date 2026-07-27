@@ -1087,13 +1087,11 @@
   "trustedDependencies": [
     "esbuild",
     "node-pty",
-    "tree-sitter-powershell",
     "protobufjs",
     "electron",
     "better-sqlite3",
     "web-tree-sitter",
     "@vscode/windows-process-tree",
-    "tree-sitter-bash",
   ],
   "patchedDependencies": {
     "@tanstack/virtual-core@3.17.3": "patches/@tanstack%2Fvirtual-core@3.17.3.patch",
