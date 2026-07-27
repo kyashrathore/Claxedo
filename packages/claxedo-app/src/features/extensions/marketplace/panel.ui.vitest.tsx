@@ -21,6 +21,19 @@ const CATALOG = {
       recommendedTargets: ["claude"],
       featured: true,
     },
+    {
+      // Deliberately oversized: a row must not grow a line for either field.
+      id: "verbose",
+      name: "An Extension With A Name Far Longer Than Any Row Should Have To Hold",
+      description:
+        "A description long enough that it would certainly wrap onto a second and probably a third line if the row let it, which is the whole point of clamping it.",
+      source: "https://github.com/acme/verbose-extension-with-a-long-repository-name",
+      kind: "mcp",
+      categories: ["mcp-servers"],
+      recommendedScope: "project",
+      recommendedTargets: ["claude"],
+      featured: true,
+    },
   ],
 }
 
@@ -74,4 +87,56 @@ describe("MarketplacePanel categories — one control per category at any width"
       expect(document.querySelectorAll(".marketplace-sidebar")).toHaveLength(1)
     })
   }
+})
+
+/*
+ * Entries are flat two-line rows, not cards. jsdom does not lay text out, so
+ * this asserts the structure that makes two lines unconditional: one no-wrap
+ * flex line, one clamped line, and the install control as a third sibling
+ * rather than a third line. (The rendered heights were measured separately in
+ * a browser: every row is 69px at both 360px and 864px pane widths, including
+ * the oversized entry below.)
+ */
+describe("MarketplacePanel entries — flat two-line rows at any width", () => {
+  for (const [label, width] of [["narrow pane", "360px"], ["wide pane", "1280px"]] as const) {
+    test(`${label}: every row is exactly two lines with no card chrome`, async () => {
+      renderAt(width)
+      await waitFor(() => expect(document.querySelectorAll(".marketplace-row").length).toBe(2))
+
+      for (const row of document.querySelectorAll<HTMLElement>(".marketplace-row")) {
+        const lines = row.querySelector<HTMLElement>(".marketplace-row-lines")!
+
+        // Two lines, and nothing else that could become a third.
+        expect(lines.querySelectorAll(".marketplace-row-line")).toHaveLength(2)
+        expect(lines.children).toHaveLength(2)
+
+        const [first, second] = [...lines.children] as HTMLElement[]
+        // Line 1 is a flex row that never wraps.
+        expect(first.className).toContain("flex")
+        expect(first.className).not.toContain("flex-wrap")
+        // Line 2 is clamped to a single line however long the description is.
+        expect(second.className).toContain("line-clamp-1")
+
+        // Icon tile, the two lines, install control — the control is a sibling
+        // of the text column, so it cannot push a line of its own.
+        expect(row.children).toHaveLength(3)
+
+        // No card chrome: the hover background is the only surface.
+        expect(row.className).not.toMatch(/(^|\s)border/)
+        expect(row.className).not.toMatch(/(^|\s)bg-/)
+        expect(row.className).toContain("hover:bg-surface-base-hover")
+      }
+
+      // Scope and source no longer own a line; they stay reachable on the row.
+      const verbose = [...document.querySelectorAll<HTMLElement>(".marketplace-row")].at(-1)!
+      expect(verbose.getAttribute("title")).toBe("acme/verbose-extension-with-a-long-repository-name · Project scope")
+    })
+  }
+
+  test("the entry list is a single column at every width", () => {
+    renderAt("1280px")
+    for (const grid of document.querySelectorAll<HTMLElement>(".marketplace-grid")) {
+      expect(grid.className).not.toMatch(/grid-cols-\d/)
+    }
+  })
 })

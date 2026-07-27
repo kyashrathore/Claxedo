@@ -492,11 +492,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
             <Show when={catalog() && !catalog.loading}>
               <Show when={showFeaturedRow()}>
                 <section class="flex flex-col gap-2.5">
-                  <div class="flex items-baseline justify-between">
+                  <div class="flex items-baseline justify-between px-2">
                     <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">Featured</h2>
                     <span class="marketplace-section-detail text-[11px] text-text-weaker">Hand-picked to start with.</span>
                   </div>
-                  <div class="marketplace-grid grid gap-2">
+                  <div class="marketplace-grid grid gap-0.5">
                     <For each={featuredEntries()}>
                       {(entry) => (
                         <ExtensionCard
@@ -517,7 +517,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
 
               <Show when={!showFeaturedRow() && activeCategory() !== "on-machine"}>
                 <section class="flex flex-col gap-2.5">
-                  <div class="flex items-baseline justify-between">
+                  <div class="flex items-baseline justify-between px-2">
                     <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">
                       {sectionTitle(activeCategory(), catalog()?.categories ?? [])}
                     </h2>
@@ -537,7 +537,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                       </div>
                     }
                   >
-                    <div class="marketplace-grid grid gap-2">
+                    <div class="marketplace-grid grid gap-0.5">
                       <For each={visibleEntries()}>
                         {(entry) => (
                           <ExtensionCard

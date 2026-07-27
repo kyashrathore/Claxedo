@@ -48,8 +48,10 @@
   padding-block: 3rem 4rem;
 }
 
+/* Entries are flat rows, and a list of rows reads as one column at every
+   width — a second column would read as cards again. */
 .marketplace-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Pane is too narrow for a sidebar column beside the content. */
@@ -103,10 +105,6 @@
   .marketplace-main {
     padding-top: 1.5rem;
   }
-
-  .marketplace-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* Pane is narrow enough that card chrome has to give way to the content. */
@@ -124,20 +122,16 @@
     display: none;
   }
 
-  /* `.marketplace-page` prefixes below out-specify the Tailwind utilities
-     these elements keep for their roomy layout. */
-  .marketplace-page .marketplace-extension-card {
-    gap: 0.625rem;
-    padding: 0.625rem;
+  /* The scope + source metadata folded onto the name line has no room here.
+     The row's title attribute keeps it reachable. */
+  .marketplace-row-meta {
+    display: none;
   }
 
-  .marketplace-page .marketplace-card-header {
-    align-items: stretch;
-    flex-direction: column;
+  /* `.marketplace-page` prefix out-specifies the Tailwind padding utility the
+     row keeps for its roomy layout. */
+  .marketplace-page .marketplace-row {
     gap: 0.5rem;
-  }
-
-  .marketplace-page .marketplace-install-control {
-    align-self: flex-end;
+    padding-inline: 0.25rem;
   }
 }
