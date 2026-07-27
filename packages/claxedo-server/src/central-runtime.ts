@@ -17,6 +17,8 @@ import type { ControlPlaneServices } from "./control-plane/services"
 import { requireAuthority } from "./control-plane/authority"
 import type { ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import type { WorkspaceSessionAdmission } from "./workspace-runtime-integration/session-env"
+import type { UsageLedger } from "./telemetry/metering"
+import type { ProductDeploymentMode } from "./telemetry/product"
 
 export { createCentralSessionRuntime } from "./central-session-runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./control-plane/auth"
@@ -34,6 +36,10 @@ export type CentralControlAppOptions = {
   }) => Promise<WorkspaceSessionAdmission>
   turnCredentials?: ConnectionTurnCredentials
   beforeLocalSessionList?: () => Promise<void>
+  /** W5: authoritative destination for completed-turn token counts (plan D1). */
+  usageLedger?: UsageLedger
+  /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
+  productDeploymentMode?: ProductDeploymentMode
 }
 
 function centralControlRequest(request: Request) {
@@ -83,11 +89,19 @@ async function authorizeSignedCentralRuntimeSession(
   })
 }
 
+/**
+ * Loopback access carries neither; a signed request always carries a subject
+ * and carries an org only when the token names one. Declared rather than
+ * inferred so the metering call site sees one optional shape instead of a
+ * union it cannot read through.
+ */
+type CentralRuntimeAccess = { subject?: string; orgId?: string }
+
 async function centralRuntimeAccess(
   request: Request,
   services: ControlPlaneServices,
   options: CentralControlAppOptions,
-) {
+): Promise<CentralRuntimeAccess | Response> {
   if (isLoopbackLocalRequest(request)) return {}
   try {
     const auth = await controlPlaneAuthContext(request, {
@@ -106,7 +120,14 @@ async function centralRuntimeAccess(
       )
     }
     await authorizeSignedCentralRuntimeSession(services, auth, sessionId)
-    return { subject: auth.user.subject }
+    // W5: the org travels with the subject so a completed turn can be keyed to
+    // a tenant. Both come from the same verified token, and the org claim is
+    // absent on personal-account sign-ins — the metering path treats that as
+    // "no tenant" rather than substituting one.
+    return {
+      subject: auth.user.subject,
+      ...(auth.user.orgId ? { orgId: auth.user.orgId } : {}),
+    }
   } catch (err) {
     if (err instanceof ControlPlaneAuthError) {
       return Response.json(controlPlaneAuthErrorBody(err), { status: err.status })
@@ -120,6 +141,8 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
     ...(options.admitWorkspaceSession ? { admitWorkspaceSession: options.admitWorkspaceSession } : {}),
     ...(options.turnCredentials ? { turnCredentials: options.turnCredentials } : {}),
+    ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
+    ...(options.productDeploymentMode ? { productDeploymentMode: options.productDeploymentMode } : {}),
   })
   const app = new Hono()
   app.route("/api/control", ControlPlaneSessionRoutes(services, {
@@ -134,9 +157,11 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     const sessionId = centralRuntimeSessionId(request)
     const message = request.method === "POST" && new URL(request.url).pathname.endsWith("/message")
     if (!message || !sessionId) return runtime.routes.fetch(centralControlRequest(request))
-    return runtime.runTurn({ sessionId, ...(access.subject ? { subject: access.subject } : {}) }, () =>
-      runtime.routes.fetch(centralControlRequest(request)),
-    )
+    return runtime.runTurn({
+      sessionId,
+      ...(access.subject ? { subject: access.subject } : {}),
+      ...(access.orgId ? { orgId: access.orgId } : {}),
+    }, () => runtime.routes.fetch(centralControlRequest(request)))
   }
   app.all("/api/control", async (c) => forwardRuntimeRequest(c.req.raw))
   app.all("/api/control/*", async (c) => forwardRuntimeRequest(c.req.raw))

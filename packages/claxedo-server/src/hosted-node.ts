@@ -9,6 +9,7 @@
 import { serve } from "@hono/node-server"
 import { createHostedApp } from "./hosted-app"
 import { createCentralControlApp } from "./central-runtime"
+import { createConvexUsageLedger } from "./telemetry/convex-usage-ledger"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels-control-plane"
 import { composeHostedControlPlane, type HostedControlPlane, type HostedWorkerEnv } from "./control-plane/hosted-services"
 import { createControlPlaneServices, defaultControlPlaneCredentials, type ControlPlaneServices } from "./control-plane/services"
@@ -108,6 +109,12 @@ export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
     // not silently fall back to the virtual env. See hostedWorkspaceResolver.
     createEnv: hostedSessionEnvFactory(plane.services, turnCredentials),
     turnCredentials,
+    // W5: on the hosted plane Convex is the authoritative usage record and
+    // PostHog capture stays best-effort. The ledger resolves its executor and
+    // service token at call time, so it is safe to construct before secrets
+    // exist. The self-host composition (server.ts) stays unwired on purpose.
+    usageLedger: createConvexUsageLedger(),
+    productDeploymentMode: "cloud",
   })
   const channels = createControlPlaneChannels({
     services: plane.services,

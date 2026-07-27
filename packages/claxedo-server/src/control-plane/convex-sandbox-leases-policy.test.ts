@@ -286,7 +286,7 @@ describe("Convex sandbox leases", () => {
     await expect(handler(release)({ db } as never, {
       service_token: "svc_secret",
       workspace_id: "ws_1",
-    } as never)).resolves.toEqual({ released: true })
+    } as never)).resolves.toEqual({ released: true, usage: null })
     await expect(handler(get)({ db } as never, {
       service_token: "svc_secret",
       workspace_id: "ws_1",

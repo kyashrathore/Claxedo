@@ -1,6 +1,7 @@
 import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
 import type { RelayTargetLookup } from "../routes/internal-relay"
 import type { ControlPlaneTelemetry } from "./services"
+import { emitSandboxLeaseClosed } from "../telemetry/metering"
 
 /**
  * Neutral resolver contract for a workspace's current user-hosted host. The
@@ -36,6 +37,30 @@ export function sandboxRelayTargetLookup(input: {
       // Touch telemetry is operational evidence; it must never break routing.
     }
   }
+  // W5 (metric spec §4.2): a touch that finds the lease no longer serving is
+  // the moment the relay LEARNS an interval ended without anyone asking for it
+  // — the idle path. The relay resolves targets for a tunnel and holds no
+  // session identity, so this lands on the ops plane; the authoritative
+  // duration is settled in Convex by the lease close path, which is why
+  // `active_ms` is omitted here rather than guessed.
+  const closedByIdle = (workspaceId: string, status: string) => {
+    try {
+      emitSandboxLeaseClosed({
+        identity: undefined,
+        sink: input.telemetry,
+        lease: {
+          workspace_id: workspaceId,
+          driver: "unknown",
+          ended_at: Date.now(),
+          reason: "idle_timeout",
+        },
+        systemReason: "relay_target_has_no_session_identity",
+      })
+    } catch {
+      // Metering is evidence, never part of routing.
+    }
+    void status
+  }
   const touch = (workspaceId: string, waitUntil?: (promise: Promise<unknown>) => void) => {
     const sandboxManager = input.sandboxManager
     if (!sandboxManager?.touch) return
@@ -43,6 +68,12 @@ export function sandboxRelayTargetLookup(input: {
       .touch(workspaceId)
       .then((result) => {
         capture({ workspaceId, touched: result.touched, status: result.status })
+        // "stopped" is the explicit persistent-resume state the reaper writes
+        // when a ready lease goes silent; "missing" means the lease is gone
+        // entirely. Either way the interval this relay was serving has ended.
+        if (result.status === "stopped" || result.status === "missing") {
+          closedByIdle(workspaceId, result.status)
+        }
       })
       .catch(() => {
         capture({ workspaceId, touched: false, status: "failed" })

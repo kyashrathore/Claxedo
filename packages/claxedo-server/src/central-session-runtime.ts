@@ -42,6 +42,8 @@ import type { SessionMeta } from "./session-meta"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { piRegistryCredentialProvider } from "./pi-credentials"
 import { piProviderCatalog, validatePiPromptModel } from "./pi-provider-catalog"
+import { emitLlmTurnCompleted, emitSessionStarted, llmTurnRecord, type UsageLedger } from "./telemetry/metering"
+import type { ProductDeploymentMode, ProductIdentity } from "./telemetry/product"
 
 type SourceChannel = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 
@@ -129,6 +131,15 @@ type CentralSessionRuntimeOptions = {
     workspaceId: string
     baseCommit?: string
   }) => Promise<{ directory: string; worktree: string; baseCommit: string; leaseEpoch: number }>
+  /**
+   * W5 (plan D1): the authoritative destination for completed-turn token
+   * counts, dual-written beside the best-effort PostHog capture. Absent = the
+   * analytics event still goes out and nothing is recorded, which is the
+   * correct posture for a self-host box with no control plane.
+   */
+  usageLedger?: UsageLedger
+  /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
+  productDeploymentMode?: ProductDeploymentMode
 }
 
 /**
@@ -321,9 +332,49 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     } as unknown as AgentHarnessFactory],
   })
   const sessionBus = createSessionBus()
-  const runTurn = <T>(input: { sessionId: string; subject?: string }, fn: () => T) => {
+  const runTurn = <T>(input: { sessionId: string; subject?: string; orgId?: string }, fn: () => T) => {
     const credential = turnCredentials.mint(input)
     return turnCredentials.run(credential, fn)
+  }
+  // W5 turn metering (metric spec §4.3, §4.5).
+  //
+  // The turn credential is the only identity that reaches this far in: the
+  // signed request is several layers above, and by the time a message
+  // completes there is no `Context` left to read. `runTurn` puts the verified
+  // subject and org into an async-local scope that spans the whole turn, so
+  // resolving it here attributes the completion to the caller that authorized
+  // it — without threading auth through the event hub.
+  //
+  // Both halves are required: a subject without an org cannot key a per-org
+  // aggregate, and substituting a placeholder org would corrupt every one of
+  // them. Personal-account turns therefore fall through to the ops plane.
+  const turnIdentity = (): ProductIdentity | undefined => {
+    const turn = turnCredentials.resolve(turnCredentials.current())
+    if (!turn?.subject || !turn.orgId) return undefined
+    return {
+      org_id: turn.orgId,
+      user_id: turn.subject,
+      surface: "session",
+      deployment_mode: options.productDeploymentMode ?? "self-host",
+    }
+  }
+  const sessionHarness = (sessionId: string) =>
+    runtimeStore.getSessionConfig(sessionId)?.harness?.id ?? "pi"
+  const meterCompletedTurn = (event: CompatEnvelope) => {
+    if (event.payload.type !== "message.updated") return
+    const info = (event.payload.properties as { info?: unknown }).info
+    const sessionId = eventSessionId(event.payload)
+    const record = llmTurnRecord({ message: info, harness: sessionHarness(sessionId ?? "") })
+    if (!record) return
+    // Resolved synchronously: the async-local turn scope unwinds as soon as
+    // this returns, so reading it after an await would find nothing.
+    const identity = turnIdentity()
+    void emitLlmTurnCompleted({
+      identity,
+      sink: services.telemetry,
+      ledger: options.usageLedger,
+      record,
+    })
   }
   async function deploymentDefaultModel(sessionId: string) {
     const configured = process.env.CLAXEDO_PI_MODEL?.trim()
@@ -490,28 +541,39 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       await services.projectionStore.delete_session_meta(sessionId)
     },
     sessionBus,
-    publishGlobal: (event: CompatEnvelope) => {
-      eventHub.publishGlobal(event)
-      const sessionId = eventSessionId(event.payload)
-      if (event.payload.type === "session.updated") {
-        const title = typeof event.payload.properties.info.title === "string"
-          ? event.payload.properties.info.title
-          : null
-        void Promise.all([
-          adapter.updateSession(event.payload.properties.info.id, { ...(title !== null ? { title } : {}) }, undefined),
-          services.projectionStore.put_session_meta(event.payload.properties.info.id, {
-            host: "central",
-            directory: null,
-            title,
-          }),
-        ]).catch((err: unknown) => {
-          console.error("[central-runtime] failed to persist session title update:", err)
-        })
-      }
-      if (sessionId) services.durableSessionLog.persist_message_event(sessionId, event.payload)
-    },
+    publishGlobal,
     resolveWorkspaceId: () => undefined,
   })
+
+  /**
+   * The single ingress every compat event crosses on its way out of a turn:
+   * the live event hub, W5 turn metering, session-title persistence, and the
+   * durable message log. Named and returned on the runtime handle because it is
+   * the one place that observes a completed turn — the signed request is
+   * several layers above and there is no request context left by the time a
+   * message completes.
+   */
+  function publishGlobal(event: CompatEnvelope) {
+    eventHub.publishGlobal(event)
+    meterCompletedTurn(event)
+    const sessionId = eventSessionId(event.payload)
+    if (event.payload.type === "session.updated") {
+      const title = typeof event.payload.properties.info.title === "string"
+        ? event.payload.properties.info.title
+        : null
+      void Promise.all([
+        adapter.updateSession(event.payload.properties.info.id, { ...(title !== null ? { title } : {}) }, undefined),
+        services.projectionStore.put_session_meta(event.payload.properties.info.id, {
+          host: "central",
+          directory: null,
+          title,
+        }),
+      ]).catch((err: unknown) => {
+        console.error("[central-runtime] failed to persist session title update:", err)
+      })
+    }
+    if (sessionId) services.durableSessionLog.persist_message_event(sessionId, event.payload)
+  }
 
   // Demo B — placement swap: attach/detach a session's tool sandbox
   // MID-CONVERSATION. PATCH /session/:id/placement with
@@ -668,6 +730,20 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       ...(model ? { model } : {}),
       ...(tags.length > 0 ? { tags } : {}),
     })
+    // W5 (metric spec §4.5): server-emitted and attributable, replacing a
+    // client-side funnel step that self-host suppresses. Emitted only on the
+    // fresh-create branch — the `existing` path above returns early, so
+    // reconnecting to a session never counts as starting one.
+    emitSessionStarted({
+      identity: turnIdentity(),
+      sink: services.telemetry,
+      session: {
+        session_id: session.id,
+        harness: input.harness ?? "pi",
+        host: "central",
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
+      },
+    })
     return session
   }
 
@@ -758,6 +834,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
   return {
     routes: placementRoutes,
     eventHub,
+    /** The compat-event ingress: live hub, turn metering, durable log. */
+    publishGlobal,
     runtimeEvents: runtimeEventsHandler(eventHub),
     sourceChannelSessionCountsByWeek: (input?: { channel?: string; includeHidden?: boolean }) =>
       services.projectionStore.source_channel_session_counts_by_week?.(input) ?? Promise.resolve([]),

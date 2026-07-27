@@ -46,6 +46,9 @@ import {
   type WorkspaceRouteOptions,
 } from "./workspace-user-hosted"
 import { normalizeClaxedoRegion } from "../region"
+import { emitSandboxLeaseOpened } from "../telemetry/metering"
+import { recordSandboxLeaseTenant } from "../telemetry/convex-usage-ledger"
+import { productIdentity } from "../telemetry/product"
 
 // `requireCloudWorkspaceEntitlement` (the D6/B4 paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
@@ -329,6 +332,26 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           throw err
         }
 
+        // W5 sandbox-compute metering (metric spec §4.2): the create path is the
+        // one lease-open site that holds a signed tenant, so the opening event is
+        // emitted here rather than inside the manager. `started_at` is stamped
+        // before `ensure` so the interval covers the cold start the user is
+        // actually paying for. This shell only serves the hosted plane, which
+        // fixes deployment_mode; a personal-account token carries no org claim
+        // and falls through to the ops plane rather than inventing an org id.
+        const leaseStartedAt = Date.now()
+        const leaseIdentity = productIdentity(auth, { surface: "workspace", deployment_mode: "cloud" })
+        emitSandboxLeaseOpened({
+          identity: leaseIdentity,
+          sink: services?.telemetry,
+          lease: {
+            workspace_id: workspaceId,
+            driver: services?.sandbox.defaultDriver ?? "unknown",
+            started_at: leaseStartedAt,
+          },
+          systemReason: "workspace_create_without_org_claim",
+        })
+
         // Kick off provisioning. The lease state machine + driver.ensureHost are
         // idempotent and re-polled by the app via /connection, so this is
         // fire-and-forget: a slow cold-start must not block the create response.
@@ -344,6 +367,20 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               repoUrl,
               ...(body.gitBranch?.trim() ? { branch: body.gitBranch.trim() } : {}),
             },
+          })
+          // The lease row exists once `ensure` has acquired it, so the tenant is
+          // stamped here rather than before: the sandbox manager's acquire port
+          // carries a workspace and a driver but no org, and this is the nearest
+          // point that holds both the verified tenant and a lease to attach it
+          // to. Metering attribution never gates provisioning, so a deployment
+          // with no Convex authority configured simply records nothing.
+          .then(() => {
+            if (!leaseIdentity) return
+            void recordSandboxLeaseTenant({
+              workspace_id: workspaceId,
+              org_id: leaseIdentity.org_id,
+              user_id: leaseIdentity.user_id,
+            })
           })
           .catch(() => undefined)
 

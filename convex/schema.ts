@@ -28,6 +28,15 @@ export default defineSchema({
     // Compatibility envelope for rows written before the hosted remote-access
     // switch moved out of the user document.
     remote_access_enabled: v.optional(v.boolean()),
+    /**
+     * W5 activation (metric spec §4.5). Stamped ONCE, by the first
+     * `llm_turn_completed` with `turn_status: "ok"`
+     * (`usageMetering.recordLlmTurn`). Absent = not yet activated. The
+     * check-and-set is the idempotence mechanism: a second ok turn observes a
+     * present value and leaves it alone, so `user_activated` fires exactly
+     * once per user for all time.
+     */
+    first_activated_at: v.optional(v.number()),
     created_at: v.number(),
     updated_at: v.number(),
   })
@@ -267,6 +276,26 @@ export default defineSchema({
   runtime_leases: defineTable({
     workspace_id: v.string(),
     home_region: v.string(),
+    // ── W5 sandbox-compute metering (metric spec §4.2) ──
+    // Lease rows carried a workspace and a sandbox but no tenant and no clock,
+    // which made "how much sandbox compute does my average user consume?"
+    // unanswerable as a matter of missing columns rather than a missing query.
+    //
+    // These are the CLERK-issued subject/org strings the control plane already
+    // holds on the signed request that created the lease — the same id space
+    // the product-plane PostHog events key on — not `v.id("orgs")`/`v.id("users")`
+    // references, matching this table's existing string `workspace_id`.
+    //
+    // All optional: a pure EXPAND step
+    // (docs/tech-docs/convex-schema-evolution.md), so every pre-W5 row stays
+    // valid and no migration is required. Rows written before this ships have
+    // no tenant and are excluded from the rollup by construction.
+    org_id: v.optional(v.string()),
+    user_id: v.optional(v.string()),
+    /** Wall-clock of the CURRENT open interval, re-stamped on every acquire. */
+    started_at: v.optional(v.number()),
+    /** Set when the lease closes; cleared by the next acquire. */
+    ended_at: v.optional(v.number()),
     // Expand phase for the provider -> driver field migration. Keep these
     // optional until every deployment has recorded the migration completion.
     provider: v.optional(v.string()),
@@ -300,6 +329,90 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_host_id", ["host_id"])
     .index("by_updated_at", ["updated_at"]),
+
+  // ── W5 metering fact + rollup tables (metric spec §4.2, §4.3; plan D1/D3) ──
+  //
+  // D1: these tables are AUTHORITATIVE. PostHog carries the same events for
+  // analysis, but every `capture()` in this codebase is best-effort by design
+  // (a dropped event must never break the operation it observes) — correct for
+  // product analytics, wrong for a number a paid plan may later be gated on.
+  // So the money-grade numbers land here and PostHog is the view.
+  //
+  // D3 retention: the two FACT tables (`sandbox_lease_events`,
+  // `llm_usage_events`) are pruned at 400 days by
+  // `usageMetering.pruneUsageFacts`; the `sandbox_usage_daily` ROLLUP is kept
+  // indefinitely, so the long-range answer survives the prune.
+  //
+  // Every one of these ships a reader (`usageMetering.leaseEventsForSandbox`,
+  // `llmUsageForSession`, `llmUsageTotals`, `sandboxUsageDaily`) — deliberately
+  // NOT repeating `audit_events`, which is write-only with zero readers
+  // anywhere in the repo.
+
+  /**
+   * One row per CLOSED lease interval — the raw sandbox-compute fact.
+   *
+   * `runtime_leases` is one mutable row per workspace that is deleted on
+   * release, so it can hold the CURRENT interval but never the history a
+   * rollup needs. This table is that history.
+   */
+  sandbox_lease_events: defineTable({
+    org_id: v.string(),
+    user_id: v.string(),
+    workspace_id: v.string(),
+    sandbox_id: v.optional(v.string()),
+    driver: v.string(),
+    started_at: v.number(),
+    ended_at: v.number(),
+    /** `ended_at - started_at`, computed at close from one clock. */
+    active_ms: v.number(),
+    reason: v.union(v.literal("idle_timeout"), v.literal("explicit_release"), v.literal("gc")),
+    /** `YYYY-MM-DD` (UTC) of `ended_at`; the rollup's grouping key. */
+    date: v.string(),
+    /** Set by the rollup so a re-run is idempotent rather than double-counting. */
+    rolled_up_at: v.optional(v.number()),
+    created_at: v.number(),
+  })
+    .index("by_sandbox_id", ["sandbox_id"])
+    .index("by_workspace_id", ["workspace_id"])
+    .index("by_date", ["date"])
+    .index("by_created_at", ["created_at"]),
+
+  /** Daily rollup — answers Q1 as `AVG(total_active_seconds) GROUP BY date`. */
+  sandbox_usage_daily: defineTable({
+    org_id: v.string(),
+    user_id: v.string(),
+    /** `YYYY-MM-DD`, UTC. */
+    date: v.string(),
+    driver: v.string(),
+    total_active_seconds: v.number(),
+    lease_count: v.number(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_bucket", ["org_id", "user_id", "date", "driver"])
+    .index("by_org_date", ["org_id", "date"])
+    .index("by_date", ["date"]),
+
+  /** One row per completed model turn — the raw AI-token fact. */
+  llm_usage_events: defineTable({
+    org_id: v.string(),
+    user_id: v.string(),
+    session_id: v.string(),
+    harness: v.string(),
+    provider_id: v.string(),
+    model_id: v.string(),
+    input_tokens: v.number(),
+    output_tokens: v.number(),
+    reasoning_tokens: v.number(),
+    cache_read_tokens: v.number(),
+    cache_write_tokens: v.number(),
+    turn_status: v.union(v.literal("ok"), v.literal("error")),
+    latency_ms: v.number(),
+    created_at: v.number(),
+  })
+    .index("by_session_id", ["session_id"])
+    .index("by_org_user", ["org_id", "user_id"])
+    .index("by_created_at", ["created_at"]),
 
   agent_extension_installs: defineTable({
     workspace_id: v.id("workspaces"),
