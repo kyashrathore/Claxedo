@@ -346,8 +346,15 @@
  *
  * Theme JSON owns the shared semantic palette; the block above spends it.
  * What is left here is what a color token cannot express: typography, SVG
- * geometry, the elevation scale, and the shell selectors that still key off
- * `data-testid` because the `data-surface` markup has not landed yet.
+ * geometry, and the elevation scale.
+ *
+ * The shell selectors below still key off `data-testid` and stay scoped to
+ * Codex. `data-surface="sidebar"` / `"header"` now exist in the markup, but
+ * moving these rules onto them unscoped would repaint the sidebar, header and
+ * tabs of all 37 other themes in one go — every one of them would start
+ * following `shell-surface-*`, which most have never been checked against.
+ * That is a deliberate follow-up with its own before/after pass, not a
+ * side effect of this port.
  */
 html[data-theme="codex"] {
   --font-family-sans:
