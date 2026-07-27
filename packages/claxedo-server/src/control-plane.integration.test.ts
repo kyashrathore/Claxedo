@@ -927,9 +927,15 @@ describe("control plane integration", () => {
     expect(provider.status).toBe(200)
     expect(await provider.json()).toEqual(upstreamProvider)
 
+    // The harness above resolves to `opencode`, so this proxies the engine
+    // catalog. It used to assert an EMPTY catalog, which encoded the very bug
+    // `configProvidersBody` (routes/opencode-compat-provider-config.ts) was
+    // written to fix: an unqualified `/config/providers` served nothing on an
+    // opencode default harness, so every client reading its model list that
+    // way -- the TUI model dialog among them -- had nothing to list.
     const providers = await fetch(`${base()}/config/providers`)
     expect(providers.status).toBe(200)
-    expect(await providers.json()).toEqual({ providers: [], default: {} })
+    expect(await providers.json()).toEqual(upstreamConfigProviders)
 
     const oldDiff = await fetch(`${base()}/api/diff/targets`)
     expect(oldDiff.status).toBe(404)

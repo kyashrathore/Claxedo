@@ -6,7 +6,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "test": "bun test --timeout 30000 --only-failures",
+    "test": "mkdir -p .artifacts/unit && bun test --timeout 30000 --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit"
   },
   "exports": {

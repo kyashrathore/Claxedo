@@ -17,7 +17,7 @@
     "generate:redirects": "bun scripts/generate-redirects.ts",
     "check:redirects": "bun scripts/generate-redirects.ts --check",
     "check:release-artifacts": "bun scripts/verify-release-artifacts.ts",
-    "test": "bun test test"
+    "test": "mkdir -p .artifacts/unit && bun test test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@astrojs/check": "0.9.6",

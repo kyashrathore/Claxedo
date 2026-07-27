@@ -104,7 +104,7 @@
     "build": "tsx scripts/build.ts",
     "verify:publish": "tsx scripts/verify-publish.ts",
     "prepublishOnly": "npm run build && npm run verify:publish",
-    "test": "bun test --path-ignore-patterns='**/store.test*' && node --import tsx --test src/store.test.ts",
+    "test": "mkdir -p .artifacts/unit && bun test --path-ignore-patterns='**/store.test*' --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node --import tsx --test src/store.test.ts",
     "test:performance": "bun test ./perf/runtime-store.perf.ts"
   },
   "dependencies": {

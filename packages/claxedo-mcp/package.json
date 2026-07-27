@@ -50,7 +50,7 @@
     "prepublishOnly": "bun run build",
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run"
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@claxedo/workgraph": "0.3.0",

@@ -39,7 +39,7 @@
     "verify:workspace-tab-motion": "bun ./scripts/capture-workspace-tab-motion.ts",
     "verify:session-switch-hot-path": "bun ./scripts/capture-session-switch-hot-path.ts",
     "verify:command-palette-file-open-motion": "bun ./scripts/capture-command-palette-file-open-motion.ts",
-    "test": "bun test --conditions=browser --preload ./happydom.ts ./src",
+    "test": "mkdir -p .artifacts/unit && bun test --conditions=browser --preload ./happydom.ts ./src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:diagnostics-release": "bun test --conditions=browser --preload ./happydom.ts ./src/features/processes/data/local-diagnostics.test.ts ./src/features/processes/ui/diagnostics/model.test.ts && vitest run --config vitest.config.ts ./src/features/processes/ui/dialog-process-diagnostics.vitest.tsx",
     "test:watch": "bun test --watch --conditions=browser --preload ./happydom.ts ./src",
     "test:performance": "bun test --conditions=browser --preload ./happydom.ts ./src/features/session/ui/message-timeline-row-reuse.test.ts && vitest run --config vitest.config.ts ./src/app/workbench/context/directory-scope.vitest.tsx ./src/app/workbench/workbench/tests/F-mount-retention.vitest.tsx ./src/app/workbench/workbench/tests/N-reactivity.vitest.tsx",

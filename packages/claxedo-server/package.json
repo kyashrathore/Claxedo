@@ -71,7 +71,7 @@
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",
     "maintenance:normalize-sandbox-leases": "bun run scripts/maintenance/normalize-convex-sandbox-leases.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
     "test:live-ui": "node --import tsx scripts/sandbox/live/live-ui-test.ts",
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
     "rebuild:native": "npm rebuild better-sqlite3"

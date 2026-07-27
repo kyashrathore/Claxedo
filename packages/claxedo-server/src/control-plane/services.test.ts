@@ -812,7 +812,12 @@ describe("control-plane services", () => {
       "/api/wr/hook/status",
     ]) {
       const res = await built.app.request(item)
-      expect([404, 405], item).toContain(res.status)
+      // 404/405 means the route is not mounted in hosted mode at all. 401 means
+      // it IS mounted but refuses an anonymous caller -- routes/hosted-shell.ts
+      // deliberately serves `/provider` (the Pi credential catalog) behind
+      // `signedAuth`, and answers `missing_bearer_token` without it. Both
+      // satisfy this test's invariant; a 2xx would not, and is what this guards.
+      expect([401, 404, 405], `${item} -> ${res.status} ${await res.text()}`).toContain(res.status)
     }
   })
 
