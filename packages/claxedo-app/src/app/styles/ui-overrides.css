@@ -510,6 +510,13 @@ html[data-theme="codex"] .session-envcard.is-floating {
  * dialogs, menus, popovers, tooltips and the hand-authored picker shells all
  * sit on one scale instead of half the family following Codex and half
  * following the generic ramp.
+ *
+ * THE RULE: any overlay component that stops naming `--codex-*` has to be added
+ * to this list in the same change. Dropping the escape hatch also drops the
+ * inheritance that was quietly supplying Codex's geometry, and the theme tests
+ * only assert colour roles — so the component keeps the right fill and border
+ * while silently falling to the generic radius and shadow beside neighbours
+ * that kept both. That is not hypothetical; see the note on Select below.
  */
 html[data-theme="codex"] [data-component="dialog"] [data-slot="dialog-content"],
 html[data-theme="codex"] [data-component="dropdown-menu-content"],
