@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import Ajv from "ajv"
+import schema from "./desktop-theme.schema.json"
 import { contrastRatio } from "./color"
 import { DEFAULT_THEMES } from "./default-themes"
 import type { HexColor } from "./types"
@@ -88,6 +90,15 @@ describe("semantic theme contract", () => {
           expect(contrastRatio(foreground, background), `${id}/${mode}/${role}/${surface}`).toBeGreaterThanOrEqual(3)
         }
       }
+    }
+  })
+
+  test("validates every bundled theme against the desktop schema", async () => {
+    const validate = new Ajv({ strict: false }).compile(schema)
+
+    for await (const file of new Bun.Glob("themes/*.json").scan({ cwd: import.meta.dir, absolute: true })) {
+      const theme = await Bun.file(file).json()
+      expect(validate(theme), `${file}: ${JSON.stringify(validate.errors)}`).toBe(true)
     }
   })
 })
