@@ -216,6 +216,12 @@ export function hostedOrgCredentials(
       await backend.delete(refFor(id))
       return true
     },
+    // NOTE: the hosted KV layout keys one record per `providerId` with no
+    // `kind` dimension, so the `kind` argument the local registry honours
+    // cannot be applied here. That is safe today only because sandbox driver
+    // configuration is 403'd in signed/hosted mode
+    // (`local_only_sandbox_driver`), so sandbox credentials never reach this
+    // adapter. Adding a kind to the KV key is required before that changes.
     deleteCredentialsByProvider: async (providerId) => {
       const record = await read(providerId)
       if (!record) return 0

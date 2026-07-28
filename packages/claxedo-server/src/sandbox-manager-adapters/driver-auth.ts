@@ -1,6 +1,7 @@
 import { getCredentialByProvider, resolveSecret } from "../credentials/registry"
 import {
   sandboxDriverAuth,
+  sandboxDriverCatalog,
   type SandboxDriverAuth,
   type SandboxDriverConfig,
   type SandboxDriverID,
@@ -20,7 +21,7 @@ function json(secret: string) {
 }
 
 export function hasManagedSandboxDriverAuth(id: SandboxDriverID) {
-  return !!getCredentialByProvider(id)
+  return !!getCredentialByProvider(id, "sandbox_driver")
 }
 
 export function sandboxDriverAuthSync<T extends SandboxDriverID>(
@@ -34,7 +35,7 @@ export function sandboxDriverAuthSync<T extends SandboxDriverID>(
 export async function sandboxDriverAuthManaged<T extends SandboxDriverID>(
   id: T,
 ): Promise<SandboxDriverAuth[T] | undefined> {
-  const secret = await resolveSecret(id)
+  const secret = await resolveSecret(id, "sandbox_driver")
   if (!secret) return
   return parseManagedAuth(id, secret)
 }
@@ -47,46 +48,41 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
   return sandboxDriverAuthSync(cfg, id, env) ?? sandboxDriverAuthManaged(id)
 }
 
+// Decoder half of the sandbox-driver credential codec; `sandboxDriverManagedSecret`
+// in `routes/sandbox-driver-routes.ts` is the encoder.
+//
+// This was seven hand-written per-driver branches, and it had already drifted
+// from the encoder: both named special cases, but not the SAME ones, so exe.dev
+// and Box decoded a JSON blob as though it were a bare token. Driving both
+// halves off `credentialFields` removes the class of bug — a new driver needs
+// no edit here, and there is no per-driver list left to disagree about.
 function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): SandboxDriverAuth[T] | undefined {
-  if (id === "exe") {
-    const api_token = clean(secret)
-    return (api_token ? { api_token } : undefined) as SandboxDriverAuth[T]
-  }
-
-  if (id === "daytona") {
-    const api_key = clean(secret)
-    return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T]
-  }
-
-  if (id === "box") {
-    const api_key = clean(secret)
-    return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T]
-  }
-
-  if (id === "docker") {
-    const image = clean(secret)
-    if (image) return { image } as SandboxDriverAuth[T]
-  }
-
+  const fields = sandboxDriverCatalog[id].credentialFields
   const parsed = json(secret)
-  if (!parsed) return
 
-  if (id === "modal") {
-    const token_id = typeof parsed.token_id === "string" ? clean(parsed.token_id) : undefined
-    const token_secret = typeof parsed.token_secret === "string" ? clean(parsed.token_secret) : undefined
-    return (token_id && token_secret ? { token_id, token_secret } : undefined) as SandboxDriverAuth[T]
-  }
+  const values =
+    parsed
+      ? Object.fromEntries(
+          fields.flatMap((field) => {
+            const raw = parsed[field.key]
+            const value = typeof raw === "string" ? clean(raw) : undefined
+            return value ? [[field.key, value]] : []
+          }),
+        )
+      : // Legacy bare secret: the pre-codec encoder stored daytona/docker
+        // unwrapped, and `credentials/migrate.ts` still writes daytona that
+        // way. A bare string can only ever be a single-field driver's value.
+        singleFieldLegacyValues(fields, secret)
 
-  if (id === "vercel") {
-    const access_token = typeof parsed.access_token === "string" ? clean(parsed.access_token) : undefined
-    const team_id = typeof parsed.team_id === "string" ? clean(parsed.team_id) : undefined
-    const project_id = typeof parsed.project_id === "string" ? clean(parsed.project_id) : undefined
-    return (access_token && team_id && project_id ? { access_token, team_id, project_id } : undefined) as SandboxDriverAuth[T]
-  }
+  if (Object.keys(values).length !== fields.length) return
+  return values as SandboxDriverAuth[T]
+}
 
-  if (id === "cloudflare") {
-    const api_token = typeof parsed.api_token === "string" ? clean(parsed.api_token) : undefined
-    const worker_url = typeof parsed.worker_url === "string" ? clean(parsed.worker_url) : undefined
-    return (api_token && worker_url ? { api_token, worker_url } : undefined) as SandboxDriverAuth[T]
-  }
+function singleFieldLegacyValues(
+  fields: readonly { key: string }[],
+  secret: string,
+): Record<string, string> {
+  if (fields.length !== 1) return {}
+  const value = clean(secret)
+  return value ? { [fields[0]!.key]: value } : {}
 }

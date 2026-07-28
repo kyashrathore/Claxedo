@@ -8,23 +8,23 @@ import {
   workspaceCreateUrl,
   workspaceCheckpointRestoreUrl,
   workspaceCheckpointsUrl,
-  workspaceDefaultProviderUrl,
-  workspaceProviderAuthUrl,
-  workspaceProvidersUrl,
+  workspaceDefaultSandboxDriverUrl,
+  workspaceSandboxDriverAuthUrl,
+  workspaceSandboxDriversUrl,
   workspaceLifecycleUrl,
   workspaceResolveUrl,
 } from "./workspace-control-routes"
 
 describe("workspace control routes", () => {
-  test("builds workspace provider, create, resolve, and delete URLs", () => {
-    expect(workspaceProvidersUrl({ baseUrl: "https://control.example.test/" }))
-      .toBe("https://control.example.test/api/workspace/providers")
-    expect(workspaceProviderAuthUrl({
+  test("builds workspace sandbox driver, create, resolve, and delete URLs", () => {
+    expect(workspaceSandboxDriversUrl({ baseUrl: "https://control.example.test/" }))
+      .toBe("https://control.example.test/api/workspace/drivers")
+    expect(workspaceSandboxDriverAuthUrl({
       baseUrl: "https://control.example.test/",
-      providerId: "daytona/custom",
-    })).toBe("https://control.example.test/api/workspace/providers/daytona%2Fcustom/auth")
-    expect(workspaceDefaultProviderUrl({ baseUrl: "https://control.example.test/" }))
-      .toBe("https://control.example.test/api/workspace/providers/default")
+      driverId: "daytona/custom",
+    })).toBe("https://control.example.test/api/workspace/drivers/daytona%2Fcustom/auth")
+    expect(workspaceDefaultSandboxDriverUrl({ baseUrl: "https://control.example.test/" }))
+      .toBe("https://control.example.test/api/workspace/drivers/default")
     expect(workspaceCreateUrl({ baseUrl: "https://control.example.test/" }))
       .toBe("https://control.example.test/api/workspace/create")
     expect(workspaceResolveUrl({

@@ -1,8 +1,8 @@
 import { centralTransportForServer } from "@/platform/runtime/transport"
 export {
-  workspaceDefaultProviderUrl,
-  workspaceProviderAuthUrl,
-  workspaceProvidersUrl,
+  workspaceDefaultSandboxDriverUrl,
+  workspaceSandboxDriverAuthUrl,
+  workspaceSandboxDriversUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
 
 export function shouldUseSandboxDriverMutations(input: { baseUrl?: string }) {

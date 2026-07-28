@@ -1,23 +1,28 @@
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import {
+  WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH,
+  WORKSPACE_SANDBOX_DRIVERS_PATH,
+  workspaceSandboxDriverAuthPath,
+} from "./workspace-control-paths"
 
 function controlPlaneBaseUrl(baseUrl?: string) {
   return normalizeUrl(baseUrl) ?? getDefaultBaseUrl()
 }
 
-export function workspaceProvidersUrl(input?: { baseUrl?: string }) {
-  return new URL("/api/workspace/providers", controlPlaneBaseUrl(input?.baseUrl)).toString()
+export function workspaceSandboxDriversUrl(input?: { baseUrl?: string }) {
+  return new URL(WORKSPACE_SANDBOX_DRIVERS_PATH, controlPlaneBaseUrl(input?.baseUrl)).toString()
 }
 
-export function workspaceProviderAuthUrl(input: { baseUrl?: string; providerId: string }) {
+export function workspaceSandboxDriverAuthUrl(input: { baseUrl?: string; driverId: string }) {
   return new URL(
-    `/api/workspace/providers/${encodeURIComponent(input.providerId)}/auth`,
+    workspaceSandboxDriverAuthPath(input.driverId),
     controlPlaneBaseUrl(input.baseUrl),
   ).toString()
 }
 
-export function workspaceDefaultProviderUrl(input?: { baseUrl?: string }) {
-  return new URL("/api/workspace/providers/default", controlPlaneBaseUrl(input?.baseUrl)).toString()
+export function workspaceDefaultSandboxDriverUrl(input?: { baseUrl?: string }) {
+  return new URL(WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH, controlPlaneBaseUrl(input?.baseUrl)).toString()
 }
 
 export function workspaceCreateUrl(input?: { baseUrl?: string }) {

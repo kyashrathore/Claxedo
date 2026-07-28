@@ -1,6 +1,6 @@
 export type ControlPlaneCredentials = {
   listCredentials: () => Promise<unknown[]>
-  getCredentialByProvider: (providerId: string) => Promise<unknown | undefined>
+  getCredentialByProvider: (providerId: string, kind?: string) => Promise<unknown | undefined>
   getCredential?: (id: string) => Promise<unknown | undefined>
   resolveCredentialSecret?: (providerId: string) => Promise<string | null>
   resolveCredentialSecretById?: (id: string) => Promise<string | null>
@@ -19,7 +19,7 @@ export type ControlPlaneCredentials = {
     updated_at: number
   }>
   deleteCredential: (id: string) => Promise<boolean>
-  deleteCredentialsByProvider: (providerId: string) => Promise<number>
+  deleteCredentialsByProvider: (providerId: string, kind?: string) => Promise<number>
   updateCredentialStatus: (id: string, status: string, error?: string) => Promise<void>
   updateCredentialHealth?: (
     id: string,

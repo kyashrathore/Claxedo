@@ -66,13 +66,13 @@ export type CredentialSyncResult = {
 
 export type ControlPlaneCredentials = {
   listCredentials: () => Promise<CredentialMetadata[]>
-  getCredentialByProvider: (providerId: string) => Promise<CredentialMetadata | undefined>
+  getCredentialByProvider: (providerId: string, kind?: string) => Promise<CredentialMetadata | undefined>
   getCredential?: (id: string) => Promise<CredentialMetadata | undefined>
   resolveCredentialSecret?: (providerId: string) => Promise<string | null>
   resolveCredentialSecretById?: (id: string) => Promise<string | null>
   putCredential: (input: CredentialWrite) => Promise<CredentialMetadata>
   deleteCredential: (id: string) => Promise<boolean>
-  deleteCredentialsByProvider: (providerId: string) => Promise<number>
+  deleteCredentialsByProvider: (providerId: string, kind?: string) => Promise<number>
   updateCredentialStatus: (id: string, status: CredentialStatus, error?: string) => Promise<void>
   updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number) => Promise<void>
   discoverLocalCredentials?: () => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
@@ -115,13 +115,13 @@ async function mirrorRenewedLocalTokens(id: string, secret: string) {
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     listCredentials: async () => (await credentialRegistry()).listCredentials(),
-    getCredentialByProvider: async (providerId) => (await credentialRegistry()).getCredentialByProvider(providerId),
+    getCredentialByProvider: async (providerId, kind) => (await credentialRegistry()).getCredentialByProvider(providerId, kind),
     getCredential: async (id) => (await credentialRegistry()).getCredential(id),
     resolveCredentialSecret: async (providerId) => (await credentialRegistry()).resolveSecret(providerId),
     resolveCredentialSecretById: async (id) => (await credentialRegistry()).resolveSecretById(id),
     putCredential: async (input) => (await credentialRegistry()).putCredential(input),
     deleteCredential: async (id) => (await credentialRegistry()).deleteCredential(id),
-    deleteCredentialsByProvider: async (providerId) => (await credentialRegistry()).deleteCredentialsByProvider(providerId),
+    deleteCredentialsByProvider: async (providerId, kind) => (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind),
     updateCredentialStatus: async (id, status, error) => {
       const registry = await credentialRegistry()
       registry.updateCredentialStatus(id, status, error)

@@ -28,7 +28,7 @@ type SelectBag = Bag & {
   onSelect?: (item: SelectItem | undefined) => void
 }
 
-function provider(configured: boolean) {
+function driver(configured: boolean) {
   return {
     id: "daytona",
     label: "Daytona",
@@ -100,14 +100,15 @@ afterEach(() => {
 
 describe("SandboxSettingsSection", () => {
   test("emits the configured-provider onboarding milestone after a successful save", async () => {
-    mocks.apiGet.mockResolvedValue({ default_provider: "daytona", providers: [provider(false)] })
-    mocks.apiPut.mockResolvedValue({ default_provider: "daytona", providers: [provider(true)] })
+    mocks.apiGet.mockResolvedValue({ default_driver: "daytona", drivers: [driver(false)] })
+    mocks.apiPut.mockResolvedValue({ default_driver: "daytona", drivers: [driver(true)] })
 
     const { SandboxSettingsSection } = await import("./sandbox-section")
     render(() => <SandboxSettingsSection />)
 
     await waitFor(() => expect(screen.getByText("Not configured")).toBeInTheDocument())
-    fireEvent.click(screen.getByRole("button", { name: "Configure" }))
+    // The selected provider's form is always open now — there is no Configure
+    // step to expand it first.
     fireEvent.input(screen.getByPlaceholderText("API Key"), { target: { value: "secret" } })
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
@@ -119,8 +120,8 @@ describe("SandboxSettingsSection", () => {
 
   test("refreshes provider state after credentials are removed", async () => {
     mocks.apiGet
-      .mockResolvedValueOnce({ default_provider: "daytona", providers: [provider(true)] })
-      .mockResolvedValueOnce({ default_provider: "daytona", providers: [provider(false)] })
+      .mockResolvedValueOnce({ default_driver: "daytona", drivers: [driver(true)] })
+      .mockResolvedValueOnce({ default_driver: "daytona", drivers: [driver(false)] })
     mocks.apiDelete.mockResolvedValue({ ok: true })
 
     const { SandboxSettingsSection } = await import("./sandbox-section")
@@ -130,7 +131,7 @@ describe("SandboxSettingsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove" }))
 
     await waitFor(() =>
-      expect(mocks.apiDelete).toHaveBeenCalledWith("http://127.0.0.1:3001/api/workspace/providers/daytona/auth"),
+      expect(mocks.apiDelete).toHaveBeenCalledWith("http://127.0.0.1:3001/api/workspace/drivers/daytona/auth"),
     )
     await waitFor(() => expect(screen.getByText("Not configured")).toBeInTheDocument())
     expect(mocks.toast).toHaveBeenCalledWith({ variant: "success", title: "Daytona credentials removed" })
@@ -138,7 +139,7 @@ describe("SandboxSettingsSection", () => {
 
   test("renders local provider settings read-only for hosted control-plane access", async () => {
     mocks.baseUrl = "https://claxedo.example.test"
-    mocks.apiGet.mockResolvedValue({ default_provider: "daytona", providers: [provider(true)] })
+    mocks.apiGet.mockResolvedValue({ default_driver: "daytona", drivers: [driver(true)] })
 
     const { SandboxSettingsSection } = await import("./sandbox-section")
     render(() => <SandboxSettingsSection />)
@@ -146,7 +147,9 @@ describe("SandboxSettingsSection", () => {
     await waitFor(() => expect(screen.getByText(/Credentials configured/)).toBeInTheDocument())
     expect(screen.getByLabelText("Default provider")).toBeDisabled()
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Update" })).toBeDisabled()
+    // The always-open form replaces the old Update/Configure toggle, so the
+    // read-only lock has to reach the input itself.
+    expect(screen.getByLabelText("API Key")).toBeDisabled()
     expect(
       screen.getByText("Signed hosted sessions can view local sandbox providers but cannot change local credentials."),
     ).toBeInTheDocument()

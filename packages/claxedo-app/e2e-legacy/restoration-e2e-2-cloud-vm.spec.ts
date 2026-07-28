@@ -3,7 +3,7 @@
  *
  * Historical restoration flow. The cloud-create dialog
  * lives at `packages/claxedo-app/src/components/dialog-create-cloud-workspace.tsx`.
- * Provider list comes from `GET /api/workspace/providers`; SSE
+ * Provider list comes from `GET /api/workspace/drivers`; SSE
  * provision events stream from `POST /api/workspace/create` and the
  * dialog waits for `step === "ready"` (line 162, hard timeout 120s).
  *
@@ -93,7 +93,7 @@ test.describe("E2E-2: cloud VM via UI, multi-runner, reload-resume", () => {
     await cloudCard.click()
     await shot(page, "02-create-cloud-dialog")
 
-    // Provider list should populate from /api/workspace/providers.
+    // Provider list should populate from /api/workspace/drivers.
     const providerSelect = page.getByRole("combobox").or(page.getByRole("listbox")).first()
     if (await providerSelect.isVisible({ timeout: 5_000 }).catch(() => false)) {
       await providerSelect.click()

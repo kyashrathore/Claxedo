@@ -6,7 +6,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { api, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
 import { useClaxedoEvents } from "@/features/workspaces/app-ports"
-import { workspaceCreateUrl, workspaceProvidersUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { workspaceCreateUrl, workspaceSandboxDriversUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
 import { sandboxProviderFacts } from "./provider-facts"
 import { loadConnectedRepositories, type RepositoryChoice } from "./repository-picker"
@@ -46,16 +46,19 @@ async function createCloudProject(
   )
 }
 
-type Provider = {
+// Wire shape of `GET /api/workspace/drivers` (see `listSandboxDrivers` in
+// @claxedo/sandbox-manager/driver-catalog). The picker below still calls these
+// "providers" to the user; only the transport uses driver naming.
+type Driver = {
   id: string
   label: string
   configured: boolean
   default: boolean
 }
 
-type ProviderResponse = {
-  default_provider: string
-  providers: Provider[]
+type DriverResponse = {
+  default_driver: string
+  drivers: Driver[]
 }
 
 type ProvisionLog = {
@@ -96,7 +99,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   const [repositories, setRepositories] = createSignal<RepositoryChoice[]>([])
   const [repositoryLoadError, setRepositoryLoadError] = createSignal("")
   const [provider, setProvider] = createSignal("")
-  const [providers, setProviders] = createSignal<Provider[]>([])
+  const [providers, setProviders] = createSignal<Driver[]>([])
   const [phase, setPhase] = createSignal<"form" | "provisioning">("form")
   const [logs, setLogs] = createSignal<ProvisionLog[]>([])
   const [error, setError] = createSignal("")
@@ -112,10 +115,10 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
 
   onMount(() => {
     void api
-      .get<ProviderResponse>(workspaceProvidersUrl({ baseUrl }))
+      .get<DriverResponse>(workspaceSandboxDriversUrl({ baseUrl }))
       .then((data) => {
-        setProviders(data.providers)
-        setProvider(data.default_provider)
+        setProviders(data.drivers)
+        setProvider(data.default_driver)
       })
       .catch(() => {
         setProviders([])
