@@ -4,6 +4,7 @@ import type { ControlPlaneCredentials } from "../control-plane/services"
 import type { CredentialHealth, CredentialMetadata } from "../credentials/types"
 import { CredentialDiscoveryError } from "../credentials/discovery"
 import { ControlPlaneAuthError } from "../control-plane/auth"
+import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 
 function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())
@@ -103,7 +104,7 @@ describe("credential routes", () => {
     expect(registry.saveDiscoveredCredentials).toHaveBeenCalledWith({
       discovery_id: "discovery-1",
       items: [{ provider_id: "openai", account_id: "account…1234567890", scope: "shared" }],
-    })
+    }, SINGLE_TENANT_ORG)
     expect({ preview, saved }).toMatchInlineSnapshot(`
       {
         "preview": {
@@ -164,7 +165,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ ok: true, scope: "shared" })
-    expect(registry.updateCredentialScope).toHaveBeenCalledWith("cred_1", "shared", 321)
+    expect(registry.updateCredentialScope).toHaveBeenCalledWith("cred_1", "shared", 321, SINGLE_TENANT_ORG)
   })
 
   test("verifies a credential with a one-token provider call and lists the persisted health", async () => {
@@ -189,7 +190,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
     expect(request).toHaveBeenCalledOnce()
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({ max_output_tokens: 1 })
     expect(request.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
@@ -219,7 +220,7 @@ describe("credential routes", () => {
     const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
 
     await expect(response.json()).resolves.toMatchObject({ verified_at: 2 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 2)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 2, SINGLE_TENANT_ORG)
   })
 
   test("classifies provider authentication failures without returning provider or secret text", async () => {
@@ -241,7 +242,7 @@ describe("credential routes", () => {
     expect(body).toEqual({ result: "auth_failed", health: "auth_failed", verified_at: 43 })
     expect(JSON.stringify(body)).not.toContain("sk-auth-secret")
     expect(JSON.stringify(body)).not.toContain("rejected")
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "auth_failed", 43)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "auth_failed", 43, SINGLE_TENANT_ORG)
   })
 
   test("classifies forbidden provider credentials as authentication failures", async () => {
@@ -282,7 +283,7 @@ describe("credential routes", () => {
     expect(response.status).toBe(200)
     expect(body).toEqual({ result: "no_billing", health: "no_billing", verified_at: 44 })
     expect(JSON.stringify(body)).not.toContain("sk-billing-secret")
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "no_billing", 44)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "no_billing", 44, SINGLE_TENANT_ORG)
   })
 
   test("classifies a temporary provider rate cap", async () => {
@@ -301,7 +302,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ result: "rate_capped", health: "rate_capped", verified_at: 45 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "rate_capped", 45)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "rate_capped", 45, SINGLE_TENANT_ORG)
   })
 
   test("classifies an expired provider token", async () => {
@@ -320,7 +321,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ result: "expired", health: "expired", verified_at: 46 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "expired", 46)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "expired", 46, SINGLE_TENANT_ORG)
   })
 
   test("does not contact a provider for metadata that is already expired", async () => {
@@ -534,7 +535,7 @@ describe("credential routes", () => {
       kind: "api_key",
       source: "managed",
       secret: "sk-test",
-    })
+    }, SINGLE_TENANT_ORG)
 
     const sync = await app.request("http://localhost/sync-local", {
       method: "POST",
@@ -542,7 +543,7 @@ describe("credential routes", () => {
       body: JSON.stringify({ provider_ids: ["openai"] }),
     })
     expect(sync.status).toBe(200)
-    expect(registry.syncLocalCredentials).toHaveBeenCalledWith(["openai"])
+    expect(registry.syncLocalCredentials).toHaveBeenCalledWith(["openai"], SINGLE_TENANT_ORG)
 
     const status = await app.request("http://localhost/cred_2/status", {
       method: "PATCH",
@@ -550,11 +551,11 @@ describe("credential routes", () => {
       body: JSON.stringify({ status: "revoked", error: "rotated" }),
     })
     expect(status.status).toBe(200)
-    expect(registry.updateCredentialStatus).toHaveBeenCalledWith("cred_2", "revoked", "rotated")
+    expect(registry.updateCredentialStatus).toHaveBeenCalledWith("cred_2", "revoked", "rotated", SINGLE_TENANT_ORG)
 
     const deleted = await app.request("http://localhost/cred_2", { method: "DELETE" })
     expect(deleted.status).toBe(200)
-    expect(registry.deleteCredential).toHaveBeenCalledWith("cred_2")
+    expect(registry.deleteCredential).toHaveBeenCalledWith("cred_2", SINGLE_TENANT_ORG)
   })
 
   test("returns structured validation errors", async () => {

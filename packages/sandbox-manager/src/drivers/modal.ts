@@ -206,6 +206,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: sandboxDriverCatalog.modal.metadata.persistence,
     },
     ensureHost,

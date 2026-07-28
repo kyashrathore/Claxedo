@@ -10,6 +10,7 @@ import {
 } from "./materializers/mcp"
 import { materializeStandaloneSkill } from "./materializers/skills"
 import {
+  materializedComponentKey as componentKey,
   readMaterializedRuntimeRecord,
   writeMaterializedRuntimeRecord,
   type MaterializedComponent,
@@ -17,6 +18,7 @@ import {
   type MaterializedRuntimeRecord,
 } from "./materialization"
 import { isHarnessTarget, type MaterializedAgentExtensionScope, type PackageSource, type HarnessTarget } from "./types"
+import { samePackageSourceIdentity, verifyPackageIntegrity, type PackageIntegrityLock } from "./integrity"
 
 export type AgentExtensionMaterializationInstall = {
   desired: {
@@ -27,9 +29,7 @@ export type AgentExtensionMaterializationInstall = {
     enabled?: boolean
     targets?: unknown[]
   }
-  lock?: {
-    resolved_sha?: string
-  }
+  lock?: PackageIntegrityLock
   status?: string
 }
 
@@ -115,8 +115,14 @@ function claxedoMcpWorkspaceId() {
 // package config are stripped so credentials never land in target files.
 // This applies ONLY to that exact id+source; third-party packages are
 // materialized verbatim.
+//
+// The privilege keys off the source tuple, so it must key off the *pinned*
+// tuple rather than the one the desired state claims: require the lock to
+// carry a matching source. A package whose lock does not pin that exact source
+// is materialized verbatim like any third party, which is the safe default.
 function isFirstPartyClaxedoMcpInstall(input: AgentExtensionMaterializationInstall) {
   const source = input.desired.source
+  if (!input.lock?.source || !samePackageSourceIdentity(source, input.lock.source)) return false
   return input.desired.id === "claxedo-mcp"
     && source.type === "github"
     && source.owner === "kyashrathore"
@@ -275,10 +281,6 @@ async function materializeDiscoveredComponent(input: {
   }]
 }
 
-function componentKey(component: Pick<MaterializedComponent, "runner" | "component" | "type">) {
-  return `${component.runner}\n${component.type}\n${component.component}`
-}
-
 // A component that failed mid-run must not cost the package the components it
 // applied on earlier runs: keep previous applied entries that this run did not
 // re-produce, so ownership survives and stale-removal does not delete them.
@@ -370,7 +372,29 @@ async function materializePackage(input: {
   }
 }
 
+// Every package root this run would materialize must match the content its
+// lock pins, and the whole check runs BEFORE anything touches disk. Verifying
+// inline per package would not be enough: a package that verified while a
+// sibling failed would leave applied artifacts on disk with no ownership
+// record in materialized.json, and every later run would then refuse to
+// overwrite the package's own unowned output.
+async function verifyMaterializationIntegrity(input: AgentExtensionMaterializeOptions) {
+  await Promise.all(input.installs.map(async (install) => {
+    // Disabled installs materialize nothing, so there is no content to verify.
+    if (install.desired.enabled === false) return
+    const packageRoot = input.packageRoots[install.desired.id]
+    if (!packageRoot) return
+    await verifyPackageIntegrity({
+      id: install.desired.id,
+      source: install.desired.source,
+      ...(install.lock ? { lock: install.lock } : {}),
+      packageRoot,
+    })
+  }))
+}
+
 export async function materializeAgentExtensionSnapshot(input: AgentExtensionMaterializeOptions) {
+  await verifyMaterializationIntegrity(input)
   const materializedFile = path.join(input.stateRoot, "materialized.json")
   const previous = await readMaterializedRuntimeRecord(materializedFile)
   const materializedAt = now(input)

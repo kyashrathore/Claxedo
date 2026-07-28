@@ -1,3 +1,83 @@
+# ---------------------------------------------------------------------------
+# Security headers.
+#
+# This file is the ONLY place they can land for the web app. The SPA is
+# published to Cloudflare Pages (`wrangler pages deploy dist`, see
+# .github/workflows/deploy-claxedo-app.yml) and is served entirely by Pages —
+# the HTML document never passes through the control-plane Worker, so the Hono
+# `securityHeaders()` middleware in packages/claxedo-server/src/hosted-app.ts
+# covers the API responses and NOTHING here. Both surfaces need their own set.
+#
+# Pages MERGES overlapping rules (see the caching note below), so these live on
+# a single `/*` rule and share no header name with the cache/MIME rules — every
+# response ends up with exactly one of each.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Pages serves this project over HTTPS only, so the HSTS pin is unconditional
+  # here. (The control plane's HSTS is gated on transport because it also runs
+  # plaintext on localhost; Pages never does.) No `preload` — that is a
+  # one-way door that needs a deliberate submission, not a config default.
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  # Legacy clickjacking header, kept for pre-CSP2 browsers only. Every current
+  # browser IGNORES it when `frame-ancestors` is present, and frame-ancestors
+  # below is authoritative. SAMEORIGIN rather than DENY because X-Frame-Options
+  # has no way to express the marketing-site embed that frame-ancestors allows;
+  # DENY would silently be the stricter policy on old browsers for no gain.
+  X-Frame-Options: SAMEORIGIN
+  # ENFORCING, and deliberately frame-ancestors ONLY. This directive governs
+  # who may embed us and nothing else, so it cannot break resource loading —
+  # unlike the full policy below. The two non-self origins are the marketing
+  # site, which embeds the demo app in an iframe (`previewSrc` in
+  # packages/claxedo-web/src/config.ts -> /demo/?embed=1) and drives it over
+  # postMessage; the app already trusts exactly these origins for that channel
+  # (TRUSTED_TOUR_ORIGINS in src/app/demo/tour-origin.ts). Everything else is
+  # blocked.
+  Content-Security-Policy: frame-ancestors 'self' https://claxedo.com https://www.claxedo.com
+  # REPORT-ONLY, and it must stay report-only until validated against real
+  # traffic. Two directives here cannot be pinned from a static file:
+  #   * connect-src — the workspace relay origin is RUNTIME-RESOLVED. The
+  #     client reads `relayUrl` out of the control plane's
+  #     GET /api/workspace/:id/connection response and opens both fetch and
+  #     wss to it (src/platform/runtime/agent/workspace-relay-connection.ts).
+  #     A deployment can also configure several relay endpoints. Pinning a host
+  #     list here takes every workspace offline the day a relay moves, so this
+  #     stays `https: wss:` until the origins are injected at build time.
+  #   * script-src — `https://*.i.posthog.com` matches the default ingest and
+  #     asset hosts (posthog-js lazy-loads recorder/exception-autocapture from
+  #     `us-assets.i.posthog.com`). A deployment that points VITE_POSTHOG_HOST
+  #     at a custom reverse proxy needs that origin added before promotion.
+  # 'wasm-unsafe-eval' is load-bearing: the Shiki highlighter compiles an
+  # inlined WASM module on the main thread and in two same-origin module
+  # workers. 'unsafe-inline' on style-src is likewise required — index.html
+  # carries an inline <style> AND an inline style attribute on <html>, and
+  # xterm/mermaid/cytoscape inject <style> elements at runtime.
+  #
+  # VALIDATED so far, by loading the production build in a real browser with
+  # exactly these headers applied: the SPA boots and renders, Clerk's bundled
+  # SDK loads and reaches its frontend API, WASM compiles on the main thread,
+  # same-origin module workers and blob workers construct, and both inline
+  # style attributes and runtime <style> injection work. Zero script-src
+  # violations came from app code — in particular the `Function("return this")`
+  # globalThis polyfills inside mermaid/cytoscape/lodash are short-circuited
+  # and never evaluate, so no 'unsafe-eval' is needed.
+  # NOT yet exercised (needs a live backend): Turnstile during sign-up, the
+  # terminal's wss, and file review actually driving the Shiki worker.
+  # KNOWN GAP found during that run: `connect-src` covers `https:`/`wss:` but
+  # NOT plaintext cross-origin `http:`, so a control plane on
+  # `http://127.0.0.1:<port>` reports a violation. Harmless on Pages, which
+  # only ever talks to an HTTPS control plane, and irrelevant to self-host and
+  # desktop builds — this file is copied into every dist but only Cloudflare
+  # Pages interprets it. Re-check before promotion anyway.
+  #
+  # PROMOTION CHECKLIST, in order: (1) point a report collector at this policy,
+  # (2) run real traffic incl. sign-up (Turnstile), a workspace session, the
+  # terminal, and file review, (3) fold in whatever reports show — the Clerk
+  # avatar host and Clerk's frontend API are the two known unknowns, (4) narrow
+  # connect-src/img-src off `https:`, (5) rename this header to
+  # `Content-Security-Policy` in one deliberate, reviewable diff.
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self' https://claxedo.com https://www.claxedo.com; script-src 'self' 'wasm-unsafe-eval' https://*.i.posthog.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; media-src 'self' data: blob: https:; worker-src 'self' blob:; connect-src 'self' https: wss:; frame-src https://challenges.cloudflare.com
+
 # Vite emits content-hashed filenames under /assets (e.g. main-DUtf99h4.js), so
 # they are immutable. Pages MERGES overlapping rules, so set Cache-Control once
 # on the /assets/* catch-all and the MIME type on the specific extensions —

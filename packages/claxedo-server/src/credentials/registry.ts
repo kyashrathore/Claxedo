@@ -3,20 +3,53 @@
  *
  * Coordinates between SQLite metadata (claxedo.db) and the secret backend.
  * Raw secret material never enters SQLite — only opaque backend references.
+ *
+ * ORG SCOPING (security invariant)
+ * --------------------------------
+ * Provider credentials are model-provider API keys and OAuth tokens — the
+ * highest-value secret in the product. Every statement in this module is
+ * scoped by `org_id`; there is no unscoped read, write, delete, or verify
+ * path, and no wildcard.
+ *
+ * The `org` parameter defaults to `SINGLE_TENANT_ORG` (`__local__`), the named
+ * partition that unsigned/loopback self-host resolves to. That default is a
+ * fail-CLOSED default, not a convenience wildcard: a call site that forgets to
+ * pass an org operates on the single-tenant partition only, so the worst
+ * outcome of a missed call site is "cannot see this org's rows" — never "can
+ * see another org's rows".
  */
 
 import { randomUUID } from "crypto"
 import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../storage/db"
-import { ClaxedoProviderCredentialTable } from "../storage/provider-credential.sql"
+import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 import { getBackend } from "./store"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialWrite, CredentialStatus } from "./types"
 import { Log } from "../log"
 import { ensurePresetForProvider, removeAutoPresetForProvider } from "../network/policy"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
 
+export { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
+
 const log = Log.create({ service: "credentials-registry" })
 const exclusiveAuthKinds = ["api_key", "oauth_token"] as const
+
+/**
+ * The tenant a credential operation runs as. Blank/whitespace is NOT a
+ * wildcard — it collapses to the named single-tenant partition.
+ */
+export type CredentialOrgScope = string
+
+/** Normalize an org scope. Never returns an empty string, never a wildcard. */
+export function credentialOrg(org?: CredentialOrgScope | null): string {
+  const value = org?.trim()
+  return value ? value : SINGLE_TENANT_ORG
+}
+
+/** The one scope predicate. Every statement in this module composes with it. */
+function inOrg(org?: CredentialOrgScope | null) {
+  return eq(ClaxedoProviderCredentialTable.org_id, credentialOrg(org))
+}
 
 function now() {
   return Date.now()
@@ -32,20 +65,27 @@ function safeRead<T>(label: string, fallback: T, read: () => T): T {
 }
 
 /** Create or update a credential with its secret stored in the backend. */
-export async function putCredential(input: CredentialWrite): Promise<CredentialMetadata> {
+export async function putCredential(
+  input: CredentialWrite,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<CredentialMetadata> {
+  const orgId = credentialOrg(org)
   const backend = getBackend()
   const ok = await backend.probe()
   if (!ok) {
     throw new Error("Secret backend unavailable — refusing to store credential")
   }
 
-  // Check for existing credential for this provider+kind
+  // Check for existing credential for this org+provider+kind. The org
+  // predicate is what stops org A's write from adopting (and then
+  // overwriting) org B's row for the same provider.
   const existing = ClaxedoDB.use((db) =>
     db
       .select()
       .from(ClaxedoProviderCredentialTable)
       .where(
         and(
+          inOrg(orgId),
           eq(ClaxedoProviderCredentialTable.provider_id, input.provider_id),
           eq(ClaxedoProviderCredentialTable.kind, input.kind),
         ),
@@ -57,6 +97,9 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
     throw new Error("Shared credentials require explicit consent")
   }
 
+  // Exclusive-kind replacement DELETES rows. Unscoped, org A storing an
+  // `openai` api_key would delete org B's `openai` oauth_token — cross-tenant
+  // denial of service. Scoped to the writer's org it can only replace its own.
   const replacing = exclusiveAuthKinds.includes(input.kind as (typeof exclusiveAuthKinds)[number])
     ? ClaxedoDB.use((db) =>
         db
@@ -64,6 +107,7 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
           .from(ClaxedoProviderCredentialTable)
           .where(
             and(
+              inOrg(orgId),
               eq(ClaxedoProviderCredentialTable.provider_id, input.provider_id),
               inArray(ClaxedoProviderCredentialTable.kind, [...exclusiveAuthKinds]),
             ),
@@ -86,6 +130,7 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
   const ts = now()
   const row = {
     id,
+    org_id: orgId,
     provider_id: input.provider_id,
     kind: input.kind,
     source: input.source,
@@ -109,13 +154,13 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
   ClaxedoDB.transaction((db) => {
     if (replaced.length > 0) {
       db.delete(ClaxedoProviderCredentialTable)
-        .where(inArray(ClaxedoProviderCredentialTable.id, replaced.map((cred) => cred.id)))
+        .where(and(inOrg(orgId), inArray(ClaxedoProviderCredentialTable.id, replaced.map((cred) => cred.id))))
         .run()
     }
     if (existing) {
       db.update(ClaxedoProviderCredentialTable)
         .set(row)
-        .where(eq(ClaxedoProviderCredentialTable.id, id))
+        .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
         .run()
     } else {
       db.insert(ClaxedoProviderCredentialTable).values(row).run()
@@ -129,7 +174,7 @@ export async function putCredential(input: CredentialWrite): Promise<CredentialM
     })
   }
 
-  log.info("Credential stored", { id, provider_id: input.provider_id, kind: input.kind })
+  log.info("Credential stored", { id, org_id: orgId, provider_id: input.provider_id, kind: input.kind })
 
   // Auto-add network preset so sandbox egress is allowed for this provider
   ensurePresetForProvider(input.provider_id)
@@ -155,11 +200,11 @@ function toMetadata(row: CredentialRow): CredentialMetadata {
   } as unknown as CredentialMetadata
 }
 
-/** List all credential metadata (no secrets). */
-export function listCredentials(): CredentialMetadata[] {
+/** List credential metadata (no secrets) for one org. */
+export function listCredentials(org: CredentialOrgScope = SINGLE_TENANT_ORG): CredentialMetadata[] {
   return safeRead("credential list", [], () =>
     ClaxedoDB.use((db) =>
-      db.select().from(ClaxedoProviderCredentialTable).all().map(toMetadata),
+      db.select().from(ClaxedoProviderCredentialTable).where(inOrg(org)).all().map(toMetadata),
     ),
   )
 }
@@ -184,14 +229,18 @@ const providerPreference = [
 /**
  * Get credential metadata by provider ID, optionally scoped to one `kind`.
  *
- * `provider_id` is NOT unique — `putCredential` upserts on (provider_id, kind,
- * account_id), so one id can legitimately hold several rows. Several sandbox
- * driver ids collide with model-provider ids (`vercel` is both), and without
- * `kind` this returns whichever row sorts first, which for a sandbox lookup can
- * be the user's model-provider API key. Callers that mean one kind should say
- * so; omitting it keeps the historical any-kind behaviour.
+ * `provider_id` is NOT unique — `putCredential` upserts on (org, provider_id,
+ * kind, account_id), so one id can legitimately hold several rows. Several
+ * sandbox driver ids collide with model-provider ids (`vercel` is both), and
+ * without `kind` this returns whichever row sorts first, which for a sandbox
+ * lookup can be the user's model-provider API key. Callers that mean one kind
+ * should say so; omitting it keeps the historical any-kind behaviour.
  */
-export function getCredentialByProvider(providerId: string, kind?: string): CredentialMetadata | undefined {
+export function getCredentialByProvider(
+  providerId: string,
+  kind?: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): CredentialMetadata | undefined {
   const row = safeRead<CredentialRow | undefined>("credential lookup", undefined, () =>
     ClaxedoDB.use((db) =>
       db
@@ -200,10 +249,11 @@ export function getCredentialByProvider(providerId: string, kind?: string): Cred
         .where(
           kind
             ? and(
+                inOrg(org),
                 eq(ClaxedoProviderCredentialTable.provider_id, providerId),
                 eq(ClaxedoProviderCredentialTable.kind, kind),
               )
-            : eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+            : and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)),
         )
         .orderBy(...providerPreference)
         .get(),
@@ -213,26 +263,32 @@ export function getCredentialByProvider(providerId: string, kind?: string): Cred
 }
 
 /** Credential lookup for request paths where a registry outage must remain distinguishable from an absent credential. */
-export function requireCredentialRegistryLookup(providerId: string): CredentialMetadata | undefined {
+export function requireCredentialRegistryLookup(
+  providerId: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): CredentialMetadata | undefined {
   const row = ClaxedoDB.use((db) =>
     db
       .select()
         .from(ClaxedoProviderCredentialTable)
-        .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)))
         .orderBy(...providerPreference)
         .get(),
   )
   return row ? toMetadata(row) : undefined
 }
 
-/** Get credential metadata by ID. */
-export function getCredential(id: string): CredentialMetadata | undefined {
+/** Get credential metadata by ID, within one org. */
+export function getCredential(
+  id: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): CredentialMetadata | undefined {
   const row = safeRead<CredentialRow | undefined>("credential read", undefined, () =>
     ClaxedoDB.use((db) =>
       db
         .select()
         .from(ClaxedoProviderCredentialTable)
-        .where(eq(ClaxedoProviderCredentialTable.id, id))
+        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
         .get(),
     ),
   )
@@ -240,30 +296,37 @@ export function getCredential(id: string): CredentialMetadata | undefined {
 }
 
 /** Resolve a credential's raw secret material — only call at trusted fanout points. */
-export async function resolveSecret(providerId: string, kind?: string): Promise<string | null> {
-  const cred = getCredentialByProvider(providerId, kind)
+export async function resolveSecret(
+  providerId: string,
+  kind?: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<string | null> {
+  const cred = getCredentialByProvider(providerId, kind, org)
   if (!cred?.secure_ref) return null
   if (cred.status !== "available") return null
 
   const secret = await getBackend().get(cred.secure_ref)
-  if (secret) touchCredential(cred.id)
+  if (secret) touchCredential(cred.id, org)
   return secret
 }
 
 /** Resolve one credential by storage id for a trusted verification retry. */
-export async function resolveSecretById(id: string): Promise<string | null> {
-  const cred = getCredential(id)
+export async function resolveSecretById(
+  id: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<string | null> {
+  const cred = getCredential(id, org)
   if (!cred?.secure_ref) return null
   const secret = await getBackend().get(cred.secure_ref)
-  if (secret) touchCredential(cred.id)
+  if (secret) touchCredential(cred.id, org)
   return secret
 }
 
-function touchCredential(id: string) {
+function touchCredential(id: string, org?: CredentialOrgScope) {
   ClaxedoDB.use((db) => db
     .update(ClaxedoProviderCredentialTable)
     .set({ last_used_at: now() })
-    .where(eq(ClaxedoProviderCredentialTable.id, id))
+    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
 }
 
@@ -273,8 +336,13 @@ function touchCredential(id: string) {
  * verification — `putCredential` would be the wrong tool: it resets health and
  * re-runs the exclusive-kind replacement logic for what is the same login.
  */
-export async function updateCredentialSecret(id: string, secret: string, expiresAt?: number): Promise<boolean> {
-  const credential = getCredential(id)
+export async function updateCredentialSecret(
+  id: string,
+  secret: string,
+  expiresAt?: number,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<boolean> {
+  const credential = getCredential(id, org)
   if (!credential) return false
   const backend = getBackend()
   const ref = await backend.put(id, secret)
@@ -290,13 +358,18 @@ export async function updateCredentialSecret(id: string, secret: string, expires
       expires_at: expiresAt ?? credential.expires_at ?? null,
       updated_at: now(),
     })
-    .where(eq(ClaxedoProviderCredentialTable.id, id))
+    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
   return true
 }
 
-export function updateCredentialScope(id: string, scope: CredentialScope, consentAt: number) {
-  const credential = getCredential(id)
+export function updateCredentialScope(
+  id: string,
+  scope: CredentialScope,
+  consentAt: number,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+) {
+  const credential = getCredential(id, org)
   if (!credential) return false
   ClaxedoDB.use((db) => db
     .update(ClaxedoProviderCredentialTable)
@@ -306,13 +379,18 @@ export function updateCredentialScope(id: string, scope: CredentialScope, consen
       consent_json: JSON.stringify({ at: consentAt, surface: "scope_change" }),
       updated_at: now(),
     })
-    .where(eq(ClaxedoProviderCredentialTable.id, id))
+    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
   return true
 }
 
 /** Update credential status (e.g. mark expired or revoked). */
-export function updateCredentialStatus(id: string, status: CredentialStatus, error?: string): void {
+export function updateCredentialStatus(
+  id: string,
+  status: CredentialStatus,
+  error?: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): void {
   ClaxedoDB.use((db) =>
     db
       .update(ClaxedoProviderCredentialTable)
@@ -322,13 +400,18 @@ export function updateCredentialStatus(id: string, status: CredentialStatus, err
         last_error: error ?? null,
         updated_at: now(),
       })
-      .where(eq(ClaxedoProviderCredentialTable.id, id))
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run(),
   )
 }
 
 /** Persist the provider-backed health result consumed by every credential surface. */
-export function updateCredentialHealth(id: string, health: CredentialHealth, validatedAt: number): void {
+export function updateCredentialHealth(
+  id: string,
+  health: CredentialHealth,
+  validatedAt: number,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): void {
   ClaxedoDB.use((db) =>
     db
       .update(ClaxedoProviderCredentialTable)
@@ -339,14 +422,17 @@ export function updateCredentialHealth(id: string, health: CredentialHealth, val
         last_error: health === "ok" ? null : health,
         updated_at: now(),
       })
-      .where(eq(ClaxedoProviderCredentialTable.id, id))
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run(),
   )
 }
 
 /** Delete a credential and its backend secret. */
-export async function deleteCredential(id: string): Promise<boolean> {
-  const cred = getCredential(id)
+export async function deleteCredential(
+  id: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<boolean> {
+  const cred = getCredential(id, org)
   if (!cred) return false
 
   if (cred.secure_ref) {
@@ -359,11 +445,11 @@ export async function deleteCredential(id: string): Promise<boolean> {
   ClaxedoDB.use((db) =>
     db
       .delete(ClaxedoProviderCredentialTable)
-      .where(eq(ClaxedoProviderCredentialTable.id, id))
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run(),
   )
 
-  log.info("Credential deleted", { id, provider_id: cred.provider_id })
+  log.info("Credential deleted", { id, org_id: credentialOrg(org), provider_id: cred.provider_id })
 
   // Remove auto-created network preset if no other creds need it
   removeAutoPresetForProvider(cred.provider_id)
@@ -373,20 +459,28 @@ export async function deleteCredential(id: string): Promise<boolean> {
 
 /** Delete all credentials for a provider. */
 /**
- * Delete every credential for a provider, optionally scoped to one `kind`.
+ * Delete every credential for a provider in one org, optionally scoped to one
+ * `kind`.
  *
- * Unscoped this is genuinely destructive across features: `vercel` is both a
- * sandbox driver id and a model-provider id, so an unscoped delete triggered by
- * "Remove" in Sandbox settings also destroyed the user's Vercel model API key.
- * Pass `kind` whenever the caller owns only one kind of credential.
+ * Unscoped by kind this is genuinely destructive across features: `vercel` is
+ * both a sandbox driver id and a model-provider id, so an unscoped delete
+ * triggered by "Remove" in Sandbox settings also destroyed the user's Vercel
+ * model API key. Pass `kind` whenever the caller owns only one kind of
+ * credential. The ORG scope is not optional — it is what keeps one tenant's
+ * "remove provider" from wiping every other tenant's key for that provider.
  */
-export async function deleteCredentialsByProvider(providerId: string, kind?: string): Promise<number> {
+export async function deleteCredentialsByProvider(
+  providerId: string,
+  kind?: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<number> {
   const scope = kind
     ? and(
+        inOrg(org),
         eq(ClaxedoProviderCredentialTable.provider_id, providerId),
         eq(ClaxedoProviderCredentialTable.kind, kind),
       )
-    : eq(ClaxedoProviderCredentialTable.provider_id, providerId)
+    : and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId))
 
   const creds = ClaxedoDB.use((db) =>
     db
@@ -448,11 +542,13 @@ function fanoutEligible(cred: CredentialMetadata): boolean {
 }
 
 /**
- * Resolve all managed credentials as a provider→secret map.
+ * Resolve all managed credentials as a provider→secret map, for ONE org.
  * Only call at trusted fanout points such as ACP spawn/config replay.
  */
-export async function resolveAllSecrets(): Promise<Record<string, string>> {
-  const creds = listCredentials().filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
+export async function resolveAllSecrets(
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<Record<string, string>> {
+  const creds = listCredentials(org).filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
   const backend = getBackend()
   const result: Record<string, string> = {}
 
@@ -471,8 +567,11 @@ export async function resolveAllSecrets(): Promise<Record<string, string>> {
   return result
 }
 
-export async function resolveSecretsForScope(scope: CredentialSecretScope = "local"): Promise<Record<string, string>> {
-  const creds = listCredentials()
+export async function resolveSecretsForScope(
+  scope: CredentialSecretScope = "local",
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<Record<string, string>> {
+  const creds = listCredentials(org)
     .filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
     .filter((c) => credentialSecretInScope({ source: c.source, scope: c.scope }, scope))
   const backend = getBackend()

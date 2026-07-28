@@ -27,10 +27,13 @@ import { localAgentConfigAllowed } from "./agent-config-local-auth"
 import {
   agentExtensionPolicyOverrides,
   captureAgentExtensionMutation,
+  catalogSourceFor,
   extensionListBody,
   extensionScope,
   extensionSourceInput,
   extensionTargets,
+  legacyWorkspaceExtensionRecord,
+  legacyWorkspaceExtensionRecordId,
   localExtensionError,
   localExtensionListBody,
   mirroredWorkspaceExtensionListBody,
@@ -40,6 +43,10 @@ import {
   workspaceExtensionScope,
   type AgentConfigRouteOptions,
 } from "./agent-config-extension-support"
+
+function agentExtensionNotFound(err: unknown) {
+  return err instanceof Error && err.message === "Agent Extension not found"
+}
 
 export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}) {
   const installExtension = options.installGitHubAgentExtension ?? installGitHubAgentExtension
@@ -239,9 +246,13 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
         })
         if (scope instanceof Response) return scope
         try {
+          // Delete is silently idempotent, so a record persisted under a
+          // legacy manifest-derived id must be resolved up front — there is
+          // no not-found error to retry on.
+          const extensionId = (await legacyWorkspaceExtensionRecordId(scope, c.req.param("id"))) ?? c.req.param("id")
           await scope.services.authority!.deleteWorkspaceAgentExtension(scope.auth, {
             workspaceId: scope.workspaceId,
-            extensionId: c.req.param("id"),
+            extensionId,
           })
           await syncWorkspaceRuntimeForSignedScope(scope)
           captureAgentExtensionMutation({
@@ -396,9 +407,14 @@ async function workspaceExtensionInstallResponse(
       ...(body.id ? { id: body.id } : {}),
       ...(targets ? { targets } : {}),
     })
-    const existing = workspaceAgentExtensionRecords(await scope.services.authority!.listWorkspaceAgentExtensions(scope.auth, {
+    const records = workspaceAgentExtensionRecords(await scope.services.authority!.listWorkspaceAgentExtensions(scope.auth, {
       workspaceId: scope.workspaceId,
-    })).find((item) => item.desired.id === result.id)
+    }))
+    // Guard on "same id OR same source", not the id alone: a record persisted
+    // before installs were pinned to the catalog id sits under the fetched
+    // package's own name and would otherwise coexist with the pinned row.
+    const legacy = legacyWorkspaceExtensionRecord(records, { id: result.id, source: result.record.desired.source })
+    const existing = records.find((item) => item.desired.id === result.id) ?? legacy
     if (existing && !sameSource(existing.desired.source, result.record.desired.source)) {
       throw new AgentExtensionConflictError(
         "agent_extension_source_conflict",
@@ -410,13 +426,27 @@ async function workspaceExtensionInstallResponse(
         },
       )
     }
+    const desired = {
+      ...result.record.desired,
+      enabled: existing?.desired.enabled ?? result.record.desired.enabled,
+      installed_at: existing?.desired.installed_at ?? result.record.desired.installed_at,
+    }
     await scope.services.authority!.upsertWorkspaceAgentExtension(scope.auth, {
       workspaceId: scope.workspaceId,
       extensionId: result.id,
-      packageName: result.record.desired.package_name,
-      desired: result.record.desired,
+      packageName: desired.package_name,
+      desired,
       lock: result.record.lock,
     })
+    // Absorb the legacy row only after the pinned row is written: failing
+    // between the calls leaves today's two-row state, which the next install
+    // heals, instead of dropping the only record of the install.
+    if (legacy) {
+      await scope.services.authority!.deleteWorkspaceAgentExtension(scope.auth, {
+        workspaceId: scope.workspaceId,
+        extensionId: legacy.desired.id,
+      })
+    }
     await syncWorkspaceRuntimeForSignedScope(scope)
     captureAgentExtensionMutation({
       services: scope.services,
@@ -426,13 +456,13 @@ async function workspaceExtensionInstallResponse(
       id: result.id,
       workspaceId: scope.workspaceId,
       source: body.source,
-      targets: result.record.desired.targets,
+      targets: desired.targets,
     })
     return c.json({
       id: result.id,
       package: result.package,
       cache: result.cache,
-      desired: result.record.desired,
+      desired,
       lock: result.record.lock,
     }, 201)
   } catch (err) {
@@ -460,8 +490,10 @@ async function mirroredWorkspaceExtensionInstallResponse(
       ...(body.id ? { id: body.id } : {}),
       ...(targets ? { targets } : {}),
     })
-    const existing = (await readMirroredWorkspaceAgentExtensions({ workspaceId }))
-      .find((item) => item.desired.id === result.id)
+    const records = await readMirroredWorkspaceAgentExtensions({ workspaceId })
+    // Same "same id OR same source" guard as the authority path above.
+    const legacy = legacyWorkspaceExtensionRecord(records, { id: result.id, source: result.record.desired.source })
+    const existing = records.find((item) => item.desired.id === result.id) ?? legacy
     if (existing && !sameSource(existing.desired.source, result.record.desired.source)) {
       throw new AgentExtensionConflictError(
         "agent_extension_source_conflict",
@@ -473,17 +505,26 @@ async function mirroredWorkspaceExtensionInstallResponse(
         },
       )
     }
+    const record = {
+      desired: {
+        ...result.record.desired,
+        enabled: existing?.desired.enabled ?? result.record.desired.enabled,
+        installed_at: existing?.desired.installed_at ?? result.record.desired.installed_at,
+      },
+      lock: result.record.lock,
+    }
     await mirrorWorkspaceAgentExtensionRecord({
       workspaceId,
-      record: result.record,
+      record,
+      ...(legacy ? { replaces: legacy.desired.id } : {}),
     })
-    await syncWorkspaceRuntimeAgentExtensions(workspaceId, [result.record])
+    await syncWorkspaceRuntimeAgentExtensions(workspaceId, await readMirroredWorkspaceAgentExtensions({ workspaceId }))
     return c.json({
       id: result.id,
       package: result.package,
       cache: result.cache,
-      desired: result.record.desired,
-      lock: result.record.lock,
+      desired: record.desired,
+      lock: record.lock,
     }, 201)
   } catch (err) {
     const mapped = workspaceExtensionError(err)
@@ -507,11 +548,26 @@ async function extensionEnabledResponse(
     })
     if (scope instanceof Response) return scope
     try {
-      await scope.services.authority!.setWorkspaceAgentExtensionEnabled(scope.auth, {
-        workspaceId: scope.workspaceId,
-        extensionId: c.req.param("id"),
-        enabled,
-      })
+      try {
+        await scope.services.authority!.setWorkspaceAgentExtensionEnabled(scope.auth, {
+          workspaceId: scope.workspaceId,
+          extensionId: c.req.param("id"),
+          enabled,
+        })
+      } catch (err) {
+        // A record persisted under a legacy manifest-derived id still answers
+        // to the catalog id (`resolveInstallId` on the local path): on a miss,
+        // retry against the same-source legacy record before reporting it.
+        const legacyId = agentExtensionNotFound(err)
+          ? await legacyWorkspaceExtensionRecordId(scope, c.req.param("id"))
+          : undefined
+        if (!legacyId) throw err
+        await scope.services.authority!.setWorkspaceAgentExtensionEnabled(scope.auth, {
+          workspaceId: scope.workspaceId,
+          extensionId: legacyId,
+          enabled,
+        })
+      }
       await syncWorkspaceRuntimeForSignedScope(scope)
       captureAgentExtensionMutation({
         services: scope.services,
@@ -574,24 +630,43 @@ async function workspaceExtensionUpdateResponse(
     const current = workspaceAgentExtensionRecords(await scope.services.authority!.listWorkspaceAgentExtensions(scope.auth, {
       workspaceId: scope.workspaceId,
     }))
-    const hit = current
-      .map((item) => item.desired)
-      .find((item) => item?.id === c.req.param("id"))
+    const requestedId = c.req.param("id")
+    const desiredItems = current.map((item) => item.desired)
+    // Read a legacy same-source record via the catalog, but reinstall under
+    // the *requested* id: updating by the curated id is also what normalizes
+    // the record onto it (same shape as updateAgentExtension on the local
+    // path). An exact record always wins.
+    const catalogSource = catalogSourceFor(requestedId)
+    const hit = desiredItems.find((item) => item?.id === requestedId)
+      ?? (catalogSource
+        ? desiredItems.find((item) => item && sameSource(item.source, catalogSource))
+        : undefined)
     if (!hit) return c.json(errorBody("agent_extension_not_found", "Not found"), 404)
     const result = await resolveWorkspaceExtension({
       source: extensionSourceInput(hit.source),
       workspaceId: scope.workspaceId,
-      id: hit.id,
+      id: requestedId,
       targets: hit.targets,
       now: Date.now(),
     })
+    const desired = {
+      ...result.record.desired,
+      enabled: hit.enabled,
+      installed_at: hit.installed_at,
+    }
     await scope.services.authority!.upsertWorkspaceAgentExtension(scope.auth, {
       workspaceId: scope.workspaceId,
       extensionId: result.id,
-      packageName: result.record.desired.package_name,
-      desired: result.record.desired,
+      packageName: desired.package_name,
+      desired,
       lock: result.record.lock,
     })
+    if (hit.id !== result.id) {
+      await scope.services.authority!.deleteWorkspaceAgentExtension(scope.auth, {
+        workspaceId: scope.workspaceId,
+        extensionId: hit.id,
+      })
+    }
     await syncWorkspaceRuntimeForSignedScope(scope)
     captureAgentExtensionMutation({
       services: scope.services,
@@ -601,9 +676,9 @@ async function workspaceExtensionUpdateResponse(
       id: result.id,
       workspaceId: scope.workspaceId,
       source: extensionSourceInput(hit.source),
-      targets: result.record.desired.targets,
+      targets: desired.targets,
     })
-    return c.json({ id: result.id, desired: result.record.desired, lock: result.record.lock })
+    return c.json({ id: result.id, desired, lock: result.record.lock })
   } catch (err) {
     const mapped = workspaceExtensionError(err)
     if (mapped) return mapped

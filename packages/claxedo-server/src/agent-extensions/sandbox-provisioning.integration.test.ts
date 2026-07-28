@@ -27,7 +27,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
 import { exportPKCS8, generateKeyPair } from "jose"
-import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions"
+import { applyRuntimeAgentExtensions, digestDirectory } from "@claxedo/agent-extensions"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import { createSqliteWorkspaceAuthority } from "../control-plane/adapters/sqlite/workspace-authority"
 import { pushRuntimeConfig } from "../workspace-supervisor-config-sync"
@@ -86,7 +86,19 @@ function signedAuth(subject: string): SignedControlPlaneAuth {
   }
 }
 
-function extensionRecord(id: string) {
+// `packageDigest` is the content hash of the package root this record's
+// materialization will actually be handed. Recording it is REQUIRED for any
+// record that reaches replay: materialization verifies the on-disk tree against
+// `component_digests.package` and refuses to apply a package it cannot verify.
+//
+// This fixture used to pass empty digest maps with a comment noting that replay
+// "skips checksum verification when no package digest is recorded". That
+// fail-open was the vulnerability closed by the pre-launch security review
+// (§6.15) — an unverifiable package is now a hard refusal, so a record without
+// a digest no longer models a valid install. Records that never reach replay
+// (push-path-only assertions) may still omit it.
+function extensionRecord(id: string, packageDigest?: string) {
+  const component_digests: Record<string, string> = packageDigest ? { package: packageDigest } : {}
   return {
     desired: {
       id,
@@ -101,11 +113,8 @@ function extensionRecord(id: string) {
     lock: {
       source: { type: "github" as const, owner: "acme", repo: id },
       resolved_sha: "cafebabecafebabecafebabecafebabecafebabe",
-      // Empty digest maps: the replay side skips checksum verification when
-      // no package digest is recorded (this test injects the package root
-      // directly instead of fetching from GitHub).
       manifest_digests: {},
-      component_digests: {},
+      component_digests,
       targets: ["claude" as const],
     },
   }
@@ -162,7 +171,12 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
   test("sqlite-authority install reaches the provisioning push and materializes into a fake sandbox FS", async () => {
     const workspaceId = "ws-w4-sqlite"
     const owner = signedAuth("user_w4_owner")
-    const record = extensionRecord("sandbox-skill")
+    // Built before the record, because the lock must carry the digest of the
+    // exact tree the replay below is handed — that is what materialization
+    // verifies against.
+    const packageRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-w4-pkg-"))
+    await writeSkillPackageFixture(packageRoot, "sandbox-probe")
+    const record = extensionRecord("sandbox-skill", await digestDirectory(packageRoot))
 
     // Declare the extension for the workspace the way the signed install
     // route does on self-host: a record in the local SQLite authority.
@@ -204,9 +218,7 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
       // root is injected so the test does not fetch from GitHub.
       const sandboxDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-w4-sandbox-"))
       const sandboxHome = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-w4-home-"))
-      const packageRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-w4-pkg-"))
       try {
-        await writeSkillPackageFixture(packageRoot, "sandbox-probe")
         await applyRuntimeAgentExtensions(body.agent_extensions, sandboxDir, {
           packageRoots: { "sandbox-skill": packageRoot },
           homeDir: sandboxHome,
@@ -230,11 +242,11 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
         await Promise.all([
           fs.promises.rm(sandboxDir, { recursive: true, force: true }),
           fs.promises.rm(sandboxHome, { recursive: true, force: true }),
-          fs.promises.rm(packageRoot, { recursive: true, force: true }),
         ])
       }
     } finally {
       await runtime.stop()
+      await fs.promises.rm(packageRoot, { recursive: true, force: true })
     }
   })
 

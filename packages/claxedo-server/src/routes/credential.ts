@@ -15,7 +15,15 @@ import { errorBody } from "./http"
 import { timingSafeEqualStrings } from "../control-plane/web-crypto"
 import { CredentialVerificationError, verifyCredential } from "../credentials/verify"
 import { CredentialDiscoveryError } from "../credentials/discovery"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../control-plane/auth"
+import {
+  ControlPlaneAuthError,
+  controlPlaneAuthContext,
+  controlPlaneAuthErrorBody,
+  type ClerkVerifier,
+  type ControlPlaneAuthConfig,
+  type ControlPlaneAuthContext,
+} from "../control-plane/auth"
+import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 
 const putBody = z.object({
   provider_id: z.string().min(1),
@@ -85,6 +93,50 @@ export type CredentialRoutesOptions = {
   fetch?: typeof fetch
   now?: () => number
   authenticate?: (request: Request) => Promise<void>
+  /**
+   * Signed-auth configuration used to resolve the CALLER'S ORG. Defaults to
+   * `controlPlaneAuthConfig()` (process env), which is what the self-host
+   * composition relies on: signed auth off → the single-tenant partition;
+   * signed auth on → the verified `org_id` claim.
+   */
+  authConfig?: ControlPlaneAuthConfig
+  verifier?: ClerkVerifier
+  /** Test/composition override for org resolution. */
+  resolveOrg?: (request: Request) => Promise<string> | string
+}
+
+/**
+ * The tenant every credential statement in this router runs as.
+ *
+ * Fail-closed by construction:
+ *  - unsigned/local self-host → the NAMED single-tenant partition. Not a
+ *    wildcard: it selects exactly the rows an install without organizations
+ *    wrote, and nothing else.
+ *  - signed with an `org_id` claim → that org.
+ *  - signed WITHOUT an org claim (personal account) → the subject, so two
+ *    org-less principals still cannot see each other's keys. This mirrors
+ *    `runtimeTokenOrgId` (`auth.user.orgId ?? auth.user.subject`), the
+ *    established convention for an absent org claim.
+ *  - misconfigured signed auth → `controlPlaneAuthContext` throws 503, and an
+ *    invalid/absent bearer throws 401. There is no path that resolves to
+ *    "every org".
+ *
+ * Exported because it is the ONE tenant convention for credential-bearing
+ * control-plane routes: `routes/provider-auth.ts` resolves its OAuth callback's
+ * tenant through this same function rather than restating the rules, so the two
+ * routers can never drift into disagreeing about who a request belongs to.
+ */
+export async function requestOrg(request: Request, options: CredentialRoutesOptions): Promise<string> {
+  if (options.resolveOrg) {
+    const resolved = await options.resolveOrg(request)
+    return resolved?.trim() ? resolved.trim() : SINGLE_TENANT_ORG
+  }
+  const context: ControlPlaneAuthContext = await controlPlaneAuthContext(request, {
+    ...(options.authConfig ? { config: options.authConfig } : {}),
+    ...(options.verifier ? { verifier: options.verifier } : {}),
+  })
+  if (context.mode !== "signed") return SINGLE_TENANT_ORG
+  return context.user.orgId?.trim() || context.user.subject.trim() || SINGLE_TENANT_ORG
 }
 
 export function CredentialRoutes(
@@ -92,6 +144,10 @@ export function CredentialRoutes(
   options: CredentialRoutesOptions = {},
 ) {
   const app = new Hono()
+  // Resolved once per request; every handler reads it instead of re-deriving,
+  // so no handler can accidentally run unscoped.
+  const orgs = new WeakMap<Request, string>()
+  const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
   if (options.authenticate) {
     app.use(async (c, next) => {
       try {
@@ -120,13 +176,24 @@ export function CredentialRoutes(
       await next()
     })
   }
+  app.use(async (c, next) => {
+    try {
+      orgs.set(c.req.raw, await requestOrg(c.req.raw, options))
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) {
+        return c.json(controlPlaneAuthErrorBody(error), error.status)
+      }
+      throw error
+    }
+    await next()
+  })
   return app
     .get("/", async (c) => {
-      const creds = (await credentials.listCredentials()).map(redact)
+      const creds = (await credentials.listCredentials(org(c.req.raw))).map(redact)
       return c.json({ credentials: creds })
     })
     .get("/:providerId", async (c) => {
-      const cred = await credentials.getCredentialByProvider(c.req.param("providerId"))
+      const cred = await credentials.getCredentialByProvider(c.req.param("providerId"), undefined, org(c.req.raw))
       if (!cred) return c.json({ credential: null })
       return c.json({ credential: redact(cred) })
     })
@@ -139,7 +206,7 @@ export function CredentialRoutes(
           ...(body.data.scope === "shared" ? {
             consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
           } : {}),
-        })
+        }, org(c.req.raw))
         return c.json({ credential: redact(cred) })
       } catch {
         return c.json(errorBody("credential_store_failed", "Failed to store credential"), 500)
@@ -150,7 +217,7 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_discovery_unavailable", "Credential discovery is unavailable"), 501)
       }
       try {
-        return c.json(await credentials.discoverLocalCredentials())
+        return c.json(await credentials.discoverLocalCredentials(org(c.req.raw)))
       } catch {
         return c.json(errorBody("credential_discovery_failed", "Failed to discover credentials"), 500)
       }
@@ -162,7 +229,7 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_discovery_unavailable", "Credential discovery is unavailable"), 501)
       }
       try {
-        return c.json(await credentials.saveDiscoveredCredentials(body.data))
+        return c.json(await credentials.saveDiscoveredCredentials(body.data, org(c.req.raw)))
       } catch (error) {
         if (error instanceof CredentialDiscoveryError) {
           const status = error.code === "discovery_expired" ? 410 : error.code === "discovery_not_found" ? 404 : 400
@@ -175,7 +242,7 @@ export function CredentialRoutes(
       const body = syncBody.safeParse(await c.req.json().catch(() => ({})))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       try {
-        const result = await credentials.syncLocalCredentials(body.data.provider_ids)
+        const result = await credentials.syncLocalCredentials(body.data.provider_ids, org(c.req.raw))
         return c.json(result)
       } catch {
         return c.json(errorBody("credential_sync_failed", "Failed to sync local credentials"), 500)
@@ -183,16 +250,19 @@ export function CredentialRoutes(
     })
     .post("/:id/verify", async (c) => {
       const id = c.req.param("id")
+      const scope = org(c.req.raw)
+      // Scoped lookup FIRST: an out-of-org id must 404 here, before the secret
+      // is resolved or any provider round-trip is made on another org's key.
       const credential = credentials.getCredential
-        ? await credentials.getCredential(id)
-        : (await credentials.listCredentials()).find((item) => item.id === id)
+        ? await credentials.getCredential(id, scope)
+        : (await credentials.listCredentials(scope)).find((item) => item.id === id)
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
       if (!credentials.resolveCredentialSecretById || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_verification_unavailable", "Credential verification is unavailable"), 501)
       }
-      const secret = await credentials.resolveCredentialSecretById(id)
+      const secret = await credentials.resolveCredentialSecretById(id, scope)
       if (!secret) {
         return c.json(errorBody("credential_secret_unavailable", "Credential secret is unavailable"), 409)
       }
@@ -202,9 +272,9 @@ export function CredentialRoutes(
         // Persist first: a renewed access token that is verified but not stored
         // would make every later read fall back to the stale one.
         if (refreshed) {
-          await credentials.updateCredentialSecret?.(id, refreshed.secret, refreshed.expiresAt)
+          await credentials.updateCredentialSecret?.(id, refreshed.secret, refreshed.expiresAt, scope)
         }
-        await credentials.updateCredentialHealth(id, health, verifiedAt)
+        await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
         return c.json({ result: health, health, verified_at: verifiedAt })
       } catch (error) {
         if (error instanceof CredentialVerificationError) {
@@ -217,7 +287,7 @@ export function CredentialRoutes(
       const body = statusBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       try {
-        await credentials.updateCredentialStatus(c.req.param("id"), body.data.status, body.data.error)
+        await credentials.updateCredentialStatus(c.req.param("id"), body.data.status, body.data.error, org(c.req.raw))
         return c.json({ ok: true })
       } catch {
         return c.json(errorBody("credential_status_update_failed", "Failed to update credential status"), 500)
@@ -230,7 +300,12 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_scope_unavailable", "Credential scope updates are unavailable"), 501)
       }
       try {
-        const updated = await credentials.updateCredentialScope(c.req.param("id"), body.data.scope, (options.now ?? Date.now)())
+        const updated = await credentials.updateCredentialScope(
+          c.req.param("id"),
+          body.data.scope,
+          (options.now ?? Date.now)(),
+          org(c.req.raw),
+        )
         if (!updated) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
         return c.json({ ok: true, scope: body.data.scope })
       } catch {
@@ -238,11 +313,15 @@ export function CredentialRoutes(
       }
     })
     .delete("/:id", async (c) => {
-      const deleted = await credentials.deleteCredential(c.req.param("id"))
+      const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })
     })
     .delete("/provider/:providerId", async (c) => {
-      const count = await credentials.deleteCredentialsByProvider(c.req.param("providerId"))
+      const count = await credentials.deleteCredentialsByProvider(
+        c.req.param("providerId"),
+        undefined,
+        org(c.req.raw),
+      )
       return c.json({ deleted: count })
     })
 }

@@ -105,6 +105,7 @@ export function createFetchBridgeSandboxDriver(options: FetchBridgeSandboxDriver
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: {
         resume: "same-sandbox",
         capture: "none",

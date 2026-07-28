@@ -33,7 +33,9 @@ export async function directoryEntriesBody(c: OpenCodeCompatRequestContext) {
     directory: input.directory,
   })
   const root = workspaceRoot(ws, input)
-  const dirPath = workspacePath(root, c.req.query("path"))
+  // Outside the try on purpose: the catch below answers fs errors with `[]`, and
+  // swallowing the containment 400 into that would hide a traversal probe.
+  const dirPath = await workspacePath(root, c.req.query("path"))
   try {
     const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
     return entries
@@ -60,7 +62,9 @@ export async function fileContentBody(c: OpenCodeCompatRequestContext) {
     workspaceId: input.workspaceId,
     directory: input.directory,
   })
-  const full = workspacePath(workspaceRoot(ws, input), c.req.query("path"))
+  // Outside the try for the same reason as `directoryEntriesBody`: the catch
+  // returns empty content, which would mask the containment rejection.
+  const full = await workspacePath(workspaceRoot(ws, input), c.req.query("path"))
   try {
     const buf = await fs.promises.readFile(full)
     if (buf.includes(0)) return binaryFileContent(buf)

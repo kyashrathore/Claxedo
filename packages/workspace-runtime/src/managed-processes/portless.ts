@@ -13,6 +13,7 @@
  * version cannot escape and block process startup.
  */
 
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -24,6 +25,26 @@ const log = Log.create({ service: "portless" })
 
 const PORTLESS_DIR = path.join(os.homedir(), ".portless")
 const DEFAULT_TLD = "localhost"
+
+/**
+ * Hex characters of the sha256 digest kept as a workspace-id discriminator.
+ * 10 hex chars = 40 bits of digest space: a birthday-bound collision chance
+ * of ~1e-9 for a batch of 100 concurrently-live workspaces (100^2 / 2^41),
+ * and still negligible (~1e-4) even at 10,000 concurrent workspaces — while
+ * costing only 10 of the 63 characters in the DNS label budget below.
+ * Matches the short-discriminator convention already used elsewhere in this
+ * codebase for the same kind of human-facing collision disambiguation (see
+ * `claxedo-server/src/credentials/discovery.ts`'s `.digest("hex").slice(0, 10)`).
+ */
+const DISCRIMINATOR_HEX_LEN = 10
+
+/**
+ * DNS label length ceiling (RFC 1035 3.1: labels are at most 63 octets).
+ * `wsLabel` in `deriveHostname` is always a single label — `sanitize()`
+ * never emits a `.` — so this bounds it directly, not just the composed
+ * hostname.
+ */
+const DNS_LABEL_MAX_LEN = 63
 
 export interface ProxyState {
   stateDir: string
@@ -137,8 +158,42 @@ export interface DeriveHostnameInput {
   workspaceName: string | undefined
   workspaceId: string | undefined
   tld: string
-  /** When true, append `-${workspaceId.slice(0,6)}` to the workspace label for collision resolution. */
+  /** When true, append a `workspaceId`-derived discriminator (see `deriveHostname`) to the workspace label for collision resolution. */
   withDiscriminator?: boolean
+}
+
+/**
+ * Derive a short, deterministic, DNS-label-safe discriminator from a whole
+ * workspace id.
+ *
+ * Hashes the *entire* id rather than reading characters at a fixed offset.
+ * The previous implementation took `sanitize(workspaceId).slice(0, 6)`, which
+ * for the `ws_<base36 millis>_<random>` id format is almost entirely the
+ * slow-moving timestamp prefix — every id minted within the same ~46-hour
+ * window produced the identical discriminator, defeating the one job this
+ * value has. A digest mixes every character of the id, including whatever
+ * high-entropy part a future id format carries and wherever it puts it, so
+ * this keeps discriminating through the next id-format change without this
+ * function ever needing to know where the "random part" lives.
+ *
+ * Deterministic by construction (sha256, no randomness involved): the same
+ * workspace id always yields the same discriminator, in this process or a
+ * different one, today or after a restart — required, since the result is
+ * embedded in a hostname other processes route by.
+ */
+function discriminatorFor(workspaceId: string): string {
+  return createHash("sha256").update(workspaceId).digest("hex").slice(0, DISCRIMINATOR_HEX_LEN)
+}
+
+/**
+ * Truncate a label component to `maxLen`, stripping any trailing hyphen the
+ * cut point exposes. `sanitize()` already guarantees no leading/trailing
+ * hyphen and no hyphen runs on the *untruncated* string, but slicing at an
+ * arbitrary index can still land right after one (e.g. `"foo-bar".slice(0, 4) === "foo-"`).
+ */
+function clampLabel(value: string, maxLen: number): string {
+  if (value.length <= maxLen) return value
+  return value.slice(0, maxLen).replace(/-+$/, "")
 }
 
 /**
@@ -148,17 +203,28 @@ export interface DeriveHostnameInput {
  * The caller passes the already-resolved workspace name (from the fallback chain
  * workspace_name || project_name || repo_name || basename(directory)), so this
  * function only owns sanitization and discriminator append.
+ *
+ * `wsLabel` is a single DNS label, so it alone is kept within
+ * `DNS_LABEL_MAX_LEN`. The discriminator (fixed length) is always kept in
+ * full — it's the part actually doing disambiguation — and the
+ * workspace-name part is truncated first when the two together would run
+ * over budget.
  */
 export function deriveHostname(input: DeriveHostnameInput): string | null {
   const namePart = sanitize(input.portName)
   if (!namePart) return null
 
-  let wsLabel = input.workspaceName ? sanitize(input.workspaceName) : ""
+  const sanitizedWorkspaceName = input.workspaceName ? sanitize(input.workspaceName) : ""
+
+  let wsLabel: string
   if (input.withDiscriminator) {
     if (!input.workspaceId) return null
-    const disc = sanitize(input.workspaceId).slice(0, 6)
-    if (!disc) return null
-    wsLabel = wsLabel ? `${wsLabel}-${disc}` : disc
+    const disc = discriminatorFor(input.workspaceId)
+    const nameBudget = Math.max(0, DNS_LABEL_MAX_LEN - disc.length - 1) // "-" separator
+    const clampedName = sanitizedWorkspaceName ? clampLabel(sanitizedWorkspaceName, nameBudget) : ""
+    wsLabel = clampedName ? `${clampedName}-${disc}` : disc
+  } else {
+    wsLabel = clampLabel(sanitizedWorkspaceName, DNS_LABEL_MAX_LEN)
   }
   if (!wsLabel) return null
 

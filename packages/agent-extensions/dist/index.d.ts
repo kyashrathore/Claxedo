@@ -11,6 +11,7 @@ export { encodeLock, lockStatePath, readExtensionLock, sortedLock, writeExtensio
 export { agentExtensionFiles, materializedAgentExtensionFiles, workspaceAgentExtensionFiles, type AgentExtensionFiles, } from "./storage";
 export { discoverAgentExtensionComponents, type DiscoveredAgentExtensionComponent, } from "./discovery";
 export { applyRuntimeAgentExtensions, type ReplayOptions, type RuntimeAgentExtensions, } from "./replay";
+export { AgentExtensionIntegrityError, isRemotePackageSource, lockedPackageDigest, samePackageSourceIdentity, verifyPackageIntegrity, type AgentExtensionIntegrityCode, type PackageIntegrityLock, } from "./integrity";
 export { materializeAgentExtensionSnapshot, removeStaleMaterializedComponents, uninstallOwnedComponents, type AgentExtensionMaterializationInstall, type AgentExtensionMaterializeOptions, } from "./materialize";
 export { AgentExtensionMaterializationError, componentOwnedBy, linkOrCopyOwnedDirectory, materializedRecordPath, readMaterializedRuntimeRecord, writeMaterializedRuntimeRecord, type MaterializedComponent, type MaterializedExtensionPackage, type MaterializedRuntimeRecord, } from "./materialization";
 export { materializeStandaloneMcp, mcpTargetPath, normalizeStandaloneMcpConfig, removeStandaloneMcpEntries, type StandaloneMcpConfig, type StandaloneMcpServerConfig, } from "./materializers/mcp";

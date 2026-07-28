@@ -363,6 +363,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      egressControl: "hosts",
       persistence: sandboxDriverCatalog.vercel.metadata.persistence,
     },
     ensureHost,

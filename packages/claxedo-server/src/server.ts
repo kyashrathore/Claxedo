@@ -4,6 +4,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import Database from "better-sqlite3"
 import { Hono } from "hono"
+import type { MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { HTTPException } from "hono/http-exception"
 import { serve } from "@hono/node-server"
@@ -15,6 +16,7 @@ import type { ProcessObserver } from "@claxedo/workspace-runtime"
 import { capture, initPostHog, shutdownPostHog } from "./posthog"
 import { initNodeObservability } from "./observability/node"
 import { reportError } from "./observability/report"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "./security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "./agent-config"
 import { eventsHandler } from "./routes/events"
 import { peerAddressStamp } from "./routes/local-only-projection"
@@ -241,6 +243,204 @@ export function isConnectionsCredentialPath(path: string): boolean {
   return CONNECTIONS_CREDENTIAL_PATH.test(path)
 }
 
+/* -------------------------------------------------------------------------
+ * Security headers for the local / self-host server.
+ *
+ * This server is the ONE surface that answers both response classes. The
+ * hosted control plane (`hosted-app.ts` + `security-headers.ts`) serves only
+ * JSON and SSE, so it enforces `default-src 'none'`. Cloudflare Pages
+ * (`packages/claxedo-app/public/_headers`) serves only the SPA, so it ships a
+ * far more permissive document policy. Self-host serves BOTH: API routes plus,
+ * when `CLAXEDO_APP_DIST_DIR` is set, the built claxedo-app bundle and its
+ * index.html — from the same origin, on the same Hono app.
+ *
+ * So it gets both policies, split by which of the two surfaces answered:
+ *
+ *   API responses          -> the hosted set, imported verbatim from
+ *                             ./security-headers (enforcing `default-src
+ *                             'none'`, `X-Frame-Options: DENY`).
+ *   SPA bundle responses   -> the document set below (enforcing
+ *                             `frame-ancestors` only, full policy
+ *                             report-only), mirroring the Pages policy.
+ *
+ * Blanket-applying the API policy would white-screen the self-hosted UI, and
+ * not only via the document: `dist/assets/*.worker-*.js` are same-origin
+ * MODULE workers, and a worker's own response CSP becomes its global CSP, so
+ * `default-src 'none'` on those bytes would kill Shiki's WASM compile inside
+ * the worker with no document-level violation to explain it. That is the
+ * reason the split is by "did the SPA bundle answer this?" rather than by
+ * `Content-Type: text/html`.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Loopback origins the self-hosted SPA legitimately talks to over PLAINTEXT.
+ *
+ * Pages gets away with `connect-src 'self' https: wss:` because a Cloudflare
+ * deploy only ever reaches an HTTPS control plane; the previous pass recorded
+ * plaintext-loopback as a known violation that policy would report (see the
+ * KNOWN GAP note in packages/claxedo-app/public/_headers). On self-host it is
+ * not a report, it is the normal case: the box commonly runs on
+ * `http://127.0.0.1:<port>`, the desktop build points the SPA at a loopback
+ * control plane on a different port than the one serving the document, and a
+ * locally hosted workspace relay is plain `ws://`. Same-origin `'self'` covers
+ * only the single-process case where the control plane also served the HTML.
+ *
+ * Port wildcards, not pinned ports: control plane, workspace runtime and relay
+ * each pick their own and `claxedo up` moves them. IPv6 literals
+ * (`http://[::1]:*`) are deliberately absent — CSP's host-source grammar has no
+ * portable syntax for them, so a loopback control plane must be addressed as
+ * `localhost` or `127.0.0.1` to stay inside the policy.
+ */
+const SELF_HOST_LOOPBACK_CONNECT_SOURCES = [
+  "http://localhost:*",
+  "http://127.0.0.1:*",
+  "ws://localhost:*",
+  "ws://127.0.0.1:*",
+] as const
+
+/**
+ * The ENFORCING half of the document policy: who may frame us, nothing else.
+ *
+ * Same reasoning as the Pages surface — a policy limited to `frame-ancestors`
+ * governs embedding only and cannot break resource loading, so it is safe to
+ * enforce without browser validation. `'self'` rather than `'none'` because it
+ * is the same bundle Pages serves (which does frame same-origin routes such as
+ * `/demo/?embed=1`), and same-origin framing is not a clickjacking vector.
+ * The two claxedo.com origins Pages allows are deliberately NOT here: nothing
+ * on the public marketing site embeds a user's private self-hosted box.
+ */
+export const SELF_HOST_DOCUMENT_FRAME_ANCESTORS = "frame-ancestors 'self'"
+
+/**
+ * The full document policy — REPORT-ONLY, and it must stay that way until it
+ * is validated against a running self-hosted app with a live backend.
+ *
+ * Directive-for-directive the Pages policy from
+ * packages/claxedo-app/public/_headers (the source of truth for what this
+ * bundle actually needs; every relaxation in it is load-bearing and documented
+ * there), with two deliberate deltas:
+ *
+ *   1. `connect-src` adds SELF_HOST_LOOPBACK_CONNECT_SOURCES — see above.
+ *   2. `frame-ancestors` drops the claxedo.com origins — see above.
+ *
+ * It is duplicated rather than imported because `_headers` is a Cloudflare
+ * Pages config file with no importable form, and hoisting a shared constant
+ * would mean editing files this pass does not own. Keep the two in sync: that
+ * file is the source of truth, and security-headers.test.ts pins its contents.
+ *
+ * VALIDATED, by serving the real `packages/claxedo-app/dist` from this server
+ * with these exact headers and driving it in a browser against a live backend:
+ * the SPA boots and renders (project list, not a white screen), the module
+ * entry + Clerk vendor bundle + CSS load, the inline <style> and the inline
+ * style attribute on <html> apply, WASM compiles on the main thread, two blob
+ * workers and `assets/markdown-shiki.worker-*.js` (a same-origin MODULE
+ * worker, served by this mount with these headers) construct and run, the
+ * `/api/wr/events` SSE stream and the JSON API routes work under the strict
+ * API policy, and a `ws://127.0.0.1:*` open is not a CSP violation. Zero
+ * report-only violations across all of it. The policy was confirmed live and
+ * genuinely restrictive by probe: `http://192.0.2.1` reports a `connect-src`
+ * violation with `disposition: "report"` while `http://127.0.0.1:4311` does
+ * not.
+ *
+ * NOT yet exercised, which is why this stays REPORT-ONLY: sign-in/sign-up
+ * (Clerk's frontend API origin, Turnstile at challenges.cloudflare.com, the
+ * Clerk avatar host on img-src) — the box ran unsigned-local, so Clerk loaded
+ * but no auth flow ran; a real workspace session and the terminal's wss to a
+ * relay; file review actually driving the Shiki worker. KNOWN GAP: a LAN
+ * self-host deploy whose control plane is a plaintext NON-loopback origin
+ * (e.g. document on `http://192.168.1.5:3001`, control plane on
+ * `http://192.168.1.5:4311` — a different origin, so `'self'` misses it) is
+ * outside this policy and would report. Harmless while report-only; it must be
+ * resolved before promotion.
+ *
+ * PROMOTION CHECKLIST (do not promote on "compat doesn't matter" — promote on
+ * evidence): (1) re-run the box above, (2) exercise the four NOT-yet legs,
+ * (3) fold in whatever reports show, (4) decide the LAN plaintext case,
+ * (5) rename the header to `content-security-policy` in one reviewable diff.
+ */
+export const SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "form-action 'self'",
+  SELF_HOST_DOCUMENT_FRAME_ANCESTORS,
+  "script-src 'self' 'wasm-unsafe-eval' https://*.i.posthog.com https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self'",
+  "media-src 'self' data: blob: https:",
+  "worker-src 'self' blob:",
+  `connect-src 'self' https: wss: ${SELF_HOST_LOOPBACK_CONNECT_SOURCES.join(" ")}`,
+  "frame-src https://challenges.cloudflare.com",
+].join("; ")
+
+/**
+ * The header set for a response served out of the SPA bundle.
+ *
+ * Built ON TOP of the hosted `securityHeaderEntries` so `nosniff`,
+ * `Referrer-Policy`, the HSTS value and — critically — the HTTPS gating stay
+ * byte-identical across all three surfaces; only the two headers a document
+ * surface must relax are overridden, plus the report-only policy appended.
+ */
+export function selfHostDocumentSecurityHeaderEntries(input: {
+  https: boolean
+}): ReadonlyArray<readonly [string, string]> {
+  const overrides: Record<string, string> = {
+    "content-security-policy": SELF_HOST_DOCUMENT_FRAME_ANCESTORS,
+    // Legacy clickjacking header for pre-CSP2 browsers; every current browser
+    // ignores it when `frame-ancestors` is present. SAMEORIGIN to match
+    // `frame-ancestors 'self'` — DENY here would be the stricter policy on old
+    // browsers only, and would break same-origin embeds for no security gain.
+    "x-frame-options": "SAMEORIGIN",
+  }
+  return [
+    ...securityHeaderEntries(input).map(([name, value]) => [name, overrides[name] ?? value] as const),
+    ["content-security-policy-report-only", SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY] as const,
+  ]
+}
+
+/**
+ * Requests that reached the SPA bundle mount.
+ *
+ * Keyed on the raw `Request`, which is stable for the life of one request and
+ * garbage-collected with it. The mark is set on ENTRY to the bundle handlers,
+ * which are registered last and only run when no API route finalized the
+ * response — so "marked" means exactly "the SPA bundle, not an API route,
+ * answered this", including the index.html client-routing fallback and a
+ * bundle 404.
+ */
+const spaBundleRequests = new WeakSet<Request>()
+
+/** Marks a request as answered by the SPA bundle. Mounted on the bundle routes. */
+const markSpaBundleRequest: MiddlewareHandler = async (c, next) => {
+  spaBundleRequests.add(c.req.raw)
+  await next()
+}
+
+/**
+ * Outermost middleware for the local server — the counterpart to
+ * `securityHeaders()` in hosted-app.ts, and mounted the same way: once, at
+ * composition, ahead of everything, so "no route can ship bare" is a property
+ * of the shell rather than a per-route review item.
+ *
+ * The write happens after `next()` so it also covers the CORS preflight, the
+ * 404 handler and whatever `onError` produced — a 500 without `nosniff` is
+ * precisely the response worth sniffing into a document.
+ */
+export function localSecurityHeaders(): MiddlewareHandler {
+  return async (c, next) => {
+    await next()
+    const https = requestIsHttps(c.req)
+    const entries = spaBundleRequests.has(c.req.raw)
+      ? selfHostDocumentSecurityHeaderEntries({ https })
+      : securityHeaderEntries({ https })
+    const stamped = withSecurityHeaders(c.res, entries)
+    // Only needed when the immutable-headers fallback rebuilt the response
+    // (proxied `fetch()` results carry an immutable header guard).
+    if (stamped !== c.res) c.res = stamped
+  }
+}
+
 export function createApp(
   services: ControlPlaneServices,
   options: {
@@ -251,6 +451,12 @@ export function createApp(
   const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
   delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
   const app = new Hono()
+  // Outermost ON PURPOSE, ahead of CORS, the unsigned-local gate and every
+  // route — so the preflight CORS short-circuits, the 404 handler and anything
+  // `onError` produces are all covered. Which of the two policies a response
+  // gets is decided from the SPA-bundle mark set further down; see the block
+  // above `createApp` for why this server needs two.
+  app.use(localSecurityHeaders())
   // Record the transport peer address for every request (including
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
   // so loopback gates verify the socket, not the spoofable Host header.
@@ -631,7 +837,12 @@ export function createApp(
   const staticDir = process.env.CLAXEDO_APP_DIST_DIR?.trim()
   if (staticDir && fs.existsSync(path.join(staticDir, "index.html"))) {
     const root = path.relative(process.cwd(), staticDir) || "."
-    app.get("*", serveStatic({ root }))
+    // `markSpaBundleRequest` runs first in the composed chain for both routes
+    // below, so every response the bundle produces — asset, index.html
+    // fallback, or bundle 404 — is stamped with the DOCUMENT policy instead of
+    // the API lockdown. Reaching here at all already means no API route
+    // finalized the response.
+    app.get("*", markSpaBundleRequest, serveStatic({ root }))
     app.get("*", async (c) => {
       if (!c.req.header("accept")?.includes("text/html")) return c.notFound()
       const html = await fs.promises.readFile(path.join(staticDir, "index.html"), "utf8")

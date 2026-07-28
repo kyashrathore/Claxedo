@@ -51,8 +51,8 @@ function selectionKey(input: { provider_id: string; account_id?: string | null }
 
 export function createCredentialDiscovery(input: {
   collect: () => Promise<LocalCredentialItem[]>
-  save: (item: CredentialWrite) => Promise<{ id: string }>
-  connected?: () => Array<{ provider_id: string; account_id?: string | null }>
+  save: (item: CredentialWrite, org?: string) => Promise<{ id: string }>
+  connected?: (org?: string) => Array<{ provider_id: string; account_id?: string | null }>
   now?: () => number
   id?: () => string
 }) {
@@ -60,10 +60,10 @@ export function createCredentialDiscovery(input: {
   const now = input.now ?? Date.now
 
   return {
-    async discover() {
+    async discover(org?: string) {
       const collected = await input.collect()
       const discovery_id = (input.id ?? randomUUID)()
-      const connected = new Set((input.connected?.() ?? []).map(selectionKey))
+      const connected = new Set((input.connected?.(org) ?? []).map(selectionKey))
       const items = new Map(collected.map((item) => {
         const redacted = preview(item, discovery_id, connected)
         return [selectionKey(redacted), item]
@@ -73,7 +73,7 @@ export function createCredentialDiscovery(input: {
       timer.unref?.()
       return { discovery_id, items: collected.map((item) => preview(item, discovery_id, connected)) }
     },
-    async save(request: { discovery_id: string; items: CredentialDiscoverySelection[] }) {
+    async save(request: { discovery_id: string; items: CredentialDiscoverySelection[] }, org?: string) {
       const discovery = stash.get(request.discovery_id)
       if (!discovery) throw new CredentialDiscoveryError("discovery_not_found")
       if (now() > discovery.expiresAt) throw new CredentialDiscoveryError("discovery_expired")
@@ -93,7 +93,7 @@ export function createCredentialDiscovery(input: {
         ...(item!.fresh_until ? { expires_at: item!.fresh_until } : {}),
         scope: request.items[index]!.scope,
         consent: { at: now(), surface: "desktop_discovery" },
-      })))
+      }, org)))
       stash.delete(request.discovery_id)
 
       return {

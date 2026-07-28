@@ -155,7 +155,7 @@ async function fetchGitHubPackageToCache(input) {
     await execFile("git", ["init", tempRoot]);
     await execFile("git", ["remote", "add", "origin", githubRepoUrl(input.source)], { cwd: tempRoot });
     await execFile("git", ["fetch", "--depth", "1", "origin", resolvedSha], { cwd: tempRoot });
-    await execFile("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: tempRoot });
+    await execFile("git", ["checkout", "--detach", resolvedSha], { cwd: tempRoot });
     return {
       ...await copyPackageToCache({
         sourceRoot: tempRoot,

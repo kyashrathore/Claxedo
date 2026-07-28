@@ -39,6 +39,18 @@ function getMermaid() {
           securityLevel: "strict",
           suppressErrorRendering: true,
           theme: "base",
+          // Defense in depth, paired with `sanitizeSvg` in session-ui. With HTML
+          // labels on, mermaid wraps every flowchart/class/state label in a
+          // `<foreignObject>` — an HTML document embedded in the SVG, and the
+          // classic way payloads walk past an SVG sanitizer. Turning them off
+          // makes mermaid emit native `<text>`/`<tspan>` instead, so the whole
+          // HTML-in-SVG surface disappears at the source and the sanitizer can
+          // drop `foreignObject` outright without costing a single label.
+          // Verified across flowchart/sequence/class/state/er/gantt/pie/git/mindmap:
+          // zero foreignObject and visually identical output.
+          htmlLabels: false,
+          flowchart: { htmlLabels: false },
+          class: { htmlLabels: false },
           themeVariables: themeVariables(),
         })
         return m

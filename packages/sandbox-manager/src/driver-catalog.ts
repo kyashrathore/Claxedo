@@ -59,6 +59,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: {
         resume: "same-sandbox",
         capture: "none",
@@ -78,6 +79,10 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      // Daytona is the only driver that can filter egress by NAME as well as
+      // by address: `domainAllowList` (names) alongside `networkAllowList`
+      // (CIDRs), with `networkBlockAll` as the deny-all floor.
+      egressControl: "hosts-and-cidrs",
       persistence: {
         resume: "same-sandbox",
         capture: "filesystem",
@@ -100,6 +105,10 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      // Modal can cut the network entirely (`blockNetwork`) but cannot express
+      // an allowlist, and its driver throws on a host policy. A blackout is
+      // not containment for a workspace that has to clone and reach a model.
+      egressControl: "none",
       persistence: {
         resume: "replacement-restore",
         capture: "filesystem",
@@ -123,6 +132,9 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      // Vercel's sandbox firewall takes a hostname allow list (or "deny-all"),
+      // never CIDRs.
+      egressControl: "hosts",
       persistence: {
         resume: "replacement-restore",
         capture: "filesystem",
@@ -145,6 +157,13 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "proxy",
+      // The Cloudflare Sandbox Worker exposes no egress filter: its broker
+      // (drivers/cloudflare-egress.ts) is an OPT-IN proxy the sandbox chooses
+      // to route brokered-credential requests through, not a boundary. The
+      // driver therefore drops `net` entirely — which is exactly why this
+      // must be declared, so the manager refuses instead of provisioning a
+      // sandbox the caller believes is contained.
+      egressControl: "none",
       persistence: {
         resume: "replacement-restore",
         capture: "directories",
@@ -164,6 +183,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: {
         resume: "same-sandbox",
         capture: "none",
@@ -183,6 +203,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
       targetAccess: "loopback",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: {
         resume: "replacement-restore",
         capture: "same-resource",

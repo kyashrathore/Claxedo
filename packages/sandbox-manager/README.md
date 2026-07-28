@@ -120,6 +120,44 @@ never logged, and never captured in a driver snapshot.
 > improves storage hygiene for *readable* credentials but does not hide them
 > from the sandbox.
 
+## Egress containment
+
+`SandboxManagerInput.net` restricts what the sandbox can reach on the network.
+It is a *separate* control from brokered secrets, with a **different** posture,
+and the difference matters:
+
+- **Brokered secrets fail closed.** A driver that cannot broker refuses to
+  provision (`error: "secret_brokering_unsupported"`).
+- **Egress does not.** Only `daytona` (names + CIDRs) and `vercel` (names) can
+  enforce an allowlist. Every other driver declares
+  `metadata.egressControl: "none"`, and for those the manager **withholds** the
+  policy and provisions anyway — the sandbox runs with unrestricted egress.
+
+Withholding rather than passing is deliberate: `exe`, `docker`, `modal` and
+`box` throw when handed a restricted policy, and `cloudflare` and the fetch
+bridge accept one and silently ignore it. Withholding at the manager means the
+throwing drivers never see a policy (their throws stay as their own last line of
+defence) and the silently-dropping ones stop pretending.
+
+The gap is never silent. `createSandboxManager` warns at composition, and again
+each time a policy is withheld:
+
+```text
+[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver "cloudflare" declares
+egressControl: "none", so workspace ws_1 can reach ANY host on the internet …
+```
+
+Pass `onEgressUnenforced` to route that into telemetry instead of `console.warn`
+— it receives a structured `SandboxEgressUnenforcedEvent`. Overriding the sink
+replaces the console warning, so only do it if the replacement is as visible.
+
+`driver.metadata.egressControl` is the machine-readable source of truth, and
+`sandboxEgressDisposition(control, net)` is the pure predicate the manager uses,
+so you can ask the same question before composing. One exception stays fail
+closed: a hosts-only driver handed an address-only policy is refused
+(`sandbox_egress_policy_unenforceable`) rather than degraded, because that
+driver *does* enforce egress — it just cannot express that encoding.
+
 > SDK conformance: the Daytona secret API and Vercel network-policy transform
 > shapes follow the providers' official docs and are validated structurally
 > against the pinned SDK types; like all provider calls in this package they

@@ -150,6 +150,53 @@ Two more are boot-required but already handled: `CLAXEDO_SIGNED_CLOUD_AUTH` and
 | `CLAXEDO_POLAR_ACCESS_TOKEN`, `CLAXEDO_POLAR_WEBHOOK_SECRET` (secrets); `CLAXEDO_POLAR_SERVER`, `_PRODUCT_MONTHLY`, `_PRODUCT_YEARLY`, `_CHECKOUT_SUCCESS_URL`, `CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS` (vars) | billing routes 503, sweep no-ops, **every org resolves to free tier** (`wrangler.toml:52-71`) |
 | `CLAXEDO_HOSTED_CREDENTIALS_ENABLED` + `CLAXEDO_CREDENTIALS_KEK` + `CLAXEDO_CF_KV_URL` + `CLAXEDO_CF_KV_TOKEN` | **all-or-nothing group.** Enabling the flag without all three fails closed at boot, naming each missing piece — deliberately, so hosted org credentials can never fall back to the unencrypted local file store (`deployment-mode.ts:122-136`) |
 
+#### Completing a credential KEK rotation
+
+`CLAXEDO_CREDENTIALS_KEK` does not retire on its own. Rotating it is a **drain,
+not a swap**: a new key changes only what new writes use, so every value written
+earlier still decrypts only under the old key — which therefore has to stay
+configured as `CLAXEDO_CREDENTIALS_KEK_NEXT`, and stays live, until stored
+ciphertext is re-encrypted. Drop `_NEXT` early and those credentials are
+unreadable; never drop it and the key was never actually retired.
+
+1. **Stage** — new key in `CLAXEDO_CREDENTIALS_KEK`, retired key in
+   `CLAXEDO_CREDENTIALS_KEK_NEXT`. Writes use the new key, reads accept either.
+2. **Drain** — from `packages/claxedo-server`:
+
+   ```sh
+   node --import tsx scripts/maintenance/rotate-credential-kek.ts --hosted
+   node --import tsx scripts/maintenance/rotate-credential-kek.ts --local
+   ```
+
+   `--hosted` sweeps the Cloudflare KV store across all orgs — the production
+   posture; `--local` sweeps whatever backend a self-host Node process reads
+   through. This runs from an operator shell, **not** inside the Worker, so
+   `--hosted` needs `CLAXEDO_CF_KV_URL`, `CLAXEDO_CF_KV_TOKEN` and both KEKs
+   exported there, against the same namespace the Worker uses. Idempotent and
+   crash-safe — each slot is one overwrite of its own id — so re-run freely. A
+   slot that cannot be decrypted fails that item, not the batch, and forces
+   `complete: false`.
+3. **Verify** — re-run with `--audit` (classifies, writes nothing). Exit 0 with
+   `complete: true` and an empty `staleKeyIds` means no ciphertext remains under
+   a retired key-id. Exit 1 means work or failures remain, and `staleKeyIds`
+   names the key-ids whose KEK must stay configured.
+4. **Retire** — only then
+   `bunx wrangler secret delete CLAXEDO_CREDENTIALS_KEK_NEXT` (production = no
+   `--env`), plus removal from any self-host environment.
+
+**The local encrypted file store is not in this scheme.**
+`packages/claxedo-server/src/credentials/local.ts` — used when
+`CLAXEDO_CF_KV_URL` is unset — encrypts with a machine-local key derived from
+`<data dir>/credentials/.seed` (`~/.claxedo` unless `CLAXEDO_DATA_DIR` overrides
+it), carries no key-id, and never involves `CLAXEDO_CREDENTIALS_KEK`. A
+`--local` run against it reports `envelopeManaged: false` and exits 0 — read
+that field alongside `complete`, because a green file-store audit is not
+evidence about the hosted store. Production never reaches that store: the
+all-or-nothing group above fails closed at boot precisely so hosted org
+credentials cannot fall back to it. Implementation:
+`src/credentials/rotate.ts` and `rotate-local.ts`; entry point
+`scripts/maintenance/rotate-credential-kek.ts`.
+
 #### Relay Worker (`packages/workspace-relay`)
 
 Per `packages/workspace-relay/wrangler.toml:12-21`: required —

@@ -149,6 +149,36 @@ describe("Convex WorkGraph owner deletion conformance", () => {
     ])
   })
 
+  test("purges the owner's master mailbox prose and keeps another owner's", async () => {
+    // Asserted against the table directly rather than through
+    // `countOwnerRecords`: that counter is derived from
+    // `WORKGRAPH_OWNER_TABLES`, so a table dropped from the list stops being
+    // counted and stops being deleted together — leaving "no owner rows
+    // remain" true of a mailbox that was never purged.
+    const harness = new DeletionHarness()
+    const context = owner("mailbox_owner")
+    const other = owner("mailbox_other_owner")
+    await seedOwner(harness, context, [
+      { streamId: "mailbox_stream", envelopeId: "mailbox_envelope", childIsolationId: "mailbox_child" },
+    ])
+    await seedOwner(harness, other, [
+      { streamId: "other_mailbox_stream", envelopeId: "other_mailbox_envelope", childIsolationId: "other_mailbox_child" },
+    ])
+    expect(harness.rowsFor("workgraph_master_mailbox")).toHaveLength(2)
+    const deletion = createConvexWorkGraphOwnerDeletionPort({
+      serviceToken: "service-secret",
+      executor: executor(harness),
+      execution: { cleanup: async () => undefined },
+      clock: { now: () => 50 },
+    })
+
+    await deletion.deleteOwner(context, { operationId: "delete_owner_mailbox" as OperationID })
+
+    expect(harness.rowsFor("workgraph_master_mailbox")).toEqual([
+      expect.objectContaining({ owner_user_id: other.ownerUserId, message: "Owner prose for other_mailbox_stream" }),
+    ])
+  })
+
   test("fences a normal owner command throughout external workspace cleanup", async () => {
     const harness = new DeletionHarness()
     const context = owner("owner_command_race")
@@ -317,6 +347,15 @@ async function seedOwner(
       session_binding_id: `binding_${stream.streamId}`,
       level: "progress",
       summary: "Owner deletion checkpoint",
+    }))
+    // Free-form owner prose, exactly as `call_master` writes it. Seeded here so
+    // every conformance case counts and purges the mailbox alongside the rest.
+    await harness.insert("workgraph_master_mailbox", ownerRow(context, {
+      id: `master_message_${stream.streamId}`,
+      stream_id: stream.streamId,
+      message: `Owner prose for ${stream.streamId}`,
+      provenance: { actor: context.actor },
+      status: "pending",
     }))
   }
   await harness.insert("workgraph_outbox", ownerRow(context, { id: "completed_outbox", status: "completed" }))

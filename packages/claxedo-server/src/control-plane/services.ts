@@ -64,25 +64,38 @@ export type CredentialSyncResult = {
   failed: Array<{ provider_id: string; error: string }>
 }
 
+/**
+ * Every method takes a trailing `org` — the tenant the operation runs as.
+ *
+ * It is optional on the type so that adapters which are ALREADY partitioned by
+ * construction (`hostedOrgCredentials(orgId)` binds one org per instance, and
+ * its KV keys are org-prefixed) satisfy the port without restating it. For the
+ * local SQLite registry the argument is the isolation boundary: omitting it
+ * selects the named single-tenant partition (`__local__`), never a wildcard, so
+ * an un-threaded call site fails closed rather than reading across tenants.
+ */
 export type ControlPlaneCredentials = {
-  listCredentials: () => Promise<CredentialMetadata[]>
-  getCredentialByProvider: (providerId: string, kind?: string) => Promise<CredentialMetadata | undefined>
-  getCredential?: (id: string) => Promise<CredentialMetadata | undefined>
-  resolveCredentialSecret?: (providerId: string) => Promise<string | null>
-  resolveCredentialSecretById?: (id: string) => Promise<string | null>
-  putCredential: (input: CredentialWrite) => Promise<CredentialMetadata>
-  deleteCredential: (id: string) => Promise<boolean>
-  deleteCredentialsByProvider: (providerId: string, kind?: string) => Promise<number>
-  updateCredentialStatus: (id: string, status: CredentialStatus, error?: string) => Promise<void>
-  updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number) => Promise<void>
-  discoverLocalCredentials?: () => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
-  saveDiscoveredCredentials?: (input: { discovery_id: string; items: CredentialDiscoverySelection[] }) => Promise<{
+  listCredentials: (org?: string) => Promise<CredentialMetadata[]>
+  getCredentialByProvider: (providerId: string, kind?: string, org?: string) => Promise<CredentialMetadata | undefined>
+  getCredential?: (id: string, org?: string) => Promise<CredentialMetadata | undefined>
+  resolveCredentialSecret?: (providerId: string, org?: string) => Promise<string | null>
+  resolveCredentialSecretById?: (id: string, org?: string) => Promise<string | null>
+  putCredential: (input: CredentialWrite, org?: string) => Promise<CredentialMetadata>
+  deleteCredential: (id: string, org?: string) => Promise<boolean>
+  deleteCredentialsByProvider: (providerId: string, kind?: string, org?: string) => Promise<number>
+  updateCredentialStatus: (id: string, status: CredentialStatus, error?: string, org?: string) => Promise<void>
+  updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number, org?: string) => Promise<void>
+  discoverLocalCredentials?: (org?: string) => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
+  saveDiscoveredCredentials?: (
+    input: { discovery_id: string; items: CredentialDiscoverySelection[] },
+    org?: string,
+  ) => Promise<{
     saved: Array<{ credential_id: string; provider_id: string; account_id?: string }>
   }>
-  updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number) => Promise<boolean>
+  updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number, org?: string) => Promise<boolean>
   /** Persist renewed secret material for an existing credential (OAuth refresh). */
-  updateCredentialSecret?: (id: string, secret: string, expiresAt?: number) => Promise<boolean>
-  syncLocalCredentials: (providerIds?: string[]) => Promise<CredentialSyncResult>
+  updateCredentialSecret?: (id: string, secret: string, expiresAt?: number, org?: string) => Promise<boolean>
+  syncLocalCredentials: (providerIds?: string[], org?: string) => Promise<CredentialSyncResult>
 }
 
 async function credentialRegistry() {
@@ -96,10 +109,10 @@ async function credentialRegistry() {
  * hosts keep both in step; Worker hosts have no such file and never reach here
  * (the fs-touching module is loaded lazily, off the worker import graph).
  */
-async function mirrorRenewedLocalTokens(id: string, secret: string) {
+async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string) {
   try {
     const registry = await credentialRegistry()
-    const credential = registry.getCredential(id)
+    const credential = registry.getCredential(id, org)
     if (!credential || !credential.account_id) return
     const codex = await import("../credentials/codex-auth-file")
     if (!codex.shouldMirrorCodexTokens(credential)) return
@@ -114,32 +127,32 @@ async function mirrorRenewedLocalTokens(id: string, secret: string) {
 
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
-    listCredentials: async () => (await credentialRegistry()).listCredentials(),
-    getCredentialByProvider: async (providerId, kind) => (await credentialRegistry()).getCredentialByProvider(providerId, kind),
-    getCredential: async (id) => (await credentialRegistry()).getCredential(id),
-    resolveCredentialSecret: async (providerId) => (await credentialRegistry()).resolveSecret(providerId),
-    resolveCredentialSecretById: async (id) => (await credentialRegistry()).resolveSecretById(id),
-    putCredential: async (input) => (await credentialRegistry()).putCredential(input),
-    deleteCredential: async (id) => (await credentialRegistry()).deleteCredential(id),
-    deleteCredentialsByProvider: async (providerId, kind) => (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind),
-    updateCredentialStatus: async (id, status, error) => {
+    listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
+    getCredentialByProvider: async (providerId, kind, org) => (await credentialRegistry()).getCredentialByProvider(providerId, kind, org),
+    getCredential: async (id, org) => (await credentialRegistry()).getCredential(id, org),
+    resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),
+    resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),
+    putCredential: async (input, org) => (await credentialRegistry()).putCredential(input, org),
+    deleteCredential: async (id, org) => (await credentialRegistry()).deleteCredential(id, org),
+    deleteCredentialsByProvider: async (providerId, kind, org) => (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind, org),
+    updateCredentialStatus: async (id, status, error, org) => {
       const registry = await credentialRegistry()
-      registry.updateCredentialStatus(id, status, error)
+      registry.updateCredentialStatus(id, status, error, org)
     },
-    updateCredentialHealth: async (id, health, validatedAt) => {
+    updateCredentialHealth: async (id, health, validatedAt, org) => {
       const registry = await credentialRegistry()
-      registry.updateCredentialHealth(id, health, validatedAt)
+      registry.updateCredentialHealth(id, health, validatedAt, org)
     },
-    discoverLocalCredentials: async () => (await import("../credentials/discovery")).credentialDiscovery.discover(),
-    saveDiscoveredCredentials: async (input) => (await import("../credentials/discovery")).credentialDiscovery.save(input),
-    updateCredentialScope: async (id, scope, consentAt) => (await credentialRegistry()).updateCredentialScope(id, scope, consentAt),
-    updateCredentialSecret: async (id, secret, expiresAt) => {
+    discoverLocalCredentials: async (org) => (await import("../credentials/discovery")).credentialDiscovery.discover(org),
+    saveDiscoveredCredentials: async (input, org) => (await import("../credentials/discovery")).credentialDiscovery.save(input, org),
+    updateCredentialScope: async (id, scope, consentAt, org) => (await credentialRegistry()).updateCredentialScope(id, scope, consentAt, org),
+    updateCredentialSecret: async (id, secret, expiresAt, org) => {
       const registry = await credentialRegistry()
-      const stored = await registry.updateCredentialSecret(id, secret, expiresAt)
-      if (stored) await mirrorRenewedLocalTokens(id, secret)
+      const stored = await registry.updateCredentialSecret(id, secret, expiresAt, org)
+      if (stored) await mirrorRenewedLocalTokens(id, secret, org)
       return stored
     },
-    syncLocalCredentials: async (providerIds) => (await import("../credentials/sync")).syncLocalCredentials(providerIds),
+    syncLocalCredentials: async (providerIds, org) => (await import("../credentials/sync")).syncLocalCredentials(providerIds, org),
   }
 }
 

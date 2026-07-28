@@ -104,7 +104,7 @@ describe("build-sandbox-image", () => {
     ]))
     expect(deps["@agentclientprotocol/claude-agent-acp"]).toBe("0.60.0")
     expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.215")
-    expect(deps.zod).toBe("4.1.8")
+    expect(deps.zod).toBe("4.4.3")
   })
 
   test("production image starts the flattened workspace-runtime dependency graph", () => {

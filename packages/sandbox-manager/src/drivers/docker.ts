@@ -321,6 +321,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
       targetAccess: "loopback",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: sandboxDriverCatalog.docker.metadata.persistence,
     },
     ensureHost,

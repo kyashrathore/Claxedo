@@ -89,6 +89,52 @@ export function componentOwnedBy(record: MaterializedRuntimeRecord | undefined, 
   return record?.packages[ownerId]?.components.some((item) => item.path === targetPath && item.status === "applied") ?? false
 }
 
+export function materializedComponentKey(component: Pick<MaterializedComponent, "runner" | "component" | "type">) {
+  return `${component.runner}\n${component.type}\n${component.component}`
+}
+
+function adoptedOwnerRecord(from: MaterializedExtensionPackage, to: MaterializedExtensionPackage | undefined) {
+  if (!to) return from
+  const seen = new Set(to.components.map(materializedComponentKey))
+  return {
+    ...to,
+    components: [
+      ...to.components,
+      ...from.components.filter((item) => item.status === "applied" && !seen.has(materializedComponentKey(item))),
+    ],
+  }
+}
+
+/**
+ * Re-key a materialized record from `from` to `to`, carrying its `components`
+ * across verbatim.
+ *
+ * This record is the ownership ledger: `componentOwnedBy` answers "may this
+ * package overwrite this path?" by looking up `packages[ownerId].components`.
+ * Re-keying an install without moving its ledger entry would strand every
+ * artifact it owns — the new id would see them as unmanaged (a hard
+ * `agent_extension_target_path_conflict`, or a silent "source already at
+ * target path" skip that owns nothing), and a later uninstall of either id
+ * would leave the other pointing at deleted files.
+ *
+ * The recorded component *paths* are built from `package_name`, never from the
+ * id, so nothing on disk moves; only the key does. Callers must do this inside
+ * the state lock and before materializing, so the snapshot reads the adopted
+ * ledger as its `previous`.
+ */
+export async function adoptMaterializedOwner(file: string, from: string, to: string) {
+  if (from === to) return false
+  const record = await readMaterializedRuntimeRecord(file)
+  const moved = record.packages[from]
+  if (!moved) return false
+  const { [from]: _adopted, ...rest } = record.packages
+  await writeMaterializedRuntimeRecord(file, {
+    version: 1,
+    packages: { ...rest, [to]: adoptedOwnerRecord(moved, record.packages[to]) },
+  })
+  return true
+}
+
 async function sameRealPath(a: string, b: string) {
   const [left, right] = await Promise.all([
     fs.realpath(a).catch(() => null),

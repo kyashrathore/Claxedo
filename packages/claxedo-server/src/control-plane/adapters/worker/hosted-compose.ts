@@ -13,11 +13,17 @@
  */
 
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager } from "@claxedo/sandbox-manager"
-import type { SandboxDriver, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxManager } from "@claxedo/sandbox-manager"
 import { createConvexLeaseStore } from "../../../sandbox-manager-adapters/stores/convex"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../convex/convex-authority"
+import { cliSessionTokenAuthority } from "../convex/convex-authority-cli-session-tokens"
 import { createUserHostedTargetResolver } from "../convex/user-hosted-relay-target"
 import type { WorkspaceAuthority } from "../../authority"
+import {
+  authorityCliSessionTokenRegistry,
+  unavailableCliSessionTokenRegistry,
+  type CliSessionTokenRegistry,
+} from "../../cli-session-registry"
 import type { UserHostedTargetResolver } from "../../sandbox-relay-target"
 
 export class HostedWorkerCompositionError extends Error {
@@ -72,9 +78,17 @@ export function composeWorkerSandboxManager(input: {
   env: HostedWorkerEnv
   driver: SandboxDriver
   maxRetryCount: number
+  /**
+   * Sink for the manager's "this driver cannot contain egress" warning. Passed
+   * through so the hosted plane can put the event somewhere an operator will
+   * actually see it — `console.warn` in a Worker only reaches whoever happens
+   * to be tailing logs. Omitted → the manager's console default.
+   */
+  onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
 }): SandboxManager {
   const { env, driver, maxRetryCount } = input
   return createSandboxManager({
+    ...(input.onEgressUnenforced ? { onEgressUnenforced: input.onEgressUnenforced } : {}),
     leaseStore: createConvexLeaseStore({
       url: storageUrl(env),
       // The hosted runtime-lease functions are service-only and reject calls
@@ -100,6 +114,35 @@ export function composeWorkerAuthority(env: HostedWorkerEnv): WorkspaceAuthority
     url: storageUrl(env),
     ...(serviceToken ? { serviceToken } : {}),
   })
+}
+
+/**
+ * Build the DURABLE CLI session token registry from env.
+ *
+ * `storageUrl` already fails composition closed when the hosted storage
+ * endpoint is missing. The service token is handled differently — NOT because
+ * it is optional, but because hosted composition deliberately tolerates its
+ * absence elsewhere (`composeWorkerAuthority` passes it through only when
+ * present; the sandbox manager requires it only once a bridge driver is
+ * configured), and this module is not the place to overturn that.
+ *
+ * So a deployment missing the token still gets a registry object — one that
+ * refuses every operation with a message naming the variable to set. The CLI
+ * path then behaves exactly as it must: no minting an unrevocable credential,
+ * no accepting a bearer nothing can check. What changes is the diagnostic. The
+ * previous failure was a bare "registry is not configured" with nothing to act
+ * on, because there was no registry anywhere in the hosted composition at all.
+ */
+export function composeWorkerCliSessionTokenRegistry(env: HostedWorkerEnv): CliSessionTokenRegistry {
+  const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
+  if (!serviceToken) {
+    return unavailableCliSessionTokenRegistry(
+      "CLI session tokens cannot be recorded or revoked: set CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN on the hosted control plane",
+    )
+  }
+  return authorityCliSessionTokenRegistry(
+    cliSessionTokenAuthority({ url: storageUrl(env), serviceToken }),
+  )
 }
 
 /**

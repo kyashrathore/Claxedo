@@ -4,9 +4,13 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { withAgentExtensionStateLock, writeFileAtomic } from "./fs-safe"
+import {
+  AgentExtensionIntegrityError,
+  verifyPackageIntegrity,
+  type PackageIntegrityLock,
+} from "./integrity"
 import { materializeAgentExtensionSnapshot, type AgentExtensionMaterializationInstall } from "./materialize"
 import { FIRST_PARTY_AGENT_EXTENSIONS_DIR } from "./types"
-import { digestDirectory } from "./cache"
 import { githubRepoUrl } from "./fetch"
 import { safeRelativePath } from "./source"
 
@@ -109,22 +113,37 @@ function source(input: RuntimeInstall) {
   }
 }
 
-function expectedDigest(input: RuntimeInstall) {
+function digestMap(input: unknown) {
+  return Object.fromEntries(Object.entries(rec(input)).flatMap(([key, value]) => {
+    const text = str(value)
+    return text ? [[key, text] as const] : []
+  }))
+}
+
+// The pushed snapshot is untrusted JSON; narrow it to the fields integrity
+// verification reads rather than handing the raw object to the verifier.
+function integrityLock(input: RuntimeInstall): PackageIntegrityLock | undefined {
+  if (!input.lock) return undefined
   const lock = rec(input.lock)
-  const component = str(rec(lock.component_digests).package)
-  return component ?? str(rec(lock.manifest_digests).package)
+  return {
+    ...(str(lock.resolved_sha) ? { resolved_sha: str(lock.resolved_sha)! } : {}),
+    ...(str(rec(lock.source).type) ? { source: packageSource(lock.source) } : {}),
+    manifest_digests: digestMap(lock.manifest_digests),
+    component_digests: digestMap(lock.component_digests),
+  }
 }
 
 async function verifyPackageDigest(input: {
   install: RuntimeInstall
   packageRoot: string
 }) {
-  const expected = expectedDigest(input.install)
-  if (!expected) return
-  const actual = await digestDirectory(input.packageRoot)
-  if (actual !== expected) {
-    throw new Error(`Agent Extension ${String(input.install.desired.id ?? "unknown")} cache checksum mismatch`)
-  }
+  const lock = integrityLock(input.install)
+  await verifyPackageIntegrity({
+    id: String(input.install.desired.id ?? "unknown"),
+    source: packageSource(input.install.desired.source),
+    ...(lock ? { lock } : {}),
+    packageRoot: input.packageRoot,
+  })
 }
 
 // The resolved SHA comes from a pushed snapshot; it is used both as a git
@@ -160,7 +179,11 @@ async function fetchToCache(input: {
       repo: info.repo,
     })], { cwd: root })
     await input.execFile("git", ["fetch", "--depth", "1", "origin", sha], { cwd: root })
-    await input.execFile("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: root })
+    // Check out the locked SHA itself, not FETCH_HEAD: git object ids are
+    // content addresses, so this makes the checkout fail closed when the
+    // remote served anything other than the commit the lock pins. Resolving
+    // FETCH_HEAD instead would take whatever the fetch happened to return.
+    await input.execFile("git", ["checkout", "--detach", sha], { cwd: root })
     const sourceRoot = info.packagePath ? path.join(root, info.packagePath) : root
     // Copy into a sibling temp dir and rename into place so a crash mid-copy
     // never leaves a partial directory at the final cache path — the
@@ -210,7 +233,9 @@ function canonicalInstall(input: RuntimeInstall): AgentExtensionMaterializationI
       ...(typeof input.desired.enabled === "boolean" ? { enabled: input.desired.enabled } : {}),
       targets: stringList(input.desired.targets),
     },
-    ...(input.lock ? { lock: { ...(typeof input.lock.resolved_sha === "string" ? { resolved_sha: input.lock.resolved_sha } : {}) } } : {}),
+    // The materializer re-verifies integrity as the last gate before disk, so
+    // it needs the pinned digest and source — not just the SHA.
+    ...(integrityLock(input) ? { lock: integrityLock(input)! } : {}),
     ...(typeof input.status === "string" ? { status: input.status } : {}),
   }
 }
@@ -243,10 +268,14 @@ async function packageRoots(input: {
     const packageRoot = await fetchToCache(fetchInput)
     try {
       await verifyPackageDigest({ install, packageRoot })
-    } catch {
+    } catch (err) {
       // A cache entry that no longer matches its lock digest (partial copy
-      // from an old crash, manual edit) would otherwise fail every future
-      // replay: discard it and fetch fresh before giving up.
+      // from an old crash, manual edit, deliberate tampering) would otherwise
+      // fail every future replay: discard it and fetch fresh before giving up.
+      // Only a digest mismatch is self-healable — an install that carries no
+      // usable lock has nothing to re-verify against, so refetching it would
+      // just launder unverified content through a second attempt.
+      if (!(err instanceof AgentExtensionIntegrityError) || err.code !== "agent_extension_digest_mismatch") throw err
       await fs.rm(packageRoot, { recursive: true, force: true })
       const refetched = await fetchToCache(fetchInput)
       await verifyPackageDigest({ install, packageRoot: refetched })

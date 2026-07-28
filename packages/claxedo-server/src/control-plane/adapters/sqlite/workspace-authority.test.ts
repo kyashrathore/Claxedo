@@ -249,6 +249,23 @@ describe("sqlite workspace authority", () => {
     expect(await authority.listAgentExtensionPolicyOverridesForRuntime({ workspaceId: "ws_ext" })).toEqual([
       { id: "ext_1", scope: "workspace", enabled: false, reason: "blocked" },
     ])
+
+    // A soft-deleted row no longer guards its source: uninstalling and then
+    // installing the same id from a different source revives the row instead
+    // of rejecting (absorbed legacy records leave the same tombstones).
+    await authority.deleteWorkspaceAgentExtension(owner, { workspaceId: "ws_ext", extensionId: "ext_1" })
+    await authority.upsertWorkspaceAgentExtension(owner, {
+      workspaceId: "ws_ext",
+      extensionId: "ext_1",
+      packageName: "@other/tool",
+      desired: { id: "ext_1", enabled: true, source: { type: "github", owner: "other", repo: "tool" } },
+      lock: {},
+    })
+    const revived = await authority.listWorkspaceAgentExtensions(owner, { workspaceId: "ws_ext" }) as Array<{
+      desired: { source: { owner: string } }
+    }>
+    expect(revived).toHaveLength(1)
+    expect(revived[0]!.desired.source).toMatchObject({ owner: "other" })
   })
 
   test("session visibility + message sync stay workspace-scoped", async () => {

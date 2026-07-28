@@ -107,6 +107,113 @@ export async function connectionRateLimitError(
   } as const
 }
 
+/**
+ * Count of sandbox leases a tenant is currently holding live, or `undefined`
+ * when the count could not be taken.
+ *
+ * Both scopes are optional INDIVIDUALLY but at least one is always supplied —
+ * see `sandboxLeaseCapError`, the only thing that builds this input. Passing
+ * both is a union, not a sum: `sandboxLeases.countActiveForOrg` counts a lease
+ * matching either scope exactly once.
+ */
+export type ActiveSandboxLeaseCounter = (input: {
+  orgId?: string
+  ownerSubject?: string
+}) => Promise<number | undefined>
+
+/**
+ * Per-tenant CONCURRENT sandbox cap for routes that provision real
+ * infrastructure.
+ *
+ * Why this exists alongside `controlPlaneRateLimitError`, rather than instead of
+ * it — the two bound different things and neither subsumes the other:
+ *
+ *  - The rate limiter bounds requests PER MINUTE, and it is a per-isolate
+ *    in-memory `Map` (security review §6.7): its ceiling does not hold across
+ *    Cloudflare isolates, and it says nothing about how many sandboxes are
+ *    already running.
+ *  - This cap bounds TOTAL LIVE SANDBOXES, and it is evaluated against durable
+ *    Convex state, so it holds no matter how many isolates the flood is spread
+ *    across, and it still holds for a slow drip that never trips a rate limit.
+ *
+ * An unenforceable count (`undefined`) does NOT block the request. That is
+ * deliberate and is not a hole an attacker can open: the count comes from the
+ * same Convex deployment as the `createCloudWorkspace` write that immediately
+ * follows it, so any condition that makes the count unavailable also fails the
+ * write. Blocking here would only convert a Convex blip into a create outage.
+ *
+ * SCOPING. The count is keyed on the ids the LEASE ROWS actually carry, as
+ * `sandboxLeases.recordTenant` stamps them:
+ *
+ *  - `orgId` is the Clerk `org_id` claim (`runtime_leases.org_id`). It is
+ *    deliberately NOT `authority.resolveOrgId`, which answers in the
+ *    authority's own internal org id space: keying the count on one id space
+ *    while the rows carry another produces a count of zero forever, i.e. a cap
+ *    that silently never fires. The claim is OPTIONAL — a personal account has
+ *    none — which is why the call site must say which org it means and why this
+ *    is an input rather than being read off `auth`.
+ *  - The owner subject is `auth.user.subject` (`runtime_leases.owner_subject`),
+ *    and is read off the verified auth HERE rather than accepted as an input.
+ *    Every signed request carries a subject and there is exactly one correct
+ *    value for it, so making it a parameter would only create the chance to
+ *    omit it — which is precisely the bug this scope exists to fix. Before the
+ *    owner column existed, an org-less caller's leases were never attributed,
+ *    there was nothing to count, and this guard returned early: the cap could
+ *    not bind at all for personal accounts, leaving the rate limiter as their
+ *    only bound.
+ *
+ * A count with NEITHER scope is refused rather than taken: it would return
+ * every live lease in the deployment and hand this caller a budget derived from
+ * other tenants (`countActiveForOrg` throws for exactly that reason). A signed
+ * request always has a subject, so the state is unreachable — the check is a
+ * structural assertion, not a path.
+ */
+export async function sandboxLeaseCapError(
+  services: ControlPlaneServices | undefined,
+  auth: SignedControlPlaneAuth,
+  input: {
+    orgId: string | undefined
+    cap: number
+    action: string
+    countActiveLeases: ActiveSandboxLeaseCounter
+  },
+) {
+  if (!(input.cap > 0)) return
+  const orgId = input.orgId?.trim()
+  const ownerSubject = auth.user.subject?.trim()
+  if (!orgId && !ownerSubject) return
+  const scope = {
+    ...(orgId ? { orgId } : {}),
+    ...(ownerSubject ? { ownerSubject } : {}),
+  }
+  const active = await input.countActiveLeases(scope)
+  if (active === undefined || active < input.cap) return
+  await requireAuthority(services).auditDeny(auth, {
+    action: input.action,
+    reason: "sandbox_lease_limit_reached",
+    metadata: {
+      ...scope,
+      activeLeases: active,
+      cap: input.cap,
+    },
+  })
+  return {
+    body: {
+      error: apiError(
+        "sandbox_lease_limit_reached",
+        orgId
+          ? "This organization already holds the maximum number of running cloud workspaces"
+          : "You already hold the maximum number of running cloud workspaces",
+        {
+          activeLeases: active,
+          limit: input.cap,
+        },
+      ),
+    },
+    status: 429,
+  } as const
+}
+
 export async function controlPlaneRateLimitError(
   services: ControlPlaneServices | undefined,
   rateLimiter: ConnectionRateLimiter,

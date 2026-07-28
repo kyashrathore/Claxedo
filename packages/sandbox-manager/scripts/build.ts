@@ -13,6 +13,7 @@ const entries = [
   "src/daytona-allow-list.ts",
   "src/defaults.ts",
   "src/driver-catalog.ts",
+  "src/hosted-network-policy.ts",
   "src/drivers/box.ts",
   "src/drivers/cloudflare.ts",
   "src/drivers/cloudflare-egress.ts",

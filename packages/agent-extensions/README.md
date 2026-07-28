@@ -142,8 +142,23 @@ so disable/enable round-trips survive replay.
 
 Agent Extensions keep ownership records in `.agent-extensions/materialized.json`
 and refuse to overwrite unmanaged target paths. Uninstall and disable remove
-only owned artifacts. GitHub packages are locked by resolved SHA and verified
-against recorded package digests before replay.
+only owned artifacts.
+
+Remote (GitHub) packages are pinned in `lock.json` by resolved SHA, package
+digest, and source tuple, and **materialization fails closed**: nothing reaches
+disk unless the package tree on disk hashes to the digest the lock pins. An
+install whose lock is missing, records no resolved SHA, or records no package
+digest is refused rather than materialized unverified, and a requested source
+that disagrees with the locked source is refused too — changing the pinned
+owner/repo/ref is a deliberate re-install (`agent-extensions update <id>`), not
+something a pushed snapshot can do implicitly. Fetches check out the locked
+commit id itself rather than `FETCH_HEAD`, so a remote that serves a different
+commit fails the checkout instead of becoming the content that gets cached.
+Verification runs inside `materializeAgentExtensionSnapshot`, so every caller
+gets it, and it runs for every install in a snapshot before any of them writes.
+`project` sources are exempt from the pinning requirement — they are a path in
+your own working tree, with no remote content to pin — but a digest recorded
+for one is still enforced.
 
 State files and target configs are written atomically (temp file + rename).
 Corrupted (unparseable) state or target config files abort the operation

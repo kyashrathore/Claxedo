@@ -61,4 +61,29 @@ crons.interval("prune usage facts", { hours: 24 }, internal.usageMetering.pruneU
   limit: 1000,
 })
 
+// §6.12 organization deletion cascade. `organization.deleted` records a purge
+// REQUEST (`orgs.purge_requested_at`); this is what actually destroys the rows,
+// once the retention grace window has elapsed. During that week an org
+// re-created in Clerk clears its own request and is never touched.
+//
+// Deliberately NOT wired to the webhook itself: a Svix delivery is not the
+// place to start an irreversible multi-transaction purge, and an hour of delay
+// costs nothing against a seven-day window. One org per tick, several bounded
+// batches per org — see `orgs.purgeDeletedOrgs` for why both limits exist.
+// CLI session token retention. Every `claxedo login` writes two rows and every
+// refresh writes two more, so without a reaper the registry only ever grows.
+// An expired row is inert — the JWT it describes fails signature verification
+// before the registry is consulted — so pruning cannot resurrect a credential;
+// the 24h retention is a clock-skew cushion, not a safety property. Hourly with
+// a bounded batch keeps each sweep inside one transaction.
+crons.interval("reap expired CLI session tokens", { hours: 1 }, internal.cliSessionTokens.reapExpired, {
+  retain_ms: 24 * 60 * 60 * 1000,
+  limit: 1000,
+})
+
+crons.interval("purge deleted organizations", { hours: 1 }, internal.orgs.purgeDeletedOrgs, {
+  retain_ms: 7 * 24 * 60 * 60 * 1000,
+  batch_limit: 256,
+})
+
 export default crons

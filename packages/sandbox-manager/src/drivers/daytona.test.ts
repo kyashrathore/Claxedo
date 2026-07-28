@@ -211,19 +211,26 @@ describe("DaytonaSandboxDriver", () => {
     )
   })
 
-  test("restricted network policy maps to Daytona SDK CIDR allowlist and full block", async () => {
+  test("restricted network policy maps to Daytona's domain allowlist, CIDR allowlist and full block", async () => {
     const daytona = client()
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
 
     await driver.ensureHost({ ...input, net: { mode: "allow-all" } })
     await driver.ensureHost({ ...input, net: { mode: "restricted", hosts: ["api.example.test"], cidrs: ["10.0.0.0/8"] } })
     await driver.ensureHost({ ...input, net: { mode: "restricted", hosts: [], cidrs: [] } })
+    await driver.ensureHost({ ...input, net: { mode: "restricted", cidrs: ["10.0.0.0/8"] } })
 
     const create = daytona.create as ReturnType<typeof vi.fn>
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("networkAllowList")
+    expect(create.mock.calls[0]?.[0]).not.toHaveProperty("domainAllowList")
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("networkBlockAll")
-    expect(create.mock.calls[1]?.[0]).toMatchObject({ networkAllowList: "10.0.0.0/8" })
+    // Names win over addresses when a policy carries both: the CIDRs are DNS
+    // resolutions of the same hosts, and a pinned /32 goes stale the moment a
+    // CDN-fronted host rotates IPs.
+    expect(create.mock.calls[1]?.[0]).toMatchObject({ domainAllowList: "api.example.test" })
+    expect(create.mock.calls[1]?.[0]).not.toHaveProperty("networkAllowList")
     expect(create.mock.calls[2]?.[0]).toMatchObject({ networkBlockAll: true })
+    expect(create.mock.calls[3]?.[0]).toMatchObject({ networkAllowList: "10.0.0.0/8" })
   })
 
   test("a stopped sandbox is started before returning a target", async () => {

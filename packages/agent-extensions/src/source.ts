@@ -83,6 +83,17 @@ export function parsePackageSource(input: string): PackageInstallSource {
   } catch {
     throw new AgentExtensionSourceError(`Unsupported Agent Extension source: ${input}`)
   }
+  // Deliberately a host check, not an owner/repo allowlist. Users are meant to
+  // install their own extensions from their own repos, so narrowing this to
+  // specific orgs would break the supported case while doing nothing an
+  // attacker with any GitHub account could not route around. `github.com` is
+  // also the only host the fetcher can actually reach (`githubRepoUrl` builds
+  // the clone URL), so a wider allowlist here would be a lie.
+  //
+  // Trust is decided downstream instead, and per install: `lock.json` pins the
+  // source tuple, resolved SHA, and content digest, and `src/integrity.ts`
+  // refuses to materialize anything that does not match that pin. Catalog-level
+  // allowlisting is a host responsibility (see docs/architecture.md).
   if (url.protocol !== "https:" || url.hostname !== "github.com") {
     throw new AgentExtensionSourceError("Only https://github.com sources are supported")
   }

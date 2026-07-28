@@ -5,7 +5,7 @@ import type {
   SandboxDriverEnsureInput,
   SandboxTarget,
 } from ".."
-import { formatDaytonaAllowList } from "../daytona-allow-list"
+import { formatDaytonaAllowList, formatDaytonaDomainAllowList } from "../daytona-allow-list"
 import { workspaceRuntimeSourceEnv, workspaceRuntimeTargetEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -50,7 +50,10 @@ export type DaytonaClientLike = {
       autoStopInterval?: number
       autoDeleteInterval?: number
       networkBlockAll?: boolean
+      /** Comma-separated allowed CIDR network addresses. */
       networkAllowList?: string
+      /** Comma-separated allowed domains — the name-based egress allowlist. */
+      domainAllowList?: string
     },
     options?: { timeout?: number },
   ) => Promise<DaytonaSandboxLike>
@@ -302,6 +305,7 @@ export function createDaytonaSandboxDriver(
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      egressControl: "hosts-and-cidrs",
       persistence: sandboxDriverCatalog.daytona.metadata.persistence,
     },
 
@@ -353,8 +357,24 @@ export function createDaytonaSandboxDriver(
   }
 }
 
+/**
+ * Translate a restricted `SandboxNetworkPolicy` into Daytona's egress
+ * controls. A policy states the same allowance as names (`hosts`), addresses
+ * (`cidrs`), or both; Daytona is the one driver that can honor either.
+ *
+ * Names win when both are present, for two reasons. The addresses are derived
+ * FROM the names upstream (`resolveSandboxNetworkPolicy` resolves each host to
+ * /32s), so nothing is lost — and a pinned /32 goes stale the moment a
+ * CDN-fronted host rotates IPs, silently cutting off a host the policy
+ * allows. Sending both would also leave it to Daytona whether two allow lists
+ * union or intersect, and an allowlist whose meaning is a guess is not one.
+ *
+ * A restricted policy that allows nothing is the deny-all floor.
+ */
 function network(input: SandboxDriverEnsureInput) {
   if (!input.net || input.net.mode === "allow-all") return {}
+  const hosts = input.net.hosts ?? []
+  if (hosts.length > 0) return { domainAllowList: formatDaytonaDomainAllowList(hosts) }
   const cidrs = input.net.cidrs ?? []
   if (cidrs.length === 0) return { networkBlockAll: true }
   return { networkAllowList: formatDaytonaAllowList(cidrs) }

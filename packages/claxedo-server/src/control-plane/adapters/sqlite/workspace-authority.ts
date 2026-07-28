@@ -1004,7 +1004,11 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
       const now = Date.now()
-      const existing = db.prepare(`SELECT desired FROM agent_extension_installs WHERE workspace_id = ? AND extension_id = ?`)
+      // Only live rows guard the source: a soft-deleted row (uninstalled, or
+      // absorbed into the pinned catalog id by the install route) must not
+      // block a fresh install that legitimately reuses its id — the upsert
+      // below revives the row under the new source.
+      const existing = db.prepare(`SELECT desired FROM agent_extension_installs WHERE workspace_id = ? AND extension_id = ? AND deleted_at IS NULL`)
         .get(args.workspaceId, args.extensionId) as { desired: string } | undefined
       if (existing) {
         const existingSource = sourceKey(object(JSON.parse(existing.desired))?.source)

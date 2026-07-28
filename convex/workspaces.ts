@@ -251,6 +251,39 @@ export const createCloud = authedMutation({
   },
   handler: async (ctx, args) => {
     const user = await upsertUser(ctx)
+    // Pre-launch security review §4.1 — `workspace_id` is CALLER-supplied and
+    // this is an `authedMutation`, so it is reachable directly through the
+    // public Convex SDK using the deployment URL that ships in the app bundle
+    // as `VITE_CONVEX_URL`. Hardening the Worker `POST /create` route does NOT
+    // close this; the guard has to live here. Server-minted ids are
+    // `ws_${Date.now().toString(36)}` — a bare millisecond timestamp with no
+    // random component — so a victim's id is guessable within a plausible
+    // creation window. Inserting a SECOND row carrying that public id bricks
+    // the workspace for everyone: every lookup goes through
+    // `workspaceByPublicId`, whose `.unique()` throws once two rows share an id.
+    //
+    // Same guard shape as `registerLocalForSharing` below, with create-specific
+    // dispositions:
+    // - Someone else's row (including a row the caller only holds an admin
+    //   SHARE grant on) is opaque "Workspace not found". A create path must
+    //   never write through a grant, and the message does not confirm the row's
+    //   owner. Soft-deleted rows are treated the same way, so an id is never
+    //   silently recycled.
+    // - The caller's own USER-HOSTED workspace is a typed conflict rather than
+    //   a silent backing flip — the mirror of `workspace_backing_conflict`.
+    // - The caller's own cloud workspace returns the existing doc unchanged, so
+    //   a create retry that reuses the id is a no-op instead of a hard failure.
+    //   Nothing is patched, so this cannot be used to edit an existing row.
+    const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (existing) {
+      if (existing.owner_user_id !== user._id || existing.deleted_at) throw new Error("Workspace not found")
+      if (existing.backing !== "cloud-vm" || existing.access !== "cloud") {
+        throw new Error(
+          "workspace_backing_conflict: cannot re-create a user-hosted workspace as a cloud workspace",
+        )
+      }
+      return { workspace_doc_id: existing._id }
+    }
     const org = await ensureOwnerOrg(ctx, user)
     const project = await ensureProject(ctx, {
       projectId: args.project_id ?? defaultProjectId(args.workspace_id),

@@ -10,6 +10,7 @@ import {
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
 export * from "./checkpoint-manager"
+export * from "./hosted-network-policy"
 
 export type SandboxRegion = string
 export type SandboxDriverId = SandboxDriverID | "fetch"
@@ -108,7 +109,146 @@ export type SandboxDriverMetadata = {
    * that is not yet wired and therefore also fails closed.
    */
   secretBrokering: "native" | "proxy" | "none"
+  /**
+   * How the driver can enforce a RESTRICTED `SandboxNetworkPolicy` — i.e.
+   * whether the sandbox's outbound network can actually be contained.
+   *
+   * A `SandboxNetworkPolicy` states the same allowance in up to two encodings:
+   * `hosts` (names) and `cidrs` (addresses). A driver contains egress if it
+   * enforces AT LEAST ONE encoding the policy carries and blocks everything
+   * else; the encodings are alternatives, not additive requirements.
+   *
+   * - `"hosts-and-cidrs"` — the provider filters by name AND by address
+   *   (Daytona: `domainAllowList` + `networkAllowList`).
+   * - `"hosts"` — the provider filters by hostname only (Vercel firewall).
+   * - `"none"` — the driver cannot express an egress allowlist. This covers
+   *   BOTH drivers that throw when handed a restricted policy (exe, docker,
+   *   box, and modal for host policy) AND — more dangerously — drivers that
+   *   silently ignore `net` and run wide open (cloudflare, the fetch bridge).
+   *   Modal is `"none"` even though it can cut the network entirely: a total
+   *   blackout is not an allowlist and cannot serve a workspace that has to
+   *   clone a repo and reach a model provider.
+   *
+   * The manager reads this to decide what the driver is handed:
+   * `sandboxEgressDisposition` enforces where it can and WITHHOLDS (loudly)
+   * where it cannot. See `SandboxEgressDisposition` for the posture and
+   * `public-docs/sandbox-egress.md` for the operator-facing consequence.
+   */
+  egressControl: SandboxEgressControl
   persistence: SandboxPersistenceCapabilities
+}
+
+/** @see SandboxDriverMetadata.egressControl */
+export type SandboxEgressControl = "none" | "hosts" | "hosts-and-cidrs"
+
+/**
+ * What the manager does with a caller's `net` for a given driver.
+ *
+ * Owner directive (2026-07-28): *"for egress in sandbox enforce where we can
+ * and document where we cant."* That replaces the previous fail-closed refusal
+ * for drivers with no egress control at all — provisioning now proceeds, and
+ * the gap is made loud instead of fatal.
+ *
+ *  - `"enforce"` — the driver gets the policy verbatim and contains the
+ *    sandbox. Also the answer when the caller asked for no containment
+ *    (absent / `allow-all`), which is nothing to enforce.
+ *  - `"withhold"` — the driver declares `egressControl: "none"`, so there is no
+ *    containment to be had. The policy is NOT handed down: half the `"none"`
+ *    drivers throw on a restricted policy (exe, docker, modal, box) and the
+ *    other half silently drop it (cloudflare, the fetch bridge). Withholding at
+ *    the manager means the throwing drivers never see one — their throws stay
+ *    in place as their own last line of defence — and the silently-dropping
+ *    ones stop pretending. The sandbox comes up with UNRESTRICTED egress, which
+ *    is a real exposure, so the manager warns (see `onEgressUnenforced`).
+ *  - `"refuse"` — the driver HAS egress control but cannot express this
+ *    particular policy's encoding (a hosts-only driver handed an address-only
+ *    allowlist). Deliberately still fail-closed: this is a composition mistake
+ *    on an otherwise-enforcing driver, and degrading it to "withhold" would
+ *    weaken the enforcing path. `hostedSandboxNetworkPolicy` only ever emits
+ *    hosts, so no production path reaches it.
+ *
+ * Pure, like `validateSandboxPersistenceCapabilities`, so the manager, the
+ * composition layer, and tests can all ask the same question.
+ */
+export type SandboxEgressDisposition =
+  | { action: "enforce" }
+  | { action: "withhold"; reason: "sandbox_egress_uncontained" }
+  | { action: "refuse"; reason: "sandbox_egress_policy_unenforceable" }
+
+/** @see SandboxEgressDisposition */
+export function sandboxEgressDisposition(
+  control: SandboxEgressControl,
+  net: SandboxNetworkPolicy | undefined,
+): SandboxEgressDisposition {
+  if (!net || net.mode === "allow-all") return { action: "enforce" }
+  if (control === "none") return { action: "withhold", reason: "sandbox_egress_uncontained" }
+  const hosts = net.hosts?.length ?? 0
+  const cidrs = net.cidrs?.length ?? 0
+  // Deny-all: no allowance to express, and every non-"none" driver can block.
+  if (hosts === 0 && cidrs === 0) return { action: "enforce" }
+  if (hosts > 0) return { action: "enforce" }
+  return control === "hosts-and-cidrs"
+    ? { action: "enforce" }
+    : { action: "refuse", reason: "sandbox_egress_policy_unenforceable" }
+}
+
+/**
+ * Emitted whenever a restricted egress policy is withheld because the composed
+ * driver declares no egress control. This is the "document where we can't" half
+ * of the directive expressed at runtime: an unrestricted sandbox that nobody
+ * was told about is the original finding, so the degrade is never silent.
+ *
+ * Two phases, because a per-create line is easy to miss in request logs:
+ *  - `"composition"` — once per `createSandboxManager` per driver, at boot.
+ *  - `"ensure"` — every time a caller's policy is actually withheld, naming the
+ *    workspace and the allowlist that did not take effect.
+ */
+export type SandboxEgressUnenforcedEvent = {
+  phase: "composition" | "ensure"
+  reason: "sandbox_egress_uncontained"
+  /** `SandboxDriver.id` of the composed driver. */
+  driver: string
+  /** Always `"none"` today — carried so a sink can group without re-deriving. */
+  egressControl: SandboxEgressControl
+  /** Ready-to-log sentence. Sinks that only forward text can use this alone. */
+  message: string
+  /** Present on `"ensure"`. */
+  workspaceId?: string
+  /** The allowlist the caller asked for and did NOT get. Present on `"ensure"`. */
+  requested?: SandboxNetworkPolicy
+}
+
+function egressUnenforcedMessage(input: {
+  phase: "composition" | "ensure"
+  driver: string
+  workspaceId?: string
+  requested?: SandboxNetworkPolicy
+}) {
+  const scope = input.workspaceId ? `workspace ${input.workspaceId}` : "every sandbox it provisions"
+  const withheld = input.requested
+    ? ` The requested allowlist (${(input.requested.hosts ?? []).length} host(s), ` +
+      `${(input.requested.cidrs ?? []).length} cidr(s)) was withheld, not applied.`
+    : ""
+  return (
+    `[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver "${input.driver}" declares ` +
+    `egressControl: "none", so ${scope} can reach ANY host on the internet, including ` +
+    `attacker-controlled buckets — agent-authored code inside the sandbox has an unmonitored ` +
+    `exfiltration path.${withheld} Select a driver that can enforce egress (daytona, vercel) ` +
+    `to close it. See public-docs/sandbox-egress.md.`
+  )
+}
+
+/**
+ * Drivers already warned about at composition time, so a control plane that
+ * composes its services per request (the hosted Worker does) logs the boot
+ * warning once per isolate instead of once per request. Keyed by driver id +
+ * declared capability, never by workspace: the per-create `"ensure"` warning is
+ * deliberately NOT deduped.
+ */
+const compositionEgressWarnings = new Set<string>()
+
+function defaultEgressUnenforcedSink(event: SandboxEgressUnenforcedEvent) {
+  console.warn(event.message)
 }
 
 /**
@@ -275,7 +415,16 @@ export type SandboxDriverEnsureInput = {
   secrets?: SandboxBrokeredSecret[]
   source?: SandboxSource
   exposure?: SandboxExposure
-  /** Optional egress policy (allow-all when omitted). */
+  /**
+   * Egress policy. Omitted means allow-all, which is only appropriate for a
+   * single-tenant deployment the operator already trusts.
+   *
+   * A driver can rely on this being ABSENT whenever it declares
+   * `egressControl: "none"`: the manager withholds the policy rather than hand
+   * it to a driver that would either throw on it or silently drop it. A driver
+   * that receives a restricted policy here is one that declared it can enforce
+   * it. @see SandboxEgressDisposition
+   */
   net?: SandboxNetworkPolicy
   /** Optional snapshot/image to boot from (user-supplied or pre-built). */
   snapshot?: string
@@ -351,6 +500,10 @@ export type SandboxManagerInput = {
   secrets?: SandboxBrokeredSecret[]
   source?: SandboxSource
   exposure?: SandboxExposure
+  /**
+   * @see SandboxDriverEnsureInput.net — enforced by a capable driver, withheld
+   * (with a warning) by one that declares `egressControl: "none"`.
+   */
   net?: SandboxNetworkPolicy
   snapshot?: string
 }
@@ -405,6 +558,17 @@ export type SandboxManagerOptions = {
   // compatibility with already-provisioned sandboxes; set your own product id
   // when embedding the manager outside Claxedo.
   appLabel?: string
+  /**
+   * Sink for the loud half of "enforce where we can, document where we can't".
+   * Called at composition time and again every time a restricted policy is
+   * withheld from a driver that cannot enforce it.
+   *
+   * Defaults to `console.warn(event.message)`. Pass your own to route the gap
+   * into a telemetry pipeline instead — but note the default is deliberately
+   * unconditional: an operator who never wires a sink still gets the warning.
+   * Pass `() => {}` only if you have another way to surface it.
+   */
+  onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
 }
 
 const DEFAULT_APP_LABEL = "claxedo"
@@ -413,6 +577,16 @@ function sandboxId(driver: string, workspaceId: string) {
   return `${driver}-${workspaceId}`
 }
 
+/**
+ * Build the driver-facing ensure input.
+ *
+ * This is the ONLY place a `SandboxDriverEnsureInput` is constructed, which is
+ * what makes the egress guarantee structural rather than a promise kept by each
+ * call site: `net` is copied across only when `sandboxEgressDisposition` says
+ * the driver can enforce it. A driver declaring `egressControl: "none"` — every
+ * driver that throws on a restricted policy, plus the two that silently drop it
+ * — cannot be reached by one through any path.
+ */
 function ensureHostInput(input: {
   driver: SandboxDriver
   workspaceId: string
@@ -421,6 +595,7 @@ function ensureHostInput(input: {
   managerInput?: SandboxManagerInput
   appLabel: string
 }): SandboxDriverEnsureInput {
+  const egress = sandboxEgressDisposition(input.driver.metadata.egressControl, input.managerInput?.net)
   const labels = {
     app: input.appLabel,
     workspaceId: input.workspaceId,
@@ -452,7 +627,11 @@ function ensureHostInput(input: {
     exposure:
       input.managerInput?.exposure ??
       (input.driver.metadata.targetAccess === "loopback" ? { kind: "loopback" } : { kind: "relay" }),
-    net: input.managerInput?.net,
+    // Withheld, never downgraded: `undefined` here is the same shape a caller
+    // that asked for no containment produces, so the throwing drivers take
+    // their allow-all path and their throws stay intact for anyone who hands
+    // them a policy directly.
+    ...(egress.action === "enforce" && input.managerInput?.net ? { net: input.managerInput.net } : {}),
     snapshot: input.managerInput?.snapshot,
   }
 }
@@ -467,10 +646,47 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     options.retryDelayMs ?? ((retryCount) => Math.min(60_000, 1_000 * 2 ** Math.max(0, retryCount - 1)))
   const maxRetryCount = options.maxRetryCount ?? Number.POSITIVE_INFINITY
   const retryCapCooldownMs = options.retryCapCooldownMs ?? 10 * 60_000
+  const egressControl = options.driver.metadata.egressControl
+  const onEgressUnenforced = options.onEgressUnenforced ?? defaultEgressUnenforcedSink
   const lifecycleOperations = new Map<string, {
     kind: "checkpoint" | "restore" | "stop" | "destroy"
     promise: Promise<unknown>
   }>()
+
+  function reportEgressUnenforced(input: { workspaceId: string; requested: SandboxNetworkPolicy }) {
+    onEgressUnenforced({
+      phase: "ensure",
+      reason: "sandbox_egress_uncontained",
+      driver: options.driver.id,
+      egressControl,
+      message: egressUnenforcedMessage({
+        phase: "ensure",
+        driver: options.driver.id,
+        workspaceId: input.workspaceId,
+        requested: input.requested,
+      }),
+      workspaceId: input.workspaceId,
+      requested: input.requested,
+    })
+  }
+
+  // Boot-time half of the warning. A per-create line lands in request logs and
+  // is easy to miss; this one lands wherever the process starts, so an operator
+  // who composed cloudflare/exe/box/docker/modal learns that this deployment
+  // runs sandboxes with unrestricted egress BEFORE the first workspace exists.
+  if (egressControl === "none") {
+    const key = `${options.driver.id}|${egressControl}`
+    if (!compositionEgressWarnings.has(key)) {
+      compositionEgressWarnings.add(key)
+      onEgressUnenforced({
+        phase: "composition",
+        reason: "sandbox_egress_uncontained",
+        driver: options.driver.id,
+        egressControl,
+        message: egressUnenforcedMessage({ phase: "composition", driver: options.driver.id }),
+      })
+    }
+  }
 
   function lifecycle<T>(
     workspaceId: string,
@@ -607,6 +823,32 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   return {
     async ensure(workspaceId, input) {
+      // Egress disposition, decided BEFORE a lease is acquired.
+      //
+      // A caller that hands us a restricted policy is stating that this sandbox
+      // must not reach the open internet. Per the 2026-07-28 owner directive
+      // ("enforce where we can and document where we cant") that request is
+      // honoured where the driver can honour it, and made LOUD — not fatal —
+      // where it cannot: refusing the create outright would take the most
+      // likely production driver (cloudflare, preferred by
+      // `defaultSandboxDriverName`) offline entirely.
+      //
+      // The withholding itself happens in `ensureHostInput`; this is where the
+      // gap gets said out loud, at the same point the old refusal lived, so it
+      // fires exactly once per create rather than once per driver retry.
+      const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
+      if (egress.action === "withhold" && input.net) {
+        reportEgressUnenforced({ workspaceId, requested: input.net })
+      }
+      if (egress.action === "refuse") {
+        // Still fail-closed, and deliberately so: this driver DOES enforce
+        // egress, it just cannot express this policy's encoding. Degrading an
+        // enforcing driver to "unrestricted" would weaken the half of the
+        // directive that says enforce where we can. Not a provisioning failure
+        // either — a composition mistake must not burn a lease epoch or enter
+        // retry backoff.
+        return { status: "unavailable", error: egress.reason, homeRegion: input.homeRegion }
+      }
       const existing = await options.leaseStore.get(workspaceId)
       if (existing?.nextRetryAt && existing.nextRetryAt > now()) {
         if (existing.status === "acquiring") {

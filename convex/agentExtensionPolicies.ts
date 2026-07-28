@@ -1,6 +1,14 @@
 import type { GenericDatabaseReader, GenericDatabaseWriter } from "convex/server"
 import { v, type GenericId } from "convex/values"
-import { authedMutation, authedQuery, authorizeWorkspace, readUser, serviceQuery, workspaceByPublicId } from "./model"
+import {
+  authedMutation,
+  authedQuery,
+  authorizeWorkspace,
+  orgAdminForUser,
+  readUser,
+  serviceQuery,
+  workspaceByPublicId,
+} from "./model"
 
 const workspaceId = { workspace_id: v.string() }
 const policyScope = v.union(v.literal("org"), v.literal("user"), v.literal("workspace"))
@@ -66,6 +74,35 @@ async function existingPolicy(ctx: { db: Db }, input: {
   return rows.find((item) => item.extension_id === input.extensionId && item.scope === input.scope)
 }
 
+// Pre-launch security review §4.2 — the scope-specific half of authorization.
+//
+// `authorizeWorkspace(workspace, "admin")` is necessary for every scope but
+// SUFFICIENT only for the two whose blast radius is the workspace itself. An
+// `org`-scoped row is keyed on `workspace.org_id`, and `policyRows` above reads
+// org rows for EVERY workspace in that org — so an org-scoped write reaches
+// workspaces the caller was never granted.
+//
+// The escalation that makes this reachable, not theoretical: a workspace owner
+// grants an outsider a narrow single-workspace `admin` share
+// (`workspaceShares.grant`, which requires no org membership); `shareRole` in
+// convex/model.ts resolves that grant with no `org_memberships` check, so the
+// outsider clears `authorizeWorkspace(..., "admin")`; `set({ scope: "org" })`
+// then writes org-wide. External single-workspace collaboration is intentional
+// and stays exactly as it is — the bug is treating workspace-admin as proof of
+// org authority, and this is where that inference is severed.
+async function authorizeScope(ctx: { db: Db }, input: {
+  workspace: Record<string, unknown>
+  userId: unknown
+  scope: PolicyScope
+}) {
+  if (input.scope !== "org") return
+  const orgId = input.workspace.org_id
+  if (!orgId) throw new Error("Workspace has no org")
+  if (!await orgAdminForUser(ctx.db, input.userId, orgId)) {
+    throw new Error("org_policy_forbidden: org-scoped agent extension policy requires an org admin role")
+  }
+}
+
 function scopedPatch(input: {
   workspace: Record<string, unknown>
   userId: unknown
@@ -114,6 +151,7 @@ export const set = authedMutation({
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "admin")) throw new Error("Workspace not found")
     const user = await readUser(ctx)
+    await authorizeScope(ctx, { workspace, userId: user._id, scope: args.scope })
     const now = Date.now()
     const patch = {
       scope: args.scope,
@@ -152,6 +190,10 @@ export const remove = authedMutation({
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "admin")) throw new Error("Workspace not found")
     const user = await readUser(ctx)
+    // `remove` carries the identical weakness: it soft-deletes the org-wide row,
+    // which silently re-enables (or re-disables) an extension for every
+    // workspace in the org. Same bar as `set`.
+    await authorizeScope(ctx, { workspace, userId: user._id, scope: args.scope })
     const existing = await existingPolicy(ctx, {
       workspace,
       userId: user._id,

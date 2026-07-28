@@ -1,7 +1,7 @@
 import { marked, type MarkedExtension, type Tokens } from "marked"
 import markedShiki from "marked-shiki"
 import katex from "katex"
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import { addClassToHast, bundledLanguages, type BundledLanguage, type ShikiTransformer } from "shiki"
 import { createSimpleContext } from "./helper"
 import { markedCodeSpanBoundary } from "./marked-code-span"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
@@ -476,6 +476,26 @@ function renderMathExpressions(html: string): string {
     .join("")
 }
 
+/**
+ * Shiki emits `<pre class="shiki OpenCode"><code>` and drops the
+ * `class="language-X"` that marked's own code renderer puts on the `<code>`.
+ * Consumers read that class back off the DOM to recover a block's language —
+ * session-ui's markdown decorator uses it for code metadata and, critically, it
+ * is how ```mermaid fences are found. Highlighting must not cost the language.
+ *
+ * The name used is the one actually highlighted with (unknown languages having
+ * been folded to `text`), which matches what session-ui stamps on the code
+ * blocks it builds itself.
+ */
+function languageClass(language: string): ShikiTransformer {
+  return {
+    name: "opencode:language-class",
+    code(node) {
+      addClassToHast(node, `language-${language}`)
+    },
+  }
+}
+
 async function highlightCodeBlocks(html: string): Promise<string> {
   const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
   const matches = [...html.matchAll(codeBlockRegex)]
@@ -509,6 +529,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       lang: language,
       theme: "OpenCode",
       tabindex: false,
+      transformers: [languageClass(language)],
     })
     result = result.replace(fullMatch, () => highlighted)
   }
@@ -549,6 +570,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
             lang: lang || "text",
             theme: "OpenCode",
             tabindex: false,
+            transformers: [languageClass(lang || "text")],
           })
         },
       }),

@@ -96,8 +96,20 @@ describe("credential discovery", () => {
       secret: "second-secret",
       scope: "shared",
       consent: { at: 100, surface: "desktop_discovery" },
-    }))
-    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ secret: "first-secret" }))
+    }), undefined)
+    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ secret: "first-secret" }), undefined)
+  })
+
+  test("forwards the caller's org so a discovered credential lands in the right tenant", async () => {
+    const { save, service } = setup()
+    const discovery = await service.discover("org_a")
+
+    await service.save({
+      discovery_id: discovery.discovery_id,
+      items: [{ provider_id: "openai", account_id: discovery.items[1]!.account_id, scope: "local" }],
+    }, "org_a")
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ provider_id: "openai" }), "org_a")
   })
 
   test("supports selecting multiple accounts for the same provider independently", async () => {

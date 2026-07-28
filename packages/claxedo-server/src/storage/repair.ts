@@ -323,6 +323,28 @@ function ensureNetworkPolicyHarnessColumn(db: SqliteInstance, out: string[]) {
   out.push("claxedo_network_policy.harness")
 }
 
+/**
+ * Heal a provider-credential table that predates org scoping.
+ *
+ * The migration adds `org_id`, but `repair` is the belt-and-braces path for a
+ * database whose migration ledger drifted. Backfilling to the named
+ * single-tenant partition keeps an existing self-host user's credentials
+ * reachable; it never widens one tenant's rows into another's, because
+ * `__local__` is only ever resolved for an unsigned/loopback request.
+ */
+function ensureProviderCredentialOrgColumn(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_provider_credential")) return
+  if (!hasColumn(db, "claxedo_provider_credential", "org_id")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `org_id` text NOT NULL DEFAULT '__local__'")
+    out.push("claxedo_provider_credential.org_id")
+  }
+  db.exec("UPDATE `claxedo_provider_credential` SET `org_id` = '__local__' WHERE `org_id` IS NULL OR trim(`org_id`) = ''")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_idx` ON `claxedo_provider_credential` (`org_id`)")
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_provider_idx` ON `claxedo_provider_credential` (`org_id`, `provider_id`)",
+  )
+}
+
 function renameColumn(db: SqliteInstance, table: string, from: string, to: string, out: string[]) {
   if (!hasTable(db, table)) return
   if (!hasColumn(db, table, from) || hasColumn(db, table, to)) return
@@ -369,6 +391,7 @@ export function repair(db: SqliteInstance) {
   ensureSessionMetaIndexes(db)
   ensureSessionAssociationIndexes(db)
   ensureNetworkPolicyHarnessColumn(db, out)
+  ensureProviderCredentialOrgColumn(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
   return out
 }

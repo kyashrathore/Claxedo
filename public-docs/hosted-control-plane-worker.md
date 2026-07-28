@@ -88,6 +88,7 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 | Cloudflare driver                                       | `CLOUDFLARE_SANDBOX_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL` (`CLOUDFLARE_API_TOKEN` remains a compatibility fallback) |
 | Daytona driver                                          | `DAYTONA_API_KEY`, `CLAXEDO_DAYTONA_SNAPSHOT`                                                                         |
 | fetch-bridge driver                                     | `CLAXEDO_SANDBOX_DRIVER_URL` — explicit-only: requires `CLAXEDO_SANDBOX_DRIVER=fetch`, never auto-selected so a stray URL can't become the hidden model |
+| `CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS`                    | comma-separated hostnames appended to the hosted sandbox egress allowlist (below); unset leaves the reviewed baseline unchanged                        |
 | `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker (Phase A)                                                                                         |
 | `CLAXEDO_TELEMETRY_MODE`                                | `on`/`off` — checked before key presence; self-host default is off                                                    |
 | `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST`           | optional telemetry (fetch-based)                                                                                      |
@@ -95,6 +96,33 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 Additional knobs — per-region relay endpoints, request rate-limit caps,
 key-rotation `_NEXT_*` extras, and device-login URL/audience/scope overrides —
 exist with sensible defaults; see the package source if you need them.
+
+### Sandbox egress allowlist
+
+Every hosted sandbox is provisioned with a restricted egress policy: its own
+relay and control plane, the one git host that workspace clones from, the model
+providers, and the package registries. Object storage and CDN wildcards are
+excluded on purpose — each is a bucket an attacker can create in their own
+account, which is the exfiltration path the allowlist exists to close.
+
+`CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS` is the only way to widen it. Set it to a
+comma-separated list of hostnames when a deployment genuinely needs something
+beyond the baseline (a private package registry, a self-hosted model gateway):
+
+```sh
+npx wrangler secret put CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS   # npm.acme.internal,models.acme.internal
+```
+
+Hostnames only — the policy carries no CIDRs. Entries are trimmed,
+lower-cased, and de-duplicated against the baseline. Unset or blank changes
+nothing.
+
+Whether the allowlist is **enforced** depends on the driver you composed:
+`daytona` enforces it, and `cloudflare` / `exe` / `fetch` cannot, in which case
+the policy is withheld and the sandbox runs with unrestricted egress. That
+degrade is never silent — the Worker logs `SANDBOX EGRESS IS UNRESTRICTED` at
+boot and emits a `sandbox.egress_unenforced` telemetry event naming the driver.
+See [Sandbox Egress Containment](./sandbox-egress.md) for the capability matrix.
 
 ### Durable Objects
 

@@ -46,16 +46,39 @@ export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): Usa
  * service token simply records nothing, because a create request must succeed
  * whether or not metering is configured. The caller fires this without
  * awaiting.
+ *
+ * The two identities are shaped the way `sandboxLeases.recordTenant` writes
+ * them, so a caller cannot express a state the mutation would reject:
+ *
+ *  - `owner_subject` is REQUIRED. It is the concurrency cap's attribution key
+ *    (`runtime_leases.owner_subject`) and every signed request carries a
+ *    subject, so there is no legitimate call that omits it. A lease that was
+ *    never stamped is a lease `sandboxLeases.countActiveForOrg` cannot see,
+ *    which is a cap that silently does not bind.
+ *  - `metering` is the W5 org/user pair. It is ONE optional object rather than
+ *    two optional fields so "both or neither" is unrepresentable-otherwise
+ *    rather than merely checked: a personal-account token has no org claim, and
+ *    a fact keyed on half a tenant — or on an org synthesized to fill the gap —
+ *    corrupts every per-org aggregate, so those callers stamp an owner only.
+ *    This is why the owner is its own column: it never reaches
+ *    `sandbox_lease_events` or the rollups.
  */
 export function recordSandboxLeaseTenant(
-  input: ConvexUsageLedgerInput & { workspace_id: string; org_id: string; user_id: string },
+  input: ConvexUsageLedgerInput & {
+    workspace_id: string
+    owner_subject: string
+    metering?: { org_id: string; user_id: string }
+  },
 ): Promise<{ stamped: boolean }> {
   return (async () => {
     const executor = requireExecutor(input, undefined, { allowUnsigned: true })
     const result = await executor.mutation(usageApi.sandboxLeases.recordTenant, {
       workspace_id: input.workspace_id,
-      org_id: input.org_id,
-      user_id: input.user_id,
+      owner_subject: input.owner_subject,
+      // Omitted, not `undefined`: `recordTenant` writes the metering pair only
+      // when both are present, and an explicit empty key is not the same thing
+      // as an absent optional arg over the wire.
+      ...(input.metering ? { org_id: input.metering.org_id, user_id: input.metering.user_id } : {}),
       service_token: requireServiceToken(input),
     })
     return { stamped: (result as { stamped?: unknown } | null)?.stamped === true }

@@ -13,6 +13,7 @@ import type * as agentExtensions from "../agentExtensions.js";
 import type * as auditEvents from "../auditEvents.js";
 import type * as billing from "../billing.js";
 import type * as channelIdentities from "../channelIdentities.js";
+import type * as cliSessionTokens from "../cliSessionTokens.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as localHostLinks from "../localHostLinks.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   auditEvents: typeof auditEvents;
   billing: typeof billing;
   channelIdentities: typeof channelIdentities;
+  cliSessionTokens: typeof cliSessionTokens;
   crons: typeof crons;
   http: typeof http;
   localHostLinks: typeof localHostLinks;

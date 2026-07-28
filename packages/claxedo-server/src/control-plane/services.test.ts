@@ -945,6 +945,11 @@ describe("control-plane services", () => {
     expect(text).toContain("const hasCredentials = credential?.status === \"available\" || !!sandboxDriverAuth(driverConfig, id)")
     expect(text).toContain("const gitBranch = body.gitBranch?.trim() || (rawWorkspaceName ? name : undefined)")
     expect(text).toContain("git_branch: gitBranch")
-    expect(text).toContain("gitBranch,")
+    // `gitBranch` has to reach all three consumers as a shorthand property: the
+    // authority's createCloudWorkspace, the telemetry properties, and
+    // startCloudWorkspaceProvisioning. A bare toContain("gitBranch,") does not
+    // guard that -- it is already satisfied by the `git_branch: gitBranch,` line
+    // pinned above -- so count the shorthand sites instead.
+    expect(text.match(/^\s+gitBranch,$/gm)?.length ?? 0).toBeGreaterThanOrEqual(3)
   })
 })

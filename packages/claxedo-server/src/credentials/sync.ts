@@ -558,7 +558,15 @@ export async function collectLocalCredentialItems() {
   return [...(await collectLocalCredentials()).values()]
 }
 
-export async function syncLocalCredentials(ids?: string[]) {
+/**
+ * Import locally discovered CLI logins into the registry for ONE org.
+ *
+ * `org` defaults to the named single-tenant partition — the same fail-closed
+ * default the registry uses. It is never a wildcard: an unscoped call reads and
+ * writes `__local__` only, so it can neither observe nor clobber another
+ * tenant's provider credentials.
+ */
+export async function syncLocalCredentials(ids?: string[], org?: string) {
   log.warn("Deprecated sync-local credential path called; migrate to explicit discovery (automatic discovery, explicit upload)")
   const all = await collectLocalCredentials()
   const list = ids?.length ? [...new Set(ids)] : [...new Set([...all.values()].map((item) => item.provider_id))]
@@ -568,7 +576,7 @@ export async function syncLocalCredentials(ids?: string[]) {
   const failed: Array<{ provider_id: string; error: string }> = []
 
   for (const providerId of list) {
-    const current = getCredentialByProvider(providerId)
+    const current = getCredentialByProvider(providerId, undefined, org)
     if (current?.source === "managed") {
       existing.push(providerId)
       continue
@@ -590,7 +598,7 @@ export async function syncLocalCredentials(ids?: string[]) {
       await Promise.all(items.map((item) => putCredential({
         ...item,
         ...(item.fresh_until ? { expires_at: item.fresh_until } : {}),
-      })))
+      }, org)))
       synced.push(providerId)
     } catch (err) {
       failed.push({

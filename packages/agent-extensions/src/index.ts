@@ -110,6 +110,16 @@ export {
 } from "./replay"
 
 export {
+  AgentExtensionIntegrityError,
+  isRemotePackageSource,
+  lockedPackageDigest,
+  samePackageSourceIdentity,
+  verifyPackageIntegrity,
+  type AgentExtensionIntegrityCode,
+  type PackageIntegrityLock,
+} from "./integrity"
+
+export {
   materializeAgentExtensionSnapshot,
   removeStaleMaterializedComponents,
   uninstallOwnedComponents,
