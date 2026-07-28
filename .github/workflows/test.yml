@@ -133,6 +133,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # Consumed by the Linux-only mermaid verification steps below; inert on the
+      # Windows leg, which skips them.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -167,6 +171,51 @@ jobs:
       - name: Check documentation links
         if: runner.os == 'Linux'
         run: bun run docs:check-links
+
+      # session-ui's mermaid path CANNOT be unit tested, so it rides here rather
+      # than in `bun turbo test`: `bun test` has no DOM, happy-dom's HTML parser
+      # drops every child of an <svg> while its XML parser makes DOMPurify a
+      # no-op (see the header of markdown-svg-sanitize.test.ts -- both failure
+      # modes produce a GREEN test that checked nothing), and markdown.tsx only
+      # loads inside a Vite graph at all, because markdown-worker.ts imports
+      # `./markdown-shiki.worker.ts?worker&url`. So these are real-Chromium
+      # scripts. They run before the build and the 35-minute test step so a
+      # mermaid regression fails fast, and Linux-only for the same reason as the
+      # docs check above. Roughly 2-3 minutes with a warm browser cache.
+      #
+      # The pair is deliberate and neither half covers the other: the sanitizer
+      # script proves mermaid's SVG is filtered, the wiring script proves the
+      # renderer is reached at all. `renderMermaidBlocks` was dead code for its
+      # entire life -- no diagram ever rendered -- and the sanitizer suite stayed
+      # green the whole time, because a sanitizer cannot notice that nothing
+      # calls it.
+      - name: Read Playwright version
+        if: runner.os == 'Linux'
+        id: playwright-version
+        run: |
+          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Same key as the e2e jobs below, so this shares their cache entry.
+      - name: Cache Playwright browsers
+        if: runner.os == 'Linux'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.playwright-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install Playwright Chromium
+        if: runner.os == 'Linux'
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      # No `bun turbo build` needed: everything these two import
+      # (@opencode-ai/ui, /core, /sdk) is exported from source, not dist.
+      - name: Verify mermaid rendering (sanitizer + wiring)
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        working-directory: packages/session-ui
+        run: bun run verify:mermaid
 
       # packages/*/dist is gitignored and several @claxedo packages resolve each
       # other through their dist exports, so the suites that import them need

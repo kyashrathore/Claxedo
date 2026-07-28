@@ -16,7 +16,16 @@
  * The decisive assertion is not string matching: every sanitized payload is
  * inserted into a live document and the run fails if any of it executes.
  *
+ * SCOPE — this script assumes the renderer is reached and only asks what happens
+ * to the SVG once it comes back. That assumption was false for the whole life of
+ * the feature: `renderMermaidBlocks` was dead code, no diagram ever rendered, and
+ * this script stayed green throughout, because a sanitizer cannot notice that
+ * nothing calls it. `verify-mermaid-wiring.mjs` covers the other half — that
+ * ```mermaid fences actually reach the renderer. Run both; neither substitutes
+ * for the other.
+ *
  * Run:  bun run packages/session-ui/script/verify-mermaid-svg-sanitizer.mjs
+ * Or:   cd packages/session-ui && bun run verify:mermaid   (runs both)
  * Playwright's browsers and mermaid resolve out of packages/claxedo-app, which is
  * where this repo keeps both.
  */
