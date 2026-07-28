@@ -1,13 +1,19 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   composeHostedControlPlane,
   HostedWorkerCompositionError,
+  sandboxEgressUnenforcedSink,
   sandboxRelayTargetLookup,
 } from "./hosted-services"
+import { composeWorkerSandboxManager } from "./adapters/worker/hosted-compose"
 import { localOnlyAuthAdapter } from "./auth"
 import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
 import type { ControlPlaneServices } from "./services"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import type {
+  SandboxDriver,
+  SandboxEgressUnenforcedEvent,
+  SandboxManager,
+} from "@claxedo/sandbox-manager"
 
 function pullServices(): ControlPlaneServices {
   return {

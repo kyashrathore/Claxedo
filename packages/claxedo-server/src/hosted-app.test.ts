@@ -4,7 +4,13 @@ import { createHostedApp } from "./hosted-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "./control-plane/hosted-services"
 import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import {
+  createSandboxManager,
+  type SandboxDriver,
+  type SandboxDriverEnsureInput,
+  type SandboxManager,
+} from "@claxedo/sandbox-manager"
+import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/hosted-device-auth"
 import {
   configureCliSessionTokenRegistry,
@@ -1459,6 +1465,120 @@ describe("hosted shell boot surface", () => {
     }
     expect(thrown?.message).toMatch(/signed auth is not enabled/)
     expect(thrown?.message).toMatch(/no workspace authority/)
+  })
+
+  /**
+   * Security review 2026-07-27 §6.14, follow-up.
+   *
+   * `HostedWorkspaceRouteOptions.sandboxEgressExtraHosts` is the operator
+   * escape hatch for widening the hosted sandbox egress allowlist, and it was
+   * declared but wired to nothing: an operator had no way to reach it, so a
+   * deployment needing a private registry had to either patch the baseline or
+   * give up on containment. These tests run the env var down the WHOLE path —
+   * plane env → `createHostedApp` → route options → `hostedSandboxNetworkPolicy`
+   * → `SandboxManager.ensure` → the driver — because an assertion on the
+   * composed options object would pass just as happily while the manager or
+   * the policy builder dropped the hosts on the way down.
+   */
+  describe("hosted sandbox egress allowlist", () => {
+    function egressPlane(env: Record<string, string | undefined> = {}) {
+      const seen: SandboxDriverEnsureInput[] = []
+      const driver: SandboxDriver = {
+        // Unique per suite: `createSandboxManager` dedupes its composition-time
+        // egress warning on driver id process-wide.
+        id: "hosted-app-egress-test",
+        ensureHost: vi.fn(async (input: SandboxDriverEnsureInput) => {
+          seen.push(input)
+          return {
+            sandboxId: `sandbox_${input.workspaceId}`,
+            url: `https://runtime.test/${input.workspaceId}`,
+            hostId: `host_${input.workspaceId}`,
+            labels: input.labels,
+          }
+        }),
+        metadata: {
+          driverRunsIn: ["worker"],
+          hostStopBehavior: "suspends-host",
+          hostResumeBehavior: "same-host",
+          targetAccess: "relay",
+          secretBrokering: "native",
+          // Enforcing, so the manager passes `net` down instead of withholding
+          // it — this suite is about the allowlist's CONTENTS.
+          egressControl: "hosts-and-cidrs",
+          persistence: {
+            resume: "same-sandbox",
+            capture: "none",
+            clone: false,
+            captureSource: "not-applicable",
+            retention: "not-applicable",
+            restoreMount: "not-applicable",
+          },
+        },
+      }
+      const plane = fakePlane({
+        sandboxManager: createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }),
+      })
+      plane.env = { ...plane.env, ...env }
+      ;(plane.services.authority as unknown as { createCloudWorkspace: unknown }).createCloudWorkspace = vi.fn(
+        async () => ({ workspace_id: "ignored" }),
+      )
+      // Lease-tenant stamping and the Convex lease counter both reach out; both
+      // swallow their own failures, but no test may touch the network.
+      globalThis.fetch = vi.fn(async () => new Response("{}", { headers: { "content-type": "application/json" } }))
+      return { plane, seen }
+    }
+
+    async function createCloudWorkspace(plane: HostedControlPlane) {
+      const app = createHostedApp(plane, { entitlementGate: async () => undefined })
+      const res = await app.fetch(
+        new Request("http://cp.test/api/workspace/create", {
+          method: "POST",
+          headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
+          body: JSON.stringify({ projectId: "proj_1", repoUrl: "https://github.com/acme/widgets.git" }),
+        }),
+      )
+      // `ensure` is fire-and-forget so a cold start never blocks the response;
+      // let the kicked-off promise settle before asserting on the driver.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      return res
+    }
+
+    test("CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS reaches the driver's allowlist", async () => {
+      const { plane, seen } = egressPlane({
+        // Padded and with an empty entry, because operators write env vars by
+        // hand: trimming and blank-dropping are part of the contract.
+        CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS: " npm.acme.internal , models.acme.internal ,, ",
+      })
+      const res = await createCloudWorkspace(plane)
+
+      expect(res.status).toBe(200)
+      expect(seen).toHaveLength(1)
+      const hosts = seen[0]!.net!.hosts ?? []
+      expect(hosts).toContain("npm.acme.internal")
+      expect(hosts).toContain("models.acme.internal")
+      expect(hosts).not.toContain("")
+      // Widening is ADDITIVE — the reviewed baseline is still there.
+      expect(hosts).toContain("api.anthropic.com")
+      expect(hosts).toContain("github.com")
+      expect(seen[0]!.net!.mode).toBe("restricted")
+    })
+
+    test("unset leaves the reviewed baseline exactly as it is", async () => {
+      // The assertion that fails if the wiring ever defaults to something:
+      // absent config must not widen the allowlist by a single host.
+      const { plane, seen } = egressPlane()
+      const withNothing = egressPlane({ CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS: "  , ," })
+
+      expect((await createCloudWorkspace(plane)).status).toBe(200)
+      expect((await createCloudWorkspace(withNothing.plane)).status).toBe(200)
+
+      expect(withNothing.seen[0]!.net!.hosts).toEqual(seen[0]!.net!.hosts)
+      expect(seen[0]!.net!.mode).toBe("restricted")
+      // Still not a rubber stamp: the exclusions the policy exists for hold.
+      for (const denied of ["storage.googleapis.com", "r2.cloudflarestorage.com", "*.workers.dev"]) {
+        expect(seen[0]!.net!.hosts ?? []).not.toContain(denied)
+      }
+    })
   })
 
   test("unsigned requests never fall through as unsigned-local even if a disabled config reached serving", async () => {

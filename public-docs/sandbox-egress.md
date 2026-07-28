@@ -124,8 +124,17 @@ contains them: general-purpose object storage and CDN wildcards
 create in their own account, so allowlisting one hands back exactly the
 exfiltration channel the policy exists to close.
 
-A deployment that genuinely needs one adds it via `sandboxEgressExtraHosts`, as
-an explicit and auditable decision.
+A deployment that genuinely needs one adds it as an explicit and auditable
+decision, by setting `CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS` on the hosted control
+plane to a comma-separated list of hostnames:
+
+```sh
+CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS=npm.acme.internal,models.acme.internal
+```
+
+That is the operator-facing name for the route option `sandboxEgressExtraHosts`
+(`HostedWorkspaceRouteOptions`), which a custom composition can also set
+directly. Hostnames only; the hosted policy carries no CIDRs.
 
 ## Failure modes and what the manager does
 
@@ -152,11 +161,27 @@ the sandbox has an unmonitored exfiltration path. The requested allowlist
 enforce egress (daytona, vercel) to close it. See public-docs/sandbox-egress.md.
 ```
 
-It goes to `console.warn` by default. To route it into telemetry instead, pass
+It goes to `console.warn` by default. To send it somewhere else, pass
 `onEgressUnenforced` to `createSandboxManager` — it receives a structured
 `SandboxEgressUnenforcedEvent` (`phase`, `driver`, `egressControl`,
 `workspaceId`, `requested`, `message`). Overriding the sink replaces the console
 warning, so only do it if the replacement is at least as visible.
+
+**The hosted control plane already overrides it.** `composeHostedControlPlane`
+keeps the console line *and* emits an ops-plane telemetry event, because a
+`console.warn` inside a Worker isolate only reaches whoever happens to be
+tailing logs at that moment — which is nobody on the day someone switches the
+driver:
+
+| | |
+| --- | --- |
+| Event | `sandbox.egress_unenforced` |
+| `distinct_id` | `system` (ops plane — no org or user identifiers) |
+| Properties | `phase`, `reason`, `driver`, `egress_control`, and on a create: `workspace_id`, `withheld_host_count`, `withheld_cidr_count` |
+
+The allowlist itself is never sent — deployment topology is not ops-plane data,
+so the withheld hosts ride as counts. Alert on `phase = "composition"` to learn
+that a deployment is uncontained *before* its first workspace exists.
 
 ## Related
 
