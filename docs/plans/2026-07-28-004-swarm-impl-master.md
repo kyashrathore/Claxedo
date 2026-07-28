@@ -65,3 +65,5 @@ The CF platform remediation items that don't touch WorkGraph mechanics: relay pr
 ## Progress log
 
 *(Executing agents append: date · WS · PR · DoD items closed · deviations.)*
+
+2026-07-28 · WS-A · https://github.com/kyashrathore/Claxedo/pull/29 · DoD closed: vocabulary gate, required generation fence, backend/consumer parity · Deviation: targeted `swarm/integration` because `origin/dev` lagged the verified integration parent by 81 commits.
