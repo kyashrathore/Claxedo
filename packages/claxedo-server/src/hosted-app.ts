@@ -41,7 +41,7 @@ import { WorkspaceCheckpointRoutes } from "./routes/workspace-checkpoints"
 import { signedOrError } from "./routes/workspace-user-hosted"
 import { HostedDeviceAuthRoutes } from "./routes/hosted-device-auth"
 import { HostedShellRoutes } from "./routes/hosted-shell"
-import { nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
+import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
 import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
 import { HostedControlRoutes } from "./routes/hosted-control"
@@ -299,16 +299,29 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     overrides.attemptTranscriptRetention ?? createHostedSessionTranscriptRetention(plane.env, services)
   const attemptOperationExecutor = createHostedAttemptOperationExecutor({
     env: plane.env,
+    ...(overrides.workGraphExecutor ? { executor: overrides.workGraphExecutor } : {}),
     ...(attemptTranscriptRetention ? { retainTranscript: attemptTranscriptRetention } : {}),
     ...(overrides.workGraphNotifyOwner ? { notifyOwner: overrides.workGraphNotifyOwner } : {}),
     ...(liveSyncRoom
       ? {
           notifyChanged: async (principal: { ownerUserId: string; orgId: string }) => {
-            await nudgeLiveSyncRoom(liveSyncRoom, `org:${principal.orgId}`, {
-              type: "workgraph.changed",
-              ownerUserId: principal.ownerUserId,
-              ts: Date.now(),
-            }).catch((error) => {
+            // Room by the WorkGraph tenant's org: `principal.orgId` is the
+            // authority-internal org id carried by the runtime access token —
+            // the SAME namespace subscriber rooms are keyed with (the hosted
+            // events route resolves `authority.resolveOrgId` at connect), so
+            // this nudge reaches every member held in the tenant's room,
+            // including subscribers connected with an active-org Clerk token.
+            // `eventVisibleTo` narrows the subject-keyed event to the owner's
+            // own connections inside the shared room.
+            await nudgeLiveSyncRoom(
+              liveSyncRoom,
+              liveSyncRoomNameForPrincipal({ ownerUserId: principal.ownerUserId, orgId: principal.orgId }),
+              {
+                type: "workgraph.changed",
+                ownerUserId: principal.ownerUserId,
+                ts: Date.now(),
+              },
+            ).catch((error) => {
               console.error("[claxedo-server] WARN  hosted agent workgraph.changed nudge failed:", error)
             })
           },
@@ -459,6 +472,10 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
       ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
       ...(liveSyncRoom ? { liveSyncRoom } : {}),
+      // The events route resolves the caller's AUTHORITY-INTERNAL org id at
+      // connect so subscriber rooms + visibility share the namespace every
+      // publisher stamps (documents/provision events, runtime-token claims).
+      ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       activateOwner: ownerActivationWithTelemetry(services.telemetry, workGraphOwnerActivation),
     }),
   )
@@ -493,7 +510,16 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ...(services.authority ? { authority: services.authority } : {}),
       ...(liveSyncRoom
         ? {
-            documentChangedSink: (event) => nudgeLiveSyncRoom(liveSyncRoom, `org:${event.orgId}`, event),
+            // Shared derivation + validation so this sink can never nudge an
+            // `org:undefined`-style room the subscriber would not be held in.
+            // `event.orgId` is the authority-internal org id (documents routes
+            // scope by `authority.resolveOrgId`) — the SAME namespace the
+            // hosted events route keys subscriber rooms with and
+            // `eventVisibleTo` compares, so this frame reaches every signed
+            // subscriber held in the document's org room. CAS-at-write remains
+            // the correctness floor; this doorbell is freshness.
+            documentChangedSink: (event) =>
+              nudgeLiveSyncRoom(liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId: event.orgId }), event),
           }
         : {}),
     }),

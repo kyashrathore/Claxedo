@@ -8,7 +8,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-  type ControlPlaneAuthContext,
+  type SignedControlPlaneAuth,
 } from "../control-plane/auth"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 
@@ -16,7 +16,7 @@ import { isLoopbackLocalRequest } from "./local-only-projection"
 // module so the hosted `LiveSyncRoom` Durable Object can share the exact same
 // scoping. Re-exported here for back-compat (events.test.ts imports it).
 export { eventVisibleTo } from "./event-visibility"
-import { eventVisibleTo } from "./event-visibility"
+import { eventScopePrincipal, eventVisibleTo, type EventScopePrincipal } from "./event-visibility"
 import { isTerminalClaxedoEvent } from "./event-retention"
 
 /**
@@ -55,16 +55,21 @@ export type EventsHandlerOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   allowLoopbackLocal?: boolean
+  /**
+   * Resolves the caller's AUTHORITY-INTERNAL org id (`authority.resolveOrgId`)
+   * at connect time — the namespace `document.changed`/`provision` events are
+   * stamped with, so signed subscribers can receive them. The Clerk org claim
+   * is deliberately never used here (disjoint namespace). Absent (no authority
+   * composed) → signed subscribers see subject-keyed events only, fail-closed.
+   */
+  resolveOrgId?: (auth: SignedControlPlaneAuth) => Promise<string>
   /** Injectable for tests; production always reads the process-global bus. */
   bus?: ClaxedoEventBus
 }
 
 // Loopback requests bypass bearer auth (single-user desktop mode); model them
 // as unsigned-local so the visibility predicate passes everything through.
-const LOOPBACK_AUTH: ControlPlaneAuthContext = {
-  mode: "unsigned-local",
-  reason: "loopback local request",
-}
+const LOOPBACK_PRINCIPAL: EventScopePrincipal = { mode: "unsigned-local" }
 
 /**
  * `/api/claxedo/events` — the central control-plane bus stream.
@@ -158,13 +163,20 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
     // defense-in-depth for compositions that mount this handler directly.
     try {
       if (options.allowLoopbackLocal && isLoopbackLocalRequest(c.req.raw)) {
-        return streamClaxedoEvents(c, LOOPBACK_AUTH, bus, replay)
+        return streamClaxedoEvents(c, LOOPBACK_PRINCIPAL, bus, replay)
       }
       const ctx = await controlPlaneAuthContext(c.req.raw, {
         ...(options.authConfig ? { config: options.authConfig } : {}),
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
-      return streamClaxedoEvents(c, ctx, bus, replay)
+      // Resolve the internal org id ONCE per connection (not per event/frame).
+      // A resolution failure fails the connect — the client's reconnect loop
+      // retries — rather than silently degrading to a principal whose org
+      // events would strand until the next reconnect anyway.
+      const orgId = ctx.mode === "signed" && options.resolveOrgId
+        ? await options.resolveOrgId(ctx)
+        : undefined
+      return streamClaxedoEvents(c, eventScopePrincipal(ctx, orgId), bus, replay)
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -176,7 +188,7 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
 
 function streamClaxedoEvents(
   c: Context,
-  ctx: ControlPlaneAuthContext,
+  principal: EventScopePrincipal,
   bus: ClaxedoEventBus,
   replay: SseReplayBuffer<StreamFrame>,
 ) {
@@ -192,7 +204,7 @@ function streamClaxedoEvents(
       if (frame === heartbeat) return true
       if (!("type" in frame)) return true
       if (frame.type === "stream.replay-gap") return true
-      return eventVisibleTo(ctx, frame)
+      return eventVisibleTo(principal, frame)
     }
 
     await stream

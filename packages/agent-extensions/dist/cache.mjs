@@ -35,6 +35,9 @@ var AgentExtensionCacheError = class extends Error {
 function agentExtensionCacheRoot(input) {
   return path.join(input.dataRoot, "agent-extensions", "cache");
 }
+function agentExtensionStateCacheRoot(input) {
+  return path.join(input.stateRoot, "cache");
+}
 function safeSha(input) {
   if (!/^[A-Fa-f0-9]{7,64}$/.test(input)) throw new AgentExtensionCacheError("resolved SHA must be a hex string");
   return input.toLowerCase();
@@ -116,6 +119,7 @@ async function copyPackageToCache(input) {
 export {
   AgentExtensionCacheError,
   agentExtensionCacheRoot,
+  agentExtensionStateCacheRoot,
   cachePackageRoot,
   copyPackageToCache,
   digestDirectory

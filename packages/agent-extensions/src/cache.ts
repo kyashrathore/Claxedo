@@ -14,6 +14,14 @@ export function agentExtensionCacheRoot(input: { dataRoot: string }) {
   return path.join(input.dataRoot, "agent-extensions", "cache")
 }
 
+// Runtime replays fetch packages they cannot resolve elsewhere into a cache
+// under the Agent Extension state root (replay.ts). Kept beside
+// agentExtensionCacheRoot because materialization's symlink-adoption check
+// derives the recognizable generated-cache layouts from these two builders.
+export function agentExtensionStateCacheRoot(input: { stateRoot: string }) {
+  return path.join(input.stateRoot, "cache")
+}
+
 function safeSha(input: string) {
   if (!/^[A-Fa-f0-9]{7,64}$/.test(input)) throw new AgentExtensionCacheError("resolved SHA must be a hex string")
   return input.toLowerCase()

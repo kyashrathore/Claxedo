@@ -16,10 +16,15 @@ beforeAll(async () => {
         // room: rooms are durable for the lifetime of the miniflare instance,
         // so a shared one would carry the previous test's held sockets and id
         // sequence into the next.
-        const auth = (subject, orgId) => ({
-          mode: "signed",
-          token: "test",
-          user: { subject, tokenIdentifier: subject, issuer: "test", orgId },
+        // orgId is the AUTHORITY-INTERNAL org id resolved at connect — the
+        // namespace publishers stamp — not the Clerk claim on the auth.
+        const subscriber = (subject, orgId) => ({
+          auth: {
+            mode: "signed",
+            token: "test",
+            user: { subject, tokenIdentifier: subject, issuer: "test" },
+          },
+          orgId,
         })
         export default {
           fetch(request, env) {
@@ -28,7 +33,7 @@ beforeAll(async () => {
             if (url.pathname === "/connect") {
               const subject = url.searchParams.get("as") ?? "alice"
               const lastEventId = request.headers.get("last-event-id") ?? undefined
-              return connectLiveSyncRoom(env.LIVE_SYNC_ROOM, auth(subject, org), 60000, undefined, lastEventId)
+              return connectLiveSyncRoom(env.LIVE_SYNC_ROOM, subscriber(subject, org), 60000, undefined, lastEventId)
             }
             if (url.pathname === "/nudge") return nudgeLiveSyncRoom(env.LIVE_SYNC_ROOM, "org:" + org, {
               type: "workgraph.changed",

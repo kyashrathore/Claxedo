@@ -693,13 +693,16 @@ describe("hosted WorkGraph composition", () => {
 
     expect(response.status).toBe(200)
     await Promise.all(pending)
-    // Room name is keyed off the SIGNED Clerk claims (orgId "clerk_org_a" from the
-    // verifier), matching how the events route holds the client's SSE stream. The
-    // event's ownerUserId is the Clerk subject so the room's per-connection
-    // eventVisibleTo narrows it to the right user inside the shared org room.
+    // Room name is keyed off the AUTHORITY-INTERNAL org id the context already
+    // resolved (`authority.resolveOrgId` → "org_internal_a"), matching how the
+    // hosted events route keys the room the client's SSE stream is held in.
+    // The Clerk org claim ("clerk_org_a" from the verifier) is a disjoint
+    // namespace and must never name the room. The event's ownerUserId is the
+    // Clerk subject so the room's per-connection eventVisibleTo narrows it to
+    // the right user inside the shared org room.
     expect(nudges).toEqual([
       {
-        room: "org:clerk_org_a",
+        room: "org:org_internal_a",
         event: { type: "workgraph.changed", ownerUserId: "user_a", ts: expect.any(Number) },
       },
     ])

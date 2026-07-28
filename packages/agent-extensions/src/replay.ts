@@ -3,12 +3,14 @@ import crypto from "crypto"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { agentExtensionStateCacheRoot } from "./cache"
 import { withAgentExtensionStateLock, writeFileAtomic } from "./fs-safe"
 import {
   AgentExtensionIntegrityError,
   verifyPackageIntegrity,
   type PackageIntegrityLock,
 } from "./integrity"
+import { agentExtensionStateRoot } from "./state"
 import { materializeAgentExtensionSnapshot, type AgentExtensionMaterializationInstall } from "./materialize"
 import { FIRST_PARTY_AGENT_EXTENSIONS_DIR } from "./types"
 import { githubRepoUrl } from "./fetch"
@@ -288,7 +290,7 @@ async function packageRoots(input: {
 
 async function applyRuntimeAgentExtensionsNow(input: RuntimeAgentExtensions | undefined, projectDir = projectDirDefault(), options: ReplayOptions = {}) {
   if (!input) return
-  const root = options.stateRoot ?? path.join(projectDir, ".agent-extensions")
+  const root = options.stateRoot ?? agentExtensionStateRoot({ scope: "project", projectDir })
   await withAgentExtensionStateLock(root, async () => {
     const installs = input.installs
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false)
@@ -309,7 +311,7 @@ async function applyRuntimeAgentExtensionsNow(input: RuntimeAgentExtensions | un
       packageRoots: await packageRoots({
         installs: enabledInstalls,
         projectDir,
-        cacheRoot: path.join(root, "cache"),
+        cacheRoot: agentExtensionStateCacheRoot({ stateRoot: root }),
         execFile: options.execFile ?? execFileDefault,
         tempRoot: options.tempRoot ?? os.tmpdir(),
         ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),

@@ -3,11 +3,13 @@ import {
   LiveSyncRoom,
   connectLiveSyncRoom,
   liveSyncRoomName,
+  liveSyncRoomNameForPrincipal,
   nudgeLiveSyncRoom,
-  roomAuthFromHeaders,
+  roomPrincipalFromHeaders,
   type LiveSyncRoomNamespace,
   type LiveSyncRoomState,
   type LiveSyncSocket,
+  type LiveSyncSubscriber,
 } from "./live-sync-room"
 import type { ClaxedoEvent } from "./bus"
 import type { ControlPlaneAuthContext } from "./control-plane/auth"
@@ -125,15 +127,32 @@ function createHibernatingNamespace() {
   }
 }
 
-const signed = (subject: string, orgId?: string): ControlPlaneAuthContext => ({
+const signedAuth = (subject: string, clerkOrgId?: string): ControlPlaneAuthContext => ({
   mode: "signed",
   token: "t",
-  user: { subject, tokenIdentifier: subject, issuer: "iss", ...(orgId ? { orgId } : {}) },
+  user: { subject, tokenIdentifier: subject, issuer: "iss", ...(clerkOrgId ? { orgId: clerkOrgId } : {}) },
+})
+
+// A resolved subscriber: `orgId` is the AUTHORITY-INTERNAL org id
+// (`authority.resolveOrgId` output), the namespace rooms are keyed with —
+// deliberately DIFFERENT-looking from any Clerk `org_...` claim in these tests
+// so a regression back to the claims namespace cannot pass by coincidence.
+const subscriber = (subject: string, internalOrgId?: string): LiveSyncSubscriber => ({
+  auth: signedAuth(subject),
+  ...(internalOrgId ? { orgId: internalOrgId } : {}),
 })
 
 const workgraphChanged = (ownerUserId: string): ClaxedoEvent => ({
   type: "workgraph.changed",
   ownerUserId,
+  ts: Date.now(),
+})
+
+const documentChanged = (orgId: string): ClaxedoEvent => ({
+  type: "document.changed",
+  documentId: "doc_1",
+  orgId,
+  projectId: "proj_1",
   ts: Date.now(),
 })
 
@@ -231,15 +250,15 @@ const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ClaxedoE
 describe("LiveSyncRoom — fan-out core (W5.1)", () => {
   test("hibernatable sockets survive room reconstruction while the public response remains SSE", async () => {
     const namespace = createHibernatingNamespace()
-    const response = await connectLiveSyncRoom(namespace, signed("alice", "acme"), 60_000)
+    const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
     const reader = response.body!.getReader()
     expect(response.headers.get("content-type")).toBe("text/event-stream")
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
-    expect(namespace.instances.get("org:acme")!.size).toBe(1)
+    expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(1)
 
-    const reconstructed = namespace.evict("org:acme")
+    const reconstructed = namespace.evict("org:org_internal_acme")
     const event = workgraphChanged("alice")
-    expect(await nudgeLiveSyncRoom(namespace, "org:acme", event)).toEqual({ delivered: 1, held: 1 })
+    expect(await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)).toEqual({ delivered: 1, held: 1 })
     expect(await readFrame(reader)).toEqual(event)
     expect(reconstructed.size).toBe(1)
     await reader.cancel()
@@ -259,7 +278,7 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
     const namespace = createHibernatingNamespace()
     const response = await connectLiveSyncRoom(
       namespace,
-      signed("alice", "acme"),
+      subscriber("alice", "org_internal_acme"),
       1,
       async () => {
         throw new Error("bearer expired")
@@ -268,33 +287,33 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
     await expect(reader.read()).rejects.toThrow("bearer expired")
-    expect(namespace.instances.get("org:acme")!.size).toBe(0)
+    expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
   })
 
   test("closes a stalled SSE bridge before its queue can grow without bound", async () => {
     const namespace = createHibernatingNamespace()
-    const response = await connectLiveSyncRoom(namespace, signed("alice", "acme"), 60_000)
+    const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
     const reader = response.body!.getReader()
     for (const _ of Array.from({ length: 40 })) {
-      await nudgeLiveSyncRoom(namespace, "org:acme", workgraphChanged("alice"))
+      await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", workgraphChanged("alice"))
     }
     await expect(reader.read()).rejects.toThrow("too slow")
-    expect(namespace.instances.get("org:acme")!.size).toBe(0)
+    expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
   })
 
   test("N connections held by one room all receive a nudge; another owner's room does not", async () => {
     const namespace = createFakeNamespace()
-    const alice = signed("alice", "acme")
-    const bob = signed("bob", "beta")
+    const alice = subscriber("alice", "org_internal_acme")
+    const bob = subscriber("bob", "org_internal_beta")
 
-    // Alice opens 3 connections; all land in the SAME room (org:acme).
+    // Alice opens 3 connections; all land in the SAME room (org:org_internal_acme).
     const aliceConns = await Promise.all([
       connectLiveSyncRoom(namespace, alice, 60_000),
       connectLiveSyncRoom(namespace, alice, 60_000),
       connectLiveSyncRoom(namespace, alice, 60_000),
     ])
-    expect(liveSyncRoomName(alice)).toBe("org:acme")
-    expect(namespace.instances.get("org:acme")!.size).toBe(3)
+    expect(liveSyncRoomName(alice)).toBe("org:org_internal_acme")
+    expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(3)
 
     const aliceReaders = aliceConns.map((res) => {
       expect(res.headers.get("Content-Type")).toBe("text/event-stream")
@@ -305,23 +324,23 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
       expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
     }
 
-    // Bob opens 1 connection in a DIFFERENT room (org:beta).
+    // Bob opens 1 connection in a DIFFERENT room (org:org_internal_beta).
     const bobRes = await connectLiveSyncRoom(namespace, bob, 60_000)
     const bobReader = bobRes.body!.getReader()
     expect(await readFrame(bobReader)).toEqual({ type: "heartbeat" })
 
     // Nudge Alice's room. All 3 of Alice's connections get it.
     const event = workgraphChanged("alice")
-    const result = await nudgeLiveSyncRoom(namespace, "org:acme", event)
+    const result = await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)
     expect(result).toEqual({ delivered: 3, held: 3 })
     for (const reader of aliceReaders) {
       expect(await readFrame(reader)).toEqual(event)
     }
 
-    // Bob's room is untouched by Alice's nudge: nudging org:beta with a
-    // workgraph event for bob delivers to bob only, never to Alice.
+    // Bob's room is untouched by Alice's nudge: nudging org:org_internal_beta
+    // with a workgraph event for bob delivers to bob only, never to Alice.
     const bobEvent = workgraphChanged("bob")
-    const bobResult = await nudgeLiveSyncRoom(namespace, "org:beta", bobEvent)
+    const bobResult = await nudgeLiveSyncRoom(namespace, "org:org_internal_beta", bobEvent)
     expect(bobResult).toEqual({ delivered: 1, held: 1 })
     expect(await readFrame(bobReader)).toEqual(bobEvent)
   })
@@ -329,10 +348,10 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
   test("per-connection eventVisibleTo filters an owner-scoped event to the wrong subject", async () => {
     const namespace = createFakeNamespace()
     // Two DIFFERENT users in the SAME org share the org room.
-    const alice = signed("alice", "acme")
-    const carol = signed("carol", "acme")
-    expect(liveSyncRoomName(alice)).toBe("org:acme")
-    expect(liveSyncRoomName(carol)).toBe("org:acme")
+    const alice = subscriber("alice", "org_internal_acme")
+    const carol = subscriber("carol", "org_internal_acme")
+    expect(liveSyncRoomName(alice)).toBe("org:org_internal_acme")
+    expect(liveSyncRoomName(carol)).toBe("org:org_internal_acme")
 
     const aliceRes = await connectLiveSyncRoom(namespace, alice, 60_000)
     const carolRes = await connectLiveSyncRoom(namespace, carol, 60_000)
@@ -344,16 +363,40 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
     // A workgraph.changed for alice is owner-scoped: only alice's connection
     // receives it even though both share the org room.
     const event = workgraphChanged("alice")
-    const result = await nudgeLiveSyncRoom(namespace, "org:acme", event)
+    const result = await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)
     expect(result).toEqual({ delivered: 1, held: 2 })
     expect(await readFrame(aliceReader)).toEqual(event)
+  })
+
+  test("an org-scoped document.changed fans to every member of the org room", async () => {
+    const namespace = createFakeNamespace()
+    const alice = subscriber("alice", "org_internal_acme")
+    const carol = subscriber("carol", "org_internal_acme")
+    const aliceRes = await connectLiveSyncRoom(namespace, alice, 60_000)
+    const carolRes = await connectLiveSyncRoom(namespace, carol, 60_000)
+    const aliceReader = aliceRes.body!.getReader()
+    const carolReader = carolRes.body!.getReader()
+    expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
+    expect(await readFrame(carolReader)).toEqual({ type: "heartbeat" })
+
+    // The event's orgId is the authority-internal id — the same value the
+    // subscribers resolved at connect — so BOTH members receive the frame.
+    const event = documentChanged("org_internal_acme")
+    const result = await nudgeLiveSyncRoom(
+      namespace,
+      liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" }),
+      event,
+    )
+    expect(result).toEqual({ delivered: 2, held: 2 })
+    expect(await readFrame(aliceReader)).toEqual(event)
+    expect(await readFrame(carolReader)).toEqual(event)
   })
 
   test("cancelling the client stream drops the held connection", async () => {
     const room = new LiveSyncRoom({}, {})
     const res = await room.fetch(
       new Request("https://live-sync-room.internal/connect", {
-        headers: { "x-livesync-mode": "signed", "x-livesync-subject": "alice", "x-livesync-org": "acme" },
+        headers: { "x-livesync-mode": "signed", "x-livesync-subject": "alice", "x-livesync-org": "org_internal_acme" },
       }),
     )
     expect(room.size).toBe(1)
@@ -363,29 +406,113 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
 
   test("nudged frames carry an `id:` line so the reader builds a cursor", async () => {
     const namespace = createHibernatingNamespace()
-    const response = await connectLiveSyncRoom(namespace, signed("alice", "acme"), 60_000)
+    const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
 
-    await nudgeLiveSyncRoom(namespace, "org:acme", workgraphChanged("alice"))
+    await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", workgraphChanged("alice"))
     expect(await readSseFrame(reader)).toMatchObject({ id: "1", data: { type: "workgraph.changed" } })
     await reader.cancel()
   })
 
-  test("roomAuthFromHeaders / liveSyncRoomName cover signed-no-org and unsigned-local", () => {
-    expect(liveSyncRoomName(signed("dave"))).toBe("owner:dave")
-    expect(liveSyncRoomName({ mode: "unsigned-local", reason: "x" })).toBe("owner:local")
+  test("roomPrincipalFromHeaders / liveSyncRoomName cover signed-no-org and unsigned-local", () => {
+    expect(liveSyncRoomName(subscriber("dave"))).toBe("owner:dave")
+    expect(liveSyncRoomName({ auth: { mode: "unsigned-local", reason: "x" } })).toBe("owner:local")
 
-    const signedAuth = roomAuthFromHeaders(
+    const signedPrincipal = roomPrincipalFromHeaders(
       new Headers({ "x-livesync-mode": "signed", "x-livesync-subject": "dave" }),
     )
-    expect(signedAuth).toEqual({
-      mode: "signed",
-      token: "",
-      user: { subject: "dave", tokenIdentifier: "dave", issuer: "" },
+    expect(signedPrincipal).toEqual({ mode: "signed", subject: "dave" })
+    const orgPrincipal = roomPrincipalFromHeaders(
+      new Headers({ "x-livesync-mode": "signed", "x-livesync-subject": "dave", "x-livesync-org": "org_internal_acme" }),
+    )
+    expect(orgPrincipal).toEqual({ mode: "signed", subject: "dave", orgId: "org_internal_acme" })
+    const localPrincipal = roomPrincipalFromHeaders(new Headers({ "x-livesync-mode": "unsigned-local" }))
+    expect(localPrincipal).toEqual({ mode: "unsigned-local" })
+  })
+
+  test("the subscriber's room is keyed by the RESOLVED internal org id, never the Clerk claim", () => {
+    // The regression this pins: the auth context carries the Clerk `org_...`
+    // claim, a DISJOINT namespace from the internal org id every publisher
+    // stamps. The room name must come from the resolved internal id; a Clerk
+    // claim on the auth must not leak into the derivation.
+    const withClerkClaim: LiveSyncSubscriber = {
+      auth: signedAuth("alice", "org_2clerkabc"),
+      orgId: "org_internal_acme",
+    }
+    expect(liveSyncRoomName(withClerkClaim)).toBe("org:org_internal_acme")
+
+    // No resolved internal id (no authority composed) → subject-keyed owner
+    // room, even when the Clerk claim is present.
+    expect(liveSyncRoomName({ auth: signedAuth("alice", "org_2clerkabc") })).toBe("owner:alice")
+  })
+})
+
+describe("live-sync room-name derivation — publisher/subscriber agreement (W5.4)", () => {
+  test("publisher helper agrees with the subscriber for a signed caller WITHOUT a resolved org", () => {
+    // The regression this pins: a publisher hand-composing `org:${orgId}` for a
+    // caller whose SSE stream is held in `owner:<subject>` strands the frame in
+    // a room nobody joined. Publisher-side derivation must match the room the
+    // subscriber (`connectLiveSyncRoom` via `liveSyncRoomName`) is held in.
+    expect(liveSyncRoomNameForPrincipal({ ownerUserId: "dave" })).toBe("owner:dave")
+    expect(liveSyncRoomNameForPrincipal({ ownerUserId: "dave" })).toBe(liveSyncRoomName(subscriber("dave")))
+  })
+
+  test("publisher helper agrees with the subscriber for a caller WITH a resolved org", () => {
+    // Both sides carry the AUTHORITY-INTERNAL org id: the publisher from its
+    // tenant identity (runtime-token claims / settlement tenant / event stamp),
+    // the subscriber from `authority.resolveOrgId` at connect.
+    expect(liveSyncRoomNameForPrincipal({ ownerUserId: "alice", orgId: "org_internal_acme" })).toBe(
+      "org:org_internal_acme",
+    )
+    expect(liveSyncRoomNameForPrincipal({ ownerUserId: "alice", orgId: "org_internal_acme" })).toBe(
+      liveSyncRoomName(subscriber("alice", "org_internal_acme")),
+    )
+  })
+
+  test("a helper-derived nudge reaches the held stream of a signed-no-org subscriber", async () => {
+    const namespace = createFakeNamespace()
+    const response = await connectLiveSyncRoom(namespace, subscriber("dave"), 60_000)
+    const reader = response.body!.getReader()
+    expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
+
+    const event = workgraphChanged("dave")
+    const result = await nudgeLiveSyncRoom(namespace, liveSyncRoomNameForPrincipal({ ownerUserId: "dave" }), event)
+    expect(result).toEqual({ delivered: 1, held: 1 })
+    expect(await readFrame(reader)).toEqual(event)
+    await reader.cancel()
+  })
+
+  test("the helper refuses identity material that cannot name a real room", () => {
+    expect(() => liveSyncRoomNameForPrincipal({})).toThrow("owner subject is invalid")
+    expect(() => liveSyncRoomNameForPrincipal({ ownerUserId: "" })).toThrow("owner subject is invalid")
+    expect(() => liveSyncRoomNameForPrincipal({ ownerUserId: "undefined" })).toThrow("owner subject is invalid")
+    expect(() => liveSyncRoomNameForPrincipal({ ownerUserId: "dave", orgId: "" })).toThrow("org id is invalid")
+    expect(() => liveSyncRoomNameForPrincipal({ ownerUserId: "dave", orgId: "undefined" })).toThrow("org id is invalid")
+  })
+
+  test("nudgeLiveSyncRoom rejects hand-composed room names with a broken segment before touching the namespace", async () => {
+    const gets: unknown[] = []
+    const namespace: LiveSyncRoomNamespace = {
+      idFromName: (name: string) => name,
+      get(id) {
+        gets.push(id)
+        return { fetch: async () => Response.json({ delivered: 0, held: 0 }) }
+      },
+    }
+    for (const roomName of ["org:undefined", "org:null", "org:", "org: ", "owner:", "workspace:w1", ""]) {
+      await expect(nudgeLiveSyncRoom(namespace, roomName, workgraphChanged("dave"))).rejects.toThrow(
+        "live-sync room name is invalid",
+      )
+    }
+    expect(gets).toEqual([])
+
+    // Well-formed names still pass through to the namespace untouched.
+    await expect(nudgeLiveSyncRoom(namespace, "owner:dave", workgraphChanged("dave"))).resolves.toEqual({
+      delivered: 0,
+      held: 0,
     })
-    const localAuth = roomAuthFromHeaders(new Headers({ "x-livesync-mode": "unsigned-local" }))
-    expect(localAuth.mode).toBe("unsigned-local")
+    expect(gets).toEqual(["owner:dave"])
   })
 })
 

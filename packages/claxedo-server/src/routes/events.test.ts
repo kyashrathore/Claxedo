@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { Hono } from "hono"
 import { eventsHandler, eventVisibleTo } from "./events"
+import { eventScopePrincipal, type EventScopePrincipal } from "./event-visibility"
 import {
   ControlPlaneAuthError,
   type ControlPlaneAuthConfig,
@@ -108,18 +109,16 @@ describe("eventsHandler — auth gate (rubric S1)", () => {
 // `ownerUserId`/`orgId` on bus events are enforced server-side, not left as
 // client-side routing hints.
 
-const signedAs = (subject: string, orgId?: string): ControlPlaneAuthContext => ({
+// Subscriber principals carry the AUTHORITY-INTERNAL org id resolved at
+// connect (`authority.resolveOrgId`), matching the namespace events are
+// stamped with — never the Clerk org claim.
+const signedAs = (subject: string, internalOrgId?: string): EventScopePrincipal => ({
   mode: "signed",
-  token: "test-token",
-  user: {
-    subject,
-    tokenIdentifier: `https://example.clerk.dev|${subject}`,
-    issuer: "https://example.clerk.dev",
-    ...(orgId ? { orgId } : {}),
-  },
+  subject,
+  ...(internalOrgId ? { orgId: internalOrgId } : {}),
 })
 
-const unsignedLocal: ControlPlaneAuthContext = { mode: "unsigned-local", reason: "test" }
+const unsignedLocal: EventScopePrincipal = { mode: "unsigned-local" }
 
 describe("eventVisibleTo — per-event authorization", () => {
   test("workgraph.changed is visible only to its owner", () => {
@@ -132,28 +131,54 @@ describe("eventVisibleTo — per-event authorization", () => {
     const event = {
       type: "document.changed",
       documentId: "doc-1",
-      orgId: "org_x",
+      orgId: "org_internal_x",
       projectId: "proj-1",
       ts: 1,
     } as const
-    expect(eventVisibleTo(signedAs("user_a", "org_x"), event)).toBe(true)
-    expect(eventVisibleTo(signedAs("user_b", "org_y"), event)).toBe(false)
-    // No org claim on the token → no org-scoped events.
+    expect(eventVisibleTo(signedAs("user_a", "org_internal_x"), event)).toBe(true)
+    expect(eventVisibleTo(signedAs("user_b", "org_internal_y"), event)).toBe(false)
+    // No resolved org on the principal → no org-scoped events, fail-closed.
     expect(eventVisibleTo(signedAs("user_c"), event)).toBe(false)
   })
 
   test("provision is visible only within its org; org-less events stay local-only", () => {
-    const scoped = { type: "provision", workspaceId: "ws-1", orgId: "org_x", step: "ready", ts: 1 } as const
-    expect(eventVisibleTo(signedAs("user_a", "org_x"), scoped)).toBe(true)
-    expect(eventVisibleTo(signedAs("user_b", "org_y"), scoped)).toBe(false)
+    const scoped = { type: "provision", workspaceId: "ws-1", orgId: "org_internal_x", step: "ready", ts: 1 } as const
+    expect(eventVisibleTo(signedAs("user_a", "org_internal_x"), scoped)).toBe(true)
+    expect(eventVisibleTo(signedAs("user_b", "org_internal_y"), scoped)).toBe(false)
 
     const orgless = { type: "provision", workspaceId: "ws-2", step: "ready", ts: 1 } as const
-    expect(eventVisibleTo(signedAs("user_a", "org_x"), orgless)).toBe(false)
+    expect(eventVisibleTo(signedAs("user_a", "org_internal_x"), orgless)).toBe(false)
     expect(eventVisibleTo(unsignedLocal, orgless)).toBe(true)
   })
 
+  test("eventScopePrincipal never leaks the Clerk org claim into the org identity", () => {
+    // The namespace-split regression this pins: the auth context's `orgId` is
+    // the Clerk `org_...` claim — a DISJOINT namespace from the internal org
+    // id events are stamped with. The principal constructor must only carry an
+    // org identity that was explicitly resolved through the authority.
+    const auth: ControlPlaneAuthContext = {
+      mode: "signed",
+      token: "test-token",
+      user: {
+        subject: "user_a",
+        tokenIdentifier: "https://example.clerk.dev|user_a",
+        issuer: "https://example.clerk.dev",
+        orgId: "org_2clerkclaim",
+      },
+    }
+    // No resolved org → NO org identity, even though the Clerk claim is set.
+    expect(eventScopePrincipal(auth)).toEqual({ mode: "signed", subject: "user_a" })
+    // The resolved internal id — not the claim — becomes the org identity.
+    expect(eventScopePrincipal(auth, "org_internal_x")).toEqual({
+      mode: "signed",
+      subject: "user_a",
+      orgId: "org_internal_x",
+    })
+    expect(eventScopePrincipal({ mode: "unsigned-local", reason: "test" })).toEqual({ mode: "unsigned-local" })
+  })
+
   test("unscoped event types are default-denied to signed subscribers", () => {
-    const signed = signedAs("user_a", "org_x")
+    const signed = signedAs("user_a", "org_internal_x")
     // Content-bearing runtime events: the original leak. `tail`, `prompt`,
     // and `lastAssistantMessage` are real terminal/agent content.
     expect(eventVisibleTo(signed, { type: "pty.stream", id: "p1", kind: "data", tail: "secret output" })).toBe(false)
@@ -220,6 +245,65 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
 
     expect(received).toContain("user_a")
     expect(received).not.toContain("user_b")
+  }, 10_000)
+
+  test("a signed subscriber receives document.changed for the org resolved at connect", async () => {
+    // Regression for the org-identity namespace split: document.changed frames
+    // are stamped with the AUTHORITY-INTERNAL org id, so the subscriber's org
+    // identity must come from `resolveOrgId` at connect — with only the Clerk
+    // claim these frames were invisible to every signed subscriber.
+    const app = mountHandler({
+      authConfig: baseConfig,
+      verifier: async () => ({
+        mode: "signed",
+        user: {
+          subject: "user_a",
+          tokenIdentifier: "https://example.clerk.dev|user_a",
+          issuer: "https://example.clerk.dev",
+          // The Clerk claim (disjoint namespace) must play no part in scoping.
+          orgId: "org_2clerkclaim",
+        },
+      }),
+      resolveOrgId: async () => "org_internal_x",
+    })
+
+    const ac = new AbortController()
+    const res = await app.request("/api/claxedo/events", {
+      headers: { authorization: "Bearer valid-token" },
+      signal: ac.signal,
+    })
+    expect(res.status).toBe(200)
+    const reader = res.body!.getReader()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    // Another org's frame first: with a broken filter it would arrive before
+    // the subscriber's own org frame below.
+    claxedoBus.publish({
+      type: "document.changed",
+      documentId: "doc_other",
+      orgId: "org_internal_y",
+      projectId: "proj_1",
+      ts: 1,
+    })
+    claxedoBus.publish({
+      type: "document.changed",
+      documentId: "doc_mine",
+      orgId: "org_internal_x",
+      projectId: "proj_1",
+      ts: 2,
+    })
+
+    const decoder = new TextDecoder()
+    let received = ""
+    while (!received.includes("doc_mine")) {
+      const { value, done } = await reader.read()
+      if (done) break
+      received += decoder.decode(value, { stream: true })
+    }
+    ac.abort()
+
+    expect(received).toContain("doc_mine")
+    expect(received).not.toContain("doc_other")
   }, 10_000)
 })
 

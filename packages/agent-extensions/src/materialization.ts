@@ -1,7 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
+import { agentExtensionCacheRoot, agentExtensionStateCacheRoot } from "./cache"
 import { readFileIfExists, writeFileAtomic } from "./fs-safe"
-import { AgentExtensionStateError } from "./state"
+import { AgentExtensionStateError, agentExtensionStateRoot } from "./state"
 import type { PackageSource, HarnessTarget } from "./types"
 
 /**
@@ -143,12 +144,25 @@ async function sameRealPath(a: string, b: string) {
   return !!left && left === right
 }
 
+// Generated cache packages live in one of two real layouts:
+// - host installs:   <dataRoot>/agent-extensions/cache/<sha>/<packagePath>
+// - runtime replays: <projectDir>/.agent-extensions/cache/<sha>/<packagePath>
+// The markers are derived from the builders that create those directories
+// (cache.ts / state.ts), so this matcher cannot drift from the on-disk layout.
+const sentinelRoot = path.sep
+const GENERATED_CACHE_ROOT_MARKERS = [
+  agentExtensionCacheRoot({ dataRoot: sentinelRoot }),
+  agentExtensionStateCacheRoot({ stateRoot: agentExtensionStateRoot({ scope: "project", projectDir: sentinelRoot }) }),
+].map((root) => path.relative(sentinelRoot, root).split(path.sep))
+
 function agentExtensionCacheKey(input: string) {
   const parts = path.resolve(input).split(path.sep)
-  const root = parts.findIndex((part, index) =>
-    part === ".agent-extensions" && parts[index + 1] === "cache"
-  )
-  return root === -1 ? undefined : parts.slice(root + 2).join("/")
+  for (let index = 0; index < parts.length; index++) {
+    const marker = GENERATED_CACHE_ROOT_MARKERS.find((segments) =>
+      segments.every((segment, offset) => parts[index + offset] === segment))
+    if (marker) return parts.slice(index + marker.length).join("/")
+  }
+  return undefined
 }
 
 async function isGeneratedCacheSymlinkToSamePackage(input: {
