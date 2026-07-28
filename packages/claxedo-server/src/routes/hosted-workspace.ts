@@ -530,11 +530,31 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // Security review 2026-07-27 §6.14 — this is the hosted, multi-tenant
             // create path, so the sandbox it provisions runs agent-authored code
             // over someone's private checkout. `net` was omitted here, and an
-            // omitted policy means allow-all: every hosted sandbox has been
-            // running with the open internet available to it. It is now always
-            // restricted, and never conditionally — a driver that cannot enforce
-            // the policy is refused by the manager (`sandbox_egress_uncontained`)
-            // rather than quietly provisioning an uncontained sandbox.
+            // omitted policy means allow-all: every hosted sandbox was running
+            // with the open internet available to it.
+            //
+            // The policy is now ALWAYS supplied here. What reaches the driver is
+            // the manager's call, per the owner directive of 2026-07-28 —
+            // "enforce where we can and document where we can't" — resolved by
+            // `sandboxEgressDisposition`:
+            //
+            //  - a driver that can enforce (daytona, vercel) is handed the
+            //    allowlist verbatim and contains the sandbox;
+            //  - a driver declaring `egressControl: "none"` (cloudflare — which
+            //    the hosted auto-selection prefers — plus exe, the fetch bridge,
+            //    docker, modal, box) has it WITHHELD rather than handed down, and
+            //    the sandbox comes up with unrestricted egress. Withholding is
+            //    what keeps the drivers that throw on a restricted policy from
+            //    seeing one, and stops the ones that silently drop it from
+            //    pretending. That is a real exposure, so it is loud and never
+            //    silent: the manager warns, and the hosted composition also
+            //    emits `sandbox.egress_unenforced` per create
+            //    (`sandboxEgressUnenforcedSink`). See
+            //    `public-docs/sandbox-egress.md` for the operator-facing matrix.
+            //
+            // So provisioning is no longer refused for an uncontained driver.
+            // Only `sandbox_egress_policy_unenforceable` still fails closed, and
+            // it is the sole reason left that reaches the refusal branch below.
             //
             // The allowlist is deliberately assembled from this request (its own
             // relay/control plane, the one git host it clones from) plus the
@@ -553,12 +573,19 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // to. Metering attribution never gates provisioning, so a deployment
           // with no Convex authority configured simply records nothing.
           .then((result) => {
-            // A containment refusal is a DEPLOYMENT fault, not a transient
-            // one: the composed driver cannot enforce the egress policy this
-            // path always supplies, so no retry helps and no sandbox will ever
-            // come up. `ensure` is fire-and-forget, so without this the only
-            // signal an operator gets is a workspace that provisions forever.
-            // There is also no lease to attribute, so metering is skipped.
+            // Since the 2026-07-28 inversion the only refusal that can land here
+            // is `sandbox_egress_policy_unenforceable`: a driver that DOES
+            // enforce egress, handed an encoding it cannot express (hosts-only
+            // vercel and a CIDR-only policy). An `egressControl: "none"` driver
+            // no longer arrives — it provisions uncontained and warns instead.
+            // The prefix match is kept deliberately broad so any future
+            // `sandbox_egress_*` refusal surfaces rather than vanishing.
+            //
+            // It is a DEPLOYMENT fault, not a transient one: no retry helps and
+            // no sandbox will ever come up. `ensure` is fire-and-forget, so
+            // without this the only signal an operator gets is a workspace that
+            // provisions forever. There is also no lease to attribute, so
+            // metering is skipped.
             if (result.status === "unavailable" && result.error?.startsWith("sandbox_egress_")) {
               captureWorkspaceTelemetry({
                 services,
