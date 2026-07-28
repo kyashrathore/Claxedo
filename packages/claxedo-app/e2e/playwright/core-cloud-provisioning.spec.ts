@@ -52,11 +52,16 @@
  *
  * ANATOMY —
  *   `[data-component="cloud-startup-view"]` — the pipeline view root
- *     (`src/components/session/cloud-startup-view.tsx`); breadcrumb line
- *     `Workspace runtime / <step label>`, a 4-row step list (icon + label + duration),
- *     and a summary line `{step label} before the composer unlocks.` (exact text from
- *     `cloudSummary()`) that this spec asserts on directly — it is the single most
- *     robust indicator of which step is CURRENT, since per-row testids do not exist.
+ *     (`src/features/session/ui/components/cloud-startup-view.tsx`); a static
+ *     `Workspace runtime` eyebrow (dev 8d1227e44's rebuild dropped the old
+ *     `Workspace runtime / <step label>` breadcrumb), a 4-row step list (icon + label +
+ *     duration), and a detail line that is now GENERIC ("The composer unlocks when the
+ *     runtime is ready.") for a plain mid-pipeline step — it only becomes the step-
+ *     specific `cloudSummary()` sentence on error or ready-handoff — so a mid-pipeline
+ *     step is no longer provable from that line. Per-row testids still do not exist, but
+ *     each row's icon slot does: `stepState()` renders `[data-icon="check-small"]` for a
+ *     `"done"` step and nothing there for the active/pending ones, which is this spec's
+ *     robust indicator of which step is CURRENT instead.
  *   `CLOUD_STARTUP_PIPELINE` (4 keys, in order): `acquiring_sandbox` ("Acquiring
  *     sandbox"), `cloning` ("Cloning repository"), `starting_runtime` ("Starting
  *     runtime"), `waiting_health` ("Waiting for health check"). A step is `"done"` (check
@@ -97,8 +102,8 @@
  *      assistant row (no duplication).
  *   5. Reloading the page while the workspace is mid-provisioning (server-reported step
  *      is NOT the first pipeline step) re-renders the pipeline at that SAME step, not
- *      reset to `acquiring_sandbox` — proven via the exact `cloudSummary()` text before
- *      and after reload.
+ *      reset to `acquiring_sandbox` — proven via every earlier step's row reading `done`
+ *      (check icon) and the reported step's row not, before and after reload.
  *   6. A cloud-workspace CREATE failure — either the create request being rejected
  *      (`POST /api/workspace/create` non-2xx, causing `createCloudWorkspace` to throw)
  *      or succeeding with `200` but a body missing `workspaceId` — shows the
@@ -145,11 +150,41 @@ const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
 
 type PipelineStep = "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready"
 
-const STEP_SUMMARY: Record<Exclude<PipelineStep, "ready">, string> = {
-  acquiring_sandbox: "Acquiring sandbox before the composer unlocks.",
-  cloning: "Cloning repository before the composer unlocks.",
-  starting_runtime: "Starting runtime before the composer unlocks.",
-  waiting_health: "Waiting for health check before the composer unlocks.",
+// Bare row labels (`CLOUD_STARTUP_PIPELINE` in cloud-startup-view.tsx) — the
+// detail line no longer restates these as a `{label} before the composer
+// unlocks.` sentence (dev 8d1227e44), so the row text itself is what a spec
+// asserts against now.
+const STEP_LABEL: Record<Exclude<PipelineStep, "ready">, string> = {
+  acquiring_sandbox: "Acquiring sandbox",
+  cloning: "Cloning repository",
+  starting_runtime: "Starting runtime",
+  waiting_health: "Waiting for health check",
+}
+
+// The pipeline row for `label`: its icon slot carries `[data-icon="check-
+// small"]` once `stepState()` marks that row `"done"`, nothing while it is
+// active/pending. `.filter({hasText})` scoped to `span` (never `div`) so it
+// resolves to the row's own label span, not any ancestor whose aggregate text
+// also happens to contain it — the live-log strip below the pipeline can echo
+// the CURRENT step's own label verbatim (`latestLog()` falls back to
+// `cloudStep(last.step)` when the log has no custom message), so callers
+// should only use labels for steps that are NOT the one under test at that
+// moment (bound it from its done/not-done neighbours instead, as behavior 5
+// does below).
+function stepRow(view: Locator, label: string) {
+  return view.locator("span").filter({ hasText: label }).locator("xpath=..")
+}
+
+async function expectStepDone(view: Locator, label: string) {
+  const row = stepRow(view, label)
+  await expect(row).toHaveCount(1)
+  await expect(row.locator('[data-icon="check-small"]')).toHaveCount(1)
+}
+
+async function expectStepNotDone(view: Locator, label: string) {
+  const row = stepRow(view, label)
+  await expect(row).toHaveCount(1)
+  await expect(row.locator('[data-icon="check-small"]')).toHaveCount(0)
 }
 
 function slug(value: string) {
@@ -726,9 +761,15 @@ test.describe("core cloud provisioning @core", () => {
 
     const view = page.locator('[data-component="cloud-startup-view"]')
     await expect(view).toBeVisible({ timeout: 20_000 })
-    await expect(view).toContainText(STEP_SUMMARY.starting_runtime, { timeout: 20_000 })
-    // Never regressed to step 0's summary while settling.
-    await expect(view).not.toContainText(STEP_SUMMARY.acquiring_sandbox)
+    await expect(view).toContainText(STEP_LABEL.starting_runtime, { timeout: 20_000 })
+    // Resumed AT starting_runtime, not step 0: the two earlier steps read
+    // `done` (check icon) and the step after starting_runtime reads not-done —
+    // together that brackets the active row to exactly index 2, matching the
+    // mock's `initialStep`, without ever needing to read starting_runtime's
+    // own row (ambiguous while it's current — see `stepRow`'s note).
+    await expectStepDone(view, STEP_LABEL.acquiring_sandbox)
+    await expectStepDone(view, STEP_LABEL.cloning)
+    await expectStepNotDone(view, STEP_LABEL.waiting_health)
     expect(mock.currentStep()).toBe("starting_runtime")
 
     await page.reload({ waitUntil: "domcontentloaded", timeout: 100_000 })
@@ -739,9 +780,10 @@ test.describe("core cloud provisioning @core", () => {
     // "Acquiring sandbox" — the resolve response is server truth, and reload
     // fully discards client-held state, so this only holds if the app reads
     // that server truth on every fresh mount.
-    await expect(viewAfterReload).toContainText(STEP_SUMMARY.starting_runtime, { timeout: 20_000 })
-    await expect(viewAfterReload).not.toContainText(STEP_SUMMARY.acquiring_sandbox)
-    await expect(viewAfterReload).not.toContainText(STEP_SUMMARY.cloning)
+    await expect(viewAfterReload).toContainText(STEP_LABEL.starting_runtime, { timeout: 20_000 })
+    await expectStepDone(viewAfterReload, STEP_LABEL.acquiring_sandbox)
+    await expectStepDone(viewAfterReload, STEP_LABEL.cloning)
+    await expectStepNotDone(viewAfterReload, STEP_LABEL.waiting_health)
   })
 
   // `resolveCloudSessionDirectory`

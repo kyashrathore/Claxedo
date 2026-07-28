@@ -83,16 +83,17 @@
  *
  * ANATOMY —
  *   `[data-component="cloud-startup-view"]` with `variant="user-hosted"` — same component
- *     cloud workspaces use (`src/components/session/cloud-startup-view.tsx`), rendering
- *     the DISTINCT `USER_HOSTED_STARTUP_PIPELINE` (3 keys, in order): `connecting_
+ *     cloud workspaces use (`src/features/session/ui/components/cloud-startup-view.tsx`),
+ *     rendering the DISTINCT `USER_HOSTED_STARTUP_PIPELINE` (3 keys, in order): `connecting_
  *     workspace` ("Connecting to workspace"), `establishing_relay` ("Establishing relay
  *     tunnel"), `checking_health` ("Checking runtime health") — never cloud's 4-key
  *     pipeline (`acquiring_sandbox`/`cloning`/`starting_runtime`/`waiting_health`). Its
  *     heading reads exactly "Connecting to workspace" (`isUserHosted() ? "Connecting to
- *     workspace" : "Preparing workspace"`), and the live summary line is `cloudSummary()`
- *     — e.g. "Establishing relay tunnel before the composer unlocks." while that step is
- *     current, or the user-hosted-specific default "Connecting to your workspace before
- *     the composer unlocks." before any step log exists.
+ *     workspace" : "Preparing workspace"`). The detail line under it is GENERIC ("The
+ *     composer unlocks when the runtime is ready.") for a plain mid-pipeline step — dev
+ *     8d1227e44 dropped the old always-on `cloudSummary()` sentence there (it now only
+ *     appears on error or ready-handoff) — so this spec proves the 3-step pipeline via the
+ *     row labels themselves, not a step-specific summary sentence.
  *   `[data-testid="workspace-offline"]` (`src/shell/workspace/workspace-gate.tsx`'s
  *     `WorkspaceOfflineView`) — the terminal "can't reach it" state for reason `"no-
  *     host"`: title "Workspace host is offline", detail EXACTLY "Start it by running
@@ -197,12 +198,6 @@ const RUNTIME_EVENT_CONTRACT_VERSION = 3
 // (`signed-workspace-model.ts`); serving that exact id as the only model leaves
 // the composer stuck on "Select model". Display name stays "Big Pickle".
 const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
-
-const USER_HOSTED_STEP_SUMMARY = {
-  connecting_workspace: "Connecting to your workspace before the composer unlocks.",
-  establishing_relay: "Establishing relay tunnel before the composer unlocks.",
-  checking_health: "Checking runtime health before the composer unlocks.",
-} as const
 
 const OFFLINE_DETAIL =
   "Start it by running `claxedo up` on the machine that serves this workspace, then retry."
@@ -673,8 +668,10 @@ test.describe("core user-hosted workspace @core", () => {
     const view = page.locator('[data-component="cloud-startup-view"]')
     await expect(view).toBeVisible({ timeout: 20_000 })
     await expect(view).toContainText("Connecting to workspace", { timeout: 10_000 })
-    await expect(view).toContainText(USER_HOSTED_STEP_SUMMARY.establishing_relay, { timeout: 10_000 })
-    await expect(view).toContainText("Establishing relay tunnel")
+    // The detail line under the heading is generic post-8d1227e44 (no more
+    // step-specific `cloudSummary()` sentence for a plain mid-pipeline step),
+    // so the distinct-3-step-pipeline proof is the row labels themselves.
+    await expect(view).toContainText("Establishing relay tunnel", { timeout: 10_000 })
     await expect(view).toContainText("Checking runtime health")
 
     // Never the cloud pipeline's vocabulary.
