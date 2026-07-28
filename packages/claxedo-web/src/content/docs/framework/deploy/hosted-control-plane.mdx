@@ -123,6 +123,7 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 | Daytona driver | `DAYTONA_API_KEY` + `CLAXEDO_DAYTONA_SNAPSHOT` |
 | fetch-bridge driver | `CLAXEDO_SANDBOX_DRIVER_URL` |
 | `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker; until set, the device endpoints return `501 device_login_unconfigured` |
+| `CLAXEDO_TELEMETRY_MODE` | `on`/`off` — checked before key presence; self-host default is off |
 | `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST` | optional telemetry (fetch-based) |
 
 Additional knobs — per-region relay endpoints, request rate-limit caps,

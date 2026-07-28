@@ -1,5 +1,18 @@
 #!/usr/bin/env bun
 
+// This finalizes electron-updater's generic feed (latest.yml / latest-mac.yml /
+// latest-linux*.yml) — it does not, and cannot, speak Tauri's updater format
+// (latest.json + minisign .sig, as served by the retired claxedo-v0.0.59
+// release). Anyone still on that Tauri build has no auto-update path into an
+// Electron release produced by this script; they must reinstall manually.
+// A compat shim is possible in principle — TAURI_SIGNING_PRIVATE_KEY,
+// TAURI_SIGNING_PRIVATE_KEY_PASSWORD, and TAURI_SIGNING_PUBLIC_KEY still exist
+// as unused repo secrets — but producing a validly-signed Tauri manifest here
+// requires reviving the retired Tauri signing step and is a decision for the
+// owner to make explicitly, not something to add unreviewed: a malformed feed
+// fails closed (an update-check error surfaced to a real user) whereas today's
+// silence (no latest.json published) fails open (no update offered, no error).
+
 import { $ } from "bun"
 import path from "path"
 

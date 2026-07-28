@@ -103,6 +103,13 @@ CLAXEDO_SIGNED_CLOUD_AUTH = "1"
 # the Worker fail-closes at boot without it (control-plane/deployment-mode.ts).
 # Never set this for self-host; absent mode = self-host by design.
 CLAXEDO_DEPLOYMENT_MODE = "hosted"
+# D12 observability (see the comment block above [vars]): declared explicitly
+# per this file's own contract, rather than left implicit-via-absence. "off"
+# is behaviorally identical to unset (config.ts telemetryEnabled) — this is
+# not a functional change. Remaining launch step (owner, not this file):
+# `wrangler secret put CLAXEDO_POSTHOG_KEY` for production, then flip this
+# line to "on".
+CLAXEDO_TELEMETRY_MODE = "off"
 
 [[r2_buckets]]
 binding = "CLAXEDO_DOCUMENTS"
@@ -155,6 +162,9 @@ CLAXEDO_DEPLOYMENT_MODE = "hosted"
 # dirty-flag wake + WakeLane DO). Production stays on WorkGraphSettler until
 # the latency budgets hold here. Rollback = delete this line and redeploy.
 CLAXEDO_WAKES_SETTLEMENT = "1"
+# D12 observability — see [vars] above. Same "off" is a no-op default; owner
+# flips to "on" for staging after `wrangler secret put CLAXEDO_POSTHOG_KEY --env staging`.
+CLAXEDO_TELEMETRY_MODE = "off"
 
 [[env.staging.r2_buckets]]
 binding = "CLAXEDO_DOCUMENTS"

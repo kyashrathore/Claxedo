@@ -67,6 +67,7 @@ function buildClient(): WorkGraphClient {
     }),
     // Only the two methods these components call are implemented; everything
     // else on the real WorkGraphClient is unused by InlineAddTask/WorkItemLeaf.
+    // as-any: test double implements only the API surface exercised by this test.
   } as unknown as WorkGraphClient
 }
 

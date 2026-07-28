@@ -270,7 +270,9 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
     CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "packages/claxedo-server/src/control-plane/adapters/worker/hosted-compose.ts",
     CLERK_WEBHOOK_SECRET: "convex/http.ts",
     CONVEX_DEPLOY_KEY: ".github/workflows/deploy-control-plane.yml",
-    CLAXEDO_SENTRY_DSN: "packages/claxedo-server/wrangler.toml",
+    CLAXEDO_POSTHOG_KEY: "packages/claxedo-server/src/observability/config.ts",
+    CLAXEDO_POSTHOG_HOST: "packages/claxedo-server/src/observability/config.ts",
+    CLAXEDO_TELEMETRY_MODE: "packages/claxedo-server/src/observability/config.ts",
     CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM: "packages/workspace-relay/wrangler.toml",
     CLAXEDO_CONTROL_PLANE_JWKS_URL: "packages/workspace-relay/wrangler.toml",
     VITE_CLAXEDO_SERVER_URL: ".github/workflows/deploy-claxedo-app.yml",
@@ -281,6 +283,27 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   test.each(Object.entries(anchors))("%s is named in the prompt and still exists in its anchor file", async (name, path) => {
     expect(`${name} in prompt: ${prompt.includes(name!)}`).toBe(`${name} in prompt: true`)
     expect(`${name} in ${path}: ${(await read(path!)).includes(name!)}`).toBe(`${name} in ${path}: true`)
+  })
+
+  test("Sentry stays fully removed, and the prompt never reintroduces it (tripwire for the 2026-07-28 purge)", async () => {
+    // Regression guard: this test previously anchored CLAXEDO_SENTRY_DSN against
+    // packages/claxedo-server/wrangler.toml. The Sentry-removal work (merged
+    // 211478bed) deleted that var from wrangler.toml but left the prompt's "CLAXEDO_SENTRY_DSN
+    // is optional" sentence in place, so this suite was red on dev with no code
+    // change required to fix it — just a stale claim. Assert the negative space
+    // directly so a partial Sentry re-introduction (config without prompt update,
+    // or vice versa) fails here instead of silently drifting again.
+    expect(controlPlaneToml).not.toContain("SENTRY")
+    expect(prompt).not.toContain("SENTRY")
+    expect(prompt).toContain("There is no Sentry integration anywhere in this repository")
+    // The replacement claim: PostHog telemetry, hard double opt-in.
+    const config = await read("packages/claxedo-server/src/observability/config.ts")
+    for (const name of ["CLAXEDO_POSTHOG_KEY", "CLAXEDO_POSTHOG_HOST", "CLAXEDO_TELEMETRY_MODE"]) {
+      expect(`${name} in observability config: ${config.includes(name)}`).toBe(`${name} in observability config: true`)
+      expect(`${name} in prompt: ${prompt.includes(name)}`).toBe(`${name} in prompt: true`)
+    }
+    expect(config).toContain('CLAXEDO_TELEMETRY_MODE=on')
+    expect(prompt).toContain('CLAXEDO_TELEMETRY_MODE is also set to "on"')
   })
 
   test("states Convex and Clerk as hard prerequisites before any Cloudflare work", () => {

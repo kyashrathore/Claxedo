@@ -16,7 +16,8 @@ export const claims = [
     publicWording: "Claxedo is free during beta.",
     owner: "Claxedo product",
     evidence: [
-      "Owner decision 2026-07-12: launch free — BYO-compute + BYO-keys keeps fixed costs low, and the billing spine ships built-but-dormant behind requireEntitlement so free→paid later is a config flip.",
+      "docs/plans/2026-07-27-002-feat-claxedo-cloud-launch-streams-plan.md",
+      "packages/claxedo-server/src/billing/entitlement.ts",
     ],
     status: "verified",
     verifiedAt: "2026-07-21",
