@@ -281,7 +281,12 @@ export function claxedoPermissionModes(input: {
   // pointed at whichever of those rows carried `level: "auto"` — on Claude that
   // row is itself named "Auto", so the menu opened showing a paraphrase of a row
   // it was hiding.
-  if ((input.report?.modes.length ?? 0) > 0) return []
+  // `readJson` does no shape validation (same constraint as the Array.isArray
+  // guard in harnessPermissionModes): a 200 whose body lacks a `modes` array
+  // must read as "no modes reported", not throw — this runs in a composer
+  // render memo, and a render-time throw blanks the whole shell.
+  const reportedModes = input.report?.modes
+  if (Array.isArray(reportedModes) && reportedModes.length > 0) return []
   return [claxedoAutoOption(input), claxedoAskOption(input.harness, input.hasSession)]
 }
 

@@ -1374,6 +1374,21 @@ async function createRealSessionRuntime(
             XDG_DATA_HOME: path.join(directory, "xdg-data"),
             OPENCODE_DISABLE_AUTOSHARE: "true",
             OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
+            // Keep the engine off models.dev. Running from source there is no baked
+            // OPENCODE_MODELS_DEV snapshot, and the fresh XDG_CACHE_HOME above makes
+            // every boot cold, so the engine fetches https://models.dev at startup
+            // AND (behind the same flock) inside the first Location's catalog
+            // materialize. Catalog state commits atomically only after that batch
+            // (core/src/state.ts State.batch), while the plugin boot is a
+            // fire-and-forget fork (core/src/plugin/internal.ts forkScoped) that
+            // nothing in the drain path waits for — so for the entire duration of a
+            // slow or rate-limited fetch the catalog is EMPTY and the first prompt's
+            // drain dies with "Model unavailable: workgraph-e2e/workgraph-model"
+            // (core/src/session/runner/model.ts), the Session never answers, and the
+            // test times out. With the fetch disabled, populate returns {} instantly
+            // and the catalog holds exactly the config-defined fake provider, which
+            // is all this hermetic lane may depend on anyway.
+            OPENCODE_DISABLE_MODELS_FETCH: "true",
           },
           stdio: ["ignore", "pipe", "pipe"],
         },

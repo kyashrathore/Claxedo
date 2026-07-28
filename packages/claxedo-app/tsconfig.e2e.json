@@ -44,11 +44,19 @@
       "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"]
     }
   },
-  // No exclusions: all 45 files under e2e/ are typechecked. `e2e/bun/**` and
-  // `real-provider-preflight.test.ts` used to be excluded because they rely on
-  // `bun:test` globals that this project did not pull in; adding "bun" to `types`
-  // above resolves them, and both now compile clean.
+  // No source exclusions: every authored file under e2e/ is typechecked.
+  // `e2e/bun/**` and `real-provider-preflight.test.ts` used to be excluded because
+  // they rely on `bun:test` globals that this project did not pull in; adding "bun"
+  // to `types` above resolves them, and both now compile clean.
+  //
+  // The two excluded directories are Playwright OUTPUT (playwright.config.ts's
+  // `outputDir` and the html reporter's `outputFolder`), both gitignored. With
+  // `allowJs: true` the generated report bundle (report/trace/sw.bundle.js)
+  // otherwise fails the gate on any tree that has ever run e2e locally — the gate
+  // must judge authored code, not artifacts of having run it.
   "include": ["e2e"],
   "exclude": [
+    "e2e/playwright/report",
+    "e2e/playwright/test-results"
   ]
 }

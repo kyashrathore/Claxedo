@@ -424,7 +424,7 @@ async function executeBrowserScenario(
   const page = await context.newPage()
   const monitor = monitorPage(page)
   const started = performance.now()
-  await installMockApi(page, app, fixture)
+  await installMockApi(page, app, fixture, monitor)
   await installSeedState(page, app.target, fixture)
 
   try {
@@ -432,6 +432,10 @@ async function executeBrowserScenario(
     const validation_failures = await validationFailures(page, monitor, scenario, fixture)
     if (process.env.PERF_DEBUG_ERRORS) {
       const body = await page.locator("body").innerText({ timeout: 500 }).catch(() => "")
+      // The ErrorBoundary renders the error text into a readonly textarea
+      // ([data-slot="input-input"]); textarea content lives in .value, which
+      // body.innerText excludes, so read it explicitly.
+      const boundaryError = await readBoundaryError(page)
       const state = await page.evaluate(() => {
         const raw = localStorage.getItem("claxedo.state.v5")
         const parsed = raw ? JSON.parse(raw) as {
@@ -443,11 +447,15 @@ async function executeBrowserScenario(
           contentIds: parsed?.workbench?.contentIds,
           metaIds: Object.keys(parsed?.meta ?? {}),
           terminalIds: Object.keys(parsed?.terminal?.owner ?? {}),
-          terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [role='button']").length,
+          terminalRows: document.querySelectorAll("[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row']").length,
         }
       }).catch(() => undefined)
       console.error(`\n[PERF_DEBUG ${scenario}] pageErrors:`, monitor.pageErrors)
       console.error(`[PERF_DEBUG ${scenario}] consoleErrors:`, monitor.consoleErrors)
+      console.error(`[PERF_DEBUG ${scenario}] boundaryError:`, boundaryError || "<none>")
+      console.error(`[PERF_DEBUG ${scenario}] failedResponses:`, monitor.failedResponses.slice(-10))
+      console.error(`[PERF_DEBUG ${scenario}] failedRequests:`, monitor.failedRequests.slice(-10))
+      console.error(`[PERF_DEBUG ${scenario}] unmatchedMockPaths:`, monitor.unmatchedMockPaths.slice(-20))
       console.error(`[PERF_DEBUG ${scenario}] state:`, state)
       console.error(`[PERF_DEBUG ${scenario}] body[0..800]:`, body.replace(/\s+/g, " ").slice(0, 800))
     }
@@ -474,21 +482,37 @@ async function executeBrowserScenario(
 
 async function browserFailureDiagnostics(page: Page, monitor: ReturnType<typeof monitorPage>, error: unknown) {
   const base = error instanceof Error ? error.message : String(error)
-  const [url, title, body] = await Promise.all([
+  const [url, title, body, boundaryError] = await Promise.all([
     page.url(),
     page.title().catch(() => ""),
     page.locator("body").innerText({ timeout: 500 }).catch(() => ""),
+    readBoundaryError(page),
   ])
   const details = [
     base,
     `url=${url}`,
     title ? `title=${title}` : undefined,
     body.trim() ? `body=${body.replace(/\s+/g, " ").trim().slice(0, 240)}` : "body=<empty>",
+    boundaryError ? `boundaryError=${boundaryError.replace(/\s+/g, " ").trim().slice(0, 600)}` : undefined,
     monitor.pageErrors.length ? `pageErrors=${monitor.pageErrors.slice(-3).join(" | ")}` : undefined,
     monitor.consoleErrors.length ? `consoleErrors=${monitor.consoleErrors.slice(-3).join(" | ")}` : undefined,
     monitor.failedResponses.length ? `failedResponses=${monitor.failedResponses.slice(-5).join(" | ")}` : undefined,
+    monitor.failedRequests.length ? `failedRequests=${monitor.failedRequests.slice(-5).join(" | ")}` : undefined,
+    monitor.unmatchedMockPaths.length ? `unmatchedMockPaths=${monitor.unmatchedMockPaths.slice(-8).join(" | ")}` : undefined,
   ].filter((item): item is string => !!item)
   return details.join("; ")
+}
+
+// The app's single ErrorBoundary (src/app/entry/app.tsx -> routes/error.tsx)
+// renders the caught error into a Kobalte textarea [data-slot="input-input"].
+// Textarea content lives in .value, not innerText, so every body.innerText
+// diagnostic misses it — this read is the eyes for boundary failures.
+async function readBoundaryError(page: Page) {
+  return await page
+    .locator('[data-slot="input-input"]')
+    .first()
+    .inputValue({ timeout: 500 })
+    .catch(() => "")
 }
 
 function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
@@ -668,7 +692,9 @@ async function measureInPageTerminalSwitch(page: Page, terminalId: string): Prom
     const fits = (r: DOMRect) => r.width > 100 && r.height > 40
 
     const start = performance.now()
-    target.click()
+    // Same NavigationRow shape as the session rows: the activate handler is
+    // on the absolute child button, not the row container.
+    ;(target.querySelector<HTMLElement>('[data-slot="navigation-row-activate"]') ?? target).click()
 
     return await new Promise<number>((resolve) => {
       const limit = 5000
@@ -862,7 +888,44 @@ export function claxedoStateSeed(
   }
 }
 
-async function installMockApi(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>) {
+// Sentinel for paths responseFor does not recognize. Unmatched paths answer
+// 404 (loudly — they land in monitor.failedResponses + unmatchedMockPaths)
+// instead of a silent 200 `{}`, so mock drift fails visibly instead of
+// blanking the app with well-formed nonsense.
+const UNMATCHED_MOCK_PATH = Symbol("perf.unmatched-mock-path")
+const warnedUnmatchedPaths = new Set<string>()
+
+// Long-poll SSE, mirroring e2e/helpers/mock-runtime.ts's drain pattern
+// (route.fulfill cannot stream, so a "live" stream is a request HELD open for
+// an idle window, then closed with a benign frame; the app reconnects with
+// backoff). The first connection per stream path answers immediately so boot
+// never waits on the hold; reconnects hold for the idle window, keeping the
+// stream calm for the whole measured flow instead of hot-looping on an
+// instantly-closed JSON body. The heartbeat frame carries no `id:` line on
+// purpose — replay-style frames must not advance Last-Event-ID cursors.
+//
+// The hold is deliberately LONGER than any measured interaction window (the
+// e2e mock drains at 4s; here a 4s cadence let a reconnect resolve inside
+// measured windows every few seconds, feeding random microtask work into the
+// frame-pair gates' tails). 25s keeps every reconnect resolution outside the
+// measurement while staying under claxedo-events' 45s heartbeat watchdog;
+// the global SDK's 15s pending-fetch watchdog aborts its held reconnects
+// early, which its loop treats as a silent, backoff-growing retry by design.
+const SSE_IDLE_HOLD_MS = 25_000
+const SSE_HEARTBEAT_BODY = `data: ${JSON.stringify({ type: "heartbeat" })}\n\n`
+
+function sseStreamPath(pathName: string) {
+  if (pathName === "/event" || pathName === "/global/event") return true
+  return pathName.endsWith("/api/wr/events") || pathName.endsWith("/api/wr/runtime-events")
+}
+
+async function installMockApi(
+  page: Page,
+  app: BrowserTarget,
+  fixture: ReturnType<typeof fixtureFor>,
+  monitor: ReturnType<typeof monitorPage>,
+) {
+  const sseConnects = new Map<string, number>()
   await page.routeWebSocket(/\/api\/wr\/pty\/[^/]+\/connect(?:\?|$)/, (socket) => {
     socket.send("perf terminal ready\r\n")
   })
@@ -881,10 +944,36 @@ async function installMockApi(page: Page, app: BrowserTarget, fixture: ReturnTyp
         headers: mockCorsHeaders(route),
       })
     }
-    const body = responseFor(url, fixture)
+    if (sseStreamPath(url.pathname)) {
+      // Several consumers share `/api/wr/events` (the claxedo-events central
+      // stream plus both `/event`/`/global/event` rewrites in the global SDK),
+      // so the first few connects answer immediately — boot never waits on the
+      // hold — and only genuine RE-connects are held for the idle window.
+      const connects = (sseConnects.get(url.pathname) ?? 0) + 1
+      sseConnects.set(url.pathname, connects)
+      if (connects > 3) await Bun.sleep(SSE_IDLE_HOLD_MS)
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: mockCorsHeaders(route),
+        body: SSE_HEARTBEAT_BODY,
+      }).catch(() => undefined)
+    }
+    const body = responseFor(url, fixture, route.request().method())
     if (body === undefined) return route.fallback()
-    if (body === "event-stream") {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: mockCorsHeaders(route), body: ": perf\n\n" })
+    if (body === UNMATCHED_MOCK_PATH) {
+      const key = `${route.request().method()} ${url.pathname}`
+      if (!monitor.unmatchedMockPaths.includes(key)) monitor.unmatchedMockPaths.push(key)
+      if (process.env.PERF_DEBUG_ERRORS || !warnedUnmatchedPaths.has(key)) {
+        warnedUnmatchedPaths.add(key)
+        console.warn(`[perf-mock] unmatched API path: ${key}`)
+      }
+      return route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        headers: mockCorsHeaders(route),
+        body: JSON.stringify({ error: "perf-harness mock: unmatched path", path: url.pathname }),
+      })
     }
     return route.fulfill({
       status: 200,
@@ -943,9 +1032,8 @@ function apiPath(pathName: string) {
   ].some((prefix) => pathName === prefix || pathName.startsWith(`${prefix}/`))
 }
 
-function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>): unknown {
+function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = "GET"): unknown {
   const pathName = url.pathname
-  if (pathName === "/event" || pathName === "/global/event") return "event-stream"
   if (pathName === "/health") return { ok: true, healthy: true, version: "perf-browser" }
   if (pathName === "/global/health") return { healthy: true, version: "perf-browser" }
   if (pathName === "/experimental/session") return experimentalSessions(url, fixture)
@@ -977,11 +1065,58 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>): unknown 
   if (pathName === "/api/claxedo/bootstrap") return boot(fixture)
   if (pathName === "/api/claxedo/agent-config/agents") return agents()
   if (pathName === "/api/claxedo/agent-config/commands") return commands()
+  // Harness status + options (the composer's harness/model controls poll
+  // these on every mount). CONTRACT: the real switch POST answers `{ ok: true }`
+  // and nothing else; the GET reports the active harness (mock-runtime.ts
+  // serves the same pair, validated against the claxedo-server handler).
+  if (pathName === "/api/claxedo/agent-config/harness") {
+    return method === "POST" ? { ok: true } : { type: "opencode", ok: true }
+  }
+  if (pathName === "/api/claxedo/agent-config/harness/options") return harnessOptions(fixture)
+  // The per-harness permission-mode report, fetched on every composer mount
+  // (directory-scoped draft form and the per-session form). Serving anything
+  // that is not a well-formed report here blanks the WHOLE app: the readers
+  // in features/session/permission/modes.ts run inside a Solid memo during
+  // the composer's render, and `claxedoPermissionModes` still dereferences
+  // `report?.modes.length` unguarded (modes.ts:284) — a 200 `{}` throws
+  // straight into the app-level ErrorBoundary. That was this harness's
+  // root failure; the shape below is the opencode row from the e2e mock's
+  // MODES_BY_HARNESS table.
+  if (pathName === "/permission/modes") return permissionModeReport()
+  if (/^\/session\/[^/]+\/permission-mode$/.test(pathName)) return permissionModeReport()
+  // Session meta for the workbench route bridge (route-bridge-resolution.ts)
+  // — resolves a bare `/s/:id` route to its owning directory.
+  const sessionMeta = pathName.match(/^\/api\/claxedo\/session\/([^/]+)\/meta$/)
+  if (sessionMeta) {
+    const session = fixture.sessions.find((item) => item.id === sessionMeta[1])
+    if (!session) return UNMATCHED_MOCK_PATH
+    return { directory: session.directory, title: session.title }
+  }
+  // Managed process inventory (features/processes/data/client.ts `list`,
+  // zod-parsed as ProcessListResponse — both arrays are required).
+  if (pathName === "/api/wr/process") return { configs: [], processes: [] }
+  // Lifecycle checkpoints (workspace-panel). Empty is the steady state for a
+  // fresh workspace; the e2e mock serves the same shape.
+  if (/^\/api\/workspace\/[^/]+\/checkpoints$/.test(pathName)) return { worktrees: [] }
+  // PTY metadata updates (title/size) — echo the addressed terminal.
+  const wrPty = pathName.match(/^\/api\/wr\/pty(?:\/([^/]+))?$/)
+  if (wrPty) {
+    if (!wrPty[1]) return fixture.terminals[0]
+    const terminal = fixture.terminals.find((item) => item.id === wrPty[1])
+    return terminal ?? UNMATCHED_MOCK_PATH
+  }
   if (pathName === "/provider") return fixture.provider
   if (pathName === "/provider/auth") return {}
   if (pathName === "/path") return fixture.path
   if (pathName === "/project") return fixture.projects
   if (pathName === "/project/current") return fixture.project
+  // Project row updates (SDK `project.update`, e.g. expansion/recency touches)
+  // — echo the fixture's project row, the SDK's declared response shape.
+  const project = pathName.match(/^\/project\/([^/]+)$/)
+  if (project) {
+    if (project[1] !== fixture.project.id) return UNMATCHED_MOCK_PATH
+    return fixture.project
+  }
   if (pathName === "/worktree") return fixture.workspaceDirectories.slice(1)
   if (pathName === "/global/config" || pathName === "/config") return {}
   if (pathName === "/agent") return agents()
@@ -1014,7 +1149,7 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>): unknown 
     return pageMessages(messages[1]!, Number(url.searchParams.get("limit") ?? 80), url.searchParams.get("before") ?? undefined, fixture)
   }
 
-  return {}
+  return UNMATCHED_MOCK_PATH
 }
 
 function sessionNavigationPage(url: URL, fixture: ReturnType<typeof fixtureFor>) {
@@ -1401,6 +1536,43 @@ function agents() {
   return [{ name: "build", mode: "primary" }]
 }
 
+// The opencode harness's permission-mode report (HarnessModeReport,
+// src/features/session/permission/modes.ts:403). opencode enforces no modes
+// of its own, so the contract answer is an EMPTY modes list plus the
+// `unsupported` reason — the same row the e2e mock's MODES_BY_HARNESS table
+// records for opencode. `modes` must always be an array: readers dereference
+// `report?.modes.length` during the composer's render, and a 200 body without
+// it throws into the app-level ErrorBoundary.
+function permissionModeReport() {
+  return {
+    modes: [],
+    unsupported: "opencode has no permission modes of its own",
+    appliesFrom: "next-turn",
+  }
+}
+
+// Harness options for the composer's model control (same shape the e2e mock
+// serves): one `model` select whose current value matches the fixture's
+// provider/model pair so the composer never renders a missing-model state.
+function harnessOptions(fixture: ReturnType<typeof fixtureFor>) {
+  const provider = fixture.provider.all[0]!
+  const model = Object.values(provider.models)[0]!
+  return {
+    source: "runner",
+    stale: false,
+    options: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: model.id,
+        selectOptions: [{ id: model.id, name: model.name }],
+      },
+    ],
+  }
+}
+
 function sessionPath(fixture: { directory: string }, sessionId: string) {
   return `/s/${sessionId}`
 }
@@ -1530,6 +1702,8 @@ function monitorPage(page: Page) {
   const pageErrors: string[] = []
   const consoleErrors: string[] = []
   const failedResponses: string[] = []
+  const failedRequests: string[] = []
+  const unmatchedMockPaths: string[] = []
   page.on("pageerror", (error) => {
     pageErrors.push(error.message)
   })
@@ -1539,7 +1713,10 @@ function monitorPage(page: Page) {
   page.on("response", (response) => {
     if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`)
   })
-  return { pageErrors, consoleErrors, failedResponses }
+  page.on("requestfailed", (request) => {
+    failedRequests.push(`${request.failure()?.errorText ?? "failed"} ${request.method()} ${request.url()}`)
+  })
+  return { pageErrors, consoleErrors, failedResponses, failedRequests, unmatchedMockPaths }
 }
 
 async function validationFailures(
@@ -1549,17 +1726,34 @@ async function validationFailures(
   fixture: ReturnType<typeof fixtureFor>,
 ) {
   const text = await page.locator("body").innerText({ timeout: 1_000 }).catch(() => "")
+  const boundaryRendered = text.includes("Something went wrong") || text.includes("An error occurred while loading the application")
+  // The boundary's error text lives in a textarea's .value, which
+  // body.innerText excludes — read it so the failure carries the actual error
+  // instead of only "error boundary rendered".
+  const boundaryError = boundaryRendered ? await readBoundaryError(page) : ""
+  // The composer's model control (`[data-action='prompt-model']`, named by
+  // 302c88e5f). The old literal checks ("Model unavailable" / "Select agent")
+  // matched strings the app no longer renders anywhere, so they could never
+  // fire; a broken model surface now shows as a control with an empty
+  // accessible name (label empty while the provider list never resolves).
+  const composerModel = await page.evaluate(() => {
+    const control = document.querySelector<HTMLElement>("[data-action='prompt-model']")
+    if (!control) return { present: false, named: false }
+    const name = control.getAttribute("aria-label") ?? control.textContent ?? ""
+    return { present: true, named: !!name.trim() }
+  }).catch(() => ({ present: false, named: false }))
   return [
     ...monitor.pageErrors.map((error) => `page error: ${error}`),
     ...monitor.consoleErrors.filter(significantConsoleError).map((error) => `console error: ${error}`),
-    ...(text.includes("Something went wrong") || text.includes("An error occurred while loading the application")
-      ? [`error boundary rendered for ${scenario}`]
+    ...(boundaryRendered
+      ? [`error boundary rendered for ${scenario}${boundaryError ? `: ${boundaryError.replace(/\s+/g, " ").trim().slice(0, 400)}` : ""}`]
       : []),
     ...(!text.trim() ? [`blank page rendered for ${scenario}`] : []),
     ...(missingSessionMessageRequest(scenario, fixture) ? [`session messages were not requested for ${scenario}`] : []),
     ...(sessionScenario(scenario) && loadingOnly(text) ? [`session page was still loading for ${scenario}`] : []),
-    ...(sessionScenario(scenario) && text.includes("Model unavailable") ? [`composer model was unavailable for ${scenario}`] : []),
-    ...(sessionScenario(scenario) && text.includes("Select agent") ? [`composer agent was unavailable for ${scenario}`] : []),
+    ...(sessionScenario(scenario) && !boundaryRendered && composerModel.present && !composerModel.named
+      ? [`composer model control had no label for ${scenario}`]
+      : []),
     ...fixture.visualFailures,
     ...Object.entries(fixture.requestCounts.expectedTranscripts).flatMap(([sessionID, expected]) =>
       fixture.requestCounts.visibleTranscripts[sessionID] ? [] : [`transcript text was not visible for ${scenario}: ${expected}`],
@@ -1744,7 +1938,10 @@ async function measureInPageSessionFirstFoldSwitch(page: Page, session: ReturnTy
     const beforeContent = document.querySelector<HTMLElement>(`[data-testid="session-content"][data-session-id="${CSS.escape(id)}"]`)
     row.scrollIntoView({ block: "nearest" })
     const started = performance.now()
-    row.click()
+    // NavigationRow's click handler lives on an absolutely-positioned CHILD
+    // (`button[data-slot="navigation-row-activate"]`) — a synthetic click on
+    // the row container never reaches it, so target the activate control.
+    ;(row.querySelector<HTMLElement>('[data-slot="navigation-row-activate"]') ?? row).click()
     const ms = await new Promise<number>((resolve) => {
       const tick = () => {
         const elapsed = performance.now() - started
@@ -2009,7 +2206,7 @@ async function clickTerminalInventoryRow(
     ? page.locator(
         `[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row'][data-terminal-id="${terminal.id}"]`,
       ).first()
-    : page.locator("[data-testid='terminal-section'] [role='button']").filter({ hasText: /terminal/i }).last()
+    : page.locator("[data-testid='terminal-section'] [data-testid='rail-sidebar-terminal-row']").last()
   if (await row.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await row.scrollIntoViewIfNeeded().catch(() => undefined)
     await row.click({ timeout: 5_000 })
