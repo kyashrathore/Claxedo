@@ -22,6 +22,19 @@
 
 name = "claxedo-workspace-relay"
 main = "src/worker.ts"
+# HELD at 2025-05-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
+# Cloudflare's `websocket_standard_binary_type` flag becomes default at
+# compatibility_date 2026-03-17: server-side WebSockets then default to
+# binaryType "blob" instead of "arraybuffer". Measured on real workerd
+# (miniflare 4.20260722.0, hibernatable DO socket, 4-byte binary frame):
+#   2025-05-01 -> ArrayBuffer   2026-03-16 -> ArrayBuffer
+#   2026-03-17 -> Blob          2026-07-18 -> Blob
+# socketFrame()/socketPayload() in src/cloudflare.ts accept only
+# `string | ArrayBuffer | Uint8Array` and return undefined for anything else,
+# so at >= 2026-03-17 every binary tunnel frame is SILENTLY DROPPED — no throw,
+# no log. cloudflare.test.ts uses hand-rolled socket doubles, so nothing in the
+# suite would catch it. Teach those two functions to await Blob.arrayBuffer()
+# (and add a real-workerd binary round-trip test) BEFORE moving this date.
 compatibility_date = "2025-05-01"
 
 [observability]

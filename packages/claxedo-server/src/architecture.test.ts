@@ -978,7 +978,8 @@ describe("harness-scoped resolution", () => {
       "agent-config.ts",
       "bootstrap.ts",
       // Shared per-route bearer gate for control-plane routers with no
-      // finer-grained authorization of their own (provider-auth).
+      // finer-grained authorization of their own (provider-auth,
+      // opencode-compat).
       "control-plane-route-auth.ts",
       "credential.ts",
       "documents.ts",
@@ -1069,6 +1070,15 @@ describe("harness-scoped resolution", () => {
     ]) {
       expect(server).toContain(token)
     }
+    // Same class as the ProviderAuthRoutes note above, pinned per-call because
+    // `...authRouteOptions(services),` appearing SOMEWHERE in server.ts says
+    // nothing about this mount. OpenCodeCompatRoutes reaches `fs.rm` recursive
+    // and `git reset --hard` + `git clean -ffdx` (`/experimental/worktree*`),
+    // writes provider credentials (`PUT /auth/:providerID`) and rewrites the
+    // MCP server list agents launch (`PATCH /global/config`). Mounted without
+    // the spread it has no per-route verification, and a signed self-host box
+    // (CLAXEDO_EMBEDDED_AUTH=1) is remotely reachable by design.
+    expect(server).toMatch(/OpenCodeCompatRoutes\(\{[^}]*\.\.\.authRouteOptions\(services\),/)
     expect(hostedApp).toContain('"/documents"')
     expect(hostedApp).toContain("DocumentsRoutes({")
     expect(server).toContain("withDataDirOwnership(dataDir()")

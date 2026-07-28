@@ -346,9 +346,29 @@ type Identity = NonNullable<Awaited<ReturnType<IdentityCtx["auth"]["getUserIdent
 type QueryCtx = GenericQueryCtx<any>
 type MutationCtx = GenericMutationCtx<any>
 
-function controlPlaneServiceToken() {
-  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-  return value ? value : undefined
+// F4 (pre-launch security review): the service token is a shared secret held on
+// BOTH sides — set as a Convex deployment env var here, and as a Worker secret
+// in packages/claxedo-server. Those two swaps cannot be made atomic, so with a
+// single accepted value ANY rotation guarantees an outage window: for the
+// duration of the skew every serviceQuery/serviceMutation in convex/ throws
+// "Unauthenticated", which is the entire control-plane executor surface plus
+// the wakes settlement dispatcher. That made the secret effectively
+// unrotatable — the worst property for a credential to have, because it turns
+// "we should rotate" into "we can't afford to".
+//
+// Accepting a PREVIOUS value alongside the current one makes rotation ordered
+// and zero-downtime:
+//   1. set _PREVIOUS to the live token (both sides now accept it, nothing changes)
+//   2. set the new token on Convex, then on the Worker (skew is covered by _PREVIOUS)
+//   3. clear _PREVIOUS once the Worker is fully rolled
+// Only step 3 narrows the accepted set, and by then nothing is signing with the
+// old value. Both slots are compared timing-safely and an empty/whitespace
+// _PREVIOUS is ignored, so the steady state (unset) is exactly as strict as before.
+function controlPlaneServiceTokens() {
+  return [
+    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim(),
+    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN_PREVIOUS?.trim(),
+  ].filter((value): value is string => !!value)
 }
 
 // Constant-time string compare — the service token is a shared secret, so
@@ -364,8 +384,13 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export function requireControlPlaneService(token: string) {
-  const expected = controlPlaneServiceToken()
-  if (!expected || !timingSafeEqual(token, expected)) throw new Error("Unauthenticated")
+  const accepted = controlPlaneServiceTokens()
+  // No configured token accepts NOTHING (fail closed) — never "no secret set,
+  // so allow". `reduce` rather than `some` so every candidate is compared and
+  // the work does not short-circuit on the first match, preserving the
+  // timing-safe posture across the two slots.
+  const matched = accepted.reduce((found, expected) => timingSafeEqual(token, expected) || found, false)
+  if (!matched) throw new Error("Unauthenticated")
 }
 
 export function authedQuery<Args extends PropertyValidators, Output>(spec: {

@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-extensions",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Install and materialize reusable agent capabilities (skills, MCP configs, plugins) into Codex, Claude, OpenCode, and Cursor runner-native locations",
   "license": "MIT",
@@ -182,7 +182,7 @@
     "build": "bun scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "test": "mkdir -p .artifacts/unit && bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "jsonc-parser": "3.3.1"

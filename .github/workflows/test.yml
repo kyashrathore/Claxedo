@@ -161,9 +161,64 @@ jobs:
             turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
 
+      # Repo-root guard, not a package suite, so it has no turbo task. Linux
+      # only: it reads Markdown off disk and is OS-independent, so running it
+      # again on the (non-blocking) Windows leg buys nothing.
+      - name: Check documentation links
+        if: runner.os == 'Linux'
+        run: bun run docs:check-links
+
+      # packages/*/dist is gitignored and several @claxedo packages resolve each
+      # other through their dist exports, so the suites that import them need
+      # these built first. turbo.json's generic `test` task deliberately does
+      # NOT use `dependsOn: ["^build"]` to get this -- that edge reaches the
+      # repo-wide-broken `opencode#build` (see the comment in turbo.json) -- so
+      # the build is scoped explicitly here instead. Same list the diagnostics
+      # and e2e jobs below use, plus typecheck.yml and release-claxedo.yml --
+      # `grep -rn 'filter=@claxedo/agent-event-runtime' .github/workflows/`
+      # finds every copy; keep them in sync.
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      # `bun turbo test` used to be a near-no-op: turbo.json declared only five
+      # package-scoped `#test` entries, and turbo runs nothing for a package it
+      # has no entry for, so 22 packages with real suites -- claxedo-server's
+      # 236 files / 2386 tests among them -- never gated a PR. turbo.json now
+      # declares ONE generic `test` task, so this command runs every package
+      # that has a `test` script, including ones added later.
+      #
+      # 35 min, up from 20: claxedo-server alone is ~4.5 min wall clock on a
+      # fast dev machine with `fileParallelism: false` (236 files serialized),
+      # and a 2-core runner is materially slower. If the observed wall clock
+      # ever crowds this ceiling, split claxedo-server into its own job rather
+      # than raising the number again -- but that job must then be added to
+      # branch protection, or it runs without gating anything.
+      #
+      # `--concurrency=2` matches the runner's core count and is load-bearing,
+      # not tuning. Turbo defaults to 10 parallel tasks; several newly-wired
+      # suites assert on wall-clock behaviour (wakes' timer coalescing,
+      # workgraph's single-concurrent-winner effect lease, workspace-runtime's
+      # PTY byte forwarding) and fail their 5s timeouts when starved of CPU.
+      # Measured: at 21-way parallelism on a fast many-core dev machine those
+      # three went red; serialized on the same machine, all three pass. A
+      # 2-core runner at concurrency 10 is strictly worse, and oversubscribing
+      # two cores buys no wall clock anyway.
       - name: Run unit tests
-        timeout-minutes: 20
-        run: bun turbo test
+        timeout-minutes: 35
+        run: bun turbo test --concurrency=2
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
@@ -171,7 +226,10 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          report_paths: packages/*/.artifacts/unit/junit.xml
+          # Second glob catches the nested workspace package (packages/sdk/js).
+          report_paths: |
+            packages/*/.artifacts/unit/junit.xml
+            packages/*/*/.artifacts/unit/junit.xml
           check_name: "unit results (${{ matrix.settings.name }})"
           detailed_summary: true
           include_time_in_summary: true
@@ -185,7 +243,9 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/*/.artifacts/unit/junit.xml
+          path: |
+            packages/*/.artifacts/unit/junit.xml
+            packages/*/*/.artifacts/unit/junit.xml
 
   e2e:
     # 12-way sharding: serialized (workers=1) the core suite runs ~50 min on a

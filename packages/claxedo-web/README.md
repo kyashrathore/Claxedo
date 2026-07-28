@@ -27,3 +27,5 @@ bunx playwright test
 Public claims about synchronization, placement, hosted operation, source parity, licensing, releases, pricing, or lineage must have reproducible evidence in the claim registry. Withheld claims must remain out of rendered pages until their owner records current evidence. Comparison pages require first-party sources, visible ownership, a review deadline, and automatic expiry from discovery.
 
 Framework code examples must compile against real exports and route/tool tables must match current implementation. When a package API changes, update its canonical framework page in the same change.
+
+Those pages are authored in `packages/claxedo-docs`, not here. `src/content/docs/framework/` is generated output — `bun run sync:framework` writes it and `bun run check:framework` fails the build if it drifts from the source tree. Edit the `.mdx` in `packages/claxedo-docs` and re-sync.

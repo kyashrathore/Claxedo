@@ -1,0 +1,113 @@
+name: claxedo-packages-release
+
+# Publishes the public `@claxedo/*` packages at the versions the repo declares.
+#
+# `claxedo-runtime-release.yml` covers the six-package runtime family and takes
+# the version as an input. This workflow covers everything (default: the six
+# that family misses — channels, connections, mcp, sandbox-manager, wakes,
+# workgraph) and reads each version from its package.json, so a release is a
+# reviewed version-bump commit rather than a number typed into a form.
+#
+# On every push to `dev` that touches one of those six package dirs, the
+# dry-run job builds, packs and inspects each tarball — the same gates
+# `script/publish-preflight.sh` encodes — without publishing anything.
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "packages/claxedo-channels/**"
+      - "packages/claxedo-connections/**"
+      - "packages/claxedo-mcp/**"
+      - "packages/sandbox-manager/**"
+      - "packages/wakes/**"
+      - "packages/workgraph/**"
+      - "packages/claxedo-server/scripts/release/**"
+      - ".github/workflows/claxedo-packages-release.yml"
+  pull_request:
+    paths:
+      - "packages/claxedo-channels/**"
+      - "packages/claxedo-connections/**"
+      - "packages/claxedo-mcp/**"
+      - "packages/sandbox-manager/**"
+      - "packages/wakes/**"
+      - "packages/workgraph/**"
+      - "packages/claxedo-server/scripts/release/**"
+      - ".github/workflows/claxedo-packages-release.yml"
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Which packages to publish"
+        required: false
+        default: others
+        type: choice
+        options:
+          - others # channels, connections, mcp, sandbox-manager, wakes, workgraph
+          - all # every public @claxedo/* package
+          - runtime-family # the six claxedo-runtime-release.yml also covers
+          - runtime
+          - apps
+          - wakes
+      npm_tag:
+        description: "npm dist-tag"
+        required: false
+        default: latest
+        type: string
+      dry_run:
+        description: "Run every gate but do not publish"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'publish' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    name: publish dry run
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Unit-test the release tooling
+        working-directory: packages/claxedo-server
+        run: node ./node_modules/vitest/vitest.mjs run scripts/release/tests/publish-claxedo-packages.test.ts scripts/release/tests/publish-runtime-packages.test.ts
+
+      - name: Build, pack and inspect every tarball
+        working-directory: packages/claxedo-server
+        run: bun run release:packages --track others --dry-run
+
+  publish:
+    name: publish
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+          scope: "@claxedo"
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: >-
+          bun run --cwd packages/claxedo-server release:packages
+          --track "${{ inputs.track }}"
+          --tag "${{ inputs.npm_tag }}"
+          ${{ inputs.dry_run && '--dry-run' || '' }}

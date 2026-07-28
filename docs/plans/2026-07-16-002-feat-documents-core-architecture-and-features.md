@@ -4,16 +4,17 @@ type: feat
 date: 2026-07-16
 status: active
 audience: product + engineering (readable companion)
-companion_of: docs/plans/2026-07-16-001-feat-documents-core-implementation-plan.md
+companion_of: "2026-07-16-001-feat-documents-core-implementation-plan (retired; recover from git history)"
 ---
 
 # Claxedo Documents — Product Features and Architecture
 
-This is the readable companion to the
-[implementation plan](./2026-07-16-001-feat-documents-core-implementation-plan.md).
-It answers two questions: **what does the user get**, and **how does each
-feature actually work under the hood**. The implementation plan owns units,
-edge cases, and gates; this doc owns the mental model.
+This is the readable companion to the implementation plan
+`2026-07-16-001-feat-documents-core-implementation-plan` (retired from the tracked
+tree; recover it from git history). It answers two questions: **what does the user
+get**, and **how does each feature actually work under the hood**. The
+implementation plan owns units, edge cases, and gates; this doc owns the mental
+model.
 
 ## The idea in one paragraph
 

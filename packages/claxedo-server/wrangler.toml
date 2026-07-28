@@ -16,6 +16,23 @@
 
 name = "claxedo-control-plane"
 main = "src/worker.ts"
+# HELD at 2025-05-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
+# Nothing here needs a newer default, and the ~60 flags that turned on between
+# 2025-05-01 and today include several this Worker cannot verify locally:
+#   2025-09-01 remove_nodejs_compat_eol{,_v23} — DELETES Node APIs from the
+#     runtime; any bundled dep still using one starts failing at runtime only.
+#   2025-09-15 enable_nodejs_process_v2 — replaces the `process` object this
+#     Worker reads bindings through (control-plane/worker-credentials.ts
+#     defaults its env argument to process.env).
+#   2025-09-01 strip_authorization_on_cross_origin_redirect — outbound calls to
+#     Convex/Clerk/Polar/Daytona lose Authorization across a cross-origin hop.
+#   2026-02-24 delete_all_deletes_alarm — DO deleteAll() also clears alarms,
+#     which WorkGraphSettler / ClaxedoWakeLane schedule.
+# A `wrangler deploy --dry-run` only bundles; it exercises none of these, and
+# a staging deploy is the only real test. See the harder-edged note in
+# packages/workspace-relay/wrangler.toml: >= 2026-03-17 provably breaks the
+# relay's binary WebSocket path, so the two Workers should not be split.
+# Move this date only alongside a supervised staging deploy + smoke.
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 

@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-event-runtime",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Canonical agent event contracts and harness adapters: normalize Claude SDK, Codex, Cursor, and ACP event streams into one runtime event model",
   "license": "MIT",
@@ -104,7 +104,7 @@
     "build": "bun scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "test": "mkdir -p .artifacts/unit && bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.2.1",

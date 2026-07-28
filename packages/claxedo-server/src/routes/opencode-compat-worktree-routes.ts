@@ -4,11 +4,39 @@ import path from "path"
 import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "../workspace-store"
 import { errorBody } from "./http"
 import { workspaceInput } from "./opencode-compat-context"
-import { defaultBranch, gitRun, locate, shell, trees } from "./opencode-compat-git"
+import { contains, defaultBranch, gitRun, locate, shell, trees } from "./opencode-compat-git"
+import { dataDir } from "../paths"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./opencode-compat-worktree"
 import { provisionRegisteredWorktree, WorktreeProvisionError } from "../worktree-service"
 
 type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
+
+/**
+ * The only two directory trees a worktree request may name for a project:
+ *
+ *  - the project's own checkout (`root.directory`), and
+ *  - the managed worktree root `<dataDir>/worktree/<project_id>`, which is
+ *    where `nextWorktreeInfo` actually creates worktrees — they live beside the
+ *    repository, not inside it.
+ *
+ * Without this, `target` is whatever the caller put in `?directory=` or in the
+ * JSON body, and it flows straight into `fs.rm(target, {recursive: true, force:
+ * true})` (deleteWorktree) and `git -C target reset --hard` + `git clean -ffdx`
+ * (resetWorktree). Neither the primary-workspace equality check nor
+ * `locate()` constrains it: `locate()` returning undefined only skips the
+ * `git worktree remove` step and falls through to the unconditional `fs.rm`.
+ */
+function withinProjectScope(project_id: string, repositoryDirectory: string, target: string) {
+  return contains(path.join(dataDir(), "worktree", project_id), target)
+    || contains(repositoryDirectory, target)
+}
+
+function outsideWorkspaceBody() {
+  return errorBody(
+    "opencode_worktree_outside_workspace",
+    "directory is outside this workspace's project and worktree roots",
+  )
+}
 
 export async function createWorktree(c: Context) {
   const input = workspaceInput(c)
@@ -73,6 +101,9 @@ export async function deleteWorktree(c: Context) {
   if (path.resolve(target) === path.resolve(root.directory)) {
     return c.json(errorBody("opencode_primary_workspace_remove_forbidden", "Cannot remove the primary workspace"), 400)
   }
+  if (!withinProjectScope(ws.project_id ?? ws.id, root.directory, target)) {
+    return c.json(outsideWorkspaceBody(), 400)
+  }
   const list = await gitRun(root.directory, ["worktree", "list", "--porcelain"])
   if (!list.ok) return c.json(errorBody("opencode_worktree_list_failed", list.err || list.out || "Failed to read git worktrees"), 400)
   const row = await locate(trees(list.out), target)
@@ -114,6 +145,9 @@ export async function resetWorktree(c: Context) {
   if (!root) return c.json(errorBody("opencode_project_workspace_not_found", "Project workspace not found"), 404)
   if (path.resolve(target) === path.resolve(root.directory)) {
     return c.json(errorBody("opencode_primary_workspace_reset_forbidden", "Cannot reset the primary workspace"), 400)
+  }
+  if (!withinProjectScope(ws.project_id ?? ws.id, root.directory, target)) {
+    return c.json(outsideWorkspaceBody(), 400)
   }
   const branch = await defaultBranch(root.directory)
   if (!branch) return c.json(errorBody("opencode_default_branch_not_found", "Default branch not found"), 400)

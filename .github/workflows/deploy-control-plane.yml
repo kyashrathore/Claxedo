@@ -177,8 +177,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bunx wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
 
-      # wrangler resolves to the workspace-pinned version (4.50.0 via the
-      # repo lockfile) after setup-bun's `bun install`.
+      # `bunx wrangler` resolves the wrangler devDependency declared by the
+      # package this step runs in — packages/workspace-relay and
+      # packages/claxedo-server each pin 4.114.0, installed by setup-bun's
+      # `bun install`. Until 2026-07-27 neither Worker package declared
+      # wrangler at all and `bunx` silently fetched whatever was latest that
+      # day; keep the pins or these deploys stop being reproducible.
       # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging.
       - name: Deploy control-plane Worker (staging)
         working-directory: packages/claxedo-server

@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { getLocalSelectionHandoff, localDraftSelectionHandoffID, resetLocalSelectionHandoffForTest } from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
@@ -6,6 +6,21 @@ import { queryClient } from "@/platform/query/query-client"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
 beforeEach(() => configureAppPortsForTest())
+
+// `mock.module` replaces a module PROCESS-WIDE and bun never unwinds it at the
+// end of a file. The cloud-startup-view stub below flips
+// `isForbiddenConnectionError` to a constant `false`, and the workspaces app
+// ports resolve that export through a call-time `require`, so leaving the stub
+// installed makes workspace-connection.ts classify a 403 as "failed" instead of
+// "forbidden" for every test file that runs after this one. Capture the real
+// module up front and put it back when this file is done.
+const realCloudStartupModule = {
+  ...(await import(`${import.meta.dir}/../ui/components/cloud-startup-view.tsx?session-actions-restore`)),
+}
+
+afterAll(() => {
+  mock.module("@/features/session/ui/components/cloud-startup-view", () => realCloudStartupModule)
+})
 
 let createSessionActions: typeof import("./session-actions").createSessionActions
 

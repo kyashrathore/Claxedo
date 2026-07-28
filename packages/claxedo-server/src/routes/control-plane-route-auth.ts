@@ -48,7 +48,16 @@ export async function requireSignedControlPlaneRoute(
   }
 }
 
-/** Hono middleware form — mount with `.use("*", controlPlaneRouteAuth(options))`. */
+/**
+ * Hono middleware form. Mount it path-scoped — `.use("/provider/*", ...)`, or
+ * once per route path as `opencode-compat.ts` does — NOT as `.use("*", ...)`
+ * unless the router is mounted under a prefix of its own. `app.route("/", sub)`
+ * re-registers a sub-app's middleware onto the parent router, so a `"*"`
+ * middleware inside a router mounted at `/` also runs for every parent route
+ * registered after it, and would reject callers that authenticate with
+ * something other than a control-plane bearer (installation tokens, runtime
+ * access tokens).
+ */
 export function controlPlaneRouteAuth(options: ControlPlaneRouteAuthOptions): MiddlewareHandler {
   return async (c, next) => {
     try {

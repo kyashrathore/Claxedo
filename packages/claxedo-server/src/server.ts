@@ -515,11 +515,17 @@ export function createApp(
 
   if (services.localExecution.enabled) {
     // OpenCode-compat routes (provider, config, project, session, agent, command)
+    // `...authRouteOptions(services)` is load-bearing: the global
+    // `unsignedLocalRequestGuard` above steps aside as soon as signed auth is
+    // enabled, and a signed self-host box (CLAXEDO_EMBEDDED_AUTH=1) is remotely
+    // reachable by design, so without it this router's destructive verbs are
+    // open to anyone who can reach the box. See routes/opencode-compat.ts.
     app.route(
       "/",
       OpenCodeCompatRoutes({
         services,
         env: process.env,
+        ...authRouteOptions(services),
         onOpencodeAccess: options.onOpencodeAccess,
       }),
     )

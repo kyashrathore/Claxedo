@@ -186,4 +186,37 @@ describe("Convex authz builder guard (D8)", () => {
       expect(source).toMatch(new RegExp(`function ${builder}\\([^]*?return migrations\\.define\\(`))
     }
   })
+
+  test("migration functions are internal, not publicly callable", async () => {
+    // F4 (pre-launch security review). The test above pins the SOURCE SHAPE of
+    // the migration helpers; this pins the thing that actually matters — the
+    // visibility of the REGISTERED functions — for the same reason the Clerk
+    // applier is asserted on `isInternal` rather than on its call site.
+    //
+    // `convex/migrations.ts` builds 46 exported functions through
+    // `@convex-dev/migrations`, and their visibility is a LIBRARY DEFAULT, not
+    // something this repo states: `Migrations.define` resolves to
+    // `this.options?.internalMutation ?? internalMutationGeneric`, and
+    // `new Migrations(components.migrations)` here passes no options. So the
+    // internal visibility of every migration rests on that `??` fallback. A
+    // library upgrade that changes the default — or someone passing an
+    // `internalMutation` option built from a public builder — would silently
+    // publish all 46 with no source-level diff in this repo.
+    //
+    // That is not a small blast radius. `migrations:run` takes the migration
+    // name as an ARGUMENT (`{ fn: "migrations:<name>" }`), so one public
+    // runner is a single unauthenticated endpoint that can drive any migration
+    // over every row of the named table — across all tenants. The tenancy
+    // backfills (`scopeWorkGraphsByOrganization` et al) rewrite the
+    // organization scoping that multi-tenant isolation is built on.
+    const migrations = await import("../../../../convex/migrations")
+    const internalFlag = (fn: unknown) => (fn as { isInternal?: boolean }).isInternal
+    // The generic runner: the highest-value target, since the migration to run
+    // is caller-supplied.
+    expect(internalFlag(migrations.run)).toBe(true)
+    // A `migrations.define(...)` migration and a helper-built one, covering
+    // both construction paths in the module.
+    expect(internalFlag(migrations.normalizeRuntimeLeaseLegacyFields)).toBe(true)
+    expect(internalFlag(migrations.scopeWorkGraphsByOrganization)).toBe(true)
+  })
 })

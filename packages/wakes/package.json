@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/wakes",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "prepublishOnly": "bun run build",
-    "test": "node ./node_modules/vitest/vitest.mjs run",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
     "typecheck": "bun x tsc --noEmit -p tsconfig.src.json",
     "typecheck:src": "bun x tsc --noEmit -p tsconfig.src.json",
     "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"

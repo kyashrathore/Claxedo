@@ -1,14 +1,29 @@
 # @claxedo/docs
 
-The legacy Mintlify authoring source for Claxedo developer documentation. The canonical public documentation now builds at **claxedo.com/framework** from `packages/claxedo-web`.
+**This directory is the canonical source for the published Claxedo developer
+documentation.** Both live surfaces come from the `.mdx` tree here:
 
-This package remains deployable during migration so `docs.claxedo.com` can stay available until the complete one-hop redirect report passes against the production edge. Do not retire it or move DNS based on repository tests alone.
+- **`claxedo.com/framework`** — `packages/claxedo-web/scripts/sync-framework-docs.ts`
+  copies every page except `index.mdx` into
+  `packages/claxedo-web/src/content/docs/framework/` and the Astro site builds
+  them. The generated tree is output, never edited by hand; `bun run check:framework`
+  in `packages/claxedo-web` fails if it drifts.
+- **`docs.claxedo.com`** — the Mintlify GitHub app builds this directory directly
+  on every push (see [Deploy](#deploy)).
 
-This is a **separate** site from the upstream `packages/docs/` Mintlify
-starter boilerplate. Content is **assembled** from the source-of-truth
-material — do not fork a second narrative that can drift:
+`index.mdx` is the one page that is *not* synced; it is served as the standalone
+`packages/claxedo-web/src/pages/framework.astro` landing instead.
 
-- `public-docs/*.md` — guides, deployment, MCP.
+Retiring `docs.claxedo.com` means binding the redirect manifest in
+`packages/claxedo-web/deploy/redirects.json` and verifying the one-hop redirect
+report against the production edge first. Do not move DNS on the strength of
+repository tests alone.
+
+This is a **separate** site from the upstream `packages/docs/` Mintlify starter
+boilerplate. Pages here are written by hand and must stay consistent with the
+material they describe — do not fork a second narrative that can drift:
+
+- `public-docs/*.md` — deployment runbooks and engineering reference.
 - The per-package `README.md` files — package reference + API tables.
 - `claxedo-cookbook/` — runnable examples.
 

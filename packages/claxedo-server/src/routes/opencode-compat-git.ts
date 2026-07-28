@@ -66,6 +66,24 @@ async function canon(input: string) {
   return process.platform === "win32" ? next.toLowerCase() : next
 }
 
+/**
+ * Containment guard for every caller-named directory that reaches `gitRun`,
+ * `shell`, or `fs.rm` on this surface.
+ *
+ * `path.resolve` collapses `..` first, so `<root>/../victim` normalizes to a
+ * sibling and is rejected. The `path.sep` suffix matters: a bare `startsWith`
+ * would accept `/srv/project-evil` as a child of `/srv/project`.
+ *
+ * Same idiom as `inside()` in documents/session-hydration.ts and
+ * `insideRepository()` in documents/repository-file-authority.ts — kept here so
+ * the worktree handlers and their tests share one definition.
+ */
+export function contains(root: string, candidate: string) {
+  const base = path.resolve(root)
+  const target = path.resolve(candidate)
+  return target === base || target.startsWith(base + path.sep)
+}
+
 export async function locate(rows: { path?: string; branch?: string }[], dir: string) {
   const key = await canon(dir)
   for (const row of rows) {

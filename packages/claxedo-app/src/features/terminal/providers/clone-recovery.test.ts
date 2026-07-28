@@ -16,11 +16,13 @@ const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?clone-recovery-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)) }
 const realRouterModule = { ...(await import("@solidjs/router")) }
+const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)) }
 
 afterAll(() => {
   mock.module("@/platform/api/api", () => realApiModule)
   mock.module("@/platform/persistence/persist", () => realPersistModule)
   mock.module("@solidjs/router", () => realRouterModule)
+  mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
 mock.module("@opencode-ai/ui/context", () => ({
