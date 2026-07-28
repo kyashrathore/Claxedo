@@ -32,6 +32,11 @@ build
 out
 ts-dist
 .turbo
+# Every `wrangler deploy`/`dev` — including `--dry-run` — writes a local state
+# dir next to the wrangler.toml it ran against. packages/workspace-relay had
+# its own rule; packages/claxedo-server and the sandbox/bench workers did not,
+# so a dry-run left untracked junk in the tree.
+.wrangler/
 .astro
 .cache
 .next

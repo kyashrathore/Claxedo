@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-relay-protocol",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Wire types, message validation, and token verifier interfaces for the Claxedo workspace relay tunnel protocol",
   "license": "MIT",

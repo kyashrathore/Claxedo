@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "MCP server and CLI for Claxedo documents, WorkGraph, processes, logs, sessions, and browser tools",
   "license": "MIT",
@@ -53,9 +53,9 @@
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
-    "@claxedo/workgraph": "0.3.0",
+    "@claxedo/workgraph": "0.4.0",
     "@modelcontextprotocol/sdk": "1.25.2",
-    "zod": "4.1.8"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

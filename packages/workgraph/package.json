@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workgraph",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -33,7 +33,7 @@
     "@noble/hashes": "2.2.0",
     "better-sqlite3": "13.0.1",
     "hono": "4.10.7",
-    "zod": "4.1.8"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

@@ -195,21 +195,30 @@ describe("cloudflare deploy prompt: commands", () => {
     const wrangler = (pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }) =>
       pkg.devDependencies?.wrangler ?? pkg.dependencies?.wrangler
 
-    // Verified 2026-07-27: only claxedo-app declares wrangler, so only the Pages
-    // deploy is version-reproducible. `bunx wrangler --version` returns 4.50.0 from
-    // packages/claxedo-app but the latest release from claxedo-server / workspace-relay.
-    const appPin = wrangler(await json("packages/claxedo-app/package.json"))
-    expect(appPin).toBeDefined()
-    promptMentions(`pinned ${appPin}`, "claxedo-app wrangler pin")
-
-    // If either Worker package later gains a pin, this fails so the prompt's
-    // "declare no wrangler dependency" paragraph gets corrected rather than going stale.
-    for (const dir of ["packages/claxedo-server", "packages/workspace-relay"]) {
-      const declared = wrangler(await json(`${dir}/package.json`))
-      expect(`${dir} declares wrangler: ${declared ?? "no"}`).toBe(`${dir} declares wrangler: no`)
+    // Verified 2026-07-28 (stream D3): all three deploy-unit packages pin the same
+    // wrangler, so `bunx wrangler` is reproducible in Units 2, 3 and 4. Each package
+    // must keep a pin AND they must agree, or the prompt's single stated version lies.
+    const unitPins = await Promise.all(
+      ["packages/workspace-relay", "packages/claxedo-server", "packages/claxedo-app"].map(async (dir) => ({
+        dir,
+        pin: wrangler(await json(`${dir}/package.json`)),
+      })),
+    )
+    for (const { dir, pin } of unitPins) {
+      expect(`${dir} pins wrangler: ${pin ?? "NOTHING — bunx would fetch an unpinned version"}`).toBe(`${dir} pins wrangler: ${pin}`)
     }
-    expect(prompt).toContain("declare no wrangler dependency at all")
-    expect(prompt).toContain("that claim is not true today")
+    // A single shared version, because the prompt states exactly one.
+    expect(unique(unitPins.map(({ pin }) => pin))).toHaveLength(1)
+    promptMentions(`pinned ${unitPins[0]!.pin}`, "deploy-unit wrangler pin")
+
+    // The sandbox container worker is deliberately held back on its own version.
+    // If that freeze is lifted, the prompt's "do not fix it" paragraph must go.
+    const sandboxPin = wrangler(await json("packages/claxedo-server/scripts/sandbox/cloudflare-worker/package.json"))
+    expect(sandboxPin).toBeDefined()
+    expect(sandboxPin).not.toBe(unitPins[0]!.pin)
+    promptMentions(`wrangler ${sandboxPin}`, "frozen sandbox-worker wrangler pin")
+    promptMentions(`npx --yes wrangler@${sandboxPin}`, "frozen sandbox-worker inline pin")
+    expect(await read(".github/workflows/deploy-cloudflare-sandbox-worker.yml")).toContain(`wrangler@${sandboxPin}`)
 
     expect(prompt).toContain("bunx wrangler")
     expect(prompt).toContain("bun install")

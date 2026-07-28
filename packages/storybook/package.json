@@ -22,7 +22,7 @@
     "@types/react": "18.0.25",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "solid-js": "1.9.10",
+    "solid-js": "1.9.12",
     "storybook": "10.5.0",
     "storybook-solidjs-vite": "10.6.0",
     "typescript": "5.9.3",
