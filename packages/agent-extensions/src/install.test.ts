@@ -8,7 +8,7 @@ import {
   installedStatePath,
   writeDesiredExtensionState,
 } from "./state"
-import { digestDirectory } from "./cache"
+import { cachePackageRoot, digestDirectory } from "./cache"
 import { lockStatePath, writeExtensionLock } from "./lock"
 import { materializedRecordPath, readMaterializedRuntimeRecord } from "./materialization"
 import { AgentExtensionConflictError, disableAgentExtension, enableAgentExtension, installCachedAgentExtension, uninstallAgentExtension, updateAgentExtension } from "./install"
@@ -1010,5 +1010,210 @@ describe("cached Agent Extension install flow", () => {
       version: 1,
       packages: {},
     })
+  })
+})
+
+// The install id used to be derived from the fetched package's own manifest
+// name / directory basename, so a catalog entry whose upstream directory is
+// named differently than its curated id persisted under the *upstream* name:
+// `anthropic-skill-pdf` (github.com/anthropics/skills/tree/main/skills/pdf)
+// landed as `pdf`, `mcp-filesystem` as `filesystem`, `mcp-fetch` as `fetch`.
+// Installs are pinned to the catalog id now, so those legacy records have to be
+// absorbed rather than left beside the pinned ones as apparent duplicates —
+// two records of one source always materialize to identical component paths,
+// and the second one can only lose the ownership check.
+describe("legacy manifest-derived install records", () => {
+  const CATALOG_ID = "anthropic-skill-pdf"
+  const LEGACY_SOURCE = {
+    type: "github" as const,
+    owner: "anthropics",
+    repo: "skills",
+    ref: "main",
+    package_path: "skills/pdf",
+  }
+
+  async function installPdf(input: { id?: string; now: number }) {
+    return installCachedAgentExtension({
+      sourceRoot: source,
+      packagePath: "skills/pdf",
+      source: LEGACY_SOURCE,
+      resolvedSha: "abcdef1234567890",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["claude"],
+      ...(input.id ? { id: input.id } : {}),
+      now: input.now,
+    })
+  }
+
+  function readState(file: "installed.json" | "lock.json" | "materialized.json") {
+    return fs.readFile(path.join(project, ".agent-extensions", file), "utf8").then(JSON.parse)
+  }
+
+  beforeEach(async () => {
+    await fs.rm(root, { recursive: true, force: true })
+    await fs.mkdir(source, { recursive: true })
+    await fs.mkdir(project, { recursive: true })
+    await fs.mkdir(home, { recursive: true })
+    await writeSource("skills/pdf/SKILL.md", "---\nname: pdf\n---\n")
+  })
+
+  test("a fresh id-pinned install lands under the catalog id, not the manifest name", async () => {
+    const result = await installPdf({ id: CATALOG_ID, now: 100 })
+
+    expect(result.id).toBe(CATALOG_ID)
+    // The manifest-derived name stays as `package_name` because it is what the
+    // on-disk artifact path is built from; only the record *key* is the id.
+    await expect(readState("installed.json")).resolves.toMatchObject({
+      installs: [{ id: CATALOG_ID, package_name: "pdf" }],
+    })
+    expect(Object.keys((await readState("lock.json")).packages)).toEqual([CATALOG_ID])
+    expect(Object.keys((await readState("materialized.json")).packages)).toEqual([CATALOG_ID])
+    await expectMaterializedDirectory(path.join(project, ".claude", "skills", "pdf"))
+  })
+
+  test("reinstalling over a legacy manifest-named record absorbs it instead of duplicating", async () => {
+    const legacy = await installPdf({ now: 100 })
+    expect(legacy.id).toBe("pdf")
+
+    const pinned = await installPdf({ id: CATALOG_ID, now: 200 })
+    expect(pinned.id).toBe(CATALOG_ID)
+
+    // One record per source, under the pinned id — in every state file.
+    const installs = (await readState("installed.json")).installs as Array<Record<string, unknown>>
+    expect(installs.map((item) => item.id)).toEqual([CATALOG_ID])
+    expect(Object.keys((await readState("lock.json")).packages)).toEqual([CATALOG_ID])
+    expect(Object.keys((await readState("materialized.json")).packages)).toEqual([CATALOG_ID])
+
+    // Absorbing carries the legacy record's history forward rather than
+    // restarting it, and the artifact the legacy record owned is still there
+    // (renaming the owner key must not orphan or delete it).
+    expect(installs[0]!.installed_at).toBe(100)
+    expect(installs[0]!.updated_at).toBe(200)
+    expect(pinned.materialized.status).toBe("applied")
+    await expectMaterializedDirectory(path.join(project, ".claude", "skills", "pdf"))
+    expect((await readState("materialized.json")).packages[CATALOG_ID].components)
+      .toContainEqual(expect.objectContaining({
+        path: path.join(project, ".claude", "skills", "pdf"),
+        status: "applied",
+      }))
+  })
+
+  test("reinstalling over a disabled legacy record keeps it disabled", async () => {
+    await installPdf({ now: 100 })
+    await disableAgentExtension({
+      id: "pdf",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      now: 150,
+    })
+
+    await installPdf({ id: CATALOG_ID, now: 200 })
+
+    const installs = (await readState("installed.json")).installs as Array<Record<string, unknown>>
+    expect(installs.map((item) => item.id)).toEqual([CATALOG_ID])
+    expect(installs[0]!.enabled).toBe(false)
+  })
+
+  test("uninstalling by catalog id removes a legacy-named record and its artifacts", async () => {
+    await installPdf({ now: 100 })
+    await expectMaterializedDirectory(path.join(project, ".claude", "skills", "pdf"))
+
+    await expect(uninstallAgentExtension({
+      id: CATALOG_ID,
+      source: LEGACY_SOURCE,
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      now: 200,
+    })).resolves.toMatchObject({ package_name: "pdf" })
+
+    await expect(readState("installed.json")).resolves.toEqual({ version: 1, installs: [] })
+    await expect(readState("lock.json")).resolves.toEqual({ version: 1, packages: {} })
+    await expect(readState("materialized.json")).resolves.toEqual({ version: 1, packages: {} })
+    await expect(fs.lstat(path.join(project, ".claude", "skills", "pdf"))).rejects.toThrow()
+  })
+
+  test("disable and enable by catalog id resolve a legacy-named record", async () => {
+    await installPdf({ now: 100 })
+
+    const lifecycle = {
+      id: CATALOG_ID,
+      source: LEGACY_SOURCE,
+      scope: "project" as const,
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+    }
+
+    await expect(disableAgentExtension({ ...lifecycle, now: 200 })).resolves.toMatchObject({
+      id: "pdf",
+      materialized: { status: "disabled" },
+    })
+    await expect(readState("installed.json")).resolves.toMatchObject({
+      installs: [{ id: "pdf", enabled: false }],
+    })
+
+    await expect(enableAgentExtension({ ...lifecycle, now: 300 })).resolves.toMatchObject({
+      id: "pdf",
+      materialized: { status: "applied" },
+    })
+    await expect(readState("installed.json")).resolves.toMatchObject({
+      installs: [{ id: "pdf", enabled: true }],
+    })
+    await expectMaterializedDirectory(path.join(project, ".claude", "skills", "pdf"))
+  })
+
+  test("updating by catalog id normalizes a legacy-named record onto the catalog id", async () => {
+    await installPdf({ now: 100 })
+
+    const result = await updateAgentExtension({
+      id: CATALOG_ID,
+      source: LEGACY_SOURCE,
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      now: 200,
+      fetchPackage: async () => ({
+        path: cachePackageRoot({ resolvedSha: "abcdef1234567890", packagePath: "skills/pdf", dataRoot: data }),
+        resolvedSha: "abcdef1234567890",
+        checksum: await digestDirectory(cachePackageRoot({ resolvedSha: "abcdef1234567890", packagePath: "skills/pdf", dataRoot: data })),
+      }),
+    })
+
+    expect(result?.id).toBe(CATALOG_ID)
+    const installs = (await readState("installed.json")).installs as Array<Record<string, unknown>>
+    expect(installs.map((item) => item.id)).toEqual([CATALOG_ID])
+    expect(installs[0]!.installed_at).toBe(100)
+    expect(Object.keys((await readState("materialized.json")).packages)).toEqual([CATALOG_ID])
+    await expectMaterializedDirectory(path.join(project, ".claude", "skills", "pdf"))
+  })
+
+  test("an unrelated install from a different source is never absorbed", async () => {
+    await writeSource("skills/docx/SKILL.md", "---\nname: docx\n---\n")
+    await installPdf({ now: 100 })
+
+    await installCachedAgentExtension({
+      sourceRoot: source,
+      packagePath: "skills/docx",
+      source: { ...LEGACY_SOURCE, package_path: "skills/docx" },
+      resolvedSha: "abcdef1234567890",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["claude"],
+      id: "anthropic-skill-docx",
+      now: 200,
+    })
+
+    const installs = (await readState("installed.json")).installs as Array<Record<string, unknown>>
+    expect(installs.map((item) => item.id)).toEqual(["anthropic-skill-docx", "pdf"])
   })
 })

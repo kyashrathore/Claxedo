@@ -10,6 +10,7 @@ import {
 } from "./materializers/mcp"
 import { materializeStandaloneSkill } from "./materializers/skills"
 import {
+  materializedComponentKey as componentKey,
   readMaterializedRuntimeRecord,
   writeMaterializedRuntimeRecord,
   type MaterializedComponent,
@@ -273,10 +274,6 @@ async function materializeDiscoveredComponent(input: {
     status: "skipped" as const,
     reason: "agent hook package materialization is not implemented yet",
   }]
-}
-
-function componentKey(component: Pick<MaterializedComponent, "runner" | "component" | "type">) {
-  return `${component.runner}\n${component.type}\n${component.component}`
 }
 
 // A component that failed mid-run must not cost the package the components it
