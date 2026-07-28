@@ -401,7 +401,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "model",
       onSelect: () => {
         phCapture("model_choose_opened", { ...identityProps(), surface: "command_palette" })
-        dialog.show(() => <DialogSelectModel model={pickerModel()} />)
+        dialog.show(() => <DialogSelectModel model={pickerModel()} surface="command_palette" />)
       },
     }),
     mcpCommand({

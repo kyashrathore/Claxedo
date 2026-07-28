@@ -25,6 +25,7 @@ export type Surface =
   | "session"
   | "documents"
   | "processes"
+  | "workgraph"
   | "settings"
   | "workspaces"
   | "onboarding"

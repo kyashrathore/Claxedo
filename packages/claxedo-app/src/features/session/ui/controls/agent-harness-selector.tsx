@@ -18,6 +18,7 @@ import { loadConnectProviderDialog, useProviders } from "@/features/session/app-
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultLabels } from "@/features/session/harness/draft-defaults"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
 const HARNESS_OPTION_LABELS: Partial<Record<HarnessType, string>> = {
   "claude-sdk": "Claude",
@@ -506,6 +507,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           })
           openedViaMenu = false
           if (!apply || !r) return
+          phCapture("harness_selected", { ...identityProps(), surface: "composer", harness: r })
           setSwitchingHarness(r)
           const switchScope = scope()
           const switchDirectory = directory()
