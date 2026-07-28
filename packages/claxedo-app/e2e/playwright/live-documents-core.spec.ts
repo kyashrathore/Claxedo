@@ -537,12 +537,19 @@ test.describe.serial("live Documents core backend @live", () => {
 
     const agentEdit = "Heading\n=======\n\nreal agent ordinary bash edit\n"
     await runGrantedPathBash(grantedPath, agentEdit)
-    // The agent's bash write-back reaches durable storage, but the open editor no
-    // longer live-refreshes to follow it (external-change removed) — it still
-    // shows the bytes it opened with.
-    expect((await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown).toBe(
-      agentEdit,
-    )
+    // The agent's bash write-back reaches durable storage, but only once the session's
+    // debounced fs.watch (session-hydration.ts: watches the hydrated document's
+    // directory, coalesces bursts behind a 100ms setTimeout, then reads the file and
+    // syncs it through) notices the external write and pushes it through — poll rather
+    // than assume that debounce has already elapsed by the time this request lands.
+    // Separately, the open editor no longer live-refreshes to follow it (external-change
+    // removed) — it still shows the bytes it opened with.
+    await expect
+      .poll(
+        async () => (await requestJson<{ markdown: string }>(`/documents/${createdDocument!.id}/content`)).markdown,
+        { timeout: 30_000 },
+      )
+      .toBe(agentEdit)
     await expect(editor).toHaveValue(preAgent)
     await proveGeometry(page, editor, testInfo, "real-agent-bash-does-not-live-refresh-open-editor")
 
