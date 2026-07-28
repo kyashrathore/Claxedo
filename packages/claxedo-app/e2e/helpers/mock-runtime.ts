@@ -408,15 +408,6 @@ export type MockRuntimeHandles = {
   /** Manually inject an event onto the global SSE stream (permission/question/todo/etc). */
   emit: (payload: MockEvent, directory?: string) => void
   /**
-   * `emit` for an IDEMPOTENT STATE frame that must survive the app's
-   * `/api/wr/events` consumer being mid-reconnect — notably across the
-   * draft→session navigation, where a plain `emit` is deterministically dropped
-   * (measured 5/5; see the `emitDurable` implementation comment). Safe only for
-   * frames that can be applied twice with the same result (`session.status`,
-   * `session.idle`); NEVER for accumulating frames like `message.part.delta`.
-   */
-  emitDurable: (payload: MockEvent, directory?: string) => void
-  /**
    * Manually inject an event onto the global SSE stream WITHOUT the
    * `{directory, payload}` envelope `emit()` always wraps events in. Real
    * `claxedoBus`-originated events (e.g. `session.lifecycle`, see
@@ -505,21 +496,27 @@ type PendingEvent = { directory: string; payload: MockEvent; flat?: boolean }
 //
 // Reader inventory for the cursor split (verified in source):
 // - global-sdk's compat loop AND its runtime-events loop
-//   (`src/context/global-sdk.tsx:561,706`) both parse `id:` lines via
-//   `sseJsonStream` and send `Last-Event-ID` on every reconnect — they get
-//   exact per-reader resume (`seq > cursor`).
-// - `ClaxedoEventsProvider` (`src/providers/claxedo-events.tsx`, its inline
-//   reader loop) ignores `id:` lines and never sends `Last-Event-ID` — a
-//   cursor-less connection is served the FULL wrapped log every time. That
-//   is safe precisely because of what this consumer does with frames: its
-//   `isClaxedoEvent` guard requires a top-level `.type`, so every
-//   `{directory, payload}`-wrapped frame is silently dropped; the only
-//   frames it consumes are FLAT ones, which the `/api/wr/events` handler
-//   serves through the separate idempotent replay-window mechanism
-//   (`flatWrReplay`) — full-log redelivery of wrapped frames to this reader
-//   is a no-op by construction. An id-tracking reader's FIRST connection is
-//   also cursor-less and gets the full log once — correct: a fresh page has
-//   applied nothing yet.
+//   (`src/app/providers/global-sdk/provider.tsx:652` and `:507`) both parse
+//   `id:` lines via `sseJsonStream` and send `Last-Event-ID` on every
+//   reconnect — they get exact per-reader resume (`seq > cursor`). The compat
+//   loop reaches THIS route because `authFetch` rewrites `/global/event` to
+//   `/api/wr/events` (`signedRuntimeEventInput`, src/platform/api/api.ts:185).
+// - `ClaxedoEventsProvider` (`src/app/integrations/claxedo-events.tsx`, its
+//   inline reader loop) resumes the same way: it reads `id:` lines (:508-509)
+//   and sends `Last-Event-ID` (:461). It is NOT a reader that wrapped frames
+//   pass through harmlessly — `normalizeClaxedoStreamEvent` (:158-169) unwraps
+//   `{directory, payload}` and applies the payload, so directory events
+//   (permission / question / message) DO reach the shell caches through it.
+//   Serving it a full log re-upserts requests the user already answered and
+//   resurrects their docks; its own cursor is what prevents that.
+// - A reader's FIRST connection is cursor-less and is served the full log
+//   once. Harmless here: a spec's page has applied nothing at that point.
+//   NOTE this is a deliberate divergence from the real handler
+//   (`packages/workspace-runtime/src/routes/runtime-events.ts`), which serves
+//   a cursor-less connection NOTHING from its replay buffer — it resumes such
+//   a connection at "now" and bootstraps its cursor with an opening heartbeat
+//   frame. The mock keeps full-log-on-first-connect because specs emit before
+//   the app has finished booting and rely on catching up.
 type LoggedEvent = { seq: number; directory: string; payload: MockEvent; flat?: boolean }
 
 class EventBus {
@@ -819,35 +816,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // must broadcast flat frames to all of them, not queue them to one.
   const FLAT_WR_REPLAY_WINDOW_MS = 6_000
   const flatWrReplay: Array<{ payload: MockEvent; until: number }> = []
-  /** Wrapped-frame counterpart of `flatWrReplay`; fed only by `emitDurable`. */
-  const wrappedWrReplay: Array<{ payload: MockEvent; directory: string; until: number }> = []
   const emitFlat = (payload: MockEvent) => {
     flatWrReplay.push({ payload, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
     fanout.emitFlat(payload)
   }
 
-  /**
-   * `emit` for a frame that must survive the consumer being mid-reconnect.
-   *
-   * MEASURED (core-busy-abort-errors behavior 6, 5/5 deterministic): a wrapped
-   * `session.status` frame emitted immediately after the draft→session navigation is
-   * NEVER applied — the app's `/api/wr/events` consumer is between connections across
-   * that transition, so the frame lands in the log but the reader that would have
-   * drained it is gone. The identical frame re-emitted ~2s later applies within 500ms
-   * and sticks. Specs worked around it by polling and re-emitting.
-   *
-   * This mirrors `flatWrReplay` for WRAPPED frames — but it is deliberately OPT-IN
-   * rather than applied to every `emit`, because replay copies carry no `id:` line and
-   * therefore do not advance a reader's cursor: a reader can legitimately see the same
-   * frame twice. That is harmless for STATE frames (`session.status`, `session.idle` —
-   * applying "busy" twice is identical to applying it once) and actively CORRUPTING
-   * for accumulating ones (`message.part.delta` would double the text). Only pass
-   * idempotent state frames here; use plain `emit` for everything else.
-   */
-  const emitDurable = (payload: MockEvent, directory: string = DIR) => {
-    wrappedWrReplay.push({ payload, directory, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
-    fanout.emit(directory, payload)
-  }
+  // NOTE: there is deliberately no wrapped-frame counterpart to `flatWrReplay`.
+  // One existed (`emitDurable`/`wrappedWrReplay`) on the premise that a wrapped
+  // frame emitted while the app's `/api/wr/events` consumer sits between
+  // connections is DROPPED. It is not: `EventBus` is an append-only log and a
+  // reconnect resumes at the reader's own `Last-Event-ID`, so such a frame is
+  // delivered late (by the reader's reconnect delay), never lost. Nothing used
+  // the escape hatch and it has been removed. If a spec needs a wrapped frame
+  // applied promptly, wait for the consumer rather than duplicating the frame.
 
   // Seed the "connected" handshake so the very first /global/event connection resolves
   // immediately instead of idling out.
@@ -1424,49 +1405,44 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/global/event?**", eventStreamHandler)
 
   // Sessions on the /w/<dir>/session/<id> route shape consume live events from
-  // GET /api/wr/events (see src/context/global-sdk.tsx), NOT /global/event.
-  // Without these mounts on the primary origin, emit() is a silent no-op for
-  // local sessions and specs only pass via the REST reconciliation fallback
-  // (confirmed in core-busy-abort-errors' request-log investigation). Same bus
-  // and wire envelope as /global/event, so cloud() re-registration on the
-  // relay origin remains behavior-identical.
-  // BROADCAST semantics for flat frames on /api/wr/events. The real server's
-  // /api/wr/events is a fan-out SSE stream: every open connection receives
-  // every event. This mock's EventBus is a work-QUEUE: `drain()` hands each
-  // event to exactly one connection. That difference is fatal for flat
-  // (claxedoBus-shaped) frames, because TWO DIFFERENT app consumers poll this
-  // one route concurrently: ClaxedoEventsProvider's central stream (the only
-  // consumer that understands flat frames) AND global-sdk's compat stream —
-  // `authFetch` rewrites `/global/event` to `/api/wr/events`
-  // (`signedRuntimeEventInput`, src/utils/api.ts) — which parses flat frames
-  // into a directory:"global" envelope where `session.lifecycle` matches no
-  // reducer (verified: this is where behavior-15's event was disappearing;
+  // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), NOT
+  // /global/event. Without these mounts on the primary origin, emit() is a
+  // silent no-op for local sessions and specs only pass via the REST
+  // reconciliation fallback (confirmed in core-busy-abort-errors' request-log
+  // investigation). Same bus and wire envelope as /global/event, so cloud()
+  // re-registration on the relay origin remains behavior-identical.
+  //
+  // FLAT frames get an extra short replay window on top of the log. History:
+  // `EventBus` USED to be a work-queue whose `drain()` handed each event to
+  // exactly one connection, which is fatal on this route because TWO app
+  // consumers poll it concurrently — ClaxedoEventsProvider's central stream
+  // (the only consumer that understands flat frames) AND global-sdk's compat
+  // stream, since `authFetch` rewrites `/global/event` to `/api/wr/events`
+  // (`signedRuntimeEventInput`, src/platform/api/api.ts:185), which parses flat
+  // frames into a directory:"global" envelope where `session.lifecycle` matches
+  // no reducer (verified: this is where behavior-15's event was disappearing;
   // the compat loop's ~250ms reconnect cadence out-polls ClaxedoEventsProvider's
-  // ~2s cadence, so it won the queue race nearly every time). Fix: flat
-  // frames are REPLAYED to every /api/wr/events response for a short window
-  // (`FLAT_WR_REPLAY_WINDOW_MS`/`flatWrReplay`, declared next to `emitFlat`)
-  // instead of being consumed by the first drainer. Duplicate delivery to
-  // ClaxedoEventsProvider is safe for every flat event this mock carries —
-  // `session.lifecycle` created applies idempotently (cache/inventory
-  // upserts by id) and the compat consumer drops flat frames entirely.
+  // ~2s cadence, so it won the queue race nearly every time). `EventBus` is now
+  // an append-only log with per-reader cursor resume, which fixes the race for
+  // every frame — but flat frames are still stripped from the log delivery and
+  // served from `flatWrReplay` (`FLAT_WR_REPLAY_WINDOW_MS`, declared next to
+  // `emitFlat`) so they carry no `id:` and cannot advance a reader's cursor.
+  // Duplicate delivery to ClaxedoEventsProvider is safe for every flat event
+  // this mock carries — `session.lifecycle` created applies idempotently
+  // (cache/inventory upserts by id) and the compat consumer drops flat frames
+  // entirely.
   const wrEventsHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     const now = Date.now()
     const replays = flatWrReplay.filter((entry) => entry.until > now)
-    const wrappedReplays = wrappedWrReplay.filter((entry) => entry.until > now)
     // Log-delivered flat copies are dropped in favor of the replay list so a
     // reader does not see the same frame twice in one body. Replay frames
     // deliberately carry NO `id:` line — they must not advance an
     // id-tracking reader's cursor.
     const body =
       sseBody(batch.filter((entry) => !entry.flat)) +
-      replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("") +
-      // Same no-`id:` rule as the flat replays above: these must not advance an
-      // id-tracking reader's cursor. See `emitDurable` for why this is opt-in.
-      wrappedReplays
-        .map((entry) => `data: ${JSON.stringify({ directory: entry.directory, payload: entry.payload })}\n\n`)
-        .join("")
+      replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
   const wrRuntimeEventsHandler = async (route: Route) => {
@@ -2575,7 +2551,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   return {
     requests,
     emit,
-    emitDurable,
     emitFlat,
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
