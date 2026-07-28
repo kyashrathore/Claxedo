@@ -936,7 +936,12 @@ describe("control-plane services", () => {
     expect(text).toContain("gitBranch: z.string().optional()")
     expect(text).toContain("services?.sandbox.defaultDriver")
     expect(text).toContain("sandboxDriverCredentials(options, services)")
-    expect(text).toContain(".getCredentialByProvider(id)")
+    // Kind-scoped since 6fee6b3ae. `provider_id` is shared with model providers
+    // and is not unique -- `vercel` is both a sandbox driver and a model
+    // provider -- so the unscoped lookup this used to pin let a model API key
+    // satisfy the sandbox-credential gate, passing creation and failing later at
+    // launch. Assert the scope, not just the call.
+    expect(text).toContain(".getCredentialByProvider(id, \"sandbox_driver\")")
     expect(text).toContain("const hasCredentials = credential?.status === \"available\" || !!sandboxDriverAuth(driverConfig, id)")
     expect(text).toContain("const gitBranch = body.gitBranch?.trim() || (rawWorkspaceName ? name : undefined)")
     expect(text).toContain("git_branch: gitBranch")
