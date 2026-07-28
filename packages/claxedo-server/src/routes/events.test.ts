@@ -6,7 +6,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "../control-plane/auth"
-import { claxedoBus } from "../bus"
+import { claxedoBus, createBus, type ClaxedoEvent } from "../bus"
 
 // Rubric S1: /api/claxedo/events must reject unauthenticated requests when
 // signed cloud auth is enabled, and must remain a pass-through when running
@@ -221,4 +221,276 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
     expect(received).toContain("user_a")
     expect(received).not.toContain("user_b")
   }, 10_000)
+})
+
+// ─── SSE replay ────────────────────────────────────────────────────────────
+//
+// Mirrors `packages/workspace-runtime/src/routes/runtime-events.test.ts`. This
+// stream was subscribe-on-connect only, so every frame published while a
+// consumer sat in its reconnect gap was gone for good. The central twist the
+// workspace stream does not have: the retention ring is shared across every
+// identity, so the per-identity `eventVisibleTo` filter has to be re-applied at
+// REPLAY time or a reconnect leaks other tenants' frames.
+
+type ReplayConnection = {
+  text: () => string
+  until: (match: (text: string) => boolean, label: string) => Promise<string>
+  close: () => void
+}
+
+async function connect(app: Hono, init: { lastEventId?: string; bearer?: string } = {}): Promise<ReplayConnection> {
+  const ac = new AbortController()
+  const res = await app.request("http://127.0.0.1/api/claxedo/events", {
+    headers: {
+      ...(init.lastEventId === undefined ? {} : { "Last-Event-ID": init.lastEventId }),
+      ...(init.bearer ? { authorization: `Bearer ${init.bearer}` } : {}),
+    },
+    signal: ac.signal,
+  })
+  expect(res.status).toBe(200)
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  return {
+    text: () => text,
+    async until(match, label) {
+      // Bounded by a read budget rather than a timer: each frame this handler
+      // writes arrives as its own chunk, so a match that never comes shows up
+      // as a small, deterministic number of reads.
+      for (let reads = 0; reads < 40; reads += 1) {
+        if (match(text)) return text
+        const next = await reader.read()
+        if (next.done) break
+        text += decoder.decode(next.value, { stream: true })
+      }
+      if (match(text)) return text
+      throw new Error(`${label}\n--- stream so far ---\n${text}`)
+    },
+    close: () => ac.abort(),
+  }
+}
+
+/**
+ * Field-order-independent frame split. Hono writes `data:` before `id:`; SSE
+ * readers (claxedo-app's inline loop, `sseJsonStream`) scan the frame's lines
+ * for each field rather than relying on order, so the tests do too.
+ */
+function frames(text: string) {
+  return text
+    .split("\n\n")
+    .filter((block) => block.trim().length > 0)
+    .map((block) => {
+      const lines = block.split("\n")
+      return {
+        id: lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim(),
+        data: lines.find((line) => line.startsWith("data:"))?.slice("data:".length).trim(),
+      }
+    })
+}
+
+/** The cursor the connection resumed from — always carried by the first frame. */
+function bootstrapId(text: string) {
+  return frames(text)[0]?.id
+}
+
+const localOnly: ControlPlaneAuthConfig = {
+  enabled: false,
+  mode: "local-only",
+  reason: "test",
+}
+
+function mountLocal(bus: ReturnType<typeof createBus<ClaxedoEvent>>) {
+  const app = new Hono()
+  app.get("/api/claxedo/events", eventsHandler({ bus, authConfig: localOnly }))
+  return app
+}
+
+/** Signed mount: frames only reach the stream if they clear `eventVisibleTo`. */
+function mountSignedAs(bus: ReturnType<typeof createBus<ClaxedoEvent>>, subject: string) {
+  const app = new Hono()
+  app.get(
+    "/api/claxedo/events",
+    eventsHandler({
+      bus,
+      authConfig: baseConfig,
+      verifier: async () => ({
+        mode: "signed",
+        user: {
+          subject,
+          tokenIdentifier: `https://example.clerk.dev|${subject}`,
+          issuer: "https://example.clerk.dev",
+        },
+      }),
+    }),
+  )
+  return app
+}
+
+const lifecycle = (tabId: string): ClaxedoEvent => ({
+  type: "agent.lifecycle",
+  tabId,
+  workspaceId: "ws_1",
+  eventType: "Busy",
+})
+
+describe("eventsHandler — /api/claxedo/events replay", () => {
+  test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+    bus.publish(lifecycle("tab_1"))
+    bus.publish(lifecycle("tab_2"))
+
+    const stream = await connect(app)
+    const text = await stream.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    stream.close()
+
+    expect(frames(text)[0]).toEqual({ id: "2", data: "{\"type\":\"heartbeat\"}" })
+  })
+
+  test("bootstraps at cursor 0 when nothing has been published yet", async () => {
+    const stream = await connect(mountLocal(createBus<ClaxedoEvent>()))
+    const text = await stream.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    stream.close()
+
+    expect(bootstrapId(text)).toBe("0")
+  })
+
+  test("a cursor-less connection is NOT served the retained log", async () => {
+    // The regression this guards: claxedo-app's reader applies the frames it
+    // reads to the shell caches, so a full re-read on every fresh connection
+    // re-applies requests the user has already consumed.
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+    bus.publish(lifecycle("tab_before"))
+
+    const stream = await connect(app)
+    await stream.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    bus.publish(lifecycle("tab_after"))
+    const text = await stream.until((seen) => seen.includes("tab_after"), "live frame never arrived")
+    stream.close()
+
+    expect(text).not.toContain("tab_before")
+  })
+
+  test("live frames carry an `id:` line so the reader builds a cursor", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+
+    const stream = await connect(app)
+    await stream.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    bus.publish(lifecycle("tab_live"))
+    const text = await stream.until((seen) => seen.includes("tab_live"), "live frame never arrived")
+    stream.close()
+
+    expect(frames(text).find((frame) => frame.data?.includes("tab_live"))?.id).toBe("1")
+  })
+
+  test("a frame published while disconnected is delivered on the next Last-Event-ID reconnect", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+
+    // A reader that has never seen a frame still leaves with a cursor.
+    const first = await connect(app)
+    const opened = await first.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    const cursor = bootstrapId(opened)
+    expect(cursor).toBe("0")
+    first.close()
+
+    // The frame-loss window: published with no connection attached.
+    bus.publish({ type: "workgraph.changed", ownerUserId: "local", ts: 1 })
+
+    const second = await connect(app, { lastEventId: cursor })
+    const text = await second.until((seen) => seen.includes("workgraph.changed"), "gap frame was lost")
+    second.close()
+
+    const recovered = frames(text).find((frame) => frame.data?.includes("workgraph.changed"))
+    expect(recovered?.id).toBe("1")
+    expect(recovered?.data).toContain("\"ownerUserId\":\"local\"")
+  })
+
+  test("resuming from a mid-log cursor replays only what follows it", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+    bus.publish(lifecycle("tab_old"))
+    bus.publish(lifecycle("tab_new"))
+
+    const stream = await connect(app, { lastEventId: "1" })
+    const text = await stream.until((seen) => seen.includes("tab_new"), "cursor resume delivered nothing")
+    stream.close()
+
+    expect(text).toContain("id: 2")
+    expect(text).not.toContain("tab_old")
+  })
+
+  test("emits a replay-gap notice when the cursor has fallen out of the retention window", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+    // Retention is 256 frames; 258 pushes the cursor at 1 out of the window.
+    for (let i = 1; i <= 258; i += 1) bus.publish(lifecycle(`tab_${i}`))
+
+    const stream = await connect(app, { lastEventId: "1" })
+    const text = await stream.until((seen) => seen.includes("stream.replay-gap"), "no replay-gap notice")
+    stream.close()
+
+    expect(text).toContain("claxedo.sse_replay_gap")
+    expect(text).toContain("\"lastEventId\":\"1\"")
+    expect(text).toContain("\"throughId\":\"258\"")
+    // The gap notice REPLACES the partial replay — a reader must refetch, not
+    // stitch a hole-ridden log into its incremental view.
+    expect(text).not.toContain("tab_258")
+  })
+
+  test("terminal frames survive eviction by the chatty ones", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountLocal(bus)
+    bus.publish({ type: "provision", workspaceId: "ws_1", step: "ready", ts: 1 })
+    for (let i = 1; i <= 300; i += 1) bus.publish(lifecycle(`tab_${i}`))
+
+    // Cursor 0 == "serve the whole retained log": the terminal ring must still
+    // hold the settlement that the 256-frame main ring evicted.
+    const stream = await connect(app, { lastEventId: "0" })
+    const text = await stream.until((seen) => seen.includes("\"provision\""), "terminal frame was evicted")
+    stream.close()
+
+    expect(text).toContain("\"workspaceId\":\"ws_1\"")
+  })
+
+  test("replay re-applies the identity filter: another tenant's frame is NOT replayed", async () => {
+    // THE central-stream hazard. The retention ring is shared by every identity
+    // — it has to be, because the frames worth recovering are the ones
+    // published while nobody was connected — so the only thing standing between
+    // user_b and user_a's events on a Last-Event-ID reconnect is that
+    // `eventVisibleTo` runs on the WRITE path, which replayed frames traverse
+    // exactly like live ones.
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountSignedAs(bus, "user_b")
+
+    // Both published with no connection attached, so both are in the ring and
+    // only the ring can deliver them.
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: 1 })
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 2 })
+
+    const stream = await connect(app, { lastEventId: "0", bearer: "valid-token" })
+    const text = await stream.until((seen) => seen.includes("user_b"), "own frame was not replayed")
+    stream.close()
+
+    expect(text).not.toContain("user_a")
+    // The id is still the SHARED publish-order sequence, not a per-identity
+    // renumbering: a cursor has to mean the same thing on every connection.
+    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("2")
+  })
+
+  test("an invisible frame is dropped on the live path too, and does not block the next visible one", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountSignedAs(bus, "user_b")
+
+    const stream = await connect(app, { bearer: "valid-token" })
+    await stream.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: 1 })
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 2 })
+    const text = await stream.until((seen) => seen.includes("user_b"), "own live frame never arrived")
+    stream.close()
+
+    expect(text).not.toContain("user_a")
+  })
 })

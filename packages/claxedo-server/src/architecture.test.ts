@@ -983,6 +983,10 @@ describe("harness-scoped resolution", () => {
       "control-plane-route-auth.ts",
       "credential.ts",
       "documents.ts",
+      // SSE replay-retention policy shared by the two central event streams
+      // (events.ts, opencode-compat-events.ts) so they cannot disagree about
+      // which frames survive eviction on the bus they both read.
+      "event-retention.ts",
       "event-visibility.ts",
       "events.ts",
       // Hosted (Cloudflare Worker) control-plane routes. Mounted by hosted-app.ts
