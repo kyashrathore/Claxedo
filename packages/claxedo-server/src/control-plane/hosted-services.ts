@@ -20,7 +20,7 @@ import { clerkAuthAdapter } from "./auth"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./runtime-access-token"
 import { workerTelemetry } from "./worker-telemetry"
 import { workerCredentials } from "./worker-credentials"
-import type { ControlPlaneServices } from "./services"
+import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
 import type { ProjectionStore } from "./projection-store"
 import type { DurableSessionLog } from "./durable-session-log"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
@@ -32,7 +32,7 @@ import type { HostedDeviceAuthProvider } from "../routes/hosted-device-auth"
 import { createControlPlaneRelayProvider } from "../relay-provider"
 import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../routes/internal-relay"
-import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { CliSessionTokenRegistry } from "./cli-session-registry"
 import {
   HostedWorkerCompositionError,
@@ -170,11 +170,70 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
   })
 }
 
-function sandboxManager(env: HostedWorkerEnv) {
+/**
+ * Route the sandbox manager's egress-unenforced warning into ops telemetry,
+ * without giving up the console line.
+ *
+ * The gap this closes is a DEPLOYMENT one, and it is silent by construction:
+ * `defaultSandboxDriverName` prefers cloudflare, cloudflare declares
+ * `egressControl: "none"`, and since the 2026-07-28 directive ("enforce where
+ * we can and document where we can't") such a deployment boots fine and creates
+ * fine — every hosted sandbox just comes up able to reach any host on the
+ * internet. The manager already warns at composition, but `console.warn` inside
+ * a Worker isolate reaches only whoever is tailing logs at that moment, which
+ * is nobody on the day the driver is switched.
+ *
+ * So the event also becomes a queryable ops fact. Deliberately NOT a hard
+ * `HostedWorkerCompositionError`: refusing composition would take the entire
+ * control plane down — auth, relay, WorkGraph, every workspace already running
+ * — over a provisioning-time capability. The failure this reports is real but
+ * partial, and the response to it is an operator changing a driver, not an
+ * outage.
+ *
+ * Ops plane, so `distinct_id: "system"` and no org/user identifiers — same
+ * contract as `sandbox.touch` and the WorkGraph monitors. `egressControl` rides
+ * along even though it is always `"none"` today, so a query can group on the
+ * capability rather than re-deriving it from a driver-id allowlist that would
+ * go stale the moment the catalog changes.
+ */
+export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
+  return (event: SandboxEgressUnenforcedEvent) => {
+    // Kept: `public-docs/sandbox-egress.md` tells operators to verify
+    // enforcement by looking for this line at boot, and overriding the sink
+    // replaces the manager's own console default.
+    console.warn(event.message)
+    telemetry.capture("system", "sandbox.egress_unenforced", {
+      phase: event.phase,
+      reason: event.reason,
+      driver: event.driver,
+      egress_control: event.egressControl,
+      ...(event.workspaceId ? { workspace_id: event.workspaceId } : {}),
+      // Counts only — an allowlist is deployment topology, not ops-plane data.
+      ...(event.requested
+        ? {
+            withheld_host_count: event.requested.hosts?.length ?? 0,
+            withheld_cidr_count: event.requested.cidrs?.length ?? 0,
+          }
+        : {}),
+    })
+  }
+}
+
+function sandboxManager(env: HostedWorkerEnv, telemetry: ControlPlaneTelemetry) {
   const driver = sandboxDriver(env)
   if (!driver) return
   const limits = safetyLimits(env)
-  return composeWorkerSandboxManager({ env, driver, maxRetryCount: limits.sandboxMaxRetryCount })
+  // The check is the DRIVER's own `metadata.egressControl`, read inside
+  // `createSandboxManager`, rather than a `sandboxDriverCatalog[id]` lookup
+  // here: a driver may narrow its declaration against the catalog entry
+  // (`drivers/docker.ts` does), and two independent readings of the same
+  // capability are two things that can disagree. One check, one warning.
+  return composeWorkerSandboxManager({
+    env,
+    driver,
+    maxRetryCount: limits.sandboxMaxRetryCount,
+    onEgressUnenforced: sandboxEgressUnenforcedSink(telemetry),
+  })
 }
 
 function deviceAuthProvider(env: HostedWorkerEnv): HostedDeviceAuthProvider | undefined {
@@ -277,10 +336,13 @@ export function composeHostedControlPlane(env: HostedWorkerEnv): HostedControlPl
     "a token signing key (CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)",
   )
 
-  const manager = sandboxManager(env)
+  // Telemetry is composed BEFORE the sandbox manager: composing the manager is
+  // what emits the boot-time "this driver cannot contain egress" event, and a
+  // sink that does not exist yet cannot receive it.
+  const telemetry = workerTelemetry(env)
+  const manager = sandboxManager(env, telemetry)
   const homeRegion = defaultHomeRegion(env)
   const relayUrls = relayEndpointsFromEnv(env, relayUrl)
-  const telemetry = workerTelemetry(env)
   const runtimeAccessSigner = runtimeAccessTokenSigner(env)
   const hostTunnelSigner = hostTunnelTokenSigner(env)
   const userHostedResolver = composeWorkerUserHostedResolver(env)

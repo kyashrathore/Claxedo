@@ -618,7 +618,13 @@ function disposeCode(key: string) {
 function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
   const current = container.children[index]
   if (block.mode === "code") {
-    updateCodeBlock(container, current, block, labels)
+    const node = updateCodeBlock(container, current, block, labels)
+    // A top-level ```mermaid fence is *always* a `mode: "code"` block, and this
+    // path never reaches `decorate()`, so mermaid has to be driven from here or
+    // it never runs at all. Gated on `complete`: a half-streamed fence cannot
+    // parse, and each failed attempt clears the marker, so an ungated call would
+    // re-render on every token until the fence closes.
+    if (block.complete) renderMermaidBlocks(node)
     return
   }
   if (
@@ -666,7 +672,7 @@ function updateCodeBlock(
   current: Element | undefined,
   block: Extract<RenderedBlock, { mode: "code" }>,
   labels: CopyLabels,
-) {
+): HTMLDivElement {
   const existing = current instanceof HTMLDivElement && current.dataset.markdownKey === block.key ? current : undefined
   const next = existing ?? document.createElement("div")
   next.dataset.markdownBlock = ""
@@ -704,7 +710,7 @@ function updateCodeBlock(
       unstable: block.unstable,
       raw: block.raw,
     })
-    return
+    return next
   }
 
   const wrapper = document.createElement("div")
@@ -729,9 +735,10 @@ function updateCodeBlock(
   if (current) {
     disposeCopyButtons(current)
     current.replaceWith(next)
-    return
+    return next
   }
   container.appendChild(next)
+  return next
 }
 
 function sameToken(left: MarkdownToken, right: MarkdownToken | undefined) {

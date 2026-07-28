@@ -224,6 +224,30 @@ function assertHostedAppBootConfig(plane: HostedControlPlane) {
   }
 }
 
+/**
+ * Deployment-specific hosts appended to the hosted sandbox egress allowlist,
+ * from `CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS` (comma-separated).
+ *
+ * This is the ONLY way an operator can widen what a hosted sandbox may reach.
+ * `hostedSandboxNetworkPolicy` deliberately excludes general-purpose object
+ * storage and CDN wildcards — each is a bucket an attacker can create in their
+ * own account — so a deployment that genuinely needs a private registry or a
+ * self-hosted model gateway names it here, and the widening is one grep away
+ * from an auditor rather than a default nobody chose.
+ *
+ * Same comma-separated shape as `CLAXEDO_NETWORK_ALLOWLIST_EXTRA`
+ * (`network/types.ts`), the credential layer's equivalent knob, so an operator
+ * who has configured one already knows this one. Unset or blank yields an empty
+ * list, which leaves the reviewed baseline exactly as it is: absent config
+ * never widens the allowlist, it only declines to.
+ */
+function sandboxEgressExtraHosts(env: HostedControlPlane["env"]): string[] {
+  return (env.CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean)
+}
+
 export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
   assertHostedAppBootConfig(plane)
   // Install the plane's durable CLI session token registry process-wide.
@@ -375,8 +399,12 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     }
   }
 
+  const egressExtraHosts = sandboxEgressExtraHosts(plane.env)
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     requireCloudWorkspaceEntitlement,
+    // Omitted when empty rather than passed as `[]`: the route option is
+    // optional, and an absent key is the shape that means "the baseline stands".
+    ...(egressExtraHosts.length ? { sandboxEgressExtraHosts: egressExtraHosts } : {}),
     authConfig: services.auth.config,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
     ...(services.relay.relayUrl ? { relayUrl: services.relay.relayUrl } : {}),

@@ -17,8 +17,10 @@ import { workspacePath } from "./opencode-compat-context"
 
 const ROOT = path.resolve("/srv/project")
 
-function reject(input: string) {
-  return () => workspacePath(ROOT, input)
+function serve(root: () => string) {
+  const app = new Hono()
+  app.get("/file", async (c) => c.json({ path: await workspacePath(root(), c.req.query("path")) }))
+  return app
 }
 
 describe("workspacePath containment", () => {
@@ -39,22 +41,19 @@ describe("workspacePath containment", () => {
     ["a relative hop into the sibling root", "../project-evil/secret"],
   ]
 
-  test.each(escapes)("rejects %s", (_name, input) => {
-    expect(reject(input)).toThrow()
+  test.each(escapes)("rejects %s", async (_name, input) => {
+    await expect(workspacePath(ROOT, input)).rejects.toThrow()
   })
 
-  test("rejects rather than clamping to the root", () => {
+  test("rejects rather than clamping to the root", async () => {
     // Silently rewriting an escaping path to `root` would answer a traversal
     // probe with a plausible 200 and hide the attempt entirely.
-    expect(workspacePath(ROOT, "ok.txt")).toBe(path.join(ROOT, "ok.txt"))
-    expect(reject("../../etc/passwd")).toThrow()
+    expect(await workspacePath(ROOT, "ok.txt")).toBe(path.join(ROOT, "ok.txt"))
+    await expect(workspacePath(ROOT, "../../etc/passwd")).rejects.toThrow()
   })
 
   test("the rejection is a 400 with the compat error shape", async () => {
-    const app = new Hono()
-    app.get("/file", (c) => c.json({ path: workspacePath(ROOT, c.req.query("path")) }))
-
-    const res = await app.request("/file?path=../../etc/passwd")
+    const res = await serve(() => ROOT).request("/file?path=../../etc/passwd")
 
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({
@@ -69,8 +68,7 @@ describe("workspacePath containment", () => {
     // Hono decodes query params, so `..%2F..%2F` reaches the helper as `../../`.
     // Guarding after decoding is the whole point — a guard that ran first would
     // pass the encoded form straight through to `fs`.
-    const app = new Hono()
-    app.get("/file", (c) => c.json({ path: workspacePath(ROOT, c.req.query("path")) }))
+    const app = serve(() => ROOT)
 
     for (const encoded of [
       "..%2F..%2Fetc%2Fpasswd",
@@ -88,10 +86,7 @@ describe("workspacePath containment", () => {
     // `%2e%2e%2f`, which is a filename, not a traversal. Pinned so nobody
     // "fixes" this by adding a second decodeURIComponent — that is how
     // double-decoding bugs get introduced.
-    const app = new Hono()
-    app.get("/file", (c) => c.json({ path: workspacePath(ROOT, c.req.query("path")) }))
-
-    const res = await app.request("/file?path=%252e%252e%252fsecret")
+    const res = await serve(() => ROOT).request("/file?path=%252e%252e%252fsecret")
 
     expect(res.status).toBe(200)
     expect((await res.json()).path).toBe(path.join(ROOT, "%2e%2e%2fsecret"))
@@ -99,25 +94,25 @@ describe("workspacePath containment", () => {
 })
 
 describe("workspacePath still resolves legitimate in-root paths", () => {
-  test("relative paths resolve under the root", () => {
-    expect(workspacePath(ROOT, "src/index.ts")).toBe(path.join(ROOT, "src", "index.ts"))
-    expect(workspacePath(ROOT, "./src/index.ts")).toBe(path.join(ROOT, "src", "index.ts"))
-    expect(workspacePath(ROOT, "src/../lib/util.ts")).toBe(path.join(ROOT, "lib", "util.ts"))
+  test("relative paths resolve under the root", async () => {
+    expect(await workspacePath(ROOT, "src/index.ts")).toBe(path.join(ROOT, "src", "index.ts"))
+    expect(await workspacePath(ROOT, "./src/index.ts")).toBe(path.join(ROOT, "src", "index.ts"))
+    expect(await workspacePath(ROOT, "src/../lib/util.ts")).toBe(path.join(ROOT, "lib", "util.ts"))
   })
 
-  test("the root itself and the empty input resolve to the root", () => {
-    expect(workspacePath(ROOT, undefined)).toBe(ROOT)
-    expect(workspacePath(ROOT, "")).toBe(ROOT)
-    expect(workspacePath(ROOT, "   ")).toBe(ROOT)
-    expect(workspacePath(ROOT, ".")).toBe(ROOT)
-    expect(workspacePath(ROOT, ROOT)).toBe(ROOT)
+  test("the root itself and the empty input resolve to the root", async () => {
+    expect(await workspacePath(ROOT, undefined)).toBe(ROOT)
+    expect(await workspacePath(ROOT, "")).toBe(ROOT)
+    expect(await workspacePath(ROOT, "   ")).toBe(ROOT)
+    expect(await workspacePath(ROOT, ".")).toBe(ROOT)
+    expect(await workspacePath(ROOT, ROOT)).toBe(ROOT)
   })
 
-  test("absolute in-root paths keep working", () => {
+  test("absolute in-root paths keep working", async () => {
     // Load-bearing: the directory listing returns an `absolute` field per entry
     // and the client round-trips it back as `?path=`. Containment must not
     // break that.
-    expect(workspacePath(ROOT, path.join(ROOT, "src", "index.ts"))).toBe(path.join(ROOT, "src", "index.ts"))
+    expect(await workspacePath(ROOT, path.join(ROOT, "src", "index.ts"))).toBe(path.join(ROOT, "src", "index.ts"))
   })
 
   test("the file browser still reads a real in-root file end to end", async () => {
@@ -126,11 +121,11 @@ describe("workspacePath still resolves legitimate in-root paths", () => {
       await fs.promises.mkdir(path.join(directory, "nested"))
       await fs.promises.writeFile(path.join(directory, "nested", "note.txt"), "hello")
 
-      const resolved = workspacePath(directory, "nested/note.txt")
+      const resolved = await workspacePath(directory, "nested/note.txt")
 
       expect(await fs.promises.readFile(resolved, "utf8")).toBe("hello")
       // ...and the escape from that same real root is refused.
-      expect(() => workspacePath(directory, "../../../etc/passwd")).toThrow()
+      await expect(workspacePath(directory, "../../../etc/passwd")).rejects.toThrow()
     } finally {
       await fs.promises.rm(directory, { recursive: true, force: true })
     }
@@ -205,37 +200,34 @@ describe.skipIf(!fixture)("workspacePath resolves symlinks before containing", (
     ["a relative-target symlink that escapes", "relative-escape/secret.txt"],
   ]
 
-  test.each(escapes)("rejects %s", (_name, input) => {
-    expect(() => workspacePath(root(), input)).toThrow()
+  test.each(escapes)("rejects %s", async (_name, input) => {
+    await expect(workspacePath(root(), input)).rejects.toThrow()
   })
 
-  test("rejects an escaping symlink handed back as an absolute path", () => {
+  test("rejects an escaping symlink handed back as an absolute path", async () => {
     // The directory listing returns an `absolute` field the client round-trips
     // as `?path=`, so the absolute form has to be guarded too.
-    expect(() => workspacePath(root(), at("root", "escape-dir", "secret.txt"))).toThrow()
+    await expect(workspacePath(root(), at("root", "escape-dir", "secret.txt"))).rejects.toThrow()
   })
 
-  test("rejects a not-yet-existing path underneath an escaping symlink", () => {
+  test("rejects a not-yet-existing path underneath an escaping symlink", async () => {
     // The trap in this whole class of fix. `realpath` throws ENOENT here just
     // like it does for a legitimate file about to be created, so "fall back to
     // the lexical check on ENOENT" reopens the hole for precisely the paths an
     // attacker crafts. `escape-dir` still resolves to `../outside`.
-    expect(() => workspacePath(root(), "escape-dir/not-yet.txt")).toThrow()
-    expect(() => workspacePath(root(), "escape-dir/nested/not-yet.txt")).toThrow()
+    await expect(workspacePath(root(), "escape-dir/not-yet.txt")).rejects.toThrow()
+    await expect(workspacePath(root(), "escape-dir/nested/not-yet.txt")).rejects.toThrow()
   })
 
-  test("rejects a dangling symlink that points outside the root", () => {
+  test("rejects a dangling symlink that points outside the root", async () => {
     // `realpath` fails on a dangling link, so walking up to the deepest
     // resolvable ancestor would treat `dangling` as a plain filename and call
     // it contained. The link has to be read by hand.
-    expect(() => workspacePath(root(), "dangling")).toThrow()
+    await expect(workspacePath(root(), "dangling")).rejects.toThrow()
   })
 
   test("the symlink rejection is the same typed 400, not an fs error", async () => {
-    const app = new Hono()
-    app.get("/file", (c) => c.json({ path: workspacePath(root(), c.req.query("path")) }))
-
-    const res = await app.request("/file?path=escape-dir/secret.txt")
+    const res = await serve(root).request("/file?path=escape-dir/secret.txt")
 
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({
@@ -247,7 +239,7 @@ describe.skipIf(!fixture)("workspacePath resolves symlinks before containing", (
   })
 
   test("an ordinary in-root path still resolves and reads", async () => {
-    const resolved = workspacePath(root(), "real/inner.txt")
+    const resolved = await workspacePath(root(), "real/inner.txt")
 
     expect(resolved).toBe(at("root", "real", "inner.txt"))
     expect(await fs.promises.readFile(resolved, "utf8")).toBe("fine")
@@ -256,8 +248,8 @@ describe.skipIf(!fixture)("workspacePath resolves symlinks before containing", (
   test("a symlink that stays inside the root still works", async () => {
     // The control that proves the fix did not simply ban symlinks. Both of
     // these resolve through a link and land back inside the root.
-    const viaDir = workspacePath(root(), "inside-dir/inner.txt")
-    const viaFile = workspacePath(root(), "inside-file")
+    const viaDir = await workspacePath(root(), "inside-dir/inner.txt")
+    const viaFile = await workspacePath(root(), "inside-file")
 
     expect(await fs.promises.readFile(viaDir, "utf8")).toBe("fine")
     expect(await fs.promises.readFile(viaFile, "utf8")).toBe("fine")
@@ -267,12 +259,12 @@ describe.skipIf(!fixture)("workspacePath resolves symlinks before containing", (
     expect(viaDir).toBe(at("root", "inside-dir", "inner.txt"))
   })
 
-  test("a not-yet-existing path in a legitimate directory still resolves", () => {
+  test("a not-yet-existing path in a legitimate directory still resolves", async () => {
     // The create case. A write path targeting a new file must survive, and so
     // must a new file under a directory that does not exist yet.
-    expect(workspacePath(root(), "real/not-yet.txt")).toBe(at("root", "real", "not-yet.txt"))
-    expect(workspacePath(root(), "real/new-dir/not-yet.txt")).toBe(at("root", "real", "new-dir", "not-yet.txt"))
-    expect(workspacePath(root(), "brand-new.txt")).toBe(at("root", "brand-new.txt"))
+    expect(await workspacePath(root(), "real/not-yet.txt")).toBe(at("root", "real", "not-yet.txt"))
+    expect(await workspacePath(root(), "real/new-dir/not-yet.txt")).toBe(at("root", "real", "new-dir", "not-yet.txt"))
+    expect(await workspacePath(root(), "brand-new.txt")).toBe(at("root", "brand-new.txt"))
   })
 
   test("a workspace root that is itself a symlink still works", async () => {
@@ -281,11 +273,11 @@ describe.skipIf(!fixture)("workspacePath resolves symlinks before containing", (
     // to `/private/var`.
     const linked = at("rootlink")
 
-    expect(await fs.promises.readFile(workspacePath(linked, "ok.txt"), "utf8")).toBe("fine")
-    expect(await fs.promises.readFile(workspacePath(linked, "real/inner.txt"), "utf8")).toBe("fine")
-    expect(workspacePath(linked, "real/not-yet.txt")).toBe(path.join(linked, "real", "not-yet.txt"))
+    expect(await fs.promises.readFile(await workspacePath(linked, "ok.txt"), "utf8")).toBe("fine")
+    expect(await fs.promises.readFile(await workspacePath(linked, "real/inner.txt"), "utf8")).toBe("fine")
+    expect(await workspacePath(linked, "real/not-yet.txt")).toBe(path.join(linked, "real", "not-yet.txt"))
     // ...and the escapes are still refused through the symlinked root.
-    expect(() => workspacePath(linked, "escape-dir/secret.txt")).toThrow()
-    expect(() => workspacePath(linked, "../outside/secret.txt")).toThrow()
+    await expect(workspacePath(linked, "escape-dir/secret.txt")).rejects.toThrow()
+    await expect(workspacePath(linked, "../outside/secret.txt")).rejects.toThrow()
   })
 })

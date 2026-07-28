@@ -27,6 +27,7 @@ export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_decisions",
   "workgraph_work_items",
   "workgraph_outcomes",
+  "workgraph_master_mailbox",
   "workgraph_stream_sequences",
   "workgraph_streams",
   "workgraph_external_identities",

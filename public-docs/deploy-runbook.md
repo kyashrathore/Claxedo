@@ -210,7 +210,29 @@ The hosted Worker also requires `CLAXEDO_WORKSPACE_AUTHORITY_URL`, `CLERK_JWT_IS
 
 Hosted Documents requires the `CLAXEDO_DOCUMENTS` R2 binding. Provision and verify `claxedo-documents-staging` and `claxedo-documents` before deployment with `bunx wrangler r2 bucket info <bucket> --json`. Both staging and production authenticated smokes probe `/documents/__claxedo_deployment_probe__`; the expected 404 proves the route reached a composed Documents backend, while a missing binding returns `document_backend_unavailable` with 503 and blocks promotion.
 
-Connections and signed WorkGraph webhooks require the encrypted per-organization credential backend. Set `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` together with `CLAXEDO_CREDENTIALS_KEK`, `CLAXEDO_CF_KV_URL`, and `CLAXEDO_CF_KV_TOKEN`; use `CLAXEDO_CREDENTIALS_KEK_NEXT` only during key rotation. Provider tokens and webhook signing secrets are then written through the Connections setup routes and never placed in WorkGraph or deployment variables.
+Connections and signed WorkGraph webhooks require the encrypted per-organization credential backend. Set `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` together with `CLAXEDO_CREDENTIALS_KEK`, `CLAXEDO_CF_KV_URL`, and `CLAXEDO_CF_KV_TOKEN`; use `CLAXEDO_CREDENTIALS_KEK_NEXT` only during key rotation, and finish that rotation with the drain below rather than leaving the retired key configured indefinitely. Provider tokens and webhook signing secrets are then written through the Connections setup routes and never placed in WorkGraph or deployment variables.
+
+### Completing a credential KEK rotation
+
+Rotating `CLAXEDO_CREDENTIALS_KEK` is a drain, not a swap. A new key changes only what *new* writes use; every value written before the rotation still decrypts only under the old key, so the retired key has to stay configured as `CLAXEDO_CREDENTIALS_KEK_NEXT` — and is therefore still live — until stored ciphertext has been re-encrypted. Removing `CLAXEDO_CREDENTIALS_KEK_NEXT` before that finishes makes those credentials unreadable; never removing it means the key was never actually retired, which is the state a rotation exists to escape.
+
+1. **Stage.** New key in `CLAXEDO_CREDENTIALS_KEK`, the key being retired in `CLAXEDO_CREDENTIALS_KEK_NEXT`. Both are configured at once: writes use the new key, reads accept either.
+2. **Drain.** Re-encrypt stored ciphertext under the new key, from `packages/claxedo-server`:
+
+   ```sh
+   cd packages/claxedo-server
+   # Hosted Worker — sweeps the Cloudflare KV credential store across all orgs.
+   node --import tsx scripts/maintenance/rotate-credential-kek.ts --hosted
+   # Self-host Node process — sweeps the backend that process reads through.
+   node --import tsx scripts/maintenance/rotate-credential-kek.ts --local
+   ```
+
+   Run whichever target applies, or both when one rotation covers a hosted Worker and a self-host process. The script runs from an operator shell, not inside the Worker, so `--hosted` needs `CLAXEDO_CF_KV_URL`, `CLAXEDO_CF_KV_TOKEN`, and both KEKs exported in that shell, pointing at the same KV namespace the Worker uses. The pass is idempotent and safe to re-run at any point: each slot is classified by its stored key-id before any work and rewritten by a single overwrite of its own storage id, so a crash mid-pass leaves either the old ciphertext (still readable — the retired key is still configured) or the new one, never a half-written slot. A slot that cannot be decrypted or verified fails that item, not the batch, and forces `complete: false`.
+
+3. **Verify.** Re-run with `--audit`, which classifies and writes nothing. Exit code 0 with `complete: true` and an empty `staleKeyIds` means no ciphertext remains under a retired key-id. Exit code 1 means work or failures remain; `staleKeyIds` names the key-ids that still hold data, and every KEK named there must stay configured.
+4. **Retire.** Only then remove `CLAXEDO_CREDENTIALS_KEK_NEXT` from the Worker secrets and any self-host environment, and redeploy.
+
+The local encrypted **file** store (`packages/claxedo-server/src/credentials/local.ts`, used when `CLAXEDO_CF_KV_URL` is unset) is outside the KEK scheme entirely: it encrypts with a machine-local key derived from `<data dir>/credentials/.seed` (`~/.claxedo` unless `CLAXEDO_DATA_DIR` overrides it), carries no key-id, and never involves `CLAXEDO_CREDENTIALS_KEK`. A `--local` run against it reports `envelopeManaged: false` and exits 0 — read that field together with `complete`, because a green file-store audit is not evidence about a hosted store. Implementation: `packages/claxedo-server/src/credentials/rotate.ts` and `rotate-local.ts`.
 
 ## WorkGraph Cloud go/no-go
 

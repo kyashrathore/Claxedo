@@ -30,17 +30,17 @@ export function workspaceRoot(ws: { directory: string } | undefined | null, inpu
 /** Symlink hops `canonical()` will follow by hand before it gives up. */
 const LINK_HOPS = 32
 
-function real(target: string) {
+async function real(target: string) {
   try {
-    return fs.realpathSync.native?.(target) ?? fs.realpathSync(target)
+    return await fs.promises.realpath(target)
   } catch {
     return undefined
   }
 }
 
-function readLink(target: string) {
+async function readLink(target: string) {
   try {
-    return fs.readlinkSync(target)
+    return await fs.promises.readlink(target)
   } catch {
     return undefined
   }
@@ -72,15 +72,15 @@ function readLink(target: string) {
  * traverse is also a component it cannot open, so the caller's `fs` call fails
  * on the same wall rather than reading something it should not.
  */
-function canonical(input: string, hops = 0): string {
+async function canonical(input: string, hops = 0): Promise<string> {
   const target = path.resolve(input)
-  const resolved = real(target)
+  const resolved = await real(target)
   if (resolved !== undefined) return path.resolve(resolved)
   const parent = path.dirname(target)
   if (parent === target) return target
-  const link = hops < LINK_HOPS ? readLink(target) : undefined
-  if (link !== undefined) return canonical(path.resolve(parent, link), hops + 1)
-  return path.join(canonical(parent, hops), path.basename(target))
+  const link = hops < LINK_HOPS ? await readLink(target) : undefined
+  if (link !== undefined) return await canonical(path.resolve(parent, link), hops + 1)
+  return path.join(await canonical(parent, hops), path.basename(target))
 }
 
 /**
@@ -121,17 +121,35 @@ function canonical(input: string, hops = 0): string {
  * the value handed back is the already-collapsed string the caller then opens,
  * so there is no un-collapsed `..` left for the kernel to interpret differently.
  *
+ * Async because `canonical()` can walk up an arbitrarily deep path and follow up
+ * to `LINK_HOPS` links, so the sync form blocked the event loop for a whole
+ * chain of `realpath` syscalls on every file-browser request — on a server that
+ * also holds long-lived SSE streams open. Both call sites
+ * (`directoryEntriesBody`, `fileContentBody` in
+ * opencode-compat-file-browser.ts) were already `async`. The two
+ * canonicalizations are independent, so they run concurrently.
+ *
  * Residual, honestly: this is TOCTOU-bounded, not TOCTOU-free. Nothing stops a
  * component from being swapped for an escaping symlink between this check and
- * the caller's `fs` call. Closing that needs `openat`-style resolution
- * (`O_NOFOLLOW`/`RESOLVE_BENEATH`), which Node does not expose; the window is
- * narrow and both callers here only read.
+ * the caller's `fs` call.
+ *
+ * Deliberately NOT copied here: the dev/ino parent pinning in
+ * `repositoryMoveTarget` (documents/local-backend.ts). That idiom re-verifies
+ * the parent's identity *around* its own write, so it can still refuse after a
+ * swap. This helper hands back a STRING that the caller opens later, so the
+ * same check would re-verify a parent and then return into the identical race —
+ * more syscalls, no narrower window. Closing it for real means reading from a
+ * pinned handle (`O_NOFOLLOW`, as `readContained()` in
+ * documents/session-hydration.ts does) rather than hardening the path helper;
+ * `fs.readdir` has no such form at all. The window is narrow and both callers
+ * here only read.
  */
-export function workspacePath(root: string, input?: string) {
+export async function workspacePath(root: string, input?: string) {
   const file = input?.trim()
   if (!file) return root
   const resolved = path.isAbsolute(file) ? path.resolve(file) : path.resolve(root, file)
-  if (!contains(canonical(root), canonical(resolved))) {
+  const [base, target] = await Promise.all([canonical(root), canonical(resolved)])
+  if (!contains(base, target)) {
     // Matches `errorBody()` in routes/http.ts. Thrown rather than returned
     // because `workspacePath` is a helper shared by handlers that have no
     // error channel of their own; Hono turns an HTTPException into exactly

@@ -234,10 +234,11 @@ describe("org deletion cascade — coverage of the schema (§6.12)", () => {
   test("the WorkGraph half is imported, not re-listed", async () => {
     const { WORKGRAPH_OWNER_TABLES } = await import("../../../../convex/workgraphOwnerDeletion")
     for (const table of WORKGRAPH_OWNER_TABLES) expect(ORG_PURGED_TABLES).toContain(table)
-    // Org+owner scoped but absent from that list, so the cascade names it
-    // itself rather than inheriting the gap.
-    expect(WORKGRAPH_OWNER_TABLES as readonly string[]).not.toContain("workgraph_master_mailbox")
-    expect(ORG_PURGED_TABLES).toContain("workgraph_master_mailbox")
+    // Org+owner scoped, so the per-owner purge owns it and the org cascade
+    // inherits it. A second copy here would be exactly the list that rots.
+    expect(WORKGRAPH_OWNER_TABLES as readonly string[]).toContain("workgraph_master_mailbox")
+    expect(ORG_PURGED_TABLES.filter((table) => table === "workgraph_master_mailbox"))
+      .toEqual(["workgraph_master_mailbox"])
   })
 })
 

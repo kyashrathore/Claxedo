@@ -399,10 +399,6 @@ type ParentCascade = Readonly<ScopedRows & { children: readonly ChildRows[] }>
  */
 export const ORG_DIRECT_TABLES: readonly ScopedRows[] = [
   ...WORKGRAPH_OWNER_TABLES.map((table) => ({ table, index: "by_tenant", field: "organization_id" })),
-  // Org+owner scoped exactly like the tables above, but MISSING from
-  // `WORKGRAPH_OWNER_TABLES` — so personal WorkGraph deletion leaves it behind
-  // today. Included here so the org cascade is complete regardless.
-  { table: "workgraph_master_mailbox", index: "by_tenant", field: "organization_id" },
   // A leftover fence from an interrupted per-owner deletion. Quiescence refuses
   // while one is LIVE; this clears any that outlived their operation.
   { table: "workgraph_owner_deletion_barriers", index: "by_tenant", field: "organization_id" },

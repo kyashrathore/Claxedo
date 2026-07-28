@@ -13,7 +13,7 @@
  */
 
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager } from "@claxedo/sandbox-manager"
-import type { SandboxDriver, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxManager } from "@claxedo/sandbox-manager"
 import { createConvexLeaseStore } from "../../../sandbox-manager-adapters/stores/convex"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../convex/convex-authority"
 import { cliSessionTokenAuthority } from "../convex/convex-authority-cli-session-tokens"
@@ -78,9 +78,17 @@ export function composeWorkerSandboxManager(input: {
   env: HostedWorkerEnv
   driver: SandboxDriver
   maxRetryCount: number
+  /**
+   * Sink for the manager's "this driver cannot contain egress" warning. Passed
+   * through so the hosted plane can put the event somewhere an operator will
+   * actually see it — `console.warn` in a Worker only reaches whoever happens
+   * to be tailing logs. Omitted → the manager's console default.
+   */
+  onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
 }): SandboxManager {
   const { env, driver, maxRetryCount } = input
   return createSandboxManager({
+    ...(input.onEgressUnenforced ? { onEgressUnenforced: input.onEgressUnenforced } : {}),
     leaseStore: createConvexLeaseStore({
       url: storageUrl(env),
       // The hosted runtime-lease functions are service-only and reject calls
