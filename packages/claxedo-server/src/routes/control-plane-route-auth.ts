@@ -1,7 +1,6 @@
 import type { MiddlewareHandler } from "hono"
 import {
   ControlPlaneAuthError,
-  bearerToken,
   controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
@@ -24,9 +23,24 @@ import {
  * so that is exactly when the protection disappears.
  *
  * Policy, matching `network-policy.ts` / `remote-access.ts`:
- * - unsigned local-only with no bearer presented → pass; the global loopback
- *   guard is the gate and requiring a bearer here would break the desktop app.
- * - anything else → a verified signed identity is required.
+ * - unsigned local-only → pass, whatever the Authorization header says; the
+ *   global loopback guard is the gate and requiring a bearer here would break
+ *   the desktop app.
+ * - `misconfigured` (signed auth requested but its env is incomplete) → 503,
+ *   raised by `controlPlaneAuthContext`. Fails closed, deliberately.
+ * - signed → a verified signed identity is required.
+ *
+ * The unsigned-local branch ignores the bearer instead of rejecting it because
+ * in that posture no bearer can ever succeed: `controlPlaneAuthContext`
+ * short-circuits on `!config.enabled` and returns `unsigned-local`, so the
+ * `mode !== "signed"` check below is unsatisfiable and every token — valid,
+ * stale, or nonsense — became a 401. This gate skipped its pass-through the
+ * moment ANY Authorization header was present, so an anonymous caller was
+ * served while the same caller presenting a token was refused, and refused with
+ * `missing_bearer_token`, which was not true of a request that carried one.
+ * That is not a gate (drop the header and walk in) and the inaccurate code sent
+ * readers hunting for a token that was already there. Ignoring the header is
+ * what `network-policy.ts`'s `routeAuth` already resolves this case to.
  */
 export type ControlPlaneRouteAuthOptions = {
   authConfig?: ControlPlaneAuthConfig
@@ -38,11 +52,16 @@ export async function requireSignedControlPlaneRoute(
   options: ControlPlaneRouteAuthOptions,
 ) {
   const config = options.authConfig ?? controlPlaneAuthConfig()
-  if (!config.enabled && config.mode === "local-only" && !bearerToken(request.headers.get("authorization"))) return
+  if (!config.enabled && config.mode === "local-only") return
   const context = await controlPlaneAuthContext(request, {
     config,
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
+  // Belt and braces, not the live refusal path: past the early return the config
+  // is either `misconfigured` (503 from the call above) or enabled, and enabled
+  // only ever returns a signed context or throws its own accurate 401
+  // (`missing_bearer_token` / `invalid_bearer_token`). This catches a verifier
+  // that resolves to something else.
   if (context.mode !== "signed") {
     throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
   }

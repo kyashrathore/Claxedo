@@ -49,6 +49,18 @@ const signedConfig: ControlPlaneAuthConfig = {
   audience: "claxedo-server",
 }
 
+const unsignedLocalConfig: ControlPlaneAuthConfig = {
+  enabled: false,
+  mode: "local-only",
+  reason: "signed/cloud auth is disabled",
+}
+
+const misconfiguredConfig: ControlPlaneAuthConfig = {
+  enabled: false,
+  mode: "misconfigured",
+  reason: "CLERK_JWT_ISSUER, CLERK_JWKS_URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
+}
+
 describe("provider-auth gate (signed mode)", () => {
   // Higher stakes than a plain read route: the OAuth callback calls
   // deleteCredentialsByProvider + putCredential, so an unauthenticated caller
@@ -94,5 +106,75 @@ describe("provider-auth gate (signed mode)", () => {
       body: JSON.stringify({ method: 0, code: "attacker-code" }),
     })
     expect(res.status).toBe(401)
+  })
+
+  test("the refusal codes describe what actually happened", async () => {
+    // The gate's two signed-mode refusals must stay distinguishable: a caller
+    // that sent nothing is told the token is MISSING, one that sent something
+    // unverifiable is told it is INVALID. The unsigned-local block below exists
+    // because this router used to answer `missing_bearer_token` to a request
+    // that plainly carried a bearer.
+    const app = mountProvider(signedConfig)
+    const missing = await app.request("/provider/auth")
+    expect(await missing.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    const invalid = await app.request("/provider/auth", { headers: { authorization: "Bearer nope" } })
+    expect(await invalid.json()).toMatchObject({ error: { code: "invalid_bearer_token" } })
+  })
+})
+
+// In unsigned-local (`CLAXEDO_SIGNED_CLOUD_AUTH` unset) this gate cannot
+// evaluate a bearer at all: `controlPlaneAuthContext` short-circuits on
+// `!config.enabled` and returns `unsigned-local`, so no token can ever produce
+// `mode === "signed"`. The gate used to skip its pass-through the moment ANY
+// Authorization header was present and then fall into that unsatisfiable
+// branch, so a request WITH a bearer got 401 `missing_bearer_token` while the
+// same request WITHOUT one was served. That is not a gate — the caller just
+// drops the header and walks in — and the code it reported was untrue.
+//
+// The real gate in this posture is the global `unsignedLocalRequestGuard`
+// (loopback-only, 403 `unsigned_local_loopback_required` off-box). So the
+// bearer is ignored here, matching `network-policy.ts`'s `routeAuth`, which
+// already resolves the same case to an anonymous pass. Two postures must NOT
+// change: `misconfigured` still fails closed with 503, and signed mode still
+// requires a verified identity (above).
+describe("provider-auth gate (unsigned local)", () => {
+  const credentialsStub = { credentials: {} } as never
+
+  function mountProvider(config: ControlPlaneAuthConfig) {
+    const app = new Hono()
+    app.route("/", ProviderAuthRoutes(credentialsStub, { authConfig: config }))
+    return app
+  }
+
+  test("an anonymous request is served", async () => {
+    const res = await mountProvider(unsignedLocalConfig).request("http://localhost:3001/provider/auth")
+    expect(res.status).toBe(200)
+  })
+
+  test.each([
+    ["the app's synthetic e2e token", "test-bypass-token"],
+    ["a stale Clerk session token", "eyJhbGciOiJSUzI1NiJ9.stale.signature"],
+    ["an opaque garbage token", "not-a-real-jwt"],
+  ])("a request carrying %s is served identically", async (_label, token) => {
+    const app = mountProvider(unsignedLocalConfig)
+    const anonymous = await app.request("http://localhost:3001/provider/auth")
+    const withBearer = await app.request("http://localhost:3001/provider/auth", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    // Presenting MORE credentials must never be less permissive than presenting
+    // none, and the response must be the same one — not a differently-shaped
+    // success that happens to share a status code.
+    expect(withBearer.status).toBe(200)
+    expect(await withBearer.json()).toEqual(await anonymous.json())
+  })
+
+  test("a misconfigured signed deployment still fails closed, bearer or not", async () => {
+    const app = mountProvider(misconfiguredConfig)
+    for (const init of [{}, { headers: { authorization: "Bearer anything" } }]) {
+      const res = await app.request("http://localhost:3001/provider/auth", init)
+      expect(res.status).toBe(503)
+      expect(await res.json()).toMatchObject({ error: { code: "signed_cloud_auth_disabled" } })
+    }
   })
 })
