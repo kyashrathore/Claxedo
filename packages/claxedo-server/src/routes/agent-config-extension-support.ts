@@ -5,9 +5,11 @@ import {
   isHarnessTarget,
   installedStatePath,
   materializedRecordPath,
+  parsePackageSource,
   readDesiredExtensionState,
   readMaterializedRuntimeRecord,
 } from "@claxedo/agent-extensions"
+import { loadAgentExtensionsCatalog } from "../agent-extensions/catalog"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
 import {
@@ -211,10 +213,28 @@ export async function syncWorkspaceRuntimeForSignedScope(scope: WorkspaceExtensi
   ])
 }
 
+// Installs are pinned to the catalog id, but records persisted before the pin
+// are keyed by the fetched package's own manifest name / directory basename
+// (`anthropic-skill-pdf` -> `pdf`, `mcp-filesystem` -> `filesystem`,
+// `mcp-fetch` -> `fetch`). The lifecycle routes only receive an id, so hand the
+// package the catalog entry's source alongside it: that is the exact key it
+// needs to resolve a legacy record to the id the caller asked for. Unknown ids
+// (anything not in the catalog) simply carry no source and resolve as before.
+function catalogSourceFor(id: string) {
+  try {
+    const entry = loadAgentExtensionsCatalog().entries.find((item) => item.id === id)
+    return entry ? parsePackageSource(entry.source) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function withId(input: AgentExtensionLifecycleInput, id: string): AgentExtensionLifecycleInput {
+  const source = catalogSourceFor(id)
   return {
     ...input,
     id,
+    ...(source ? { source } : {}),
   }
 }
 

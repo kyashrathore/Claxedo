@@ -240,6 +240,14 @@ export function buildMcpInstallRequest(entry: CatalogEntry, directory?: string) 
       scope: entry.recommendedScope,
       ...(entry.recommendedScope === "project" && directory ? { directory } : {}),
       targets: entry.recommendedTargets,
+      // Pin the record to the catalog id, exactly as the marketplace panel
+      // does. Omitting it lets the server fall back to a name derived from the
+      // fetched package's own manifest/directory basename, so the MCP picker
+      // and the marketplace panel would file the *same* catalog entry under
+      // two different ids (`mcp-filesystem` here vs `filesystem` there) —
+      // and `installedRecordFor`, which builds the DELETE path, would then
+      // resolve whichever landed first.
+      id: entry.id,
     },
   }
 }

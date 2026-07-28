@@ -20,7 +20,9 @@ import {
   jsonOrError,
   machineItemsFromJson,
   packageNameFromSource,
+  recordMatchesEntry,
   responseJson,
+  sameInstallLocation,
   type CatalogCategoryId,
   type CatalogEntry,
   type DiscoveredExtension,
@@ -83,10 +85,14 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     return set
   })
 
+  // Prefer an exact catalog-id hit over a legacy manifest-derived one: after
+  // the server absorbs a legacy record, the pinned id is the only one that
+  // still addresses the install, and aiming a DELETE/enable at the absorbed id
+  // would 404.
   const findInstalledRecord = (entry: CatalogEntry): InstalledRecord | undefined => {
     const records = installedRecords()
-    const pkg = packageNameFromSource(entry.source)
-    return records.find((r) => r.id === entry.id || r.id === pkg || r.package_name === pkg)
+    return records.find((r) => r.id === entry.id)
+      ?? records.find((r) => recordMatchesEntry(r, entry))
   }
 
   const setStatus = (id: string, status: InstallStatus) =>
@@ -259,13 +265,22 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
       await jsonOrError(res)
       setStatus(entry.id, "installed")
       const dir = entry.recommendedScope === "project" ? props.directory : undefined
+      const location = {
+        scope: entry.recommendedScope === "workspace" ? "machine" as const : entry.recommendedScope,
+        directory: dir,
+      }
+      // Replace, don't append. A record for this entry may already be here
+      // under a legacy manifest-derived id, and the server just absorbed it
+      // into the pinned catalog id — appending would leave a stale row for an
+      // id that no longer exists, which `findInstalledRecord` could then aim
+      // the next uninstall/toggle at. Only same-scope rows are collapsed;
+      // machine- and project-scope installs are genuinely separate records.
       setInstalledRecords((prev) => [
-        ...prev,
+        ...prev.filter((r) => !(sameInstallLocation(r, location) && recordMatchesEntry(r, entry))),
         {
           id: entry.id,
           package_name: packageNameFromSource(entry.source) || undefined,
-          scope: entry.recommendedScope === "workspace" ? "machine" : entry.recommendedScope,
-          directory: dir,
+          ...location,
         },
       ])
       showToast({ title: `${entry.name} installed`, variant: "success", duration: 3000 })
@@ -300,7 +315,12 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
         headers: { Accept: "application/json" },
       })
       await jsonOrError(res)
-      setInstalledRecords((prev) => prev.filter((r) => r !== record))
+      // Drop every row this entry answers to in that scope, not just the one
+      // object identity that was matched: a legacy manifest-derived row and a
+      // pinned row both denote the install the server just removed, and
+      // leaving either behind keeps the card stuck on "Installed".
+      setInstalledRecords((prev) =>
+        prev.filter((r) => !(sameInstallLocation(r, record) && recordMatchesEntry(r, entry))))
       setStatus(entry.id, "idle")
       showToast({ title: `${entry.name} uninstalled`, variant: "success", duration: 3000 })
     } catch (err) {

@@ -17,7 +17,9 @@ import {
   machineItemFromJson,
   machineItemsFromJson,
   packageNameFromSource,
+  recordMatchesEntry,
   responseErrorMessage,
+  sameInstallLocation,
   type CatalogEntry,
   type DiscoveredExtension,
 } from "./install-flow"
@@ -239,6 +241,41 @@ describe("isEntryInstalled", () => {
     expect(isEntryInstalled(entry, new Set(["acme"]))).toBe(true)
     expect(isEntryInstalled(entry, new Set(["my-tool"]))).toBe(true)
     expect(isEntryInstalled(entry, new Set(["unrelated"]))).toBe(false)
+  })
+})
+
+describe("recordMatchesEntry", () => {
+  const entry = fullEntry({ id: "anthropic-skill-pdf", source: "https://github.com/anthropics/skills/tree/main/skills/pdf" })
+
+  it("matches the pinned catalog id", () => {
+    expect(recordMatchesEntry({ id: "anthropic-skill-pdf", scope: "machine" }, entry)).toBe(true)
+  })
+
+  it("matches a legacy record keyed by the manifest-derived name", () => {
+    // What the server persisted before installs were pinned to the catalog id.
+    expect(recordMatchesEntry({ id: "pdf", scope: "machine" }, entry)).toBe(true)
+    expect(recordMatchesEntry({ id: "something-else", package_name: "pdf", scope: "machine" }, entry)).toBe(true)
+  })
+
+  it("does not match an unrelated record", () => {
+    expect(recordMatchesEntry({ id: "mcp-fetch", package_name: "fetch", scope: "machine" }, entry)).toBe(false)
+  })
+
+  it("never matches on an empty derived package name", () => {
+    const blank = fullEntry({ id: "acme", source: "/" })
+    expect(recordMatchesEntry({ id: "", scope: "machine" }, blank)).toBe(false)
+  })
+})
+
+describe("sameInstallLocation", () => {
+  it("separates machine- and project-scope records", () => {
+    expect(sameInstallLocation({ scope: "machine" }, { scope: "machine" })).toBe(true)
+    expect(sameInstallLocation({ scope: "machine" }, { scope: "project", directory: "/repo" })).toBe(false)
+  })
+
+  it("separates project records in different directories", () => {
+    expect(sameInstallLocation({ scope: "project", directory: "/a" }, { scope: "project", directory: "/a" })).toBe(true)
+    expect(sameInstallLocation({ scope: "project", directory: "/a" }, { scope: "project", directory: "/b" })).toBe(false)
   })
 })
 

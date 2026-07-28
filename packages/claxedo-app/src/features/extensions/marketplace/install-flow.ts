@@ -310,6 +310,30 @@ export function isEntryInstalled(entry: CatalogEntry, installed: Set<string>): b
   return pkgName.length > 0 && installed.has(pkgName)
 }
 
+// One catalog entry can be addressed by two ids. Installs are pinned to the
+// catalog id now, but the server used to key them by the fetched package's own
+// manifest name / directory basename, so records persisted before the pin sit
+// under the upstream name (`anthropic-skill-pdf` -> `pdf`, `mcp-filesystem` ->
+// `filesystem`, `mcp-fetch` -> `fetch`). Both ids denote the same install --
+// the server absorbs the legacy record on the next install/update of the same
+// source -- so the client must treat them as one row, not two.
+export function recordMatchesEntry(record: InstalledRecord, entry: CatalogEntry): boolean {
+  if (record.id === entry.id) return true
+  const pkgName = packageNameFromSource(entry.source)
+  return pkgName.length > 0 && (record.id === pkgName || record.package_name === pkgName)
+}
+
+// Records live in per-scope state files, so a machine-scope install and a
+// project-scope install of one entry are genuinely two installs. Only rows in
+// the same scope (and, for project scope, the same directory) may be collapsed
+// into each other.
+export function sameInstallLocation(
+  record: Pick<InstalledRecord, "scope" | "directory">,
+  location: Pick<InstalledRecord, "scope" | "directory">,
+): boolean {
+  return record.scope === location.scope && record.directory === location.directory
+}
+
 // A record with no explicit `enabled` field is treated as enabled — the
 // server only writes `enabled: false` for a deliberately-disabled install,
 // and older list payloads omit the field entirely.
