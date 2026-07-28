@@ -9,7 +9,7 @@
     "./embedded": "./src/embedded.ts"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "mkdir -p .artifacts/unit && bun test --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {

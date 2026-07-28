@@ -22,6 +22,10 @@ export function initNodeObservability(env: ObservabilityEnv = process.env): { en
     dsn: options.dsn,
     ...(options.release ? { release: options.release } : {}),
     tracesSampleRate: 0,
+    // I-5: never ship credential material. @sentry/node attaches request
+    // headers/body on its own; sentryInitOptions' beforeSend strips them.
+    sendDefaultPii: options.sendDefaultPii,
+    beforeSend: options.beforeSend,
     initialScope: options.initialScope,
     // The server owns its own SIGTERM shutdown and error surfaces; Sentry's
     // default OnUncaughtException integration would exit the process for us.

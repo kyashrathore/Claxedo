@@ -3,7 +3,7 @@
   "generatedFrom": "packages/claxedo-docs/**/*.mdx",
   "hostingBinding": {
     "status": "unbound",
-    "reason": "The active claxedo.com and docs.claxedo.com edge provider is not declared in this repository. Bind this manifest before DNS cutover."
+    "reason": "No edge applies this manifest. Both hosts are already live, bound out-of-band: claxedo.com and docs.claxedo.com return 200, and no workflow in this repository deploys either one. docs.claxedo.com still serves packages/claxedo-docs directly rather than redirecting, so none of these redirects are in effect. Declare the serving platform in this repository, then bind this manifest and verify the one-hop redirect report against the production edge before retiring docs.claxedo.com."
   },
   "redirects": [
     {

@@ -15,7 +15,7 @@ describe("local production spawn inventory", () => {
     )
 
     for (const row of sourceRows) {
-      const text = await Bun.file(join(root, row.source!.file)).text()
+      const text = stripComments(await Bun.file(join(root, row.source!.file)).text())
       expect(count(text, expression(row.source!.callee))).toBe(row.source!.calls)
     }
   })
@@ -28,7 +28,7 @@ describe("local production spawn inventory", () => {
     )
     const discovered = new Map<string, number>()
     for (const file of await productionFiles()) {
-      const text = await Bun.file(join(root, file)).text()
+      const text = stripComments(await Bun.file(join(root, file)).text())
       const names = childProcessNames(text)
       const aliases = [...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*promisify\(\s*([A-Za-z_$][\w$]*)\s*\)/g)]
         .filter((match) => names.has(match[2]!))
@@ -130,6 +130,53 @@ function expression(callee: string) {
 
 function count(text: string, pattern: RegExp) {
   return [...text.matchAll(pattern)].length
+}
+
+/**
+ * The inventory counts spawn CALLSITES, not textual occurrences. A doc comment
+ * that mentions `query()` in prose is not a process spawn, so comments are
+ * removed before counting. Absorbing such a mention by bumping a declared
+ * `calls` count would be the wrong fix: the count would stop meaning "how many
+ * real spawn seams live here" and a genuinely new, unclassified seam could then
+ * slip past this gate.
+ */
+function stripComments(text: string) {
+  let out = ""
+  let index = 0
+  let quote: string | undefined
+  while (index < text.length) {
+    const char = text[index]!
+    if (quote) {
+      if (char === "\\") {
+        out += char + (text[index + 1] ?? "")
+        index += 2
+        continue
+      }
+      if (char === quote) quote = undefined
+      out += char
+      index += 1
+      continue
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char
+      out += char
+      index += 1
+      continue
+    }
+    if (char === "/" && text[index + 1] === "/") {
+      while (index < text.length && text[index] !== "\n") index += 1
+      continue
+    }
+    if (char === "/" && text[index + 1] === "*") {
+      index += 2
+      while (index < text.length && !(text[index] === "*" && text[index + 1] === "/")) index += 1
+      index += 2
+      continue
+    }
+    out += char
+    index += 1
+  }
+  return out
 }
 
 function escape(value: string) {

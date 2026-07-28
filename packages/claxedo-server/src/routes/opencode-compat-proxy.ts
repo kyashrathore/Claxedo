@@ -1,10 +1,15 @@
 import type { ControlPlaneServices } from "../control-plane/services"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode-engine"
 import { resolveWorkspace } from "../workspace-store"
+import type { ControlPlaneRouteAuthOptions } from "./control-plane-route-auth"
 import { errorBody } from "./http"
 import { requestHarnessId, workspaceInput, type OpenCodeCompatRequestContext } from "./opencode-compat-context"
 
-export type OpenCodeCompatRouteOptions = {
+// `ControlPlaneRouteAuthOptions` (`authConfig` + `verifier`) is part of the
+// options on purpose: without it the mount site in server.ts had nowhere to put
+// `...authRouteOptions(services)`, which is why this router was the one
+// control-plane surface left with no per-route bearer verification at all.
+export type OpenCodeCompatRouteOptions = ControlPlaneRouteAuthOptions & {
   env?: Record<string, string | undefined>
   onOpencodeAccess?: () => void
   services?: ControlPlaneServices

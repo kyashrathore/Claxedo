@@ -22,8 +22,12 @@ it to an index.
 
 - [Plans](./plans/README.md)
   Dated plans that are still referenced by live packages or source comments.
-- [Tech Docs](./tech-docs/README.md)
+- [Tech Docs](./tech-docs/)
   Current architecture, public-doc support material, and docs used by tests.
-- [Composable AI Infra](./tech-docs/ai-infra/README.md)
-  Active Claxedo AI-infra architecture pointer referenced by the app override
-  tombstone.
+- [Decisions](./decisions/)
+  Dated decision records for choices that current code still depends on.
+- [Brainstorms](./brainstorms/)
+  Investigation notes kept only while they still explain live behavior.
+
+Operational runbooks for the deployed control plane, relay, and Convex
+deployment live in [`public-docs/`](../public-docs/README.md), not here.

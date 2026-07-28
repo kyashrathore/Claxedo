@@ -5,10 +5,12 @@ import { createMockSDK, createMockStorage } from "./test-helpers"
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?relay-lifecycle-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?relay-lifecycle-restore`)) }
+const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?relay-lifecycle-restore`)) }
 
 afterAll(() => {
   mock.module("@/platform/api/api", () => realApiModule)
   mock.module("@/platform/persistence/persist", () => realPersistModule)
+  mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
 mock.module("@opencode-ai/ui/context", () => ({
@@ -79,7 +81,13 @@ mock.module("@/platform/persistence/persist", () => ({
   },
 }))
 
+// Spread the real module for the same reason as persist above: a PARTIAL mock
+// leaves every other export bound to whatever the previously-registered mock
+// happened to install, and the no-op `clearInitialCommandMarker` then leaks
+// into terminal-recovery.test.ts (which runs later in CI's file order) and
+// silently breaks its `executed`-set clearing.
 mock.module("@/features/terminal/core/terminal-recovery", () => ({
+  ...realRecoveryModule,
   clearInitialCommandMarker: () => {},
 }))
 

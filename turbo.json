@@ -8,40 +8,65 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
-    "opencode#test": {
-      "dependsOn": ["^build"],
-      "outputs": [],
-      "passThroughEnv": ["*"]
-    },
-    "@opencode-ai/core#test": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "test:ci": {
+    // ONE generic `test` task, on purpose. This file used to carry only
+    // package-scoped `<pkg>#test` entries, and turbo runs NOTHING for a task
+    // name it has no entry for, so `bun turbo test` silently skipped every
+    // package that was not listed. 27 packages have a `test` script; only 5
+    // were listed, so 22 with real suites -- claxedo-server alone has 236 test
+    // files / 2386 tests -- produced zero CI signal.
+    //
+    // A generic entry is also the only shape that stays correct as packages are
+    // added: a new package with a `test` script is gated the day it lands, with
+    // no turbo.json edit to forget. Add a `<pkg>#test` override ONLY for a
+    // package that genuinely needs different deps/outputs -- an override
+    // REPLACES this entry for that package rather than merging with it.
+    //
+    // `outputs` is where every suite writes its JUnit report (see each
+    // package's `test` script); .github/workflows/test.yml publishes them via
+    // packages/*/.artifacts/unit/junit.xml.
+    //
+    // Deliberately NO `dependsOn: ["^build"]` here. `@claxedo/server` depends
+    // on `@opencode-ai/sdk-next`, which depends on `opencode`, and
+    // `opencode#build` is broken repo-wide: packages/opencode/script/build.ts
+    // builds an embedded web UI from `packages/app`, a directory the Claxedo
+    // hard fork renamed to `packages/claxedo-app`, so it dies with
+    // `ENOENT: Could not change directory to .../packages/app`. A `^build` here
+    // drags that dead task into the graph and every test task fails on a build
+    // error instead of on tests. Packages that need workspace deps built get
+    // them from the explicit scoped `bun turbo build --filter=...` step in
+    // .github/workflows/test.yml -- the same list typecheck.yml and the e2e
+    // jobs already use.
+    "test": {
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
-    "opencode#test:ci": {
+    // The five suites that were already wired before this file grew a generic
+    // `test` task. They keep `^build` so their behaviour is unchanged; none of
+    // them reaches `opencode#build` through its dependency graph.
+    "opencode#test": {
+      "dependsOn": ["^build"],
+      "outputs": [".artifacts/unit/junit.xml"],
+      "passThroughEnv": ["*"]
+    },
+    "@opencode-ai/core#test": {
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
     "@opencode-ai/ui#test": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [".artifacts/unit/junit.xml"],
+      "passThroughEnv": ["*"]
     },
     "@opencode-ai/session-ui#test": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@opencode-ai/ui#test:ci": {
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
     "@claxedo/app#test": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [".artifacts/unit/junit.xml"],
+      "passThroughEnv": ["*"]
     }
   }
 }

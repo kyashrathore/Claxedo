@@ -6,6 +6,7 @@ import { fanOutConfig } from "../config-fanout"
 import { syncOpencodeMcpConfig } from "../opencode-mcp-sync"
 import { sandboxFetch } from "../sandbox-target-fetch"
 import { listProjects, resolveWorkspace } from "../workspace-store"
+import { controlPlaneRouteAuth } from "./control-plane-route-auth"
 import { errorBody } from "./http"
 import { bootPath, queryHarnessId, requestHarnessId, runner, workspaceInput } from "./opencode-compat-context"
 import { streamGlobalEvents } from "./opencode-compat-events"
@@ -46,7 +47,38 @@ function syncResultStatus(input: Awaited<ReturnType<typeof syncOpencodeMcpConfig
   ) as Record<string, unknown>
 }
 
+/**
+ * Gated for the same reason `provider-auth.ts` is, and with more surface: this
+ * router reaches `fs.rm(target, {recursive, force})` and `git reset --hard` +
+ * `git clean -ffdx` (`/experimental/worktree*`), writes and deletes provider
+ * credentials (`PUT|DELETE /auth/:providerID`), rewrites the MCP server list
+ * that agents then launch (`PATCH /config`, `PATCH /global/config`) and reads
+ * any file the process can read (`GET /file/content`, which resolves absolute
+ * `?path=` as-is). `route-ownership.ts` files `/config`, `/provider` and
+ * `/auth` in the same AgentConfigRegistry domain as the gated provider-auth
+ * routes; this router was the half of that domain still carrying no per-route
+ * verification. See `control-plane-route-auth.ts` for why the global
+ * `unsignedLocalRequestGuard` does not cover the signed self-host posture.
+ *
+ * The gate is registered at the router's OWN paths rather than as `.use("*")`.
+ * `app.route("/", sub)` re-registers a sub-app's middleware onto the parent
+ * router, so a `"*"` middleware here would also run for every parent route
+ * mounted after this one — in server.ts that is /documents, /internal/documents,
+ * /api/workspace, /api/control and /api/claxedo/events, several of which
+ * authenticate with an installation or runtime-access token rather than a
+ * control-plane bearer and would start failing in signed mode.
+ * `opencode-compat-auth-gate.test.ts` pins both halves.
+ */
 export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
+  const app = new Hono()
+  const routes = compatRoutes(options)
+  for (const routePath of new Set(routes.routes.map((route) => route.path))) {
+    app.use(routePath, controlPlaneRouteAuth(options))
+  }
+  return app.route("/", routes)
+}
+
+function compatRoutes(options: OpenCodeCompatRouteOptions) {
   return new Hono()
     .get("/global/health", (c) =>
       c.json({

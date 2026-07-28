@@ -1,8 +1,21 @@
 # Claxedo Packages
 
-> 📖 **Published docs: [claxedo.com/framework](https://claxedo.com/framework).** This
-> directory is the in-repo source; the hosted site is assembled from it and the
-> package READMEs.
+> ℹ️ **This directory is in-repo engineering reference, not a website source.**
+> No build reads it: `claxedo.com/framework` is generated from
+> `packages/claxedo-docs` by `packages/claxedo-web/scripts/sync-framework-docs.ts`,
+> and `docs.claxedo.com` serves `packages/claxedo-docs` directly. What does read
+> this directory:
+>
+> - `deploy-control-plane.yml`, `deploy-convex.yml`, and `deploy-relay.yml` cite
+>   [`deploy-runbook.md`](./deploy-runbook.md) and
+>   [`relay-and-deployment.md`](./relay-and-deployment.md) by path in their
+>   rollback instructions.
+> - `packages/workspace-runtime/scripts/verify-publish.ts` gates publishing on the
+>   "Mounted Route Families" table in [`workspace-runtime.md`](./workspace-runtime.md)
+>   matching `docs/api-manifest.json`.
+>
+> Keep these pages accurate for those consumers. For the published docs, see
+> [claxedo.com/framework](https://claxedo.com/framework).
 
 Claxedo is a set of composable packages for building coding-agent products.
 The packages in this repo let you normalize agent events, drive multiple agent

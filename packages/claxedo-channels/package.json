@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/channels",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
   "description": "Channel ingress for agent sessions: route GitHub, Slack, Telegram, Discord, and WhatsApp messages into Claxedo runtimes with dedup, session resolution, and approval bridging",
@@ -40,7 +40,7 @@
     "build": "bun run scripts/build.ts",
     "prepublishOnly": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run"
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@chat-adapter/discord": "4.32.0",

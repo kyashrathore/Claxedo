@@ -39,7 +39,7 @@
     "verify:workspace-tab-motion": "bun ./scripts/capture-workspace-tab-motion.ts",
     "verify:session-switch-hot-path": "bun ./scripts/capture-session-switch-hot-path.ts",
     "verify:command-palette-file-open-motion": "bun ./scripts/capture-command-palette-file-open-motion.ts",
-    "test": "bun test --conditions=browser --preload ./happydom.ts ./src",
+    "test": "mkdir -p .artifacts/unit && bun test --conditions=browser --preload ./happydom.ts ./src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:diagnostics-release": "bun test --conditions=browser --preload ./happydom.ts ./src/features/processes/data/local-diagnostics.test.ts ./src/features/processes/ui/diagnostics/model.test.ts && vitest run --config vitest.config.ts ./src/features/processes/ui/dialog-process-diagnostics.vitest.tsx",
     "test:watch": "bun test --watch --conditions=browser --preload ./happydom.ts ./src",
     "test:performance": "bun test --conditions=browser --preload ./happydom.ts ./src/features/session/ui/message-timeline-row-reuse.test.ts && vitest run --config vitest.config.ts ./src/app/workbench/context/directory-scope.vitest.tsx ./src/app/workbench/workbench/tests/F-mount-retention.vitest.tsx ./src/app/workbench/workbench/tests/N-reactivity.vitest.tsx",
@@ -70,7 +70,7 @@
     "@clerk/testing": "2.2.7",
     "@happy-dom/global-registrator": "20.0.11",
     "@modelcontextprotocol/sdk": "1.25.2",
-    "@playwright/test": "1.59.1",
+    "@playwright/test": "1.61.1",
     "@solidjs/testing-library": "0.8.10",
     "@tailwindcss/vite": "4.1.11",
     "@testing-library/jest-dom": "6.9.1",
@@ -86,16 +86,16 @@
     "@xterm/headless": "6.1.0-beta.289",
     "jsdom": "26.1.0",
     "msw": "2.14.6",
-    "playwright-core": "1.59.1",
+    "playwright-core": "1.61.1",
     "sharp": "0.34.5",
     "typescript": "catalog:",
     "vite": "7.1.4",
     "vite-plugin-solid": "2.11.10",
     "vitest": "2.1.9",
-    "wrangler": "4.50.0"
+    "wrangler": "4.114.0"
   },
   "dependencies": {
-    "@claxedo/agent-event-runtime": "workspace:0.6.0",
+    "@claxedo/agent-event-runtime": "workspace:0.7.0",
     "@claxedo/workgraph": "workspace:*",
     "@clerk/clerk-js": "5.125.10",
     "@json-render/core": "0.14.1",
@@ -160,11 +160,11 @@
     "qrcode": "1.5.4",
     "remeda": "2.26.0",
     "shell-quote": "1.8.3",
-    "solid-js": "1.9.10",
+    "solid-js": "1.9.12",
     "solid-tiptap": "0.8.0",
-    "zod": "4.1.8"
+    "zod": "4.4.3"
   },
   "peerDependencies": {
-    "solid-js": "1.9.10"
+    "solid-js": "1.9.12"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-relay-protocol",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Wire types, message validation, and token verifier interfaces for the Claxedo workspace relay tunnel protocol",
   "license": "MIT",
@@ -41,7 +41,7 @@
     "build": "tsx scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "test": "mkdir -p .artifacts/unit && bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
