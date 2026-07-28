@@ -141,10 +141,20 @@ describe("workspace module wiring", () => {
       workspaceId: "ws_1",
       eventType: "Busy",
     })
-    const next = await reader.read()
+    // `/api/wr/events` opens with a cursor-bootstrap heartbeat (see
+    // `routes/runtime-events.ts`), so the bus frame is not the first chunk.
+    // Per-frame delivery is covered in `routes/runtime-events.test.ts`; this
+    // test only proves the route is wired to the bus.
+    const decoder = new TextDecoder()
+    let seen = ""
+    for (let reads = 0; reads < 8 && !seen.includes("agent.lifecycle"); reads += 1) {
+      const next = await reader.read()
+      if (next.done) break
+      seen += decoder.decode(next.value, { stream: true })
+    }
     ac.abort()
 
-    expect(new TextDecoder().decode(next.value)).toContain("\"type\":\"agent.lifecycle\"")
+    expect(seen).toContain("\"type\":\"agent.lifecycle\"")
   })
 
   test("workspace core replays runtime events after Last-Event-ID", async () => {
