@@ -452,8 +452,16 @@ async function expectInstalledPill(page: Page, name: string) {
   await expect(card.getByText("Installed", { exact: true })).toBeVisible({ timeout: 30_000 })
 }
 
+// 60s, not the 15s this started at: every install toast in this file lands
+// only AFTER the server's real `git` fetch of the package repo completes, and
+// `kyashrathore/Claxedo` (behaviors 3-5) measured 15.9s / 17.7s / 32.4s over
+// three cold fetches on a warm connection — i.e. the old 15s ceiling was
+// BELOW the fetch floor, so those behaviors could only ever pass by luck.
+// This matches the 120s per-test budget beforeEach already sets for exactly
+// this reason; a longer wait can only make a genuine failure slower to
+// report, never turn a red into a green.
 async function expectToast(page: Page, text: string) {
-  await expect(page.locator('[data-slot="toast-title"]', { hasText: text })).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('[data-slot="toast-title"]', { hasText: text })).toBeVisible({ timeout: 60_000 })
 }
 
 async function uninstallViaUi(page: Page, name: string) {
@@ -537,10 +545,20 @@ test.describe("live agent extensions materialization @live", () => {
     // materialized record shows the conflicting component failed while the
     // package overall did not silently report success.
     const materialized = await readJsonFile(path.join(stateRoot(), "materialized.json"))
-    const packages = materialized.packages as Record<string, { status: string; components: Array<{ runner: string; status: string; reason?: string }> }>
+    const packages = materialized.packages as Record<string, { status: string; components: Array<{ runner: string; type: string; status: string; reason?: string }> }>
     const claxedoPkg = packages["claxedo-mcp"]
     expect(claxedoPkg?.status).not.toBe("applied")
-    const claudeComponent = claxedoPkg?.components.find((c) => c.runner === "claude")
+    // `type: "mcp"` is load-bearing, not decoration: `claxedo-mcp` is NOT an
+    // MCP-only package — it also ships `skills/claxedo-documents` and
+    // `skills/workgraph`, and `materializePackage` emits one component per
+    // (target × discovered component) with skills FIRST
+    // (`discovery.ts`'s `discoverAgentExtensionComponents` orders skills
+    // before mcp). The claude runner therefore contributes THREE components
+    // here — two applied skills, then the conflicting MCP — so a bare
+    // `find((c) => c.runner === "claude")` resolves to the applied
+    // `claxedo-documents` skill and reports "applied" for a conflict that
+    // did correctly fail. Pin the component this behavior is actually about.
+    const claudeComponent = claxedoPkg?.components.find((c) => c.runner === "claude" && c.type === "mcp")
     expect(claudeComponent?.status).toBe("failed")
     expect(claudeComponent?.reason).toMatch(/already exists/)
 

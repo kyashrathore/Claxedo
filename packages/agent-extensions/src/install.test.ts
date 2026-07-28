@@ -641,6 +641,61 @@ describe("cached Agent Extension install flow", () => {
     expect(retry.materialized.status).toBe("applied")
   })
 
+  // Unit mirror of live-agent-extensions-materialization.spec.ts behavior 4,
+  // whose real shape the project-scope test above does not reach: MACHINE
+  // scope (target file is `<home>/.claude.json`, not `<project>/.mcp.json`)
+  // and a package that ships BOTH skills and an MCP config — exactly what
+  // `claxedo-mcp` is. That combination is what makes the record's component
+  // list ambiguous: `materializePackage` emits one component per
+  // (target × discovered component) and `discoverAgentExtensionComponents`
+  // orders skills BEFORE mcp, so the claude runner contributes an applied
+  // skill component ahead of the failed MCP one. Anything that selects a
+  // component by `runner` alone reads the skill and reports a false
+  // "applied" for a conflict that did correctly fail.
+  test("a machine-scope conflict in ~/.claude.json fails legibly, preserves the unowned entry, and marks the MCP component (not the skill) failed", async () => {
+    await writeSource("mcp.json", JSON.stringify({ servers: { claxedo: { command: "npx", args: ["-y", "@claxedo/mcp"] } } }))
+    await writeSource("skills/docs/SKILL.md", "---\nname: docs\n---\n")
+    // Hand-written, unowned, same server name — the user's own config.
+    const claudeJson = path.join(home, ".claude.json")
+    const unowned = `${JSON.stringify({
+      mcpServers: { claxedo: { command: "/usr/bin/false", args: ["not-ours"] } },
+    }, null, 2)}\n`
+    await fs.writeFile(claudeJson, unowned)
+
+    await expect(installCachedAgentExtension({
+      sourceRoot: source,
+      source: { type: "github", owner: "kyashrathore", repo: "Claxedo", ref: "dev", package_path: "packages/claxedo-mcp" },
+      resolvedSha: "abcdef1234567890",
+      scope: "machine",
+      dataRoot: data,
+      homeDir: home,
+      targets: ["claude", "cursor"],
+      id: "claxedo-mcp",
+      now: 100,
+    })).rejects.toThrow("already exists")
+
+    // Never a silent overwrite: byte-for-byte, not merely "still has a claxedo key".
+    await expect(fs.readFile(claudeJson, "utf8")).resolves.toBe(unowned)
+
+    const record = await readMaterializedRuntimeRecord(
+      materializedRecordPath(agentExtensionStateRoot({ scope: "machine", dataRoot: data })),
+    )
+    const pkg = record.packages["claxedo-mcp"]
+    expect(pkg?.status).toBe("failed")
+    expect(pkg?.components.find((item) => item.runner === "claude" && item.type === "mcp")).toMatchObject({
+      status: "failed",
+      reason: expect.stringContaining("already exists"),
+    })
+    // The same runner's skill DID materialize — this is the entry a
+    // runner-only lookup wrongly reads as the conflict's outcome.
+    expect(pkg?.components.find((item) => item.runner === "claude" && item.type === "skill")?.status).toBe("applied")
+    // A conflict on one target does not abort the others in the same pass.
+    expect(pkg?.components.find((item) => item.runner === "cursor" && item.type === "mcp")).toMatchObject({
+      status: "applied",
+      path: path.join(home, ".cursor", "mcp.json"),
+    })
+  })
+
   test("same id from a different source returns a structured conflict", async () => {
     await writeSource("SKILL.md", "---\nname: review\n---\n")
     await installCachedAgentExtension({
