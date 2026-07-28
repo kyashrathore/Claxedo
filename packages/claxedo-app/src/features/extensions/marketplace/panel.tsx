@@ -231,6 +231,29 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
           source: entry.source,
           scope: entry.recommendedScope,
           targets: entry.recommendedTargets,
+          // Pin the install record to the catalog's own id. Server-side,
+          // `installFetchedAgentExtension` falls back to a name derived from
+          // the fetched package's own manifest/directory basename
+          // (`id = input.id ?? packageName`) whenever the caller omits `id` —
+          // that fallback only happens to equal the catalog id for entries
+          // whose upstream repo directory is named identically to the
+          // catalog's id (true for claxedo-mcp by coincidence, since this
+          // repo controls both). For a third-party catalog entry like
+          // anthropic-skill-pdf (github.com/anthropics/skills/tree/main/
+          // skills/pdf), the fallback resolves to "pdf", NOT
+          // "anthropic-skill-pdf" — so installed.json/lock.json/
+          // materialized.json end up keyed differently than the catalog and
+          // this very card's entry.id, and the optimistic local record this
+          // function appends below (keyed by entry.id) silently disagrees
+          // with what a page reload's GET /extensions would report for the
+          // same install. isEntryInstalled()/findInstalledRecord() paper
+          // over the mismatch with a packageNameFromSource() fallback match,
+          // which is why the UI still shows "Installed" either way — but the
+          // underlying state files disagree with the catalog id. Send it
+          // explicitly so every persisted record is addressable by the same
+          // id the marketplace card and this function's own optimistic
+          // update already use.
+          id: entry.id,
         }),
       })
       await jsonOrError(res)

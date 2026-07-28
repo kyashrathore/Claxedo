@@ -449,6 +449,27 @@ async function installViaUi(page: Page, name: string) {
 
 async function expectInstalledPill(page: Page, name: string) {
   const card = extensionCard(page, name)
+  // Hover race, verified live: installViaUi()'s .click() leaves Playwright's
+  // virtual mouse sitting at the "Install" button's screen coordinates. Once
+  // that click flips the card to installed, the SAME coordinates now land on
+  // the pill's `group/install` wrapper, so the browser's real :hover already
+  // matches on the very first render — the pill's "Installed" span carries
+  // `group-hover/install:hidden` (InstallButton, cards.tsx) specifically so
+  // hovering it swaps in the Disable/Uninstall row (this is intentional,
+  // already-relied-upon behavior: uninstallViaUi below hovers this exact
+  // wrapper on purpose to reach "Uninstall", and cards.ui.vitest.tsx's
+  // "behavior 6 UI" describe block codifies the swap). `group-hover:hidden`
+  // is a real `display: none`, which removes the span from the a11y tree too
+  // (confirmed via this failure's own error-context.md accessibility
+  // snapshot: "Disable"/"Uninstall" buttons present, no "Installed" text) —
+  // but nothing about the accessible NAME of a stable control is changing
+  // here; the "Installed" text is a plain non-interactive status readout
+  // that gets replaced by real controls on hover, not a control whose own
+  // state depends on hover. A real mouse user would experience the exact
+  // same instantaneous swap, since their cursor also stays put after
+  // clicking. So the fix belongs here, not in the component: move the mouse
+  // off the card before reading the hover-sensitive pill text.
+  await page.mouse.move(0, 0)
   await expect(card.getByText("Installed", { exact: true })).toBeVisible({ timeout: 30_000 })
 }
 
