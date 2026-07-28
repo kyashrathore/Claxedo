@@ -68,6 +68,14 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     build: {
       target: "esnext",
       outDir: isDemoBuild ? "dist-demo" : "dist",
+      // PostHog Error Tracking symbolication (deploy-claxedo-app.yml).
+      // "hidden" writes *.map files next to each chunk without adding a
+      // `//# sourceMappingURL` comment to the bundle, so nothing shipped to
+      // Cloudflare Pages ever points at a map file, while the maps still
+      // exist on disk for the deploy workflow's `posthog-cli sourcemap
+      // inject`/`upload` step to find before it deletes every *.map from
+      // the publish directory.
+      sourcemap: "hidden",
       rollupOptions: {
         input: isDemoBuild
           ? { demo: fileURLToPath(new URL("./demo/index.html", import.meta.url)) }

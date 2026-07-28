@@ -74,6 +74,7 @@ import { createHostedSessionTranscriptRetention } from "./workgraph-host/hosted-
 import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/documents"
 import { workGraphHttpTelemetry } from "./workgraph-host/operational-telemetry"
+import { captureProduct, productIdentity } from "./telemetry/product"
 import type { SettlementDispatcher } from "./workgraph-host/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "./workgraph-host/convex-store"
 
@@ -619,7 +620,7 @@ function ownerActivationWithTelemetry(
 ) {
   return async (auth: SignedControlPlaneAuth) => {
     const result = await activate(auth)
-    telemetry.capture(auth.user.subject, "workgraph.catalog_activation", {
+    const properties = {
       status: result.status,
       ...(result.status === "ready"
         ? {}
@@ -629,6 +630,18 @@ function ownerActivationWithTelemetry(
             reason: result.error.reason,
             retryable: result.error.retryable,
           }),
-    })
+    }
+    // A user turning on their catalog is a product-plane event, so it carries
+    // the required-properties contract whenever the token names an org. This
+    // shell only ever serves the hosted plane (createHostedApp asserts
+    // CLAXEDO_DEPLOYMENT_MODE=hosted), which fixes deployment_mode. Personal-
+    // account tokens carry no org claim; those stay on the plain capture rather
+    // than inventing an org id that would corrupt every per-org aggregate.
+    const identity = productIdentity(auth, { surface: "workgraph", deployment_mode: "cloud" })
+    if (identity) {
+      captureProduct(telemetry, "workgraph.catalog_activation", identity, properties)
+      return
+    }
+    telemetry.capture(auth.user.subject, "workgraph.catalog_activation", properties)
   }
 }

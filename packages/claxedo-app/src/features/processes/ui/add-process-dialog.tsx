@@ -21,7 +21,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createProcessClient } from "@/features/processes/data/client"
 import type { Process } from "@/features/processes/data/process"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 
@@ -171,11 +171,11 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
 
       if (isEdit() && props.config) {
         await client.updateConfig(props.config.id, body)
-        phCapture("process_updated", { has_port: store.usePort, restart_policy: store.restartPolicy })
+        phCapture("process_updated", { ...identityProps(), surface: "processes", has_port: store.usePort, restart_policy: store.restartPolicy })
         showToast({ title: "Process updated", variant: "success", duration: 3000 })
       } else {
         await client.createConfig(body)
-        phCapture("process_created", { has_port: store.usePort, auto_start: store.autoStart, restart_policy: store.restartPolicy })
+        phCapture("process_created", { ...identityProps(), surface: "processes", has_port: store.usePort, auto_start: store.autoStart, restart_policy: store.restartPolicy })
         showToast({ title: "Process created", variant: "success", duration: 3000 })
         // Notify parent to open the pane, then refresh to pick up the new config.
         // The SSE process.config.changed event also syncs configs, but calling
@@ -204,7 +204,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
     setStore("deleting", true)
     try {
       await client.deleteConfig(props.config.id)
-      phCapture("process_deleted")
+      phCapture("process_deleted", { ...identityProps(), surface: "processes" })
       showToast({ title: "Process removed", variant: "success", duration: 3000 })
       props.onDone?.()
       dialog.close()

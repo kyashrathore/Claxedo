@@ -21,6 +21,8 @@ import {
   markPermissionAutoResponded,
   permissionAutoAcceptVersion,
 } from "@/features/session/providers/permission-auto-response-cache"
+import { permissionDecidedProperties } from "@/features/session/permission/modes"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
 type PermissionRespondFn = (input: {
   sessionID: string
@@ -120,6 +122,13 @@ const permissionContextInput = {
     function respondOnce(permission: PermissionRequest, directory?: string) {
       const hit = markPermissionAutoResponded(permission.id)
       if (hit) return
+      // Claxedo answering on the user's behalf — "Approve for me" / directory
+      // auto-accept — is always a grant; there is no auto-deny path.
+      phCapture("permission_decided", {
+        ...identityProps(),
+        surface: "session",
+        ...permissionDecidedProperties({ response: "once", toolKind: permission.permission, mode: "auto" }),
+      })
       respond({
         sessionID: permission.sessionID,
         permissionID: permission.id,

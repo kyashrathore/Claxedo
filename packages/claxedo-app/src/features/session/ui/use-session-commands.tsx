@@ -32,7 +32,8 @@ const canAddSelectionContext = (input: {
   return input.selectedLines(path) != null
 }
 import { useClaxedoState } from "@/features/session/app-ports"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
+import { redactedPath } from "@/platform/telemetry/redact"
 import type { SessionTransportCapabilities } from "../store/session-transport"
 import {
   registeredConversationSnapshot,
@@ -161,7 +162,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+shift+s",
       slash: "new",
       onSelect: () => {
-        phCapture("session_new")
+        phCapture("session_new", { ...identityProps(), surface: "command_palette" })
         navigate(workspaceSessionRoute(args.directory()))
         // Hand focus to the new draft's composer once it mounts. Without this a
         // keyboard user who runs "New session" from the palette/chord lands with
@@ -182,7 +183,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+p",
       slash: "open",
       onSelect: () => {
-        phCapture("file_open_dialog")
+        phCapture("file_open_dialog", { ...identityProps(), surface: "command_palette" })
         dialog.show(() => (
           <DialogSelectFile
             directory={args.directory()}
@@ -200,7 +201,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       onSelect: () => {
         const active = tabs().active()
         if (!active) return
-        phCapture("tab_closed", { tab_type: active })
+        phCapture("tab_closed", { ...identityProps(), surface: "command_palette", tab_type: active })
         tabs().close(active)
       },
     }),
@@ -232,7 +233,13 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           return
         }
 
-        phCapture("context_selection_added", { path })
+        phCapture("context_selection_added", {
+          ...identityProps(),
+          surface: "command_palette",
+          // A path, and its basename alone, identify the user's work; only the
+          // file kind and a stable digest leave the device.
+          ...redactedPath(path),
+        })
         addSelectionToContext(path, selectionFromLines(range))
       },
     }),
@@ -245,7 +252,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+shift+r",
       disabled: !claxedoState,
       onSelect: () => {
-        phCapture("review_pane_toggled")
+        phCapture("review_pane_toggled", { ...identityProps(), surface: "command_palette" })
         if (!claxedoState) return
 
         const paneId = claxedoState.wb.state.focusedPaneId
@@ -276,7 +283,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       title: language.t("command.fileTree.toggle"),
       keybind: "mod+shift+e",
       onSelect: () => {
-        phCapture("file_tree_toggled")
+        phCapture("file_tree_toggled", { ...identityProps(), surface: "command_palette" })
         layout.fileTree.toggle()
       },
     }),
@@ -393,8 +400,8 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+'",
       slash: "model",
       onSelect: () => {
-        phCapture("model_choose_opened")
-        dialog.show(() => <DialogSelectModel model={pickerModel()} />)
+        phCapture("model_choose_opened", { ...identityProps(), surface: "command_palette" })
+        dialog.show(() => <DialogSelectModel model={pickerModel()} surface="command_palette" />)
       },
     }),
     mcpCommand({
@@ -404,7 +411,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+;",
       slash: "mcp",
       onSelect: () => {
-        phCapture("mcp_toggle_opened")
+        phCapture("mcp_toggle_opened", { ...identityProps(), surface: "command_palette" })
         dialog.show(() => <DialogSelectMcp />)
       },
     }),
@@ -415,7 +422,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       keybind: "mod+.",
       slash: "agent",
       onSelect: () => {
-        phCapture("agent_cycled", { direction: "forward" })
+        phCapture("agent_cycled", { ...identityProps(), surface: "command_palette", direction: "forward" })
         local.agent.move(1)
       },
     }),
@@ -425,7 +432,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       description: language.t("command.agent.cycle.reverse.description"),
       keybind: "shift+mod+.",
       onSelect: () => {
-        phCapture("agent_cycled", { direction: "reverse" })
+        phCapture("agent_cycled", { ...identityProps(), surface: "command_palette", direction: "reverse" })
         local.agent.move(-1)
       },
     }),
@@ -435,7 +442,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       description: language.t("command.model.variant.cycle.description"),
       keybind: "shift+mod+d",
       onSelect: () => {
-        phCapture("model_variant_cycled")
+        phCapture("model_variant_cycled", { ...identityProps(), surface: "command_palette" })
         local.model.variant.cycle()
       },
     }),
@@ -457,7 +464,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const nowAutoAccepting = sessionID
           ? permission.isAutoAccepting(sessionID, sdk.directory)
           : permission.isAutoAcceptingDirectory(sdk.directory)
-        phCapture("auto_accept_toggled", { enabled: nowAutoAccepting })
+        phCapture("auto_accept_toggled", { ...identityProps(), surface: "command_palette", enabled: nowAutoAccepting })
         showToast({
           title: nowAutoAccepting
             ? language.t("toast.permissions.autoaccept.on.title")
@@ -485,10 +492,10 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       onSelect: async () => {
         const sessionID = args.sessionId()
         if (!sessionID) return
-        phCapture("session_undo")
+        phCapture("session_undo", { ...identityProps(), surface: "command_palette" })
         const currentStatus = args.status()
         if (supports("abort") && (currentStatus.type === "busy" || currentStatus.type === "retry")) {
-          phCapture("session_abort")
+          phCapture("session_abort", { ...identityProps(), surface: "command_palette" })
           await sdk.client.session.abort({ sessionID }).catch(() => {})
         }
         const revert = info()?.revert?.messageID
@@ -513,7 +520,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       onSelect: async () => {
         const sessionID = args.sessionId()
         if (!sessionID) return
-        phCapture("session_redo")
+        phCapture("session_redo", { ...identityProps(), surface: "command_palette" })
         const revertMessageID = info()?.revert?.messageID
         if (!revertMessageID) return
         const nextMessage = userMessages().find((x) => x.id > revertMessageID)
@@ -547,7 +554,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           })
           return
         }
-        phCapture("session_compact", { model_id: model.id, provider_id: model.provider.id })
+        phCapture("session_compact", { ...identityProps(), surface: "command_palette", model_id: model.id, provider_id: model.provider.id })
         await sdk.client.session.summarize({
           sessionID,
           modelID: model.id,
@@ -562,7 +569,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "fork",
       disabled: !args.sessionId() || visibleUserMessages().length === 0 || !supports("fork"),
       onSelect: () => {
-        phCapture("session_fork")
+        phCapture("session_fork", { ...identityProps(), surface: "command_palette" })
         dialog.show(() => <DialogFork />)
       },
     }),

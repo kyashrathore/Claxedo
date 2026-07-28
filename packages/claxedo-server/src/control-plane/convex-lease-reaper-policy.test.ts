@@ -71,6 +71,11 @@ const sweepArgs = {
   ready_heartbeat_stale_after_ms: 30 * 60 * 1_000,
 }
 
+// W5: the sweep also settles a lease's billable interval when it closes a
+// heartbeat-silent lease, and reports how many it settled. These fixtures carry
+// no tenant, so `closed_intervals` stays 0 throughout — a metering fact keyed on
+// a fabricated org would be worse than none. The tenant-carrying paths are
+// covered in convex-usage-metering-policy.test.ts.
 describe("Convex lease reaper sweep (D13)", () => {
   test("the sweep is an internal function: not callable by any client", () => {
     // cronMutation wraps internalMutationGeneric — only the Convex
@@ -91,7 +96,7 @@ describe("Convex lease reaper sweep (D13)", () => {
     await expect(handler(sweepStaleLeases)({ db } as never, {
       ...sweepArgs,
       now: 1_000 + HOUR,
-    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 1, marked_stopped: 0 })
+    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 1, marked_stopped: 0, closed_intervals: 0 })
 
     expect(rows.get("lease_1")).toMatchObject({
       status: "unavailable",
@@ -110,7 +115,7 @@ describe("Convex lease reaper sweep (D13)", () => {
     await expect(handler(sweepStaleLeases)({ db } as never, {
       ...sweepArgs,
       now: 1_000 + 60_000, // one minute in: a legitimate cold start
-    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 0 })
+    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 0, closed_intervals: 0 })
 
     expect(rows.get("lease_1")).toEqual(before)
   })
@@ -129,7 +134,7 @@ describe("Convex lease reaper sweep (D13)", () => {
     await expect(handler(sweepStaleLeases)({ db } as never, {
       ...sweepArgs,
       now: 5_000 + HOUR,
-    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 1 })
+    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 1, closed_intervals: 0 })
 
     expect(rows.get("lease_1")).toMatchObject({
       status: "stopped",
@@ -153,7 +158,7 @@ describe("Convex lease reaper sweep (D13)", () => {
     await expect(handler(sweepStaleLeases)({ db } as never, {
       ...sweepArgs,
       now: 100_000 + 60_000,
-    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 0 })
+    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 0, closed_intervals: 0 })
 
     expect(rows.get("lease_1")).toEqual(before)
   })
@@ -164,7 +169,7 @@ describe("Convex lease reaper sweep (D13)", () => {
     await expect(handler(sweepStaleLeases)({ db } as never, {
       ...sweepArgs,
       now: 1_000 + HOUR,
-    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 1 })
+    } as never)).resolves.toEqual({ scanned: 1, marked_unavailable: 0, marked_stopped: 1, closed_intervals: 0 })
     expect(rows.get("lease_1")).toMatchObject({ status: "stopped" })
   })
 
@@ -179,7 +184,7 @@ describe("Convex lease reaper sweep (D13)", () => {
     await expect(handler(sweepStaleLeases)({ db } as never, {
       ...sweepArgs,
       now: 1_000 + 10 * HOUR,
-    } as never)).resolves.toEqual({ scanned: 3, marked_unavailable: 0, marked_stopped: 0 })
+    } as never)).resolves.toEqual({ scanned: 3, marked_unavailable: 0, marked_stopped: 0, closed_intervals: 0 })
     expect(rows).toEqual(before)
   })
 
@@ -191,11 +196,11 @@ describe("Convex lease reaper sweep (D13)", () => {
     const now = 1_000 + HOUR
 
     await expect(handler(sweepStaleLeases)({ db } as never, { ...sweepArgs, now } as never))
-      .resolves.toEqual({ scanned: 2, marked_unavailable: 1, marked_stopped: 1 })
+      .resolves.toEqual({ scanned: 2, marked_unavailable: 1, marked_stopped: 1, closed_intervals: 0 })
     const afterFirst = new Map([...rows].map(([id, row]) => [id, { ...row }]))
 
     await expect(handler(sweepStaleLeases)({ db } as never, { ...sweepArgs, now: now + HOUR } as never))
-      .resolves.toEqual({ scanned: 2, marked_unavailable: 0, marked_stopped: 0 })
+      .resolves.toEqual({ scanned: 2, marked_unavailable: 0, marked_stopped: 0, closed_intervals: 0 })
     expect(rows).toEqual(afterFirst)
   })
 })

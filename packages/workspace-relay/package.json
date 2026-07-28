@@ -47,9 +47,9 @@
   },
   "dependencies": {
     "@claxedo/workspace-relay-protocol": "0.7.0",
-    "@sentry/bun": "10.64.0",
     "hono": "4.10.7",
-    "jose": "6.0.11"
+    "jose": "6.0.11",
+    "posthog-node": "4.18.0"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

@@ -79,7 +79,6 @@ export const DEFAULT_ALLOWLIST: Record<string, string[]> = {
   convex: ["convex.dev", "*.convex.dev", "*.convex.cloud"],
   railway: ["railway.app", "*.railway.app"],
   // Observability
-  sentry: ["sentry.io", "*.sentry.io", "sentry-cdn.com", "*.sentry-cdn.com"],
   posthog: ["posthog.com", "*.posthog.com"],
   langfuse: ["*.langfuse.com", "*.cloud.langfuse.com"],
   // Browser testing

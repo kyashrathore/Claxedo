@@ -53,9 +53,21 @@ function canonicalLeaseDocument(row: Record<string, unknown>) {
   const checkpoint = optionalObject(row, "checkpoint")
   const persistence = optionalObject(row, "persistence_capabilities")
   const restore = optionalObject(row, "restore_status")
+  const orgId = optionalString(row, "org_id")
+  const userId = optionalString(row, "user_id")
+  const startedAt = optionalNumber(row, "started_at")
+  const endedAt = optionalNumber(row, "ended_at")
   return {
     workspace_id: optionalString(row, "workspace_id") ?? "",
     home_region: optionalString(row, "home_region") ?? "us-east",
+    // W5 metering identity + clock. Spread conditionally so an absent value
+    // stays ABSENT rather than becoming an explicit undefined key — the
+    // canonical document is written with `db.replace`, so a key that is present
+    // and empty is indistinguishable from a tenant we recorded as blank.
+    ...(orgId ? { org_id: orgId } : {}),
+    ...(userId ? { user_id: userId } : {}),
+    ...(startedAt === undefined ? {} : { started_at: startedAt }),
+    ...(endedAt === undefined ? {} : { ended_at: endedAt }),
     ...(optionalString(row, "driver") ? { driver: optionalString(row, "driver") } : {}),
     epoch: optionalNumber(row, "epoch") ?? 0,
     status: row.status,
@@ -104,12 +116,82 @@ export function legacyLeaseDocument(row: Record<string, unknown>) {
   })
 }
 
+// ---------------------------------------------------------------------------
+// W5 sandbox-compute metering (metric spec §4.2).
+//
+// A lease's billable interval opens at `acquire` and closes exactly once, at
+// whichever of the three real close paths gets there first: explicit release,
+// the reaper's heartbeat-silence transition, or driver-side GC. `active_ms` is
+// subtracted from ONE clock (`now - started_at`) rather than assembled from
+// two writers, so it cannot drift.
+//
+// Closing is idempotent by predicate: a row with no `started_at`, or one that
+// already carries `ended_at`, has no open interval and writes nothing. That is
+// what keeps a reaper sweep re-running over the same stopped lease from
+// inventing compute that was never consumed.
+// ---------------------------------------------------------------------------
+
+export const closeReason = v.union(
+  v.literal("idle_timeout"),
+  v.literal("explicit_release"),
+  v.literal("gc"),
+)
+
+/** `YYYY-MM-DD` in UTC — the rollup's grouping key, stable across regions. */
+export function usageDate(timestamp: number) {
+  return new Date(timestamp).toISOString().slice(0, 10)
+}
+
+/**
+ * Write the close fact for a lease's open interval, if it has one. Returns the
+ * inserted fact so callers can hand `active_ms` straight to the product-plane
+ * event without a second read.
+ *
+ * A lease with no tenant (pre-W5 rows, or a lease acquired by a path that
+ * never carried a signed user) records NOTHING: a fact row keyed on a
+ * fabricated org would silently corrupt every per-org aggregate downstream,
+ * which is strictly worse than a missing row.
+ */
+async function closeLeaseInterval(
+  ctx: { db: { insert: (table: string, value: Record<string, unknown>) => Promise<unknown> } },
+  row: Record<string, unknown>,
+  input: { reason: "idle_timeout" | "explicit_release" | "gc"; now: number },
+) {
+  const startedAt = optionalNumber(row, "started_at")
+  const endedAt = optionalNumber(row, "ended_at")
+  if (startedAt === undefined || endedAt !== undefined) return null
+  const orgId = optionalString(row, "org_id")
+  const userId = optionalString(row, "user_id")
+  if (!orgId || !userId) return null
+  const sandboxId = optionalString(row, "sandbox_id")
+  const fact = {
+    org_id: orgId,
+    user_id: userId,
+    workspace_id: optionalString(row, "workspace_id") ?? "",
+    ...(sandboxId ? { sandbox_id: sandboxId } : {}),
+    driver: optionalString(row, "driver") ?? optionalString(row, "provider") ?? "unknown",
+    started_at: startedAt,
+    ended_at: input.now,
+    active_ms: Math.max(0, input.now - startedAt),
+    reason: input.reason,
+    date: usageDate(input.now),
+    created_at: input.now,
+  }
+  await ctx.db.insert("sandbox_lease_events", fact)
+  return fact
+}
+
 export const acquire = serviceMutation({
   args: {
     workspace_id: v.string(),
     home_region: v.string(),
     driver: v.string(),
     stale_after_ms: v.number(),
+    // W5: the tenant the lease is being held FOR. Optional so unsigned/local
+    // composition keeps working unchanged; absent tenant simply means the
+    // interval is never metered.
+    org_id: v.optional(v.string()),
+    user_id: v.optional(v.string()),
     now: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -133,6 +215,13 @@ export const acquire = serviceMutation({
       workspace_id: args.workspace_id,
       home_region: current?.home_region ?? args.home_region,
       driver: current?.driver ?? args.driver,
+      // W5: a fresh epoch opens a fresh billable interval. The previous one was
+      // already closed by whichever close path ran (release deletes the row;
+      // the reaper stamps `ended_at`), so re-stamping here cannot double-count.
+      org_id: args.org_id ?? current?.org_id,
+      user_id: args.user_id ?? current?.user_id,
+      started_at: now,
+      ended_at: undefined,
       epoch: (current?.epoch ?? 0) + 1,
       status: "acquiring" as const,
       retry_count: current?.retry_count ?? 0,
@@ -231,15 +320,60 @@ export const recordFailure = serviceMutation({
 export const release = serviceMutation({
   args: {
     ...workspaceId,
+    // W5: why the interval ended. Defaults to the explicit path because that is
+    // what this mutation IS — the GC/idle callers pass their own reason.
+    reason: v.optional(closeReason),
+    now: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const current = await ctx.db
       .query("runtime_leases")
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
       .first()
-    if (!current) return { released: false }
+    if (!current) return { released: false, usage: null }
+    // Close BEFORE the delete: the row is the only place the interval's start
+    // and tenant live, and after `delete` there is nothing left to subtract.
+    const usage = await closeLeaseInterval(ctx, current, {
+      reason: args.reason ?? "explicit_release",
+      now: args.now ?? Date.now(),
+    })
     await ctx.db.delete(current._id)
-    return { released: true }
+    return { released: true, usage }
+  },
+})
+
+/**
+ * Stamp the tenant a lease is held for, after the fact.
+ *
+ * The lease is acquired by the sandbox manager, whose `SandboxLeaseAcquireInput`
+ * port carries a workspace and a driver but no tenant — and the acquire happens
+ * inside a fire-and-forget provision, several layers below the signed request
+ * that authorized it. Rather than thread an org through every driver's store
+ * contract, the ONE call site that holds a verified tenant (the hosted cloud
+ * workspace create route) stamps it onto the lease it just caused.
+ *
+ * Write-once by design: a lease already carrying a tenant keeps it, so a retried
+ * create cannot re-attribute a running sandbox to a different org.
+ */
+export const recordTenant = serviceMutation({
+  args: {
+    ...workspaceId,
+    org_id: v.string(),
+    user_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const current = await ctx.db
+      .query("runtime_leases")
+      .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
+      .first()
+    if (!current) return { stamped: false, reason: "no_lease" as const }
+    if (current.org_id || current.user_id) return { stamped: false, reason: "already_attributed" as const }
+    await ctx.db.patch(current._id, {
+      org_id: args.org_id,
+      user_id: args.user_id,
+      updated_at: Date.now(),
+    })
+    return { stamped: true, reason: null }
   },
 })
 
@@ -301,6 +435,7 @@ export const sweepStaleLeases = cronMutation({
     const rows = await ctx.db.query("runtime_leases").collect()
     let markedUnavailable = 0
     let markedStopped = 0
+    let closedIntervals = 0
     for (const row of rows) {
       if (row.status === "acquiring" && now - row.updated_at >= args.acquiring_stale_after_ms) {
         await ctx.db.replace(row._id, canonicalLeaseDocument({
@@ -315,9 +450,16 @@ export const sweepStaleLeases = cronMutation({
       if (row.status === "ready") {
         const lastSeen = row.last_heartbeat_at ?? row.updated_at
         if (now - lastSeen >= args.ready_heartbeat_stale_after_ms) {
+          // W5: ready -> stopped is a real close, so the interval settles here.
+          // `closeLeaseInterval` is predicate-idempotent, and stamping
+          // `ended_at` means a later sweep over the same stopped row writes
+          // nothing — the reaper cannot inflate compute by running often.
+          const usage = await closeLeaseInterval(ctx, row, { reason: "idle_timeout", now })
+          if (usage) closedIntervals += 1
           await ctx.db.replace(row._id, canonicalLeaseDocument({
             ...row,
             status: "stopped",
+            ended_at: now,
             last_error: `reaper: ready lease heartbeat silent for ${now - lastSeen}ms`,
             updated_at: now,
           }))
@@ -325,7 +467,12 @@ export const sweepStaleLeases = cronMutation({
         }
       }
     }
-    return { scanned: rows.length, marked_unavailable: markedUnavailable, marked_stopped: markedStopped }
+    return {
+      scanned: rows.length,
+      marked_unavailable: markedUnavailable,
+      marked_stopped: markedStopped,
+      closed_intervals: closedIntervals,
+    }
   },
 })
 

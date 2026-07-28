@@ -59,9 +59,20 @@ crons = ["*/15 * * * *"]
 #   CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM (+ optional _NEXT_*),
 #   CLERK_JWT_ISSUER, CLERK_JWKS_URL (+ optional CLERK_JWT_AUDIENCE).
 #
-# Observability (D12) — secret:
-#   CLAXEDO_SENTRY_DSN — Sentry DSN for the Worker. ABSENT = Sentry no-ops
-#     cleanly (no events, no network); set it once the Sentry project exists.
+# Observability (D12) — one vendor carries product analytics AND error
+# tracking, so one key configures both planes. Sending takes TWO opt-ins and
+# both are required; any other combination registers no sink at all (no events,
+# no exceptions, no network), which is the default everywhere.
+# Public var:
+#   CLAXEDO_TELEMETRY_MODE — `on` is the only value that permits sending
+#     (case-insensitive). Checked BEFORE the key, so `off`/unset silences the
+#     Worker whatever secrets it holds. Cloud deploys set it explicitly.
+# Secret:
+#   CLAXEDO_POSTHOG_KEY — PostHog project key for the Worker. Inert on its own
+#     while the mode is anything but `on`.
+# Public var (optional):
+#   CLAXEDO_POSTHOG_HOST — ingest host override for the EU region or a
+#     self-hosted PostHog. Defaults to https://us.i.posthog.com.
 # Release tagging (D12): CLAXEDO_RELEASE = git SHA, passed AT DEPLOY TIME by
 # the D11 deploy workflow rather than pinned here:
 #   wrangler deploy --var CLAXEDO_RELEASE:$GITHUB_SHA

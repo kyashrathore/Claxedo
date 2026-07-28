@@ -4,7 +4,7 @@ import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { useCommand } from "@/app/providers/command"
 import { createProcessPaneToggleCommand } from "./workbench/rail/layout-commands"
 import type { ClaxedoStateApi } from "./workbench/state/index"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
 export function useClaxedoAppShellCommands(input: {
   state: ClaxedoStateApi
@@ -42,7 +42,7 @@ export function useClaxedoAppShellCommands(input: {
 
   command.register("claxedo-layout", () => [
     createProcessPaneToggleCommand(() => {
-      phCapture("process_pane_toggled")
+      phCapture("process_pane_toggled", { ...identityProps(), surface: "command_palette" })
       input.state.workspacePanel.toggle("processes", {
         workspaceDir: input.activeDirectory(),
         navigator: "processes",

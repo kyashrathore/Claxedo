@@ -62,7 +62,59 @@ jobs:
           VITE_AUTH_ENABLED: "true"
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          # Public by design: VITE_ vars ship in the client bundle — this is
+          # the PostHog PROJECT key (capture-only), never a personal API
+          # key. Empty key leaves analytics.ts uninitialized: no client,
+          # no network call, the same "no keys configured => nothing sent"
+          # contract self-host builds rely on. Mode defaults to "on" here
+          # because a Claxedo Cloud deploy is the intended-on case, so an
+          # unpopulated repo var can't silently leave production dark; the
+          # repo var still overrides it to "off" without a code change.
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          VITE_CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
         run: bun run build
+
+      # A source-map upload token is optional config: its absence must
+      # degrade to "no upload, deploy still green," never a failed step.
+      # secrets.* is not usable directly in `if:`, hence the bridge through
+      # a step output.
+      - name: Check for PostHog source map token
+        id: posthog_cli_check
+        env:
+          POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$POSTHOG_CLI_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # POSTHOG_CLI_API_KEY / POSTHOG_CLI_PROJECT_ID are the CLI's own env
+      # var names (verified with `bunx @posthog/cli --help`; deliberately
+      # different from the GH secret/var names on the left of each line).
+      # --host has no env-var form in this CLI version, hence the explicit
+      # flag. release-version reuses the repo's CLAXEDO_RELEASE = git SHA
+      # convention (D12) so uploaded maps line up with the deployed build.
+      - name: Inject and upload PostHog source maps
+        if: steps.posthog_cli_check.outputs.enabled == 'true'
+        working-directory: packages/claxedo-app
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_TOKEN }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+        run: |
+          set -euo pipefail
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap inject --directory dist --release-version "$GITHUB_SHA"
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap upload --directory dist --release-version "$GITHUB_SHA"
+
+      # Unconditional: build.sourcemap is "hidden" (vite.cloud.config.ts),
+      # so *.map files exist on disk whenever the build ran, upload token
+      # present or not. Cloudflare Pages must never serve raw source maps.
+      - name: Strip source maps from the publish directory
+        working-directory: packages/claxedo-app
+        run: find dist -type f -name '*.map' -delete
 
       - name: Deploy app
         working-directory: packages/claxedo-app

@@ -13,6 +13,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { loadConnectProviderDialog, loadSelectProviderDialog } from "@/features/session/app-ports"
 import type { PickerItem, PickerState } from "@/features/session/ui/model/select-model"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
 export function freeOpenCodeModels(models: PickerItem[]) {
   return models.filter((item) => item.provider.id === "opencode" && item.cost?.input === 0 && item.cost.output === 0)
@@ -81,6 +82,16 @@ export const DialogSelectModelUnpaid: Component<{ model?: PickerState }> = (prop
                 key={(x) => `${x.provider.id}:${x.id}`}
                 onSelect={(x) => {
                   model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, { recent: true })
+                  // Only a real pick, never the list's own clear/deselect call. This
+                  // dialog is reached only from the composer's unpaid-model prompt.
+                  if (x) {
+                    phCapture("model_selected", {
+                      ...identityProps(),
+                      surface: "composer",
+                      provider_id: x.provider.id,
+                      model_id: x.id,
+                    })
+                  }
                   dialog.close()
                 }}
               >

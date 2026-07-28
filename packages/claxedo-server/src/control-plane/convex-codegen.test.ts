@@ -41,6 +41,7 @@ describe("Convex generated API artifacts", () => {
       "runtimeAccessTokens",
       "sandboxLeases",
       "sessions",
+      "usageMetering",
       "users",
       "wakes",
       "workgraphActivity",

@@ -2,22 +2,35 @@
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
 import { Button } from "@opencode-ai/ui/button"
-import { Component, Show } from "solid-js"
+import { Component, Show, createEffect } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { captureException, identityProps, type Surface } from "@/platform/telemetry/analytics"
 import { formatError } from "./error-format"
 
 export type { InitError } from "./error-format"
 
 interface ErrorPageProps {
   error: unknown
+  /** Which boundary rendered this page; the DEV harness overrides it. */
+  surface?: Surface
 }
 
 export const ErrorPage: Component<ErrorPageProps> = (props) => {
   const platform = usePlatform()
   const language = useLanguage()
+
+  // The boundary swallowed this error, so `capture_exceptions` never sees it.
+  let reported: unknown
+  createEffect(() => {
+    const error = props.error
+    if (error === reported) return
+    reported = error
+    captureException(error, { ...identityProps(), surface: props.surface ?? "error_page" })
+  })
+
   const [store, setStore] = createStore({
     checking: false,
     version: undefined as string | undefined,

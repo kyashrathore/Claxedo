@@ -255,7 +255,7 @@ Any failed item is a no-go. Missing external credentials defer deployed acceptan
 
 ### WorkGraph operational signals and alert contract
 
-Every local server and hosted Worker composition emits content-free WorkGraph operational events through the configured Control Plane telemetry sink. The event properties contain bounded counts, durations, HTTP status classes, command names, stable error codes, queue kinds, and enumerated outcomes. The telemetry boundary excludes organization and user identifiers, prompts, titles, source text, credentials, provider URLs, repository URLs, and relay URLs.
+Every local server and hosted Worker composition emits content-free WorkGraph operational events through the configured Control Plane telemetry sink. The event properties contain bounded counts, durations, HTTP status classes, command names, stable error codes, queue kinds, and enumerated outcomes. The telemetry boundary excludes organization and user identifiers, prompts, titles, source text, credentials, provider URLs, repository URLs, and relay URLs. This operational plane is distinct from Claxedo's product-analytics plane — feature events and exception reports, which are identified by design and carry organization and user identifiers — documented separately in `packages/claxedo-web/src/pages/privacy.md`.
 
 
 

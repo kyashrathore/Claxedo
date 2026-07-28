@@ -10,9 +10,11 @@ import {
   SAFE_READ_PERMISSIONS,
   SANDBOXED_NO_POLICY_REASON,
   claxedoPermissionModes,
+  classifyToolKind,
   defaultPermissionSelection,
   findPermissionModeOption,
   harnessPermissionModes,
+  permissionDecidedProperties,
   permissionModeOptions,
   type HarnessModeReport,
 } from "./modes"
@@ -439,5 +441,68 @@ describe("the wire shape matches the runtime's own declaration", () => {
     const backAgain: AgentPermissionModeState = { ...asReport, modes: [...asReport.modes] }
     expect(backAgain.currentModeId).toBe("a")
     expect(asReport.appliesFrom).toBe("next-turn")
+  })
+})
+
+describe("classifyToolKind — permission_decided's tool_kind bucketing", () => {
+  test("buckets each named tier to its generic category", () => {
+    expect(classifyToolKind("read")).toBe("read")
+    expect(classifyToolKind("glob")).toBe("read")
+    expect(classifyToolKind("search")).toBe("read")
+    expect(classifyToolKind("edit")).toBe("write")
+    expect(classifyToolKind("todowrite")).toBe("write")
+    expect(classifyToolKind("delete")).toBe("write")
+    expect(classifyToolKind("move")).toBe("write")
+    expect(classifyToolKind("bash")).toBe("execute")
+    expect(classifyToolKind("task")).toBe("execute")
+    expect(classifyToolKind("skill")).toBe("execute")
+    expect(classifyToolKind("doom_loop")).toBe("execute")
+    expect(classifyToolKind("webfetch")).toBe("network")
+    expect(classifyToolKind("websearch")).toBe("network")
+    expect(classifyToolKind("external_directory")).toBe("network")
+    expect(classifyToolKind("question")).toBe("interactive")
+  })
+
+  // The permission namespace has an OPEN TAIL — MCP tool names, subagent ids,
+  // and the shell tool id are all dynamic strings the harness invents at
+  // runtime. Every one of them must land in the same safe bucket rather than
+  // being forwarded, or a connection/tool name leaks into analytics.
+  test("buckets undefined and every unrecognized dynamic id to other", () => {
+    expect(classifyToolKind(undefined)).toBe("other")
+    expect(classifyToolKind("switch_mode")).toBe("other")
+    expect(classifyToolKind("mcp__acme-crm__lookup_customer")).toBe("other")
+    expect(classifyToolKind("subagent-7f3a2b")).toBe("other")
+    expect(classifyToolKind("bash-9f8e")).toBe("other")
+  })
+})
+
+describe("permissionDecidedProperties — the permission_decided property allowlist", () => {
+  // The guard against future PII creep: this enumerates the exact allowed keys.
+  // Tripwire — add a forbidden property (e.g. `title`) to the function's return
+  // in modes.ts, watch this fail, then remove it.
+  test("emits exactly decision, mode, and tool_kind — nothing else", () => {
+    const props = permissionDecidedProperties({ response: "once", toolKind: "bash", mode: "manual" })
+    expect(Object.keys(props).sort()).toEqual(["decision", "mode", "tool_kind"])
+  })
+
+  test("reject maps to deny; once and always both map to allow", () => {
+    expect(permissionDecidedProperties({ response: "reject", toolKind: "edit", mode: "manual" }).decision).toBe("deny")
+    expect(permissionDecidedProperties({ response: "once", toolKind: "edit", mode: "manual" }).decision).toBe("allow")
+    expect(permissionDecidedProperties({ response: "always", toolKind: "edit", mode: "manual" }).decision).toBe("allow")
+  })
+
+  test("carries the mode the caller passed through untouched", () => {
+    expect(permissionDecidedProperties({ response: "once", toolKind: "read", mode: "auto" }).mode).toBe("auto")
+    expect(permissionDecidedProperties({ response: "reject", toolKind: "read", mode: "manual" }).mode).toBe("manual")
+  })
+
+  test("never forwards the raw permission/tool string as a property value", () => {
+    const props = permissionDecidedProperties({
+      response: "once",
+      toolKind: "mcp__acme-crm__lookup_customer",
+      mode: "auto",
+    })
+    expect(Object.values(props)).not.toContain("mcp__acme-crm__lookup_customer")
+    expect(props.tool_kind).toBe("other")
   })
 })

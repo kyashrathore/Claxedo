@@ -58,7 +58,8 @@ export default function ErrorPageHarness() {
 
   return (
     <div data-testid="error-page-harness" data-error-variant={new URLSearchParams(location.search).get("variant") ?? DEFAULT_VARIANT}>
-      <ErrorPage error={error()} />
+      {/* Its own surface so synthetic harness errors never join real crashes. */}
+      <ErrorPage error={error()} surface="error_page_harness" />
     </div>
   )
 }

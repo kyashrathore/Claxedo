@@ -18,6 +18,10 @@ explain a maintained package or cross-package delivery contract.
     seven drivers under BYOK, native capture preferred so most providers need no
     object-storage binding, a portable runtime-level artifact as the universal
     floor, and the seven checkpoint defects found reviewing the landed code.
+- [PostHog observability](./2026-07-28-001-feat-posthog-observability-plan.md)
+  - Active implementation plan (W0–W7): PostHog is the single stack for
+    product analytics and error tracking across every runtime. Normative
+    amendment source for launch streams F1, F6, and §7 owner decision #2.
 - [Connections emulator E2E](./2026-07-06-005-test-connections-e2e-emulate-plan.md)
   - Retained as an active test plan. The connections package, server host,
     settings UI, and WorkGraph consumer still exist, and emulator endpoint seams

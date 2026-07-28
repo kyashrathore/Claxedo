@@ -9,7 +9,7 @@ import { Extension, type Editor, type Range } from "@tiptap/core"
 import Suggestion, { type SuggestionOptions, type SuggestionProps, type SuggestionKeyDownProps } from "@tiptap/suggestion"
 import { createSignal, createEffect, For, Show } from "solid-js"
 import { render as solidRender } from "solid-js/web"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
 // ── Command items ──────────────────────────────────────────────────────
 
@@ -583,7 +583,7 @@ export const SlashCommands = Extension.create({
         items: ({ query }: { query: string }) => filterSlashCommands(slashCommandItems, query),
         render: createSuggestionRenderer,
         command: ({ editor, range, props }: { editor: SlashCommandEditor; range: Range; props: { item: SlashCommandItem } }) => {
-          phCapture("page_slash_command_used", { command_id: props.item.id, command_title: props.item.title })
+          phCapture("page_slash_command_used", { ...identityProps(), surface: "documents", command_id: props.item.id, command_title: props.item.title })
           props.item.command({ editor, range })
         },
       } satisfies SlashCommandSuggestionOptions,

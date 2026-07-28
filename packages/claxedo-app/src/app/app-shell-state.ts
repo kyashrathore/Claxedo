@@ -6,7 +6,8 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 
 import { useNotification } from "@/app/providers/notification"
-import { capture as phCapture } from "@/platform/telemetry/analytics"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
+import { redactedPathValues } from "@/platform/telemetry/redact"
 import { realDirectory, useClaxedoState } from "./workbench/state/index"
 import { projectToProjectItem } from "./workbench/state/route-bridge"
 import { resolveActiveDirectory } from "../features/workspaces/lib/active-workspace"
@@ -56,7 +57,13 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
     if (typeof args[0] === "string") {
       const eventName = args[0].replace(/\s+/g, "_")
       const props = args[1] && typeof args[1] === "object" ? (args[1] as Record<string, unknown>) : undefined
-      phCapture(eventName, props)
+      // Flow properties carry workspace/route directories verbatim; the sink is
+      // the only choke point every producer passes through.
+      phCapture(eventName, {
+        ...identityProps(),
+        surface: "app_shell",
+        ...redactedPathValues(props ?? {}),
+      })
     }
   }
   const ensureDirectorySessionCache = async (directory: string) => {

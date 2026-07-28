@@ -39,4 +39,26 @@ crons.interval("flag stale billing sync", { hours: 6 }, internal.billing.flagSta
   stale_after_ms: 24 * 60 * 60 * 1000,
 })
 
+// W5 sandbox-compute rollup (metric spec §4.2). Closed lease intervals land in
+// `sandbox_lease_events` one row at a time; this folds them into the daily
+// per-tenant buckets that answer "how much sandbox compute does my average
+// user consume?". Hourly rather than daily so a day's number is readable while
+// the day is still running, and the sweep is consume-once
+// (`rolled_up_at`-stamped) so the cadence can change freely without
+// double-counting. The batch bound keeps one tick inside a single Convex
+// transaction; a backlog drains over the following ticks.
+crons.interval("roll up sandbox usage", { hours: 1 }, internal.usageMetering.rollupSandboxUsageDaily, {
+  limit: 1000,
+})
+
+// W5 retention (plan D3). One row per lease and per turn is unbounded growth at
+// Cloud scale — `audit_events` has no retention cron and neither would these.
+// Raw facts age out at 400 days; the daily rollups are kept, so the long-range
+// answer survives the prune. Lease facts are only prunable once rolled up, so
+// this can never erase compute the daily table has not yet counted.
+crons.interval("prune usage facts", { hours: 24 }, internal.usageMetering.pruneUsageFacts, {
+  retain_ms: 400 * 24 * 60 * 60 * 1000,
+  limit: 1000,
+})
+
 export default crons

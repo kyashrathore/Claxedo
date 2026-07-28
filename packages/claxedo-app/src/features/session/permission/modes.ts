@@ -66,6 +66,55 @@ export const DANGER_GATED_PERMISSIONS = [
   "doom_loop",
 ] as const
 
+/**
+ * Generic bucket for `permission_decided` telemetry. NEVER the raw permission
+ * string itself: opencode's permission namespace has an open tail — MCP tool
+ * names, subagent ids, and the shell tool id are all dynamic — so forwarding it
+ * verbatim risks leaking a connection or tool name into an analytics event.
+ * Anything this table does not recognize, including every dynamic id above,
+ * buckets to "other" rather than being forwarded raw.
+ */
+export type ToolKindCategory = "read" | "write" | "execute" | "network" | "interactive" | "other"
+
+const WRITE_TOOL_KINDS: readonly string[] = [...IN_PROJECT_WRITE_PERMISSIONS, "delete", "move"]
+const EXECUTE_TOOL_KINDS: readonly string[] = ["bash", "task", "skill", "doom_loop", "execute"]
+const NETWORK_TOOL_KINDS: readonly string[] = ["webfetch", "websearch", "fetch", "external_directory"]
+
+/** Classify a raw permission/tool-kind string for telemetry. Pure and total. */
+export function classifyToolKind(permission: string | undefined): ToolKindCategory {
+  if (!permission) return "other"
+  if ((SAFE_READ_PERMISSIONS as readonly string[]).includes(permission)) return "read"
+  if ((ACP_SAFE_TOOL_KINDS as readonly string[]).includes(permission)) return "read"
+  if (WRITE_TOOL_KINDS.includes(permission)) return "write"
+  if (EXECUTE_TOOL_KINDS.includes(permission)) return "execute"
+  if (NETWORK_TOOL_KINDS.includes(permission)) return "network"
+  if ((INTERACTIVE_PERMISSIONS as readonly string[]).includes(permission)) return "interactive"
+  return "other"
+}
+
+export type PermissionDecidedProperties = {
+  decision: "allow" | "deny"
+  mode: "auto" | "manual"
+  tool_kind: ToolKindCategory
+}
+
+/**
+ * The `permission_decided` event body, shared by the manual dock decision
+ * (`session-composer-state.ts`) and the auto-accept path (`providers/permission.tsx`)
+ * so the two never drift on how a response maps to `decision`.
+ */
+export function permissionDecidedProperties(input: {
+  response: "once" | "always" | "reject"
+  /** The raw `PermissionRequest.permission` field — bucketed here, never forwarded raw. */
+  toolKind: string | undefined
+  mode: "auto" | "manual"
+}): PermissionDecidedProperties {
+  return {
+    decision: input.response === "reject" ? "deny" : "allow",
+    mode: input.mode,
+    tool_kind: classifyToolKind(input.toolKind),
+  }
+}
 
 /**
  * What the user picked.

@@ -16,6 +16,8 @@ import {
 } from "@/features/session/data/sync/queries"
 import { dispatchSessionTodoEvent } from "@/features/session/store/session-status-dispatcher"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import { permissionDecidedProperties } from "@/features/session/permission/modes"
+import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
 export const todoState = (input: {
   count: number
@@ -135,6 +137,14 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     const perm = permissionRequest()
     if (!perm) return
     if (store.responding === perm.id) return
+
+    // The dock's own Deny / Allow Always / Allow Once buttons — a human decided,
+    // as opposed to the auto-accept path captured in `providers/permission.tsx`.
+    phCapture("permission_decided", {
+      ...identityProps(),
+      surface: "session",
+      ...permissionDecidedProperties({ response, toolKind: perm.permission, mode: "manual" }),
+    })
 
     setStore("responding", perm.id)
     permission

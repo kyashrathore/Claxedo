@@ -9,6 +9,14 @@ import type { Event, MessageBoxOptions } from "electron"
 import { app, BrowserWindow, dialog, utilityProcess } from "electron"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
+import { installDesktopTelemetry } from "./telemetry"
+
+// Registered before every other line in this file (including the app.setName
+// / app.setPath calls immediately below): once a listener exists here,
+// Electron/Node's default uncaughtException behavior is disabled, so this
+// module's handler becomes the only thing standing between a thrown error
+// and a desktop app that hangs instead of failing fast.
+installDesktopTelemetry()
 
 const APP_NAMES: Record<string, string> = {
   dev: "Claxedo Dev",

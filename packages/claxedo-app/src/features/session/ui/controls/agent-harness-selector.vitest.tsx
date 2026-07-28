@@ -26,6 +26,14 @@ const setHarnessCalls: Array<{ scope: string; type: string }> = []
 const setModelCalls: Array<{ scope: string; model: { providerID: string; modelID: string } }> = []
 const hydrateCalls: Array<{ scope: string; directory?: string; sessionId?: string }> = []
 const resolveDefaultCalls: unknown[] = []
+const captured: Array<{ event: string; properties: Record<string, unknown> }> = []
+
+vi.mock("@/platform/telemetry/analytics", () => ({
+  capture: (event: string, properties: Record<string, unknown>) => {
+    captured.push({ event, properties })
+  },
+  identityProps: () => ({ org_id: "org_1", user_id: "user_1", deployment_mode: "self-host" }),
+}))
 let readiness = "ready"
 let harnessType = "claude-acp"
 let models: Array<{ id: string; name: string }> = []
@@ -231,6 +239,7 @@ afterEach(() => {
   setModelCalls.length = 0
   hydrateCalls.length = 0
   resolveDefaultCalls.length = 0
+  captured.length = 0
 })
 
 beforeEach(() => {
@@ -307,6 +316,32 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
     fireEvent.click(option)
     expect(setHarnessCalls).toHaveLength(0)
+  })
+
+  test("clicking an option captures harness_selected with an id-only property allowlist", () => {
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+    const option = container.querySelector("[data-testid='select-option-codex-acp']") as HTMLButtonElement
+
+    fireEvent.click(option)
+
+    const event = captured.find((entry) => entry.event === "harness_selected")
+    expect(event).toBeDefined()
+    expect(event?.properties.harness).toBe("codex-acp")
+    // The guard against future PII creep: this enumerates the exact allowed
+    // keys. Tripwire — add a forbidden property (e.g. `title`) at the call site
+    // in agent-harness-selector.tsx, watch this fail, then remove it.
+    expect(Object.keys(event?.properties ?? {}).sort()).toEqual(
+      ["deployment_mode", "harness", "org_id", "surface", "user_id"].sort(),
+    )
+  })
+
+  test("does not capture harness_selected when the click is a no-op (current harness, disabled, or stray typeahead)", () => {
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    fireEvent.click(container.querySelector("[data-testid='select-option-claude-acp']") as HTMLButtonElement)
+    fireEvent.click(container.querySelector("[data-testid='select-typeahead-codex-acp']") as HTMLButtonElement)
+
+    expect(captured.filter((entry) => entry.event === "harness_selected")).toEqual([])
   })
 
   test("a typeahead-while-closed change does NOT switch the harness", () => {

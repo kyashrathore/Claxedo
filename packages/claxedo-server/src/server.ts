@@ -259,7 +259,7 @@ export function createApp(
   // default onError swallows route exceptions into bare 500s; this keeps that
   // exact response behavior (HTTPException responses pass through) while
   // reporting server exceptions through the observability seam — a no-op
-  // unless Sentry was initialized (CLAXEDO_SENTRY_DSN set).
+  // unless a PostHog key is configured.
   app.onError((err, c) => {
     if (err instanceof HTTPException) return err.getResponse()
     reportError(err, {
@@ -877,9 +877,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   configureOpenCodeApplicationTools(undefined)
   initPostHog()
-  // D12: Sentry on the Node server — no-op unless CLAXEDO_SENTRY_DSN is set
-  // (release = git SHA via CLAXEDO_RELEASE/GIT_SHA; events tagged unit=server
-  // + deployment_mode). See observability/node.ts.
+  // Error tracking rides the client initPostHog just built — no-op unless a
+  // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
+  // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
   mirrorProcessEvents()
   configureOpencodeMcpSync({ enabled: opencodeCompat })

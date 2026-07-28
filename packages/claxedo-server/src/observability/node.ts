@@ -1,42 +1,41 @@
 /**
- * Node-server Sentry wiring (D12, ops-floor decision: Sentry is the
- * observability floor, chosen because it is the only option with first-party
- * coverage across the Worker, the Node relay, and Convex). Node-only: imported
- * by server.ts, NEVER by worker.ts/hosted-app.ts — the Worker registers its
- * own @sentry/cloudflare sink directly in worker.ts, and the Worker
- * import-graph guard keeps this module (and @sentry/node) out of that graph.
+ * Node-server error sink. Node-only: imported by server.ts and main.ts, NEVER
+ * by worker.ts/hosted-app.ts — `posthog-node` is on the Worker's forbidden-
+ * import list and the Worker import-graph guard keeps this module out of that
+ * graph. The Worker registers its own fetch-based sink in worker.ts.
  *
- * DSN-absent contract: without CLAXEDO_SENTRY_DSN this returns
- * { enabled: false } WITHOUT calling Sentry.init at all — zero SDK overhead,
- * zero network (Sentry's own recommendation for conditional enablement).
+ * One client, two planes: the sink reuses the `posthog-node` client that
+ * posthog.ts already owns, so product events and exceptions share a connection,
+ * a flush schedule, and one shutdown path.
+ *
+ * Key-absent contract: without a PostHog key this returns { enabled: false }
+ * WITHOUT constructing a client and WITHOUT registering a sink — zero SDK
+ * overhead, zero network, and report.ts's own no-sink branch keeps every
+ * reportError call a silent no-op.
  */
 
-import * as Sentry from "@sentry/node"
+import { initPostHog } from "../posthog"
 import { setErrorReporterSink } from "./report"
-import { sentryInitOptions, type ObservabilityEnv } from "./sentry-config"
+import { observabilityOptions, type ObservabilityEnv } from "./config"
 
 export function initNodeObservability(env: ObservabilityEnv = process.env): { enabled: boolean } {
-  const options = sentryInitOptions(env, "server")
-  if (!options.enabled || !options.dsn) return { enabled: false }
-  Sentry.init({
-    dsn: options.dsn,
-    ...(options.release ? { release: options.release } : {}),
-    tracesSampleRate: 0,
-    // I-5: never ship credential material. @sentry/node attaches request
-    // headers/body on its own; sentryInitOptions' beforeSend strips them.
-    sendDefaultPii: options.sendDefaultPii,
-    beforeSend: options.beforeSend,
-    initialScope: options.initialScope,
-    // The server owns its own SIGTERM shutdown and error surfaces; Sentry's
-    // default OnUncaughtException integration would exit the process for us.
-    // Keep exits under server.ts's control.
-    integrations: (defaults) => defaults.filter((integration) => integration.name !== "OnUncaughtException"),
-  })
+  const options = observabilityOptions(env, "server")
+  if (!options.enabled) return { enabled: false }
+  const client = initPostHog(env)
+  if (!client) return { enabled: false }
   setErrorReporterSink((error, context) => {
-    Sentry.withScope((scope) => {
-      scope.setTags(context.tags)
-      if (Object.keys(context.extra).length > 0) scope.setExtras(context.extra)
-      Sentry.captureException(error)
+    // Product-plane identity when a call site knows it; the ops-plane "system"
+    // principal otherwise. A boot or background failure genuinely has no user.
+    const distinctId = context.tags.user_id || "system"
+    // I-5 (never report credential material): the payload is EXACTLY the base
+    // tags plus the caller's tags/extra. posthog-node attaches no request
+    // context of its own — no headers, cookies, query strings, or bodies — so
+    // the credential-scrub class of bug cannot occur on this path. Keep it
+    // that way: never pass request objects or header maps into tags/extra.
+    client.captureException(error, distinctId, {
+      ...options.tags,
+      ...context.tags,
+      ...context.extra,
     })
   })
   return { enabled: true }

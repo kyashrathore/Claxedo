@@ -1,20 +1,20 @@
 /**
- * Runtime-neutral error-reporting seam (D12, ops-floor decision: Sentry is
- * the observability floor, with unattended detection and grouping as the
- * binding requirement for a solo-operator on-call).
+ * Runtime-neutral error-reporting seam (D12, ops-floor decision: unattended
+ * detection and grouping is the binding requirement for a solo-operator
+ * on-call).
  *
  * The Worker, the Node server, and tests all share this module; none of them
- * import a Sentry SDK from here (this file must stay Worker-safe — the
- * import-graph guard walks it). Each entrypoint registers its own sink at
- * boot: worker.ts → @sentry/cloudflare, server.ts → @sentry/node (via
- * observability/node.ts). With no sink registered — or with no Sentry DSN
- * configured, in which case the SDK sends nothing — every report is a clean
- * no-op: no network, no throw.
+ * import an SDK from here (this file must stay Worker-safe — the import-graph
+ * guard walks it, and `posthog-node` is a forbidden Worker import). Each
+ * entrypoint registers its own sink at boot: worker.ts → a fetch-based
+ * `$exception` POST, server.ts → `posthog-node` (via observability/node.ts).
+ * With no sink registered — which is exactly what happens when no PostHog key
+ * is configured — every report is a clean no-op: no network, no throw.
  *
  * Page classes (exactly TWO per the ADR): payment-path errors carry
- * `page_class=payment` so a single Sentry alert rule can page the phone on
- * them; the external-uptime page class lives outside this process entirely.
- * Everything else lands in the daily digest.
+ * `page_class=payment` so a single alert rule can page the phone on them; the
+ * external-uptime page class lives outside this process entirely. Everything
+ * else lands in the daily digest.
  */
 
 export type ErrorReportContext = {
@@ -31,7 +31,7 @@ export type ErrorReporterSink = (
 
 let sink: ErrorReporterSink | undefined
 
-/** Register the process's Sentry-backed sink. Pass undefined to reset (tests). */
+/** Register the process's error sink. Pass undefined to reset (tests). */
 export function setErrorReporterSink(next: ErrorReporterSink | undefined): void {
   sink = next
 }
@@ -49,8 +49,8 @@ export function reportError(error: unknown, context: ErrorReportContext = {}): v
  * Payment-path page class (ADR §4: one of exactly two page classes).
  *
  * Wave-2 billing code (Polar webhook route, checkout, seat sync) calls THIS
- * instead of reportError so the events carry `page_class=payment`; the Sentry
- * alert rule that pages the phone matches on that tag. Everything reported
+ * instead of reportError so the events carry `page_class=payment`; the alert
+ * rule that pages the phone matches on that property. Everything reported
  * through plain reportError stays digest-tier.
  */
 export function reportPaymentError(error: unknown, context: ErrorReportContext = {}): void {

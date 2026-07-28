@@ -13,6 +13,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ModelTooltip } from "@/features/session/ui/model/model-tooltip"
 import { useLanguage } from "@/platform/i18n/provider"
 import { loadManageModelsDialog, loadSelectProviderDialog } from "@/features/session/app-ports"
+import { capture as phCapture, identityProps, type Surface } from "@/platform/telemetry/analytics"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
@@ -66,6 +67,10 @@ const ModelList: Component<{
   action?: JSX.Element
   model: PickerState
   tooltips?: boolean
+  /** Where this picker was opened from, for `model_selected` telemetry. Every
+   * caller of `ModelSelectorPopover`/`DialogSelectModel` shares this one commit
+   * point, so the surface travels as a prop rather than being guessed here. */
+  surface?: Surface
 }> = (props) => {
   const language = useLanguage()
 
@@ -121,6 +126,15 @@ const ModelList: Component<{
         props.model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
         })
+        // Only a real pick, never the list's own clear/deselect call.
+        if (x) {
+          phCapture("model_selected", {
+            ...identityProps(),
+            surface: props.surface ?? "composer",
+            provider_id: x.provider.id,
+            model_id: x.id,
+          })
+        }
         props.onSelect()
       }}
     >
@@ -164,6 +178,9 @@ export function ModelSelectorPopover(props: {
    * dropdown class so this picker matches the other menus on the dock instead
    * of opening at its own width and row rhythm. */
   contentClass?: string
+  /** `model_selected` telemetry surface. Defaults to "composer" — every current
+   * caller of this popover lives on the composer dock. */
+  surface?: Surface
 }) {
   const [store, setStore] = createStore<{
     open: boolean
@@ -236,6 +253,7 @@ export function ModelSelectorPopover(props: {
             provider={props.provider}
             model={props.model}
             tooltips={props.tooltips}
+            surface={props.surface}
             onSelect={() => close("select")}
             class="p-1"
             action={props.actions === false ? undefined : (
@@ -269,7 +287,7 @@ export function ModelSelectorPopover(props: {
   )
 }
 
-export const DialogSelectModel: Component<{ provider?: string; model: PickerState }> = (props) => {
+export const DialogSelectModel: Component<{ provider?: string; model: PickerState; surface?: Surface }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
 
@@ -294,7 +312,7 @@ export const DialogSelectModel: Component<{ provider?: string; model: PickerStat
         </Button>
       }
     >
-      <ModelList provider={props.provider} model={props.model} onSelect={() => dialog.close()} />
+      <ModelList provider={props.provider} model={props.model} surface={props.surface} onSelect={() => dialog.close()} />
       <Button variant="ghost" class="ml-3 mt-5 mb-6 text-text-base self-start" onClick={manage}>
         {language.t("dialog.model.manage")}
       </Button>
