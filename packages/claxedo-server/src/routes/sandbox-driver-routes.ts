@@ -67,19 +67,29 @@ export function sandboxDriverRoutes(
       if (!id) return c.json({ error: apiError("sandbox_driver_unsupported", "Unsupported sandbox driver") }, 400)
       const body = authBody.parse(await c.req.json().catch(() => ({})))
       const cfg = await loadUserConfig()
-      const driverConfig = sandboxDriverConfig(cfg)
-      const driverAuth = driverConfig.auth ?? {}
 
-      try {
-        const secret = sandboxDriverManagedSecret(id, body.auth)
-        if (secret) {
+      // The credential registry is the ONLY sink for sandbox driver secrets.
+      // A failed write used to be swallowed and the raw `body.auth` written
+      // verbatim into user-agent-config.json (plaintext, mode 0644) while the
+      // response still reported `configured: true` — so the UI showed success
+      // while the secret sat on disk in the clear, and nothing surfaced the
+      // downgrade. Fail loudly instead: no plaintext copy, no config write, no
+      // false success.
+      const secret = sandboxDriverManagedSecret(id, body.auth)
+      if (secret) {
+        try {
           await putSandboxDriverCredential(options, services, id, secret)
+        } catch {
+          return c.json(
+            {
+              error: apiError(
+                "sandbox_driver_credential_store_failed",
+                "Failed to store sandbox driver credentials",
+              ),
+            },
+            500,
+          )
         }
-      } catch {
-        setSandboxDriverConfig(cfg, {
-          ...driverConfig,
-          auth: { ...driverAuth, [id]: body.auth },
-        })
       }
 
       setSandboxDriverConfig(cfg, {
@@ -97,7 +107,10 @@ export function sandboxDriverRoutes(
       if (!id) return c.json({ error: apiError("sandbox_driver_unsupported", "Unsupported sandbox driver") }, 400)
       const cfg = await loadUserConfig()
 
-      await configuredCredentials(options, services).deleteCredentialsByProvider(id).catch(() => {})
+      // Kind-scoped: `provider_id` is shared with model providers, so an
+      // unscoped delete here also destroyed the user's model API key for any
+      // id that exists in both namespaces (e.g. `vercel`).
+      await configuredCredentials(options, services).deleteCredentialsByProvider(id, "sandbox_driver").catch(() => {})
 
       const driverConfig = sandboxDriverConfig(cfg)
       const auth = { ...driverConfig.auth }
@@ -182,6 +195,19 @@ export function sandboxDriverCredentials(options: WorkspaceRouteOptions, service
   return configuredCredentials(options, services)
 }
 
+// Encoder half of the sandbox-driver credential codec. `parseManagedAuth` in
+// `sandbox-manager-adapters/driver-auth.ts` is the decoder and MUST stay in
+// step with this function — the registry stores one opaque string per
+// credential, so a driver with several fields only survives the round trip if
+// both halves agree on the encoding.
+//
+// This used to special-case `daytona` and `docker` to a bare value and JSON
+// everything else, while the decoder special-cased a DIFFERENT set (exe, box
+// raw). exe.dev and Box therefore round-tripped to the literal string
+// `{"api_token":"…"}` — the save succeeded, the UI showed configured, and only
+// the sandbox launch saw the corrupt token. One rule now: always JSON. The
+// decoder still accepts a bare value so credentials written by the old encoder
+// (and by `credentials/migrate.ts`, which writes daytona bare) keep working.
 function sandboxDriverManagedSecret(id: SandboxDriverID, auth: Record<string, string>) {
   const values = Object.fromEntries(
     sandboxDriverCatalog[id].credentialFields.flatMap((field) => {
@@ -190,7 +216,5 @@ function sandboxDriverManagedSecret(id: SandboxDriverID, auth: Record<string, st
     }),
   )
   if (Object.keys(values).length !== sandboxDriverCatalog[id].credentialFields.length) return
-  if (id === "daytona") return values.api_key
-  if (id === "docker") return values.image
   return JSON.stringify(values)
 }

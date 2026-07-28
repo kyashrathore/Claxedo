@@ -181,14 +181,30 @@ const providerPreference = [
   desc(ClaxedoProviderCredentialTable.updated_at),
 ]
 
-/** Get credential metadata by provider ID. */
-export function getCredentialByProvider(providerId: string): CredentialMetadata | undefined {
+/**
+ * Get credential metadata by provider ID, optionally scoped to one `kind`.
+ *
+ * `provider_id` is NOT unique — `putCredential` upserts on (provider_id, kind,
+ * account_id), so one id can legitimately hold several rows. Several sandbox
+ * driver ids collide with model-provider ids (`vercel` is both), and without
+ * `kind` this returns whichever row sorts first, which for a sandbox lookup can
+ * be the user's model-provider API key. Callers that mean one kind should say
+ * so; omitting it keeps the historical any-kind behaviour.
+ */
+export function getCredentialByProvider(providerId: string, kind?: string): CredentialMetadata | undefined {
   const row = safeRead<CredentialRow | undefined>("credential lookup", undefined, () =>
     ClaxedoDB.use((db) =>
       db
         .select()
         .from(ClaxedoProviderCredentialTable)
-        .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+        .where(
+          kind
+            ? and(
+                eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+                eq(ClaxedoProviderCredentialTable.kind, kind),
+              )
+            : eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+        )
         .orderBy(...providerPreference)
         .get(),
     ),
@@ -224,8 +240,8 @@ export function getCredential(id: string): CredentialMetadata | undefined {
 }
 
 /** Resolve a credential's raw secret material — only call at trusted fanout points. */
-export async function resolveSecret(providerId: string): Promise<string | null> {
-  const cred = getCredentialByProvider(providerId)
+export async function resolveSecret(providerId: string, kind?: string): Promise<string | null> {
+  const cred = getCredentialByProvider(providerId, kind)
   if (!cred?.secure_ref) return null
   if (cred.status !== "available") return null
 
@@ -356,12 +372,27 @@ export async function deleteCredential(id: string): Promise<boolean> {
 }
 
 /** Delete all credentials for a provider. */
-export async function deleteCredentialsByProvider(providerId: string): Promise<number> {
+/**
+ * Delete every credential for a provider, optionally scoped to one `kind`.
+ *
+ * Unscoped this is genuinely destructive across features: `vercel` is both a
+ * sandbox driver id and a model-provider id, so an unscoped delete triggered by
+ * "Remove" in Sandbox settings also destroyed the user's Vercel model API key.
+ * Pass `kind` whenever the caller owns only one kind of credential.
+ */
+export async function deleteCredentialsByProvider(providerId: string, kind?: string): Promise<number> {
+  const scope = kind
+    ? and(
+        eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+        eq(ClaxedoProviderCredentialTable.kind, kind),
+      )
+    : eq(ClaxedoProviderCredentialTable.provider_id, providerId)
+
   const creds = ClaxedoDB.use((db) =>
     db
       .select()
       .from(ClaxedoProviderCredentialTable)
-      .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+      .where(scope)
       .all(),
   )
 
@@ -375,7 +406,7 @@ export async function deleteCredentialsByProvider(providerId: string): Promise<n
   ClaxedoDB.use((db) =>
     db
       .delete(ClaxedoProviderCredentialTable)
-      .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+      .where(scope)
       .run(),
   )
 

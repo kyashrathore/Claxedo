@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
   shouldUseSandboxDriverMutations,
-  workspaceDefaultProviderUrl,
-  workspaceProviderAuthUrl,
-  workspaceProvidersUrl,
+  workspaceDefaultSandboxDriverUrl,
+  workspaceSandboxDriverAuthUrl,
+  workspaceSandboxDriversUrl,
 } from "./sandbox-section-logic"
 
 describe("sandbox settings section", () => {
@@ -21,16 +21,18 @@ describe("sandbox settings section", () => {
     ).toBe(true)
   })
 
-  test("builds sandbox provider control-plane URLs locally", () => {
-    expect(workspaceProvidersUrl({ baseUrl: "https://control.example.test/" })).toBe(
-      "https://control.example.test/api/workspace/providers",
+  // These are string assertions only. What actually binds them to a server that
+  // answers is `sandbox-driver-routes.contract.test.ts` in claxedo-server.
+  test("builds sandbox driver control-plane URLs locally", () => {
+    expect(workspaceSandboxDriversUrl({ baseUrl: "https://control.example.test/" })).toBe(
+      "https://control.example.test/api/workspace/drivers",
     )
-    expect(workspaceProviderAuthUrl({
+    expect(workspaceSandboxDriverAuthUrl({
       baseUrl: "https://control.example.test/",
-      providerId: "daytona/custom",
-    })).toBe("https://control.example.test/api/workspace/providers/daytona%2Fcustom/auth")
-    expect(workspaceDefaultProviderUrl({ baseUrl: "https://control.example.test/" })).toBe(
-      "https://control.example.test/api/workspace/providers/default",
+      driverId: "daytona/custom",
+    })).toBe("https://control.example.test/api/workspace/drivers/daytona%2Fcustom/auth")
+    expect(workspaceDefaultSandboxDriverUrl({ baseUrl: "https://control.example.test/" })).toBe(
+      "https://control.example.test/api/workspace/drivers/default",
     )
   })
 })

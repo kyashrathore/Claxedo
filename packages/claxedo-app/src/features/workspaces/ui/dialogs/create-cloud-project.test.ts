@@ -7,7 +7,7 @@ describe("create cloud project dialog transport", () => {
     expect(source).not.toContain("RuntimeGateway")
     expect(source).not.toContain('from "../../../settings/ui/sandbox-section-logic"')
     expect(source).toContain('from "@/platform/runtime/agent/workspace-control-routes"')
-    expect(source).toContain("workspaceProvidersUrl({ baseUrl })")
+    expect(source).toContain("workspaceSandboxDriversUrl({ baseUrl })")
     expect(source).toContain("workspaceCreateUrl({ baseUrl })")
     expect(source).toContain("workspaceResolveUrl({ baseUrl, workspaceId })")
   })

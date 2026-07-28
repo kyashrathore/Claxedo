@@ -40,6 +40,11 @@ const runtimeGatewayBoundary = new Set([
   "app/connection/server-health.ts",
   "features/workspaces/data/share-workspace.ts",
   "platform/runtime/agent/workspace-control-routes.ts",
+  // The sandbox-driver path literals `workspace-control-routes.ts` builds its
+  // URLs from, split into an import-free module so claxedo-server's
+  // `sandbox-driver-routes.contract.test.ts` can dispatch them through the real
+  // Hono router. Same route-boundary role, now bindable from the server side.
+  "platform/runtime/agent/workspace-control-paths.ts",
   "platform/runtime/agent/dialog-select-directory-routes.ts",
   "app/workbench/state/route-bridge.tsx",
   // Pure route→session resolution + session-probe URL builders split out of
@@ -480,7 +485,7 @@ describe("workspace runtime route audit", () => {
     expect(connect).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(sandbox).toMatch(/createSignal<Record<string, Record<string, string>>>/)
-    expect(sandbox).toMatch(/workspaceProviderAuthUrl/)
+    expect(sandbox).toMatch(/workspaceSandboxDriverAuthUrl/)
     expect(sandbox).not.toMatch(/RuntimeGateway/)
   })
 

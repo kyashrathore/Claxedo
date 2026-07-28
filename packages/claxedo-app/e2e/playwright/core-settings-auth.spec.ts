@@ -83,7 +83,7 @@
  *     connect dialog's `onCleanup`, i.e. every close) wipes them and bumps a
  *     `generation` counter that stops any in-flight OAuth poll loop from
  *     acting on stale state.
- *   Sandbox: `SandboxSettingsSection` loads `GET /api/workspace/providers`
+ *   Sandbox: `SandboxSettingsSection` loads `GET /api/workspace/drivers`
  *     (default provider id + per-provider field/configured metadata) against
  *     `getDefaultBaseUrl()` (reads `window.__OPENCODE__.serverUrl` when set,
  *     else env/origin fallbacks). `shouldUseSandboxDriverMutations` gates every
@@ -264,12 +264,15 @@
  *   20. Disconnect is a two-step inline confirm ("Disconnect" → "Disconnect?"
  *       + Confirm/Cancel); Confirm DELETEs `/connections/:id` and toasts;
  *       Cancel reverts with zero request sent.
- *   21. Sandbox → Default Provider only shows "Save" when the local
- *       selection differs from the server value; Save PUTs
- *       `/api/workspace/providers/default` and the button disappears again.
- *   22. Sandbox → Credentials: "Configure"/"Update" expands an inline field
- *       form; Save PUTs `/api/workspace/providers/:id/auth`; "Remove" DELETEs
- *       the same URL; both refresh the list and toast.
+ *   21. Sandbox → the Provider dropdown picks ONE provider; when the picked
+ *       one already has credentials but is not the active one, "Use for new
+ *       workspaces" PUTs `/api/workspace/drivers/default` and then retires
+ *       itself (the picked provider is now active).
+ *   22. Sandbox → Credentials: the picked provider's field form is always
+ *       open (no Configure/Update toggle); Save PUTs
+ *       `/api/workspace/drivers/:id/auth` with `default: true` so configuring
+ *       a provider also selects it; "Remove" DELETEs the same URL; both
+ *       refresh the list and toast.
  *   23. Sandbox mutation controls are all disabled and a read-only notice
  *       renders whenever the resolved base URL is not a loopback host.
  *   24. Network Policy inside the (workspace-less) Sandbox tab always allows
@@ -848,9 +851,9 @@ function mockIntegrations(
 // Sandbox-tab route mock (not covered by the shared mock-runtime helper)
 // ---------------------------------------------------------------------------
 
-function mockSandboxProviders(page: Page, initial: { default_provider: string; providers: { id: string; label: string; fields: { key: string; label: string; secret?: boolean }[]; configured: boolean; source: string; default: boolean }[] }) {
+function mockSandboxDrivers(page: Page, initial: { default_driver: string; drivers: { id: string; label: string; fields: { key: string; label: string; secret?: boolean }[]; configured: boolean; source: string; default: boolean }[] }) {
   let state = initial
-  const putAuthCalls: { providerId: string; body: unknown }[] = []
+  const putAuthCalls: { driverId: string; body: unknown }[] = []
   const deleteAuthCalls: string[] = []
   const putDefaultCalls: unknown[] = []
   return {
@@ -859,29 +862,29 @@ function mockSandboxProviders(page: Page, initial: { default_provider: string; p
     putDefaultCalls,
     async install() {
       await page.route(
-        "**/api/workspace/providers**",
+        "**/api/workspace/drivers**",
         withCors(async (route) => {
         const url = new URL(route.request().url())
         const method = route.request().method()
-        if (url.pathname === "/api/workspace/providers" && method === "GET") return json(route, state)
-        if (url.pathname === "/api/workspace/providers/default" && method === "PUT") {
-          const body = route.request().postDataJSON() as { provider: string }
+        if (url.pathname === "/api/workspace/drivers" && method === "GET") return json(route, state)
+        if (url.pathname === "/api/workspace/drivers/default" && method === "PUT") {
+          const body = route.request().postDataJSON() as { driver: string }
           putDefaultCalls.push(body)
-          state = { ...state, default_provider: body.provider, providers: state.providers.map((p) => ({ ...p, default: p.id === body.provider })) }
+          state = { ...state, default_driver: body.driver, drivers: state.drivers.map((p) => ({ ...p, default: p.id === body.driver })) }
           return json(route, state)
         }
-        const authMatch = url.pathname.match(/^\/api\/workspace\/providers\/([^/]+)\/auth$/)
+        const authMatch = url.pathname.match(/^\/api\/workspace\/drivers\/([^/]+)\/auth$/)
         if (authMatch && method === "PUT") {
-          const providerId = decodeURIComponent(authMatch[1])
+          const driverId = decodeURIComponent(authMatch[1])
           const body = route.request().postDataJSON()
-          putAuthCalls.push({ providerId, body })
-          state = { ...state, providers: state.providers.map((p) => (p.id === providerId ? { ...p, configured: true } : p)) }
+          putAuthCalls.push({ driverId, body })
+          state = { ...state, drivers: state.drivers.map((p) => (p.id === driverId ? { ...p, configured: true } : p)) }
           return json(route, state)
         }
         if (authMatch && method === "DELETE") {
-          const providerId = decodeURIComponent(authMatch[1])
-          deleteAuthCalls.push(providerId)
-          state = { ...state, providers: state.providers.map((p) => (p.id === providerId ? { ...p, configured: false } : p)) }
+          const driverId = decodeURIComponent(authMatch[1])
+          deleteAuthCalls.push(driverId)
+          state = { ...state, drivers: state.drivers.map((p) => (p.id === driverId ? { ...p, configured: false } : p)) }
           return json(route, { ok: true })
         }
         return route.fulfill({ status: 404, contentType: "application/json", headers: corsHeaders(), body: "{}" })
@@ -890,7 +893,7 @@ function mockSandboxProviders(page: Page, initial: { default_provider: string; p
       // The Sandbox tab's Network Policy section (`network-policy.tsx`) fires its
       // own unconditional `createResource` fetches (policy rows + groups) the
       // instant it mounts — independent of anything above, and NOT covered by the
-      // `**/api/workspace/providers**` route. Left unmocked, those hit the real
+      // `**/api/workspace/drivers**` route. Left unmocked, those hit the real
       // (unreachable in this harness) backend, reject with "Failed to fetch", and
       // — reproduced live — crash the top-level `ErrorBoundary` (src/app/entry/
       // app.tsx:169 wraps `DialogProvider`, so the Settings dialog's own subtree
@@ -945,7 +948,7 @@ test.describe("core settings + auth @core", () => {
     test("the Sandbox tab renders unconditionally — no config or env flag gates it — behavior 2", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
-      await mockSandboxProviders(page, { default_provider: "docker", providers: [] }).install()
+      await mockSandboxDrivers(page, { default_driver: "docker", drivers: [] }).install()
       await openWorkbench(page, DIR)
       await openSettings(page)
 
@@ -1749,14 +1752,17 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("Sandbox: default provider, credential CRUD, read-only lock, network policy", () => {
-    test("default provider Save only appears on a diff, PUTs default, and clears — behavior 21", async ({ page }) => {
+    test("switching provider offers 'Use for new workspaces', PUTs default, and clears — behavior 21", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
-      const sandbox = mockSandboxProviders(page, {
-        default_provider: "docker",
-        providers: [
+      const sandbox = mockSandboxDrivers(page, {
+        default_driver: "docker",
+        drivers: [
           { id: "docker", label: "Docker", fields: [{ key: "token", label: "Token", secret: true }], configured: true, source: "config", default: true },
-          { id: "e2b", label: "E2B", fields: [{ key: "token", label: "Token", secret: true }], configured: false, source: "config", default: false },
+          // Configured on purpose: switching the active provider without
+          // retyping a stored key is exactly what this affordance is for, and
+          // it only renders for a provider that already has credentials.
+          { id: "e2b", label: "E2B", fields: [{ key: "token", label: "Token", secret: true }], configured: true, source: "config", default: false },
         ],
       })
       await sandbox.install()
@@ -1764,7 +1770,8 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "compute")
 
-      await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0)
+      const useForNew = page.getByRole("button", { name: "Use for new workspaces" })
+      await expect(useForNew).toHaveCount(0)
       // Scoped to the ACTIVE tabs-content panel, not a bare `.first()`:
       // inactive `Tabs.Content` panels stay mounted (Kobalte hides them via
       // the `hidden` attribute, not removal — see the mobile-menu fix
@@ -1782,34 +1789,34 @@ test.describe("core settings + auth @core", () => {
       // wiring (this Select has none).
       await page.locator('[data-slot="select-select-item"]').filter({ hasText: "E2B" }).click({ force: true })
 
-      const save = page.getByRole("button", { name: "Save", exact: true })
-      await expect(save).toBeVisible()
-      await save.click()
+      await expect(useForNew).toBeVisible()
+      await useForNew.click()
 
       await expect.poll(() => sandbox.putDefaultCalls.length, { timeout: 10_000 }).toBe(1)
-      expect(sandbox.putDefaultCalls[0]).toMatchObject({ provider: "e2b" })
+      expect(sandbox.putDefaultCalls[0]).toMatchObject({ driver: "e2b" })
       await expect(page.getByText("Default sandbox provider updated")).toBeVisible()
-      await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0)
+      // E2B is the active provider now, so the affordance retires itself.
+      await expect(useForNew).toHaveCount(0)
     })
 
-    test("credential CRUD: Configure → Save PUTs auth, Remove DELETEs — behavior 22", async ({ page }) => {
+    test("credential CRUD: Save PUTs auth, Remove DELETEs — behavior 22", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
-      const sandbox = mockSandboxProviders(page, {
-        default_provider: "docker",
-        providers: [{ id: "docker", label: "Docker", fields: [{ key: "token", label: "Token", secret: true }], configured: false, source: "config", default: true }],
+      const sandbox = mockSandboxDrivers(page, {
+        default_driver: "docker",
+        drivers: [{ id: "docker", label: "Docker", fields: [{ key: "token", label: "Token", secret: true }], configured: false, source: "config", default: true }],
       })
       await sandbox.install()
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "compute")
 
-      await page.getByRole("button", { name: "Configure" }).click()
+      // No Configure step: the selected provider's form is always open.
       await page.locator('input[type="password"]').first().fill("provider-token-value")
       await page.getByRole("button", { name: "Save", exact: true }).click()
 
       await expect.poll(() => sandbox.putAuthCalls.length, { timeout: 10_000 }).toBe(1)
-      expect(sandbox.putAuthCalls[0].providerId).toBe("docker")
+      expect(sandbox.putAuthCalls[0].driverId).toBe("docker")
       await expect(page.getByText("Docker credentials saved")).toBeVisible()
 
       await expect(page.getByRole("button", { name: "Remove" })).toBeVisible()
@@ -1821,9 +1828,9 @@ test.describe("core settings + auth @core", () => {
     test("non-loopback base URL locks every sandbox mutation control and shows the read-only notice — behavior 23", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR, { serverUrl: "https://cloud.claxedo-e2e-test.invalid" })
-      const sandbox = mockSandboxProviders(page, {
-        default_provider: "docker",
-        providers: [{ id: "docker", label: "Docker", fields: [{ key: "token", label: "Token", secret: true }], configured: true, source: "config", default: true }],
+      const sandbox = mockSandboxDrivers(page, {
+        default_driver: "docker",
+        drivers: [{ id: "docker", label: "Docker", fields: [{ key: "token", label: "Token", secret: true }], configured: true, source: "config", default: true }],
       })
       await sandbox.install()
       await openWorkbench(page, DIR)
@@ -1836,14 +1843,16 @@ test.describe("core settings + auth @core", () => {
       // Scoped to the active panel — see behavior 21's fix above for why a
       // bare `.first()` is unstable here.
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden]) [data-slot="select-select-trigger"]').first()).toBeDisabled()
-      await expect(page.getByRole("button", { name: "Update" })).toBeDisabled()
+      // The always-open form replaced the Update toggle, so the lock has to
+      // reach the credential input itself, not just the buttons around it.
+      await expect(page.locator('[data-slot="tabs-content"]:not([hidden]) input[type="password"]').first()).toBeDisabled()
       await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled()
     })
 
     test("Network Policy inside the workspace-less Sandbox tab always allows adding an entry — behavior 24", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
-      const sandbox = mockSandboxProviders(page, { default_provider: "docker", providers: [] })
+      const sandbox = mockSandboxDrivers(page, { default_driver: "docker", drivers: [] })
       await sandbox.install()
       let policyPostCount = 0
       await page.route(

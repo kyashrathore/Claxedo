@@ -544,15 +544,15 @@ test.describe.serial("real Clerk/Convex managed cloud workspace through Workspac
     await signInWithClerkUi(page)
     await expect.poll(() => realConvexToken(page), { timeout: 30_000 }).not.toBeNull()
 
-    const providers = await authedFetchFromPage(page, { path: "/api/workspace/providers" })
-    expect(providers.status, JSON.stringify(providers.body)).toBe(200)
+    const drivers = await authedFetchFromPage(page, { path: "/api/workspace/drivers" })
+    expect(drivers.status, JSON.stringify(drivers.body)).toBe(200)
     const provider = process.env.CLAXEDO_E2E_CLOUD_PROVIDER?.trim() || (
-      (providers.body as {
-        default_provider?: string
-        providers?: Array<{ id?: string; configured?: boolean; default?: boolean }>
-      }).providers?.find((item) => item.default && item.configured)?.id
-      ?? (providers.body as { providers?: Array<{ id?: string; configured?: boolean }> }).providers?.find((item) => item.configured)?.id
-      ?? (providers.body as { default_provider?: string }).default_provider
+      (drivers.body as {
+        default_driver?: string
+        drivers?: Array<{ id?: string; configured?: boolean; default?: boolean }>
+      }).drivers?.find((item) => item.default && item.configured)?.id
+      ?? (drivers.body as { drivers?: Array<{ id?: string; configured?: boolean }> }).drivers?.find((item) => item.configured)?.id
+      ?? (drivers.body as { default_driver?: string }).default_driver
       ?? "daytona"
     )
 
