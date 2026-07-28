@@ -16,7 +16,7 @@ export const claims = [
     publicWording: "Claxedo is free during beta.",
     owner: "Claxedo product",
     evidence: [
-      "docs/plans/2026-07-27-002-feat-claxedo-cloud-launch-streams-plan.md",
+      "docs/plans/2026-07-28-002-claxedo-launch-remaining.md",
       "packages/claxedo-server/src/billing/entitlement.ts",
     ],
     status: "verified",

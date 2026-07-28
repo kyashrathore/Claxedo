@@ -2,7 +2,7 @@
 
 - **Date:** 2026-07-28
 - **Status:** PLANNED — implementation-ready
-- **Scope:** one vendor, PostHog, carries **product analytics AND error tracking** for every Claxedo runtime: the web app, the Electron desktop app, the Node server, the Cloudflare Worker, and the Bun relay. This plan executes the metric spec in `2026-07-27-004-claxedo-tracking-review-and-metric-spec.md` §4 and implements its error-visibility half with PostHog Error Tracking behind the existing runtime-neutral reporting seam.
+- **Scope:** one vendor, PostHog, carries **product analytics AND error tracking** for every Claxedo runtime: the web app, the Electron desktop app, the Node server, the Cloudflare Worker, and the Bun relay. This plan carries the error-visibility half of the metric spec with PostHog Error Tracking behind the existing runtime-neutral reporting seam. (The metric spec's analytics half — org attribution, the metering fact tables, the telemetry opt-out gate, PII redaction — is already implemented; see `2026-07-28-002-claxedo-launch-remaining.md` §1.)
 - **Resolves:** launch-plan §7 owner decision #2 ("who owns analytics, and which provider?") — the provider is PostHog; naming the human owner remains the one open sub-item. Unblocks launch stream B6.
 - **Owner questions inherited from the metric spec:** average sandbox compute per user; average AI tokens per user; which features users care about; what self-hosters can turn off.
 
@@ -66,13 +66,13 @@ Per-runtime transport (the Worker constraint is documented law — `posthog-node
 
 ## 4. Workstreams
 
-#### W0 — Record the decision and align the launch plan — **S**
-**Why:** launch stream F6 (`2026-07-27-002-…:375-381`) currently verifies "a deliberately-triggered test error reaches the Sentry dashboard (server)", F1's production-secret list names Sentry, and §7 decision #2 is open — all three now answered by this plan.
+#### W0 — Record the decision and align the launch checklist — **S**
+**Why:** the launch checklist's error-visibility DoD and its production-secret list both still named Sentry, and the "who owns analytics" decision was open — all three now answered by this plan. (The old launch-streams and tracking-review plans were executed and deleted; `2026-07-28-002-claxedo-launch-remaining.md` is the live checklist.)
 
-Tasks: edit `2026-07-27-002-feat-claxedo-cloud-launch-streams-plan.md` — F6 DoD becomes "a deliberately-triggered test error from each runtime (app, server, Worker, relay) appears as an issue in PostHog Error Tracking"; F1's secret list swaps Sentry for `CLAXEDO_POSTHOG_KEY` + `POSTHOG_CLI_TOKEN`; §7.2 records "provider: PostHog (2026-07-28-001); owner: <named human>". Add this plan to `docs/plans/README.md`'s retained list.
+Tasks: edit `docs/plans/2026-07-28-002-claxedo-launch-remaining.md` — the error-visibility DoD becomes "a deliberately-triggered test error from each runtime (app, server, Worker, relay) appears as an issue in PostHog Error Tracking"; the production-secret list swaps Sentry for `CLAXEDO_POSTHOG_KEY` + `POSTHOG_CLI_TOKEN`; §2.6 records "provider: PostHog (2026-07-28-001); owner: <named human>". Also clear the stale `CLAXEDO_SENTRY_DSN` references in `public-docs/production-environment-runbook.md` (§3 of the checklist tracks them). Add this plan to `docs/plans/README.md`'s retained list.
 
 **DoD:**
-- `grep -in "sentry" docs/plans/2026-07-27-002-*.md` → zero hits.
+- `grep -in "sentry" docs/plans/2026-07-28-002-*.md public-docs/production-environment-runbook.md` → zero hits.
 - `grep -n "2026-07-28-001" docs/plans/README.md` → one hit.
 
 **Depends on:** nothing.
