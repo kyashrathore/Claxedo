@@ -668,17 +668,21 @@ test.describe("core busy / abort / errors @core", () => {
     // unconditionally-mounted `/api/wr/events` channel — the same path driveTurn's own
     // events take, and the same path behavior 5's abort event uses.
     //
-    // It is emitted on a poll rather than once, and the reason is measured, not guessed:
-    // an instrumented run showed the FIRST emit issued immediately after the Thinking row
-    // appears is never applied (banner absent, status still plain busy, for 2.5s), while a
-    // re-emit 2s later is applied within 500ms and then persists indefinitely. The window
-    // right after session creation is when the app's SSE consumer is re-establishing its
-    // `/api/wr/events` connection across the draft→session navigation, so a frame emitted
-    // into it can be dropped. That is a delivery property of the shared mock + consumer
-    // handshake, NOT app behavior and NOT what this behavior asserts — so the fix is to
-    // make delivery eventual rather than lucky. The poll stops emitting the moment the
-    // banner exists, and nothing re-emits during the oracle below, so this can never mask
-    // the oracle's "submit control back to ready" layer.
+    // It is emitted on a poll rather than once because the FIRST emit lands DURING the
+    // consumer's reconnect gap, not because it is lost. An instrumented run showed the
+    // emit issued immediately after the Thinking row appears leaves the banner absent for
+    // ~2.5s, while a re-emit ~2s later applies within 500ms and sticks — and the earlier
+    // reading of that as "the frame was dropped" was wrong. Nothing drops it: the mock's
+    // `EventBus` is an append-only log and `ClaxedoEventsProvider` reconnects with its own
+    // `Last-Event-ID`, so the frame is delivered on the next connection. What the poll is
+    // actually absorbing is claxedo-app's ~2s reconnect floor
+    // (`app/providers/claxedo-events-reconnect.ts`) plus the 2s session-switch quiet window
+    // the draft→session navigation arms (`platform/runtime/session-switch.ts`) — i.e. a
+    // LATENCY property of the consumer's reconnect policy, NOT app behavior and NOT what
+    // this behavior asserts. Re-emitting is harmless for this frame (`session.status` is a
+    // state assignment: applying "retry" twice equals applying it once). The poll stops
+    // emitting the moment the banner exists, and nothing re-emits during the oracle below,
+    // so this can never mask the oracle's "submit control back to ready" layer.
     const retryBanner = page.locator(SELECTORS_retry.banner)
     await expect
       .poll(
