@@ -304,6 +304,11 @@ test.describe.serial("live Documents core backend @live", () => {
     await page.goto(indexUrl())
     await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible({ timeout: 30_000 })
     await page.getByRole("button", { name: "New document" }).click()
+    // "New document" is a searchable project picker, not a direct-create button
+    // (document-index.tsx's `NewDocumentButton`/`createInProject`): pick the sole
+    // fixture project from its list before a document actually gets created —
+    // the same flow the mocked Tier M sibling (documents-core.spec.ts) drives.
+    await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
 
     const title = page.getByRole("textbox", { name: "Document name" })
     const rich = page.getByRole("textbox", { name: "Document rich editor" })
@@ -363,6 +368,8 @@ test.describe.serial("live Documents core backend @live", () => {
       return request.method() === "POST" && new URL(response.url()).pathname === "/documents" && response.ok()
     })
     await page.getByRole("button", { name: "New document" }).click()
+    // Same project picker as the canary above: pick the sole fixture project first.
+    await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible({ timeout: 30_000 })
     createdDocument = (await (await createdResponse).json()) as DocumentSummary
 
@@ -451,14 +458,26 @@ test.describe.serial("live Documents core backend @live", () => {
     await conflict.getByRole("button", { name: "Reload disk" }).click()
     source = await sourceEditor(page)
     await expect(source).toHaveValue(competingExternal)
+    // Two snapshots are now labeled "Edited": this test's own competing write
+    // (index 0, newest-first) and the baseline the restart test saved before it
+    // (index 1). Text-filtering on the "Edited" label alone is ambiguous once a
+    // second edit exists — resolve the target by content hash instead, the same
+    // way the parked-conflict restore later in this file does.
+    const snapshots = await requestJson<Array<{ id: string; sha256: string }>>(
+      `/documents/${createdDocument!.id}/snapshots`,
+    )
+    const baselineSnapshot = snapshots.findIndex(
+      (snapshot) => snapshot.sha256 === createHash("sha256").update(baseline).digest("hex"),
+    )
+    expect(baselineSnapshot).toBeGreaterThanOrEqual(0)
     await page.getByLabel("More", { exact: true }).click()
     const versions = page.getByRole("list", { name: "Document versions" })
     await expect(versions).toBeVisible()
-    const savedVersion = versions.getByRole("listitem").filter({ hasText: "Edited" }).first()
+    const savedVersion = versions.getByRole("listitem").nth(baselineSnapshot)
     await expect(savedVersion).toBeVisible()
     await savedVersion.getByRole("button", { name: "Restore" }).click()
-    await expect(source).toHaveValue("Heading\n=======\n\nreal managed bytes survive restart\n")
-    expect(await fs.readFile(canonical, "utf8")).toBe("Heading\n=======\n\nreal managed bytes survive restart\n")
+    await expect(source).toHaveValue(baseline)
+    expect(await fs.readFile(canonical, "utf8")).toBe(baseline)
     await proveGeometry(page, source, testInfo, "real-version-restored-exact-bytes")
   })
 
