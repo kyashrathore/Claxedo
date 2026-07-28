@@ -190,6 +190,9 @@ describe("DialogSelectMcp", () => {
       source: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
       scope: "machine",
       targets: ["opencode", "claude"],
+      // The catalog id, not the directory basename the server would otherwise
+      // derive ("filesystem") — see buildMcpInstallRequest.
+      id: "mcp-filesystem",
     })
   })
 
@@ -206,6 +209,10 @@ describe("DialogSelectMcp", () => {
       scope: "project",
       directory: "/repo/main",
       targets: ["opencode", "codex"],
+      // Pinned to the catalog id, same as the marketplace panel. Without it the
+      // server derives the id from the fetched package's directory basename
+      // ("postgres"), so this dialog and the panel would file one entry twice.
+      id: "mcp-postgres",
     })
   })
 
