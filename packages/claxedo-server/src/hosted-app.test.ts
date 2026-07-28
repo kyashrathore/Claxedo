@@ -1390,9 +1390,29 @@ describe("hosted shell boot surface", () => {
       expect(res.headers.get("content-type")).toContain("text/event-stream")
       const reader = res.body!.getReader()
       const first = await reader.read()
-      expect(new TextDecoder().decode(first.value)).toBe(`data: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
+      // The bootstrap frame carries an `id:` so the client's SSE cursor is
+      // armed from the first byte, matching the three resumable streams. This
+      // composition binds no LiveSyncRoom, so it is the heartbeat-only fallback
+      // and the cursor is whatever the caller presented (nothing here → "0").
+      expect(new TextDecoder().decode(first.value)).toBe(`id: 0\ndata: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
       await reader.cancel()
     }
+  })
+
+  test("the fallback event stream echoes the caller's cursor instead of rewinding it", async () => {
+    // The fallback buffers nothing (it has no publisher at all), but it must
+    // not walk a reconnecting client's cursor backwards to 0 — that would make
+    // the client's next resume address a position it has already passed.
+    const app = createHostedApp(fakePlane())
+    const res = await app.fetch(
+      new Request("http://cp.test/api/claxedo/events", {
+        headers: { authorization: "Bearer user_1", accept: "text/event-stream", "Last-Event-ID": "42" },
+      }),
+    )
+    const reader = res.body!.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toBe(`id: 42\ndata: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
+    await reader.cancel()
   })
 
   // D9 fail-closed hosted boot: the hosted app refuses to compose unless the

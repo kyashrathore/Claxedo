@@ -8,7 +8,9 @@
  * embedded runtime, and no central runner, so these routes answer with the
  * minimal synthetic payloads the app actually reads:
  *
- *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream
+ *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream,
+ *                                 resumable by `Last-Event-ID` when a
+ *                                 LiveSyncRoom is bound (see live-sync-room.ts)
  *   GET /api/claxedo/bootstrap  — aggregate boot payload (signed → Convex workspaces)
  *   GET /global/health          — { healthy, version }
  *   GET /global/config          — {}
@@ -234,7 +236,27 @@ const HEARTBEAT_MS = 30_000
 // in the local bus envelope (`{"type":"heartbeat"}`), matching
 // `routes/events.ts`. This fallback carries heartbeats only; hosted Worker
 // composition supplies `LiveSyncRoom` for mutation nudges.
-function eventsStream(c: Context, heartbeatMs: number) {
+//
+// REPLAY IS DELIBERATELY NOT IMPLEMENTED HERE, and the reason is that there is
+// nothing to replay: this fallback has no publisher of any kind. Nothing writes
+// events to it — not the process-global `claxedoBus` (which cannot be reached
+// from a module that must stay in the Worker bundle) and not the Durable Object
+// (whose absence is what selects this branch). A retention ring bolted on here
+// would buffer the empty set forever.
+//
+// Its one live consumer is the Node hosted composition (`hosted-node.ts`), which
+// passes no `liveSyncRoom`. That composition is documented as multi-instance by
+// design and single-instance in practice (`docs/plans/
+// 2026-07-18-001-cf-deployment-hardening.md` W6.2 — per-instance live-sync via a
+// Convex subscription — is unbuilt), so even once it HAS a publisher, a
+// module-singleton ring would be the wrong shape for it: with N instances the
+// ring an isolate fills is not the ring the next reconnect reads. Its resumable
+// story arrives with W6.2's cross-instance fan-out, not before.
+//
+// The bootstrap frame still echoes the caller's cursor so the wire contract
+// matches the Worker path and a reconnect cannot silently rewind a client's
+// cursor to 0.
+function eventsStream(c: Context, heartbeatMs: number, lastEventId?: string) {
   const encoder = new TextEncoder()
   let timer: ReturnType<typeof setInterval> | undefined
   const stop = () => {
@@ -243,15 +265,16 @@ function eventsStream(c: Context, heartbeatMs: number) {
   }
   const body = new ReadableStream<Uint8Array>({
     start(ctrl) {
-      const write = (data: unknown) => {
+      const write = (data: unknown, id?: string) => {
         try {
-          ctrl.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+          ctrl.enqueue(encoder.encode(`${id ? `id: ${id}\n` : ""}data: ${JSON.stringify(data)}\n\n`))
         } catch {
           stop()
         }
       }
       // Initial hello so proxies flush headers and the bus goes live at once.
-      write({ type: "heartbeat" })
+      write({ type: "heartbeat" }, lastEventId ?? "0")
+      // Periodic heartbeats carry no id — they must never advance a cursor.
       timer = setInterval(() => write({ type: "heartbeat" }), heartbeatMs)
     },
     cancel() {
@@ -275,14 +298,21 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // Every live-sync subscriber passes control-plane auth. There is no
       // loopback bypass on a hosted central. Keep the resolved context so the
       // room routes by owner and applies the same per-event `eventVisibleTo`
-      // scoping the local Node bus does.
+      // scoping the local Node bus does — to REPLAYED frames as much as live
+      // ones, since a room's retention ring is shared by every member of an org.
       const authorize = () => controlPlaneAuthContext(c.req.raw, {
         config: options.authConfig,
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
       const ctx = await authorize()
-      if (options.liveSyncRoom) return await connectLiveSyncRoom(options.liveSyncRoom, ctx, heartbeatMs, authorize)
-      return eventsStream(c, heartbeatMs)
+      // The cursor is read here and forwarded, not resolved here: the room owns
+      // the sequence, so it is the only party that can turn a cursor-less
+      // connection into a resume point.
+      const lastEventId = c.req.header("last-event-id")
+      if (options.liveSyncRoom) {
+        return await connectLiveSyncRoom(options.liveSyncRoom, ctx, heartbeatMs, authorize, lastEventId)
+      }
+      return eventsStream(c, heartbeatMs, lastEventId)
     } catch (err) {
       return authErrorResponse(c, err)
     }

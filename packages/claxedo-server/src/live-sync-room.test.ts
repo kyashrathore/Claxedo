@@ -97,8 +97,11 @@ function createHibernatingNamespace() {
     states.set(name, state)
     const next = new LiveSyncRoom(state, {
       createWebSocketPair: fakePair,
-      upgradeResponse(client) {
-        const response = new Response(null)
+      // Headers are forwarded because the room reports the cursor a connection
+      // resumes from on the upgrade response; dropping them here would silently
+      // hide that plumbing from every test that goes through this fake.
+      upgradeResponse(client, headers) {
+        const response = new Response(null, headers ? { headers } : undefined)
         Object.defineProperty(response, "webSocket", { value: client })
         return response
       },
@@ -137,17 +140,93 @@ const workgraphChanged = (ownerUserId: string): ClaxedoEvent => ({
 // Read exactly one SSE `data:` frame (one enqueue = one full frame) and return
 // its parsed JSON payload.
 async function readFrame(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<unknown> {
+  return (await readSseFrame(reader)).data
+}
+
+/** As above, but keeping the `id:` line the replay contract rides on. */
+async function readSseFrame(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<{ id?: string; data: unknown }> {
   const decoder = new TextDecoder()
   const { value, done } = await reader.read()
   if (done || !value) throw new Error("stream ended before a frame arrived")
-  const text = decoder.decode(value)
-  const data = text
-    .split("\n")
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).trim())
-    .join("\n")
-  return JSON.parse(data)
+  return parseSseFrames(decoder.decode(value))[0]!
 }
+
+/**
+ * Field-order-independent frame split. One chunk is not one frame on the room's
+ * own SSE path: the bootstrap and everything replayed behind it are enqueued
+ * together inside `start()`, so the blank-line delimiter is the only correct
+ * framing.
+ */
+function parseSseFrames(text: string) {
+  return text
+    .split("\n\n")
+    .filter((block) => block.trim().length > 0)
+    .map((block) => {
+      const lines = block.split("\n")
+      const data = lines.find((line) => line.startsWith("data:"))?.slice("data:".length).trim()
+      return {
+        id: lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim(),
+        data: data ? (JSON.parse(data) as unknown) : undefined,
+      }
+    })
+}
+
+/**
+ * Drive the room's OWN SSE path (no Durable Object WebSocket API available), so
+ * a test can assert on the exact bytes a connection opens with. `connect`
+ * returns everything the room wrote synchronously at open time — the bootstrap
+ * frame plus the replay — which is precisely the surface this fix adds.
+ */
+async function openRoom(room: LiveSyncRoom, init: { subject?: string; org?: string; lastEventId?: string } = {}) {
+  const headers: Record<string, string> = {
+    "x-livesync-mode": "signed",
+    "x-livesync-subject": init.subject ?? "alice",
+    ...(init.org === undefined ? { "x-livesync-org": "acme" } : { "x-livesync-org": init.org }),
+    ...(init.lastEventId === undefined ? {} : { "x-livesync-last-event-id": init.lastEventId }),
+  }
+  const response = await room.fetch(new Request("https://live-sync-room.internal/connect", { headers }))
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  const idle = Symbol("idle")
+  let text = ""
+  // Each frame is its own `enqueue`, and everything the room writes at open
+  // time is already queued by the time `fetch` resolves. Read until a read
+  // stops resolving immediately — the next thing on this stream is a heartbeat
+  // 30 seconds out, so "nothing more right now" means "the open is complete".
+  for (let reads = 0; reads < 64; reads += 1) {
+    const next = await Promise.race([
+      reader.read(),
+      new Promise<typeof idle>((resolve) => setTimeout(() => resolve(idle), 0)),
+    ])
+    if (next === idle) break
+    if (next.done) break
+    text += decoder.decode(next.value, { stream: true })
+  }
+  await reader.cancel()
+  return {
+    cursorHeader: response.headers.get("x-livesync-cursor"),
+    frames: parseSseFrames(text),
+  }
+}
+
+async function pushEvent(room: LiveSyncRoom, event: ClaxedoEvent) {
+  const response = await room.fetch(new Request("https://live-sync-room.internal/nudge", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(event),
+  }))
+  expect(response.status).toBe(200)
+}
+
+const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ClaxedoEvent => ({
+  type: "provision",
+  workspaceId,
+  orgId: "acme",
+  step,
+  ts: Date.now(),
+})
 
 describe("LiveSyncRoom — fan-out core (W5.1)", () => {
   test("hibernatable sockets survive room reconstruction while the public response remains SSE", async () => {
@@ -282,6 +361,17 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
     expect(room.size).toBe(0)
   })
 
+  test("nudged frames carry an `id:` line so the reader builds a cursor", async () => {
+    const namespace = createHibernatingNamespace()
+    const response = await connectLiveSyncRoom(namespace, signed("alice", "acme"), 60_000)
+    const reader = response.body!.getReader()
+    expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
+
+    await nudgeLiveSyncRoom(namespace, "org:acme", workgraphChanged("alice"))
+    expect(await readSseFrame(reader)).toMatchObject({ id: "1", data: { type: "workgraph.changed" } })
+    await reader.cancel()
+  })
+
   test("roomAuthFromHeaders / liveSyncRoomName cover signed-no-org and unsigned-local", () => {
     expect(liveSyncRoomName(signed("dave"))).toBe("owner:dave")
     expect(liveSyncRoomName({ mode: "unsigned-local", reason: "x" })).toBe("owner:local")
@@ -296,5 +386,118 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
     })
     const localAuth = roomAuthFromHeaders(new Headers({ "x-livesync-mode": "unsigned-local" }))
     expect(localAuth.mode).toBe("unsigned-local")
+  })
+})
+
+/**
+ * Retention behaviour, asserted against the room directly.
+ *
+ * The workerd suite owns the production shape (a real hibernatable socket
+ * bridged to SSE); this one owns volume and edge cases, which are cheap here
+ * and awkward there. Both exercise the SAME ring and the SAME `eventVisibleTo`
+ * choke point — the room's own SSE path just skips the socket bridge.
+ */
+describe("LiveSyncRoom — Last-Event-ID replay", () => {
+  test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, workgraphChanged("alice"))
+    await pushEvent(room, workgraphChanged("alice"))
+
+    const opened = await openRoom(room)
+    expect(opened.frames[0]).toEqual({ id: "2", data: { type: "heartbeat" } })
+    // The bridge cannot derive this — only the room knows its own tip — so it
+    // travels back on the connect response.
+    expect(opened.cursorHeader).toBe("2")
+  })
+
+  test("bootstraps at cursor 0 when the room has retained nothing", async () => {
+    const opened = await openRoom(new LiveSyncRoom({}, {}))
+    expect(opened.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
+  })
+
+  test("a cursor-less connection is NOT served the retained log", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, workgraphChanged("alice"))
+
+    const opened = await openRoom(room)
+    expect(opened.frames).toHaveLength(1)
+    expect(JSON.stringify(opened.frames)).not.toContain("workgraph.changed")
+  })
+
+  test("a frame published while disconnected is delivered on the next Last-Event-ID connect", async () => {
+    const room = new LiveSyncRoom({}, {})
+    // Nothing is attached, so the ring is the only thing that can carry this.
+    await pushEvent(room, workgraphChanged("alice"))
+
+    const opened = await openRoom(room, { lastEventId: "0" })
+    expect(opened.frames[0]).toEqual({ id: "0", data: { type: "heartbeat" } })
+    expect(opened.frames[1]).toMatchObject({ id: "1", data: { type: "workgraph.changed", ownerUserId: "alice" } })
+  })
+
+  test("resuming from a mid-log cursor replays only what follows it", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, provisionStep("ws_old", "ready"))
+    await pushEvent(room, provisionStep("ws_new", "ready"))
+
+    const opened = await openRoom(room, { lastEventId: "1" })
+    expect(opened.frames).toHaveLength(2)
+    expect(opened.frames[1]).toMatchObject({ id: "2", data: { workspaceId: "ws_new" } })
+  })
+
+  test("emits a replay-gap notice when the cursor has fallen out of the retention window", async () => {
+    const room = new LiveSyncRoom({}, {})
+    // Retention is 256 frames; 258 pushes the cursor at 1 out of the window.
+    for (let i = 1; i <= 258; i += 1) await pushEvent(room, provisionStep(`ws_${i}`, "cloning"))
+
+    const opened = await openRoom(room, { lastEventId: "1" })
+    expect(opened.frames[1]).toMatchObject({
+      data: {
+        type: "stream.replay-gap",
+        code: "claxedo.sse_replay_gap",
+        severity: "warn",
+        lastEventId: "1",
+        throughId: "258",
+      },
+    })
+    // The notice REPLACES the partial replay — a reader must refetch, not
+    // stitch a hole-ridden log into its incremental view.
+    expect(JSON.stringify(opened.frames)).not.toContain("ws_258")
+  })
+
+  test("a cursor ahead of the room's sequence is reported as a gap, never as silence", async () => {
+    // What a Durable Object eviction looks like from the client's side: the
+    // room is rebuilt with an empty ring while the client still holds a cursor
+    // from the sequence that died with it.
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, workgraphChanged("alice"))
+
+    const opened = await openRoom(room, { lastEventId: "99" })
+    expect(opened.frames[1]).toMatchObject({
+      data: { type: "stream.replay-gap", lastEventId: "99", throughId: "1" },
+    })
+  })
+
+  test("replay re-applies the identity filter: an org peer's frame is NOT replayed", async () => {
+    // THE hosted-stream hazard. Every member of an org shares one room and
+    // therefore one ring, so the only thing standing between carol and alice's
+    // events on a Last-Event-ID reconnect is that `eventVisibleTo` runs on the
+    // write path, which replayed frames traverse exactly like live ones.
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, workgraphChanged("alice"))
+    await pushEvent(room, workgraphChanged("carol"))
+
+    const opened = await openRoom(room, { subject: "carol", lastEventId: "0" })
+    expect(JSON.stringify(opened.frames)).not.toContain("alice")
+    // The id stays the room's SHARED publish-order sequence, not a per-identity
+    // renumbering: a cursor has to mean the same thing on every connection.
+    expect(opened.frames[1]).toMatchObject({ id: "2", data: { ownerUserId: "carol" } })
+  })
+
+  test("an org-scoped frame is not replayed to a signed caller from another org", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, provisionStep("ws_acme", "ready"))
+
+    const opened = await openRoom(room, { subject: "mallory", org: "other", lastEventId: "0" })
+    expect(opened.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
   })
 })
