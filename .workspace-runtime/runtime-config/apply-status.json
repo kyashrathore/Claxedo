@@ -1,8 +1,8 @@
 {
   "state": "applied",
-  "revision": 6,
-  "acceptedAt": "2026-07-27T17:33:04.798Z",
-  "updatedAt": "2026-07-27T17:33:04.803Z",
+  "revision": 190,
+  "acceptedAt": "2026-07-27T20:28:24.348Z",
+  "updatedAt": "2026-07-27T20:28:24.352Z",
   "harness": {
     "id": "opencode",
     "access": "native"

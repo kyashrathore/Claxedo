@@ -17,6 +17,9 @@ import {
   type CliSessionTokenRegistry,
 } from "./control-plane/cli-session-registry"
 import { durableCliSessionTokenRegistry } from "./test-helpers/cli-session-registry"
+import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
+import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+import type { DocumentsRouteBackend } from "./routes/documents"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount
@@ -1524,7 +1527,9 @@ describe("hosted shell boot surface", () => {
       )
       // Lease-tenant stamping and the Convex lease counter both reach out; both
       // swallow their own failures, but no test may touch the network.
-      globalThis.fetch = vi.fn(async () => new Response("{}", { headers: { "content-type": "application/json" } }))
+      globalThis.fetch = vi.fn(
+        async () => new Response("{}", { headers: { "content-type": "application/json" } }),
+      ) as unknown as typeof globalThis.fetch
       return { plane, seen }
     }
 
@@ -1596,5 +1601,199 @@ describe("hosted shell boot surface", () => {
       expect(res.status).toBe(503)
       expect(await res.json()).toMatchObject({ error: { code: "hosted_unsigned_rejected" } })
     }
+  })
+})
+
+// ─── Live-sync org identity — end-to-end delivery ───────────────────────────
+//
+// The event plane's canonical org identity is the AUTHORITY-INTERNAL org id:
+// events are stamped with it (documents routes via `authority.resolveOrgId`,
+// runtime-token claims via the launch tenant) and the hosted events route
+// resolves the SAME id at connect to key the subscriber's room and visibility.
+// These tests pin the two deliveries the earlier Clerk-claims room keying made
+// impossible: an org-stamped document.changed reaching a signed subscriber,
+// and an agent attempt-operation nudge reaching a subscriber whose bearer
+// carries an active-org Clerk claim.
+
+// In-memory DO namespace holding REAL LiveSyncRoom instances, one per name —
+// the same single-instance-per-name contract the Workers runtime provides.
+function liveRoomNamespace() {
+  const instances = new Map<string, InstanceType<typeof LiveSyncRoom>>()
+  return {
+    instances,
+    idFromName: (name: string) => name,
+    get(id: unknown) {
+      const name = id as string
+      let room = instances.get(name)
+      if (!room) {
+        room = new LiveSyncRoom({}, {})
+        instances.set(name, room)
+      }
+      const instance = room
+      return { fetch: (request: Request) => instance.fetch(request) }
+    },
+  } satisfies LiveSyncRoomNamespace & { instances: Map<string, InstanceType<typeof LiveSyncRoom>> }
+}
+
+// One SSE frame per read (the room writes one enqueue per frame).
+async function readLiveSyncFrame(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<unknown> {
+  const { value, done } = await reader.read()
+  if (done || !value) throw new Error("live-sync stream ended before a frame arrived")
+  const data = new TextDecoder()
+    .decode(value)
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trim())
+    .join("\n")
+  return JSON.parse(data)
+}
+
+/**
+ * A plane whose bearer carries an ACTIVE-ORG Clerk claim (`org_2clerkacme`,
+ * the CLAIMS namespace) which the authority resolves to the INTERNAL org id
+ * (`org_internal_acme`, the namespace events are stamped with and rooms are
+ * keyed by). The two values are deliberately distinct so a regression back to
+ * keying anything off the Clerk claim cannot pass by coincidence.
+ */
+function activeOrgPlane() {
+  const plane = fakePlane()
+  const services = plane.services as unknown as {
+    auth: { verifier: (token: string) => Promise<unknown> }
+    authority: {
+      resolveOrgId: (auth: { user: { subject: string; orgId?: string } }) => Promise<string>
+      authorizeProject: (auth: unknown, args: { orgId?: string }) => Promise<unknown>
+    }
+  }
+  services.auth.verifier = async (token: string) => ({
+    mode: "signed",
+    user: {
+      subject: token,
+      tokenIdentifier: `https://clerk.test|${token}`,
+      issuer: "https://clerk.test",
+      orgId: "org_2clerkacme",
+    },
+  })
+  services.authority.resolveOrgId = async (auth) =>
+    auth.user.orgId === "org_2clerkacme" ? "org_internal_acme" : `org_${auth.user.subject}`
+  services.authority.authorizeProject = async (_auth, args) =>
+    args.orgId === "org_internal_acme" ? { ok: true, role: "editor", orgId: args.orgId } : { ok: false }
+  return plane
+}
+
+describe("hosted live-sync delivery — internal org identity end-to-end", () => {
+  afterEach(() => {
+    configureCliSessionTokenRegistry(undefined)
+  })
+
+  test("delivers document.changed through the LiveSyncRoom to a signed active-org subscriber", async () => {
+    const namespace = liveRoomNamespace()
+    const entry = {
+      id: "document_1",
+      org_id: "org_internal_acme",
+      project_id: "proj_1",
+      display_name: "Launch checklist",
+      origin_kind: "managed",
+      placement_kind: "hosted",
+      placement_id: "hosted",
+      status: "draft",
+      archived_at: null,
+    }
+    const documentsBackend = {
+      index: {
+        find: async (orgId: string, documentId: string) =>
+          orgId === "org_internal_acme" && documentId === "document_1" ? entry : undefined,
+        transitionStatus: async (_scope: unknown, _documentId: string, status: string) => ({ ...entry, status }),
+      },
+    } as unknown as DocumentsRouteBackend
+    const app = createHostedApp(activeOrgPlane(), { liveSyncRoom: namespace, documentsBackend })
+
+    const stream = await app.fetch(
+      new Request("http://cp.test/api/claxedo/events", {
+        headers: { authorization: "Bearer member", accept: "text/event-stream" },
+      }),
+    )
+    expect(stream.status).toBe(200)
+    const reader = stream.body!.getReader()
+    expect(await readLiveSyncFrame(reader)).toEqual({ type: "heartbeat" })
+    // The subscriber's room is keyed by the RESOLVED internal org id, not the
+    // bearer's Clerk claim.
+    expect([...namespace.instances.keys()]).toEqual(["org:org_internal_acme"])
+
+    const mutation = await app.fetch(
+      new Request("http://cp.test/documents/document_1/status", {
+        method: "POST",
+        headers: { authorization: "Bearer member", "content-type": "application/json" },
+        body: JSON.stringify({ status: "review" }),
+      }),
+    )
+    expect(mutation.status).toBe(200)
+
+    // The documents route stamped the event with the internal org id; the
+    // room's per-connection filter compares it against the id the subscriber
+    // resolved at connect — the frame arrives.
+    expect(await readLiveSyncFrame(reader)).toMatchObject({
+      type: "document.changed",
+      documentId: "document_1",
+      orgId: "org_internal_acme",
+      projectId: "proj_1",
+    })
+    await reader.cancel()
+  })
+
+  test("an agent attempt-operation nudge reaches a subscriber connected with an active-org token", async () => {
+    const keyPair = await generateKeyPair("EdDSA", { extractable: true })
+    const namespace = liveRoomNamespace()
+    const plane = activeOrgPlane()
+    plane.env = { ...plane.env, CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(keyPair.publicKey) }
+    const app = createHostedApp(plane, {
+      liveSyncRoom: namespace,
+      workGraphExecutor: {
+        query: async () => ({}),
+        mutation: async () => ({ ok: true, operationId: "op_checkpoint_1", cursor: "1", value: {} }),
+      },
+    })
+
+    const stream = await app.fetch(
+      new Request("http://cp.test/api/claxedo/events", {
+        headers: { authorization: "Bearer member", accept: "text/event-stream" },
+      }),
+    )
+    expect(stream.status).toBe(200)
+    const reader = stream.body!.getReader()
+    expect(await readLiveSyncFrame(reader)).toEqual({ type: "heartbeat" })
+    expect([...namespace.instances.keys()]).toEqual(["org:org_internal_acme"])
+
+    // The runtime access token carries exactly what hosted launches mint: the
+    // owner's Clerk subject and the WorkGraph tenant's INTERNAL org id.
+    const token = await mintRuntimeAccessToken(
+      { subject: "member", orgId: "org_internal_acme", workspaceId: "ws_wg_stream_1", hostId: "host_1", role: "owner" },
+      keyPair.privateKey,
+      "EdDSA",
+    )
+    const operation = await app.fetch(
+      new Request("http://cp.test/internal/workgraph/attempt-operation", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          identity: { attemptId: "attempt_1", sessionId: "ses_1", workspaceId: "ws_wg_stream_1" },
+          operation: {
+            type: "record_checkpoint",
+            operationId: "op_checkpoint_1",
+            level: "progress",
+            summary: "Landed the fix",
+            evidenceIds: [],
+          },
+        }),
+      }),
+    )
+    expect(operation.status).toBe(200)
+    await expect(operation.json()).resolves.toMatchObject({ ok: true })
+
+    // The nudge names the tenant's org room from the token's internal org id —
+    // the SAME room the active-org subscriber is held in — and the room's
+    // subject filter narrows the doorbell to the owner's own connections.
+    expect(await readLiveSyncFrame(reader)).toMatchObject({ type: "workgraph.changed", ownerUserId: "member" })
+    await reader.cancel()
   })
 })

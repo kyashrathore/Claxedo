@@ -89,6 +89,138 @@ function env(overrides: Record<string, string> = {}) {
   }
 }
 
+/**
+ * Security review 2026-07-27 §6.14, follow-up.
+ *
+ * A hosted deployment whose driver declares `egressControl: "none"` — which
+ * `defaultSandboxDriverName`'s first choice, cloudflare, does — boots fine and
+ * creates fine, and every sandbox it provisions can reach any host on the
+ * internet. The manager already warns to `console.warn`, but inside a Worker
+ * isolate that reaches only whoever is tailing logs at that moment. The point
+ * of these tests is that the misconfiguration also becomes a queryable ops fact,
+ * emitted BEFORE the first workspace exists.
+ */
+describe("sandbox egress unenforced signal", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  afterEach(() => warn.mockClear())
+
+  const compositionEvent: SandboxEgressUnenforcedEvent = {
+    phase: "composition",
+    reason: "sandbox_egress_uncontained",
+    driver: "cloudflare",
+    egressControl: "none",
+    message: "[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver \"cloudflare\" …",
+  }
+
+  test("names the uncontained driver on the ops plane, and keeps the console line", () => {
+    const capture = vi.fn()
+    sandboxEgressUnenforcedSink({ capture })(compositionEvent)
+
+    expect(capture).toHaveBeenCalledTimes(1)
+    // Ops plane: `system`, never a user or org id — same contract as
+    // `sandbox.touch` and the WorkGraph monitors.
+    expect(capture.mock.calls[0]![0]).toBe("system")
+    expect(capture.mock.calls[0]![1]).toBe("sandbox.egress_unenforced")
+    expect(capture.mock.calls[0]![2]).toMatchObject({
+      phase: "composition",
+      reason: "sandbox_egress_uncontained",
+      // The load-bearing property: an operator reading the alert learns WHICH
+      // driver to change without going back to the deploy manifest.
+      driver: "cloudflare",
+      egress_control: "none",
+    })
+    // The sink REPLACES the manager's console default, and sandbox-egress.md
+    // tells operators to verify enforcement by looking for this line at boot.
+    expect(warn).toHaveBeenCalledWith(compositionEvent.message)
+  })
+
+  test("a per-create event carries the workspace and counts, never the allowlist", () => {
+    const capture = vi.fn()
+    sandboxEgressUnenforcedSink({ capture })({
+      ...compositionEvent,
+      phase: "ensure",
+      workspaceId: "ws_abc123",
+      requested: { mode: "restricted", hosts: ["api.anthropic.com", "github.com"], cidrs: ["10.0.0.0/8"] },
+    })
+
+    const properties = capture.mock.calls[0]![2] as Record<string, unknown>
+    expect(properties).toMatchObject({
+      phase: "ensure",
+      workspace_id: "ws_abc123",
+      withheld_host_count: 2,
+      withheld_cidr_count: 1,
+    })
+    // Deployment topology is not ops-plane data: the hosts ride as counts.
+    expect(JSON.stringify(properties)).not.toContain("api.anthropic.com")
+    expect(JSON.stringify(properties)).not.toContain("github.com")
+  })
+
+  test("the hosted composition wires the sink, so an uncontained driver reports at boot", () => {
+    // End-to-end through the real seam: `composeWorkerSandboxManager` is what
+    // `composeHostedControlPlane` calls, and `createSandboxManager` is what
+    // reads the driver's `metadata.egressControl` and fires the composition
+    // warning. The driver id is unique because that warning is deduped
+    // process-wide on `${driver.id}|${egressControl}`.
+    const capture = vi.fn()
+    composeWorkerSandboxManager({
+      env: { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "svc" },
+      driver: uncontainedDriver("hosted-services-test-uncontained"),
+      maxRetryCount: 5,
+      onEgressUnenforced: sandboxEgressUnenforcedSink({ capture }),
+    })
+
+    expect(capture.mock.calls.map((call) => [call[0], call[1]])).toEqual([["system", "sandbox.egress_unenforced"]])
+    expect(capture.mock.calls[0]![2]).toMatchObject({
+      phase: "composition",
+      driver: "hosted-services-test-uncontained",
+      egress_control: "none",
+    })
+  })
+
+  test("an enforcing driver composes silently", () => {
+    const capture = vi.fn()
+    const driver = uncontainedDriver("hosted-services-test-contained")
+    composeWorkerSandboxManager({
+      env: { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "svc" },
+      driver: { ...driver, metadata: { ...driver.metadata, egressControl: "hosts-and-cidrs" } },
+      maxRetryCount: 5,
+      onEgressUnenforced: sandboxEgressUnenforcedSink({ capture }),
+    })
+
+    // Guards the alert's signal-to-noise: a daytona deployment must not page.
+    expect(capture).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+function uncontainedDriver(id: string): SandboxDriver {
+  return {
+    id,
+    ensureHost: vi.fn(async (input) => ({
+      sandboxId: `sandbox_${input.workspaceId}`,
+      url: `https://runtime.test/${input.workspaceId}`,
+      hostId: `host_${input.workspaceId}`,
+      labels: input.labels,
+    })),
+    metadata: {
+      driverRunsIn: ["worker"],
+      hostStopBehavior: "suspends-host",
+      hostResumeBehavior: "same-host",
+      targetAccess: "relay",
+      secretBrokering: "none",
+      egressControl: "none",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: false,
+        captureSource: "not-applicable",
+        retention: "not-applicable",
+        restoreMount: "not-applicable",
+      },
+    },
+  }
+}
+
 describe("hosted service composition", () => {
   test("keeps Claxedo home regions and relay endpoint mapping in hosted services", async () => {
     const plane = composeHostedControlPlane(env({

@@ -14,6 +14,7 @@ import {
   type DesiredExtensionInstall,
 } from "./state"
 import { lockStatePath, readExtensionLock, type LockedExtensionPackage } from "./lock"
+import { sameSource } from "./source"
 import {
   materializedRecordPath,
   readMaterializedRuntimeRecord,
@@ -144,14 +145,21 @@ export async function getRuntimeAgentExtensionsSnapshot(
   const firstParty = config.scope !== "project" || desiredInstalls.some((item) => item.id === FIRST_PARTY_AGENT_EXTENSION_ID)
     ? undefined
     : await discoverFirstPartyAgentExtensions(config.projectDir)
-  // Local desired state is authoritative for ids it already tracks; a
+  // Local desired state is authoritative for installs it already tracks; a
   // workspace record with the same id would otherwise produce a duplicate
-  // installed.json row on replay.
-  const localIds = new Set([
-    ...desiredInstalls.map((item) => item.id),
-    ...(firstParty ? [firstParty.id] : []),
-  ])
-  const workspace = (options.workspaceInstalls ?? []).filter((item) => !localIds.has(item.desired.id))
+  // installed.json row on replay. A same-source record under a different id
+  // (one side keyed by a legacy manifest-derived id, the other by the catalog
+  // id) is the same install too: both build component paths from the shared
+  // package_name, so replaying the second row could only lose the ownership
+  // check.
+  const localInstalls = [
+    ...desiredInstalls,
+    ...(firstParty ? [firstParty] : []),
+  ]
+  const localIds = new Set(localInstalls.map((item) => item.id))
+  const workspace = (options.workspaceInstalls ?? []).filter((item) =>
+    !localIds.has(item.desired.id)
+    && !localInstalls.some((local) => sameSource(local.source, item.desired.source)))
   const installs: Array<{
     desired: DesiredExtensionInstall
     lock?: LockedExtensionPackage

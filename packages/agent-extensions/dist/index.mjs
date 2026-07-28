@@ -101,6 +101,9 @@ var AgentExtensionCacheError = class extends Error {
 function agentExtensionCacheRoot(input) {
   return path.join(input.dataRoot, "agent-extensions", "cache");
 }
+function agentExtensionStateCacheRoot(input) {
+  return path.join(input.stateRoot, "cache");
+}
 function safeSha(input) {
   if (!/^[A-Fa-f0-9]{7,64}$/.test(input)) throw new AgentExtensionCacheError("resolved SHA must be a hex string");
   return input.toLowerCase();
@@ -661,6 +664,34 @@ async function writeMaterializedRuntimeRecord(file, record) {
 function componentOwnedBy(record, targetPath, ownerId) {
   return record?.packages[ownerId]?.components.some((item) => item.path === targetPath && item.status === "applied") ?? false;
 }
+function materializedComponentKey(component) {
+  return `${component.runner}
+${component.type}
+${component.component}`;
+}
+function adoptedOwnerRecord(from, to) {
+  if (!to) return from;
+  const seen = new Set(to.components.map(materializedComponentKey));
+  return {
+    ...to,
+    components: [
+      ...to.components,
+      ...from.components.filter((item) => item.status === "applied" && !seen.has(materializedComponentKey(item)))
+    ]
+  };
+}
+async function adoptMaterializedOwner(file, from, to) {
+  if (from === to) return false;
+  const record = await readMaterializedRuntimeRecord(file);
+  const moved = record.packages[from];
+  if (!moved) return false;
+  const { [from]: _adopted, ...rest } = record.packages;
+  await writeMaterializedRuntimeRecord(file, {
+    version: 1,
+    packages: { ...rest, [to]: adoptedOwnerRecord(moved, record.packages[to]) }
+  });
+  return true;
+}
 async function sameRealPath(a, b) {
   const [left, right] = await Promise.all([
     fs7.realpath(a).catch(() => null),
@@ -668,12 +699,18 @@ async function sameRealPath(a, b) {
   ]);
   return !!left && left === right;
 }
+var sentinelRoot = path7.sep;
+var GENERATED_CACHE_ROOT_MARKERS = [
+  agentExtensionCacheRoot({ dataRoot: sentinelRoot }),
+  agentExtensionStateCacheRoot({ stateRoot: agentExtensionStateRoot({ scope: "project", projectDir: sentinelRoot }) })
+].map((root) => path7.relative(sentinelRoot, root).split(path7.sep));
 function agentExtensionCacheKey(input) {
   const parts = path7.resolve(input).split(path7.sep);
-  const root = parts.findIndex(
-    (part, index) => part === ".agent-extensions" && parts[index + 1] === "cache"
-  );
-  return root === -1 ? void 0 : parts.slice(root + 2).join("/");
+  for (let index = 0; index < parts.length; index++) {
+    const marker = GENERATED_CACHE_ROOT_MARKERS.find((segments) => segments.every((segment, offset) => parts[index + offset] === segment));
+    if (marker) return parts.slice(index + marker.length).join("/");
+  }
+  return void 0;
 }
 async function isGeneratedCacheSymlinkToSamePackage(input) {
   if (!input.existing.isSymbolicLink()) return false;
@@ -921,9 +958,9 @@ async function readJson2(file) {
   if (raw === void 0 || !raw.trim()) return {};
   return readJsonFromText(raw, file);
 }
-function readJsonFromText(raw, file) {
+function readJsonFromText(raw, file, options = {}) {
   const errors = [];
-  const parsed = parseJsonc(raw, errors);
+  const parsed = parseJsonc(raw, errors, options);
   if (errors.length > 0) {
     throw new AgentExtensionMaterializationError(
       `MCP target config ${file} contains invalid JSON; fix it before materializing (refusing to rewrite a file that cannot be parsed)`,
@@ -933,6 +970,7 @@ function readJsonFromText(raw, file) {
   }
   return asRecord(parsed);
 }
+var OPENCODE_PARSE_OPTIONS = { allowTrailingComma: true };
 async function writeJson(file, input) {
   await fs8.mkdir(path9.dirname(file), { recursive: true, mode: 493 });
   await writeFileAtomic(file, JSON.stringify(input, null, 2) + "\n");
@@ -952,16 +990,16 @@ async function removeStandaloneMcpEntries(input) {
   if (input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json")) {
     const raw = await readText(input.file);
     if (!raw.trim()) return;
-    readJsonFromText(raw, input.file);
+    readJsonFromText(raw, input.file, OPENCODE_PARSE_OPTIONS);
     let text2 = raw;
     for (const name of input.names) {
       text2 = applyEdits(text2, modify(text2, ["mcp", name], void 0, JSONC_FORMAT));
     }
-    const withoutEntries = readJsonFromText(text2, input.file);
+    const withoutEntries = readJsonFromText(text2, input.file, OPENCODE_PARSE_OPTIONS);
     if (Object.keys(asRecord(withoutEntries.mcp)).length === 0) {
       text2 = applyEdits(text2, modify(text2, ["mcp"], void 0, JSONC_FORMAT));
     }
-    if (Object.keys(readJsonFromText(text2, input.file)).length === 0) {
+    if (Object.keys(readJsonFromText(text2, input.file, OPENCODE_PARSE_OPTIONS)).length === 0) {
       await fs8.rm(input.file, { force: true });
       return;
     }
@@ -1038,7 +1076,7 @@ async function materializeStandaloneMcp(input) {
   }
   if (input.runner === "opencode") {
     const raw = await readText(target);
-    const root2 = raw.trim() ? readJsonFromText(raw, target) : {};
+    const root2 = raw.trim() ? readJsonFromText(raw, target, OPENCODE_PARSE_OPTIONS) : {};
     const current2 = asRecord(root2.mcp);
     const nextServers2 = toOpenCodeMcpServers(input.config);
     const drifted2 = /* @__PURE__ */ new Set();
@@ -1400,16 +1438,11 @@ async function materializeDiscoveredComponent(input) {
     reason: "agent hook package materialization is not implemented yet"
   }];
 }
-function componentKey(component) {
-  return `${component.runner}
-${component.type}
-${component.component}`;
-}
 function withPreviousApplied(components, previous) {
-  const seen = new Set(components.map(componentKey));
+  const seen = new Set(components.map(materializedComponentKey));
   return [
     ...components,
-    ...(previous?.components ?? []).filter((component) => component.status === "applied" && !seen.has(componentKey(component)))
+    ...(previous?.components ?? []).filter((component) => component.status === "applied" && !seen.has(materializedComponentKey(component)))
   ];
 }
 async function materializePackage(input) {
@@ -1643,6 +1676,16 @@ function marketplacePackageName(input) {
   if (input.source.type === "github" && input.source.repo) return input.source.repo;
   return path13.basename(input.packageRoot);
 }
+function legacyInstallId(input) {
+  return input.installs.find((item) => item.id !== input.id && sameSource(item.source, input.source))?.id;
+}
+function resolveInstallId(input) {
+  if (input.installs.some((item) => item.id === input.id)) return input.id;
+  if (input.lock?.[input.id]) return input.id;
+  if (!input.source) return input.id;
+  const source3 = input.source;
+  return legacyInstallId({ installs: input.installs, id: input.id, source: source3 }) ?? Object.entries(input.lock ?? {}).find(([id, locked]) => id !== input.id && sameSource(locked.source, source3))?.[0] ?? input.id;
+}
 async function installFetchedAgentExtension(input) {
   const packageRoot = input.packageRoot;
   const packageType = await discoverAgentExtensionPackage(packageRoot);
@@ -1655,7 +1698,8 @@ async function installFetchedAgentExtension(input) {
       readDesiredExtensionState(files.installed),
       readExtensionLock(files.lock)
     ]);
-    const existing = desired.installs.find((item) => item.id === id);
+    const legacyId = legacyInstallId({ installs: desired.installs, id, source: input.source });
+    const existing = desired.installs.find((item) => item.id === id) ?? desired.installs.find((item) => item.id === legacyId);
     if (existing && !sameSource(existing.source, input.source) && !input.replaceOwned) {
       throw new AgentExtensionConflictError(
         "agent_extension_source_conflict",
@@ -1667,11 +1711,13 @@ async function installFetchedAgentExtension(input) {
         }
       );
     }
+    if (legacyId) await adoptMaterializedOwner(files.materialized, legacyId, id);
     const checksum = input.checksum ?? await digestDirectory(packageRoot);
     const timestamp = input.now ?? Date.now();
     const state = upsertInstallState({
       state: desired,
       id,
+      ...legacyId ? { replaces: legacyId } : {},
       packageName: packageName2,
       source: input.source,
       scope: input.scope,
@@ -1680,10 +1726,12 @@ async function installFetchedAgentExtension(input) {
       installedAt: input.installedAt ?? existing?.installed_at ?? timestamp,
       updatedAt: timestamp
     });
+    const { ...lockedPackages } = lock.packages;
+    if (legacyId) delete lockedPackages[legacyId];
     const nextLock = {
       version: 1,
       packages: {
-        ...lock.packages,
+        ...lockedPackages,
         [id]: {
           source: input.source,
           resolved_sha: input.resolvedSha,
@@ -1737,7 +1785,11 @@ async function updateAgentExtension(input) {
   if (!input.homeDir) throw new Error("homeDir is required to update an Agent Extension");
   const files = filesFor(input);
   const desired = await readDesiredExtensionState(files.installed);
-  const desiredInstall2 = desired.installs.find((item) => item.id === input.id);
+  const desiredInstall2 = desired.installs.find((item) => item.id === resolveInstallId({
+    installs: desired.installs,
+    id: input.id,
+    ...input.source ? { source: input.source } : {}
+  }));
   if (!desiredInstall2) return void 0;
   if (desiredInstall2.source.type === "project") {
     if (!input.projectDir) throw new Error("projectDir is required to update a project Agent Extension");
@@ -1851,7 +1903,7 @@ function upsertInstallState(input) {
   return {
     version: 1,
     installs: [
-      ...input.state.installs.filter((item) => item.id !== input.id),
+      ...input.state.installs.filter((item) => item.id !== input.id && item.id !== input.replaces),
       {
         id: input.id,
         package_name: input.packageName,
@@ -1879,12 +1931,18 @@ async function disableAgentExtension(input) {
       readExtensionLock(files.lock),
       readMaterializedRuntimeRecord(files.materialized)
     ]);
-    const item = record.packages[input.id];
-    const desiredInstall2 = desired.installs.find((install) => install.id === input.id);
+    const id = resolveInstallId({
+      installs: desired.installs,
+      lock: lock.packages,
+      id: input.id,
+      ...input.source ? { source: input.source } : {}
+    });
+    const item = record.packages[id];
+    const desiredInstall2 = desired.installs.find((install) => install.id === id);
     if (!item && !desiredInstall2) return void 0;
     const state = setEnabled({
       state: desired,
-      id: input.id,
+      id,
       enabled: false,
       updatedAt: input.now ?? Date.now()
     });
@@ -1896,10 +1954,10 @@ async function disableAgentExtension(input) {
       homeDir: input.homeDir,
       now: input.now
     });
-    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id];
-    if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`);
+    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[id];
+    if (!materialized) throw new Error(`Agent Extension ${id} was not materialized`);
     return {
-      id: input.id,
+      id,
       materialized
     };
   });
@@ -1912,8 +1970,14 @@ async function enableAgentExtension(input) {
       readDesiredExtensionState(files.installed),
       readExtensionLock(files.lock)
     ]);
-    const desiredInstall2 = desired.installs.find((item) => item.id === input.id);
-    const locked = lock.packages[input.id];
+    const id = resolveInstallId({
+      installs: desired.installs,
+      lock: lock.packages,
+      id: input.id,
+      ...input.source ? { source: input.source } : {}
+    });
+    const desiredInstall2 = desired.installs.find((item) => item.id === id);
+    const locked = lock.packages[id];
     if (!desiredInstall2 || !locked) return void 0;
     const packageRoot = cachePackageRoot({
       resolvedSha: locked.resolved_sha,
@@ -1923,7 +1987,7 @@ async function enableAgentExtension(input) {
     await applyProjection({
       state: setEnabled({
         state: desired,
-        id: input.id,
+        id,
         enabled: true,
         updatedAt: input.now ?? Date.now()
       }),
@@ -1932,12 +1996,12 @@ async function enableAgentExtension(input) {
       projectDir: projectDirFor(input),
       homeDir: input.homeDir,
       now: input.now,
-      packageRoots: { [input.id]: packageRoot }
+      packageRoots: { [id]: packageRoot }
     });
-    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id];
-    if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`);
+    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[id];
+    if (!materialized) throw new Error(`Agent Extension ${id} was not materialized`);
     return {
-      id: input.id,
+      id,
       materialized
     };
   });
@@ -1950,15 +2014,21 @@ async function uninstallAgentExtension(input) {
       readMaterializedRuntimeRecord(files.materialized),
       readExtensionLock(files.lock)
     ]);
-    const item = record.packages[input.id];
-    const desiredInstall2 = desired.installs.find((install) => install.id === input.id);
-    const lockedPackage2 = lock.packages[input.id];
+    const id = resolveInstallId({
+      installs: desired.installs,
+      lock: lock.packages,
+      id: input.id,
+      ...input.source ? { source: input.source } : {}
+    });
+    const item = record.packages[id];
+    const desiredInstall2 = desired.installs.find((install) => install.id === id);
+    const lockedPackage2 = lock.packages[id];
     if (!item && !desiredInstall2 && !lockedPackage2) return void 0;
-    const { [input.id]: _removedLock, ...locked } = lock.packages;
+    const { [id]: _removedLock, ...locked } = lock.packages;
     await applyProjection({
       state: {
         version: 1,
-        installs: desired.installs.filter((install) => install.id !== input.id)
+        installs: desired.installs.filter((install) => install.id !== id)
       },
       lock: { version: 1, packages: locked },
       files,
@@ -1967,7 +2037,7 @@ async function uninstallAgentExtension(input) {
       now: input.now
     });
     return item ?? {
-      package_name: desiredInstall2?.package_name ?? input.id,
+      package_name: desiredInstall2?.package_name ?? id,
       source: desiredInstall2?.source ?? lockedPackage2.source,
       resolved_sha: lockedPackage2?.resolved_sha ?? "",
       enabled: false,
@@ -2181,7 +2251,7 @@ async function packageRoots(input) {
 }
 async function applyRuntimeAgentExtensionsNow(input, projectDir = projectDirDefault(), options = {}) {
   if (!input) return;
-  const root = options.stateRoot ?? path14.join(projectDir, ".agent-extensions");
+  const root = options.stateRoot ?? agentExtensionStateRoot({ scope: "project", projectDir });
   await withAgentExtensionStateLock(root, async () => {
     const installs = input.installs;
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false);
@@ -2202,7 +2272,7 @@ async function applyRuntimeAgentExtensionsNow(input, projectDir = projectDirDefa
       packageRoots: await packageRoots({
         installs: enabledInstalls,
         projectDir,
-        cacheRoot: path14.join(root, "cache"),
+        cacheRoot: agentExtensionStateCacheRoot({ stateRoot: root }),
         execFile: options.execFile ?? execFileDefault2,
         tempRoot: options.tempRoot ?? os2.tmpdir(),
         ...options.packageRoots ? { packageRoots: options.packageRoots } : {}
@@ -2301,11 +2371,12 @@ async function getRuntimeAgentExtensionsSnapshot(input, options = {}) {
     (item) => config.scope !== "project" || item.id !== FIRST_PARTY_AGENT_EXTENSION_ID || item.source.type !== "project"
   );
   const firstParty = config.scope !== "project" || desiredInstalls.some((item) => item.id === FIRST_PARTY_AGENT_EXTENSION_ID) ? void 0 : await discoverFirstPartyAgentExtensions(config.projectDir);
-  const localIds = /* @__PURE__ */ new Set([
-    ...desiredInstalls.map((item) => item.id),
-    ...firstParty ? [firstParty.id] : []
-  ]);
-  const workspace = (options.workspaceInstalls ?? []).filter((item) => !localIds.has(item.desired.id));
+  const localInstalls = [
+    ...desiredInstalls,
+    ...firstParty ? [firstParty] : []
+  ];
+  const localIds = new Set(localInstalls.map((item) => item.id));
+  const workspace = (options.workspaceInstalls ?? []).filter((item) => !localIds.has(item.desired.id) && !localInstalls.some((local) => sameSource(local.source, item.desired.source)));
   const installs = [
     ...desiredInstalls.map((item) => ({
       desired: item,
@@ -2675,12 +2746,12 @@ function workspaceAgentExtensionRecords(input) {
 async function resolveGitHubWorkspaceAgentExtension(input) {
   const source3 = parsePackageSource(input.source);
   if (source3.type !== "github") throw new Error("Only GitHub workspace Agent Extension sources are supported");
-  const cache = await fetchGitHubPackageToCache({
+  const cache = await (input.fetchPackage ?? fetchGitHubPackageToCache)({
     source: source3,
     dataRoot: dataRootFor2(input)
   });
   const packageType = await discoverAgentExtensionPackage(cache.path);
-  const packageName2 = packageType.type === "marketplace" ? input.id ?? source3.repo : packageType.name;
+  const packageName2 = packageType.type === "marketplace" ? marketplacePackageName({ manifest: packageType.manifest, source: source3, packageRoot: cache.path }) : packageType.name;
   const targets2 = input.targets ?? allAgentExtensionTargets();
   const checksum = await digestDirectory(cache.path);
   return {
@@ -2711,13 +2782,24 @@ async function resolveGitHubWorkspaceAgentExtension(input) {
 }
 async function mirrorWorkspaceAgentExtensionRecord(input) {
   const files = filesFor2(input);
-  const lock = await readExtensionLock(files.lock);
+  const [desired, lock] = await Promise.all([
+    readDesiredExtensionState(files.installed),
+    readExtensionLock(files.lock)
+  ]);
+  const packages = { ...lock.packages };
+  if (input.replaces) delete packages[input.replaces];
   await Promise.all([
-    upsertDesiredExtensionInstall(files.installed, input.record.desired),
+    writeDesiredExtensionState(files.installed, {
+      version: 1,
+      installs: [
+        ...desired.installs.filter((item) => item.id !== input.record.desired.id && item.id !== input.replaces),
+        input.record.desired
+      ]
+    }),
     writeExtensionLock(files.lock, {
       version: 1,
       packages: {
-        ...lock.packages,
+        ...packages,
         [input.record.desired.id]: input.record.lock
       }
     })

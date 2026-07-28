@@ -378,6 +378,50 @@ describe("Agent Extensions runtime config projection", () => {
     expect(review[0]?.desired.source).toMatchObject({ owner: "acme" })
   })
 
+  test("drops workspace records whose source a local install tracks under another id", async () => {
+    // Local record under a legacy manifest-derived id, workspace record for
+    // the same source under the catalog id. Both build component paths from
+    // the shared package_name, so replaying both rows would make them fight
+    // over the same artifacts.
+    await installCachedAgentExtension({
+      sourceRoot: source,
+      source: { type: "github", owner: "acme", repo: "review" },
+      resolvedSha: "abcdef1234567890",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["cursor"],
+      id: "review",
+      now: 100,
+    })
+
+    const snapshot = await getRuntimeAgentExtensionsSnapshot({ projectDir: project }, {
+      workspaceInstalls: [{
+        desired: {
+          id: "acme-catalog-review",
+          package_name: "review",
+          source: { type: "github", owner: "acme", repo: "review" },
+          scope: "workspace",
+          enabled: true,
+          targets: ["cursor"],
+          installed_at: 10,
+          updated_at: 20,
+        },
+        lock: {
+          source: { type: "github", owner: "acme", repo: "review" },
+          resolved_sha: "fedcba9876543210",
+          manifest_digests: { package: "digest" },
+          component_digests: { package: "digest" },
+          targets: ["cursor"],
+        },
+      }],
+    })
+
+    expect(snapshot.installs.map((item) => item.desired.id)).toEqual(["review"])
+    expect(snapshot.installs[0]?.desired.scope).toBe("project")
+  })
+
   test("org disabled policy blocks workspace enable and projects the install as disabled", async () => {
     await expect(getRuntimeAgentExtensionsSnapshot({ projectDir: project }, {
       workspaceInstalls: [{

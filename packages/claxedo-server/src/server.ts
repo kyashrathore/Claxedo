@@ -742,12 +742,15 @@ export function createApp(
   // Claxedo events SSE — auth-gated via the same control-plane bearer used
   // by /api/control/* and /api/workspace/* (rubric S1). authFetch on the
   // frontend already attaches the token because the consumer uses fetch+
-  // ReadableStream, not raw EventSource.
+  // ReadableStream, not raw EventSource. Signed subscribers resolve their
+  // AUTHORITY-INTERNAL org id at connect so org-scoped events
+  // (document.changed/provision, stamped with internal ids) are visible.
   app.get(
     "/api/claxedo/events",
     eventsHandler({
       ...authRouteOptions(services),
       allowLoopbackLocal: true,
+      ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
     }),
   )
 
@@ -756,7 +759,8 @@ export function createApp(
   // Worker-safe and cannot import the bus, so the local composition root injects
   // the publish here. Every document mutation — saves AND `fs.watch` external
   // changes — funnels through `publishDocumentEvent`, so this one line covers
-  // both paths. Hosted (`hosted-app.ts`) installs no sink and emits nothing.
+  // both paths. Hosted (`hosted-app.ts`) injects a LiveSyncRoom nudge sink
+  // through the DocumentsRoutes option instead of this process-global one.
   setDocumentChangedSink((event) => claxedoBus.publish(event))
   app.route(
     "/documents",

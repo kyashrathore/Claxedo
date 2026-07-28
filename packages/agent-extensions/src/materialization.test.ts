@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { cachePackageRoot } from "./cache"
 import { linkOrCopyOwnedDirectory, type MaterializedRuntimeRecord } from "./materialization"
 import { uninstallOwnedComponents } from "./materialize"
 
@@ -94,6 +95,50 @@ describe("Agent Extension materialization ownership", () => {
         },
       },
     })).resolves.toEqual({ status: "applied", path: target })
+  })
+
+  test("adopts stale symlinks that point at the same package in the data-root install cache", async () => {
+    const source = cachePackageRoot({ resolvedSha: "abc1234", packagePath: "skills/pdf", dataRoot: path.join(root, "data") })
+    const staleSource = cachePackageRoot({ resolvedSha: "abc1234", packagePath: "skills/pdf", dataRoot: path.join(root, "stale-data") })
+    const target = path.join(root, "worktree", ".claude", "skills", "pdf")
+    await fs.mkdir(source, { recursive: true })
+    await fs.mkdir(staleSource, { recursive: true })
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(path.join(source, "SKILL.md"), "current")
+    await fs.writeFile(path.join(staleSource, "SKILL.md"), "stale")
+    await fs.symlink(staleSource, target, "dir")
+
+    await expect(linkOrCopyOwnedDirectory({
+      sourceDir: source,
+      targetDir: target,
+      ownerId: "pdf",
+    })).resolves.toEqual({ status: "applied", path: target })
+
+    await expect(fs.realpath(target)).resolves.toBe(await fs.realpath(source))
+    await expect(fs.readFile(path.join(target, "SKILL.md"), "utf8")).resolves.toBe("current")
+  })
+
+  test("still rejects symlinks that point at a different package in the data-root install cache", async () => {
+    const source = cachePackageRoot({ resolvedSha: "abc1234", packagePath: "skills/pdf", dataRoot: path.join(root, "data") })
+    const other = cachePackageRoot({ resolvedSha: "def5678", packagePath: "skills/pdf", dataRoot: path.join(root, "data") })
+    const target = path.join(root, "worktree", ".claude", "skills", "pdf")
+    await fs.mkdir(source, { recursive: true })
+    await fs.mkdir(other, { recursive: true })
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(path.join(source, "SKILL.md"), "current")
+    await fs.writeFile(path.join(other, "SKILL.md"), "other")
+    await fs.symlink(other, target, "dir")
+
+    await expect(linkOrCopyOwnedDirectory({
+      sourceDir: source,
+      targetDir: target,
+      ownerId: "pdf",
+    })).rejects.toMatchObject({
+      name: "AgentExtensionMaterializationError",
+      code: "agent_extension_target_path_conflict",
+    })
+
+    await expect(fs.realpath(target)).resolves.toBe(await fs.realpath(other))
   })
 
   test("uninstallOwnedComponents removes MCP entries without deleting the shared config file", async () => {

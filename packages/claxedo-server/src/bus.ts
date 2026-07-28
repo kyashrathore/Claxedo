@@ -98,8 +98,11 @@ export type WorkgraphChangedEvent = {
 // but are NOT interchangeable: convert at the boundary, never pass through.
 //
 // `orgId`/`projectId` are required so a consumer can filter to its own project.
-// `orgId` is enforced server-side by `routes/events.ts` (signed subscribers only
-// see their own org's events); `projectId` remains a client-side routing hint.
+// `orgId` is the AUTHORITY-INTERNAL org id (`authority.resolveOrgId` at the
+// documents routes — Convex `orgs._id` / SQLite `org_id`, NEVER the Clerk org
+// claim) and is enforced server-side (`routes/event-visibility.ts`: signed
+// subscribers resolve the same internal id at connect and only see their own
+// org's events); `projectId` remains a client-side routing hint.
 export type DocumentChangedEvent = {
   type: "document.changed"
   documentId: string
@@ -115,10 +118,11 @@ type ControlEvent =
       type: "provision"
       workspaceId: string
       /**
-       * Org that owns the workspace (`Workspace.org_id`), stamped at publish.
-       * `routes/events.ts` uses it to scope delivery in signed mode; absent
-       * (local workspaces) means the event is only visible to unsigned-local/
-       * loopback subscribers.
+       * Org that owns the workspace (`Workspace.org_id`, the AUTHORITY-INTERNAL
+       * org id namespace), stamped at publish. `routes/event-visibility.ts`
+       * uses it to scope delivery in signed mode (subscribers resolve the same
+       * internal id at connect); absent (local workspaces) means the event is
+       * only visible to unsigned-local/loopback subscribers.
        */
       orgId?: string
       step: "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"

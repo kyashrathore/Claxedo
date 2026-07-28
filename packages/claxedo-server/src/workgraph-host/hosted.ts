@@ -56,7 +56,7 @@ import {
   type SettlementDispatcher,
   type SettlementTenant,
 } from "./settlement-dispatcher"
-import { liveSyncRoomName, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../live-sync-room"
+import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../live-sync-room"
 import type { WorkgraphChangedEvent } from "../bus"
 
 // Command types whose successful application enqueues a control-effect outbox
@@ -188,28 +188,45 @@ export function createHostedWorkGraph(
   const now = input.now ?? Date.now
   // W5.3: ring the caller's live-sync room after a successful command so a
   // client whose SSE stream is held by another Worker isolate reloads. The room
-  // NAME is derived from the SIGNED auth (Clerk org/subject claims), identical to
-  // how the hosted events route (`connectLiveSyncRoom`) keys the room the client
-  // is held in — so the nudge always reaches the right room. The event carries
-  // `ownerUserId = auth.user.subject` (== `context.ownerUserId`), which the room's
-  // per-connection `eventVisibleTo` narrows to the right subject inside a shared
-  // org room. Advisory + fire-and-forget: a failing nudge never fails the command.
+  // NAME is derived from the AUTHORITY-INTERNAL org id already resolved for
+  // this context (`trustedOrganizationId` → the settlement tenant), identical
+  // to how the hosted events route (`connectLiveSyncRoom`) keys the room the
+  // client is held in — it resolves the same `authority.resolveOrgId` at
+  // connect — so the nudge always reaches the right room. The Clerk org claim
+  // is deliberately NOT used: it is a disjoint namespace that names a room no
+  // subscriber joins. The event carries `ownerUserId = auth.user.subject`
+  // (== `context.ownerUserId`), which the room's per-connection
+  // `eventVisibleTo` narrows to the right subject inside a shared org room.
+  // Advisory + fire-and-forget: a failing nudge never fails the command.
   const nudgeLiveSync = (context: WorkGraphContext) => {
     const namespace = input.liveSyncRoom
     if (!namespace) return
     const auth = signedAuthByContext.get(context)
     if (!auth) return
+    const tenant = settlementTenantByContext.get(context)
     const event: WorkgraphChangedEvent = {
       type: "workgraph.changed",
       ownerUserId: auth.user.subject,
       ts: now(),
     }
-    const run = nudgeLiveSyncRoom(namespace, liveSyncRoomName(auth), event).then(
-      () => {},
-      (error) => {
-        console.error("[claxedo-server] WARN  hosted workgraph.changed nudge failed:", error)
-      },
-    )
+    let run: Promise<void>
+    try {
+      const roomName = liveSyncRoomNameForPrincipal({
+        ownerUserId: auth.user.subject,
+        ...(tenant ? { orgId: tenant.organizationId } : {}),
+      })
+      run = nudgeLiveSyncRoom(namespace, roomName, event).then(
+        () => {},
+        (error) => {
+          console.error("[claxedo-server] WARN  hosted workgraph.changed nudge failed:", error)
+        },
+      )
+    } catch (error) {
+      // Room-name derivation rejects identity material that cannot name a real
+      // room; the nudge stays advisory, so the command result must survive it.
+      console.error("[claxedo-server] WARN  hosted workgraph.changed nudge failed:", error)
+      return
+    }
     const waitUntil = liveSyncWaitUntilByContext.get(context)
     if (waitUntil) waitUntil(run)
     else void run

@@ -54,6 +54,15 @@ export type HostedShellRouteOptions = {
    * by the caller's LiveSyncRoom. Absent → heartbeat fallback.
    */
   liveSyncRoom?: LiveSyncRoomNamespace
+  /**
+   * Resolves the caller's AUTHORITY-INTERNAL org id (`authority.resolveOrgId`)
+   * at connect time. Room names and the per-connection event visibility filter
+   * live in this namespace — the SAME one document/provision events and
+   * WorkGraph runtime-token claims are stamped with — never the Clerk org
+   * claim. Absent → signed subscribers hold the subject-keyed owner room,
+   * where org-scoped events stay invisible fail-closed.
+   */
+  resolveOrgId?: (auth: SignedControlPlaneAuth) => Promise<string>
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
@@ -117,6 +126,20 @@ function emptyConfigProviders() {
   return {
     providers: [],
     default: {},
+  }
+}
+
+// Shape mirror of `extensionListBody()` in routes/agent-config-extension-
+// support.ts with zero installs (that module is local-only: it imports os and
+// fs-backed install/state modules, so it cannot enter the Worker bundle). The
+// app's `installedRecordsFromJson` only accepts this object shape — a bare
+// array parses to nothing, so every marketplace card would render as
+// not-installed and Install would re-run on already-installed entries.
+function emptyExtensionList() {
+  return {
+    desired: { version: 1, installs: [] },
+    materialized: { version: 1, packages: {} },
+    effective: {},
   }
 }
 
@@ -281,7 +304,22 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
       const ctx = await authorize()
-      if (options.liveSyncRoom) return await connectLiveSyncRoom(options.liveSyncRoom, ctx, heartbeatMs, authorize)
+      if (options.liveSyncRoom) {
+        // Resolve the internal org id ONCE per connect (not per heartbeat or
+        // event) so the subscriber's room and visibility identity share the
+        // namespace publishers stamp. A resolution failure fails the connect
+        // (the client's reconnect loop retries); silently degrading to the
+        // owner room would strand this caller's org events until reconnect.
+        const orgId = ctx.mode === "signed" && options.resolveOrgId
+          ? await options.resolveOrgId(ctx)
+          : undefined
+        return await connectLiveSyncRoom(
+          options.liveSyncRoom,
+          { auth: ctx, ...(orgId ? { orgId } : {}) },
+          heartbeatMs,
+          authorize,
+        )
+      }
       return eventsStream(c, heartbeatMs)
     } catch (err) {
       return authErrorResponse(c, err)
@@ -373,7 +411,9 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     .get("/api/claxedo/agent-config/extensions/machine-scan", (c) => c.json([]))
     // Installed-extensions list (marketplace `loadInstalled`, ?scope=machine|
     // project). A hosted central has no local machine/project install surface,
-    // so the installed set is empty. Answer 200 [] instead of 404 — the app
-    // swallows the failure but the 404 still logs a red console error.
-    .get("/api/claxedo/agent-config/extensions", (c) => c.json([]))
+    // so the installed set is empty — served as the `extensionListBody` object
+    // shape the app parses, with 200 (a 404 would log a red console error).
+    // Workspace-scope installs never land here: the app routes those through
+    // the marketplace's workspace flow, not this boot surface.
+    .get("/api/claxedo/agent-config/extensions", (c) => c.json(emptyExtensionList()))
 }

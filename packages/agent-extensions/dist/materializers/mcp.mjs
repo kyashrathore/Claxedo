@@ -2,7 +2,7 @@ import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
 
 // src/materializers/mcp.ts
 import fs2 from "fs/promises";
-import path2 from "path";
+import path5 from "path";
 import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser";
 
 // src/fs-safe.ts
@@ -31,6 +31,40 @@ async function readFileIfExists(file) {
 var STATE_LOCK_STALE_MS = 10 * 60 * 1e3;
 
 // src/materialization.ts
+import path4 from "path";
+
+// src/cache.ts
+import path2 from "path";
+function agentExtensionCacheRoot(input) {
+  return path2.join(input.dataRoot, "agent-extensions", "cache");
+}
+function agentExtensionStateCacheRoot(input) {
+  return path2.join(input.stateRoot, "cache");
+}
+
+// src/state.ts
+import path3 from "path";
+var AgentExtensionStateError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AgentExtensionStateError";
+  }
+};
+function agentExtensionStateRoot(input) {
+  if (input.scope === "project") {
+    if (!input.projectDir) throw new AgentExtensionStateError("projectDir is required for project Agent Extension state");
+    return path3.join(input.projectDir, ".agent-extensions");
+  }
+  if (input.scope === "workspace") {
+    if (!input.workspaceId) throw new AgentExtensionStateError("workspaceId is required for workspace Agent Extension state");
+    if (!input.dataRoot) throw new AgentExtensionStateError("dataRoot is required for workspace Agent Extension state");
+    return path3.join(input.dataRoot, "agent-extensions", "workspaces", input.workspaceId);
+  }
+  if (!input.dataRoot) throw new AgentExtensionStateError("dataRoot is required for machine Agent Extension state");
+  return path3.join(input.dataRoot, "agent-extensions");
+}
+
+// src/materialization.ts
 var AgentExtensionMaterializationError = class extends Error {
   constructor(message, code = "agent_extension_materialization_error", details = {}) {
     super(message);
@@ -39,6 +73,11 @@ var AgentExtensionMaterializationError = class extends Error {
     this.name = "AgentExtensionMaterializationError";
   }
 };
+var sentinelRoot = path4.sep;
+var GENERATED_CACHE_ROOT_MARKERS = [
+  agentExtensionCacheRoot({ dataRoot: sentinelRoot }),
+  agentExtensionStateCacheRoot({ stateRoot: agentExtensionStateRoot({ scope: "project", projectDir: sentinelRoot }) })
+].map((root) => path4.relative(sentinelRoot, root).split(path4.sep));
 
 // src/materializers/mcp.ts
 function asRecord(input) {
@@ -73,34 +112,34 @@ function mcpTargetPath(input) {
   if (input.runner === "cursor") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project Cursor MCP materialization");
-      return path2.join(input.projectDir, ".cursor", "mcp.json");
+      return path5.join(input.projectDir, ".cursor", "mcp.json");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine Cursor MCP materialization");
-    return path2.join(input.homeDir, ".cursor", "mcp.json");
+    return path5.join(input.homeDir, ".cursor", "mcp.json");
   }
   if (input.runner === "claude") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project Claude MCP materialization");
-      return path2.join(input.projectDir, ".mcp.json");
+      return path5.join(input.projectDir, ".mcp.json");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine Claude MCP materialization");
-    return path2.join(input.homeDir, ".claude.json");
+    return path5.join(input.homeDir, ".claude.json");
   }
   if (input.runner === "codex") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project Codex MCP materialization");
-      return path2.join(input.projectDir, ".codex", "config.toml");
+      return path5.join(input.projectDir, ".codex", "config.toml");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine Codex MCP materialization");
-    return path2.join(input.homeDir, ".codex", "config.toml");
+    return path5.join(input.homeDir, ".codex", "config.toml");
   }
   if (input.runner === "opencode") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project OpenCode MCP materialization");
-      return path2.join(input.projectDir, ".opencode", "opencode.jsonc");
+      return path5.join(input.projectDir, ".opencode", "opencode.jsonc");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine OpenCode MCP materialization");
-    return path2.join(input.homeDir, ".config", "opencode", "opencode.jsonc");
+    return path5.join(input.homeDir, ".config", "opencode", "opencode.jsonc");
   }
   return void 0;
 }
@@ -207,9 +246,9 @@ async function readJson(file) {
   if (raw === void 0 || !raw.trim()) return {};
   return readJsonFromText(raw, file);
 }
-function readJsonFromText(raw, file) {
+function readJsonFromText(raw, file, options = {}) {
   const errors = [];
-  const parsed = parseJsonc(raw, errors);
+  const parsed = parseJsonc(raw, errors, options);
   if (errors.length > 0) {
     throw new AgentExtensionMaterializationError(
       `MCP target config ${file} contains invalid JSON; fix it before materializing (refusing to rewrite a file that cannot be parsed)`,
@@ -219,8 +258,9 @@ function readJsonFromText(raw, file) {
   }
   return asRecord(parsed);
 }
+var OPENCODE_PARSE_OPTIONS = { allowTrailingComma: true };
 async function writeJson(file, input) {
-  await fs2.mkdir(path2.dirname(file), { recursive: true, mode: 493 });
+  await fs2.mkdir(path5.dirname(file), { recursive: true, mode: 493 });
   await writeFileAtomic(file, JSON.stringify(input, null, 2) + "\n");
 }
 var JSONC_FORMAT = { formattingOptions: { tabSize: 2, insertSpaces: true } };
@@ -238,16 +278,16 @@ async function removeStandaloneMcpEntries(input) {
   if (input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json")) {
     const raw = await readText(input.file);
     if (!raw.trim()) return;
-    readJsonFromText(raw, input.file);
+    readJsonFromText(raw, input.file, OPENCODE_PARSE_OPTIONS);
     let text = raw;
     for (const name of input.names) {
       text = applyEdits(text, modify(text, ["mcp", name], void 0, JSONC_FORMAT));
     }
-    const withoutEntries = readJsonFromText(text, input.file);
+    const withoutEntries = readJsonFromText(text, input.file, OPENCODE_PARSE_OPTIONS);
     if (Object.keys(asRecord(withoutEntries.mcp)).length === 0) {
       text = applyEdits(text, modify(text, ["mcp"], void 0, JSONC_FORMAT));
     }
-    if (Object.keys(readJsonFromText(text, input.file)).length === 0) {
+    if (Object.keys(readJsonFromText(text, input.file, OPENCODE_PARSE_OPTIONS)).length === 0) {
       await fs2.rm(input.file, { force: true });
       return;
     }
@@ -318,13 +358,13 @@ async function materializeStandaloneMcp(input) {
     const prefix = withoutOwned.trim() ? `${withoutOwned.trimEnd()}
 
 ` : "";
-    await fs2.mkdir(path2.dirname(target), { recursive: true, mode: 493 });
+    await fs2.mkdir(path5.dirname(target), { recursive: true, mode: 493 });
     await writeFileAtomic(target, `${prefix}${Object.entries(nextSections).map(([name, cfg]) => codexMcpSection(name, cfg)).join("\n")}`);
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextSections) });
   }
   if (input.runner === "opencode") {
     const raw = await readText(target);
-    const root2 = raw.trim() ? readJsonFromText(raw, target) : {};
+    const root2 = raw.trim() ? readJsonFromText(raw, target, OPENCODE_PARSE_OPTIONS) : {};
     const current2 = asRecord(root2.mcp);
     const nextServers2 = toOpenCodeMcpServers(input.config);
     const drifted2 = /* @__PURE__ */ new Set();
@@ -358,7 +398,7 @@ async function materializeStandaloneMcp(input) {
     const next = Object.entries(nextServers2).reduce((text, [name, value]) => applyEdits(text, modify(text, ["mcp", name], value, {
       formattingOptions: { tabSize: 2, insertSpaces: true }
     })), raw.trim() ? raw : "{}");
-    await fs2.mkdir(path2.dirname(target), { recursive: true, mode: 493 });
+    await fs2.mkdir(path5.dirname(target), { recursive: true, mode: 493 });
     await writeFileAtomic(target, `${next.trimEnd()}
 `);
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextServers2) });

@@ -10,12 +10,17 @@ beforeAll(async () => {
       contents: `
         import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from ${JSON.stringify(new URL("./live-sync-room.ts", import.meta.url).pathname)}
         export { LiveSyncRoom }
-        const auth = { mode: "signed", token: "test", user: { subject: "alice", tokenIdentifier: "alice", issuer: "test", orgId: "acme" } }
+        // orgId is the AUTHORITY-INTERNAL org id resolved at connect — the
+        // namespace publishers stamp — not the Clerk claim on the auth.
+        const subscriber = {
+          auth: { mode: "signed", token: "test", user: { subject: "alice", tokenIdentifier: "alice", issuer: "test" } },
+          orgId: "org_internal_acme",
+        }
         export default {
           fetch(request, env) {
             const url = new URL(request.url)
-            if (url.pathname === "/connect") return connectLiveSyncRoom(env.LIVE_SYNC_ROOM, auth, 60000)
-            if (url.pathname === "/nudge") return nudgeLiveSyncRoom(env.LIVE_SYNC_ROOM, "org:acme", {
+            if (url.pathname === "/connect") return connectLiveSyncRoom(env.LIVE_SYNC_ROOM, subscriber, 60000)
+            if (url.pathname === "/nudge") return nudgeLiveSyncRoom(env.LIVE_SYNC_ROOM, "org:org_internal_acme", {
               type: "workgraph.changed",
               ownerUserId: "alice",
               ts: Date.now(),

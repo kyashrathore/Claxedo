@@ -4,6 +4,9 @@ export declare class AgentExtensionCacheError extends Error {
 export declare function agentExtensionCacheRoot(input: {
     dataRoot: string;
 }): string;
+export declare function agentExtensionStateCacheRoot(input: {
+    stateRoot: string;
+}): string;
 export declare function cachePackageRoot(input: {
     resolvedSha: string;
     packagePath?: string;
