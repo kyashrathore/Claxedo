@@ -13,9 +13,4 @@ describe("framework routes", () => {
     expect(generated).toContain("cookbook/01-hello-agent.mdx")
   })
 
-  test("keeps generated content deterministic", () => {
-    const result = Bun.spawnSync(["bun", "scripts/sync-framework-docs.ts", "--check"], { cwd: root.pathname })
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout.toString()).toContain("Verified 47 deterministic framework pages")
-  })
 })

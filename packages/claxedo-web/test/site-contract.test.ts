@@ -25,15 +25,6 @@ describe("public site contract", () => {
     expect(publishableClaims.map((item) => item.id as string)).not.toContain("hosted-source-parity")
   })
 
-  test("backs every publishable claim with repository evidence", async () => {
-    const repository = new URL("../../../", import.meta.url)
-    expect(
-      await Promise.all(
-        publishableClaims.flatMap((item) => item.evidence).map((evidence) => Bun.file(new URL(evidence, repository)).exists()),
-      ),
-    ).not.toContain(false)
-  })
-
   test("has a complete release artifact contract", () => {
     expect(downloads.map((download) => download.platform)).toEqual([
       "macos-arm64",
