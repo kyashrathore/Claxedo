@@ -8,6 +8,7 @@ import {
   parsePackageSource,
   readDesiredExtensionState,
   readMaterializedRuntimeRecord,
+  sameSource,
 } from "@claxedo/agent-extensions"
 import { loadAgentExtensionsCatalog } from "../agent-extensions/catalog"
 import type { ControlPlaneServices } from "../control-plane/services"
@@ -31,6 +32,7 @@ import {
   readMirroredWorkspaceAgentExtensions,
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
+  type WorkspaceAgentExtensionRecord,
 } from "../agent-extensions/workspace"
 import {
   resolveEffectiveAgentExtensionPolicy,
@@ -220,13 +222,48 @@ export async function syncWorkspaceRuntimeForSignedScope(scope: WorkspaceExtensi
 // package the catalog entry's source alongside it: that is the exact key it
 // needs to resolve a legacy record to the id the caller asked for. Unknown ids
 // (anything not in the catalog) simply carry no source and resolve as before.
-function catalogSourceFor(id: string) {
+export function catalogSourceFor(id: string) {
   try {
     const entry = loadAgentExtensionsCatalog().entries.find((item) => item.id === id)
     return entry ? parsePackageSource(entry.source) : undefined
   } catch {
     return undefined
   }
+}
+
+/**
+ * Find the workspace record for the same source persisted under a different
+ * id — the workspace-scope counterpart of `legacyInstallId` on the local
+ * install path. Installs are pinned to the catalog id, but records persisted
+ * before the pin are keyed by the fetched package's manifest name / directory
+ * basename, so a pinned install must absorb such a record instead of filing a
+ * second row beside it (two records of one source are never two installs).
+ */
+export function legacyWorkspaceExtensionRecord(
+  records: WorkspaceAgentExtensionRecord[],
+  input: { id: string; source: WorkspaceAgentExtensionRecord["desired"]["source"] },
+) {
+  return records.find((item) => item.desired.id !== input.id && sameSource(item.desired.source, input.source))
+}
+
+/**
+ * Resolve the stored id a workspace lifecycle route should act on when the
+ * requested id has no record of its own: when the catalog knows the id, a
+ * legacy record for that same source answers to it too (`resolveInstallId` on
+ * the local path). Returns undefined when there is nothing to resolve, so the
+ * caller keeps its own not-found semantics for the requested id.
+ */
+export async function legacyWorkspaceExtensionRecordId(
+  scope: WorkspaceExtensionScope,
+  id: string,
+) {
+  const source = catalogSourceFor(id)
+  if (!source) return undefined
+  const records = workspaceAgentExtensionRecords(await scope.services.authority!.listWorkspaceAgentExtensions(scope.auth, {
+    workspaceId: scope.workspaceId,
+  }))
+  if (records.some((item) => item.desired.id === id)) return undefined
+  return legacyWorkspaceExtensionRecord(records, { id, source })?.desired.id
 }
 
 export function withId(input: AgentExtensionLifecycleInput, id: string): AgentExtensionLifecycleInput {

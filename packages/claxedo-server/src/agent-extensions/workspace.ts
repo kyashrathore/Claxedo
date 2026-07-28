@@ -1,4 +1,5 @@
 export {
+  sameSource,
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
 } from "@claxedo/agent-extensions"
@@ -29,6 +30,7 @@ export function mirrorWorkspaceAgentExtensionRecord(input: {
   workspaceId: string
   dataRoot?: string
   record: WorkspaceAgentExtensionRecord & { lock: NonNullable<WorkspaceAgentExtensionRecord["lock"]> }
+  replaces?: string
 }) {
   return mirrorPackageWorkspaceAgentExtensionRecord(withDataRoot(input))
 }

@@ -6,6 +6,10 @@ import { localOnlyAuthAdapter, type ClerkVerifier } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { createAgentConfigRoutes } from "./agent-config"
 import { AgentExtensionConflictError, installCachedAgentExtension } from "../agent-extensions/install"
+import {
+  mirrorWorkspaceAgentExtensionRecord,
+  readMirroredWorkspaceAgentExtensions,
+} from "../agent-extensions/workspace"
 import { AgentExtensionMaterializationError } from "@claxedo/agent-extensions"
 
 const root = `${process.env.TMPDIR ?? "/tmp"}/agent-config-extensions-route-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -69,6 +73,67 @@ function services(authority: NonNullable<ControlPlaneServices["authority"]>): Co
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: true },
     authority,
+  }
+}
+
+// The catalog source of `anthropic-skill-pdf` exactly as parsePackageSource
+// yields it. A record persisted before installs were pinned to the catalog id
+// sits under the fetched package's own name (`pdf`) with this same source —
+// that is the key the workspace routes resolve and absorb it by.
+const pdfCatalogSource = {
+  type: "github" as const,
+  owner: "anthropics",
+  repo: "skills",
+  ref: "main",
+  package_path: "skills/pdf",
+}
+
+function legacyPdfRecord() {
+  return {
+    desired: {
+      id: "pdf",
+      package_name: "pdf",
+      source: pdfCatalogSource,
+      scope: "workspace" as const,
+      enabled: false,
+      targets: ["claude" as const],
+      installed_at: 5,
+      updated_at: 5,
+    },
+    lock: {
+      source: pdfCatalogSource,
+      resolved_sha: "abcdef1234567890",
+      manifest_digests: { package: "abc" },
+      component_digests: { package: "abc" },
+      targets: ["claude" as const],
+    },
+  }
+}
+
+function resolvedPinnedPdf(id = "anthropic-skill-pdf", targets: Array<"claude"> = ["claude"]) {
+  return {
+    id,
+    package: { type: "standalone-skill", name: "pdf", skill_path: "SKILL.md" } as const,
+    cache: { path: "/cache/pdf", checksum: "def", resolvedSha: "fedcba9876543210" },
+    record: {
+      desired: {
+        id,
+        package_name: "pdf",
+        source: pdfCatalogSource,
+        scope: "workspace" as const,
+        enabled: true,
+        targets,
+        installed_at: 200,
+        updated_at: 200,
+      },
+      lock: {
+        source: pdfCatalogSource,
+        resolved_sha: "fedcba9876543210",
+        manifest_digests: { package: "def" },
+        component_digests: { package: "def" },
+        targets,
+      },
+    },
   }
 }
 
@@ -808,6 +873,198 @@ describe("Agent Config Agent Extensions routes", () => {
       },
     })
     expect(upsertWorkspaceAgentExtension).not.toHaveBeenCalled()
+  })
+
+  test("workspace install absorbs a legacy same-source record instead of filing a second row", async () => {
+    const upsertWorkspaceAgentExtension = vi.fn(async () => ({}))
+    const deleteWorkspaceAgentExtension = vi.fn(async () => ({ ok: true }))
+    const app = createAgentConfigRoutes({
+      services: services({
+        usersMe: async () => ({}),
+        authorizeWorkspaceAgentExtensionsAdmin: vi.fn(async () => {}),
+        listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
+        upsertWorkspaceAgentExtension,
+        deleteWorkspaceAgentExtension,
+      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      authConfig,
+      verifier,
+      resolveGitHubWorkspaceAgentExtension: async () => resolvedPinnedPdf(),
+    })
+
+    const install = await app.request("/extensions?scope=workspace&workspaceId=ws_1", {
+      method: "POST",
+      body: JSON.stringify({
+        source: "https://github.com/anthropics/skills/tree/main/skills/pdf",
+        id: "anthropic-skill-pdf",
+        targets: ["claude"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer user_1",
+      },
+    })
+
+    expect(install.status).toBe(201)
+    // The absorbed record keeps its enablement and install time — a disabled
+    // legacy install must not come back to life just because it was re-keyed.
+    await expect(install.json()).resolves.toMatchObject({
+      id: "anthropic-skill-pdf",
+      desired: { id: "anthropic-skill-pdf", enabled: false, installed_at: 5 },
+    })
+    expect(upsertWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      workspaceId: "ws_1",
+      extensionId: "anthropic-skill-pdf",
+      desired: expect.objectContaining({ id: "anthropic-skill-pdf", enabled: false, installed_at: 5 }),
+    }))
+    expect(deleteWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), {
+      workspaceId: "ws_1",
+      extensionId: "pdf",
+    })
+  })
+
+  test("authority-less workspace install absorbs a legacy same-source mirror record", async () => {
+    await mirrorWorkspaceAgentExtensionRecord({
+      workspaceId: "ws_mirror",
+      record: legacyPdfRecord(),
+    })
+    const app = createAgentConfigRoutes({
+      homeDir: home,
+      resolveGitHubWorkspaceAgentExtension: async () => resolvedPinnedPdf(),
+    })
+
+    const install = await app.request("/extensions?scope=workspace&workspaceId=ws_mirror", {
+      method: "POST",
+      body: JSON.stringify({
+        source: "https://github.com/anthropics/skills/tree/main/skills/pdf",
+        id: "anthropic-skill-pdf",
+        targets: ["claude"],
+      }),
+      headers: { "Content-Type": "application/json" },
+    })
+
+    expect(install.status).toBe(201)
+    await expect(install.json()).resolves.toMatchObject({
+      id: "anthropic-skill-pdf",
+      desired: { id: "anthropic-skill-pdf", enabled: false, installed_at: 5 },
+    })
+    const records = await readMirroredWorkspaceAgentExtensions({ workspaceId: "ws_mirror" })
+    expect(records.map((item) => item.desired.id)).toEqual(["anthropic-skill-pdf"])
+    expect(records[0]).toMatchObject({
+      desired: { enabled: false, installed_at: 5 },
+      lock: { resolved_sha: "fedcba9876543210" },
+    })
+  })
+
+  test("workspace enable and disable resolve a legacy same-source record via the catalog id", async () => {
+    const setWorkspaceAgentExtensionEnabled = vi.fn(async (_auth: unknown, args: { extensionId: string }) => {
+      if (args.extensionId !== "pdf") throw new Error("Agent Extension not found")
+      return {}
+    })
+    const app = createAgentConfigRoutes({
+      services: services({
+        usersMe: async () => ({}),
+        listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
+        setWorkspaceAgentExtensionEnabled,
+      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      authConfig,
+      verifier,
+    })
+
+    const res = await app.request("/extensions/anthropic-skill-pdf/enable?scope=workspace&workspaceId=ws_1", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true, enabled: true })
+    expect(setWorkspaceAgentExtensionEnabled).toHaveBeenNthCalledWith(1, expect.anything(), {
+      workspaceId: "ws_1",
+      extensionId: "anthropic-skill-pdf",
+      enabled: true,
+    })
+    expect(setWorkspaceAgentExtensionEnabled).toHaveBeenNthCalledWith(2, expect.anything(), {
+      workspaceId: "ws_1",
+      extensionId: "pdf",
+      enabled: true,
+    })
+  })
+
+  test("workspace uninstall resolves a legacy same-source record via the catalog id", async () => {
+    const deleteWorkspaceAgentExtension = vi.fn(async () => ({ ok: true }))
+    const app = createAgentConfigRoutes({
+      services: services({
+        usersMe: async () => ({}),
+        listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
+        deleteWorkspaceAgentExtension,
+      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      authConfig,
+      verifier,
+    })
+
+    const res = await app.request("/extensions/anthropic-skill-pdf?scope=workspace&workspaceId=ws_1", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true })
+    expect(deleteWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), {
+      workspaceId: "ws_1",
+      extensionId: "pdf",
+    })
+  })
+
+  test("workspace update normalizes a legacy same-source record onto the requested catalog id", async () => {
+    const calls: unknown[] = []
+    const upsertWorkspaceAgentExtension = vi.fn(async () => ({}))
+    const deleteWorkspaceAgentExtension = vi.fn(async () => ({ ok: true }))
+    const app = createAgentConfigRoutes({
+      services: services({
+        usersMe: async () => ({}),
+        authorizeWorkspaceAgentExtensionsAdmin: vi.fn(async () => {}),
+        listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
+        upsertWorkspaceAgentExtension,
+        deleteWorkspaceAgentExtension,
+      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      authConfig,
+      verifier,
+      resolveGitHubWorkspaceAgentExtension: async (input) => {
+        calls.push(input)
+        return resolvedPinnedPdf(input.id ?? "anthropic-skill-pdf", input.targets as Array<"claude"> ?? ["claude"])
+      },
+    })
+
+    const update = await app.request("/extensions/anthropic-skill-pdf/update?scope=workspace&workspaceId=ws_1", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(update.status).toBe(200)
+    await expect(update.json()).resolves.toMatchObject({
+      id: "anthropic-skill-pdf",
+      desired: {
+        id: "anthropic-skill-pdf",
+        enabled: false,
+        installed_at: 5,
+        updated_at: 200,
+      },
+      lock: { resolved_sha: "fedcba9876543210" },
+    })
+    expect(calls).toEqual([{
+      source: "https://github.com/anthropics/skills/tree/main/skills/pdf",
+      workspaceId: "ws_1",
+      id: "anthropic-skill-pdf",
+      targets: ["claude"],
+      now: expect.any(Number),
+    }])
+    expect(upsertWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      extensionId: "anthropic-skill-pdf",
+      desired: expect.objectContaining({ id: "anthropic-skill-pdf", enabled: false, installed_at: 5 }),
+    }))
+    expect(deleteWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), {
+      workspaceId: "ws_1",
+      extensionId: "pdf",
+    })
   })
 
   test("workspace list reads policy overrides from Control Plane authority by default", async () => {

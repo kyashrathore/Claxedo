@@ -102,7 +102,10 @@ export async function installCachedAgentExtension(input: InstallCachedAgentExten
 // Marketplace manifests carry no single package name; prefer the manifest's
 // own name, then the source repo, before falling back to the cache directory
 // basename (which is the resolved SHA for repo-root GitHub installs).
-function marketplacePackageName(input: {
+// Exported so the workspace-scope resolver derives the identical name:
+// `package_name` builds the on-disk artifact paths, so one source must name
+// the same artifacts at every scope.
+export function marketplacePackageName(input: {
   manifest: Record<string, unknown>
   source: PackageInstallSource
   packageRoot: string

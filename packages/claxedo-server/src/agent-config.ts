@@ -44,6 +44,7 @@ import {
 } from "./agent-extensions/runtime-config"
 import {
   readMirroredWorkspaceAgentExtensions,
+  sameSource,
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
 } from "./agent-extensions/workspace"
@@ -361,7 +362,10 @@ function defaultRuntimeWorkspaceAuthority(): RuntimeWorkspaceAuthority {
 // record workspace Agent Extensions in the local mirror instead of an
 // authority. Fold those records in so a sandbox re-provision does not lose
 // extensions that only the live `syncWorkspaceRuntimeAgentExtensions` push
-// knew about. Authority records win on id conflicts.
+// knew about. Authority records win on id conflicts — and on source
+// conflicts, because a same-source record under another id (legacy
+// manifest-derived vs catalog id) is the same install and would replay onto
+// the same package_name-derived artifact paths.
 async function mirroredRuntimeWorkspaceAgentExtensions(workspaceId: string) {
   try {
     return await readMirroredWorkspaceAgentExtensions({ workspaceId })
@@ -375,7 +379,9 @@ function mergeWorkspaceAgentExtensionRecords(
   fallback: WorkspaceAgentExtensionRecord[],
 ) {
   const seen = new Set(primary.map((item) => item.desired.id))
-  return [...primary, ...fallback.filter((item) => !seen.has(item.desired.id))]
+  return [...primary, ...fallback.filter((item) =>
+    !seen.has(item.desired.id)
+    && !primary.some((record) => sameSource(record.desired.source, item.desired.source)))]
 }
 
 async function runtimeWorkspaceAgentExtensions(workspaceId: string, input: {

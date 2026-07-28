@@ -96,10 +96,16 @@ export const upsert = authedMutation({
       deleted_at: undefined,
     }
     if (existing) {
-      const existingSource = sourceKey(existing.desired.source)
-      const requestedSource = sourceKey(object(args.desired)?.source)
-      if (existingSource && requestedSource && existingSource !== requestedSource) {
-        throw new Error("Agent Extension is already installed from a different source")
+      // Only live rows guard the source: a soft-deleted row (uninstalled, or
+      // absorbed into the pinned catalog id by the install route) must not
+      // block a fresh install that legitimately reuses its id — the patch
+      // below revives the row under the new source.
+      if (!existing.deleted_at) {
+        const existingSource = sourceKey(existing.desired.source)
+        const requestedSource = sourceKey(object(args.desired)?.source)
+        if (existingSource && requestedSource && existingSource !== requestedSource) {
+          throw new Error("Agent Extension is already installed from a different source")
+        }
       }
       await ctx.db.patch(existing._id, patch)
       return { extension_id: args.extension_id }
