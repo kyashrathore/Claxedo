@@ -1,5 +1,5 @@
 import type {
-  AttemptDto,
+  RunDto,
   AttentionItem,
   IntakeCandidateDto,
   IntakeCandidatePageCursor,
@@ -19,7 +19,7 @@ import { DetailState, DialogField, DialogSection, WorkGraphDialog } from "./work
 import type { WorkGraphSessionOpener, WorkGraphSessionReference } from "../api"
 import { createDependencyResolver, STATUS_DISPLAY, taskStatusLabel, type TaskStatusLabel } from "../work-item-rows"
 import { MasterEscalationContent } from "./master-escalation-content"
-import { AttemptDetailView } from "./attempt-detail-view"
+import { RunDetailView } from "./run-detail-view"
 
 /** Read-only status line for an approved `pending` task: Ready (will run /
  *  paused) when launchable, else Waiting on the named incomplete blockers. */
@@ -51,7 +51,7 @@ export function TaskDialog(props: {
   /** Every non-abandoned task in the item's Stream — used to split Waiting vs
    *  Ready and to name the incomplete blockers a Waiting task is held on. */
   streamItems?: WorkItemDto[]
-  streamAttempts?: AttemptDto[]
+  streamRuns?: RunDto[]
   /** Whether the owning Stream is paused (an approved task reads "Ready — paused"). */
   streamPaused?: boolean
   masterStatus?: StreamMasterStatus
@@ -150,7 +150,7 @@ export function TaskDialog(props: {
             depsComplete={depsComplete()}
             incompleteDependencies={incompleteDependencies()}
             masterStatus={props.masterStatus}
-            streamAttempts={props.streamAttempts}
+            streamRuns={props.streamRuns}
             onOpenSession={openSession}
           />
         )}
@@ -218,7 +218,7 @@ export function WaitingItemDialog(props: {
     if (kind === "decision") return "Decision"
     if (kind === "admission_proposal") return "Review proposed work"
     if (kind === "work_item") return "Task"
-    if (kind === "attempt") return "Attempt"
+    if (kind === "run") return "Run"
     if (kind === "unorganized_ai_work") return "Unorganized AI work"
     if (kind === "configuration_required") return "Configuration required"
     if (kind === "master_escalation") return "Master needs your help"
@@ -256,13 +256,13 @@ function AfterProposal(props: ItemContentProps) {
 
 function AfterWorkItem(props: ItemContentProps) {
   return (
-    <Show when={props.item.kind === "attempt" && props.item} keyed fallback={<AfterAttempt {...props} />}>
-      {(item) => <AttemptContent attemptId={item.record.id} source={props.source} onOpenSession={props.onOpenSession} />}
+    <Show when={props.item.kind === "run" && props.item} keyed fallback={<AfterRun {...props} />}>
+      {(item) => <RunContent runId={item.record.id} source={props.source} onOpenSession={props.onOpenSession} />}
     </Show>
   )
 }
 
-function AfterAttempt(props: ItemContentProps) {
+function AfterRun(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "unorganized_ai_work"} fallback={<AfterCandidates {...props} />}>
       <CandidatesContent source={props.source} onResolved={props.onResolved} />
@@ -351,7 +351,7 @@ function DecisionContent(props: {
   )
 }
 
-// ── Task (work item) + Attempt execution/results ──────────────────────────
+// ── Task (work item) + Run execution/results ──────────────────────────
 
 function TaskContent(props: {
   workItemId: string
@@ -363,7 +363,7 @@ function TaskContent(props: {
   depsComplete?: boolean
   incompleteDependencies?: { id: string; title: string }[]
   masterStatus?: StreamMasterStatus
-  streamAttempts?: AttemptDto[]
+  streamRuns?: RunDto[]
   onOpenSession?: WorkGraphSessionOpener
 }) {
   const [workItem, { refetch }] = createResource(
@@ -379,11 +379,11 @@ function TaskContent(props: {
     if (!granularity) return
     return { granularity, refreshToken: props.refreshToken ?? workItem()?.version }
   })
-  // The true latest attempt, resolved by following strict page cursors to the
-  // end — never an arbitrary first-page attempt.
+  // The true latest run, resolved by following strict page cursors to the
+  // end — never an arbitrary first-page run.
   const [latest] = createResource(
     () => [props.workItemId, props.refreshToken] as const,
-    ([workItemId]) => props.source.latestAttempt(workItemId),
+    ([workItemId]) => props.source.latestRun(workItemId),
   )
   return (
     <DetailState resource={workItem} retry={refetch} skeleton={<TaskSkeleton />}>
@@ -410,19 +410,19 @@ function TaskContent(props: {
             <div class="workgraph-detail-status" role="status">{pendingStatusText(item, props.depsComplete, props.streamPaused, props.incompleteDependencies)}</div>
           </Show>
           <TaskChips item={item} source={props.source} />
-          <DialogSection title="Latest attempt">
+          <DialogSection title="Latest run">
             <Show when={latest.loading && !latest()}>
               <div class="workgraph-detail-status" role="status">
-                Loading attempt…
+                Loading run…
               </div>
             </Show>
             <Show when={latest.error}>
               <div class="workgraph-detail-status is-error" role="alert">
-                {String((latest.error as { message?: string })?.message ?? "Attempts could not be loaded.")}
+                {String((latest.error as { message?: string })?.message ?? "Runs could not be loaded.")}
               </div>
             </Show>
-            <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-[12px] text-text-weaker">No attempt has run yet.</span></Show>}>
-              {(detail) => <AttemptDetailView detail={detail()} masterStatus={props.masterStatus} streamAttempts={props.streamAttempts} onOpenSession={props.onOpenSession} />}
+            <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-[12px] text-text-weaker">No run has run yet.</span></Show>}>
+              {(detail) => <RunDetailView detail={detail()} masterStatus={props.masterStatus} streamRuns={props.streamRuns} onOpenSession={props.onOpenSession} />}
             </Show>
           </DialogSection>
           <Show when={activityKey()} keyed fallback={
@@ -573,7 +573,7 @@ function TaskActivityRow(props: { entry: TaskActivityEntry }) {
 }
 
 function activityIcon(category: TaskActivityEntry["category"]): "task" | "terminal" | "check-small" | "help" | "link" | "status" {
-  if (category === "attempt") return "terminal"
+  if (category === "run") return "terminal"
   if (category === "checkpoint") return "check-small"
   if (category === "decision") return "help"
   if (category === "evidence") return "link"
@@ -581,13 +581,13 @@ function activityIcon(category: TaskActivityEntry["category"]): "task" | "termin
   return "task"
 }
 
-function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSource; onOpenSession?: WorkGraphSessionOpener }) {
-  const [detail, { refetch }] = createResource(() => props.source.attempt(props.attemptId))
+function RunContent(props: { runId: string; source: WorkGraphWaitingSource; onOpenSession?: WorkGraphSessionOpener }) {
+  const [detail, { refetch }] = createResource(() => props.source.run(props.runId))
   return (
     <DetailState resource={detail} retry={refetch}>
-      {(attemptDetail) => (
+      {(runDetail) => (
         <div class="workgraph-detail">
-          <AttemptDetailView detail={attemptDetail} onOpenSession={props.onOpenSession} />
+          <RunDetailView detail={runDetail} onOpenSession={props.onOpenSession} />
         </div>
       )}
     </DetailState>

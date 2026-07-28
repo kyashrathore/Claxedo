@@ -9,7 +9,7 @@ export function createSqlitePullRequestEffects(database: Database.Database) {
   return {
     async claim(context: WorkGraphContext, input: Readonly<{
       streamId: string
-      attemptId: string
+      runId: string
       idempotencyKey: string
       repository: string
       head: string

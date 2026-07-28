@@ -358,7 +358,7 @@ describe("Connections-backed personal intake", () => {
   })
 
   it("releases a failed external effect for retry and allows only one concurrent winner", async () => {
-    let attempts = 0
+    let runs = 0
     let releaseFirst: (() => void) | undefined
     const provider = await fakeProvider((request, response) => {
       if (request.method !== "POST") {
@@ -366,13 +366,13 @@ describe("Connections-backed personal intake", () => {
         response.end(JSON.stringify({ items: [{ id: 1009, number: 9, title: "Retry sync", body: "", state: "open", updated_at: "2026-07-13T00:00:00Z" }] }))
         return
       }
-      attempts++
-      if (attempts === 1) {
+      runs++
+      if (runs === 1) {
         response.statusCode = 500
         response.end("failed")
         return
       }
-      if (attempts === 2) {
+      if (runs === 2) {
         releaseFirst = () => response.end("{}")
         return
       }
@@ -394,7 +394,7 @@ describe("Connections-backed personal intake", () => {
     expect(concurrent).toEqual({ applied: false, reason: "in_progress" })
     releaseFirst?.()
     expect(await winner).toEqual({ applied: true, reason: "announce" })
-    expect(attempts).toBe(2)
+    expect(runs).toBe(2)
   })
 
   it("reuses the exact source and proposal when candidate binding persistence fails", async () => {

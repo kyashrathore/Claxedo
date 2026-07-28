@@ -57,7 +57,7 @@ const server = startServer(port, {
     ? { opencodeUrl: runtimeEnvText(process.env, "OPENCODE_URL") }
     : {}),
   ...(workgraphBroker
-    ? { workgraphConnectionBrokerOrigin: workgraphBroker, workgraphAttemptBrokerOrigin: workgraphBroker }
+    ? { workgraphConnectionBrokerOrigin: workgraphBroker, workgraphRunBrokerOrigin: workgraphBroker }
     : {}),
   opencodeCompat: runtimeEnvText(process.env, "WORKSPACE_RUNTIME_OPENCODE_COMPAT") !== "0",
 }, { signals: true })

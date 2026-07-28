@@ -416,7 +416,7 @@ function SettingsFormBody(props: SettingsFormProps) {
       ...(agent().trim() ? { agent: agent().trim() } : {}),
       ...(chosen ? { model: { providerId: chosen.providerId, modelId: chosen.modelId } } : {}),
       ...(effort().trim() ? { effort: effort().trim() } : {}),
-      // Harness-native tools are not a user-facing policy choice. Attempts execute in
+      // Harness-native tools are not a user-facing policy choice. Runs execute in
       // the Stream workspace with every native tool the selected harness
       // advertises. Connection tools remain capability-gated by the selected Connections.
       tools: automaticTools(),
@@ -500,10 +500,10 @@ function SettingsFormBody(props: SettingsFormProps) {
           <Show when={!providerlessHarness(harness())}>
             <SelectRow label="Provider" description="Model service connected to the selected harness." value={provider()} onChange={changeProvider} options={providerOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.model?.providerId} />
           </Show>
-          <SelectRow label="Model" description="Model used for every provider turn in the attempt." value={model()} onChange={changeModel} options={modelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={modelKey(props.inheritedExecution?.model) || undefined} />
+          <SelectRow label="Model" description="Model used for every provider turn in the run." value={model()} onChange={changeModel} options={modelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={modelKey(props.inheritedExecution?.model) || undefined} />
           <SelectRow label="Effort" description="Reasoning depth requested from the selected model." value={effort()} onChange={setEffort} options={effortOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.effort} />
           <Show when={harness() === "opencode"}>
-            <ConnectionRow label="Connections" description="External accounts an attempt may use through scoped broker tools." options={connectionOptions()} selected={connectionIds()} onToggle={toggleConnection} override={connectionsOverride()} onOverride={setConnectionsMode} emptyLabel={emptyLabel} editable={hasCaps()} />
+            <ConnectionRow label="Connections" description="External accounts an run may use through scoped broker tools." options={connectionOptions()} selected={connectionIds()} onToggle={toggleConnection} override={connectionsOverride()} onOverride={setConnectionsMode} emptyLabel={emptyLabel} editable={hasCaps()} />
           </Show>
           <Show when={props.showActivity}>
             <div class="workgraph-settings-section-title">Activity</div>

@@ -686,6 +686,7 @@ export default defineSchema({
     ...workGraphOwner,
     id: v.string(),
     workgraph_id: v.string(),
+    parent_stream_id: v.optional(v.string()),
     title: v.string(),
     description: v.optional(v.string()),
     charter: v.optional(v.object({ text: v.string(), hash: v.string() })),
@@ -731,6 +732,7 @@ export default defineSchema({
     .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
     .index("by_tenant_created_id", ["organization_id", "owner_user_id", "created_at", "id"])
     .index("by_tenant_updated", ["organization_id", "owner_user_id", "updated_at"])
+    .index("by_tenant_parent", ["organization_id", "owner_user_id", "parent_stream_id"])
     .index("by_tenant_pinned_updated", ["organization_id", "owner_user_id", "pinned", "updated_at"])
     .index("by_tenant_workgraph_lifecycle", [
       "organization_id",
@@ -772,6 +774,7 @@ export default defineSchema({
     ...workGraphOwner,
     id: v.string(),
     stream_id: v.string(),
+    parent_task_id: v.optional(v.string()),
     outcome_id: v.optional(v.string()),
     title: v.string(),
     description: v.optional(v.string()),
@@ -789,7 +792,7 @@ export default defineSchema({
     // read as unknown origin.
     created_by_actor_type: v.optional(v.string()),
     created_by_actor_id: v.optional(v.string()),
-    origin_attempt_id: v.optional(v.string()),
+    origin_run_id: v.optional(v.string()),
     abandoned_at: v.optional(v.number()),
     abandon_reason: v.optional(v.string()),
     completed_at: v.optional(v.number()),
@@ -798,6 +801,7 @@ export default defineSchema({
   })
     .index("by_tenant", ["organization_id", "owner_user_id"])
     .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
+    .index("by_tenant_parent", ["organization_id", "owner_user_id", "parent_task_id"])
     .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
     .index("by_tenant_created_id", ["organization_id", "owner_user_id", "created_at", "id"])
     .index("by_tenant_updated", ["organization_id", "owner_user_id", "updated_at"])
@@ -819,12 +823,13 @@ export default defineSchema({
     .index("by_tenant_item", ["organization_id", "owner_user_id", "work_item_id"])
     .index("by_tenant_dependency", ["organization_id", "owner_user_id", "depends_on_work_item_id"]),
 
-  workgraph_attempts: defineTable({
+  workgraph_runs: defineTable({
     ...workGraphOwner,
     id: v.string(),
     stream_id: v.string(),
     work_item_id: v.string(),
-    attempt_number: v.number(),
+    run_number: v.number(),
+    generation: v.number(),
     state: v.string(),
     execution_kind: v.optional(v.union(v.literal("managed"), v.literal("attached"))),
     resolved_execution: v.any(),
@@ -832,7 +837,7 @@ export default defineSchema({
     started_at: v.optional(v.number()),
     finished_at: v.optional(v.number()),
     result: v.optional(v.any()),
-    attention_reason: v.optional(v.string()),
+    parked_reason: v.optional(v.string()),
     envelope_id: v.optional(v.string()),
     child_workspace_id: v.optional(v.string()),
     session_id: v.optional(v.string()),
@@ -846,7 +851,7 @@ export default defineSchema({
     .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
     .index("by_tenant_created_id", ["organization_id", "owner_user_id", "created_at", "id"])
     .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
-    .index("by_tenant_item_attempt", ["organization_id", "owner_user_id", "work_item_id", "attempt_number"])
+    .index("by_tenant_item_run", ["organization_id", "owner_user_id", "work_item_id", "run_number"])
     .index("by_tenant_item_updated_id", ["organization_id", "owner_user_id", "work_item_id", "updated_at", "id"])
     .index("by_tenant_stream_state", ["organization_id", "owner_user_id", "stream_id", "state", "updated_at"])
     .index("by_tenant_state_updated", ["organization_id", "owner_user_id", "state", "updated_at"]),
@@ -858,7 +863,7 @@ export default defineSchema({
     session_id: v.string(),
     project_id: v.string(),
     current_work_item_id: v.optional(v.string()),
-    current_attempt_id: v.optional(v.string()),
+    current_run_id: v.optional(v.string()),
     state: v.union(v.literal("active"), v.literal("released")),
     bound_at: v.number(),
     released_at: v.optional(v.number()),
@@ -874,7 +879,7 @@ export default defineSchema({
     id: v.string(),
     stream_id: v.string(),
     work_item_id: v.string(),
-    attempt_id: v.string(),
+    run_id: v.string(),
     session_binding_id: v.string(),
     level: v.union(v.literal("milestone"), v.literal("progress"), v.literal("detail")),
     summary: v.string(),
@@ -890,7 +895,7 @@ export default defineSchema({
     .index("by_tenant_item_occurred_id", ["organization_id", "owner_user_id", "work_item_id", "occurred_at", "id"])
     .index("by_tenant_binding", ["organization_id", "owner_user_id", "session_binding_id"]),
 
-  // Secret-free references used to authorize one Attempt's callback-scoped
+  // Secret-free references used to authorize one Run's callback-scoped
   // Connection operations. Provider credentials remain in Connections.
   workgraph_connection_metadata: defineTable({
     organization_id: v.id("orgs"),
@@ -906,9 +911,9 @@ export default defineSchema({
     .index("by_connection", ["connection_id"])
     .index("by_organization_connection", ["organization_id", "connection_id"]),
 
-  workgraph_attempt_connection_bindings: defineTable({
+  workgraph_run_connection_bindings: defineTable({
     ...workGraphOwner,
-    attempt_id: v.string(),
+    run_id: v.string(),
     session_id: v.string(),
     workspace_id: v.string(),
     connection_ids: v.array(v.string()),
@@ -917,7 +922,7 @@ export default defineSchema({
     ...workGraphMutable,
   })
     .index("by_tenant", ["organization_id", "owner_user_id"])
-    .index("by_tenant_attempt", ["organization_id", "owner_user_id", "attempt_id"])
+    .index("by_tenant_run", ["organization_id", "owner_user_id", "run_id"])
     .index("by_tenant_session_workspace", ["organization_id", "owner_user_id", "session_id", "workspace_id"]),
 
   workgraph_leases: defineTable({
@@ -1002,7 +1007,7 @@ export default defineSchema({
     ...workGraphOwner,
     id: v.string(),
     stream_id: v.string(),
-    attempt_id: v.optional(v.string()),
+    run_id: v.optional(v.string()),
     effect_kind: v.string(),
     idempotency_key: v.string(),
     external_reference: v.any(),
@@ -1336,7 +1341,7 @@ export default defineSchema({
     .index("by_owner", ["owner_user_id"]),
 
   // Server-attested, tenant-bound execution capability catalog. Settings
-  // writes and Attempt admission validate against this exact snapshot; a
+  // writes and Run admission validate against this exact snapshot; a
   // missing or stale tenant snapshot fails closed.
   workgraph_execution_capabilities: defineTable({
     organization_id: v.id("orgs"),
@@ -1345,7 +1350,7 @@ export default defineSchema({
     catalog: v.any(),
     // Optional only for expand-safe deployment over pre-freshness rows. Runtime
     // reads reject rows without this attestation metadata, so legacy data never
-    // participates in settings validation or Attempt admission.
+    // participates in settings validation or Run admission.
     catalog_revision: v.optional(v.string()),
     observed_at: v.number(),
     expires_at: v.optional(v.number()),

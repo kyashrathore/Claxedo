@@ -28,13 +28,13 @@ describe("Attention contracts", () => {
         { updatedAt: 10, kind: "decision" as const, id: "b" },
         { updatedAt: 20, kind: "work_item" as const, id: "z" },
         { updatedAt: 10, kind: "decision" as const, id: "a" },
-        { updatedAt: 10, kind: "attempt" as const, id: "c" },
+        { updatedAt: 10, kind: "run" as const, id: "c" },
       ].sort(compareAttentionPosition),
     ).toEqual([
       { updatedAt: 20, kind: "work_item", id: "z" },
-      { updatedAt: 10, kind: "attempt", id: "c" },
       { updatedAt: 10, kind: "decision", id: "a" },
       { updatedAt: 10, kind: "decision", id: "b" },
+      { updatedAt: 10, kind: "run", id: "c" },
     ])
   })
 
@@ -91,7 +91,7 @@ describe("Attention contracts", () => {
       updatedAt: 8,
       streamId: "stream_1",
       sessionId: "ses_master_stream_1",
-      reason: "Merge conflict remained after three attempts",
+      reason: "Merge conflict remained after three runs",
       evidenceIds: ["evidence_1"],
       receiptRefs: ["diff://ours", "diff://theirs"],
     })).toMatchObject({

@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest"
 import {
-  AttemptStateSchema,
+  RunStateSchema,
   CompletionContractSchema,
   DecisionStateSchema,
   EvidenceDtoSchema,
@@ -40,13 +40,13 @@ describe("WorkGraph contracts", () => {
     expect(StreamVisibilitySchema.parse("archived")).toBe("archived")
     expect(OutcomeStateSchema.parse("ready_to_close")).toBe("ready_to_close")
     expect(WorkItemStateSchema.parse("integration_needed")).toBe("integration_needed")
-    expect(AttemptStateSchema.parse("placing")).toBe("placing")
+    expect(RunStateSchema.parse("placing")).toBe("placing")
     expect(DecisionStateSchema.parse("answered")).toBe("answered")
     expect(WorkItemStateSchema.parse("pending_approval")).toBe("pending_approval")
     expect(() => WorkItemStateSchema.parse("done")).toThrow()
   })
 
-  it("distinguishes inheritable execution defaults from a complete immutable Attempt profile", () => {
+  it("distinguishes inheritable execution defaults from a complete immutable Run profile", () => {
     expect(ExecutionProfileDefaultsSchema.parse({ model: { providerId: "openai", modelId: "gpt-5" } })).toEqual({
       model: { providerId: "openai", modelId: "gpt-5" },
     })
@@ -108,7 +108,7 @@ describe("WorkGraph contracts", () => {
     expect(() => WorkSourceDtoSchema.parse({ ...source, revisionCount: 0 })).toThrow()
   })
 
-  it("validates completion requirements and provenance-bearing evidence without treating an Attempt result as completion", () => {
+  it("validates completion requirements and provenance-bearing evidence without treating an Run result as completion", () => {
     const contract = CompletionContractSchema.parse({
       version: 1,
       mode: "all",

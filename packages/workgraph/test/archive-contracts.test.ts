@@ -9,8 +9,8 @@ import {
 import { WorkGraphEventTypeSchema } from "../src/contracts/events"
 
 describe("WorkGraph archive contract", () => {
-  it("admits recovered Attempt lease history as a canonical semantic event", () => {
-    expect(WorkGraphEventTypeSchema.parse("attempt_lease_recovered")).toBe("attempt_lease_recovered")
+  it("admits recovered Run lease history as a canonical semantic event", () => {
+    expect(WorkGraphEventTypeSchema.parse("run_lease_recovered")).toBe("run_lease_recovered")
   })
 
   it("defines a usable strict semantic value for every portable record kind", async () => {
@@ -69,7 +69,7 @@ describe("WorkGraph archive contract", () => {
     for (const record of [
       { kind: "stream", id: "stream_1", value: { state: "active" } },
       { kind: "stream", id: "stream_1", value: { lifecycle: "active", purpose: "Ship" } },
-      { kind: "attempt", id: "attempt_1", value: { lifecycle: "running", resolvedExecutionProfile: {} } },
+      { kind: "run", id: "run_1", value: { lifecycle: "running", resolvedExecutionProfile: {} } },
       { kind: "stream", id: "stream_1", value: { owner_user_id: "owner_1" } },
     ]) {
       await expect(validateWorkGraphArchive(value([record]))).rejects.toMatchObject({ reason: "malformed" })
@@ -289,13 +289,14 @@ function canonicalRecords() {
       },
     },
     {
-      kind: "attempt",
-      id: "attempt_1",
+      kind: "run",
+      id: "run_1",
       value: {
         ...publicRecord,
         streamId: "stream_1",
         workItemId: "work_item_1",
-        attemptNumber: 1,
+        runNumber: 1,
+        generation: 1,
         state: "result",
         resolvedExecution,
         admittedAt: 1,
@@ -312,7 +313,7 @@ function canonicalRecords() {
         ...publicRecord,
         streamId: "stream_1",
         workItemId: "work_item_1",
-        attemptId: "attempt_1",
+        runId: "run_1",
         sessionBindingId: "binding_1",
         level: "progress",
         summary: "Validated the release boundary",
@@ -377,7 +378,7 @@ function canonicalRecords() {
         schemaVersion: 1,
         createdAt: 1,
         streamId: "stream_1",
-        attemptId: "attempt_1",
+        runId: "run_1",
         effectKind: "pull_request",
         idempotencyKey: "effect_1",
         externalReference: { url: "https://example.com/pr/1" },
@@ -518,7 +519,7 @@ function canonicalRecords() {
         sessionId: "session_1",
         projectId: "project_1",
         currentWorkItemId: "work_item_1",
-        currentAttemptId: "attempt_1",
+        currentRunId: "run_1",
         state: "active",
         boundAt: 1,
       },

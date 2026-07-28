@@ -125,8 +125,8 @@ import { createLocalExecutionCapabilities } from "./workgraph-host/local-executi
 import { createSqlitePullRequestEffects } from "./workgraph-host/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "./workgraph-agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree-service"
-import { StreamIDSchema, masterAttemptId, masterSessionId } from "@claxedo/workgraph/contracts"
-import type { CommandResult, WorkGraphAttemptOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
+import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
+import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "./session-meta"
 import { ClaxedoDB } from "./storage/db"
 import { RemoteAccessRoutes } from "./routes/remote-access"
@@ -1046,13 +1046,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
-  let executeWorkGraphAttempt:
-    | ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>)
+  let executeWorkGraphRun:
+    | ((context: WorkGraphContext, request: WorkGraphRunOperationRequest) => Promise<CommandResult>)
     | undefined
   let recordWorkGraphPullRequest:
     | ((context: WorkGraphContext, input: Readonly<{
         streamId: string
-        attemptId: string
+        runId: string
         idempotencyKey: string
         pullRequestId: string
         url: string
@@ -1068,21 +1068,21 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         publicRepository: boolean
       }>) => Promise<boolean>)
     | undefined
-  const localWorkGraphAttempts = new Map<
+  const localWorkGraphRuns = new Map<
     string,
     Readonly<{
-      identity: WorkGraphAttemptOperationRequest["identity"]
+      identity: WorkGraphRunOperationRequest["identity"]
       context: WorkGraphContext
     }>
   >()
-  const sameAttemptIdentity = (
-    left: WorkGraphAttemptOperationRequest["identity"],
-    right: WorkGraphAttemptOperationRequest["identity"],
+  const sameRunIdentity = (
+    left: WorkGraphRunOperationRequest["identity"],
+    right: WorkGraphRunOperationRequest["identity"],
   ) =>
-    left.attemptId === right.attemptId &&
+    left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.workspaceId === right.workspaceId &&
-    left.leaseEpoch === right.leaseEpoch
+    left.generation === right.generation
   configureOpenCodeAuth(options.opencodePassword)
   configureOpenCodeEmbedPath(options.opencodeEmbedPath)
   if (options.opencodeUrl) {
@@ -1103,14 +1103,14 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     opencodeCompat,
     piModelBackend: centralModelBackend().modelBackend,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    workgraphAttemptBroker: async (request, signal) => {
-      if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Attempt operation was cancelled")
-      const binding = localWorkGraphAttempts.get(request.identity.sessionId)
-      if (!binding || !sameAttemptIdentity(binding.identity, request.identity)) {
-        throw new Error("WorkGraph Attempt operation identity is not bound to this runtime")
+    workgraphRunBroker: async (request, signal) => {
+      if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Run operation was cancelled")
+      const binding = localWorkGraphRuns.get(request.identity.sessionId)
+      if (!binding || !sameRunIdentity(binding.identity, request.identity)) {
+        throw new Error("WorkGraph Run operation identity is not bound to this runtime")
       }
-      if (!executeWorkGraphAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
-      return executeWorkGraphAttempt(binding.context, request)
+      if (!executeWorkGraphRun) throw new Error("WorkGraph Run command broker is not ready")
+      return executeWorkGraphRun(binding.context, request)
     },
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title (opencode's own LLM rename, or an ACP harness's
@@ -1229,10 +1229,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     gateway.createHarnessWorkGraphGateway(opencodeRequest, {
       connections: built.connections,
       resolveTeamOwner: (context) => `org:${context.organizationId}`,
-      executeAttempt: async (context, request, signal) => {
+      executeRun: async (context, request, signal) => {
         if (signal.aborted) throw signal.reason
-        if (!executeWorkGraphAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
-        return executeWorkGraphAttempt(context, request)
+        if (!executeWorkGraphRun) throw new Error("WorkGraph Run command broker is not ready")
+        return executeWorkGraphRun(context, request)
       },
       recordPullRequest: async (context, input) => {
         if (!recordWorkGraphPullRequest) throw new Error("WorkGraph pull request receipt broker is not ready")
@@ -1243,20 +1243,20 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         return authorizeWorkGraphPullRequest(context, input)
       },
       pullRequestEffects: createSqlitePullRequestEffects(workgraphDatabase),
-      attemptContexts: {
+      runContexts: {
         bind: async (input) => {
-          const existing = localWorkGraphAttempts.get(input.identity.sessionId)
+          const existing = localWorkGraphRuns.get(input.identity.sessionId)
           if (
             existing &&
-            (!sameAttemptIdentity(existing.identity, input.identity) ||
+            (!sameRunIdentity(existing.identity, input.identity) ||
               existing.context.organizationId !== input.context.organizationId ||
               existing.context.ownerUserId !== input.context.ownerUserId)
           )
-            throw new Error("WorkGraph Session is already bound to another Attempt owner")
-          localWorkGraphAttempts.set(input.identity.sessionId, input)
+            throw new Error("WorkGraph Session is already bound to another Run owner")
+          localWorkGraphRuns.set(input.identity.sessionId, input)
         },
         release: async (sessionId) => {
-          localWorkGraphAttempts.delete(sessionId)
+          localWorkGraphRuns.delete(sessionId)
         },
       },
       bindings,
@@ -1372,14 +1372,14 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   void workgraph.then((embedded) => {
     // Master identity must resolve to the server-authored master session
     // binding — self-consistent strings alone are forgeable by any local
-    // caller of the attempt-tools route.
+    // caller of the run-tools route.
     const requireLocalMasterIdentity = async (
-      context: Parameters<NonNullable<typeof executeWorkGraphAttempt>>[0],
-      identity: Readonly<{ streamId?: string; sessionId: string; attemptId: string }>,
+      context: Parameters<NonNullable<typeof executeWorkGraphRun>>[0],
+      identity: Readonly<{ streamId?: string; sessionId: string; runId: string }>,
       label: string,
     ) => {
       const streamId = identity.streamId
-      if (!streamId || identity.sessionId !== masterSessionId(streamId) || identity.attemptId !== masterAttemptId(streamId)) {
+      if (!streamId || identity.sessionId !== masterSessionId(streamId) || identity.runId !== masterRunId(streamId)) {
         throw new Error(`${label} requires an exact master identity`)
       }
       const binding = await embedded.sessionBindings.readForSession(context, identity.sessionId)
@@ -1388,7 +1388,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       }
       return StreamIDSchema.parse(streamId)
     }
-    executeWorkGraphAttempt = async (context, request) => {
+    executeWorkGraphRun = async (context, request) => {
       if (request.operation.type === "update_stream_notes") {
         const streamId = await requireLocalMasterIdentity(context, request.identity, "Stream notes")
         const masterContext = { ...context, actor: { type: "agent" as const, id: request.identity.sessionId as never } }
@@ -1438,22 +1438,22 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
           request.operation.type === "record_checkpoint"
             ? {
                 version: 1,
-                type: "record_attempt_checkpoint",
-                attemptId: request.identity.attemptId,
+                type: "record_run_checkpoint",
+                runId: request.identity.runId,
                 sessionId: request.identity.sessionId,
                 workspaceId: request.identity.workspaceId,
-                ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+                generation: request.identity.generation,
                 level: request.operation.level,
                 summary: request.operation.summary,
                 evidenceIds: request.operation.evidenceIds,
               }
             : {
                 version: 1,
-                type: "complete_attempt",
-                attemptId: request.identity.attemptId,
+                type: "complete_run",
+                runId: request.identity.runId,
                 sessionId: request.identity.sessionId,
                 workspaceId: request.identity.workspaceId,
-                ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+                generation: request.identity.generation,
                 summary: request.operation.summary,
                 artifacts: request.operation.artifacts,
                 evidence: request.operation.evidence,
@@ -1553,7 +1553,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
             `
         SELECT organization_id, owner_user_id FROM wg_v2_streams
         UNION
-        SELECT organization_id, owner_user_id FROM wg_v2_attempts WHERE lifecycle = 'running' AND session_id IS NOT NULL
+        SELECT organization_id, owner_user_id FROM wg_v2_runs WHERE lifecycle = 'running' AND session_id IS NOT NULL
         UNION
         SELECT organization_id, owner_user_id FROM wg_v2_due_jobs WHERE job_type = 'source_plan' AND status IN ('pending', 'failed', 'running')
       `,
@@ -1572,7 +1572,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
             await embedded.sourcePlanning.runDue(context)
             // Doorbell safety net: nudge clients when this
             // owner's change log advanced by any path that does not run through
-            // `service.execute` (attempt settlement, source planning,
+            // `service.execute` (run settlement, source planning,
             // activity, intake). Tip-conditional, so an idle owner emits nothing.
             embedded.observeChanges(context)
           }),

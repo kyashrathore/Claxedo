@@ -1,12 +1,12 @@
-import type { AttemptID, WorkGraphContext, WorkItemID } from "@claxedo/workgraph/contracts"
+import type { RunID, WorkGraphContext, WorkItemID } from "@claxedo/workgraph/contracts"
 import type { ExecutionSessionID, WorkspaceExecutionPort } from "@claxedo/workgraph"
-import { recordSemanticAttemptResult, type AttemptResultStore } from "@claxedo/workgraph"
+import { recordSemanticRunResult, type RunResultStore } from "@claxedo/workgraph"
 
-export async function reconcileWorkGraphAttempt(
+export async function reconcileWorkGraphRun(
   context: WorkGraphContext,
-  input: Readonly<{ attemptId: AttemptID; workItemId: WorkItemID; sessionId: ExecutionSessionID; leaseEpoch: number }>,
+  input: Readonly<{ runId: RunID; workItemId: WorkItemID; sessionId: ExecutionSessionID; leaseEpoch: number }>,
   execution: WorkspaceExecutionPort,
-  store: AttemptResultStore,
+  store: RunResultStore,
 ) {
-  return recordSemanticAttemptResult(context, input, await execution.result(context, input), store)
+  return recordSemanticRunResult(context, input, await execution.result(context, input), store)
 }

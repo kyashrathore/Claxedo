@@ -5,7 +5,7 @@ description: Organize and execute the authenticated user's AI work through WorkG
 
 # WorkGraph
 
-WorkGraph is the user's personal organization for AI work. A Stream is a coherent line of work, an Outcome is a shippable result, a Work Item is executable work, and an Attempt is one immutable execution.
+WorkGraph is the user's personal organization for AI work. A Stream is a coherent line of work, an Outcome is a shippable result, a Work Item is executable work, and an Run is one immutable execution.
 
 Use the `workgraph_*` tools in the same vocabulary shown in the app:
 

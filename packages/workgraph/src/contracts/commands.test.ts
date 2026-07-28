@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest"
-import { CompleteAttemptCommandSchema, RecordAttemptCheckpointCommandSchema } from "./commands"
+import { CompleteRunCommandSchema, RecordRunCheckpointCommandSchema } from "./commands"
 
-describe("Attempt action commands", () => {
+describe("Run action commands", () => {
   it("parses a scoped checkpoint and defaults evidence references", () => {
-    expect(RecordAttemptCheckpointCommandSchema.parse({
+    expect(RecordRunCheckpointCommandSchema.parse({
       version: 1,
-      type: "record_attempt_checkpoint",
-      attemptId: "attempt_1",
+      type: "record_run_checkpoint",
+      runId: "run_1",
       sessionId: "session_1",
       workspaceId: "/workspace",
-      leaseEpoch: 3,
+      generation: 3,
       level: "progress",
       summary: "Validated the persistence boundary",
     })).toMatchObject({ evidenceIds: [] })
@@ -18,19 +18,19 @@ describe("Attempt action commands", () => {
   it("requires completion to carry semantic output and evidence", () => {
     const command = {
       version: 1,
-      type: "complete_attempt",
-      attemptId: "attempt_1",
+      type: "complete_run",
+      runId: "run_1",
       sessionId: "session_1",
       workspaceId: "/workspace",
-      leaseEpoch: 3,
+      generation: 3,
       summary: "Implemented and verified the change",
       evidence: [{
         requirementId: "tests",
         evidence: { kind: "test_result", summary: "Focused tests pass", passed: true },
       }],
     }
-    expect(CompleteAttemptCommandSchema.parse(command)).toMatchObject({ artifacts: [] })
-    expect(() => CompleteAttemptCommandSchema.parse({ ...command, evidence: [] })).toThrow()
-    expect(() => CompleteAttemptCommandSchema.parse({ ...command, streamId: "stream_1" })).toThrow()
+    expect(CompleteRunCommandSchema.parse(command)).toMatchObject({ artifacts: [] })
+    expect(() => CompleteRunCommandSchema.parse({ ...command, evidence: [] })).toThrow()
+    expect(() => CompleteRunCommandSchema.parse({ ...command, streamId: "stream_1" })).toThrow()
   })
 })

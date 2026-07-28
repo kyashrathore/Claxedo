@@ -1,6 +1,6 @@
 import {
   AdmissionProposalDtoSchema,
-  AttemptDetailDtoSchema,
+  RunDetailDtoSchema,
   IntakeCandidateDtoSchema,
   type AttentionItem,
   type CommandResult,
@@ -45,10 +45,10 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     proposal: vi.fn(),
     workItem: vi.fn(),
     stream: vi.fn(async () => ({ activityGranularity: "progress" }) as never),
-    latestAttempt: vi.fn(),
+    latestRun: vi.fn(),
     activity: vi.fn(async () => ({ entries: [], hasMore: false })),
     evidence: vi.fn(async () => []),
-    attempt: vi.fn(),
+    run: vi.fn(),
     decision: vi.fn(async () => decision),
     candidates: vi.fn(),
     defaults: vi.fn(),
@@ -60,7 +60,7 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     dismissAdmission: vi.fn(),
     stageIntakeCandidate: vi.fn(),
     dismissIntakeCandidate: vi.fn(),
-    cancelAttempt: vi.fn(),
+    cancelRun: vi.fn(),
     retryWorkItem: vi.fn(),
     approveWorkItem: vi.fn(),
     rejectWorkItem: vi.fn(),
@@ -110,7 +110,7 @@ const masterEscalationItem = {
   kind: "master_escalation",
   streamId: "stream_1",
   sessionId: "ses_master_stream_1",
-  reason: "Landing conflict remained after three attempts",
+  reason: "Landing conflict remained after three runs",
   evidenceIds: [],
   receiptRefs: ["diff:ours", "diff:theirs"],
 } as AttentionItem
@@ -136,14 +136,15 @@ const failedWorkItem = WorkItemDtoSchema.parse({
   evidenceIds: [],
   executionDefaults: {},
 })
-const failedAttempt = AttemptDetailDtoSchema.parse({
-  attempt: {
-    recordType: "attempt",
+const failedRun = RunDetailDtoSchema.parse({
+  run: {
+    recordType: "run",
     ...owner,
-    id: "attempt_failed",
+    id: "run_failed",
     streamId: "stream_1",
     workItemId: failedWorkItem.id,
-    attemptNumber: 1,
+    runNumber: 1,
+    generation: 1,
     state: "failed",
     resolvedExecution: {
       environment: { kind: "local_worktree" },
@@ -158,7 +159,7 @@ const failedAttempt = AttemptDetailDtoSchema.parse({
     admittedAt: 1,
     startedAt: 2,
     finishedAt: 3,
-    attentionReason: "thread not found: thread_missing",
+    parkedReason: "thread not found: thread_missing",
     sourceRevisionRefs: [],
   },
   executionReferences: { sessionId: "session_failed", workspaceId: "workspace_failed" },
@@ -253,7 +254,7 @@ describe("WaitingItemDialog — failed task", () => {
     const onClose = vi.fn()
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
     })
     render(() => (
       <WaitingItemDialog
@@ -270,8 +271,8 @@ describe("WaitingItemDialog — failed task", () => {
     expect(onOpenSession).toHaveBeenCalledWith({
       sessionId: "session_failed",
       workspaceId: "workspace_failed",
-      harness: failedAttempt.attempt.resolvedExecution.harness,
-      environment: failedAttempt.attempt.resolvedExecution.environment,
+      harness: failedRun.run.resolvedExecution.harness,
+      environment: failedRun.run.resolvedExecution.environment,
     })
     expect(onClose).toHaveBeenCalledOnce()
   })
@@ -279,7 +280,7 @@ describe("WaitingItemDialog — failed task", () => {
   test("uses a constrained dialog whose body owns vertical scrolling", async () => {
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
     })
     render(() => <WaitingItemDialog selection={failedWorkItemAttention} source={source} onClose={() => {}} onResolved={() => {}} />)
 
@@ -294,7 +295,7 @@ describe("WaitingItemDialog — failed task", () => {
     const onClose = vi.fn()
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
       retryWorkItem,
     })
     render(() => <WaitingItemDialog selection={failedWorkItemAttention} source={source} onClose={onClose} onResolved={onResolved} />)
@@ -323,7 +324,7 @@ describe("WaitingItemDialog — master escalation", () => {
       />
     ))
 
-    expect(await screen.findByText("Landing conflict remained after three attempts")).toBeInTheDocument()
+    expect(await screen.findByText("Landing conflict remained after three runs")).toBeInTheDocument()
     expect(screen.getByText("diff:ours")).toBeInTheDocument()
     await fireEvent.click(screen.getByRole("button", { name: "Open in project" }))
     expect(onOpenSession).toHaveBeenCalledWith({ sessionId: "ses_master_stream_1" })
@@ -362,7 +363,7 @@ describe("TaskDialog — execution and activity", () => {
     let resolve: (value: WorkItemDto) => void = () => {}
     const source = baseSource({
       workItem: vi.fn(() => new Promise<WorkItemDto>((r) => (resolve = r))),
-      latestAttempt: vi.fn(async () => undefined),
+      latestRun: vi.fn(async () => undefined),
     })
     render(() => <TaskDialog item={failedWorkItem} source={source} onClose={() => {}} onResolved={() => {}} />)
     expect(await screen.findByRole("status", { name: "Loading task" })).toBeInTheDocument()
@@ -375,7 +376,7 @@ describe("TaskDialog — execution and activity", () => {
     const item = { ...failedWorkItem, state: "pending" as const }
     const source = baseSource({
       workItem: vi.fn(async () => item),
-      latestAttempt: vi.fn(async () => undefined),
+      latestRun: vi.fn(async () => undefined),
     })
 
     render(() => <TaskDialog item={item} source={source} streamItems={[item]} onClose={() => {}} onResolved={() => {}} />)
@@ -392,12 +393,12 @@ describe("TaskDialog — execution and activity", () => {
     const item = { ...failedWorkItem, state: "pending_approval" as const }
     const source = baseSource({
       workItem: vi.fn(async () => item),
-      latestAttempt: vi.fn(async () => undefined),
+      latestRun: vi.fn(async () => undefined),
       approveWorkItem,
     })
 
     render(() => <TaskDialog item={item} source={source} onClose={onClose} onResolved={onResolved} />)
-    expect(await screen.findByText("No attempt has run yet.")).toBeInTheDocument()
+    expect(await screen.findByText("No run has run yet.")).toBeInTheDocument()
     const approve = screen.getByRole("button", { name: "Approve" })
     expect(approve.closest(".workgraph-item-dialog-footer")).not.toBeNull()
     await fireEvent.click(approve)
@@ -413,12 +414,12 @@ describe("TaskDialog — execution and activity", () => {
     const item = { ...failedWorkItem, state: "pending_approval" as const }
     const source = baseSource({
       workItem: vi.fn(async () => item),
-      latestAttempt: vi.fn(async () => undefined),
+      latestRun: vi.fn(async () => undefined),
       rejectWorkItem,
     })
 
     render(() => <TaskDialog item={item} source={source} onClose={() => {}} onResolved={onResolved} />)
-    await screen.findByText("No attempt has run yet.")
+    await screen.findByText("No run has run yet.")
     await fireEvent.click(screen.getByRole("button", { name: "Reject" }))
     const reason = screen.getByRole("textbox", { name: "Reason to reject" })
     await fireEvent.input(reason, { target: { value: "No longer needed" } })
@@ -432,7 +433,7 @@ describe("TaskDialog — execution and activity", () => {
     const item = { ...failedWorkItem, dependencyIds: ["dep_1", "dep_2"] }
     const source = baseSource({
       workItem: vi.fn(async () => item),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
       evidence: vi.fn(async () => []),
     })
 
@@ -449,7 +450,7 @@ describe("TaskDialog — execution and activity", () => {
     const item = { ...failedWorkItem, state: "result_ready" as const }
     const source = baseSource({
       workItem: vi.fn(async () => item),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
       evidence: vi.fn(async () => [{ requirementId: "requirement_1" }] as never),
     })
 
@@ -471,7 +472,7 @@ describe("TaskDialog — execution and activity", () => {
         })
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
       activity: activity as never,
     })
 
@@ -487,7 +488,7 @@ describe("TaskDialog — execution and activity", () => {
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
       stream: vi.fn(async () => ({ activityGranularity: "detailed" }) as never),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
       activity,
     })
 
@@ -501,12 +502,12 @@ describe("TaskDialog — execution and activity", () => {
     const onOpenSession = vi.fn(async () => {})
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
     })
 
     render(() => <TaskDialog item={failedWorkItem} source={source} onClose={onClose} onResolved={() => {}} onOpenSession={onOpenSession} />)
-    await fireEvent.click(await screen.findByRole("button", { name: `Open session ${failedAttempt.executionReferences.sessionId}` }))
-    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedAttempt.executionReferences.sessionId }))
+    await fireEvent.click(await screen.findByRole("button", { name: `Open session ${failedRun.executionReferences.sessionId}` }))
+    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedRun.executionReferences.sessionId }))
     expect(onClose).toHaveBeenCalledOnce()
   })
 
@@ -514,16 +515,16 @@ describe("TaskDialog — execution and activity", () => {
     const onOpenSession = vi.fn(async () => {})
     const source = baseSource({
       workItem: vi.fn(async () => failedWorkItem),
-      latestAttempt: vi.fn(async () => failedAttempt),
+      latestRun: vi.fn(async () => failedRun),
     })
     render(() => (
       <TaskDialog
         item={failedWorkItem}
         source={source}
-        streamAttempts={[{
-          ...failedAttempt.attempt,
+        streamRuns={[{
+          ...failedRun.run,
           result: { summary: "Deployment diff", artifactRefs: ["diff:deployment"], finishedAt: 3 },
-          executionReferences: failedAttempt.executionReferences,
+          executionReferences: failedRun.executionReferences,
         }]}
         masterStatus={{
           state: "hibernating",
@@ -543,7 +544,7 @@ describe("TaskDialog — execution and activity", () => {
     expect(screen.getByRole("link", { name: "Open master receipt https://github.test/pull/42" }))
       .toHaveAttribute("href", "https://github.test/pull/42")
     await fireEvent.click(screen.getByRole("button", { name: "Open master receipt diff:deployment" }))
-    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedAttempt.executionReferences.sessionId }))
+    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedRun.executionReferences.sessionId }))
   })
 })
 

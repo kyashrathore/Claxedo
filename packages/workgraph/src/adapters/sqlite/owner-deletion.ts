@@ -31,7 +31,7 @@ const ownerTablesInDeletionOrder = [
   "wg_v2_leases",
   "wg_v2_agent_checkpoints",
   "wg_v2_session_bindings",
-  "wg_v2_attempts",
+  "wg_v2_runs",
   "wg_v2_decisions",
   "wg_v2_work_items",
   "wg_v2_outcomes",
@@ -271,18 +271,18 @@ function readCleanupTargets(database: RawDatabase, context: WorkGraphContext): r
     const envelope = JSON.parse(row.envelope_identity_json) as { id?: unknown }
     if (typeof envelope.id !== "string" || envelope.id.length === 0) throw new WorkGraphOwnerDeletionError("storage_failed")
     const childIsolationIds = (database.prepare(`
-      SELECT DISTINCT child_workspace_id FROM wg_v2_attempts
+      SELECT DISTINCT child_workspace_id FROM wg_v2_runs
       WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND child_workspace_id IS NOT NULL
       ORDER BY child_workspace_id
     `).all(context.organizationId, context.ownerUserId, row.id) as Array<{ child_workspace_id: ChildIsolationID }>)
-      .map((attempt) => attempt.child_workspace_id)
+      .map((run) => run.child_workspace_id)
     return { streamId: row.id, envelopeId: envelope.id as StreamEnvelopeID, childIsolationIds }
   })
 }
 
 function isQuiescent(database: RawDatabase, context: WorkGraphContext) {
   const checks = [
-    "SELECT 1 FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running', 'attention') LIMIT 1",
+    "SELECT 1 FROM wg_v2_runs WHERE organization_id = ? AND owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running', 'parked') LIMIT 1",
     "SELECT 1 FROM wg_v2_leases WHERE organization_id = ? AND owner_user_id = ? LIMIT 1",
     "SELECT 1 FROM wg_v2_runtime_effects WHERE organization_id = ? AND owner_user_id = ? AND state != 'completed' LIMIT 1",
     "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE organization_id = ? AND owner_user_id = ? AND state = 'reserved' LIMIT 1",

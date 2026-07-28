@@ -25,8 +25,8 @@ export async function enqueueIndependentSessionIntake(
   },
 ) {
   if (await workGraphOwnerDeletionBarrier(ctx, input.organizationId, input.ownerUserId)) return "blocked" as const
-  const attempt = await ctx.db
-    .query("workgraph_attempts")
+  const run = await ctx.db
+    .query("workgraph_runs")
     .withIndex("by_tenant", (query: any) =>
       query.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId),
     )
@@ -37,7 +37,7 @@ export async function enqueueIndependentSessionIntake(
       ),
     )
     .first()
-  if (attempt) return "ignored" as const
+  if (run) return "ignored" as const
   const existing = await ctx.db
     .query("workgraph_due_jobs")
     .withIndex("by_tenant_subject", (query: any) =>

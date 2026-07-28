@@ -10,11 +10,11 @@ import {
   EvidencePageSchema,
   EvidenceSubjectSchema,
   AdmissionProposalDtoSchema,
-  AttemptDetailDtoSchema,
+  RunDetailDtoSchema,
   DecisionDtoSchema,
   ReplacementReviewSchema,
-  WorkItemAttemptPageCursorSchema,
-  WorkItemAttemptPageSchema,
+  WorkItemRunPageCursorSchema,
+  WorkItemRunPageSchema,
   TaskActivityPageCursorSchema,
   TaskActivityPageSchema,
   StreamActivityGranularitySchema,
@@ -38,7 +38,7 @@ import {
   type AttentionCursor,
   type CommandResult,
   type EvidencePageCursor,
-  type WorkItemAttemptPageCursor,
+  type WorkItemRunPageCursor,
   type TaskActivityPageCursor,
   type StreamActivityGranularity,
   type StreamDto,
@@ -217,13 +217,13 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       read(`/proposals/${encodeURIComponent(proposalId)}`, (value) => AdmissionProposalDtoSchema.parse(value)),
     workItem: (workItemId: string) =>
       read(`/work-items/${encodeURIComponent(workItemId)}`, (value) => WorkItemDtoSchema.parse(value)),
-    workItemAttempts: (
+    workItemRuns: (
       workItemId: string,
-      options: Readonly<{ after?: WorkItemAttemptPageCursor; limit?: number }> = {},
+      options: Readonly<{ after?: WorkItemRunPageCursor; limit?: number }> = {},
     ) => {
       const query = new URLSearchParams({ limit: String(options.limit ?? 50) })
-      if (options.after) query.set("after", WorkItemAttemptPageCursorSchema.parse(options.after))
-      return read(`/work-items/${encodeURIComponent(workItemId)}/attempts?${query}`, (value) => WorkItemAttemptPageSchema.parse(value))
+      if (options.after) query.set("after", WorkItemRunPageCursorSchema.parse(options.after))
+      return read(`/work-items/${encodeURIComponent(workItemId)}/runs?${query}`, (value) => WorkItemRunPageSchema.parse(value))
     },
     workItemActivity: (
       workItemId: string,
@@ -240,10 +240,10 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       if (options.after) query.set("after", TaskActivityPageCursorSchema.parse(options.after))
       return read(`/work-items/${encodeURIComponent(workItemId)}/activity?${query}`, (value) => TaskActivityPageSchema.parse(value))
     },
-    attempt: (attemptId: string) =>
+    run: (runId: string) =>
       read(
-        `/attempts/${encodeURIComponent(attemptId)}`,
-        (value) => AttemptDetailDtoSchema.parse(value),
+        `/runs/${encodeURIComponent(runId)}`,
+        (value) => RunDetailDtoSchema.parse(value),
         bypassFetchThrottle({}),
       ),
     decision: (decisionId: string) =>
@@ -398,10 +398,10 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       type: "approve_work_items",
       approvals: approvals.map((approval) => ({ workItemId: approval.workItemId, expectedVersion: approval.expectedVersion })),
     }),
-    cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => execute({
+    cancelRun: (runId: string, expectedVersion: number, reason: string) => execute({
       version: 1,
-      type: "cancel_attempt",
-      attemptId,
+      type: "cancel_run",
+      runId,
       expectedVersion,
       reason,
     }),
@@ -444,7 +444,7 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       type: "propose_decision",
       ...decision,
     }),
-    recordEvidence: (evidence: { subject: z.input<typeof EvidenceSubjectSchema>; requirementId?: string; sourceAttemptId?: string; evidence: z.input<typeof EvidenceInputSchema> }) => execute({
+    recordEvidence: (evidence: { subject: z.input<typeof EvidenceSubjectSchema>; requirementId?: string; sourceRunId?: string; evidence: z.input<typeof EvidenceInputSchema> }) => execute({
       version: 1,
       type: "record_evidence",
       ...evidence,

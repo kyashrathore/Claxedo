@@ -20,7 +20,7 @@ import {
 } from "./hosted-connection-operation"
 
 describe("hosted Connection operation endpoint", () => {
-  it("resolves the personal Attempt binding by the verified organization and user", async () => {
+  it("resolves the personal Run binding by the verified organization and user", async () => {
     const queries: Record<string, unknown>[] = []
     const execute = createHostedConnectionOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
@@ -38,7 +38,7 @@ describe("hosted Connection operation endpoint", () => {
       service_token: "service-secret",
       orgId: "org-acme",
       ownerUserId: "alice",
-      attemptId: "attempt",
+      runId: "run",
       workspaceId: "workspace",
       connectionId: "connection",
     })])
@@ -51,7 +51,7 @@ describe("hosted Connection operation endpoint", () => {
       executor: {
         query: async () => ({
           context: { ownerUserId: "alice", ownerPartition: "org:org-acme" },
-          attemptId: "master_stream_1",
+          runId: "master_stream_1",
           sessionId: "ses_master_stream_1",
           workspaceId: "workspace",
           connectionIds: ["connection"],
@@ -78,7 +78,7 @@ describe("hosted Connection operation endpoint", () => {
     await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, {
       version: 1,
       identity: {
-        attemptId: "master_stream_1",
+        runId: "master_stream_1",
         sessionId: "ses_master_stream_1",
         workspaceId: "workspace",
         connectionId: "connection" as never,
@@ -98,7 +98,7 @@ describe("hosted Connection operation endpoint", () => {
       ownerUserId: "alice",
       orgId: "org-acme",
       streamId: "stream_1",
-      attemptId: "master_stream_1",
+      runId: "master_stream_1",
       repository: "claxedo/app",
       draft: false,
       publicRepository: true,
@@ -112,7 +112,7 @@ describe("hosted Connection operation endpoint", () => {
       executor: {
         query: async () => ({
           context: { ownerUserId: "alice", ownerPartition: "org:org-acme" },
-          attemptId: "master_stream_1",
+          runId: "master_stream_1",
           sessionId: "ses_master_stream_1",
           workspaceId: "workspace",
           connectionIds: ["connection"],
@@ -148,7 +148,7 @@ describe("hosted Connection operation endpoint", () => {
     await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, {
       version: 1,
       identity: {
-        attemptId: "master_stream_1",
+        runId: "master_stream_1",
         sessionId: "ses_master_stream_1",
         workspaceId: "workspace",
         connectionId: "connection" as never,
@@ -339,7 +339,7 @@ function request(token: string | undefined, workspaceId: string) {
 function requestBody(workspaceId: string) {
   return {
     version: 1 as const,
-    identity: { attemptId: "attempt", sessionId: "session", workspaceId, connectionId: "connection" },
+    identity: { runId: "run", sessionId: "session", workspaceId, connectionId: "connection" },
     operation: { type: "comment" as const, externalId: "42", body: "Done", idempotencyKey: "once" },
   }
 }

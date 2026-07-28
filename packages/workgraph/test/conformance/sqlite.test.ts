@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { createSqliteWorkGraphArchivePort } from "../../src"
-import { createSqliteAttemptRuntime, createSqliteWorkGraphService } from "../../src/adapters/sqlite/store"
+import { createSqliteRunRuntime, createSqliteWorkGraphService } from "../../src/adapters/sqlite/store"
 import { createChangeCursor } from "../../src/contracts"
 import type { CompletionContract, CompletionRequirementID, OperationID, StreamID, WorkGraphContext } from "../../src/contracts"
 import type { WorkspaceExecutionPort } from "../../src/ports"
@@ -27,26 +27,26 @@ workGraphStoreContract("SQLite", async (input) => {
   return {
     ...adapter,
     // A user-created Work Item in an active Stream is auto-admitted by the drain
-    // that runs after every command; `admit` returns that already-admitted Attempt.
+    // that runs after every command; `admit` returns that already-admitted Run.
     admit: async (owner, { workItemId }) => {
       const operationId = branded<OperationID>(input.ids.next("admit"))
       const row = database
         .prepare(
-          `SELECT id, lease_epoch FROM wg_v2_attempts
+          `SELECT id, generation FROM wg_v2_runs
            WHERE organization_id = ? AND owner_user_id = ? AND work_item_id = ?
-           ORDER BY attempt_number DESC LIMIT 1`,
+           ORDER BY run_number DESC LIMIT 1`,
         )
-        .get(owner.organizationId, owner.ownerUserId, workItemId) as { id: string; lease_epoch: number } | undefined
+        .get(owner.organizationId, owner.ownerUserId, workItemId) as { id: string; generation: number } | undefined
       if (!row)
-        return { ok: false, operationId, error: { code: "blocked", message: "No admitted Attempt", retryable: false } }
+        return { ok: false, operationId, error: { code: "blocked", message: "No admitted Run", retryable: false } }
       const cursor = createChangeCursor({
         organizationId: owner.organizationId,
         ownerUserId: owner.ownerUserId,
         position: 1,
       })
-      return { ok: true, operationId, cursor, value: { attemptId: row.id, leaseEpoch: row.lease_epoch } }
+      return { ok: true, operationId, cursor, value: { runId: row.id, leaseEpoch: row.generation } }
     },
-    restart: async () => ({ attemptRuntime: createSqliteAttemptRuntime(database, input.clock) }),
+    restart: async () => ({ runRuntime: createSqliteRunRuntime(database, input.clock) }),
   }
 })
 
@@ -141,7 +141,7 @@ const execution: WorkspaceExecutionPort = {
     repository: input.repository,
     workspaceId: "/tmp/workgraph-conformance",
   }),
-  launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-conformance" }),
+  launch: async (_context, input) => ({ sessionId: `session_${input.runId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-conformance" }),
   cancel: async () => undefined,
   result: async () => ({ state: "running" }),
   cleanup: async () => undefined,

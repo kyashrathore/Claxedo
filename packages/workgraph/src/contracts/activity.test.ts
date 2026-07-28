@@ -34,7 +34,7 @@ describe("bounded Task activity contracts", () => {
       .toThrow(expect.objectContaining<Partial<TaskActivityPageCursorError>>({ reason: "granularity_mismatch" }))
   })
 
-  it("represents attached Session bindings without permitting an Attempt outside a Task", () => {
+  it("represents attached Session bindings without permitting an Run outside a Task", () => {
     const active = {
       recordType: "session_binding" as const,
       schemaVersion: 1 as const,
@@ -45,7 +45,7 @@ describe("bounded Task activity contracts", () => {
       sessionId: "session",
       projectId: "project",
       currentWorkItemId: branded("task"),
-      currentAttemptId: branded("attempt"),
+      currentRunId: branded("run"),
       state: "active" as const,
       boundAt: 1,
       createdAt: 1,
@@ -56,7 +56,7 @@ describe("bounded Task activity contracts", () => {
     expect(() => SessionBindingDtoSchema.parse({
       ...active,
       currentWorkItemId: undefined,
-    })).toThrow("A bound Attempt requires a current Work Item")
+    })).toThrow("A bound Run requires a current Work Item")
     expect(() => SessionBindingDtoSchema.parse({
       ...active,
       state: "released",
@@ -72,7 +72,7 @@ describe("bounded Task activity contracts", () => {
       version: 1,
       streamId: branded("stream"),
       workItemId: branded("task"),
-      attemptId: branded("attempt"),
+      runId: branded("run"),
       sessionBindingId: branded("binding"),
       level: "progress" as const,
       summary: "Validated the storage boundary",
@@ -93,15 +93,15 @@ describe("bounded Task activity contracts", () => {
 
   it("normalizes canonical facts without carrying messages, commands, or reasoning", () => {
     const entry = {
-      id: "attempt:attempt:running",
+      id: "run:run:running",
       streamId: branded("stream"),
       workItemId: branded("task"),
-      category: "attempt" as const,
+      category: "run" as const,
       importance: "progress" as const,
       summary: "Execution started",
       occurredAt: 3,
       actor: { type: "system" as const, id: branded("runtime") },
-      source: { type: "attempt" as const, id: branded("attempt") },
+      source: { type: "run" as const, id: branded("run") },
     }
     expect(TaskActivityEntrySchema.parse(entry)).toMatchObject(entry)
     expect(() => TaskActivityEntrySchema.parse({ ...entry, shellCommand: "git status" })).toThrow()

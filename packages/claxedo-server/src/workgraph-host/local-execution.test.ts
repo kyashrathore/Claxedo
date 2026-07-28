@@ -13,7 +13,7 @@ afterEach(async () =>
 )
 
 describe("local WorkGraph workspace execution", () => {
-  it("fails closed before Session admission when an Attempt requires Connections", async () => {
+  it("fails closed before Session admission when an Run requires Connections", async () => {
     let admitted = false
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: "/tmp/workgraph-connections",
@@ -33,7 +33,7 @@ describe("local WorkGraph workspace execution", () => {
         streamId: "stream_1" as never,
         workItemId: "item_1" as never,
         title: "Use connected code host",
-        attemptId: "attempt_1" as never,
+        runId: "run_1" as never,
         leaseEpoch: 1,
         envelopeId: "envelope_1" as never,
         workspaceId: "/tmp/workspace",
@@ -91,7 +91,7 @@ describe("local WorkGraph workspace execution", () => {
       streamId,
       workItemId: "item_1" as never,
       title: "Implement the feature",
-      attemptId: "attempt_1" as never,
+      runId: "run_1" as never,
       leaseEpoch: 1,
       envelopeId: envelope.id,
       workspaceId: envelope.workspaceId,
@@ -235,7 +235,7 @@ describe("local WorkGraph workspace execution", () => {
       streamId: "stream_1" as StreamID,
       workItemId: "item_1" as never,
       title: "Implement the feature",
-      attemptId: "attempt_1" as never,
+      runId: "run_1" as never,
       leaseEpoch: 1,
       envelopeId: envelope.id,
       workspaceId: envelope.workspaceId,
@@ -297,11 +297,11 @@ describe("local WorkGraph workspace execution", () => {
       encoded("owner"),
       encoded(streamId),
       "children",
-      encoded("attempt_1"),
+      encoded("run_1"),
     )
     await fs.mkdir(path.dirname(legacyChild), { recursive: true })
     await run("git", ["-C", envelope.workspaceId, "worktree", "add", "--detach", legacyChild, "HEAD"])
-    const legacyChildId = `child_${encoded("org-a")}.${encoded("owner")}.${encoded("attempt_1")}` as never
+    const legacyChildId = `child_${encoded("org-a")}.${encoded("owner")}.${encoded("run_1")}` as never
     await execution.cleanup(owner(), {
       streamId,
       envelopeId: envelope.id,
@@ -323,7 +323,7 @@ describe("local WorkGraph workspace execution", () => {
     await expect(execution.cleanup(owner(), { streamId, envelopeId: envelope.id, reason: "delete" })).rejects.toThrow()
   })
 
-  it("launches every Attempt in the Stream workspace and leaves worktree strategy to the agent", async () => {
+  it("launches every Run in the Stream workspace and leaves worktree strategy to the agent", async () => {
     const root = await repositoryFixture("workgraph-local-stream-workspace")
     const worktrees = `${root}/worktrees`
     const directories: string[] = []
@@ -331,7 +331,7 @@ describe("local WorkGraph workspace execution", () => {
       worktreeRoot: worktrees,
       repositoryDirectory: async () => `${root}/repository`,
       sessions: {
-        admit: async (input) => { directories.push(input.directory); return `session_${input.attemptId}` },
+        admit: async (input) => { directories.push(input.directory); return `session_${input.runId}` },
         cancel: async () => undefined,
         result: async () => ({ state: "running" }),
       },
@@ -342,11 +342,11 @@ describe("local WorkGraph workspace execution", () => {
       environment: { kind: "local_worktree" },
       repository: { baseRevision: "HEAD" },
     })
-    await Promise.all(["attempt_1", "attempt_2"].map((attemptId) => execution.launch(owner(), {
+    await Promise.all(["run_1", "run_2"].map((runId) => execution.launch(owner(), {
       streamId,
-      workItemId: `item_${attemptId}` as never,
-      title: `Work ${attemptId}`,
-      attemptId: attemptId as never,
+      workItemId: `item_${runId}` as never,
+      title: `Work ${runId}`,
+      runId: runId as never,
       leaseEpoch: 1,
       envelopeId: envelope.id,
       workspaceId: envelope.workspaceId,
@@ -406,7 +406,7 @@ function adapter(root: string, worktreeRoot: string, releaseDirectory?: (directo
     worktreeRoot,
     repositoryDirectory: async () => `${root}/repository`,
     sessions: {
-      admit: async (input) => `session_${input.attemptId}`,
+      admit: async (input) => `session_${input.runId}`,
       cancel: async () => undefined,
       result: async () => ({ state: "running" }),
       ...(releaseDirectory ? { releaseDirectory } : {}),

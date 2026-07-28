@@ -492,10 +492,10 @@ describe("SQLite canonical WorkGraph archive", () => {
         '{"version":1,"mode":"all","requirements":[{"id":"proof","kind":"test","description":"Pass"}]}', 1, 1)
     `).run(streamId)
     source.prepare(`
-      INSERT INTO wg_v2_attempts
-        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+      INSERT INTO wg_v2_runs
+        (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle,
          resolved_execution_profile_json, created_at, updated_at)
-      VALUES ('organization', 'owner', 'attempt_live', ?, 'item_live', 1, 'running', '{}', 1, 1)
+      VALUES ('organization', 'owner', 'run_live', ?, 'item_live', 1, 'running', '{}', 1, 1)
     `).run(streamId)
 
     await expect(createSqliteWorkGraphArchivePort(source).export(owner()))
@@ -588,7 +588,7 @@ describe("SQLite canonical WorkGraph archive", () => {
       "stream",
       "outcome",
       "work_item",
-      "attempt",
+      "run",
       "decision",
       "decision_work_item",
       "evidence",
@@ -601,11 +601,11 @@ describe("SQLite canonical WorkGraph archive", () => {
       "completed_external_effect",
       "terminal_scheduled_job",
     ]))
-    expect(archive.records.find((record) => record.kind === "attempt")?.value).toMatchObject({
+    expect(archive.records.find((record) => record.kind === "run")?.value).toMatchObject({
       executionIdentity: {
         envelopeId: "envelope_1",
         childIsolationId: "child_1",
-        sessionId: "session_attempt_1",
+        sessionId: "session_run_1",
       },
     })
     expect(archive.records.find((record) => record.kind === "decision")?.value).toMatchObject({
@@ -741,13 +741,13 @@ function seedComprehensiveArchive(database: BetterSqlite3.Database) {
       '{"version":1,"mode":"all","requirements":[{"id":"proof","kind":"integration","description":"Merged"}]}',
       NULL, 3, 10);
 
-    INSERT INTO wg_v2_attempts
-      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+    INSERT INTO wg_v2_runs
+      (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle,
        resolved_execution_profile_json, envelope_id, child_workspace_id, session_id,
        terminal_result_json, row_version, created_at, updated_at, started_at, finished_at)
-    VALUES ('organization', 'owner', 'attempt_1', 'stream_1', 'work_item_1', 1, 'result',
+    VALUES ('organization', 'owner', 'run_1', 'stream_1', 'work_item_1', 1, 'result',
       '{"environment":{"kind":"local_worktree"},"harness":"opencode","agent":"build","model":{"providerId":"openai","modelId":"gpt-5"},"effort":"high","tools":[],"connectionIds":[],"isolation":"child","cleanup":"retain","integration":"pull_request"}',
-      'envelope_1', 'child_1', 'session_attempt_1',
+      'envelope_1', 'child_1', 'session_run_1',
       '{"summary":"Implemented","artifactRefs":["pr:1"],"finishedAt":8}', 2, 4, 8, 5, 8);
 
     INSERT INTO wg_v2_decisions
@@ -779,16 +779,16 @@ function seedComprehensiveArchive(database: BetterSqlite3.Database) {
       '{"ok":true,"operationId":"operation_1","cursor":"0","value":{"claimed":true}}', 5);
 
     INSERT INTO wg_v2_durable_effect_receipts
-      (organization_id, owner_user_id, id, stream_id, attempt_id, effect_kind, idempotency_key,
+      (organization_id, owner_user_id, id, stream_id, run_id, effect_kind, idempotency_key,
        external_reference_json, provenance_json, created_at)
-    VALUES ('organization', 'owner', 'receipt_1', 'stream_1', 'attempt_1', 'merged', 'operation_1:integration',
+    VALUES ('organization', 'owner', 'receipt_1', 'stream_1', 'run_1', 'merged', 'operation_1:integration',
       '{"reference":"https://example.com/pr/1"}',
       '{"actor":{"type":"agent","id":"agent_1"},"operationId":"operation_1"}', 8);
 
     INSERT INTO wg_v2_evidence
-      (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id, source_attempt_id,
+      (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id, source_run_id,
        evidence_kind, summary, reference_json, provenance_json, created_at)
-    VALUES ('organization', 'owner', 'evidence_1', 'stream_1', 'work_item', 'work_item_1', 'proof', 'attempt_1',
+    VALUES ('organization', 'owner', 'evidence_1', 'stream_1', 'work_item', 'work_item_1', 'proof', 'run_1',
       'integration', 'Merged PR',
       '{"kind":"integration","summary":"Merged PR","effect":"merged","reference":"https://example.com/pr/1"}',
       '{"actor":{"type":"agent","id":"agent_1"},"operationId":"operation_1","requestId":"request_1"}', 8);
@@ -807,8 +807,8 @@ function seedComprehensiveArchive(database: BetterSqlite3.Database) {
     INSERT INTO wg_v2_runtime_effects
       (organization_id, owner_user_id, id, effect_kind, resource_type, resource_id, idempotency_key,
        payload_json, state, attempt_count, created_at, updated_at, completed_at)
-    VALUES ('organization', 'owner', 'runtime_effect_1', 'integration', 'attempt', 'attempt_1', 'runtime_effect_key',
-      '{"attemptId":"attempt_1"}', 'completed', 1, 7, 8, 8);
+    VALUES ('organization', 'owner', 'runtime_effect_1', 'integration', 'run', 'run_1', 'runtime_effect_key',
+      '{"runId":"run_1"}', 'completed', 1, 7, 8, 8);
 
     INSERT INTO wg_v2_migration_intake
       (organization_id, owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason,

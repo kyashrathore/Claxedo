@@ -251,7 +251,7 @@ describe("SQLite WorkGraph owner deletion conformance", () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId))
+    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs WHERE work_item_id = ?").get(workItemId))
       .toEqual({ count: 0 })
     expect(launches).toBe(0)
     releaseCleanup()
@@ -310,15 +310,15 @@ function seedWorkspace(
   database.prepare("UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE owner_user_id = ? AND id = ?")
     .run(JSON.stringify({ id: envelopeId, workspaceId: `/tmp/${envelopeId}` }), context.ownerUserId, streamId)
   database.prepare(`
-    INSERT INTO wg_v2_attempts
-      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json,
+    INSERT INTO wg_v2_runs
+      (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle, resolved_execution_profile_json,
        envelope_id, child_workspace_id, terminal_result_json, created_at, updated_at, finished_at)
     VALUES (?, ?, ?, ?, ?, 1, 'result', '{}', ?, ?, '{"summary":"done","artifacts":[]}', 10, 11, 11)
-  `).run(context.organizationId, context.ownerUserId, `attempt_${workItemId}`, streamId, workItemId, envelopeId, childIsolationId)
+  `).run(context.organizationId, context.ownerUserId, `run_${workItemId}`, streamId, workItemId, envelopeId, childIsolationId)
   database.prepare(`
     INSERT INTO wg_v2_session_bindings
       (organization_id, owner_user_id, id, stream_id, session_id, project_id, current_work_item_id,
-       current_attempt_id, state, bound_at, provenance_json, created_at, updated_at)
+       current_run_id, state, bound_at, provenance_json, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 10, '{}', 10, 10)
   `).run(
     context.organizationId,
@@ -328,11 +328,11 @@ function seedWorkspace(
     `session_${workItemId}`,
     `project_${workItemId}`,
     workItemId,
-    `attempt_${workItemId}`,
+    `run_${workItemId}`,
   )
   database.prepare(`
     INSERT INTO wg_v2_agent_checkpoints
-      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_id, session_binding_id,
+      (organization_id, owner_user_id, id, stream_id, work_item_id, run_id, session_binding_id,
        level, summary, evidence_ids_json, occurred_at, provenance_json, operation_id, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'progress', 'Owner deletion checkpoint', '[]', 10, '{}', ?, 10, 10)
   `).run(
@@ -341,7 +341,7 @@ function seedWorkspace(
     `checkpoint_${workItemId}`,
     streamId,
     workItemId,
-    `attempt_${workItemId}`,
+    `run_${workItemId}`,
     `binding_${workItemId}`,
     `checkpoint_operation_${workItemId}`,
   )
@@ -400,7 +400,7 @@ function autonomousExecution(launched: () => void): WorkspaceExecutionPort {
     }),
     launch: async (_context, input) => {
       launched()
-      return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-owner-deletion" }
+      return { sessionId: `session_${input.runId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-owner-deletion" }
     },
     cancel: async () => undefined,
     result: async () => ({ state: "running" }),

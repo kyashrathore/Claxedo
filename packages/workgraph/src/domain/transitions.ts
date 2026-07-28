@@ -1,5 +1,5 @@
 import type {
-  AttemptState,
+  RunState,
   DecisionState,
   OutcomeState,
   StreamLifecycleState,
@@ -7,7 +7,7 @@ import type {
   WorkItemState,
 } from "../contracts/lifecycle"
 
-export type LifecycleEntity = "stream" | "stream_visibility" | "outcome" | "work_item" | "attempt" | "decision"
+export type LifecycleEntity = "stream" | "stream_visibility" | "outcome" | "work_item" | "run" | "decision"
 
 export type TransitionResult<State extends string> =
   | { readonly ok: true; readonly state: State }
@@ -38,6 +38,7 @@ const outcomeTransitions = {
 } as const satisfies Record<OutcomeState, readonly OutcomeState[]>
 
 const workItemTransitions = {
+  draft: ["pending", "pending_approval", "abandoned"],
   pending_approval: ["pending", "abandoned"],
   pending: ["pending_approval", "active", "blocked", "abandoned"],
   active: [
@@ -59,15 +60,15 @@ const workItemTransitions = {
   abandoned: [],
 } as const satisfies Record<WorkItemState, readonly WorkItemState[]>
 
-const attemptTransitions = {
+const runTransitions = {
   admitted: ["placing", "cancelled"],
   placing: ["running", "failed", "cancelled"],
-  running: ["result", "attention", "failed", "cancelled"],
+  running: ["result", "parked", "failed", "cancelled"],
   result: [],
-  attention: ["running", "result", "failed", "cancelled"],
+  parked: ["running", "result", "failed", "cancelled"],
   failed: [],
   cancelled: [],
-} as const satisfies Record<AttemptState, readonly AttemptState[]>
+} as const satisfies Record<RunState, readonly RunState[]>
 
 const decisionTransitions = {
   proposed: ["pending"],
@@ -97,8 +98,8 @@ export function transitionWorkItem(from: WorkItemState, to: WorkItemState) {
   return transition("work_item", workItemTransitions, from, to)
 }
 
-export function transitionAttempt(from: AttemptState, to: AttemptState) {
-  return transition("attempt", attemptTransitions, from, to)
+export function transitionRun(from: RunState, to: RunState) {
+  return transition("run", runTransitions, from, to)
 }
 
 export function transitionDecision(from: DecisionState, to: DecisionState) {

@@ -47,24 +47,42 @@ const executionProfileShape = {
   ...generationProfileShape,
 }
 
-export const ExecutionProfileDefaultsSchema = z.preprocess(
-  withoutLegacyPolicies,
-  z.strictObject(executionProfileShape).partial(),
-)
-export type ExecutionProfileDefaults = z.infer<typeof ExecutionProfileDefaultsSchema>
-
-export const ResolvedExecutionProfileSchema = z.preprocess(
-  withoutLegacyPolicies,
-  z.strictObject(executionProfileShape).readonly(),
-).transform(deepFreeze)
-export type ResolvedExecutionProfile = z.infer<typeof ResolvedExecutionProfileSchema>
-
 /** Session generation selects a harness/model but does not own Task placement. */
 export const ResolvedGenerationProfileSchema = z.preprocess(
   withoutExecutionTarget,
   z.strictObject(generationProfileShape).readonly(),
-).transform(deepFreeze)
+).overwrite(deepFreeze)
 export type ResolvedGenerationProfile = z.infer<typeof ResolvedGenerationProfileSchema>
+
+const AgentProfileNameSchema = z.string().trim().min(1).max(64)
+
+export const AgentProfileSchema = z.strictObject({
+  name: AgentProfileNameSchema,
+  brief: z.string().max(2_000),
+  generation: ResolvedGenerationProfileSchema,
+  memoryRef: z.string().optional(),
+})
+export type AgentProfile = z.infer<typeof AgentProfileSchema>
+
+export const ExecutionProfileDefaultsSchema = z.preprocess(
+  withoutLegacyPolicies,
+  z.strictObject({
+    ...executionProfileShape,
+    agents: z.array(AgentProfileSchema),
+    assignments: z.strictObject({
+      planning: AgentProfileNameSchema.optional(),
+      execution: AgentProfileNameSchema.optional(),
+      review: AgentProfileNameSchema.optional(),
+    }),
+  }).partial(),
+)
+export type ExecutionProfileDefaults = z.infer<typeof ExecutionProfileDefaultsSchema>
+
+export const ResolvedExecutionProfileSchema = z.preprocess(
+  withoutDefaultsMetadata,
+  z.strictObject(executionProfileShape).readonly(),
+).transform(deepFreeze)
+export type ResolvedExecutionProfile = z.infer<typeof ResolvedExecutionProfileSchema>
 
 export const ExecutionProfileLevelSchema = z.enum(["workgraph", "stream", "outcome", "work_item"])
 export type ExecutionProfileLevel = z.infer<typeof ExecutionProfileLevelSchema>
@@ -97,4 +115,13 @@ function withoutExecutionTarget(value: unknown) {
   delete generation.environment
   delete generation.repository
   return generation
+}
+
+function withoutDefaultsMetadata(value: unknown) {
+  const result = withoutLegacyPolicies(value)
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result
+  const execution = { ...(result as Record<string, unknown>) }
+  delete execution.agents
+  delete execution.assignments
+  return execution
 }

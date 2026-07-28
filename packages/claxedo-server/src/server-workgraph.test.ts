@@ -408,25 +408,25 @@ describe("embedded local WorkGraph v2", () => {
     expect(((await beforeCompletion.json()) as { records: Array<{ recordType: string; state?: string }> }).records)
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ recordType: "work_item", state: "active" }),
-        expect.objectContaining({ recordType: "attempt", state: "running" }),
+        expect.objectContaining({ recordType: "run", state: "running" }),
       ]))
-    const attempt = embedded.database.prepare(`
-      SELECT attempts.id, attempts.session_id, attempts.lease_epoch, bindings.project_id
-      FROM wg_v2_attempts attempts
+    const run = embedded.database.prepare(`
+      SELECT runs.id, runs.session_id, runs.generation, bindings.project_id
+      FROM wg_v2_runs runs
       JOIN wg_v2_session_bindings bindings
-        ON bindings.organization_id = attempts.organization_id
-        AND bindings.owner_user_id = attempts.owner_user_id
-        AND bindings.session_id = attempts.session_id
-        AND bindings.current_attempt_id = attempts.id
-      WHERE attempts.work_item_id = ? AND attempts.lifecycle = 'running'
-    `).get(workItemId) as { id: string; session_id: string; lease_epoch: number; project_id: string }
+        ON bindings.organization_id = runs.organization_id
+        AND bindings.owner_user_id = runs.owner_user_id
+        AND bindings.session_id = runs.session_id
+        AND bindings.current_run_id = runs.id
+      WHERE runs.work_item_id = ? AND runs.lifecycle = 'running'
+    `).get(workItemId) as { id: string; session_id: string; generation: number; project_id: string }
     expect((await command(app, "operation_explicit_completion", {
       version: 1,
-      type: "complete_attempt",
-      attemptId: attempt.id,
-      sessionId: attempt.session_id,
-      workspaceId: attempt.project_id,
-      leaseEpoch: attempt.lease_epoch,
+      type: "complete_run",
+      runId: run.id,
+      sessionId: run.session_id,
+      workspaceId: run.project_id,
+      generation: run.generation,
       summary: "Done",
       artifacts: ["commit:abc"],
       evidence: [{
@@ -438,7 +438,7 @@ describe("embedded local WorkGraph v2", () => {
     const records = ((await snapshot.json()) as { records: Array<{ recordType: string; state?: string; result?: unknown }> }).records
     expect(records).toEqual(expect.arrayContaining([
       expect.objectContaining({ recordType: "work_item", state: "result_ready" }),
-      expect.objectContaining({ recordType: "attempt", state: "result", result: expect.objectContaining({ artifactRefs: ["commit:abc"] }) }),
+      expect.objectContaining({ recordType: "run", state: "result", result: expect.objectContaining({ artifactRefs: ["commit:abc"] }) }),
     ]))
   })
 })

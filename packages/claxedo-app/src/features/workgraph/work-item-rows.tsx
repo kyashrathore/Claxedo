@@ -1,4 +1,4 @@
-import type { AttemptDto, CommandResult, OutcomeDto, WorkItemDto } from "@claxedo/workgraph/contracts"
+import type { RunDto, CommandResult, OutcomeDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createSignal, For, Match, Switch, type Accessor, type JSX, Show } from "solid-js"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
@@ -123,7 +123,7 @@ function TaskStatusGlyph(props: { label: TaskStatusLabel }) {
 export function OutcomeGroup(props: {
   outcome?: OutcomeDto
   items: WorkItemDto[]
-  attempts: AttemptDto[]
+  runs: RunDto[]
   streamId: string
   client: WorkGraphClient
   mutate: Mutate
@@ -161,7 +161,7 @@ export function OutcomeGroup(props: {
       </div>
       <div class="workgraph-leaves">
         <KeyedById records={props.items}>
-          {(item) => <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} depsComplete={props.depsComplete(item())} streamPaused={props.streamPaused} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />}
+          {(item) => <WorkItemLeaf item={item()} runs={props.runs} client={props.client} mutate={props.mutate} depsComplete={props.depsComplete(item())} streamPaused={props.streamPaused} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />}
         </KeyedById>
         <Show when={props.outcome}>
           <InlineAddTask
@@ -179,7 +179,7 @@ export function OutcomeGroup(props: {
 
 export function WorkItemLeaf(props: {
   item: WorkItemDto
-  attempts: AttemptDto[]
+  runs: RunDto[]
   client: WorkGraphClient
   mutate: Mutate
   /** Whether the item's blockers are all settled — splits Waiting vs Ready. */
@@ -191,14 +191,14 @@ export function WorkItemLeaf(props: {
 }) {
   const label = () => taskStatusLabel(props.item.state, props.depsComplete ?? props.item.dependencyIds.length === 0)
   const waits = () => props.item.dependencyIds.length
-  const latestAttempt = () =>
-    props.attempts
-      .filter((attempt) => attempt.workItemId === props.item.id)
-      .toSorted((left, right) => left.attemptNumber - right.attemptNumber)
+  const latestRun = () =>
+    props.runs
+      .filter((run) => run.workItemId === props.item.id)
+      .toSorted((left, right) => left.runNumber - right.runNumber)
       .at(-1)
-  const hasLiveAttempt = () =>
-    props.attempts.some(
-      (attempt) => attempt.workItemId === props.item.id && ["admitted", "placing", "running"].includes(attempt.state),
+  const hasLiveRun = () =>
+    props.runs.some(
+      (run) => run.workItemId === props.item.id && ["admitted", "placing", "running"].includes(run.state),
     )
   const [busy, setBusy] = createSignal(false)
   const [sessionError, setSessionError] = createSignal<string>()
@@ -209,7 +209,7 @@ export function WorkItemLeaf(props: {
   const [reason, setReason] = createSignal("")
   const remove = async (event: MouseEvent) => {
     event.stopPropagation()
-    if (busy() || hasLiveAttempt()) return
+    if (busy() || hasLiveRun()) return
     setBusy(true)
     try {
       await props.mutate(() => props.client.cancelWorkItem(props.item.id, props.item.version, "Deleted from overview"))
@@ -259,7 +259,7 @@ export function WorkItemLeaf(props: {
   }
   const retry = async (event: MouseEvent) => {
     event.stopPropagation()
-    if (busy() || !isRetryable(props.item, props.attempts)) return
+    if (busy() || !isRetryable(props.item, props.runs)) return
     setBusy(true)
     setSessionError()
     try {
@@ -270,22 +270,22 @@ export function WorkItemLeaf(props: {
   }
   const stop = async (event: MouseEvent) => {
     event.stopPropagation()
-    const attempt = latestAttempt()
-    if (busy() || attempt?.state !== "running") return
+    const run = latestRun()
+    if (busy() || run?.state !== "running") return
     setBusy(true)
     try {
-      await props.mutate(() => props.client.cancelAttempt(attempt.id, attempt.version, "Stopped from task row"))
+      await props.mutate(() => props.client.cancelRun(run.id, run.version, "Stopped from task row"))
     } finally {
       setBusy(false)
     }
   }
   const openSession = async (event: MouseEvent) => {
     event.stopPropagation()
-    const attempt = latestAttempt()
-    if (!attempt) return
+    const run = latestRun()
+    if (!run) return
     setSessionError()
     try {
-      const references = attempt.executionReferences ?? (await props.client.attempt(attempt.id)).executionReferences
+      const references = run.executionReferences ?? (await props.client.run(run.id)).executionReferences
       if (!references?.sessionId) {
         setSessionError("Session unavailable")
         return
@@ -293,8 +293,8 @@ export function WorkItemLeaf(props: {
       await props.onOpenSession?.({
         sessionId: references.sessionId,
         ...(references.workspaceId ? { workspaceId: references.workspaceId } : {}),
-        harness: attempt.resolvedExecution.harness,
-        environment: attempt.resolvedExecution.environment,
+        harness: run.resolvedExecution.harness,
+        environment: run.resolvedExecution.environment,
       })
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : "Session unavailable")
@@ -304,8 +304,8 @@ export function WorkItemLeaf(props: {
   // failed"); every other label is carried by the glyph and its own affordance.
   const showState = () => label() === "needs-you"
   const sessionAvailable = () => {
-    const attempt = latestAttempt()
-    return !!props.onOpenSession && !!attempt && !["admitted", "placing"].includes(attempt.state)
+    const run = latestRun()
+    return !!props.onOpenSession && !!run && !["admitted", "placing"].includes(run.state)
   }
 
   return (
@@ -340,7 +340,7 @@ export function WorkItemLeaf(props: {
       <Show when={showState()}>
         <span class="workgraph-leaf-state text-text-weaker">{props.item.state.replaceAll("_", " ")}</span>
       </Show>
-      <Show when={latestAttempt()?.state === "cancelled" && isRetryable(props.item, props.attempts)}>
+      <Show when={latestRun()?.state === "cancelled" && isRetryable(props.item, props.runs)}>
         <span class="workgraph-leaf-state workgraph-leaf-stopped text-text-weaker">Stopped · Retry</span>
       </Show>
       <Show when={sessionError()}>{(message) => <span class="workgraph-leaf-session-error" role="alert">{message()}</span>}</Show>
@@ -406,7 +406,7 @@ export function WorkItemLeaf(props: {
           </button>
         </Show>
       </Show>
-      <Show when={isRetryable(props.item, props.attempts)}>
+      <Show when={isRetryable(props.item, props.runs)}>
         <button
           type="button"
           class="workgraph-leaf-session workgraph-leaf-retry"
@@ -418,7 +418,7 @@ export function WorkItemLeaf(props: {
           <Icon name="reset" size="small" />
         </button>
       </Show>
-      <Show when={latestAttempt()?.state === "running"}>
+      <Show when={latestRun()?.state === "running"}>
         <button
           type="button"
           class="workgraph-leaf-session workgraph-leaf-stop"
@@ -443,7 +443,7 @@ export function WorkItemLeaf(props: {
       </Show>
       {/* A staged row's Reject is its removal path (abandon with a reason); the
           plain delete only serves the non-staged rows. */}
-      <Show when={!hasLiveAttempt() && label() !== "staged"}>
+      <Show when={!hasLiveRun() && label() !== "staged"}>
         <button
           type="button"
           class="workgraph-row-delete"
@@ -458,13 +458,13 @@ export function WorkItemLeaf(props: {
   )
 }
 
-export function isRetryable(item: WorkItemDto, attempts: AttemptDto[]) {
+export function isRetryable(item: WorkItemDto, runs: RunDto[]) {
   if (["completed", "abandoned"].includes(item.state)) return false
   if (["failed", "verification_failed"].includes(item.state)) return true
-  return ["attention", "failed", "cancelled"].includes(
-    attempts
-      .filter((attempt) => attempt.workItemId === item.id)
-      .toSorted((left, right) => left.attemptNumber - right.attemptNumber)
+  return ["parked", "failed", "cancelled"].includes(
+    runs
+      .filter((run) => run.workItemId === item.id)
+      .toSorted((left, right) => left.runNumber - right.runNumber)
       .at(-1)?.state ?? "",
   )
 }

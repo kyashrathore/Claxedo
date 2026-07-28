@@ -1,13 +1,13 @@
-import type { AttemptDto } from "../contracts/records"
+import type { RunDto } from "../contracts/records"
 import type { ExecutionProfileProvenance } from "./execution-profile"
 
-export interface AttemptAdmissionSnapshot {
-  readonly attempt: AttemptDto
+export interface RunAdmissionSnapshot {
+  readonly run: RunDto
   readonly executionProvenance: ExecutionProfileProvenance
 }
 
-export function createAttemptAdmissionSnapshot(input: AttemptAdmissionSnapshot): AttemptAdmissionSnapshot {
-  return deepFreeze({ attempt: input.attempt, executionProvenance: { ...input.executionProvenance } })
+export function createRunAdmissionSnapshot(input: RunAdmissionSnapshot): RunAdmissionSnapshot {
+  return deepFreeze({ run: input.run, executionProvenance: { ...input.executionProvenance } })
 }
 
 function deepFreeze<Value>(value: Value): Value {

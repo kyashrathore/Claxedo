@@ -5,7 +5,7 @@ import { CompletionContractSchema } from "./completion"
 import { WorkGraphActorSchema } from "./context"
 import { ExecutionProfileDefaultsSchema, ResolvedExecutionProfileSchema, WorkGraphDefaultsSchema } from "./execution"
 import {
-  AttemptIDSchema,
+  RunIDSchema,
   DecisionIDSchema,
   EvidenceIDSchema,
   OperationIDSchema,
@@ -16,7 +16,7 @@ import {
   WorkItemIDSchema,
 } from "./ids"
 import {
-  AttemptStateSchema,
+  RunStateSchema,
   DecisionStateSchema,
   OutcomeStateSchema,
   StreamLifecycleStateSchema,
@@ -152,50 +152,51 @@ export const WorkItemDtoSchema = z.strictObject({
   executionDefaults: ExecutionProfileDefaultsSchema.optional(),
   createdByActorType: z.enum(["user", "agent", "system"]).optional(),
   createdByActorId: text.optional(),
-  originAttemptId: AttemptIDSchema.optional(),
+  originRunId: RunIDSchema.optional(),
   abandonedAt: timestamp.optional(),
   abandonReason: text.optional(),
 })
 export type WorkItemDto = z.infer<typeof WorkItemDtoSchema>
 
-export const AttemptResultSchema = z.strictObject({
+export const RunResultSchema = z.strictObject({
   summary: text,
   artifactRefs: z.array(text),
   finishedAt: timestamp,
 })
-export type AttemptResult = z.infer<typeof AttemptResultSchema>
+export type RunResult = z.infer<typeof RunResultSchema>
 
 const runtimeReference = z.string().trim().min(1).max(512)
-export const AttemptExecutionReferencesSchema = z.strictObject({
+export const RunExecutionReferencesSchema = z.strictObject({
   sessionId: runtimeReference.optional(),
   workspaceId: runtimeReference.optional(),
   childWorkspaceId: runtimeReference.optional(),
 }).refine((references) => references.sessionId || references.workspaceId || references.childWorkspaceId, {
-  message: "Attempt execution references cannot be empty",
+  message: "Run execution references cannot be empty",
 })
-export type AttemptExecutionReferences = z.infer<typeof AttemptExecutionReferencesSchema>
+export type RunExecutionReferences = z.infer<typeof RunExecutionReferencesSchema>
 
-export const AttemptDtoSchema = z
+export const RunDtoSchema = z
   .strictObject({
-    recordType: z.literal("attempt"),
+    recordType: z.literal("run"),
     ...ownerRecordShape,
-    id: AttemptIDSchema,
+    id: RunIDSchema,
     streamId: StreamIDSchema,
     workItemId: WorkItemIDSchema,
-    attemptNumber: z.number().int().positive(),
-    state: AttemptStateSchema,
+    runNumber: z.number().int().positive(),
+    generation: z.number().int().positive(),
+    state: RunStateSchema,
     resolvedExecution: ResolvedExecutionProfileSchema,
     admittedAt: timestamp,
     startedAt: timestamp.optional(),
     finishedAt: timestamp.optional(),
-    result: AttemptResultSchema.optional(),
-    attentionReason: text.optional(),
+    result: RunResultSchema.optional(),
+    parkedReason: text.optional(),
     sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
     executionKind: z.enum(["managed", "attached"]).default("managed"),
-    executionReferences: AttemptExecutionReferencesSchema.optional(),
+    executionReferences: RunExecutionReferencesSchema.optional(),
   })
   .transform(deepFreeze)
-export type AttemptDto = z.infer<typeof AttemptDtoSchema>
+export type RunDto = z.infer<typeof RunDtoSchema>
 
 export const DecisionOptionSchema = z.strictObject({
   id: text,
@@ -244,7 +245,7 @@ export const WorkGraphRecordReferenceSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("stream"), id: StreamIDSchema }),
   z.strictObject({ type: z.literal("outcome"), id: OutcomeIDSchema }),
   z.strictObject({ type: z.literal("work_item"), id: WorkItemIDSchema }),
-  z.strictObject({ type: z.literal("attempt"), id: AttemptIDSchema }),
+  z.strictObject({ type: z.literal("run"), id: RunIDSchema }),
   z.strictObject({ type: z.literal("decision"), id: DecisionIDSchema }),
   z.strictObject({ type: z.literal("admission_proposal"), id: AdmissionProposalIDSchema }),
 ])
@@ -399,7 +400,7 @@ export const WorkGraphPublicRecordSchema = z.union([
   StreamDtoSchema,
   OutcomeDtoSchema,
   WorkItemDtoSchema,
-  AttemptDtoSchema,
+  RunDtoSchema,
   DecisionDtoSchema,
   AdmissionProposalDtoSchema,
 ])

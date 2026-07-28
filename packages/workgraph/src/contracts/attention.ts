@@ -1,7 +1,7 @@
 import { z } from "zod"
 import {
   AdmissionProposalDtoSchema,
-  AttemptDtoSchema,
+  RunDtoSchema,
   DecisionDtoSchema,
   WorkItemDtoSchema,
 } from "./records"
@@ -17,7 +17,7 @@ export const AttentionKindSchema = z.enum([
   "admission_proposal",
   "decision",
   "work_item",
-  "attempt",
+  "run",
   "unorganized_ai_work",
   "configuration_required",
   "master_escalation",
@@ -86,15 +86,15 @@ const WorkItemAttentionItemSchema = z
     recordIdentity(item, context)
   })
 
-const AttemptAttentionItemSchema = z
+const RunAttentionItemSchema = z
   .strictObject({
     ...itemShape,
-    kind: z.literal("attempt"),
-    record: AttemptDtoSchema,
+    kind: z.literal("run"),
+    record: RunDtoSchema,
   })
   .superRefine((item, context) => {
-    if (item.record.state !== "attention") {
-      context.addIssue({ code: "custom", path: ["record", "state"], message: "Attempt is not waiting for attention" })
+    if (item.record.state !== "parked") {
+      context.addIssue({ code: "custom", path: ["record", "state"], message: "Run is not waiting for attention" })
     }
     recordIdentity(item, context)
   })
@@ -171,7 +171,7 @@ export const AttentionItemSchema = z.union([
   AdmissionAttentionItemSchema,
   DecisionAttentionItemSchema,
   WorkItemAttentionItemSchema,
-  AttemptAttentionItemSchema,
+  RunAttentionItemSchema,
   UnorganizedAIWorkAttentionItemSchema,
   ConfigurationRequiredAttentionItemSchema,
   MasterEscalationAttentionItemSchema,

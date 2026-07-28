@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { readWorkGraphProjection } from "../../../../convex/workgraphChanges"
-import { resolveCanonicalAttemptExecutionDefaults } from "../../../../convex/workgraphCommands"
+import { resolveCanonicalRunExecutionDefaults } from "../../../../convex/workgraphCommands"
 
 describe("Convex WorkGraph legacy quarantine", () => {
   test("does not execute a legacy nested root profile as canonical defaults", () => {
@@ -17,7 +17,7 @@ describe("Convex WorkGraph legacy quarantine", () => {
       integration: "manual",
     }
 
-    expect(resolveCanonicalAttemptExecutionDefaults({ root: profile })).toEqual({
+    expect(resolveCanonicalRunExecutionDefaults({ root: profile })).toEqual({
       environment: profile.environment,
       repository: profile.repository,
       harness: profile.harness,
@@ -27,7 +27,7 @@ describe("Convex WorkGraph legacy quarantine", () => {
       tools: profile.tools,
       connectionIds: [],
     })
-    expect(resolveCanonicalAttemptExecutionDefaults({ root: { execution: profile } })).toBeUndefined()
+    expect(resolveCanonicalRunExecutionDefaults({ root: { execution: profile } })).toBeUndefined()
   })
 
 

@@ -23,7 +23,7 @@ export type LegacyMigrationIntake = {
   id: string
   legacyTable: string
   legacyRecordId: string
-  intakeKind: "source_review" | "work_mapping_review" | "attempt_mapping_review"
+  intakeKind: "source_review" | "work_mapping_review" | "run_mapping_review"
   reason: string
   rawReference: Record<string, string | number | null>
 }
@@ -66,7 +66,7 @@ type LegacyNode = {
   node_type: string
 }
 
-type LegacyAttempt = {
+type LegacyExecutionRow = {
   attempt_id: string
   run_id: string
   node_id: string
@@ -124,8 +124,8 @@ export function exportLegacyWorkGraphMigration(input: SqliteInput, target: Legac
         { node_id: node.node_id, run_id: node.run_id, kind: node.kind, title: node.title, status: node.status, node_type: node.node_type },
       ),
     ),
-    ...(db.prepare("SELECT attempt_id, run_id, node_id, status, runtime_type FROM attempts_current ORDER BY attempt_id").all() as LegacyAttempt[]).map(
-      (attempt) => attemptIntake(target, attempt),
+    ...(db.prepare("SELECT attempt_id, run_id, node_id, status, runtime_type FROM attempts_current ORDER BY attempt_id").all() as LegacyExecutionRow[]).map(
+      (execution) => runIntake(target, execution),
     ),
     ...(db.prepare("SELECT run_id, kind, title FROM run_sources_current ORDER BY run_id").all() as LegacyRunSource[]).map((source) =>
       workIntake(
@@ -251,19 +251,19 @@ function workIntake(
   return { id: target.idFor("intake", table, recordId), legacyTable: table, legacyRecordId: recordId, intakeKind: "work_mapping_review", reason, rawReference }
 }
 
-function attemptIntake(target: LegacyMigrationTarget, attempt: LegacyAttempt): LegacyMigrationIntake {
+function runIntake(target: LegacyMigrationTarget, execution: LegacyExecutionRow): LegacyMigrationIntake {
   return {
-    id: target.idFor("intake", "attempts_current", attempt.attempt_id),
+    id: target.idFor("intake", "attempts_current", execution.attempt_id),
     legacyTable: "attempts_current",
-    legacyRecordId: attempt.attempt_id,
-    intakeKind: "attempt_mapping_review",
-    reason: "A legacy attempt cannot be attached until its run and node have user-confirmed v2 Work Item mappings; its status does not prove completion.",
+    legacyRecordId: execution.attempt_id,
+    intakeKind: "run_mapping_review",
+    reason: "A historical execution cannot be attached until its run and node have user-confirmed Work Item mappings; its status does not prove completion.",
     rawReference: {
-      attempt_id: attempt.attempt_id,
-      run_id: attempt.run_id,
-      node_id: attempt.node_id,
-      status: attempt.status,
-      runtime_type: attempt.runtime_type,
+      attempt_id: execution.attempt_id,
+      run_id: execution.run_id,
+      node_id: execution.node_id,
+      status: execution.status,
+      runtime_type: execution.runtime_type,
     },
   }
 }

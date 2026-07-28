@@ -33,7 +33,7 @@ const supportedTables = new Set([
   "wg_v2_outcomes",
   "wg_v2_work_items",
   "wg_v2_work_item_dependencies",
-  "wg_v2_attempts",
+  "wg_v2_runs",
   "wg_v2_session_bindings",
   "wg_v2_agent_checkpoints",
   "wg_v2_decisions",
@@ -65,7 +65,7 @@ const ownerTables = [
   "wg_v2_outcomes",
   "wg_v2_work_items",
   "wg_v2_work_item_dependencies",
-  "wg_v2_attempts",
+  "wg_v2_runs",
   "wg_v2_session_bindings",
   "wg_v2_agent_checkpoints",
   "wg_v2_leases",
@@ -341,7 +341,7 @@ export function createSqliteWorkGraphArchivePort(
           INSERT INTO wg_v2_work_items
             (organization_id, owner_user_id, id, stream_id, outcome_id, title, description, lifecycle, priority,
              execution_overrides_json, completion_contract_json, created_by_actor_type, created_by_actor_id,
-             origin_attempt_id, abandoned_reason, abandoned_at, row_version, schema_version, created_at,
+             origin_run_id, abandoned_reason, abandoned_at, row_version, schema_version, created_at,
              updated_at, completed_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -357,7 +357,7 @@ export function createSqliteWorkGraphArchivePort(
           JSON.stringify(record.value.completionContract),
           record.value.createdByActorType ?? null,
           record.value.createdByActorId ?? null,
-          record.value.originAttemptId ?? null,
+          record.value.originRunId ?? null,
           record.value.abandonReason ?? null,
           record.value.abandonedAt ?? null,
           record.value.version,
@@ -379,19 +379,20 @@ export function createSqliteWorkGraphArchivePort(
           record.value.schemaVersion,
           record.value.createdAt,
         ))
-        records.filter(kind("attempt")).forEach((record) => database.prepare(`
-          INSERT INTO wg_v2_attempts
-            (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+        records.filter(kind("run")).forEach((record) => database.prepare(`
+          INSERT INTO wg_v2_runs
+            (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, generation, lifecycle,
              execution_kind, resolved_execution_profile_json, envelope_id, child_workspace_id, session_id,
-             terminal_result_json, attention_reason, row_version, schema_version,
+             terminal_result_json, parked_reason, row_version, schema_version,
              created_at, updated_at, started_at, finished_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.workItemId,
-          record.value.attemptNumber,
+          record.value.runNumber,
+          record.value.generation,
           record.value.state,
           record.value.executionKind,
           JSON.stringify(record.value.resolvedExecution),
@@ -399,7 +400,7 @@ export function createSqliteWorkGraphArchivePort(
           record.value.executionIdentity?.childIsolationId ?? null,
           record.value.executionIdentity?.sessionId ?? null,
           record.value.result === undefined ? null : JSON.stringify(record.value.result),
-          record.value.attentionReason ?? null,
+          record.value.parkedReason ?? null,
           record.value.version,
           record.value.schemaVersion,
           record.value.admittedAt,
@@ -410,7 +411,7 @@ export function createSqliteWorkGraphArchivePort(
         records.filter(kind("session_binding")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_session_bindings
             (organization_id, owner_user_id, id, stream_id, session_id, project_id, current_work_item_id,
-             current_attempt_id, state, bound_at, released_at, provenance_json, row_version, schema_version,
+             current_run_id, state, bound_at, released_at, provenance_json, row_version, schema_version,
              created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -420,7 +421,7 @@ export function createSqliteWorkGraphArchivePort(
           record.value.sessionId,
           record.value.projectId,
           record.value.currentWorkItemId ?? null,
-          record.value.currentAttemptId ?? null,
+          record.value.currentRunId ?? null,
           record.value.state,
           record.value.boundAt,
           record.value.releasedAt ?? null,
@@ -432,7 +433,7 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("agent_checkpoint")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_agent_checkpoints
-            (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_id, session_binding_id,
+            (organization_id, owner_user_id, id, stream_id, work_item_id, run_id, session_binding_id,
              level, summary, evidence_ids_json, occurred_at, provenance_json, operation_id, row_version,
              schema_version, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -441,7 +442,7 @@ export function createSqliteWorkGraphArchivePort(
           record.id,
           record.value.streamId,
           record.value.workItemId,
-          record.value.attemptId,
+          record.value.runId,
           record.value.sessionBindingId,
           record.value.level,
           record.value.summary,
@@ -499,14 +500,14 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("durable_effect_receipt")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_durable_effect_receipts
-            (organization_id, owner_user_id, id, stream_id, attempt_id, effect_kind, idempotency_key,
+            (organization_id, owner_user_id, id, stream_id, run_id, effect_kind, idempotency_key,
              external_reference_json, provenance_json, schema_version, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
-          record.value.attemptId ?? null,
+          record.value.runId ?? null,
           record.value.effectKind,
           record.value.idempotencyKey,
           JSON.stringify(record.value.externalReference),
@@ -517,7 +518,7 @@ export function createSqliteWorkGraphArchivePort(
         records.filter(kind("evidence")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_evidence
             (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id,
-             source_attempt_id, evidence_kind, summary, reference_json, provenance_json,
+             source_run_id, evidence_kind, summary, reference_json, provenance_json,
              schema_version, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -527,7 +528,7 @@ export function createSqliteWorkGraphArchivePort(
           record.value.subject.type,
           subjectId(record.value.subject),
           record.value.requirementId ?? null,
-          record.value.sourceAttemptId ?? null,
+          record.value.sourceRunId ?? null,
           record.value.kind,
           record.value.summary,
           JSON.stringify(evidenceReference(record.value)),
@@ -923,10 +924,10 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       dependencyKind: string(row.dependency_kind),
     },
   }))
-  const attempts = publicRecords.filter((record) => record.recordType === "attempt").map((record) => {
+  const runs = publicRecords.filter((record) => record.recordType === "run").map((record) => {
     const { executionReferences: _executionReferences, ...archiveValue } = publicValue(record)
     const row = database.prepare(`
-      SELECT envelope_id, child_workspace_id, session_id FROM wg_v2_attempts
+      SELECT envelope_id, child_workspace_id, session_id FROM wg_v2_runs
       WHERE organization_id = ? AND owner_user_id = ? AND id = ?
     `).get(context.organizationId, context.ownerUserId, record.id) as {
       envelope_id: string | null
@@ -939,7 +940,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       ...(row.session_id === null ? {} : { sessionId: row.session_id }),
     }
     return {
-      kind: "attempt" as const,
+      kind: "run" as const,
       id: record.id,
       value: {
         ...archiveValue,
@@ -960,7 +961,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       sessionId: string(row.session_id),
       projectId: string(row.project_id),
       ...(row.current_work_item_id === null ? {} : { currentWorkItemId: string(row.current_work_item_id) }),
-      ...(row.current_attempt_id === null ? {} : { currentAttemptId: string(row.current_attempt_id) }),
+      ...(row.current_run_id === null ? {} : { currentRunId: string(row.current_run_id) }),
       state: string(row.state),
       boundAt: timestamp(row.bound_at),
       ...(row.released_at === null ? {} : { releasedAt: timestamp(row.released_at) }),
@@ -977,7 +978,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       provenance: recordProvenance(row.provenance_json),
       streamId: string(row.stream_id),
       workItemId: string(row.work_item_id),
-      attemptId: string(row.attempt_id),
+      runId: string(row.run_id),
       sessionBindingId: string(row.session_binding_id),
       level: string(row.level),
       summary: string(row.summary),
@@ -1012,7 +1013,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       schemaVersion: integer(row.schema_version),
       createdAt: timestamp(row.created_at),
       streamId: string(row.stream_id),
-      ...(row.attempt_id === null ? {} : { attemptId: string(row.attempt_id) }),
+      ...(row.run_id === null ? {} : { runId: string(row.run_id) }),
       effectKind: string(row.effect_kind),
       idempotencyKey: string(row.idempotency_key),
       externalReference: json(row.external_reference_json),
@@ -1034,7 +1035,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
         schemaVersion: integer(row.schema_version),
         subject: evidenceSubject(row),
         ...(row.requirement_id === null ? {} : { requirementId: string(row.requirement_id) }),
-        ...(row.source_attempt_id === null ? {} : { sourceAttemptId: string(row.source_attempt_id) }),
+        ...(row.source_run_id === null ? {} : { sourceRunId: string(row.source_run_id) }),
         summary: string(row.summary),
         recordedAt: timestamp(row.created_at),
         recordedBy: actor(evidenceProvenance.actor),
@@ -1204,7 +1205,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
   })
   return [
     ...workgraphs, ...sources, ...revisions, ...sourceViews, ...candidates, ...externalIdentities,
-    ...streams, ...outcomes, ...workItems, ...dependencies, ...attempts, ...sessionBindings, ...agentCheckpoints,
+    ...streams, ...outcomes, ...workItems, ...dependencies, ...runs, ...sessionBindings, ...agentCheckpoints,
     ...decisions, ...decisionWorkItems,
     ...evidence, ...receipts, ...sourceReferences, ...proposals,
     ...operations, ...events, ...changes, ...runtimeEffects, ...migrationIntake,
@@ -1216,7 +1217,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
 function narrowSupportedArchive(archive: WorkGraphArchive) {
   const unsupported = archive.records.find((record) => ![
     "workgraph", "work_source", "work_source_revision", "source_view", "intake_candidate", "external_identity",
-    "stream", "outcome", "work_item", "work_item_dependency", "attempt", "session_binding", "agent_checkpoint",
+    "stream", "outcome", "work_item", "work_item_dependency", "run", "session_binding", "agent_checkpoint",
     "decision", "decision_work_item",
     "evidence", "durable_effect_receipt", "record_source_revision",
     "admission_proposal", "operation_result", "event", "change", "runtime_effect", "migration_intake",
@@ -1454,7 +1455,7 @@ function subjectStreamId(
 
 function assertQuiescent(database: Database, context: WorkGraphContext) {
   const checks = [
-    "SELECT 1 FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running') LIMIT 1",
+    "SELECT 1 FROM wg_v2_runs WHERE organization_id = ? AND owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running') LIMIT 1",
     "SELECT 1 FROM wg_v2_leases WHERE organization_id = ? AND owner_user_id = ? LIMIT 1",
     "SELECT 1 FROM wg_v2_runtime_effects WHERE organization_id = ? AND owner_user_id = ? AND state != 'completed' LIMIT 1",
     "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE organization_id = ? AND owner_user_id = ? AND state = 'reserved' LIMIT 1",
@@ -1579,7 +1580,7 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
       require("work_item", record.value.workItemId)
       require("work_item", record.value.dependsOnWorkItemId)
     }
-    if (record.kind === "attempt") {
+    if (record.kind === "run") {
       require("stream", record.value.streamId)
       require("work_item", record.value.workItemId)
       requireSourceReferences(record)
@@ -1587,12 +1588,12 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     if (record.kind === "session_binding") {
       require("stream", record.value.streamId)
       if (record.value.currentWorkItemId) require("work_item", record.value.currentWorkItemId)
-      if (record.value.currentAttemptId) require("attempt", record.value.currentAttemptId)
+      if (record.value.currentRunId) require("run", record.value.currentRunId)
     }
     if (record.kind === "agent_checkpoint") {
       require("stream", record.value.streamId)
       require("work_item", record.value.workItemId)
-      require("attempt", record.value.attemptId)
+      require("run", record.value.runId)
       require("session_binding", record.value.sessionBindingId)
       record.value.evidenceIds.forEach((id) => require("evidence", id))
     }
@@ -1607,14 +1608,14 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     }
     if (record.kind === "evidence") {
       require(record.value.subject.type, subjectId(record.value.subject))
-      if (record.value.sourceAttemptId) require("attempt", record.value.sourceAttemptId)
+      if (record.value.sourceRunId) require("run", record.value.sourceRunId)
       if (record.value.kind === "integration" && record.value.durableEffectReceiptId) {
         require("durable_effect_receipt", record.value.durableEffectReceiptId)
       }
     }
     if (record.kind === "durable_effect_receipt") {
       require("stream", record.value.streamId)
-      if (record.value.attemptId) require("attempt", record.value.attemptId)
+      if (record.value.runId) require("run", record.value.runId)
     }
     if (record.kind === "record_source_revision") {
       require(record.value.recordType, record.value.recordId)
@@ -1656,19 +1657,19 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     if (!sameMembers(record.value.dependencyIds, related)) throw new WorkGraphArchiveRestoreError("malformed")
   })
   const workItemStreams = new Map(workItems.map((record) => [record.id, record.value.streamId]))
-  const attemptWorkItems = new Map(records.filter(kind("attempt")).map((record) => [record.id, record.value.workItemId]))
+  const runWorkItems = new Map(records.filter(kind("run")).map((record) => [record.id, record.value.workItemId]))
   records.filter(kind("session_binding")).forEach((record) => {
     if (record.value.currentWorkItemId && workItemStreams.get(record.value.currentWorkItemId) !== record.value.streamId) {
       throw new WorkGraphArchiveRestoreError("malformed")
     }
-    if (record.value.currentAttemptId && attemptWorkItems.get(record.value.currentAttemptId) !== record.value.currentWorkItemId) {
+    if (record.value.currentRunId && runWorkItems.get(record.value.currentRunId) !== record.value.currentWorkItemId) {
       throw new WorkGraphArchiveRestoreError("malformed")
     }
   })
   const bindingStreams = new Map(records.filter(kind("session_binding")).map((record) => [record.id, record.value.streamId]))
   records.filter(kind("agent_checkpoint")).forEach((record) => {
     if (workItemStreams.get(record.value.workItemId) !== record.value.streamId ||
-      attemptWorkItems.get(record.value.attemptId) !== record.value.workItemId ||
+      runWorkItems.get(record.value.runId) !== record.value.workItemId ||
       bindingStreams.get(record.value.sessionBindingId) !== record.value.streamId) {
       throw new WorkGraphArchiveRestoreError("malformed")
     }
@@ -1696,7 +1697,7 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
   })
   records.filter(kind("record_source_revision")).forEach((reference) => {
     const record = records.find((candidate) => candidate.kind === reference.value.recordType && candidate.id === reference.value.recordId)
-    if (!record || !["stream", "outcome", "work_item", "attempt", "decision"].includes(record.kind)) {
+    if (!record || !["stream", "outcome", "work_item", "run", "decision"].includes(record.kind)) {
       throw new WorkGraphArchiveRestoreError("malformed")
     }
     if (!("sourceRevisionRefs" in record.value) || !record.value.sourceRevisionRefs.some((source) =>
@@ -1704,8 +1705,8 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     )) throw new WorkGraphArchiveRestoreError("malformed")
   })
   records.filter((record): record is Extract<CanonicalWorkGraphArchiveRecord, {
-    kind: "stream" | "outcome" | "work_item" | "attempt" | "decision"
-  }> => ["stream", "outcome", "work_item", "attempt", "decision"].includes(record.kind)).forEach((record) => {
+    kind: "stream" | "outcome" | "work_item" | "run" | "decision"
+  }> => ["stream", "outcome", "work_item", "run", "decision"].includes(record.kind)).forEach((record) => {
     record.value.sourceRevisionRefs.forEach((source) => {
       if (!records.filter(kind("record_source_revision")).some((reference) =>
         reference.value.recordType === record.kind && reference.value.recordId === record.id &&

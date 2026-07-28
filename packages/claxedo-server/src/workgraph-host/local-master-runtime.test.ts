@@ -82,7 +82,7 @@ describe("local WorkGraph master runtime", () => {
       expect.objectContaining({ status: "admitted", sessionId: `ses_master_${streamId}` }),
     ])
     expect(admit).toHaveBeenCalledWith(expect.objectContaining({
-      attemptId: `master_${streamId}`,
+      runId: `master_${streamId}`,
       sessionId: `ses_master_${streamId}`,
       messageId: expect.stringMatching(/^msg_master_/),
       directory: "/workgraph/envelope",

@@ -10,10 +10,10 @@ import {
   EvidencePageSchema,
   AdmissionProposalDtoSchema,
   ReplacementReviewSchema,
-  AttemptDetailDtoSchema,
+  RunDetailDtoSchema,
   DecisionDtoSchema,
-  WorkItemAttemptPageCursorError,
-  WorkItemAttemptPageSchema,
+  WorkItemRunPageCursorError,
+  WorkItemRunPageSchema,
   TaskActivityPageSchema,
   TaskActivityPageCursorError,
   WorkItemDtoSchema,
@@ -52,9 +52,9 @@ import {
   WorkGraphHttpProposalReadSchema,
   WorkGraphHttpReplacementReviewQuerySchema,
   WorkGraphHttpWorkItemReadSchema,
-  WorkGraphHttpWorkItemAttemptsQuerySchema,
+  WorkGraphHttpWorkItemRunsQuerySchema,
   WorkGraphHttpWorkItemActivityQuerySchema,
-  WorkGraphHttpAttemptReadSchema,
+  WorkGraphHttpRunReadSchema,
   WorkGraphHttpDecisionReadSchema,
   type WorkGraphHttpQueries,
   type WorkGraphHttpService,
@@ -389,22 +389,22 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     return context.json(parsed)
   })
 
-  router.get("/work-items/:workItemId/attempts", async (context) => {
+  router.get("/work-items/:workItemId/runs", async (context) => {
     const id = WorkGraphHttpWorkItemReadSchema.safeParse({ workItemId: context.req.param("workItemId") })
-    const query = WorkGraphHttpWorkItemAttemptsQuerySchema.safeParse(context.req.query())
-    if (!id.success || !query.success) return errorResponse(context, 400, "validation_error", "Invalid Task Attempts query", false)
+    const query = WorkGraphHttpWorkItemRunsQuerySchema.safeParse(context.req.query())
+    if (!id.success || !query.success) return errorResponse(context, 400, "validation_error", "Invalid Task Runs query", false)
     try {
-      const page = WorkItemAttemptPageSchema.parse(await input.service.queries.workItems.listAttempts(
+      const page = WorkItemRunPageSchema.parse(await input.service.queries.workItems.listRuns(
         context.get("workGraphContext"),
         { workItemId: id.data.workItemId, ...query.data },
       ))
-      if (page.attempts.some((detail) => detail.attempt.ownerUserId !== context.get("workGraphContext").ownerUserId || detail.attempt.workItemId !== id.data.workItemId)) {
-        throw new Error("Task Attempts query crossed its trusted owner boundary")
+      if (page.runs.some((detail) => detail.run.ownerUserId !== context.get("workGraphContext").ownerUserId || detail.run.workItemId !== id.data.workItemId)) {
+        throw new Error("Task Runs query crossed its trusted owner boundary")
       }
       return context.json(page)
     } catch (error) {
-      if (isWorkItemAttemptPageCursorError(error)) {
-        return errorResponse(context, 409, "cursor_invalid", "Task Attempt cursor is no longer valid", false)
+      if (isWorkItemRunPageCursorError(error)) {
+        return errorResponse(context, 409, "cursor_invalid", "Task Run cursor is no longer valid", false)
       }
       throw error
     }
@@ -446,17 +446,17 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     return context.json(parsed)
   })
 
-  router.get("/attempts/:attemptId", async (context) => {
+  router.get("/runs/:runId", async (context) => {
     if (Object.keys(context.req.query()).length > 0) {
-      return errorResponse(context, 400, "validation_error", "Attempt reads do not accept query selectors", false)
+      return errorResponse(context, 400, "validation_error", "Run reads do not accept query selectors", false)
     }
-    const query = WorkGraphHttpAttemptReadSchema.safeParse({ attemptId: context.req.param("attemptId") })
-    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Attempt identifier", false)
-    const detail = await input.service.queries.attempts.read(context.get("workGraphContext"), query.data)
-    if (!detail) return errorResponse(context, 404, "not_found", "Attempt not found", false)
-    const parsed = AttemptDetailDtoSchema.parse(detail)
-    if (parsed.attempt.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.attempt.id !== query.data.attemptId) {
-      throw new Error("Attempt query crossed its trusted owner boundary")
+    const query = WorkGraphHttpRunReadSchema.safeParse({ runId: context.req.param("runId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Run identifier", false)
+    const detail = await input.service.queries.runs.read(context.get("workGraphContext"), query.data)
+    if (!detail) return errorResponse(context, 404, "not_found", "Run not found", false)
+    const parsed = RunDetailDtoSchema.parse(detail)
+    if (parsed.run.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.run.id !== query.data.runId) {
+      throw new Error("Run query crossed its trusted owner boundary")
     }
     return context.json(parsed)
   })
@@ -705,8 +705,8 @@ function isEvidencePageCursorError(error: unknown): error is EvidencePageCursorE
     ["invalid", "owner_mismatch", "subject_mismatch"].includes(String(error.reason))
 }
 
-function isWorkItemAttemptPageCursorError(error: unknown): error is WorkItemAttemptPageCursorError {
-  return error instanceof Error && error.name === "WorkItemAttemptPageCursorError" && "reason" in error &&
+function isWorkItemRunPageCursorError(error: unknown): error is WorkItemRunPageCursorError {
+  return error instanceof Error && error.name === "WorkItemRunPageCursorError" && "reason" in error &&
     ["invalid", "owner_mismatch", "work_item_mismatch"].includes(String(error.reason))
 }
 

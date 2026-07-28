@@ -130,7 +130,12 @@ export async function createLocalEmbeddedWorkGraph(
     database: input.database,
     ...(input.sourcePlanning
       ? {
-          sessions: input.sourcePlanning.sessions,
+          sessions: {
+            classifyAdmissionError: input.sourcePlanning.sessions.classifyAdmissionError,
+            admit: ({ attemptId, ...request }) =>
+              input.sourcePlanning!.sessions.admit({ runId: attemptId, ...request }),
+            result: input.sourcePlanning.sessions.result,
+          },
           sessionDirectory: input.sourcePlanning.directory,
         }
       : {}),
@@ -222,27 +227,27 @@ export async function createLocalEmbeddedWorkGraph(
   router.route("/", authenticated)
   const reconcile = async (context: WorkGraphContext) => {
     const startedAt = Date.now()
-    const attempts = workgraph.listSqliteReconcilableAttempts(input.database, context)
+    const runs = workgraph.listSqliteReconcilableRuns(input.database, context)
     try {
       const results = await Promise.all(
-        attempts.map(async (attempt) => {
-          const renewal = await adapter.attemptRuntime.renewLease(context, {
-            attemptId: attempt.attemptId,
-            expectedLeaseEpoch: attempt.leaseEpoch,
+        runs.map(async (run) => {
+          const renewal = await adapter.runRuntime.renewLease(context, {
+            runId: run.runId,
+            expectedLeaseEpoch: run.leaseEpoch,
             occurredAt: Date.now(),
             durationMs: 300_000,
           })
           if (!renewal) return { settled: false as const }
           const result = await input.execution.result(context, {
-            attemptId: attempt.attemptId,
-            sessionId: attempt.sessionId,
+            runId: run.runId,
+            sessionId: run.sessionId,
           })
           if (result.state === "pending" || result.state === "running") return { settled: false as const }
-          return workgraph.recordSemanticAttemptResult(
+          return workgraph.recordSemanticRunResult(
             context,
-            { ...attempt, leaseEpoch: renewal.leaseEpoch },
+            { ...run, leaseEpoch: renewal.leaseEpoch },
             result,
-            adapter.attemptResults,
+            adapter.runResults,
           )
         }),
       )
@@ -255,8 +260,8 @@ export async function createLocalEmbeddedWorkGraph(
       await adapter.drainReadyStreams()
       await master?.runDue(context)
       operationalTelemetry?.queue({
-        kind: "attempt",
-        backlog: attempts.length,
+        kind: "run",
+        backlog: runs.length,
         oldestAgeMs: 0,
         failed: results.filter((result) => result.settled && "state" in result && result.state === "failed").length,
         retried: 0,
@@ -267,7 +272,7 @@ export async function createLocalEmbeddedWorkGraph(
         outcome: "succeeded",
         latencyMs: Date.now() - startedAt,
         lagMs: 0,
-        claimed: attempts.length,
+        claimed: runs.length,
         running: results.filter((result) => !result.settled).length,
         settled: results.filter((result) => result.settled).length,
         failed: results.filter((result) => result.settled && "state" in result && result.state === "failed").length,
@@ -278,7 +283,7 @@ export async function createLocalEmbeddedWorkGraph(
         outcome: "failed",
         latencyMs: Date.now() - startedAt,
         lagMs: 0,
-        claimed: attempts.length,
+        claimed: runs.length,
         running: 0,
         settled: 0,
         failed: 1,
@@ -308,7 +313,7 @@ export async function createLocalEmbeddedWorkGraph(
     /**
      * Nudge iff this owner's change log advanced since the last call. The server
      * reconciler drives this once per owner per tick so that writers outside the
-     * command path (attempt settlement, source planning, activity, intake
+     * command path (run settlement, source planning, activity, intake
      * stores) still reach clients, without costing anything when idle.
      */
     observeChanges: changeTips.observe,

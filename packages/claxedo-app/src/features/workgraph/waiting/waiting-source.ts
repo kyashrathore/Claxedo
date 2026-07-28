@@ -1,6 +1,6 @@
 import type {
   AdmissionProposalDto,
-  AttemptDetailDto,
+  RunDetailDto,
   AttentionCursor,
   AttentionItem,
   AttentionPage,
@@ -13,7 +13,7 @@ import type {
   ReplacementReview,
   StreamDto,
   WorkGraphDefaultsDto,
-  WorkItemAttemptPageCursor,
+  WorkItemRunPageCursor,
   TaskActivityPage,
   TaskActivityPageCursor,
   StreamActivityGranularity,
@@ -38,11 +38,11 @@ export type WorkGraphWaitingSource = {
   workItem: (workItemId: string) => Promise<WorkItemDto>
   stream: (streamId: string) => Promise<StreamDto>
   /**
-   * The true latest attempt for a Work Item — determined by following strict
+   * The true latest run for a Work Item — determined by following strict
    * page cursors to the end, so it is correct even beyond the first page.
-   * Resolves to undefined when no attempt has run.
+   * Resolves to undefined when no run has run.
    */
-  latestAttempt: (workItemId: string) => Promise<AttemptDetailDto | undefined>
+  latestRun: (workItemId: string) => Promise<RunDetailDto | undefined>
   activity: (
     workItemId: string,
     options?: Readonly<{
@@ -52,7 +52,7 @@ export type WorkGraphWaitingSource = {
     }>,
   ) => Promise<TaskActivityPage>
   evidence: (workItemId: string) => Promise<EvidenceDto[]>
-  attempt: (attemptId: string) => Promise<AttemptDetailDto>
+  run: (runId: string) => Promise<RunDetailDto>
   decision: (decisionId: string) => Promise<DecisionDto>
   /** One page of intake candidates. Pass the previous page's `nextCursor` to page. */
   candidates: (after?: IntakeCandidatePageCursor) => Promise<IntakeCandidatePage>
@@ -64,7 +64,7 @@ export type WorkGraphWaitingSource = {
   dismissAdmission: (proposalId: string, expectedVersion: number) => Promise<CommandResult>
   stageIntakeCandidate: (candidateId: string) => Promise<unknown>
   dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => Promise<unknown>
-  cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
+  cancelRun: (runId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
   retryWorkItem: (workItemId: string, expectedVersion: number) => Promise<CommandResult>
   approveWorkItem: WorkGraphClient["approveWorkItem"]
   rejectWorkItem: WorkGraphClient["rejectWorkItem"]
@@ -90,10 +90,10 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     proposal: (id) => client.proposal(id),
     workItem: (id) => client.workItem(id),
     stream: (id) => client.stream(id),
-    latestAttempt: (id) => latestAttempt(client, id),
+    latestRun: (id) => latestRun(client, id),
     activity: (id, options) => client.workItemActivity(id, options),
     evidence: (id) => workItemEvidence(client, id),
-    attempt: (id) => client.attempt(id),
+    run: (id) => client.run(id),
     decision: (id) => client.decision(id),
     candidates: (after) => client.intakeCandidates(after ? { after } : {}),
     defaults: () => client.defaults(),
@@ -104,7 +104,7 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     dismissAdmission: (id, version) => client.dismissAdmission(id, version),
     stageIntakeCandidate: (id) => client.stageIntakeCandidate(id),
     dismissIntakeCandidate: (id, version) => client.dismissIntakeCandidate(id, version),
-    cancelAttempt: (id, version, reason) => client.cancelAttempt(id, version, reason),
+    cancelRun: (id, version, reason) => client.cancelRun(id, version, reason),
     retryWorkItem: (id, version) => client.retryWorkItem(id, version),
     approveWorkItem: (id, version) => client.approveWorkItem(id, version),
     rejectWorkItem: (id, version, reason) => client.rejectWorkItem(id, version, reason),
@@ -114,18 +114,18 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
 }
 
 /**
- * Walks every attempt page in cursor order and returns the attempt with the
- * highest attempt number. Following the cursor to the end (rather than reading
+ * Walks every run page in cursor order and returns the run with the
+ * highest run number. Following the cursor to the end (rather than reading
  * only the first page) is what makes "latest" correct when a Work Item has more
- * attempts than one page holds.
+ * runs than one page holds.
  */
-async function latestAttempt(client: WorkGraphClient, workItemId: string) {
-  let after: WorkItemAttemptPageCursor | undefined
-  let best: AttemptDetailDto | undefined
+async function latestRun(client: WorkGraphClient, workItemId: string) {
+  let after: WorkItemRunPageCursor | undefined
+  let best: RunDetailDto | undefined
   for (;;) {
-    const page = await client.workItemAttempts(workItemId, after ? { after } : {})
-    for (const detail of page.attempts) {
-      if (!best || detail.attempt.attemptNumber > best.attempt.attemptNumber) best = detail
+    const page = await client.workItemRuns(workItemId, after ? { after } : {})
+    for (const detail of page.runs) {
+      if (!best || detail.run.runNumber > best.run.runNumber) best = detail
     }
     if (!page.hasMore || !page.nextCursor) return best
     after = page.nextCursor
@@ -216,13 +216,13 @@ export function toWaitingRow(item: AttentionItem): WaitingRowView {
       item,
     }
   }
-  if (item.kind === "attempt") {
+  if (item.kind === "run") {
     return {
-      key: `attempt:${item.id}`,
+      key: `run:${item.id}`,
       kind: item.kind,
       tag: "attention",
-      title: `Attempt ${item.record.attemptNumber}`,
-      meta: item.record.attentionReason ?? "Attempt needs your attention",
+      title: `Run ${item.record.runNumber}`,
+      meta: item.record.parkedReason ?? "Run needs your attention",
       critical: true,
       staged: false,
       item,

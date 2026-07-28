@@ -27,7 +27,7 @@ The user can return at any time and quickly answer:
 - **Task:** The primary user-facing unit of work in a Stream. The service contract names it a Work Item and records its dependencies, completion contract, and execution profile.
 - **Outcome:** An optional grouping for Tasks that together produce one shippable result. It carries success criteria and linked evidence; WorkGraph proposes closure when the criteria are satisfied and the user confirms it.
 - **Work Source:** Exact source text captured from an agent, authoring surface, external issue, independent session, or explicit source action. Each edit creates a revision; confirmed work keeps the exact source revision that produced it.
-- **Attempt:** One agent execution try. It preserves the resolved environment, model, effort, session, findings, artifacts, and terminal result.
+- **Run:** One agent execution try. It preserves the resolved environment, model, effort, session, findings, artifacts, and terminal result.
 - **Decision:** A durable choice containing its context, options, answer, rationale, provenance, and affected work.
 
 ## Main interaction
@@ -36,7 +36,7 @@ WorkGraph is one compact personal surface at `/workgraph`. Streams expand in pla
 
 The existing app-global WorkspacePanel is the single secondary panel and has one top-level toggle. WorkGraph contributes **Needs you** and **Settings** views to that same panel. The WorkGraph header controls select those views; they do not create another panel or toggle. A small dot on the existing top-level toggle indicates open attention. When no attention exists, WorkGraph renders no dot, contextual card, list, or empty attention state.
 
-The Needs you view contains proposal review, Decisions, Task and Attempt attention, configuration requirements, and an aggregate for external-issue and independent-Session candidates. Selecting a domain item opens its focused dialog over the same WorkGraph surface. Candidates do not create a separate intake, capture, or onboarding screen. The top-level Settings view contains WorkGraph execution defaults only. A Stream settings control opens one tabless Stream-scoped dialog containing that Stream's execution overrides. Settings content is flush, descriptions and errors sit beside their fields, and the action footer remains pinned. The WorkspacePanel shell contains no WorkGraph domain state; WorkGraph supplies its tenant-scoped views and interactions.
+The Needs you view contains proposal review, Decisions, Task and Run attention, configuration requirements, and an aggregate for external-issue and independent-Session candidates. Selecting a domain item opens its focused dialog over the same WorkGraph surface. Candidates do not create a separate intake, capture, or onboarding screen. The top-level Settings view contains WorkGraph execution defaults only. A Stream settings control opens one tabless Stream-scoped dialog containing that Stream's execution overrides. Settings content is flush, descriptions and errors sit beside their fields, and the action footer remains pinned. The WorkspacePanel shell contains no WorkGraph domain state; WorkGraph supplies its tenant-scoped views and interactions.
 
 ## Creating and organizing work
 
@@ -48,15 +48,15 @@ When the user asks an agent or authoring surface to organize an idea, PRD, plan,
 
 Planning is version-fenced to the immutable revision and proposal. A lost admission response resumes the same durable session and message, and only valid structured output from that Session can make the proposal reviewable. Invalid or unavailable generation produces a visible `planning_failed` state with bounded retry and attention. The user edits and confirms the exact rendered proposal version before any Task is admitted.
 
-When the Work Source changes, WorkGraph shows the revision diff and proposes a replan. The user can keep the existing plan, reset a wholly disposable Stream, or fork a new Stream. A reset is available only when every nonterminal Task belongs to the prior source revision and no durable external effect exists. Confirmation is bound to the exact reviewed Task IDs and versions. WorkGraph fences their Attempts, preserves completed history, and holds replacement Tasks behind a durable reset barrier until Session interruption and envelope cleanup are acknowledged. Confirmed work is never rewritten silently.
+When the Work Source changes, WorkGraph shows the revision diff and proposes a replan. The user can keep the existing plan, reset a wholly disposable Stream, or fork a new Stream. A reset is available only when every nonterminal Task belongs to the prior source revision and no durable external effect exists. Confirmation is bound to the exact reviewed Task IDs and versions. WorkGraph fences their Runs, preserves completed history, and holds replacement Tasks behind a durable reset barrier until Session interruption and envelope cleanup are acknowledged. Confirmed work is never rewritten silently.
 
 Docs v2 is the first authoring adapter target for this contract. A user will brainstorm and draft freely in a document, then ask WorkGraph to turn an exact document revision into work. Later document revisions append equivalent Work Source revisions and enter the same diff, replan, and confirmation flow; the document remains the authoring surface while WorkGraph remains execution truth. The repository has the adapter seam, but the current Documents feature is still legacy Pages and has no durable Docs v2 revision model, so this document-triggered journey remains pending.
 
 ### From external trackers
 
-GitHub, Linear, Jira, and similar sources use organization-owned Claxedo Connections. The organization owns credential and Connection metadata; each user owns their provider identity mapping, saved filters, candidate state, and Attempt bindings over those credentials. Matching issues remain personal candidates until the user chooses **Add to WorkGraph** from Needs you.
+GitHub, Linear, Jira, and similar sources use organization-owned Claxedo Connections. The organization owns credential and Connection metadata; each user owns their provider identity mapping, saved filters, candidate state, and Run bindings over those credentials. Matching issues remain personal candidates until the user chooses **Add to WorkGraph** from Needs you.
 
-The external tracker remains authoritative for team issue state. WorkGraph owns personal execution state, Attempts, and Decisions. Sync-back defaults to announcing meaningful results, with silent and fuller synchronization available per source view.
+The external tracker remains authoritative for team issue state. WorkGraph owns personal execution state, Runs, and Decisions. Sync-back defaults to announcing meaningful results, with silent and fuller synchronization available per source view.
 
 ### From independent AI sessions
 
@@ -75,7 +75,7 @@ Each Stream owns an execution workspace: a local worktree, cloud VM, or equivale
 Execution configuration inherits through:
 
 ```text
-WorkGraph defaults → Stream → optional Outcome → Task → immutable Attempt snapshot
+WorkGraph defaults → Stream → optional Outcome → Task → immutable Run snapshot
 ```
 
 The Stream defines the environment, repository, and starting revision. Each Task resolves its harness and agent, model, effort, tools, and Connections. Branch, worktree, and repository integration behavior is part of the Task instructions and harness execution. The user edits only execution overrides. Every selectable value comes from the exact server-attested capability catalog for the trusted tenant; unavailable or stale capability state remains explicit and cannot authorize execution. One versioned settings save commits the complete scope-specific patch atomically: WorkGraph Settings writes execution defaults, while Stream Settings writes Stream execution overrides. Clearing a field removes that override, and conflicts preserve the user's unsaved input for an explicit retry.
@@ -87,7 +87,7 @@ A Stream or Outcome runs in one of two modes:
 
 “Execute this Stream” defaults to autonomous. WorkGraph has no product-level agent-capacity or work-in-progress limit. Every item whose blockers and required Decisions are resolved and whose execution profile is valid is ready to launch.
 
-Pause stops new Attempts; active Attempts continue unless the user explicitly cancels them. Transient infrastructure and provider failures retry automatically. Semantic, repeated, or ambiguous failures require attention.
+Pause stops new Runs; active Runs continue unless the user explicitly cancels them. Transient infrastructure and provider failures retry automatically. Semantic, repeated, or ambiguous failures require attention.
 
 ## Truthful state
 
@@ -101,11 +101,11 @@ Users can correct any state while preserving history and provenance.
 
 ## Lifecycle and sharing
 
-Before a Stream produces an integrated or externally durable result, it is disposable. Deleting it cancels Attempts, destroys its worktree or VM, and discards unmerged partial work.
+Before a Stream produces an integrated or externally durable result, it is disposable. Deleting it cancels Runs, destroys its worktree or VM, and discards unmerged partial work.
 
 Integrated code, a merged pull request, a published artifact, or another accepted external write is a point of no return. The Stream can no longer be deleted because its history explains durable effects outside WorkGraph. The user closes it instead.
 
-Closing preserves Attempts, Decisions, evidence, and references to integrated results. Unfinished Tasks become abandoned with a reason, and the isolated environment is cleaned up after retained results are recorded. Archive hides a closed Stream while preserving that history.
+Closing preserves Runs, Decisions, evidence, and references to integrated results. Unfinished Tasks become abandoned with a reason, and the isolated environment is cleaned up after retained results are recorded. Archive hides a closed Stream while preserving that history.
 
 A WorkGraph is private and personally owned by default. Later sharing begins with owner-controlled, read-only access to a Stream or whole WorkGraph. Collaborative mutation and shared ownership are separate future capabilities; organization goals and top-down allocation are outside the product’s core identity.
 
@@ -139,7 +139,7 @@ A meaningful independent AI session appears in the aggregated Unorganized AI wor
 
 ### 7. Discard or close a Stream
 
-The user abandons a partially implemented Stream whose work remains isolated. Deleting the Stream cancels its Attempts and destroys its worktree or VM. If any result has already been integrated or published, deletion is unavailable; closing preserves the history and marks unfinished Tasks abandoned.
+The user abandons a partially implemented Stream whose work remains isolated. Deleting the Stream cancels its Runs and destroys its worktree or VM. If any result has already been integrated or published, deletion is unavailable; closing preserves the history and marks unfinished Tasks abandoned.
 
 ## Success criteria
 
@@ -158,7 +158,7 @@ WorkGraph succeeds when the user can:
 
 - One personal WorkGraph surface with inline Stream expansion, canonical Add task, and WorkGraph Needs you and Settings views in the existing app-global WorkspacePanel.
 - WorkGraph application services embedded in `claxedo-server`, with authenticated HTTP/JSON plus ordered change cursors for the app and standalone stdio MCP, direct in-process access for local embedded agent tools and workers, and hosted embedded tools gated on durable Session tenant provenance.
-- Streams, Tasks, optional Outcomes, Attempts, agent-created Decisions, and attention.
+- Streams, Tasks, optional Outcomes, Runs, agent-created Decisions, and attention.
 - Versioned Work Sources and durable Session-backed “Turn into work” planning with explicit planning and failure states.
 - Organization-credential, user-filtered external sources.
 - Unorganized AI work capture.

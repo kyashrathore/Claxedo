@@ -141,7 +141,7 @@ describe("WorkGraph overview actions", () => {
         streams={[noted]}
         outcomes={[]}
         items={[]}
-        attempts={[]}
+        runs={[]}
         empty={<div>No streams</div>}
         relativeTime={() => "now"}
         client={createWorkGraphClient({ baseUrl: "http://test.local", request: workGraphRequest({ records: () => [noted], command: () => success() }) })}
@@ -267,7 +267,7 @@ describe("WorkGraph overview actions", () => {
       ]),
     )
     expect(commands.some((command) => command.type === "close_stream")).toBe(false)
-    // The explicit Delete action stays put for a fresh, user-initiated attempt.
+    // The explicit Delete action stays put for a fresh, user-initiated run.
     await waitFor(() => expect(screen.getByRole("button", { name: "Delete stream", exact: true })).toBeEnabled())
   })
 
@@ -329,9 +329,9 @@ describe("WorkGraph overview actions", () => {
     await waitFor(() => expect(screen.queryByText("Remove obsolete setup")).not.toBeInTheDocument())
   })
 
-  test("does not offer task abandonment while its Attempt is live", async () => {
+  test("does not offer task abandonment while its Run is live", async () => {
     const request = workGraphRequest({
-      records: () => [stream, outcome, activeItem, runningAttempt],
+      records: () => [stream, outcome, activeItem, runningRun],
       command: () => success(),
     })
 
@@ -346,7 +346,7 @@ describe("WorkGraph overview actions", () => {
   test("retries an attention task directly from its row", async () => {
     const commands: Array<Record<string, unknown>> = []
     const request = workGraphRequest({
-      records: () => [stream, outcome, activeItem, attentionAttempt],
+      records: () => [stream, outcome, activeItem, parkedRun],
       command: (command) => {
         commands.push(command)
         return success()
@@ -367,10 +367,10 @@ describe("WorkGraph overview actions", () => {
 
   test("retries every attention task directly from its Stream row", async () => {
     const secondItem = { ...activeItem, id: "item_second", title: "Verify production", version: 3 }
-    const secondAttempt = { ...attentionAttempt, id: "attempt_2", workItemId: secondItem.id }
+    const secondRun = { ...parkedRun, id: "run_2", workItemId: secondItem.id }
     const commands: Array<Record<string, unknown>> = []
     const request = workGraphRequest({
-      records: () => [stream, outcome, activeItem, secondItem, attentionAttempt, secondAttempt],
+      records: () => [stream, outcome, activeItem, secondItem, parkedRun, secondRun],
       command: (command) => {
         commands.push(command)
         return success()
@@ -392,21 +392,21 @@ describe("WorkGraph overview actions", () => {
 
   test("opens the latest related Session from the snapshot without a click-time read", async () => {
     const onOpenSession = vi.fn()
-    const earlierAttempt = { ...runningAttempt, state: "result" as const }
-    const latestAttempt = {
-      ...runningAttempt,
-      id: "attempt_2",
-      attemptNumber: 2,
+    const earlierRun = { ...runningRun, state: "result" as const }
+    const latestRun = {
+      ...runningRun,
+      id: "run_2",
+      runNumber: 2,
       executionReferences: { sessionId: "session_running", workspaceId: "workspace_running" },
     }
-    const attemptReads: string[] = []
+    const runReads: string[] = []
     const request = workGraphRequest({
-      records: () => [stream, outcome, activeItem, earlierAttempt, latestAttempt],
+      records: () => [stream, outcome, activeItem, earlierRun, latestRun],
       command: () => success(),
-      attempt: (attemptId) => {
-        attemptReads.push(attemptId)
+      run: (runId) => {
+        runReads.push(runId)
         return {
-          attempt: latestAttempt,
+          run: latestRun,
           executionReferences: { sessionId: "session_running", workspaceId: "workspace_running" },
         }
       },
@@ -424,16 +424,16 @@ describe("WorkGraph overview actions", () => {
       expect(onOpenSession).toHaveBeenCalledWith({
         sessionId: "session_running",
         workspaceId: "workspace_running",
-        harness: latestAttempt.resolvedExecution.harness,
-        environment: latestAttempt.resolvedExecution.environment,
+        harness: latestRun.resolvedExecution.harness,
+        environment: latestRun.resolvedExecution.environment,
       }),
     )
-    expect(attemptReads).toEqual([])
+    expect(runReads).toEqual([])
   })
 
   test("stops a running Task from the shared row and renders Stopped · Retry after cancellation", async () => {
     const commands: Array<Record<string, unknown>> = []
-    let records: unknown[] = [stream, outcome, activeItem, runningAttempt]
+    let records: unknown[] = [stream, outcome, activeItem, runningRun]
     const request = workGraphRequest({
       records: () => records,
       command: (command) => {
@@ -442,7 +442,7 @@ describe("WorkGraph overview actions", () => {
           stream,
           outcome,
           activeItem,
-          { ...runningAttempt, state: "cancelled", version: 2, finishedAt: 2 },
+          { ...runningRun, state: "cancelled", version: 2, finishedAt: 2 },
         ]
         return success()
       },
@@ -454,8 +454,8 @@ describe("WorkGraph overview actions", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Stop task Deploy production" }))
     await waitFor(() => expect(commands).toEqual([{
       version: 1,
-      type: "cancel_attempt",
-      attemptId: "attempt_1",
+      type: "cancel_run",
+      runId: "run_1",
       expectedVersion: 1,
       reason: "Stopped from task row",
     }]))
@@ -490,7 +490,7 @@ describe("WorkGraph overview actions", () => {
         streams={streams()}
         outcomes={[]}
         items={[]}
-        attempts={[]}
+        runs={[]}
         empty={<div>No streams</div>}
         relativeTime={() => "now"}
         client={client}
@@ -525,7 +525,7 @@ describe("WorkGraph overview actions", () => {
         stream={stream}
         outcomes={[outcome]}
         items={[pendingItem]}
-        attempts={[]}
+        runs={[]}
         client={client}
         mutate={async () => true}
         onOpenTask={() => undefined}
@@ -564,7 +564,7 @@ describe("WorkGraph overview actions", () => {
   test("can pause a Stream and stop its running work from the Pause popover", async () => {
     const commands: Array<Record<string, unknown>> = []
     const request = workGraphRequest({
-      records: () => [stream, outcome, activeItem, runningAttempt],
+      records: () => [stream, outcome, activeItem, runningRun],
       command: (command) => {
         commands.push(command)
         return success()
@@ -579,7 +579,7 @@ describe("WorkGraph overview actions", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Pause stream", exact: true }))
     await waitFor(() => expect(commands).toEqual([
       { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 1, state: "paused", reason: "Paused from overview" },
-      { version: 1, type: "cancel_attempt", attemptId: "attempt_1", expectedVersion: 1, reason: "Stopped while pausing Stream" },
+      { version: 1, type: "cancel_run", runId: "run_1", expectedVersion: 1, reason: "Stopped while pausing Stream" },
     ]))
   })
 
@@ -721,19 +721,19 @@ describe("WorkGraph project grouping", () => {
 function workGraphRequest(input: {
   records: () => unknown[]
   command: (command: Record<string, unknown>) => Record<string, unknown>
-  attempt?: (attemptId: string) => unknown
+  run?: (runId: string) => unknown
 }) {
   return async (request: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof request === "string" ? request : request instanceof URL ? request : request.url)
     const pathname = url.pathname
     if (pathname.includes("/attention")) return Response.json({ items: [], total: 0, hasMore: false })
-    if (pathname.includes("/attempts/") && input.attempt) return Response.json(input.attempt(pathname.split("/").at(-1)!))
+    if (pathname.includes("/runs/") && input.run) return Response.json(input.run(pathname.split("/").at(-1)!))
     if (pathname.endsWith("/evidence")) return Response.json({ evidence: [], hasMore: false })
     if (pathname.includes("/work-items/") && pathname.endsWith("/activity")) {
       return Response.json({ entries: [], hasMore: false })
     }
-    if (pathname.includes("/work-items/") && pathname.endsWith("/attempts")) {
-      return Response.json({ attempts: [], hasMore: false })
+    if (pathname.includes("/work-items/") && pathname.endsWith("/runs")) {
+      return Response.json({ runs: [], hasMore: false })
     }
     if (pathname.includes("/work-items/")) {
       const id = pathname.split("/").at(-1)
@@ -847,18 +847,19 @@ const pendingItem = {
 }
 const activeItem = { ...pendingItem, id: "item_active", title: "Deploy production", state: "active" as const }
 const stagedItem = { ...pendingItem, id: "item_pa", title: "Draft the migration", state: "pending_approval" as const, createdByActorType: "agent" as const, createdByActorId: "agent_planner" }
-const runningAttempt = {
-  recordType: "attempt" as const,
+const runningRun = {
+  recordType: "run" as const,
   schemaVersion: 1 as const,
   ownerUserId: "user_1",
   version: 1,
   createdAt: 1,
   updatedAt: 1,
   provenance,
-  id: "attempt_1",
+  id: "run_1",
   streamId: "stream_1",
   workItemId: "item_active",
-  attemptNumber: 1,
+  runNumber: 1,
+  generation: 1,
   state: "running" as const,
   resolvedExecution: {
     environment: { kind: "local_worktree" as const },
@@ -873,9 +874,9 @@ const runningAttempt = {
   startedAt: 1,
   sourceRevisionRefs: [],
 }
-const attentionAttempt = {
-  ...runningAttempt,
-  state: "attention" as const,
+const parkedRun = {
+  ...runningRun,
+  state: "parked" as const,
   finishedAt: 2,
-  attentionReason: "Harness Session request failed",
+  parkedReason: "Harness Session request failed",
 }

@@ -15,7 +15,7 @@ const publishedEntries = [
 ].map((file) => path.join(root, file))
 const retainedInternalRoots = [
   "src/db/schema.ts",
-  "src/domain/attempt.ts",
+  "src/domain/run.ts",
   "src/domain/launch-readiness.ts",
   "src/domain/lifecycle.ts",
 ].map((file) => path.join(root, file))
@@ -63,7 +63,7 @@ describe("WorkGraph v2 public entrypoints", () => {
       "WorkGraphClient",
       "createApp",
       "registerWorkGraphTools",
-      "startAttempts",
+      "startRuns",
       "cancelNodeExecution",
       "openSqliteExecutionStore",
       "openSqliteEventStore",

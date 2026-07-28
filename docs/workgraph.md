@@ -133,7 +133,7 @@ WorkGraph is a self-contained domain service inside the Claxedo server. Its boun
 
 ### 6.2 State machines as data, scheduling as a pure function
 
-Task, attempt, stream, and decision lifecycles are literal transition tables — no scattered `if`s. The scheduler is a pure predicate over graph state: **runnable-or-not is a boolean**; the reason codes attached to "not" exist for the UI and telemetry, and nothing else consumes them. No model is ever in the launch path: launchability must be deterministic, near-free, and testable, because it runs constantly over every pending task. Notably, nothing transitions *into* `completed` through the tables — completion only passes through the evidence contract.
+Task, run, stream, and decision lifecycles are literal transition tables — no scattered `if`s. The scheduler is a pure predicate over graph state: **runnable-or-not is a boolean**; the reason codes attached to "not" exist for the UI and telemetry, and nothing else consumes them. No model is ever in the launch path: launchability must be deterministic, near-free, and testable, because it runs constantly over every pending task. Notably, nothing transitions *into* `completed` through the tables — completion only passes through the evidence contract.
 
 ### 6.3 The execution substrate
 

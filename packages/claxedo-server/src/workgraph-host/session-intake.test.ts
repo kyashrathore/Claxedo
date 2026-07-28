@@ -47,7 +47,7 @@ describe("WorkGraph Session intake host", () => {
       directory: "/repo",
       resolveContext: () => context(),
     })
-    listeners[0]!({ payload: { type: "session.status", properties: { sessionID: "ses_workgraph_attempt", status: { type: "idle" } } } })
+    listeners[0]!({ payload: { type: "session.status", properties: { sessionID: "ses_workgraph_run", status: { type: "idle" } } } })
     expect(reads).toBe(0)
   })
 

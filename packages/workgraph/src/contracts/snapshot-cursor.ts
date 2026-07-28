@@ -9,7 +9,7 @@ const recordTypes = new Set([
   "stream",
   "outcome",
   "work_item",
-  "attempt",
+  "run",
   "decision",
   "admission_proposal",
 ])

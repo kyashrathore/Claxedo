@@ -89,7 +89,7 @@ Read-only mode registers:
 - `workgraph_intake` when the embedded/HTTP host supports it
 - `workgraph_get_candidate` when the embedded/HTTP host supports it
 - `workgraph_evidence` when the embedded/HTTP host supports it
-- `workgraph_attempts` when the embedded/HTTP host supports it
+- `workgraph_runs` when the embedded/HTTP host supports it
 - `workgraph_recap`
 
 Read-only mode omits:

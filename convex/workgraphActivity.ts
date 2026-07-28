@@ -202,17 +202,17 @@ export async function readTaskActivityProjection(
     "event",
     cursor,
   ), "event", parsed.data.granularity)
-  const attemptsQuery = filterActivitySource(beforeCursor(
-    ctx.db.query("workgraph_attempts")
+  const runsQuery = filterActivitySource(beforeCursor(
+    ctx.db.query("workgraph_runs")
       .withIndex("by_tenant_item_updated_id", (query: any) => activityIndexRange(query
         .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
-        .eq("work_item_id", parsed.data.workItemId), "updated_at", "attempt", cursor)),
+        .eq("work_item_id", parsed.data.workItemId), "updated_at", "run", cursor)),
     "updated_at",
     "id",
-    "attempt",
+    "run",
     cursor,
-  ), "attempt", parsed.data.granularity)
+  ), "run", parsed.data.granularity)
   const checkpointsQuery = filterActivitySource(beforeCursor(
     ctx.db.query("workgraph_agent_checkpoints")
       .withIndex("by_tenant_item_occurred_id", (query: any) => activityIndexRange(query
@@ -236,9 +236,9 @@ export async function readTaskActivityProjection(
     "evidence",
     cursor,
   )
-  const [changes, attempts, checkpoints, evidence, decisionLinks] = await Promise.all([
+  const [changes, runs, checkpoints, evidence, decisionLinks] = await Promise.all([
     changesQuery.order("desc").take(sourceLimit),
-    attemptsQuery.order("desc").take(sourceLimit),
+    runsQuery.order("desc").take(sourceLimit),
     checkpointsQuery.order("desc").take(sourceLimit),
     evidenceQuery.order("desc").take(sourceLimit),
     ctx.db.query("workgraph_decision_work_items")
@@ -269,14 +269,14 @@ export async function readTaskActivityProjection(
       `decision:${left.id}`,
     ))
     .slice(0, sourceLimit)
-  const attemptIds = new Set((await ctx.db.query("workgraph_attempts")
-    .withIndex("by_tenant_item_attempt", (query: any) => query
+  const runIds = new Set((await ctx.db.query("workgraph_runs")
+    .withIndex("by_tenant_item_run", (query: any) => query
       .eq("organization_id", organizationId)
       .eq("owner_user_id", ownerUserId)
       .eq("work_item_id", parsed.data.workItemId))
     .order("desc")
-    .take(100)).map((attempt: any) => attempt.id))
-  const receipts = attemptIds.size === 0 ? [] : (await beforeCursor(
+    .take(100)).map((run: any) => run.id))
+  const receipts = runIds.size === 0 ? [] : (await beforeCursor(
     ctx.db.query("workgraph_durable_effect_receipts")
       .withIndex("by_tenant_stream_created_id", (query: any) => activityIndexRange(query
         .eq("organization_id", organizationId)
@@ -287,11 +287,11 @@ export async function readTaskActivityProjection(
     "external_effect",
     cursor,
   ).order("desc").take(Math.max(sourceLimit * 4, 20)))
-    .filter((receipt: any) => receipt.attempt_id && attemptIds.has(receipt.attempt_id))
+    .filter((receipt: any) => receipt.run_id && runIds.has(receipt.run_id))
     .slice(0, sourceLimit)
   const entries = [
     ...changes.map((change: any) => eventActivity(item.stream_id, parsed.data.workItemId, change, events.get(change.operation_id))),
-    ...attempts.map((attempt: any) => attemptActivity(item.stream_id, parsed.data.workItemId, attempt)),
+    ...runs.map((run: any) => runActivity(item.stream_id, parsed.data.workItemId, run)),
     ...checkpoints.map((checkpoint: any) => checkpointActivity(item.stream_id, parsed.data.workItemId, checkpoint)),
     ...decisions.map((decision) => decisionActivity(item.stream_id, parsed.data.workItemId, decision)),
     ...evidence.map((record: any) => evidenceActivity(item.stream_id, parsed.data.workItemId, record)),
@@ -368,19 +368,19 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
   if (!item || item.stream_id !== binding.stream_id) {
     throw new WorkGraphSessionBindingError("not_found", "Work Item not found in the bound Stream")
   }
-  if (binding.current_work_item_id === item.id && binding.current_attempt_id) {
+  if (binding.current_work_item_id === item.id && binding.current_run_id) {
     throw new WorkGraphSessionBindingError("invalid_transition", "Session is already attached to this Work Item")
   }
   if (binding.current_work_item_id) {
-    const [currentItem, currentAttempt] = await Promise.all([
+    const [currentItem, currentRun] = await Promise.all([
       owned(ctx, "workgraph_work_items", context.organizationId, context.ownerUserId, binding.current_work_item_id),
-      binding.current_attempt_id
-        ? owned(ctx, "workgraph_attempts", context.organizationId, context.ownerUserId, binding.current_attempt_id)
+      binding.current_run_id
+        ? owned(ctx, "workgraph_runs", context.organizationId, context.ownerUserId, binding.current_run_id)
         : undefined,
     ])
     if (!currentItem || !["completed", "abandoned"].includes(currentItem.state) ||
-      !currentAttempt || !["result", "failed", "cancelled"].includes(currentAttempt.state)) {
-      throw new WorkGraphSessionBindingError("invalid_transition", "Settle the current Work Item and Attempt before attaching another")
+      !currentRun || !["result", "failed", "cancelled"].includes(currentRun.state)) {
+      throw new WorkGraphSessionBindingError("invalid_transition", "Settle the current Work Item and Run before attaching another")
     }
   }
   if (item.state !== "pending") throw new WorkGraphSessionBindingError("not_ready", "Work Item is not ready")
@@ -406,8 +406,8 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
   if (decisions.some((decision) => decision && ["proposed", "pending"].includes(decision.state))) {
     throw new WorkGraphSessionBindingError("not_ready", "Work Item requires a pending Decision")
   }
-  const activeAttempt = await ctx.db.query("workgraph_attempts")
-    .withIndex("by_tenant_item_attempt", (query: any) => query
+  const activeRun = await ctx.db.query("workgraph_runs")
+    .withIndex("by_tenant_item_run", (query: any) => query
       .eq("organization_id", context.organizationId)
       .eq("owner_user_id", context.ownerUserId)
       .eq("work_item_id", item.id))
@@ -417,22 +417,23 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
       query.eq(query.field("state"), "running"),
     ))
     .first()
-  if (activeAttempt) throw new WorkGraphSessionBindingError("not_ready", "Work Item already has an active Attempt")
-  const latest = await ctx.db.query("workgraph_attempts")
-    .withIndex("by_tenant_item_attempt", (query: any) => query
+  if (activeRun) throw new WorkGraphSessionBindingError("not_ready", "Work Item already has an active Run")
+  const latest = await ctx.db.query("workgraph_runs")
+    .withIndex("by_tenant_item_run", (query: any) => query
       .eq("organization_id", context.organizationId)
       .eq("owner_user_id", context.ownerUserId)
       .eq("work_item_id", item.id))
     .order("desc")
     .first()
-  const attemptId = activityId("attempt", context.ownerUserId, input.operationId)
-  await ctx.db.insert("workgraph_attempts", {
+  const runId = activityId("run", context.ownerUserId, input.operationId)
+  await ctx.db.insert("workgraph_runs", {
     organization_id: context.organizationId,
     owner_user_id: context.ownerUserId,
-    id: attemptId,
+    id: runId,
     stream_id: item.stream_id,
     work_item_id: item.id,
-    attempt_number: (latest?.attempt_number ?? 0) + 1,
+    run_number: (latest?.run_number ?? 0) + 1,
+    generation: 1,
     state: "running",
     execution_kind: "attached",
     resolved_execution: input.resolvedExecution,
@@ -449,7 +450,7 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
   await ctx.db.patch(item._id, { state: "active", row_version: item.row_version + 1, updated_at: context.now })
   await ctx.db.patch(binding._id, {
     current_work_item_id: item.id,
-    current_attempt_id: attemptId,
+    current_run_id: runId,
     provenance: { actor: context.actor, operationId: input.operationId },
     row_version: binding.row_version + 1,
     updated_at: context.now,
@@ -464,7 +465,7 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
       "session_binding",
       binding.id,
       "session_task_attached",
-      { bindingId: binding.id, workItemId: item.id, attemptId },
+      { bindingId: binding.id, workItemId: item.id, runId },
       true,
     ),
   }
@@ -472,18 +473,18 @@ async function attachSessionTask(ctx: any, context: ActivityContext, input: Atta
 
 async function recordAgentCheckpoint(ctx: any, context: ActivityContext, input: RecordAgentCheckpointInput) {
   const binding = await requireOwned(ctx, "workgraph_session_bindings", context, input.bindingId, "Session binding")
-  if (binding.state !== "active" || !binding.current_work_item_id || !binding.current_attempt_id) {
+  if (binding.state !== "active" || !binding.current_work_item_id || !binding.current_run_id) {
     throw new WorkGraphSessionBindingError("invalid_transition", "Session binding has no active Work Item")
   }
-  const attempt = await owned(ctx, "workgraph_attempts", context.organizationId, context.ownerUserId, binding.current_attempt_id)
-  if (!attempt || attempt.state !== "running" || attempt.execution_kind !== "attached" || attempt.session_id !== binding.session_id) {
-    throw new WorkGraphSessionBindingError("invalid_transition", "Attached Attempt is not running in the bound Session")
+  const run = await owned(ctx, "workgraph_runs", context.organizationId, context.ownerUserId, binding.current_run_id)
+  if (!run || run.state !== "running" || run.execution_kind !== "attached" || run.session_id !== binding.session_id) {
+    throw new WorkGraphSessionBindingError("invalid_transition", "Attached Run is not running in the bound Session")
   }
   const evidence = await Promise.all(input.evidenceIds.map((id) =>
     owned(ctx, "workgraph_evidence", context.organizationId, context.ownerUserId, id)))
   if (evidence.some((record) => !record || !(
     (record.subject_type === "work_item" && record.subject_id === binding.current_work_item_id) ||
-    record.reference?.sourceAttemptId === binding.current_attempt_id
+    record.reference?.sourceRunId === binding.current_run_id
   ))) {
     throw new WorkGraphSessionBindingError("not_found", "Checkpoint evidence does not belong to the active Task")
   }
@@ -494,7 +495,7 @@ async function recordAgentCheckpoint(ctx: any, context: ActivityContext, input: 
     id,
     stream_id: binding.stream_id,
     work_item_id: binding.current_work_item_id,
-    attempt_id: binding.current_attempt_id,
+    run_id: binding.current_run_id,
     session_binding_id: binding.id,
     level: input.level,
     summary: input.summary,
@@ -517,7 +518,7 @@ async function recordAgentCheckpoint(ctx: any, context: ActivityContext, input: 
       "agent_checkpoint",
       id,
       "agent_checkpoint_recorded",
-      { checkpointId: id, workItemId: binding.current_work_item_id, attemptId: binding.current_attempt_id },
+      { checkpointId: id, workItemId: binding.current_work_item_id, runId: binding.current_run_id },
     ),
   }
 }
@@ -526,10 +527,10 @@ async function releaseSessionBinding(ctx: any, context: ActivityContext, input: 
   const binding = await requireOwned(ctx, "workgraph_session_bindings", context, input.bindingId, "Session binding")
   if (binding.state === "released") return { result: bindingDto(context.ownerUserId, binding) }
   if (binding.row_version !== input.expectedVersion) throw new WorkGraphSessionBindingError("conflict", "Session binding version changed")
-  if (binding.current_attempt_id) {
-    const attempt = await owned(ctx, "workgraph_attempts", context.organizationId, context.ownerUserId, binding.current_attempt_id)
-    if (!attempt || !["result", "failed", "cancelled"].includes(attempt.state)) {
-      throw new WorkGraphSessionBindingError("invalid_transition", "Settle the attached Attempt before releasing its Session")
+  if (binding.current_run_id) {
+    const run = await owned(ctx, "workgraph_runs", context.organizationId, context.ownerUserId, binding.current_run_id)
+    if (!run || !["result", "failed", "cancelled"].includes(run.state)) {
+      throw new WorkGraphSessionBindingError("invalid_transition", "Settle the attached Run before releasing its Session")
     }
   }
   await ctx.db.patch(binding._id, {
@@ -668,7 +669,7 @@ function bindingDto(ownerUserId: string, row: any): SessionBindingDto {
     sessionId: row.session_id,
     projectId: row.project_id,
     ...(row.current_work_item_id ? { currentWorkItemId: row.current_work_item_id } : {}),
-    ...(row.current_attempt_id ? { currentAttemptId: row.current_attempt_id } : {}),
+    ...(row.current_run_id ? { currentRunId: row.current_run_id } : {}),
     state: row.state,
     boundAt: row.bound_at,
     ...(row.released_at === undefined ? {} : { releasedAt: row.released_at }),
@@ -687,7 +688,7 @@ function checkpointDto(ownerUserId: string, row: any): AgentCheckpointDto {
     version: row.row_version,
     streamId: row.stream_id,
     workItemId: row.work_item_id,
-    attemptId: row.attempt_id,
+    runId: row.run_id,
     sessionBindingId: row.session_binding_id,
     level: row.level,
     summary: row.summary,
@@ -715,17 +716,17 @@ function eventActivity(streamId: string, workItemId: string, change: any, event:
   })
 }
 
-function attemptActivity(streamId: string, workItemId: string, attempt: any): TaskActivityEntry {
+function runActivity(streamId: string, workItemId: string, run: any): TaskActivityEntry {
   return TaskActivityEntrySchema.parse({
-    id: `attempt:${attempt.id}:${attempt.state}`,
+    id: `run:${run.id}:${run.state}`,
     streamId,
     workItemId,
-    category: "attempt",
-    importance: ["result", "failed", "cancelled"].includes(attempt.state) ? "milestones" : "progress",
-    summary: `Attempt ${attempt.attempt_number} ${attempt.state}`,
-    occurredAt: attempt.updated_at,
+    category: "run",
+    importance: ["result", "failed", "cancelled"].includes(run.state) ? "milestones" : "progress",
+    summary: `Run ${run.run_number} ${run.state}`,
+    occurredAt: run.updated_at,
     actor: { type: "system", id: "workgraph_runtime" },
-    source: { type: "attempt", id: attempt.id },
+    source: { type: "run", id: run.id },
   })
 }
 
@@ -806,7 +807,7 @@ function beforeCursor(
 
 function filterActivitySource(
   query: any,
-  source: "event" | "attempt" | "checkpoint",
+  source: "event" | "run" | "checkpoint",
   granularity: StreamActivityGranularity,
 ) {
   if (granularity === "detailed") return query
@@ -815,7 +816,7 @@ function filterActivitySource(
       ? filter.eq(filter.field("change_type"), "work_item_state_changed")
       : filter.neq(filter.field("change_type"), "work_item_updated"))
   }
-  if (source === "attempt") {
+  if (source === "run") {
     if (granularity === "progress") return query
     return query.filter((filter: any) => filter.or(
       filter.eq(filter.field("state"), "result"),

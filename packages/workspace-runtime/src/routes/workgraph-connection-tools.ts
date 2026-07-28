@@ -24,7 +24,7 @@ export type {
 }
 
 const bindingIdentity = z.object({
-  attemptId: z.string().min(1),
+  runId: z.string().min(1),
   sessionId: z.string().min(1),
   workspaceId: z.string().min(1),
 }).strict()
@@ -244,11 +244,11 @@ export function WorkGraphConnectionToolRoutes(input: {
     if (
       existing
       && (
-        existing.identity.attemptId !== parsed.data.identity.attemptId
+        existing.identity.runId !== parsed.data.identity.runId
         || existing.identity.workspaceId !== parsed.data.identity.workspaceId
       )
     ) {
-      return c.json(errorBody("connection_binding_conflict", "Session is already bound to another Attempt"), 409)
+      return c.json(errorBody("connection_binding_conflict", "Session is already bound to another Run"), 409)
     }
     const callbackNonce = crypto.randomUUID()
     const binding = {

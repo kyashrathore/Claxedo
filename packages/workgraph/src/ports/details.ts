@@ -1,12 +1,12 @@
 import type {
   AdmissionProposalDto,
   AdmissionProposalReadInputSchema,
-  AttemptDetailDto,
-  AttemptReadInputSchema,
+  RunDetailDto,
+  RunReadInputSchema,
   DecisionDto,
   DecisionReadInputSchema,
-  WorkItemAttemptListInputSchema,
-  WorkItemAttemptPage,
+  WorkItemRunListInputSchema,
+  WorkItemRunPage,
   WorkItemDto,
   WorkItemReadInputSchema,
   TaskActivityListInput,
@@ -21,11 +21,11 @@ export type WorkGraphDetailQueries = Readonly<{
   }>
   workItems: Readonly<{
     readDetail: OwnerQuery<z.infer<typeof WorkItemReadInputSchema>, WorkItemDto | undefined>
-    listAttempts: OwnerQuery<z.infer<typeof WorkItemAttemptListInputSchema>, WorkItemAttemptPage>
+    listRuns: OwnerQuery<z.infer<typeof WorkItemRunListInputSchema>, WorkItemRunPage>
     listActivity: OwnerQuery<TaskActivityListInput, TaskActivityPage>
   }>
-  attempts: Readonly<{
-    read: OwnerQuery<z.infer<typeof AttemptReadInputSchema>, AttemptDetailDto | undefined>
+  runs: Readonly<{
+    read: OwnerQuery<z.infer<typeof RunReadInputSchema>, RunDetailDto | undefined>
   }>
   decisions: Readonly<{
     read: OwnerQuery<z.infer<typeof DecisionReadInputSchema>, DecisionDto | undefined>

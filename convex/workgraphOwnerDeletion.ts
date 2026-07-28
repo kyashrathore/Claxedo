@@ -8,7 +8,7 @@ export const WORKGRAPH_OWNER_DELETION_BATCH_SIZE = 8
 export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_attention_entries",
   "workgraph_attention_summaries",
-  "workgraph_attempt_connection_bindings",
+  "workgraph_run_connection_bindings",
   "workgraph_decision_work_items",
   "workgraph_evidence",
   "workgraph_durable_effect_receipts",
@@ -23,7 +23,7 @@ export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_leases",
   "workgraph_agent_checkpoints",
   "workgraph_session_bindings",
-  "workgraph_attempts",
+  "workgraph_runs",
   "workgraph_decisions",
   "workgraph_work_items",
   "workgraph_outcomes",
@@ -301,13 +301,13 @@ export async function releaseWorkGraphOwnerDeletion(ctx: any, organization: stri
 }
 
 async function readCleanupTargets(ctx: any, organization: string, owner: string): Promise<readonly CleanupTarget[]> {
-  const [streams, attempts] = await Promise.all([
+  const [streams, runs] = await Promise.all([
     ownerRows(ctx, "workgraph_streams", organization, owner),
-    ownerRows(ctx, "workgraph_attempts", organization, owner),
+    ownerRows(ctx, "workgraph_runs", organization, owner),
   ])
   const streamIds: string[] = [...new Set<string>([
     ...streams.map((stream: any) => String(stream.id)),
-    ...attempts.filter((attempt: any) => attempt.envelope_id).map((attempt: any) => String(attempt.stream_id)),
+    ...runs.filter((run: any) => run.envelope_id).map((run: any) => String(run.stream_id)),
   ])].sort()
   return streamIds.flatMap((streamId) => {
     const stream = streams.find((candidate: any) => candidate.id === streamId)
@@ -319,31 +319,31 @@ async function readCleanupTargets(ctx: any, organization: string, owner: string)
       if (!value) throw new Error("Stored Stream envelope has no exact identity")
       envelopeIds.add(value)
     }
-    attempts.filter((attempt: any) => attempt.stream_id === streamId).forEach((attempt: any) => {
-      const value = exactString(attempt.envelope_id)
+    runs.filter((run: any) => run.stream_id === streamId).forEach((run: any) => {
+      const value = exactString(run.envelope_id)
       if (value) envelopeIds.add(value)
     })
     if (envelopeIds.size === 0) return []
     if (envelopeIds.size !== 1) throw new Error("Stream has conflicting execution envelope identities")
-    const childIsolationIds: string[] = [...new Set<string>(attempts
-      .filter((attempt: any) => attempt.stream_id === streamId)
-      .map((attempt: any) => exactString(attempt.child_workspace_id))
+    const childIsolationIds: string[] = [...new Set<string>(runs
+      .filter((run: any) => run.stream_id === streamId)
+      .map((run: any) => exactString(run.child_workspace_id))
       .filter((value: string | undefined): value is string => value !== undefined))].sort()
     return [{ streamId, envelopeId: [...envelopeIds][0]!, childIsolationIds }]
   })
 }
 
 async function isQuiescent(ctx: any, organization: string, owner: string) {
-  const [attempts, leases, runtimeEffects, bindings, proposals, outbox, jobs] = await Promise.all([
-    ownerRows(ctx, "workgraph_attempts", organization, owner),
+  const [runs, leases, runtimeEffects, bindings, proposals, outbox, jobs] = await Promise.all([
+    ownerRows(ctx, "workgraph_runs", organization, owner),
     ownerRows(ctx, "workgraph_leases", organization, owner),
     ownerRows(ctx, "workgraph_runtime_effects", organization, owner),
-    ownerRows(ctx, "workgraph_attempt_connection_bindings", organization, owner),
+    ownerRows(ctx, "workgraph_run_connection_bindings", organization, owner),
     ownerRows(ctx, "workgraph_admission_proposals", organization, owner),
     ownerRows(ctx, "workgraph_outbox", organization, owner),
     ownerRows(ctx, "workgraph_due_jobs", organization, owner),
   ])
-  return !attempts.some((row: any) => ["admitted", "placing", "running", "attention"].includes(row.state))
+  return !runs.some((row: any) => ["admitted", "placing", "running", "parked"].includes(row.state))
     && leases.length === 0
     && !runtimeEffects.some((row: any) => row.state !== "completed")
     && !bindings.some((row: any) => row.revoked_at === undefined)

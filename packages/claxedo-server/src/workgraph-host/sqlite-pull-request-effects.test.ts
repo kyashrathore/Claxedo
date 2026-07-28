@@ -16,7 +16,7 @@ describe("SQLite pull request effect outbox", () => {
     const effects = createSqlitePullRequestEffects(database)
     const input = {
       streamId: "stream_1",
-      attemptId: "master_stream_1",
+      runId: "master_stream_1",
       idempotencyKey: "stream_1:pr",
       repository: "claxedo/app",
       head: "workgraph/v2",

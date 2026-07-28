@@ -21,7 +21,7 @@ export {
   type ExecutionProfileCapabilityValidation,
 } from "./execution-capability-policy"
 export {
-  transitionAttempt,
+  transitionRun,
   transitionDecision,
   transitionOutcome,
   transitionStream,

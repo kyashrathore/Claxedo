@@ -175,7 +175,7 @@ export function createWorkGraphOperationalReporter(
     },
     queue(
       input: Readonly<{
-        kind: "attempt" | "source_plan" | "session_intake"
+        kind: "run" | "source_plan" | "session_intake"
         backlog: number
         oldestAgeMs: number
         failed: number

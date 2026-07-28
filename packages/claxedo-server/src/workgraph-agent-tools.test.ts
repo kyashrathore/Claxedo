@@ -493,7 +493,7 @@ describe("embedded WorkGraph agent tools", () => {
       expect(await invoke("workgraph_activity", { work_item_id: firstTaskId })).toMatchObject({
         entries: expect.arrayContaining([
           expect.objectContaining({ category: "checkpoint", summary: "First logical boundary verified" }),
-          expect.objectContaining({ category: "attempt", summary: expect.stringContaining("result") }),
+          expect.objectContaining({ category: "run", summary: expect.stringContaining("result") }),
         ]),
       })
     } finally {
@@ -573,7 +573,7 @@ function embedded(execute: ReturnType<typeof vi.fn>) {
         streams: { read: empty },
         sources: { list: empty, read: empty, readRevision: empty },
         proposals: { read: empty },
-        workItems: { readDetail: empty, listAttempts: empty, listActivity: empty },
+        workItems: { readDetail: empty, listRuns: empty, listActivity: empty },
         attempts: { read: empty },
         decisions: { read: empty },
         evidence: { read: empty, list: empty },

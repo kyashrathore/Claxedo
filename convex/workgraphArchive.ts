@@ -16,7 +16,7 @@ import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransi
 import { streamActivity } from "./workgraphChanges"
 
 const ROOT_ID = "workgraph_default"
-const activeAttemptStates = new Set(["admitted", "placing", "running"])
+const activeRunStates = new Set(["admitted", "placing", "running"])
 const archiveTables = [
   "workgraphs",
   "work_sources",
@@ -28,7 +28,7 @@ const archiveTables = [
   "workgraph_outcomes",
   "workgraph_work_items",
   "workgraph_work_item_dependencies",
-  "workgraph_attempts",
+  "workgraph_runs",
   "workgraph_session_bindings",
   "workgraph_agent_checkpoints",
   "workgraph_decisions",
@@ -48,7 +48,7 @@ const archiveTables = [
 const operationalTables = [
   "workgraph_attention_entries",
   "workgraph_attention_summaries",
-  "workgraph_attempt_connection_bindings",
+  "workgraph_run_connection_bindings",
   "workgraph_leases",
   "workgraph_cleanup_receipts",
   "workgraph_stream_sequences",
@@ -137,7 +137,7 @@ export async function exportWorkGraphArchive(ctx: any, organization: string, own
       ...(row.execution_defaults === undefined ? {} : { executionDefaults: row.execution_defaults }),
       ...(row.created_by_actor_type === undefined ? {} : { createdByActorType: row.created_by_actor_type }),
       ...(row.created_by_actor_id === undefined ? {} : { createdByActorId: row.created_by_actor_id }),
-      ...(row.origin_attempt_id === undefined ? {} : { originAttemptId: row.origin_attempt_id }),
+      ...(row.origin_run_id === undefined ? {} : { originRunId: row.origin_run_id }),
       ...(row.completed_at === undefined ? {} : { completedAt: row.completed_at }),
       ...(row.abandoned_at === undefined ? {} : { abandonedAt: row.abandoned_at }),
       ...(row.abandon_reason === undefined ? {} : { abandonReason: row.abandon_reason }),
@@ -146,12 +146,12 @@ export async function exportWorkGraphArchive(ctx: any, organization: string, own
       schemaVersion: row.schema_version, createdAt: row.created_at, workItemId: row.work_item_id,
       dependsOnWorkItemId: row.depends_on_work_item_id, dependencyKind: row.dependency_kind,
     })),
-    ...rows.workgraph_attempts.map((row) => record("attempt", row.id, {
-      ...publicBase(row), streamId: row.stream_id, workItemId: row.work_item_id, attemptNumber: row.attempt_number,
+    ...rows.workgraph_runs.map((row) => record("run", row.id, {
+      ...publicBase(row), streamId: row.stream_id, workItemId: row.work_item_id, runNumber: row.run_number,
       state: row.state, resolvedExecution: row.resolved_execution, admittedAt: row.admitted_at,
       executionKind: row.execution_kind ?? "managed",
       ...(row.started_at === undefined ? {} : { startedAt: row.started_at }), ...(row.finished_at === undefined ? {} : { finishedAt: row.finished_at }),
-      ...(row.result === undefined ? {} : { result: row.result }), ...(row.attention_reason === undefined ? {} : { attentionReason: row.attention_reason }),
+      generation: row.generation, ...(row.result === undefined ? {} : { result: row.result }), ...(row.parked_reason === undefined ? {} : { parkedReason: row.parked_reason }),
       ...(row.envelope_id || row.child_workspace_id || row.session_id ? { executionIdentity: {
         ...(row.envelope_id ? { envelopeId: row.envelope_id } : {}),
         ...(row.child_workspace_id ? { childIsolationId: row.child_workspace_id } : {}),
@@ -162,12 +162,12 @@ export async function exportWorkGraphArchive(ctx: any, organization: string, own
     ...rows.workgraph_session_bindings.map((row) => record("session_binding", row.id, {
       ...publicBase(row), streamId: row.stream_id, sessionId: row.session_id, projectId: row.project_id,
       ...(row.current_work_item_id === undefined ? {} : { currentWorkItemId: row.current_work_item_id }),
-      ...(row.current_attempt_id === undefined ? {} : { currentAttemptId: row.current_attempt_id }),
+      ...(row.current_run_id === undefined ? {} : { currentRunId: row.current_run_id }),
       state: row.state, boundAt: row.bound_at,
       ...(row.released_at === undefined ? {} : { releasedAt: row.released_at }),
     })),
     ...rows.workgraph_agent_checkpoints.map((row) => record("agent_checkpoint", row.id, {
-      ...publicBase(row), streamId: row.stream_id, workItemId: row.work_item_id, attemptId: row.attempt_id,
+      ...publicBase(row), streamId: row.stream_id, workItemId: row.work_item_id, runId: row.run_id,
       sessionBindingId: row.session_binding_id, level: row.level, summary: row.summary,
       evidenceIds: row.evidence_ids, occurredAt: row.occurred_at,
     })),
@@ -187,7 +187,7 @@ export async function exportWorkGraphArchive(ctx: any, organization: string, own
     ...rows.workgraph_evidence.map((row) => record("evidence", row.id, evidenceValue(row, rows.workgraph_durable_effect_receipts))),
     ...rows.workgraph_durable_effect_receipts.map((row) => record("durable_effect_receipt", row.id, {
       schemaVersion: row.schema_version, createdAt: row.created_at, streamId: row.stream_id,
-      ...(row.attempt_id ? { attemptId: row.attempt_id } : {}), effectKind: row.effect_kind,
+      ...(row.run_id ? { runId: row.run_id } : {}), effectKind: row.effect_kind,
       idempotencyKey: row.idempotency_key, externalReference: row.external_reference, provenance: cleanProvenance(row.provenance),
     })),
     ...rows.workgraph_record_source_revisions.map((row) => record("record_source_revision", row.id, {
@@ -312,7 +312,7 @@ async function syncRestoredAttention(ctx: any, organization: string, owner: stri
   const tables: Record<string, string> = {
     intake_candidate: "workgraph_intake_candidates",
     work_item: "workgraph_work_items",
-    attempt: "workgraph_attempts",
+    run: "workgraph_runs",
     decision: "workgraph_decisions",
     admission_proposal: "workgraph_admission_proposals",
     terminal_scheduled_job: "workgraph_due_jobs",
@@ -327,14 +327,14 @@ async function syncRestoredAttention(ctx: any, organization: string, owner: stri
 }
 
 async function notQuiescent(ctx: any, organization: string, owner: string) {
-  const [attempts, leases, bindings, outbox, jobs, streams, proposals, mailbox] = await Promise.all([
-    ownedRows(ctx, "workgraph_attempts", organization, owner), ownedRows(ctx, "workgraph_leases", organization, owner),
-    ownedRows(ctx, "workgraph_attempt_connection_bindings", organization, owner), ownedRows(ctx, "workgraph_outbox", organization, owner),
+  const [runs, leases, bindings, outbox, jobs, streams, proposals, mailbox] = await Promise.all([
+    ownedRows(ctx, "workgraph_runs", organization, owner), ownedRows(ctx, "workgraph_leases", organization, owner),
+    ownedRows(ctx, "workgraph_run_connection_bindings", organization, owner), ownedRows(ctx, "workgraph_outbox", organization, owner),
     ownedRows(ctx, "workgraph_due_jobs", organization, owner), ownedRows(ctx, "workgraph_streams", organization, owner),
     ownedRows(ctx, "workgraph_admission_proposals", organization, owner),
     ownedRows(ctx, "workgraph_master_mailbox", organization, owner),
   ])
-  return attempts.some((row: any) => activeAttemptStates.has(row.state)) || leases.length > 0 || bindings.some((row: any) => row.revoked_at === undefined)
+  return runs.some((row: any) => activeRunStates.has(row.state)) || leases.length > 0 || bindings.some((row: any) => row.revoked_at === undefined)
     || outbox.some((row: any) => row.status !== "completed") || jobs.some((row: any) => !terminalJobStatus(row))
     || streams.some((row: any) => row.deletion?.state === "pending" || row.closure?.state === "pending")
     || streams.some((row: any) => row.envelope && row.envelope.status !== "destroyed")
@@ -422,19 +422,19 @@ async function validateReferences(ctx: any, organization: string, owner: string,
       if (!has("stream", value.streamId) || (value.outcomeId && !has("outcome", value.outcomeId)) || !value.dependencyIds.every((id: string) => has("work_item", id)) || !value.evidenceIds.every((id: string) => has("evidence", id)) || !value.sourceRevisionRefs.every(validRef) || JSON.stringify([...value.dependencyIds].sort()) !== JSON.stringify(linked)) return rejected("malformed")
     }
     if (record.kind === "work_item_dependency" && (!has("work_item", value.workItemId) || !has("work_item", value.dependsOnWorkItemId))) return rejected("malformed")
-    if (record.kind === "attempt" && (!has("stream", value.streamId) || !has("work_item", value.workItemId) || !value.sourceRevisionRefs.every(validRef))) return rejected("malformed")
+    if (record.kind === "run" && (!has("stream", value.streamId) || !has("work_item", value.workItemId) || !value.sourceRevisionRefs.every(validRef))) return rejected("malformed")
     if (record.kind === "session_binding" && (!has("stream", value.streamId) ||
       (value.currentWorkItemId && !has("work_item", value.currentWorkItemId)) ||
-      (value.currentAttemptId && !has("attempt", value.currentAttemptId)))) return rejected("malformed")
+      (value.currentRunId && !has("run", value.currentRunId)))) return rejected("malformed")
     if (record.kind === "agent_checkpoint" && (!has("stream", value.streamId) || !has("work_item", value.workItemId) ||
-      !has("attempt", value.attemptId) || !has("session_binding", value.sessionBindingId) ||
+      !has("run", value.runId) || !has("session_binding", value.sessionBindingId) ||
       !value.evidenceIds.every((id: string) => has("evidence", id)))) return rejected("malformed")
     if (record.kind === "decision") {
       const linked = decisionLinks.filter((link) => link.value.decisionId === record.id).map((link) => link.value.workItemId).sort()
       if (!has("stream", value.streamId) || JSON.stringify(value.proposedBy) !== JSON.stringify(value.provenance.actor) || !value.affectedWorkItemIds.every((id: string) => has("work_item", id)) || !value.sourceRevisionRefs.every(validRef) || JSON.stringify([...value.affectedWorkItemIds].sort()) !== JSON.stringify(linked)) return rejected("malformed")
     }
     if (record.kind === "decision_work_item" && (!has("decision", value.decisionId) || !has("work_item", value.workItemId))) return rejected("malformed")
-    if (record.kind === "durable_effect_receipt" && (!has("stream", value.streamId) || (value.attemptId && !has("attempt", value.attemptId)))) return rejected("malformed")
+    if (record.kind === "durable_effect_receipt" && (!has("stream", value.streamId) || (value.runId && !has("run", value.runId)))) return rejected("malformed")
     if (record.kind === "record_source_revision" && (!has("work_source", value.workSourceId) || !has("work_source_revision", value.sourceRevisionId) || !has(value.recordType, value.recordId))) return rejected("malformed")
     if (record.kind === "admission_proposal" && (!has("workgraph", value.workgraphId) || !validRef(value.source) || (value.previousSource && !validRef(value.previousSource)) || (value.intakeCandidateId && !has("intake_candidate", value.intakeCandidateId)))) return rejected("malformed")
     if (record.kind === "event") {
@@ -462,20 +462,20 @@ async function validateReferences(ctx: any, organization: string, owner: string,
     if (eligible.length !== 1) return rejected("dependency_unavailable")
     if (record.kind === "source_view") connectionOrgs.set(record.id, eligible[0].organization_id)
   }
-  const attempts = new Map(archive.records.filter((record) => record.kind === "attempt").map((record) => [record.id, record.value]))
+  const runs = new Map(archive.records.filter((record) => record.kind === "run").map((record) => [record.id, record.value]))
   const bindings = new Map(archive.records.filter((record) => record.kind === "session_binding").map((record) => [record.id, record.value]))
   for (const record of archive.records.filter((entry) => entry.kind === "session_binding")) {
     if (record.value.currentWorkItemId && subjectStreams.get(record.value.currentWorkItemId) !== record.value.streamId) return rejected("malformed")
-    if (record.value.currentAttemptId && attempts.get(record.value.currentAttemptId)?.workItemId !== record.value.currentWorkItemId) return rejected("malformed")
+    if (record.value.currentRunId && runs.get(record.value.currentRunId)?.workItemId !== record.value.currentWorkItemId) return rejected("malformed")
   }
   for (const record of archive.records.filter((entry) => entry.kind === "agent_checkpoint")) {
     if (subjectStreams.get(record.value.workItemId) !== record.value.streamId ||
-      attempts.get(record.value.attemptId)?.workItemId !== record.value.workItemId ||
+      runs.get(record.value.runId)?.workItemId !== record.value.workItemId ||
       bindings.get(record.value.sessionBindingId)?.streamId !== record.value.streamId) return rejected("malformed")
   }
   for (const record of archive.records.filter((entry) => entry.kind === "evidence")) {
     const value: any = record.value
-    if (!subjectStreams.has(subjectId(value.subject)) || (value.sourceAttemptId && !has("attempt", value.sourceAttemptId)) || (value.durableEffectReceiptId && !has("durable_effect_receipt", value.durableEffectReceiptId))) return rejected("malformed")
+    if (!subjectStreams.has(subjectId(value.subject)) || (value.sourceRunId && !has("run", value.sourceRunId)) || (value.durableEffectReceiptId && !has("durable_effect_receipt", value.durableEffectReceiptId))) return rejected("malformed")
   }
   return { ok: true as const, connectionOrgs, subjectStreams }
 }
@@ -493,15 +493,15 @@ async function insertRecord(ctx: any, organization: string, owner: string, recor
   if (record.kind === "external_identity") return ctx.db.insert("workgraph_external_identities", { organization_id: organization, owner_user_id: owner, id: record.id, ...(value.intakeCandidateId ? { intake_candidate_id: value.intakeCandidateId } : {}), provider: value.provider, team_connection_id: value.teamConnectionId, external_id: value.externalId, ...(value.externalKey ? { external_key: value.externalKey } : {}), ...(value.externalUrl ? { external_url: value.externalUrl } : {}), ...(value.observedRevision ? { observed_revision: value.observedRevision } : {}), metadata: value.metadata, schema_version: value.schemaVersion, created_at: value.createdAt, updated_at: value.updatedAt })
   if (record.kind === "stream") return ctx.db.insert("workgraph_streams", { organization_id: organization, owner_user_id: owner, id: record.id, workgraph_id: value.workgraphId, title: value.title, ...(value.description === undefined ? {} : { description: value.description }), ...(value.charter === undefined ? {} : { charter: value.charter }), ...(value.masterStatus === undefined ? {} : { master_status: value.masterStatus }), ...(value.notesSource === undefined ? {} : { notes_source: snakeRef(value.notesSource) }), ...(value.publicPrConfirmedAt === undefined ? {} : { public_pr_confirmed_at: value.publicPrConfirmedAt }), lifecycle_state: value.lifecycleState, visibility: value.visibility, pinned: value.pinned, execution_defaults: value.executionDefaults, activity_granularity: value.activityGranularity, activity: value.activity, ...(value.envelope ? { envelope: value.envelope } : {}), ...(value.replacementReset ? { replacement_reset: value.replacementReset } : {}), last_activity_at: value.activity.lastActivityAt, durable_effect_count: value.durableEffectCount, source_revision_refs: snakeRefs(value.sourceRevisionRefs), provenance: value.provenance, ...physicalBase(value) })
   if (record.kind === "outcome") return ctx.db.insert("workgraph_outcomes", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, title: value.title, ...(value.description === undefined ? {} : { description: value.description }), state: value.state, success_criteria: value.successCriteria, evidence_ids: value.evidenceIds, ...(value.executionDefaults ? { execution_defaults: value.executionDefaults } : {}), source_revision_refs: snakeRefs(value.sourceRevisionRefs), ...(value.readyToCloseAt === undefined ? {} : { ready_to_close_at: value.readyToCloseAt }), ...(value.closedAt === undefined ? {} : { closed_at: value.closedAt }), ...(value.closedBy ? { closed_by: value.closedBy } : {}), ...(value.closeReason ? { close_reason: value.closeReason } : {}), ...(value.reopenedAt === undefined ? {} : { reopened_at: value.reopenedAt }), ...(value.reopenReason ? { reopen_reason: value.reopenReason } : {}), provenance: value.provenance, ...physicalBase(value) })
-  if (record.kind === "work_item") return ctx.db.insert("workgraph_work_items", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, ...(value.outcomeId ? { outcome_id: value.outcomeId } : {}), title: value.title, ...(value.description === undefined ? {} : { description: value.description }), state: value.state, priority: value.priority, source_revision_refs: snakeRefs(value.sourceRevisionRefs), completion_contract: value.completionContract, evidence_ids: value.evidenceIds, ...(value.executionDefaults ? { execution_defaults: value.executionDefaults } : {}), ...(value.createdByActorType === undefined ? {} : { created_by_actor_type: value.createdByActorType }), ...(value.createdByActorId === undefined ? {} : { created_by_actor_id: value.createdByActorId }), ...(value.originAttemptId === undefined ? {} : { origin_attempt_id: value.originAttemptId }), ...(value.completedAt === undefined ? {} : { completed_at: value.completedAt }), ...(value.abandonedAt === undefined ? {} : { abandoned_at: value.abandonedAt }), ...(value.abandonReason ? { abandon_reason: value.abandonReason } : {}), provenance: value.provenance, ...physicalBase(value) })
+  if (record.kind === "work_item") return ctx.db.insert("workgraph_work_items", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, ...(value.outcomeId ? { outcome_id: value.outcomeId } : {}), title: value.title, ...(value.description === undefined ? {} : { description: value.description }), state: value.state, priority: value.priority, source_revision_refs: snakeRefs(value.sourceRevisionRefs), completion_contract: value.completionContract, evidence_ids: value.evidenceIds, ...(value.executionDefaults ? { execution_defaults: value.executionDefaults } : {}), ...(value.createdByActorType === undefined ? {} : { created_by_actor_type: value.createdByActorType }), ...(value.createdByActorId === undefined ? {} : { created_by_actor_id: value.createdByActorId }), ...(value.originRunId === undefined ? {} : { origin_run_id: value.originRunId }), ...(value.completedAt === undefined ? {} : { completed_at: value.completedAt }), ...(value.abandonedAt === undefined ? {} : { abandoned_at: value.abandonedAt }), ...(value.abandonReason ? { abandon_reason: value.abandonReason } : {}), provenance: value.provenance, ...physicalBase(value) })
   if (record.kind === "work_item_dependency") return ctx.db.insert("workgraph_work_item_dependencies", { organization_id: organization, owner_user_id: owner, id: record.id, work_item_id: value.workItemId, stream_id: subjectStreams.get(value.workItemId), depends_on_work_item_id: value.dependsOnWorkItemId, dependency_kind: value.dependencyKind, schema_version: value.schemaVersion, created_at: value.createdAt })
-  if (record.kind === "attempt") return ctx.db.insert("workgraph_attempts", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, work_item_id: value.workItemId, attempt_number: value.attemptNumber, state: value.state, execution_kind: value.executionKind, resolved_execution: value.resolvedExecution, admitted_at: value.admittedAt, ...(value.startedAt === undefined ? {} : { started_at: value.startedAt }), ...(value.finishedAt === undefined ? {} : { finished_at: value.finishedAt }), ...(value.result ? { result: value.result } : {}), ...(value.attentionReason ? { attention_reason: value.attentionReason } : {}), ...(value.executionIdentity?.envelopeId ? { envelope_id: value.executionIdentity.envelopeId } : {}), ...(value.executionIdentity?.childIsolationId ? { child_workspace_id: value.executionIdentity.childIsolationId } : {}), ...(value.executionIdentity?.sessionId ? { session_id: value.executionIdentity.sessionId } : {}), source_revision_refs: snakeRefs(value.sourceRevisionRefs), provenance: value.provenance, ...physicalBase(value) })
-  if (record.kind === "session_binding") return ctx.db.insert("workgraph_session_bindings", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, session_id: value.sessionId, project_id: value.projectId, ...(value.currentWorkItemId ? { current_work_item_id: value.currentWorkItemId } : {}), ...(value.currentAttemptId ? { current_attempt_id: value.currentAttemptId } : {}), state: value.state, bound_at: value.boundAt, ...(value.releasedAt === undefined ? {} : { released_at: value.releasedAt }), provenance: value.provenance, ...physicalBase(value) })
-  if (record.kind === "agent_checkpoint") return ctx.db.insert("workgraph_agent_checkpoints", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, work_item_id: value.workItemId, attempt_id: value.attemptId, session_binding_id: value.sessionBindingId, level: value.level, summary: value.summary, evidence_ids: value.evidenceIds, occurred_at: value.occurredAt, operation_id: value.provenance.operationId ?? `archive:${record.id}`, provenance: value.provenance, ...physicalBase(value) })
+  if (record.kind === "run") return ctx.db.insert("workgraph_runs", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, work_item_id: value.workItemId, run_number: value.runNumber, generation: value.generation, state: value.state, execution_kind: value.executionKind, resolved_execution: value.resolvedExecution, admitted_at: value.admittedAt, ...(value.startedAt === undefined ? {} : { started_at: value.startedAt }), ...(value.finishedAt === undefined ? {} : { finished_at: value.finishedAt }), ...(value.result ? { result: value.result } : {}), ...(value.parkedReason ? { parked_reason: value.parkedReason } : {}), ...(value.executionIdentity?.envelopeId ? { envelope_id: value.executionIdentity.envelopeId } : {}), ...(value.executionIdentity?.childIsolationId ? { child_workspace_id: value.executionIdentity.childIsolationId } : {}), ...(value.executionIdentity?.sessionId ? { session_id: value.executionIdentity.sessionId } : {}), source_revision_refs: snakeRefs(value.sourceRevisionRefs), provenance: value.provenance, ...physicalBase(value) })
+  if (record.kind === "session_binding") return ctx.db.insert("workgraph_session_bindings", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, session_id: value.sessionId, project_id: value.projectId, ...(value.currentWorkItemId ? { current_work_item_id: value.currentWorkItemId } : {}), ...(value.currentRunId ? { current_run_id: value.currentRunId } : {}), state: value.state, bound_at: value.boundAt, ...(value.releasedAt === undefined ? {} : { released_at: value.releasedAt }), provenance: value.provenance, ...physicalBase(value) })
+  if (record.kind === "agent_checkpoint") return ctx.db.insert("workgraph_agent_checkpoints", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, work_item_id: value.workItemId, run_id: value.runId, session_binding_id: value.sessionBindingId, level: value.level, summary: value.summary, evidence_ids: value.evidenceIds, occurred_at: value.occurredAt, operation_id: value.provenance.operationId ?? `archive:${record.id}`, provenance: value.provenance, ...physicalBase(value) })
   if (record.kind === "decision") return ctx.db.insert("workgraph_decisions", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, state: value.state, question: value.question, options: value.options, ...(value.recommendationOptionId ? { recommendation_option_id: value.recommendationOptionId } : {}), ...(value.rationale === undefined ? {} : { rationale: value.rationale }), ...(value.answer ? { answer: value.answer } : {}), ...(value.dismissedAt === undefined ? {} : { dismissed_at: value.dismissedAt }), ...(value.dismissReason ? { dismiss_reason: value.dismissReason } : {}), source_revision_refs: snakeRefs(value.sourceRevisionRefs), provenance: value.provenance, ...physicalBase(value) })
   if (record.kind === "decision_work_item") return ctx.db.insert("workgraph_decision_work_items", { organization_id: organization, owner_user_id: owner, id: record.id, decision_id: value.decisionId, stream_id: subjectStreams.get(value.workItemId), work_item_id: value.workItemId, schema_version: value.schemaVersion, created_at: value.createdAt })
   if (record.kind === "evidence") return ctx.db.insert("workgraph_evidence", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: subjectStreams.get(subjectId(value.subject)), subject_type: value.subject.type, subject_id: subjectId(value.subject), evidence_kind: value.kind, summary: value.summary, reference: evidenceReference(value), provenance: { actor: value.recordedBy }, schema_version: value.schemaVersion, created_at: value.recordedAt })
-  if (record.kind === "durable_effect_receipt") return ctx.db.insert("workgraph_durable_effect_receipts", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, ...(value.attemptId ? { attempt_id: value.attemptId } : {}), effect_kind: value.effectKind, idempotency_key: value.idempotencyKey, external_reference: value.externalReference, provenance: value.provenance, schema_version: value.schemaVersion, created_at: value.createdAt })
+  if (record.kind === "durable_effect_receipt") return ctx.db.insert("workgraph_durable_effect_receipts", { organization_id: organization, owner_user_id: owner, id: record.id, stream_id: value.streamId, ...(value.runId ? { run_id: value.runId } : {}), effect_kind: value.effectKind, idempotency_key: value.idempotencyKey, external_reference: value.externalReference, provenance: value.provenance, schema_version: value.schemaVersion, created_at: value.createdAt })
   if (record.kind === "record_source_revision") return ctx.db.insert("workgraph_record_source_revisions", { organization_id: organization, owner_user_id: owner, id: record.id, record_type: value.recordType, record_id: value.recordId, work_source_id: value.workSourceId, source_revision_id: value.sourceRevisionId, ordinal: value.ordinal, schema_version: value.schemaVersion, created_at: value.createdAt })
   if (record.kind === "admission_proposal") return ctx.db.insert("workgraph_admission_proposals", { organization_id: organization, owner_user_id: owner, id: record.id, workgraph_id: value.workgraphId, state: value.state, source: snakeRef(value.source), ...(value.previousSource ? { previous_source: snakeRef(value.previousSource) } : {}), ...(value.intakeCandidateId ? { intake_candidate_id: value.intakeCandidateId } : {}), proposal_kind: value.proposalKind, generation: value.generation, ...(value.diffSummary === undefined ? {} : { diff_summary: value.diffSummary }), ...(value.suggestedPlacement ? { suggested_placement: value.suggestedPlacement } : {}), ...(value.placementMatches ? { placement_matches: value.placementMatches } : {}), ...(value.proposedOutcomes ? { proposed_outcomes: value.proposedOutcomes } : {}), ...(value.proposedWorkItems ? { proposed_work_items: value.proposedWorkItems } : {}), ...(value.duplicateMatches ? { duplicate_matches: value.duplicateMatches } : {}), planning_evidence: value.planningEvidence, ...(value.disposition ? { disposition: value.disposition } : {}), ...(value.confirmedChangeCursor ? { confirmed_change_cursor: readChangeCursor(value.confirmedChangeCursor, organization, owner) } : {}), provenance: value.provenance, ...physicalBase(value), ...(value.confirmedAt === undefined ? {} : { confirmed_at: value.confirmedAt }) })
   if (record.kind === "operation_result") return ctx.db.insert("workgraph_operation_results", { organization_id: organization, owner_user_id: owner, id: record.id, command_type: value.commandType, request_hash: value.requestHash, result_status: value.resultStatus, result: value.result, ...(value.changeCursor ? { change_cursor: readChangeCursor(value.changeCursor, organization, owner) } : {}), schema_version: value.schemaVersion, created_at: value.createdAt })
@@ -582,9 +582,9 @@ function evidenceValue(row: any, receipts: any[]) {
   return {
     schemaVersion: row.schema_version, kind: row.evidence_kind, subject,
     ...(reference.requirementId ? { requirementId: reference.requirementId } : {}),
-    ...(reference.sourceAttemptId ? { sourceAttemptId: reference.sourceAttemptId } : {}),
+    ...(reference.sourceRunId ? { sourceRunId: reference.sourceRunId } : {}),
     summary: row.summary, recordedAt: row.created_at, recordedBy: row.provenance.actor,
-    ...Object.fromEntries(Object.entries(reference).filter(([key]) => !["kind", "summary", "requirementId", "sourceAttemptId"].includes(key))),
+    ...Object.fromEntries(Object.entries(reference).filter(([key]) => !["kind", "summary", "requirementId", "sourceRunId"].includes(key))),
     ...(row.evidence_kind === "integration" && reference.effect !== "other" && receipt ? { durableEffectReceiptId: receipt.id } : {}),
   }
 }

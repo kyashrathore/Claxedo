@@ -225,13 +225,43 @@ describe("WorkGraph MCP parity", () => {
 
   it("binds, selects, checkpoints, and completes through trusted current-Session identity", async () => {
     const unselected = sessionBinding()
-    const selected = sessionBinding({ currentWorkItemId: "task-1", currentAttemptId: "attempt-1", version: 2 })
+    const selected = sessionBinding({ currentWorkItemId: "task-1", currentRunId: "run-1", version: 2 })
     const transport = {
       execute: vi.fn(async (request) => ({ ok: true, operationId: request.operationId, cursor: "cursor-1", value: { workItemId: "task-1" } })),
       snapshot: vi.fn(),
       readStream: vi.fn(),
       readWorkItem: vi.fn(async () => ({ id: "task-1" })),
-      readAttempt: vi.fn(async () => ({ id: "attempt-1" })),
+      readRun: vi.fn(async () => ({
+        run: {
+          recordType: "run" as const,
+          schemaVersion: 1 as const,
+          ownerUserId: "user_1",
+          id: "run-1",
+          streamId: "stream-1",
+          workItemId: "task-1",
+          runNumber: 1,
+          generation: 1,
+          state: "running" as const,
+          resolvedExecution: {
+            environment: { kind: "local_worktree" as const, directory: "/repo" },
+            repository: { baseRevision: "HEAD" },
+            harness: "opencode",
+            agent: "build",
+            model: { providerId: "openai", modelId: "gpt-5" },
+            effort: "high",
+            tools: [],
+            connectionIds: [],
+          },
+          admittedAt: 1,
+          startedAt: 1,
+          sourceRevisionRefs: [],
+          executionKind: "managed" as const,
+          version: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          provenance: { actor: { type: "agent" as const, id: "session-1" }, operationId: "operation-select" },
+        },
+      })),
       bindSession: vi.fn(async () => unselected),
       readSessionBinding: vi.fn(async () => unselected),
       attachSessionTask: vi.fn(async () => selected),
@@ -297,10 +327,11 @@ describe("WorkGraph MCP parity", () => {
       operationId: "operation-complete",
       command: {
         version: 1,
-        type: "complete_attempt",
-        attemptId: "attempt-1",
+        type: "complete_run",
+        runId: "run-1",
         sessionId: "session-1",
         workspaceId: "project-1",
+        generation: 1,
         summary: "Implemented and verified",
         artifacts: [],
         evidence: [{ requirementId: "tests", evidence: { kind: "test_result", summary: "Tests pass", passed: true } }],
@@ -710,7 +741,7 @@ describe("WorkGraph MCP parity", () => {
     for (const [recordType, path] of [
       ["proposal", "/api/workgraph/proposals/missing"],
       ["work_item", "/api/workgraph/work-items/missing"],
-      ["attempt", "/api/workgraph/attempts/missing"],
+      ["run", "/api/workgraph/runs/missing"],
       ["decision", "/api/workgraph/decisions/missing"],
     ] as const) {
       const request = vi.fn(async () => { throw new McpHttpError(404, "not_found", "missing") })
@@ -720,11 +751,11 @@ describe("WorkGraph MCP parity", () => {
     }
   })
 
-  it("uses canonical detail pages for Attempts and evidence", async () => {
+  it("uses canonical detail pages for Runs and evidence", async () => {
     const request = vi.fn()
-      .mockResolvedValueOnce({ attempts: [], hasMore: false })
+      .mockResolvedValueOnce({ runs: [], hasMore: false })
       .mockResolvedValueOnce({ evidence: [], hasMore: false })
-    await callWorkGraph(request, "workgraph_attempts", { work_item_id: "item-1", cursor: "attempt-1", limit: 10 })
+    await callWorkGraph(request, "workgraph_runs", { work_item_id: "item-1", cursor: "run-1", limit: 10 })
     await callWorkGraph(request, "workgraph_evidence", {
       action: "list",
       subject: { type: "work_item", workItemId: "item-1" },
@@ -732,7 +763,7 @@ describe("WorkGraph MCP parity", () => {
       limit: 20,
     })
     expect(request.mock.calls).toEqual([
-      ["/api/workgraph/work-items/item-1/attempts?limit=10&after=attempt-1", { method: "GET" }],
+      ["/api/workgraph/work-items/item-1/runs?limit=10&after=run-1", { method: "GET" }],
       ["/api/workgraph/evidence?limit=20&after=evidence-1&subjectType=work_item&workItemId=item-1", { method: "GET" }],
     ])
   })
@@ -1039,7 +1070,7 @@ describe("WorkGraph MCP parity", () => {
       "workgraph_intake",
       "workgraph_get_candidate",
       "workgraph_evidence",
-      "workgraph_attempts",
+      "workgraph_runs",
       "workgraph_activity",
     ])
   })

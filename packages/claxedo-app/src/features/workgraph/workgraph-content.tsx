@@ -1,4 +1,4 @@
-import type { AttentionCursor, AttentionItem, AttemptDto, CommandResult, ExecutionEnvironment, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
+import type { AttentionCursor, AttentionItem, RunDto, CommandResult, ExecutionEnvironment, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { Dialog as DialogRoot } from "@kobalte/core/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog as DialogShell } from "@opencode-ai/ui/dialog"
@@ -196,7 +196,7 @@ export function WorkGraphContent(props: {
 
   const records = createMemo(() => snapshot()?.records ?? [])
   const streams = createMemo(() => records().filter((record): record is StreamDto => record.recordType === "stream"))
-  const attempts = createMemo(() => records().filter((record): record is AttemptDto => record.recordType === "attempt"))
+  const runs = createMemo(() => records().filter((record): record is RunDto => record.recordType === "run"))
   const workItems = createMemo(() => records().filter((record): record is WorkItemDto => record.recordType === "work_item"))
   const selectedTaskItem = createMemo(() => selectedTask() && (
     workItems().find((item) => item.id === selectedTask()!.item.id) ?? selectedTask()!.item
@@ -208,7 +208,7 @@ export function WorkGraphContent(props: {
     return streamId ? workItems().filter((item) => item.streamId === streamId && item.state !== "abandoned") : []
   })
   const outcomes = createMemo(() => records().filter((record): record is OutcomeDto => record.recordType === "outcome"))
-  const activeAttempts = createMemo(() => attempts().filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state)))
+  const activeRuns = createMemo(() => runs().filter((run) => ["admitted", "placing", "running"].includes(run.state)))
   const sortedStreams = createMemo(() => [...streams()].sort((a, b) => b.activity.lastActivityAt - a.activity.lastActivityAt))
 
   const hasAttention = () => attentionTotal() > 0
@@ -534,7 +534,7 @@ export function WorkGraphContent(props: {
                 <StatStrip
                   stats={[
                     { label: "Active", value: streams().filter((stream) => stream.lifecycleState !== "closed").length },
-                    { label: "Agents working", value: activeAttempts().length },
+                    { label: "Agents working", value: activeRuns().length },
                     { label: "Needs you", value: attentionTotal() },
                   ]}
                 />
@@ -638,7 +638,7 @@ export function WorkGraphContent(props: {
                           placeholder="https://github.com/owner/repository.git"
                           required
                         />
-                        <small>The cloud workspace clones this repository for every Stream Attempt.</small>
+                        <small>The cloud workspace clones this repository for every Stream Run.</small>
                       </label>
                     </Show>
                     <Show when={mutationError()}>{(error) => <StatusBanner error={error()} retry={retryMutation} />}</Show>
@@ -681,7 +681,7 @@ export function WorkGraphContent(props: {
                   streams={sortedStreams()}
                   outcomes={outcomes()}
                   items={workItems()}
-                  attempts={attempts()}
+                  runs={runs()}
                   empty={<EmptyState title="No streams yet" copy="Create one for the first outcome you want to ship." />}
                   relativeTime={relativeTime}
                   client={client}
@@ -769,7 +769,7 @@ export function WorkGraphContent(props: {
                             stream={stream()}
                             outcomes={outcomes().filter((outcome) => outcome.streamId === stream().id)}
                             items={workItems().filter((item) => item.streamId === stream().id && item.state !== "abandoned")}
-                            attempts={attempts().filter((attempt) => attempt.streamId === stream().id)}
+                            runs={runs().filter((run) => run.streamId === stream().id)}
                             client={client}
                             mutate={mutate}
                             onOpenTask={selectTask}
@@ -792,7 +792,7 @@ export function WorkGraphContent(props: {
         )}
       </Show>
       <WaitingItemDialog selection={selectedWaiting()?.item} source={source} onClose={closeWaiting} onResolved={resolvedWaiting} onOpenSettings={openWorkGraphSettings} onOpenSession={props.onOpenSession} />
-      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} streamItems={selectedTaskStreamItems()} streamAttempts={attempts().filter((attempt) => attempt.streamId === selectedTaskItem()?.streamId)} streamPaused={selectedTaskStream()?.lifecycleState === "paused"} masterStatus={selectedTaskStream()?.masterStatus} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
+      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} streamItems={selectedTaskStreamItems()} streamRuns={runs().filter((run) => run.streamId === selectedTaskItem()?.streamId)} streamPaused={selectedTaskStream()?.lifecycleState === "paused"} masterStatus={selectedTaskStream()?.masterStatus} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
       <StreamNotesDialog stream={notesStream()} client={client} onClose={() => setNotesStream()} />
     </main>
   )

@@ -18,7 +18,7 @@ npm install @claxedo/workgraph
 Personal WorkGraph
   └─ Stream
       ├─ Task (Work Item in the service contract)
-      │   └─ Attempt
+      │   └─ Run
       └─ Outcome (optional grouping for Tasks)
 ```
 
@@ -28,9 +28,9 @@ Streams also contain Work Sources, Decisions, artifacts, external issues, and ag
 
 1. The user creates a Stream and adds Tasks, or asks an agent or authoring surface to organize exact source text.
 2. “Turn into work” persists a durable planning record. A background Session V2 planner may publish ranked placement, duplicate evidence, optional Outcomes, Tasks, completion contracts, and execution defaults for compare-and-set confirmation against the exact rendered proposal version and source revision. Invalid or unavailable generation produces `planning_failed` and attention.
-   A later-revision reset is a whole disposable-Stream operation: confirmation fences the exact reviewed nonterminal Task IDs and versions, rejects unrelated work or durable effects, and blocks replacement execution until durable Attempt interruption and envelope cleanup complete.
+   A later-revision reset is a whole disposable-Stream operation: confirmation fences the exact reviewed nonterminal Task IDs and versions, rejects unrelated work or durable effects, and blocks replacement execution until durable Run interruption and envelope cleanup complete.
 3. The Stream receives an isolated worktree or cloud VM; Tasks inherit its execution context and declare model, effort, tools, and completion contract.
-4. WorkGraph launches every ready item and records each Attempt.
+4. WorkGraph launches every ready item and records each Run.
 5. Agents update factual state, attach results, add necessary discovered work, and raise consequential Decisions for review.
 
 Work started outside WorkGraph appears as a tenant-scoped candidate in the aggregated Unorganized AI work entry in the Needs you view of the existing app-global WorkspacePanel. Candidates use this shared attention surface rather than a separate intake, capture, or onboarding screen.
@@ -68,7 +68,7 @@ Matching issues remain user-owned, tenant-scoped candidates and appear in Needs 
 
 Provider secrets and Connection metadata remain organization-owned in Connections. WorkGraph stores the user's Connection binding, provider identity mapping, filters, and sync receipts. Connectors obtain a live `CapabilityHandle` for each external operation and report authentication failure through it.
 
-The external tracker remains authoritative for team issue state. WorkGraph owns the user's execution overlay: Attempts, Decisions, and evidence. Sync-back defaults to announcing meaningful results.
+The external tracker remains authoritative for team issue state. WorkGraph owns the user's execution overlay: Runs, Decisions, and evidence. Sync-back defaults to announcing meaningful results.
 
 ## Execution
 
@@ -77,14 +77,14 @@ Each Stream owns an execution workspace such as a worktree or cloud VM. Tasks ru
 Execution configuration inherits through:
 
 ```text
-WorkGraph defaults → Stream → optional Outcome → Task → Attempt snapshot
+WorkGraph defaults → Stream → optional Outcome → Task → Run snapshot
 ```
 
 Autonomous execution launches every ready Task until the selected work completes, blocks, reaches an explicit user safety boundary, or requires a consequential Decision. Supervised execution pauses after one batch. WorkGraph has no product-level agent-capacity or work-in-progress limit.
 
-An Attempt finishing does not complete its Task. The declared completion contract must be satisfied. Outcome closure similarly requires evidence against success criteria and user confirmation.
+An Run finishing does not complete its Task. The declared completion contract must be satisfied. Outcome closure similarly requires evidence against success criteria and user confirmation.
 
-Before any result is integrated or published, deleting a Stream cancels Attempts and removes its WorkGraph-owned local workspace. Hosted deletion releases WorkGraph's workspace lease; the sandbox manager independently stops idle compute and reaps unowned infrastructure. Placement uses a durable compensation effect reserved before external cancellation and workspace reconciliation. Both operations retain failure history and reconcile across process restart before a stale Attempt becomes durable attention. After any durable external result, the Stream is non-deletable: closing preserves history, marks unfinished items abandoned, and stops future scheduling without destroying its workspace.
+Before any result is integrated or published, deleting a Stream cancels Runs and removes its WorkGraph-owned local workspace. Hosted deletion releases WorkGraph's workspace lease; the sandbox manager independently stops idle compute and reaps unowned infrastructure. Placement uses a durable compensation effect reserved before external cancellation and workspace reconciliation. Both operations retain failure history and reconcile across process restart before a stale Run becomes durable attention. After any durable external result, the Stream is non-deletable: closing preserves history, marks unfinished items abandoned, and stops future scheduling without destroying its workspace.
 
 ## Public surfaces
 
@@ -135,9 +135,9 @@ console.log(stream?.title) // "Ship Cloud"
 
 ### Execution capability discovery
 
-`GET /api/workgraph/execution-capabilities` is the tenant-scoped, side-effect-free catalog used by WorkGraph Settings. It returns one server-attested snapshot containing a content revision, observation time, exclusive expiry, supported environments and policy values, the active runtime harness, agents, models and efforts, tools, repository choices, and connected Connection metadata. Catalog lifetime is capped at five minutes. Settings writes, Attempt admission, and autonomous execution validate the exact catalog tenant, freshness, and selected values; an expired or mismatched catalog fails explicitly. The request accepts no tenant or workspace selector. Clients render only values present in that exact snapshot. A typed `503 execution_capabilities_unavailable` identifies the unavailable catalog and whether retry is meaningful.
+`GET /api/workgraph/execution-capabilities` is the tenant-scoped, side-effect-free catalog used by WorkGraph Settings. It returns one server-attested snapshot containing a content revision, observation time, exclusive expiry, supported environments and policy values, the active runtime harness, agents, models and efforts, tools, repository choices, and connected Connection metadata. Catalog lifetime is capped at five minutes. Settings writes, Run admission, and autonomous execution validate the exact catalog tenant, freshness, and selected values; an expired or mismatched catalog fails explicitly. The request accepts no tenant or workspace selector. Clients render only values present in that exact snapshot. A typed `503 execution_capabilities_unavailable` identifies the unavailable catalog and whether retry is meaningful.
 
-Local discovery reads the configured repository and live OpenCode runtime and advertises local worktrees with required repository context. Hosted discovery reads a deterministic, per-tenant catalog runtime managed by the control plane and advertises hosted workspaces with optional repository input. Attempt-level branch and worktree strategy belongs to the selected harness or agent rather than the execution profile. Compute stop, sleep, resume, and physical garbage collection are sandbox-manager concerns. Repository integration behavior is expressed through the Task prompt and completion contract and performed by the selected harness. A Stream execution workspace is created later from its resolved repository and immutable Attempt profile; an execution-profile `presetId` is a reserved adapter configuration reference and is not a workspace identifier.
+Local discovery reads the configured repository and live OpenCode runtime and advertises local worktrees with required repository context. Hosted discovery reads a deterministic, per-tenant catalog runtime managed by the control plane and advertises hosted workspaces with optional repository input. Run-level branch and worktree strategy belongs to the selected harness or agent rather than the execution profile. Compute stop, sleep, resume, and physical garbage collection are sandbox-manager concerns. Repository integration behavior is expressed through the Task prompt and completion contract and performed by the selected harness. A Stream execution workspace is created later from its resolved repository and immutable Run profile; an execution-profile `presetId` is a reserved adapter configuration reference and is not a workspace identifier.
 
 `POST /api/workgraph/execution-capabilities/refresh` is the explicit tenant-authorized agent/control-plane operation that may provision or refresh the hosted catalog runtime. WorkGraph Settings consumes only the side-effect-free GET. Cloud deployment provisions this runtime during user setup or through background control-plane work so opening Settings never creates infrastructure.
 
@@ -164,7 +164,7 @@ describe("my WorkGraph adapter", () => {
 })
 ```
 
-Core conformance version 6 proves tenant isolation, operation idempotency, compare-and-set writes with append rollback, ordered tenant and Stream change cursors, stable snapshot pagination, tenant-bound resume cursors, snapshot-relevant mutation invalidation, exact snapshot-to-change convergence across adapter restart, Stream lifecycle validation, immutable Work Source revisions, evidence-backed completion, atomic arbitration between Stream deletion and durable-effect receipts, lease acquisition/renewal/expiry, Attempt runtime recovery, source-revision replacement fencing, Session-binding isolation and exact retry, and bounded Task-activity pagination across restart. Checkpoint-only changes preserve an in-progress snapshot page chain while remaining visible after its `snapshotCursor`. Cursors are opaque client continuation tokens bound to the trusted tenant and their collection or filter. `SnapshotResumeCursor` is distinct from the `ChangeCursor` watermark returned as `snapshotCursor`. A conforming Convex adapter uses bounded keyset pagination beyond the first 100 records. The app and standalone MCP aggregate every page and perform one clean restart when a snapshot-relevant tenant mutation invalidates a partial page chain. The harness imports neither SQLite nor Convex and can be registered with any test runner that accepts async test functions.
+Core conformance version 6 proves tenant isolation, operation idempotency, compare-and-set writes with append rollback, ordered tenant and Stream change cursors, stable snapshot pagination, tenant-bound resume cursors, snapshot-relevant mutation invalidation, exact snapshot-to-change convergence across adapter restart, Stream lifecycle validation, immutable Work Source revisions, evidence-backed completion, atomic arbitration between Stream deletion and durable-effect receipts, lease acquisition/renewal/expiry, Run runtime recovery, source-revision replacement fencing, Session-binding isolation and exact retry, and bounded Task-activity pagination across restart. Checkpoint-only changes preserve an in-progress snapshot page chain while remaining visible after its `snapshotCursor`. Cursors are opaque client continuation tokens bound to the trusted tenant and their collection or filter. `SnapshotResumeCursor` is distinct from the `ChangeCursor` watermark returned as `snapshotCursor`. A conforming Convex adapter uses bounded keyset pagination beyond the first 100 records. The app and standalone MCP aggregate every page and perform one clean restart when a snapshot-relevant tenant mutation invalidates a partial page chain. The harness imports neither SQLite nor Convex and can be registered with any test runner that accepts async test functions.
 
 Archive conformance version 1 separately defines canonical tenant-scoped export/restore, cross-tenant and non-empty-target rejection, exact retry idempotency, conflicting-operation rejection, and malformed or secret-bearing archive rejection. SQLite and Convex implement the archive, restart, cleanup, and permanent-deletion contract in repository verification; deployed Cloud acceptance remains a separate release gate.
 
@@ -172,7 +172,7 @@ The maintained public package surfaces are `@claxedo/workgraph`, `/contracts`, `
 
 ## Boundaries
 
-- WorkGraph owns personal work structure, backend candidate admission state, Attempts, Decisions, events, and sync receipts.
+- WorkGraph owns personal work structure, backend candidate admission state, Runs, Decisions, events, and sync receipts.
 - WorkGraph owns exact Work Sources captured through agents, explicit source actions, and authoring adapters, together with their revision history. The Docs v2 adapter seam exists; a durable Docs v2 authoring surface must invoke it before the user journey is complete. The current legacy Pages surface does not provide that invocation.
 - Workspace runtimes own files, processes, terminals, worktrees, cloud VMs, and agent sessions.
 - Connections owns provider credentials, refresh, capability grants, and authentication health.

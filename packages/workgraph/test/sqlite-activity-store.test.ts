@@ -78,7 +78,7 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
       workItemId: first,
       resolvedExecution,
     })
-    expect(attached).toMatchObject({ currentWorkItemId: first, currentAttemptId: expect.any(String), version: 2 })
+    expect(attached).toMatchObject({ currentWorkItemId: first, currentRunId: expect.any(String), version: 2 })
     await expect(ports.sessionBindings.attachTask(owner(), {
       operationId: operation("attach_first"),
       bindingId: binding.id,
@@ -118,7 +118,7 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
     expect(firstPage.entries).toHaveLength(2)
     expect(firstPage.entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ category: "checkpoint", summary: "Validated the first boundary" }),
-      expect.objectContaining({ category: "attempt" }),
+      expect.objectContaining({ category: "run" }),
     ]))
     expect(firstPage).toMatchObject({ hasMore: true, nextCursor: expect.any(String) })
     await ports.sessionBindings.recordCheckpoint(owner(), {
@@ -140,14 +140,14 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
 
     database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'completed' WHERE id = ?").run(first)
     await expect(ports.sessionBindings.attachTask(owner(), {
-      operationId: operation("attach_second_attempt_running"),
+      operationId: operation("attach_second_run_running"),
       bindingId: binding.id,
       expectedVersion: 2,
       workItemId: second,
       resolvedExecution,
     })).rejects.toMatchObject({ code: "invalid_transition" })
-    database.prepare("UPDATE wg_v2_attempts SET lifecycle = 'result', finished_at = ? WHERE id = ?")
-      .run(++now, attached.currentAttemptId)
+    database.prepare("UPDATE wg_v2_runs SET lifecycle = 'result', finished_at = ? WHERE id = ?")
+      .run(++now, attached.currentRunId)
     const moved = await ports.sessionBindings.attachTask(owner(), {
       operationId: operation("attach_second"),
       bindingId: binding.id,
@@ -157,8 +157,8 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
     })
     expect(moved).toMatchObject({ currentWorkItemId: second, version: 3 })
 
-    database.prepare("UPDATE wg_v2_attempts SET lifecycle = 'result', finished_at = ? WHERE id = ?")
-      .run(++now, moved.currentAttemptId)
+    database.prepare("UPDATE wg_v2_runs SET lifecycle = 'result', finished_at = ? WHERE id = ?")
+      .run(++now, moved.currentRunId)
     await expect(ports.sessionBindings.release(owner(), {
       operationId: operation("release"),
       bindingId: binding.id,
@@ -200,13 +200,13 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
       summary: "Archive this boundary",
       evidenceIds: [],
     })
-    source.prepare("UPDATE wg_v2_attempts SET lifecycle = 'result', finished_at = 20 WHERE execution_kind = 'attached'").run()
+    source.prepare("UPDATE wg_v2_runs SET lifecycle = 'result', finished_at = 20 WHERE execution_kind = 'attached'").run()
 
     const archive = await createSqliteWorkGraphArchivePort(source).export(owner())
     expect(archive.records).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "session_binding", id: binding.id }),
       expect.objectContaining({ kind: "agent_checkpoint" }),
-      expect.objectContaining({ kind: "attempt", value: expect.objectContaining({ executionKind: "attached" }) }),
+      expect.objectContaining({ kind: "run", value: expect.objectContaining({ executionKind: "attached" }) }),
     ]))
     await createSqliteWorkGraphArchivePort(target).restore(owner(), {
       operationId: operation("archive_restore"),
@@ -215,7 +215,7 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
     await expect(createSqliteWorkGraphArchivePort(target).export(owner())).resolves.toMatchObject({ records: archive.records })
   })
 
-  it("uses the same Decision and active-Attempt readiness fences as managed execution", async () => {
+  it("uses the same Decision and active-Run readiness fences as managed execution", async () => {
     const database = new BetterSqlite3(":memory:")
     databases.push(database)
     let id = 0
@@ -256,26 +256,26 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
       optionId: "yes",
     })
     database.prepare(`
-      INSERT INTO wg_v2_attempts
-        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+      INSERT INTO wg_v2_runs
+        (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle,
          resolved_execution_profile_json, created_at, updated_at)
       VALUES (?, ?, 'managed_running', ?, ?, 1, 'running', '{}', 1, 1)
     `).run(owner().organizationId, owner().ownerUserId, streamId, workItemId)
     await expect(ports.sessionBindings.attachTask(owner(), {
-      operationId: operation("attach_with_attempt"),
+      operationId: operation("attach_with_run"),
       bindingId: binding.id,
       expectedVersion: 1,
       workItemId,
       resolvedExecution,
-    })).rejects.toMatchObject({ code: "not_ready", message: "Work Item already has an active Attempt" })
-    database.prepare("UPDATE wg_v2_attempts SET lifecycle = 'failed', finished_at = 2 WHERE id = 'managed_running'").run()
+    })).rejects.toMatchObject({ code: "not_ready", message: "Work Item already has an active Run" })
+    database.prepare("UPDATE wg_v2_runs SET lifecycle = 'failed', finished_at = 2 WHERE id = 'managed_running'").run()
     await expect(ports.sessionBindings.attachTask(owner(), {
       operationId: operation("attach_after_ready"),
       bindingId: binding.id,
       expectedVersion: 1,
       workItemId,
       resolvedExecution,
-    })).resolves.toMatchObject({ currentWorkItemId: workItemId, currentAttemptId: expect.any(String) })
+    })).resolves.toMatchObject({ currentWorkItemId: workItemId, currentRunId: expect.any(String) })
   })
 
   it("removes attached activity state when a disposable Stream is deleted", async () => {
@@ -311,8 +311,8 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
       summary: "Disposable checkpoint",
       evidenceIds: [],
     })
-    database.prepare("UPDATE wg_v2_attempts SET lifecycle = 'result', finished_at = 20 WHERE id = ?")
-      .run(attached.currentAttemptId)
+    database.prepare("UPDATE wg_v2_runs SET lifecycle = 'result', finished_at = 20 WHERE id = ?")
+      .run(attached.currentRunId)
     const version = database.prepare("SELECT row_version FROM wg_v2_streams WHERE id = ?").get(streamId) as { row_version: number }
 
     await expect(execute(service, "delete_stream_execute", {
@@ -324,7 +324,7 @@ describe("SQLite WorkGraph activity and attached Sessions", () => {
     expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_streams WHERE id = ?").get(streamId)).toEqual({ count: 0 })
     expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_session_bindings WHERE stream_id = ?").get(streamId)).toEqual({ count: 0 })
     expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_agent_checkpoints WHERE stream_id = ?").get(streamId)).toEqual({ count: 0 })
-    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE stream_id = ?").get(streamId)).toEqual({ count: 0 })
+    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs WHERE stream_id = ?").get(streamId)).toEqual({ count: 0 })
   })
 })
 

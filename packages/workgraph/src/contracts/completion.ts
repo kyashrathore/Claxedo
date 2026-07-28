@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { WorkGraphActorSchema } from "./context"
 import {
-  AttemptIDSchema,
+  RunIDSchema,
   CompletionRequirementIDSchema,
   DurableEffectReceiptIDSchema,
   EvidenceIDSchema,
@@ -51,7 +51,7 @@ const evidenceShape = {
   id: EvidenceIDSchema,
   subject: EvidenceSubjectSchema,
   requirementId: CompletionRequirementIDSchema.optional(),
-  sourceAttemptId: AttemptIDSchema.optional(),
+  sourceRunId: RunIDSchema.optional(),
   summary: z.string().trim().min(1),
   recordedAt: z.number().int().nonnegative(),
   recordedBy: WorkGraphActorSchema,

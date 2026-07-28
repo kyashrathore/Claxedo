@@ -29,8 +29,8 @@ export type OutcomeID = z.infer<typeof OutcomeIDSchema>
 export const WorkItemIDSchema = id("WorkItemID")
 export type WorkItemID = z.infer<typeof WorkItemIDSchema>
 
-export const AttemptIDSchema = id("AttemptID")
-export type AttemptID = z.infer<typeof AttemptIDSchema>
+export const RunIDSchema = id("RunID")
+export type RunID = z.infer<typeof RunIDSchema>
 
 export const AgentCheckpointIDSchema = id("AgentCheckpointID")
 export type AgentCheckpointID = z.infer<typeof AgentCheckpointIDSchema>

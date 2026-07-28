@@ -1,4 +1,4 @@
-import type { AttemptDto, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
+import type { RunDto, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { Show } from "solid-js"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
 import { createDependencyResolver, InlineAddTask, KeyedById, OutcomeGroup, sortByStatusLabel, WorkItemLeaf, type Mutate } from "./work-item-rows"
@@ -10,7 +10,7 @@ export function StreamTasksPanelBody(props: {
   stream: StreamDto
   outcomes: OutcomeDto[]
   items: WorkItemDto[]
-  attempts: AttemptDto[]
+  runs: RunDto[]
   client: WorkGraphClient
   mutate: Mutate
   onOpenTask: (item: WorkItemDto, invoker: HTMLElement) => void
@@ -39,7 +39,7 @@ export function StreamTasksPanelBody(props: {
             <OutcomeGroup
               outcome={outcome()}
               items={sortByStatusLabel(props.items.filter((item) => item.outcomeId === outcome().id), depsComplete())}
-              attempts={props.attempts}
+              runs={props.runs}
               streamId={props.stream.id}
               client={props.client}
               mutate={props.mutate}
@@ -53,7 +53,7 @@ export function StreamTasksPanelBody(props: {
         <Show when={props.outcomes.length > 0 && unassigned().length}>
           <OutcomeGroup
             items={unassigned()}
-            attempts={props.attempts}
+            runs={props.runs}
             streamId={props.stream.id}
             client={props.client}
             mutate={props.mutate}
@@ -67,7 +67,7 @@ export function StreamTasksPanelBody(props: {
           <div class="workgraph-leaves">
             <KeyedById records={unassigned()}>
               {(item) => (
-                <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
+                <WorkItemLeaf item={item()} runs={props.runs} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
               )}
             </KeyedById>
           </div>

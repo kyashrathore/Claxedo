@@ -285,9 +285,9 @@ describe("WorkGraph API", () => {
       state: "active", priority: 0, dependencyIds: [], sourceRevisionRefs: [source], evidenceIds: [],
       completionContract: { version: 1, mode: "all", requirements: [{ id: "verified", kind: "verification", description: "Verified", instructions: "Run tests" }] },
     }
-    const attempt = {
-      recordType: "attempt", ...base, id: "attempt_1", streamId: "stream_1", workItemId: "item_1",
-      attemptNumber: 1, state: "running", admittedAt: 1, sourceRevisionRefs: [source],
+    const run = {
+      recordType: "run", ...base, id: "run_1", streamId: "stream_1", workItemId: "item_1",
+      runNumber: 1, generation: 1, state: "running", admittedAt: 1, sourceRevisionRefs: [source],
       resolvedExecution: {
         environment: { kind: "hosted_workspace" }, harness: "codex", agent: "developer",
         model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
@@ -302,8 +302,8 @@ describe("WorkGraph API", () => {
         targets: [{ workItemId: "item_1", expectedVersion: 1, title: "Ship", state: "active" }],
       },
       "/api/workgraph/work-items/item_1": workItem,
-      "/api/workgraph/work-items/item_1/attempts": { attempts: [{ attempt, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } }], hasMore: false },
-      "/api/workgraph/attempts/attempt_1": { attempt, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } },
+      "/api/workgraph/work-items/item_1/runs": { runs: [{ run, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } }], hasMore: false },
+      "/api/workgraph/runs/run_1": { run, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } },
       "/api/workgraph/decisions/decision_1": { recordType: "decision", ...base, id: "decision_1", streamId: "stream_1", state: "pending", question: "Ship?", options: [{ id: "yes", label: "Yes" }], affectedWorkItemIds: ["item_1"], sourceRevisionRefs: [source] },
       "/api/workgraph/intake/candidate_1": { candidateKind: "session", id: "candidate_1", ownerUserId: "user_1", version: 1, sessionId: "session_1", title: "Investigate", body: "Finding", state: "unorganized", createdAt: 1, updatedAt: 1 },
     }
@@ -322,16 +322,16 @@ describe("WorkGraph API", () => {
       targets: [{ workItemId: "item_1", expectedVersion: 1 }],
     })
     await expect(client.workItem("item_1")).resolves.toMatchObject({ id: "item_1" })
-    await expect(client.workItemAttempts("item_1", { limit: 10 })).resolves.toMatchObject({ attempts: [{ executionReferences: { sessionId: "session_1" } }] })
-    await expect(client.attempt("attempt_1")).resolves.toMatchObject({ attempt: { id: "attempt_1" } })
+    await expect(client.workItemRuns("item_1", { limit: 10 })).resolves.toMatchObject({ runs: [{ executionReferences: { sessionId: "session_1" } }] })
+    await expect(client.run("run_1")).resolves.toMatchObject({ run: { id: "run_1" } })
     await expect(client.decision("decision_1")).resolves.toMatchObject({ id: "decision_1" })
     await expect(client.intakeCandidate("candidate_1")).resolves.toMatchObject({ id: "candidate_1" })
     expect(calls).toEqual([
       "/api/workgraph/proposals/proposal_1",
       `/api/workgraph/streams/stream_1/replacement-review?workSourceId=${source.workSourceId}&revisionId=${source.revisionId}&contentHash=${source.contentHash}`,
       "/api/workgraph/work-items/item_1",
-      "/api/workgraph/work-items/item_1/attempts?limit=10",
-      "/api/workgraph/attempts/attempt_1",
+      "/api/workgraph/work-items/item_1/runs?limit=10",
+      "/api/workgraph/runs/run_1",
       "/api/workgraph/decisions/decision_1",
       "/api/workgraph/intake/candidate_1",
     ])
@@ -526,7 +526,7 @@ describe("WorkGraph API", () => {
     await client.rejectWorkItem("item_2", 4, "Not needed")
     await client.approveWorkItems([{ workItemId: "item_1", expectedVersion: 3 }, { workItemId: "item_3", expectedVersion: 5 }])
     await client.setStreamLifecycle({ streamId: "stream_1", expectedVersion: 4, state: "paused", reason: "Paused from overview" })
-    await client.cancelAttempt("attempt_1", 3, "Owner stopped it")
+    await client.cancelRun("run_1", 3, "Owner stopped it")
     await client.cancelWorkItem("item_1", 4, "No longer needed")
     await client.answerDecision("decision_1", 2, { optionId: "ship" })
     await client.recordEvidence({ subject: { type: "work_item", workItemId: "item_1" }, evidence: { kind: "finding", summary: "Smoke test is green" } })
@@ -546,7 +546,7 @@ describe("WorkGraph API", () => {
       { operationId: "operation_fixed", command: { version: 1, type: "reject_work_item", workItemId: "item_2", expectedVersion: 4, reason: "Not needed" } },
       { operationId: "operation_fixed", command: { version: 1, type: "approve_work_items", approvals: [{ workItemId: "item_1", expectedVersion: 3 }, { workItemId: "item_3", expectedVersion: 5 }] } },
       { operationId: "operation_fixed", command: { version: 1, type: "set_stream_lifecycle", streamId: "stream_1", expectedVersion: 4, state: "paused", reason: "Paused from overview" } },
-      { operationId: "operation_fixed", command: { version: 1, type: "cancel_attempt", attemptId: "attempt_1", expectedVersion: 3, reason: "Owner stopped it" } },
+      { operationId: "operation_fixed", command: { version: 1, type: "cancel_run", runId: "run_1", expectedVersion: 3, reason: "Owner stopped it" } },
       { operationId: "operation_fixed", command: { version: 1, type: "cancel_work_item", workItemId: "item_1", expectedVersion: 4, reason: "No longer needed" } },
       { operationId: "operation_fixed", command: { version: 1, type: "answer_decision", decisionId: "decision_1", expectedVersion: 2, optionId: "ship" } },
       { operationId: "operation_fixed", command: { version: 1, type: "record_evidence", subject: { type: "work_item", workItemId: "item_1" }, evidence: { kind: "finding", summary: "Smoke test is green" } } },

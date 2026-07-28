@@ -1009,7 +1009,7 @@ describe("workspace runtime auth helpers", () => {
     // Regression: proxy-driven (Session V2) sessions keep messages in the
     // engine and get bound into the store message-less by discovery — an empty
     // store projection must never shadow the engine transcript (staging
-    // WorkGraph retention synced [] and settled attempts without transcripts).
+    // WorkGraph retention synced [] and settled runs without transcripts).
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-bound-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -2867,7 +2867,7 @@ describe("scoped Session tool compatibility", () => {
     expect(context).toContain("workgraph_complete_task")
     expect(context).toContain("http://127.0.0.1:4567/callback/nonce")
     expect(context).toContain("session-1")
-    expect(context).not.toContain("attemptId")
+    expect(context).not.toContain("runId")
     expect(context).not.toContain("streamId")
     expect(context).not.toContain("workItemId")
     host.dispose()

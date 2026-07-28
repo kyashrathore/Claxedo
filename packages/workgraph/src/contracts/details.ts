@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { AdmissionProposalIDSchema } from "./commands"
 import {
-  AttemptIDSchema,
+  RunIDSchema,
   DecisionIDSchema,
   StreamIDSchema,
   WorkItemIDSchema,
@@ -9,8 +9,8 @@ import {
 import { WorkItemStateSchema } from "./lifecycle"
 import {
   AdmissionProposalDtoSchema,
-  AttemptDtoSchema,
-  AttemptExecutionReferencesSchema,
+  RunDtoSchema,
+  RunExecutionReferencesSchema,
   DecisionDtoSchema,
   WorkItemDtoSchema,
 } from "./records"
@@ -24,8 +24,8 @@ export const AdmissionProposalReadInputSchema = z.strictObject({ proposalId: Adm
 export type AdmissionProposalReadInput = z.infer<typeof AdmissionProposalReadInputSchema>
 export const WorkItemReadInputSchema = z.strictObject({ workItemId: WorkItemIDSchema })
 export type WorkItemReadInput = z.infer<typeof WorkItemReadInputSchema>
-export const AttemptReadInputSchema = z.strictObject({ attemptId: AttemptIDSchema })
-export type AttemptReadInput = z.infer<typeof AttemptReadInputSchema>
+export const RunReadInputSchema = z.strictObject({ runId: RunIDSchema })
+export type RunReadInput = z.infer<typeof RunReadInputSchema>
 export const DecisionReadInputSchema = z.strictObject({ decisionId: DecisionIDSchema })
 export type DecisionReadInput = z.infer<typeof DecisionReadInputSchema>
 export const IntakeCandidateReadInputSchema = z.strictObject({ candidateId: z.string().trim().min(1).max(512) })
@@ -79,120 +79,120 @@ export const ReplacementReviewSchema = z.discriminatedUnion("status", [
 ])
 export type ReplacementReview = z.infer<typeof ReplacementReviewSchema>
 
-export const AttemptDetailDtoSchema = z.strictObject({
-  attempt: AttemptDtoSchema,
-  executionReferences: AttemptExecutionReferencesSchema.optional(),
+export const RunDetailDtoSchema = z.strictObject({
+  run: RunDtoSchema,
+  executionReferences: RunExecutionReferencesSchema.optional(),
 })
-export type AttemptDetailDto = z.infer<typeof AttemptDetailDtoSchema>
+export type RunDetailDto = z.infer<typeof RunDetailDtoSchema>
 
-export const WorkItemAttemptPageCursorSchema = z.string().trim().min(1).max(maxLength).brand("WorkItemAttemptPageCursor")
-export type WorkItemAttemptPageCursor = z.infer<typeof WorkItemAttemptPageCursorSchema>
+export const WorkItemRunPageCursorSchema = z.string().trim().min(1).max(maxLength).brand("WorkItemRunPageCursor")
+export type WorkItemRunPageCursor = z.infer<typeof WorkItemRunPageCursorSchema>
 
-export const WorkItemAttemptListInputSchema = z.strictObject({
+export const WorkItemRunListInputSchema = z.strictObject({
   workItemId: WorkItemIDSchema,
-  after: WorkItemAttemptPageCursorSchema.optional(),
+  after: WorkItemRunPageCursorSchema.optional(),
   limit: z.number().int().min(1).max(100),
 })
-export type WorkItemAttemptListInput = z.infer<typeof WorkItemAttemptListInputSchema>
+export type WorkItemRunListInput = z.infer<typeof WorkItemRunListInputSchema>
 
-export const WorkItemAttemptPageSchema = z.strictObject({
-  attempts: z.array(AttemptDetailDtoSchema),
+export const WorkItemRunPageSchema = z.strictObject({
+  runs: z.array(RunDetailDtoSchema),
   hasMore: z.boolean(),
-  nextCursor: WorkItemAttemptPageCursorSchema.optional(),
+  nextCursor: WorkItemRunPageCursorSchema.optional(),
 }).superRefine((page, context) => {
   if (page.hasMore === Boolean(page.nextCursor)) return
   context.addIssue({
     code: "custom",
     path: ["nextCursor"],
-    message: "An Attempt page cursor is required exactly when more Attempts exist",
+    message: "An Run page cursor is required exactly when more Runs exist",
   })
 })
-export type WorkItemAttemptPage = z.infer<typeof WorkItemAttemptPageSchema>
+export type WorkItemRunPage = z.infer<typeof WorkItemRunPageSchema>
 
 export const WorkGraphDetailSchemas = {
   proposal: AdmissionProposalDtoSchema,
   workItem: WorkItemDtoSchema,
-  attempt: AttemptDetailDtoSchema,
+  run: RunDetailDtoSchema,
   decision: DecisionDtoSchema,
   candidate: IntakeCandidateDtoSchema,
-  attempts: WorkItemAttemptPageSchema,
+  runs: WorkItemRunPageSchema,
   replacementReview: ReplacementReviewSchema,
 } as const
 
-export type WorkItemAttemptPageCursorErrorReason = "invalid" | "owner_mismatch" | "work_item_mismatch"
+export type WorkItemRunPageCursorErrorReason = "invalid" | "owner_mismatch" | "work_item_mismatch"
 
-export class WorkItemAttemptPageCursorError extends Error {
+export class WorkItemRunPageCursorError extends Error {
   readonly code = "cursor_invalid" as const
 
-  constructor(readonly reason: WorkItemAttemptPageCursorErrorReason) {
-    super("Attempt page cursor is not valid for this owner and Work Item")
-    this.name = "WorkItemAttemptPageCursorError"
+  constructor(readonly reason: WorkItemRunPageCursorErrorReason) {
+    super("Run page cursor is not valid for this owner and Work Item")
+    this.name = "WorkItemRunPageCursorError"
   }
 }
 
-export function createWorkItemAttemptPageCursor(input: Readonly<{
+export function createWorkItemRunPageCursor(input: Readonly<{
   organizationId: string
   ownerUserId: string
   workItemId: string
-  attemptNumber: number
-  attemptId: string
-}>): WorkItemAttemptPageCursor {
+  runNumber: number
+  runId: string
+}>): WorkItemRunPageCursor {
   const cursor = [
     prefix,
     encode(input.organizationId),
     encode(input.ownerUserId),
     encode(input.workItemId),
-    integer(input.attemptNumber),
-    encode(input.attemptId),
+    integer(input.runNumber),
+    encode(input.runId),
   ].join(":")
-  if (cursor.length > maxLength) throw new WorkItemAttemptPageCursorError("invalid")
-  return WorkItemAttemptPageCursorSchema.parse(cursor)
+  if (cursor.length > maxLength) throw new WorkItemRunPageCursorError("invalid")
+  return WorkItemRunPageCursorSchema.parse(cursor)
 }
 
-export function readWorkItemAttemptPageCursor(
+export function readWorkItemRunPageCursor(
   cursor: string,
   organizationId: string,
   ownerUserId: string,
   workItemId: string,
-): Readonly<{ attemptNumber: number; attemptId: z.infer<typeof AttemptIDSchema> }> {
-  if (cursor.length > maxLength) throw new WorkItemAttemptPageCursorError("invalid")
+): Readonly<{ runNumber: number; runId: z.infer<typeof RunIDSchema> }> {
+  if (cursor.length > maxLength) throw new WorkItemRunPageCursorError("invalid")
   const parts = cursor.split(":")
-  if (parts.length !== 6 || parts[0] !== prefix) throw new WorkItemAttemptPageCursorError("invalid")
-  if (decode(parts[1]!) !== organizationId || decode(parts[2]!) !== ownerUserId) throw new WorkItemAttemptPageCursorError("owner_mismatch")
-  if (decode(parts[3]!) !== workItemId) throw new WorkItemAttemptPageCursorError("work_item_mismatch")
+  if (parts.length !== 6 || parts[0] !== prefix) throw new WorkItemRunPageCursorError("invalid")
+  if (decode(parts[1]!) !== organizationId || decode(parts[2]!) !== ownerUserId) throw new WorkItemRunPageCursorError("owner_mismatch")
+  if (decode(parts[3]!) !== workItemId) throw new WorkItemRunPageCursorError("work_item_mismatch")
   return {
-    attemptNumber: integer(parts[4]),
-    attemptId: AttemptIDSchema.parse(decode(parts[5]!)),
+    runNumber: integer(parts[4]),
+    runId: RunIDSchema.parse(decode(parts[5]!)),
   }
 }
 
-export function compareWorkItemAttemptPosition(
-  left: Readonly<{ attemptNumber: number; id: string }>,
-  right: Readonly<{ attemptNumber: number; id: string }>,
+export function compareWorkItemRunPosition(
+  left: Readonly<{ runNumber: number; id: string }>,
+  right: Readonly<{ runNumber: number; id: string }>,
 ) {
-  return left.attemptNumber - right.attemptNumber || left.id.localeCompare(right.id)
+  return left.runNumber - right.runNumber || left.id.localeCompare(right.id)
 }
 
 function encode(value: string) {
-  if (!value) throw new WorkItemAttemptPageCursorError("invalid")
+  if (!value) throw new WorkItemRunPageCursorError("invalid")
   return encodeURIComponent(value)
 }
 
 function decode(value: string) {
   try {
     const decoded = decodeURIComponent(value)
-    if (!decoded || encodeURIComponent(decoded) !== value) throw new WorkItemAttemptPageCursorError("invalid")
+    if (!decoded || encodeURIComponent(decoded) !== value) throw new WorkItemRunPageCursorError("invalid")
     return decoded
   } catch (error) {
-    if (error instanceof WorkItemAttemptPageCursorError) throw error
-    throw new WorkItemAttemptPageCursorError("invalid")
+    if (error instanceof WorkItemRunPageCursorError) throw error
+    throw new WorkItemRunPageCursorError("invalid")
   }
 }
 
 function integer(value: number | string | undefined) {
   const parsed = Number(value)
   if (value === undefined || !/^\d+$/.test(String(value)) || !Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new WorkItemAttemptPageCursorError("invalid")
+    throw new WorkItemRunPageCursorError("invalid")
   }
   return parsed
 }

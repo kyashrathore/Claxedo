@@ -66,7 +66,7 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
     expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_operation_results").get()).toEqual({ count: 0 })
   })
 
-  it("revalidates the resolved profile against the current catalog before Attempt admission", async () => {
+  it("revalidates the resolved profile against the current catalog before Run admission", async () => {
     const database = open()
     const context = owner("organization_a")
     let catalog = capabilities(context)
@@ -74,8 +74,8 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
     const service = createSqliteWorkGraphService({
       database,
       execution: {
-        provisionOrAdopt: async () => { throw new Error("Attempt must not reach placement") },
-        launch: async () => { throw new Error("Attempt must not reach launch") },
+        provisionOrAdopt: async () => { throw new Error("Run must not reach placement") },
+        launch: async () => { throw new Error("Run must not reach launch") },
         cancel: async () => undefined,
         result: async () => ({ state: "running" }),
         cleanup: async () => undefined,
@@ -94,7 +94,7 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
     const streamId = valueId(stream, "streamId")
     // Drift the catalog so the resolved model is no longer supported before the
     // task exists. The drain that runs after creation must re-validate the
-    // resolved profile and skip admission — no Attempt reaches placement/launch.
+    // resolved profile and skip admission — no Run reaches placement/launch.
     catalog = { ...catalog, models: [{ ...catalog.models[0]!, modelId: "gpt-5-mini" }] }
     const item = await service.execute(context, {
       operationId: "item" as never,
@@ -111,7 +111,7 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
       },
     })
     expect(item).toMatchObject({ ok: true })
-    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get()).toEqual({ count: 0 })
+    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs").get()).toEqual({ count: 0 })
     expect(database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(valueId(item, "workItemId")))
       .toEqual({ lifecycle: "pending" })
   })

@@ -19,8 +19,8 @@ const workGraphTables = [
   "workgraph_outcomes",
   "workgraph_work_items",
   "workgraph_work_item_dependencies",
-  "workgraph_attempts",
-  "workgraph_attempt_connection_bindings",
+  "workgraph_runs",
+  "workgraph_run_connection_bindings",
   "workgraph_leases",
   "workgraph_decisions",
   "workgraph_decision_work_items",
@@ -87,7 +87,7 @@ describe("Convex WorkGraph persistence policy", () => {
       "workgraph_streams",
       "workgraph_outcomes",
       "workgraph_work_items",
-      "workgraph_attempts",
+      "workgraph_runs",
       "workgraph_decisions",
     ] as const) {
       expect(schema.tables[tableName].validator.fields.source_revision_refs).toMatchObject({
@@ -100,7 +100,7 @@ describe("Convex WorkGraph persistence policy", () => {
     expect(activityGranularity).toMatchObject({ isOptional: "optional", kind: "union" })
     expect(activityGranularity.members.map((member) => member.value)).toEqual(["milestones", "progress", "detailed"])
     expect(
-      (schema.tables.workgraph_attempts as unknown as { indexes: Array<{ fields: string[] }> }).indexes,
+      (schema.tables.workgraph_runs as unknown as { indexes: Array<{ fields: string[] }> }).indexes,
     ).toContainEqual(expect.objectContaining({ fields: ["organization_id", "owner_user_id", "state", "updated_at"] }))
   })
 
@@ -153,7 +153,7 @@ describe("Convex WorkGraph persistence policy", () => {
       "workgraph_decision_work_items",
       "workgraph_evidence",
       "workgraph_durable_effect_receipts",
-      "workgraph_attempts",
+      "workgraph_runs",
       "workgraph_decisions",
       "workgraph_outcomes",
       "workgraph_leases",

@@ -501,8 +501,8 @@ export const syncWorkGraphSession = serviceMutation({
   },
 })
 
-// Completion-time transcript retention for hosted WorkGraph Attempts. The
-// caller (the attempt-operation broker) only holds the runtime token's
+// Completion-time transcript retention for hosted WorkGraph Runs. The
+// caller (the run-operation broker) only holds the runtime token's
 // Clerk subject, so the durable owner is resolved through the same trusted
 // tenant-subject path the WorkGraph command executor uses. The workspace must
 // already exist (the launch sync created it) — an absent workspace fails the

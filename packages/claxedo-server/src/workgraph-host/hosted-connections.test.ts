@@ -122,7 +122,7 @@ function context(): WorkGraphContext {
   return {
     organizationId: "org-acme" as never,
     ownerUserId: OwnerUserIDSchema.parse("alice"),
-    actor: { type: "agent", id: ActorIDSchema.parse("attempt-agent") },
+    actor: { type: "agent", id: ActorIDSchema.parse("run-agent") },
     requestId: RequestIDSchema.parse("request"),
     access: { mode: "owner" },
   }

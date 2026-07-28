@@ -83,7 +83,7 @@ function ctx() {
       org_memberships: [],
       session_history: [],
       session_messages: [],
-      workgraph_attempts: [],
+      workgraph_runs: [],
       workgraph_due_jobs: [],
       workgraph_owner_deletion_barriers: [],
     }),

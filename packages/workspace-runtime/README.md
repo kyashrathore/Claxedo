@@ -103,12 +103,12 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/testing` | Small test management-auth helpers. |
 
 Root runtime value exports:
-`Pty`, `WORKGRAPH_ATTEMPT_BINDING_PATH`, `WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS`,
-`WORKGRAPH_ATTEMPT_TOOL_NAMES`, `WORKGRAPH_ATTEMPT_TOOL_PATH`,
-`WORKGRAPH_ATTEMPT_TOOL_SCHEMAS`, `WORKGRAPH_CONNECTION_BINDING_PATH`,
+`Pty`, `WORKGRAPH_RUN_BINDING_PATH`, `WORKGRAPH_RUN_TOOL_INPUT_SCHEMAS`,
+`WORKGRAPH_RUN_TOOL_NAMES`, `WORKGRAPH_RUN_TOOL_PATH`,
+`WORKGRAPH_RUN_TOOL_SCHEMAS`, `WORKGRAPH_CONNECTION_BINDING_PATH`,
 `WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS`, `WORKGRAPH_CONNECTION_TOOL_NAMES`,
 `WORKGRAPH_CONNECTION_TOOL_PATH`, `WORKGRAPH_CONNECTION_TOOL_SCHEMAS`,
-`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WorkGraphAttemptToolRoutes`,
+`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WorkGraphRunToolRoutes`,
 `WorkGraphConnectionOperationRequestSchema`,
 `WorkGraphConnectionOperationResponseSchema`, `WorkGraphConnectionToolRoutes`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
@@ -151,7 +151,7 @@ boundary.
 | `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
 | `*    /api/workgraph/tools`, `* /api/workgraph/connection-binding` | [`routes/workgraph-connection-tools.ts`](src/routes/workgraph-connection-tools.ts) | exposure-dependent runtime auth |
-| `*    /api/workgraph/attempt-tools`, `* /api/workgraph/attempt-binding` | [`routes/workgraph-attempt-tools.ts`](src/routes/workgraph-attempt-tools.ts) | exposure-dependent runtime auth |
+| `*    /api/workgraph/run-tools`, `* /api/workgraph/run-binding` | [`routes/workgraph-run-tools.ts`](src/routes/workgraph-run-tools.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/session-env/*` | session-env routes (mounted by the host) | exposure-dependent runtime auth |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |

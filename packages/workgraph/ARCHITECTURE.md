@@ -13,7 +13,7 @@ Local agent tools and workers ── direct ─┤
                             Embedded WorkGraph services
                               ├─ Streams, Tasks, optional Outcomes
                               ├─ Work Sources and intake
-                              ├─ Attempts and Decisions
+                              ├─ Runs and Decisions
                               ├─ Attention
                               └─ events and subscriptions
                                          │
@@ -29,7 +29,7 @@ HTTP is the northbound app and standalone-MCP contract, not an internal service 
 
 ### WorkGraph
 
-WorkGraph owns personal Streams, workspace intent, Outcomes, Work Items, source views, intake candidates, Attempts, Decisions, execution profiles, completion evidence, durable-effect receipts, activity, events, and leases.
+WorkGraph owns personal Streams, workspace intent, Outcomes, Work Items, source views, intake candidates, Runs, Decisions, execution profiles, completion evidence, durable-effect receipts, activity, events, and leases.
 
 ### Work Sources
 
@@ -37,11 +37,11 @@ WorkGraph owns exact source text captured through agents, explicit source action
 
 ### Connections
 
-Connections owns organization-scoped provider credentials and Connection metadata, refresh, capability grants, account health, and team partitioning. WorkGraph owns each user's provider identity mapping and saved filters. Attempt bindings contain only tenant-bound Connection references and permitted tools; they never transfer credential ownership into WorkGraph.
+Connections owns organization-scoped provider credentials and Connection metadata, refresh, capability grants, account health, and team partitioning. WorkGraph owns each user's provider identity mapping and saved filters. Run bindings contain only tenant-bound Connection references and permitted tools; they never transfer credential ownership into WorkGraph.
 
 ### Workspace runtimes
 
-Workspace runtimes own repositories, filesystems, worktrees, cloud VMs, processes, terminals, and sessions. WorkGraph assigns one primary isolated envelope to each executable Stream and dispatches Work Item Attempts inside it through a stable execution port.
+Workspace runtimes own repositories, filesystems, worktrees, cloud VMs, processes, terminals, and sessions. WorkGraph assigns one primary isolated envelope to each executable Stream and dispatches Work Item Runs inside it through a stable execution port.
 
 ### Hosted control plane
 
@@ -75,7 +75,7 @@ type AtomicCommand<Input, Result> = (context: WorkGraphContext, input: Readonly<
 type TenantQuery<Input, Result> = (context: WorkGraphContext, input: Readonly<Input>) => Promise<Result>
 ```
 
-The application service dispatches a public command discriminator to the corresponding atomic handler and exposes typed tenant-scoped queries. Atomic commands map to Convex mutations, SQLite transactions, or custom adapter units of work. Core adapters provide tuple-bound queries, atomic state/change/outbox mutation, ordered append, idempotency, compare-and-set transitions, expiring leases, opaque tenant-and-filter-bound cursors, and migrations. Published core conformance version 6 certifies these semantics through restart-safe snapshot convergence, Attempt runtime recovery, source-revision replacement fencing, Session-binding exact retry, and bounded Task-activity pagination. Portable tenant export/restore uses a separate archive port and archive conformance version 1. SQLite and Convex implement archive, cleanup, deletion, bounded workers, and tuple-leading indexes in repository verification.
+The application service dispatches a public command discriminator to the corresponding atomic handler and exposes typed tenant-scoped queries. Atomic commands map to Convex mutations, SQLite transactions, or custom adapter units of work. Core adapters provide tuple-bound queries, atomic state/change/outbox mutation, ordered append, idempotency, compare-and-set transitions, expiring leases, opaque tenant-and-filter-bound cursors, and migrations. Published core conformance version 6 certifies these semantics through restart-safe snapshot convergence, Run runtime recovery, source-revision replacement fencing, Session-binding exact retry, and bounded Task-activity pagination. Portable tenant export/restore uses a separate archive port and archive conformance version 1. SQLite and Convex implement archive, cleanup, deletion, bounded workers, and tuple-leading indexes in repository verification.
 
 ### Convex
 
@@ -95,7 +95,7 @@ OSS operators can register another adapter and run the public conformance suite.
 
 - `WorkGraphService` dispatches the canonical atomic command set and tenant-scoped query capabilities.
 - Source admission and matching services bind immutable revisions, rank bounded Stream and duplicate candidates, and confirm versioned proposal packages.
-- Execution, completion, and lifecycle services resolve immutable Attempt profiles, reconcile runtime state, evaluate evidence, and enforce close/delete boundaries.
+- Execution, completion, and lifecycle services resolve immutable Run profiles, reconcile runtime state, evaluate evidence, and enforce close/delete boundaries.
 - Intake, Source View, webhook, and Session-intake services produce personal candidates and perform provider work through Connections.
 - Attention services expose exact actionable domain records.
 
@@ -126,22 +126,22 @@ Placement uses compact Stream title, description, and purpose summaries. It sear
 ## Execution flow
 
 1. Resolve or create the Stream's primary worktree/VM envelope from its base repository and revision.
-2. Resolve WorkGraph, Stream, optional Outcome, and Work Item settings into an immutable Attempt profile inside that envelope.
+2. Resolve WorkGraph, Stream, optional Outcome, and Work Item settings into an immutable Run profile inside that envelope.
 3. Verify blockers, Decisions, workspace access, organization Connection access, user binding, and the completion contract.
-4. Acquire the Attempt execution lease and adopt the Stream workspace.
+4. Acquire the Run execution lease and adopt the Stream workspace.
 5. Launch the session and record stable envelope, child worktree, session, model, effort, and Connection identities.
 6. Consume runtime lifecycle and semantic MCP updates independently.
 7. Evaluate the completion contract and create integration, review, or verification work when required.
 
 Every ready Work Item may launch. Operational quotas and failures are observable execution conditions, not a product-level agent-capacity queue.
 
-Pause stops new launches; explicit cancel targets active Attempts. Transient infrastructure failures retry automatically. Semantic, repeated, and ambiguous failures create attention.
+Pause stops new launches; explicit cancel targets active Runs. Transient infrastructure failures retry automatically. Semantic, repeated, and ambiguous failures create attention.
 
-Placement failure handling reserves a durable compensation effect before invoking external cancellation and cleanup. Reconciliation runs both operations independently, preserves their failure history, and retries across process restart. Stale admitted or placing Attempts become durable attention only after compensation completes, so attention never substitutes for unfinished external cleanup.
+Placement failure handling reserves a durable compensation effect before invoking external cancellation and cleanup. Reconciliation runs both operations independently, preserves their failure history, and retries across process restart. Stale admitted or placing Runs become durable attention only after compensation completes, so attention never substitutes for unfinished external cleanup.
 
 ## Completion and Decisions
 
-Attempts report execution results; Work Items complete only when their contracts are satisfied. Outcomes move to ready-to-close when success criteria have evidence and require owner confirmation.
+Runs report execution results; Work Items complete only when their contracts are satisfied. Outcomes move to ready-to-close when success criteria have evidence and require owner confirmation.
 
 Agents directly record factual findings and necessary follow-up work. Changes to confirmed scope, priority, success criteria, or consequential direction create Decisions. Pending Decisions block only affected and dependent work.
 
@@ -149,21 +149,21 @@ Agents directly record factual findings and necessary follow-up work. Changes to
 
 The Stream tracks durable-effect receipts for merged or directly integrated code, published artifacts, and accepted external writes.
 
-While no durable effect exists, deletion is destructive and atomic from the user's perspective: cancel Attempts, destroy the Stream workspace, discard unmerged work, then remove personal graph records according to deletion policy.
+While no durable effect exists, deletion is destructive and atomic from the user's perspective: cancel Runs, destroy the Stream workspace, discard unmerged work, then remove personal graph records according to deletion policy.
 
-Once a durable effect exists, deletion is rejected. Closing records the reason, marks unfinished Work Items abandoned, preserves Attempts, Decisions, evidence, and external references, and cleans up the envelope after retained results are secured.
+Once a durable effect exists, deletion is rejected. Closing records the reason, marks unfinished Work Items abandoned, preserves Runs, Decisions, evidence, and external references, and cleans up the envelope after retained results are secured.
 
 ## WorkGraph app composition
 
 The app renders one compact `/workgraph` surface whose Streams expand in place. The existing app-global WorkspacePanel and its top-level toggle are the only secondary-panel shell and control. The panel is not owned or bounded by a workspace; individual views supply their own scope. WorkGraph contributes tenant-bound Needs you and Settings views while keeping WorkGraph domain state in the feature.
 
-The existing top-level toggle carries a small accessible attention indicator when the bounded tenant-scoped Attention projection is non-empty. The WorkGraph header Needs you and Settings controls select those top-level views in the same panel instance. Zero attention produces no WorkGraph dot, contextual card, list, or empty body content. Selecting a Needs you item opens a focused proposal, candidate, Task/Attempt, Decision, or configuration dialog over the same `/workgraph` surface. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing execution overrides. Settings content is flush, descriptions and validation errors sit beside their fields, and the footer stays pinned. Add task remains the canonical manual work action.
+The existing top-level toggle carries a small accessible attention indicator when the bounded tenant-scoped Attention projection is non-empty. The WorkGraph header Needs you and Settings controls select those top-level views in the same panel instance. Zero attention produces no WorkGraph dot, contextual card, list, or empty body content. Selecting a Needs you item opens a focused proposal, candidate, Task/Run, Decision, or configuration dialog over the same `/workgraph` surface. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing execution overrides. Settings content is flush, descriptions and validation errors sit beside their fields, and the footer stays pinned. Add task remains the canonical manual work action.
 
 Attention and candidate collections use stable tenant-bound cursor pages. Targeted tenant-scoped queries load the selected item's details. An Attention, candidate, or detail-query failure remains explicit and never switches to a full-snapshot or fabricated result. Settings changes are versioned atomic commands: WorkGraph saves one execution-defaults patch, while Stream saves one execution patch. Clearing an override is explicit.
 
 ### Execution capability catalog
 
-WorkGraph Settings obtains valid execution choices through a tenant-scoped execution-capabilities port. Its northbound `GET /execution-capabilities` derives the trusted organization and user from the host, accepts no tenant or workspace selector, and performs no provisioning. Local composition observes the configured repository and live runtime. Hosted composition observes a deterministic per-tenant catalog workspace owned by the control plane. This catalog workspace is an infrastructure probe, while a Stream workspace is the later execution target created from repository and Attempt-profile state. Profile `presetId` is reserved for adapter configuration and never identifies either workspace.
+WorkGraph Settings obtains valid execution choices through a tenant-scoped execution-capabilities port. Its northbound `GET /execution-capabilities` derives the trusted organization and user from the host, accepts no tenant or workspace selector, and performs no provisioning. Local composition observes the configured repository and live runtime. Hosted composition observes a deterministic per-tenant catalog workspace owned by the control plane. This catalog workspace is an infrastructure probe, while a Stream workspace is the later execution target created from repository and Run-profile state. Profile `presetId` is reserved for adapter configuration and never identifies either workspace.
 
 The response is one server-attested observation containing a content-addressed revision, observation time, exclusive expiry, supported environment policy values, the active harness, agent/model/effort/tool catalogs, repository inputs, and connected Connection metadata. Lifetime is capped at five minutes. Settings writes and execution admission validate the exact tenant, freshness, and selections. An unavailable, expired, wrong-tenant, or invalid catalog cannot authorize execution. The explicit tenant-bound `POST /execution-capabilities/refresh` operation may provision or refresh the catalog workspace for agents and hosted background setup. The app reads through GET only. Cloud deployment establishes catalog runtimes before Settings use and monitors their availability separately from Stream execution workspaces.
 
@@ -179,7 +179,7 @@ The hosted Convex adapter and local SQLite adapter expose the same tenant-scoped
 - Share grants are explicit, read-only initially, and resource-scoped.
 - Organization Connection use rechecks membership and capability.
 - Provider secrets remain inside Connections and in memory for one request.
-- MCP tools bind the agent to owner, Attempt, and permitted work.
+- MCP tools bind the agent to owner, Run, and permitted work.
 - Workspace placement verifies owner access to the workspace and repository.
 - Webhooks verify provider signatures before source-view routing and deduplication.
 - Events and logs exclude credentials and sensitive provider bodies.

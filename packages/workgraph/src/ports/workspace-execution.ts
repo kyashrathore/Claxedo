@@ -1,5 +1,5 @@
 import type {
-  AttemptID,
+  RunID,
   ConnectionID,
   ExecutionEnvironment,
   RepositoryTarget,
@@ -60,7 +60,7 @@ export type WorkspaceExecutionPort = Readonly<{
       streamId: StreamID
       workItemId: WorkItemID
       title: string
-      attemptId: AttemptID
+      runId: RunID
       leaseEpoch: number
       envelopeId: StreamEnvelopeID
       workspaceId: string
@@ -74,7 +74,7 @@ export type WorkspaceExecutionPort = Readonly<{
   cancel(
     context: WorkGraphContext,
     input: Readonly<{
-      attemptId: AttemptID
+      runId: RunID
       sessionId: ExecutionSessionID
       reason: string
     }>,
@@ -83,7 +83,7 @@ export type WorkspaceExecutionPort = Readonly<{
   result(
     context: WorkGraphContext,
     input: Readonly<{
-      attemptId: AttemptID
+      runId: RunID
       sessionId: ExecutionSessionID
     }>,
   ): Promise<ExecutionResult>

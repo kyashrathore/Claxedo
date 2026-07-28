@@ -142,6 +142,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       owner_user_id TEXT NOT NULL,
       id TEXT NOT NULL,
       workgraph_id TEXT NOT NULL,
+      parent_stream_id TEXT,
       title TEXT NOT NULL,
       purpose TEXT NOT NULL,
       charter_json TEXT,
@@ -202,6 +203,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       owner_user_id TEXT NOT NULL,
       id TEXT NOT NULL,
       stream_id TEXT NOT NULL,
+      parent_task_id TEXT,
       outcome_id TEXT,
       source_revision_id TEXT,
       title TEXT NOT NULL,
@@ -212,7 +214,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       completion_contract_json TEXT NOT NULL DEFAULT '{}',
       created_by_actor_type TEXT,
       created_by_actor_id TEXT,
-      origin_attempt_id TEXT,
+      origin_run_id TEXT,
       abandoned_reason TEXT,
       abandoned_at TEXT,
       row_version INTEGER NOT NULL DEFAULT 1,
@@ -243,13 +245,13 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       FOREIGN KEY (organization_id, owner_user_id, depends_on_work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS wg_v2_attempts (
+    CREATE TABLE IF NOT EXISTS wg_v2_runs (
       organization_id TEXT NOT NULL,
       owner_user_id TEXT NOT NULL,
       id TEXT NOT NULL,
       stream_id TEXT NOT NULL,
       work_item_id TEXT NOT NULL,
-      attempt_number INTEGER NOT NULL,
+      run_number INTEGER NOT NULL,
       lifecycle TEXT NOT NULL,
       execution_kind TEXT NOT NULL DEFAULT 'managed' CHECK (execution_kind IN ('managed', 'attached')),
       resolved_execution_profile_json TEXT NOT NULL,
@@ -257,8 +259,8 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       child_workspace_id TEXT,
       session_id TEXT,
       terminal_result_json TEXT,
-      attention_reason TEXT,
-      lease_epoch INTEGER NOT NULL DEFAULT 1,
+      parked_reason TEXT,
+      generation INTEGER NOT NULL DEFAULT 1,
       row_version INTEGER NOT NULL DEFAULT 1,
       schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
       created_at TEXT NOT NULL,
@@ -266,7 +268,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       started_at TEXT,
       finished_at TEXT,
       PRIMARY KEY (organization_id, owner_user_id, id),
-      UNIQUE (organization_id, owner_user_id, work_item_id, attempt_number),
+      UNIQUE (organization_id, owner_user_id, work_item_id, run_number),
       FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
       FOREIGN KEY (organization_id, owner_user_id, stream_id, work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, stream_id, id) ON DELETE CASCADE
     );
@@ -279,7 +281,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       session_id TEXT NOT NULL,
       project_id TEXT NOT NULL,
       current_work_item_id TEXT,
-      current_attempt_id TEXT,
+      current_run_id TEXT,
       state TEXT NOT NULL CHECK (state IN ('active', 'released')),
       bound_at TEXT NOT NULL,
       released_at TEXT,
@@ -291,7 +293,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       PRIMARY KEY (organization_id, owner_user_id, id),
       FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
       FOREIGN KEY (organization_id, owner_user_id, stream_id, current_work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, stream_id, id) ON DELETE RESTRICT,
-      FOREIGN KEY (organization_id, owner_user_id, current_attempt_id) REFERENCES wg_v2_attempts(organization_id, owner_user_id, id) ON DELETE RESTRICT
+      FOREIGN KEY (organization_id, owner_user_id, current_run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS wg_v2_agent_checkpoints (
@@ -300,7 +302,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       id TEXT NOT NULL,
       stream_id TEXT NOT NULL,
       work_item_id TEXT NOT NULL,
-      attempt_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
       session_binding_id TEXT NOT NULL,
       level TEXT NOT NULL CHECK (level IN ('milestone', 'progress', 'detail')),
       summary TEXT NOT NULL,
@@ -315,7 +317,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       PRIMARY KEY (organization_id, owner_user_id, id),
       UNIQUE (organization_id, owner_user_id, operation_id),
       FOREIGN KEY (organization_id, owner_user_id, stream_id, work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, stream_id, id) ON DELETE CASCADE,
-      FOREIGN KEY (organization_id, owner_user_id, attempt_id) REFERENCES wg_v2_attempts(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE CASCADE,
       FOREIGN KEY (organization_id, owner_user_id, session_binding_id) REFERENCES wg_v2_session_bindings(organization_id, owner_user_id, id) ON DELETE CASCADE
     );
 
@@ -416,7 +418,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       subject_type TEXT NOT NULL,
       subject_id TEXT NOT NULL,
       requirement_id TEXT,
-      source_attempt_id TEXT,
+      source_run_id TEXT,
       evidence_kind TEXT NOT NULL,
       summary TEXT NOT NULL,
       reference_json TEXT NOT NULL DEFAULT '{}',
@@ -425,7 +427,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       created_at TEXT NOT NULL,
       PRIMARY KEY (organization_id, owner_user_id, id),
       FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
-      FOREIGN KEY (organization_id, owner_user_id, source_attempt_id) REFERENCES wg_v2_attempts(organization_id, owner_user_id, id) ON DELETE RESTRICT
+      FOREIGN KEY (organization_id, owner_user_id, source_run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS wg_v2_durable_effect_receipts (
@@ -433,7 +435,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       owner_user_id TEXT NOT NULL,
       id TEXT NOT NULL,
       stream_id TEXT NOT NULL,
-      attempt_id TEXT,
+      run_id TEXT,
       effect_kind TEXT NOT NULL,
       idempotency_key TEXT NOT NULL,
       external_reference_json TEXT NOT NULL,
@@ -443,7 +445,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       PRIMARY KEY (organization_id, owner_user_id, id),
       UNIQUE (organization_id, owner_user_id, idempotency_key),
       FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE RESTRICT,
-      FOREIGN KEY (organization_id, owner_user_id, attempt_id) REFERENCES wg_v2_attempts(organization_id, owner_user_id, id) ON DELETE RESTRICT
+      FOREIGN KEY (organization_id, owner_user_id, run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS wg_v2_attention_acknowledgements (
@@ -691,13 +693,15 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
     CREATE INDEX IF NOT EXISTS wg_v2_intake_status_idx ON wg_v2_intake_candidates(organization_id, owner_user_id, status, updated_at);
     CREATE INDEX IF NOT EXISTS wg_v2_external_identity_lookup_idx ON wg_v2_external_identities(organization_id, owner_user_id, provider, team_connection_id, external_id);
     CREATE INDEX IF NOT EXISTS wg_v2_streams_lifecycle_idx ON wg_v2_streams(organization_id, owner_user_id, lifecycle, pinned, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_streams_parent_idx ON wg_v2_streams(organization_id, owner_user_id, parent_stream_id);
     CREATE INDEX IF NOT EXISTS wg_v2_outcomes_stream_idx ON wg_v2_outcomes(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
     CREATE INDEX IF NOT EXISTS wg_v2_work_items_outcome_idx ON wg_v2_work_items(organization_id, owner_user_id, outcome_id, lifecycle, priority);
     CREATE INDEX IF NOT EXISTS wg_v2_work_items_stream_idx ON wg_v2_work_items(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_work_items_parent_idx ON wg_v2_work_items(organization_id, owner_user_id, parent_task_id);
     CREATE INDEX IF NOT EXISTS wg_v2_dependencies_item_idx ON wg_v2_work_item_dependencies(organization_id, owner_user_id, work_item_id);
     CREATE INDEX IF NOT EXISTS wg_v2_dependencies_target_idx ON wg_v2_work_item_dependencies(organization_id, owner_user_id, depends_on_work_item_id);
-    CREATE INDEX IF NOT EXISTS wg_v2_attempts_item_idx ON wg_v2_attempts(organization_id, owner_user_id, work_item_id, attempt_number);
-    CREATE INDEX IF NOT EXISTS wg_v2_attempts_stream_state_idx ON wg_v2_attempts(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_runs_item_idx ON wg_v2_runs(organization_id, owner_user_id, work_item_id, run_number);
+    CREATE INDEX IF NOT EXISTS wg_v2_runs_stream_state_idx ON wg_v2_runs(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
     CREATE UNIQUE INDEX IF NOT EXISTS wg_v2_session_bindings_active_session_idx
       ON wg_v2_session_bindings(organization_id, owner_user_id, session_id) WHERE state = 'active';
     CREATE INDEX IF NOT EXISTS wg_v2_session_bindings_stream_idx ON wg_v2_session_bindings(organization_id, owner_user_id, stream_id, updated_at);
@@ -707,7 +711,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
     CREATE INDEX IF NOT EXISTS wg_v2_decision_items_item_idx ON wg_v2_decision_work_items(organization_id, owner_user_id, work_item_id);
     CREATE INDEX IF NOT EXISTS wg_v2_evidence_subject_idx ON wg_v2_evidence(organization_id, owner_user_id, subject_type, subject_id, requirement_id, created_at);
     CREATE INDEX IF NOT EXISTS wg_v2_evidence_subject_created_id_idx ON wg_v2_evidence(organization_id, owner_user_id, subject_type, subject_id, created_at, id);
-    CREATE INDEX IF NOT EXISTS wg_v2_evidence_attempt_idx ON wg_v2_evidence(organization_id, owner_user_id, source_attempt_id, created_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_evidence_run_idx ON wg_v2_evidence(organization_id, owner_user_id, source_run_id, created_at);
     CREATE INDEX IF NOT EXISTS wg_v2_receipts_stream_idx ON wg_v2_durable_effect_receipts(organization_id, owner_user_id, stream_id, created_at);
     CREATE INDEX IF NOT EXISTS wg_v2_record_source_revisions_record_idx ON wg_v2_record_source_revisions(organization_id, owner_user_id, record_type, record_id, ordinal);
     CREATE INDEX IF NOT EXISTS wg_v2_proposals_state_idx ON wg_v2_admission_proposals(organization_id, owner_user_id, lifecycle, updated_at);
@@ -722,12 +726,12 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
     CREATE INDEX IF NOT EXISTS wg_v2_migration_intake_status_idx ON wg_v2_migration_intake(organization_id, owner_user_id, status, created_at);
   `)
 
-  const attemptColumns = db.query("PRAGMA table_info(wg_v2_attempts)").all() as Array<{ name: string }>
-  if (!attemptColumns.some((column) => column.name === "lease_epoch")) {
-    db.exec("ALTER TABLE wg_v2_attempts ADD COLUMN lease_epoch INTEGER NOT NULL DEFAULT 1")
+  const runColumns = db.query("PRAGMA table_info(wg_v2_runs)").all() as Array<{ name: string }>
+  if (!runColumns.some((column) => column.name === "generation")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1")
   }
-  if (!attemptColumns.some((column) => column.name === "execution_kind")) {
-    db.exec("ALTER TABLE wg_v2_attempts ADD COLUMN execution_kind TEXT NOT NULL DEFAULT 'managed'")
+  if (!runColumns.some((column) => column.name === "execution_kind")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN execution_kind TEXT NOT NULL DEFAULT 'managed'")
   }
 
   const sourceRevisionColumns = db.query("PRAGMA table_info(wg_v2_work_source_revisions)").all() as Array<{ name: string }>
@@ -761,8 +765,8 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
   if (!workItemColumns.some((column) => column.name === "created_by_actor_id")) {
     db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN created_by_actor_id TEXT")
   }
-  if (!workItemColumns.some((column) => column.name === "origin_attempt_id")) {
-    db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN origin_attempt_id TEXT")
+  if (!workItemColumns.some((column) => column.name === "origin_run_id")) {
+    db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN origin_run_id TEXT")
   }
   const masterMailboxColumns = db.query("PRAGMA table_info(wg_v2_master_mailbox)").all() as Array<{ name: string }>
   if (!masterMailboxColumns.some((column) => column.name === "schema_version")) {
@@ -776,7 +780,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
   if (!changeColumns.some((column) => column.name === "snapshot_relevant")) {
     db.exec("ALTER TABLE wg_v2_changes ADD COLUMN snapshot_relevant INTEGER NOT NULL DEFAULT 1 CHECK (snapshot_relevant IN (0, 1))")
   }
-  reconcileAndDropExecutionModeColumns(db, streamColumns, attemptColumns)
+  reconcileAndDropExecutionModeColumns(db, streamColumns, runColumns)
   db.exec(`
     CREATE INDEX IF NOT EXISTS wg_v2_changes_snapshot_relevant_idx
       ON wg_v2_changes(organization_id, owner_user_id, snapshot_relevant, cursor);
@@ -802,7 +806,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
 function reconcileAndDropExecutionModeColumns(
   db: ReturnType<typeof sqlite>,
   streamColumns: Array<{ name: string }>,
-  attemptColumns: Array<{ name: string }>,
+  runColumns: Array<{ name: string }>,
 ) {
   const streamHasExecutionState = streamColumns.some((column) => column.name === "execution_state")
   if (streamHasExecutionState) {
@@ -818,8 +822,8 @@ function reconcileAndDropExecutionModeColumns(
   if (streamHasExecutionState) {
     db.exec("ALTER TABLE wg_v2_streams DROP COLUMN execution_state")
   }
-  if (attemptColumns.some((column) => column.name === "execution_mode")) {
-    db.exec("ALTER TABLE wg_v2_attempts DROP COLUMN execution_mode")
+  if (runColumns.some((column) => column.name === "execution_mode")) {
+    db.exec("ALTER TABLE wg_v2_runs DROP COLUMN execution_mode")
   }
 }
 

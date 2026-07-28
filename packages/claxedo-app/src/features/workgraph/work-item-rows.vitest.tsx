@@ -131,7 +131,7 @@ describe("WorkItemLeaf — workgraph_task_completed telemetry", () => {
   // See the W6 report for the full semantics.
   test("approving a staged task captures workgraph_task_completed with an id-only property allowlist", async () => {
     const client = buildClient()
-    render(() => <WorkItemLeaf item={stagedItem} attempts={[]} client={client} mutate={mutate} onOpenTask={() => undefined} />)
+    render(() => <WorkItemLeaf item={stagedItem} runs={[]} client={client} mutate={mutate} onOpenTask={() => undefined} />)
 
     await fireEvent.click(screen.getByRole("button", { name: `Approve task ${stagedItem.title}` }))
 
@@ -155,7 +155,7 @@ describe("WorkItemLeaf — workgraph_task_completed telemetry", () => {
   test("omits outcome_id for a task with no outcome", async () => {
     const client = buildClient()
     render(() => (
-      <WorkItemLeaf item={stagedItemNoOutcome} attempts={[]} client={client} mutate={mutate} onOpenTask={() => undefined} />
+      <WorkItemLeaf item={stagedItemNoOutcome} runs={[]} client={client} mutate={mutate} onOpenTask={() => undefined} />
     ))
 
     await fireEvent.click(screen.getByRole("button", { name: `Approve task ${stagedItemNoOutcome.title}` }))

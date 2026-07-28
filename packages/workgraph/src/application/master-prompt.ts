@@ -1,4 +1,4 @@
-import { buildTrustedConnectionContext } from "./attempt-prompt"
+import { buildTrustedConnectionContext } from "./run-prompt"
 
 /** The one authority-envelope sentence every master operates under. Local and
  *  hosted runtimes must deliver identical guardrail text — a drifted copy means
@@ -18,7 +18,7 @@ export function buildMasterPrompt(input: Readonly<{
   stream: Readonly<{ id: string; title: string }>
   charter: Readonly<{ text: string; hash: string }>
   mailbox: readonly Readonly<{ message: string }>[]
-  attempts: readonly Readonly<{ id: string; workItemId: string; state: string; result: string }>[]
+  runs: readonly Readonly<{ id: string; workItemId: string; state: string; result: string }>[]
   connectionIds: readonly string[]
   capabilities: Readonly<{ landing: boolean }>
 }>) {
@@ -39,7 +39,7 @@ export function buildMasterPrompt(input: Readonly<{
     MASTER_AUTHORITY_ENVELOPE,
     `Duties: ${duties}.`,
     `Mailbox:\n${input.mailbox.length ? input.mailbox.map((message) => `- ${message.message}`).join("\n") : "- (empty)"}`,
-    `Recent terminal attempts:\n${input.attempts.length ? input.attempts.map((attempt) => `- ${attempt.id} (${attempt.state}) task=${attempt.workItemId} result=${attempt.result}`).join("\n") : "- (none)"}`,
+    `Recent terminal runs:\n${input.runs.length ? input.runs.map((run) => `- ${run.id} (${run.state}) task=${run.workItemId} result=${run.result}`).join("\n") : "- (none)"}`,
     buildTrustedConnectionContext(input.connectionIds),
     "For each action, cite the charter clause and include working file/diff/PR receipt references in your status.",
   ].filter((section): section is string => !!section).join("\n\n")

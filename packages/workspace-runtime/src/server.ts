@@ -26,9 +26,9 @@ import {
   type WorkGraphConnectionOperationBroker,
 } from "./routes/workgraph-connection-tools"
 import {
-  WorkGraphAttemptToolRoutes,
-  type WorkGraphAttemptOperationBroker,
-} from "./routes/workgraph-attempt-tools"
+  WorkGraphRunToolRoutes,
+  type WorkGraphRunOperationBroker,
+} from "./routes/workgraph-run-tools"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import { WorktreeRoutes } from "./routes/worktree"
@@ -101,9 +101,9 @@ export type WorkspaceRuntimeServerOptions = {
   /** Exact central origin allowed to receive a bound Runtime Access Token. */
   workgraphConnectionBrokerOrigin?: string
   workgraphConnectionBrokerRequestLimits?: WorkGraphConnectionBrokerRequestLimits
-  /** Trusted Attempt command broker; hosted runtimes use the exact central origin below. */
-  workgraphAttemptBroker?: WorkGraphAttemptOperationBroker
-  workgraphAttemptBrokerOrigin?: string
+  /** Trusted Run command broker; hosted runtimes use the exact central origin below. */
+  workgraphRunBroker?: WorkGraphRunOperationBroker
+  workgraphRunBrokerOrigin?: string
   /** Process-retained authority. It is never projected into a Session or child environment. */
   internalSecrets?: WorkspaceRuntimeInternalSecrets
 }
@@ -577,14 +577,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     unregisterSessionTools: unregisterSessionToolGroup("connections"),
   })
   app.route("/", workgraphConnectionTools)
-  const workgraphAttemptTools = WorkGraphAttemptToolRoutes({
+  const workgraphRunTools = WorkGraphRunToolRoutes({
     workspaceId: options.target?.workspaceId ?? workspaceId(),
-    ...(options.workgraphAttemptBroker ? { broker: options.workgraphAttemptBroker } : {}),
-    ...(options.workgraphAttemptBrokerOrigin ? { brokerOrigin: options.workgraphAttemptBrokerOrigin } : {}),
-    registerSessionTools: registerSessionToolGroup("attempt"),
-    unregisterSessionTools: unregisterSessionToolGroup("attempt"),
+    ...(options.workgraphRunBroker ? { broker: options.workgraphRunBroker } : {}),
+    ...(options.workgraphRunBrokerOrigin ? { brokerOrigin: options.workgraphRunBrokerOrigin } : {}),
+    registerSessionTools: registerSessionToolGroup("run"),
+    unregisterSessionTools: unregisterSessionToolGroup("run"),
   })
-  app.route("/", workgraphAttemptTools)
+  app.route("/", workgraphRunTools)
 
   app.get(WorkspaceRuntimeRoutes.health, (c) =>
     c.json(runtimeLiveness(host, options)),
@@ -605,7 +605,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ProcessManager.bindProcessObserver(options.target.directory)
     }
     workgraphConnectionTools.dispose()
-    workgraphAttemptTools.dispose()
+    workgraphRunTools.dispose()
     worktrees?.close()
     host.dispose()
   }

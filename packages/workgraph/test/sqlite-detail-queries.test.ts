@@ -4,7 +4,7 @@ import type { CommandResult, OperationID, WorkGraphContext } from "../src/contra
 import { createSqliteWorkGraphService } from "../src/adapters/sqlite/store"
 
 describe("SQLite targeted WorkGraph details", () => {
-  test("keeps exact reads owner-scoped and paginates immutable Attempt details", async () => {
+  test("keeps exact reads owner-scoped and paginates immutable Run details", async () => {
     const database = new BetterSqlite3(":memory:")
     const owner = context("owner_a")
     const other = context("owner_b")
@@ -32,30 +32,30 @@ describe("SQLite targeted WorkGraph details", () => {
         connectionIds: [],
       })
       const insert = database.prepare(`
-        INSERT INTO wg_v2_attempts (
-          organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+        INSERT INTO wg_v2_runs (
+          organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle,
           resolved_execution_profile_json, envelope_id, child_workspace_id, session_id,
           row_version, schema_version, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, 1, 2, ?, ?)
       `)
-      insert.run(owner.organizationId, owner.ownerUserId, "attempt_1", streamId, workItemId, 1, execution, "workspace_1", null, "session_1", 10, 10)
-      insert.run(owner.organizationId, owner.ownerUserId, "attempt_2", streamId, workItemId, 2, execution, null, null, null, 20, 20)
+      insert.run(owner.organizationId, owner.ownerUserId, "run_1", streamId, workItemId, 1, execution, "workspace_1", null, "session_1", 10, 10)
+      insert.run(owner.organizationId, owner.ownerUserId, "run_2", streamId, workItemId, 2, execution, null, null, null, 20, 20)
 
       expect(await service.queries.workItems.readDetail(owner, { workItemId: workItemId as never })).toMatchObject({ id: workItemId })
       expect(await service.queries.workItems.readDetail(other, { workItemId: workItemId as never })).toBeUndefined()
-      expect(await service.queries.attempts.read(owner, { attemptId: "attempt_1" as never })).toMatchObject({
-        attempt: { id: "attempt_1", workItemId },
+      expect(await service.queries.runs.read(owner, { runId: "run_1" as never })).toMatchObject({
+        run: { id: "run_1", workItemId },
         executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" },
       })
-      expect(await service.queries.attempts.read(owner, { attemptId: "attempt_2" as never })).not.toHaveProperty("executionReferences")
-      expect(await service.queries.attempts.read(other, { attemptId: "attempt_1" as never })).toBeUndefined()
+      expect(await service.queries.runs.read(owner, { runId: "run_2" as never })).not.toHaveProperty("executionReferences")
+      expect(await service.queries.runs.read(other, { runId: "run_1" as never })).toBeUndefined()
 
-      const first = await service.queries.workItems.listAttempts(owner, { workItemId: workItemId as never, limit: 1 })
-      expect(first).toMatchObject({ attempts: [{ attempt: { id: "attempt_1" } }], hasMore: true })
+      const first = await service.queries.workItems.listRuns(owner, { workItemId: workItemId as never, limit: 1 })
+      expect(first).toMatchObject({ runs: [{ run: { id: "run_1" } }], hasMore: true })
       expect(first.nextCursor).toMatch(/^wgat1:/)
-      await expect(service.queries.workItems.listAttempts(owner, { workItemId: workItemId as never, limit: 1, after: first.nextCursor! }))
-        .resolves.toMatchObject({ attempts: [{ attempt: { id: "attempt_2" } }], hasMore: false })
-      await expect(service.queries.workItems.listAttempts(other, { workItemId: workItemId as never, limit: 1, after: first.nextCursor! }))
+      await expect(service.queries.workItems.listRuns(owner, { workItemId: workItemId as never, limit: 1, after: first.nextCursor! }))
+        .resolves.toMatchObject({ runs: [{ run: { id: "run_2" } }], hasMore: false })
+      await expect(service.queries.workItems.listRuns(other, { workItemId: workItemId as never, limit: 1, after: first.nextCursor! }))
         .rejects.toMatchObject({ reason: "owner_mismatch" })
     } finally {
       database.close()

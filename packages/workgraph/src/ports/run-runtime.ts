@@ -1,13 +1,13 @@
 import type {
-  AttemptID,
+  RunID,
   StreamID,
   WorkGraphContext,
   WorkItemID,
 } from "../contracts"
 import type { ExecutionSessionID, StreamEnvelopeID } from "./workspace-execution"
 
-export type ReconcilableAttempt = Readonly<{
-  attemptId: AttemptID
+export type ReconcilableRun = Readonly<{
+  runId: RunID
   streamId: StreamID
   workItemId: WorkItemID
   sessionId: ExecutionSessionID
@@ -18,39 +18,39 @@ export type ReconcilableAttempt = Readonly<{
   leaseExpiresAt: number
 }>
 
-export type AttemptLeaseRenewal = Readonly<{
+export type RunLeaseRenewal = Readonly<{
   leaseEpoch: number
   expiresAt: number
   recovered: boolean
 }>
 
-type AttemptTerminalIdentity = Readonly<{
-  attemptId: AttemptID
+type RunTerminalIdentity = Readonly<{
+  runId: RunID
   workItemId: WorkItemID
   leaseEpoch: number
 }>
 
-export type AttemptTerminalResult =
-  | Readonly<AttemptTerminalIdentity & {
+export type RunTerminalResult =
+  | Readonly<RunTerminalIdentity & {
       state: "result"
       /** Persistence rejects empty or whitespace-only semantic output. */
       summary: string
       artifacts: readonly string[]
     }>
-  | Readonly<AttemptTerminalIdentity & { state: "failed"; reason: string }>
-  | Readonly<AttemptTerminalIdentity & { state: "cancelled"; reason?: string }>
+  | Readonly<RunTerminalIdentity & { state: "failed"; reason: string }>
+  | Readonly<RunTerminalIdentity & { state: "cancelled"; reason?: string }>
 
-/** Runtime ownership remains separate from atomic Attempt admission. */
-export type AttemptRuntimePort = Readonly<{
-  listReconcilable: (context: WorkGraphContext) => Promise<readonly ReconcilableAttempt[]>
+/** Runtime ownership remains separate from atomic Run admission. */
+export type RunRuntimePort = Readonly<{
+  listReconcilable: (context: WorkGraphContext) => Promise<readonly ReconcilableRun[]>
   renewLease: (
     context: WorkGraphContext,
     input: Readonly<{
-      attemptId: AttemptID
+      runId: RunID
       expectedLeaseEpoch: number
       occurredAt: number
       durationMs: number
     }>,
-  ) => Promise<AttemptLeaseRenewal | undefined>
-  recordResult: (context: WorkGraphContext, input: AttemptTerminalResult) => Promise<boolean>
+  ) => Promise<RunLeaseRenewal | undefined>
+  recordResult: (context: WorkGraphContext, input: RunTerminalResult) => Promise<boolean>
 }>

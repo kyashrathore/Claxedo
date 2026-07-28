@@ -25,8 +25,8 @@ export function createLocalEmbeddedWorkGraphTransport(
       }),
     readProposal: (proposalId) => embedded.service.queries.proposals.read(resolveContext(), { proposalId }),
     readWorkItem: (workItemId) => embedded.service.queries.workItems.readDetail(resolveContext(), { workItemId }),
-    listWorkItemAttempts: (workItemId, input) =>
-      embedded.service.queries.workItems.listAttempts(resolveContext(), {
+    listWorkItemRuns: (workItemId, input) =>
+      embedded.service.queries.workItems.listRuns(resolveContext(), {
         workItemId: workItemId as never,
         ...input,
       } as never),
@@ -35,7 +35,7 @@ export function createLocalEmbeddedWorkGraphTransport(
         workItemId: workItemId as never,
         ...input,
       } as never),
-    readAttempt: (attemptId) => embedded.service.queries.attempts.read(resolveContext(), { attemptId }),
+    readRun: (runId) => embedded.service.queries.runs.read(resolveContext(), { runId }),
     readDecision: (decisionId) => embedded.service.queries.decisions.read(resolveContext(), { decisionId }),
     readEvidence: (evidenceId) =>
       embedded.service.queries.evidence.read(resolveContext(), { evidenceId: evidenceId as never }),

@@ -32,7 +32,7 @@ export type WorkGraphCommandHandlers = {
 export type WorkGraphCommandHandler = AtomicCommand<WorkGraphCommandRequest, CommandResult>
 
 /**
- * Capability maps are supplied by the domain layer (streams, work, attempts,
+ * Capability maps are supplied by the domain layer (streams, work, runs,
  * decisions, and so on). Keeping the maps generic preserves concrete command
  * signatures without turning the port into a SQL-shaped repository.
  */

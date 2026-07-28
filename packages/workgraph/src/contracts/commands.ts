@@ -3,7 +3,7 @@ import { CompletionContractSchema, EvidenceSubjectSchema } from "./completion"
 import { WorkGraphActorSchema } from "./context"
 import { ExecutionProfileDefaultsSchema, WorkGraphDefaultsSchema } from "./execution"
 import {
-  AttemptIDSchema,
+  RunIDSchema,
   DecisionIDSchema,
   EvidenceIDSchema,
   OperationIDSchema,
@@ -346,14 +346,14 @@ export const ApproveWorkItemsCommandSchema = z.strictObject({
 })
 export type ApproveWorkItemsCommand = z.infer<typeof ApproveWorkItemsCommandSchema>
 
-export const CancelAttemptCommandSchema = z.strictObject({
+export const CancelRunCommandSchema = z.strictObject({
   version,
-  type: z.literal("cancel_attempt"),
-  attemptId: AttemptIDSchema,
+  type: z.literal("cancel_run"),
+  runId: RunIDSchema,
   expectedVersion,
   reason: text,
 })
-export type CancelAttemptCommand = z.infer<typeof CancelAttemptCommandSchema>
+export type CancelRunCommand = z.infer<typeof CancelRunCommandSchema>
 
 export const RetryWorkItemCommandSchema = z.strictObject({
   version,
@@ -421,42 +421,42 @@ export const RecordEvidenceCommandSchema = z.strictObject({
   type: z.literal("record_evidence"),
   subject: EvidenceSubjectSchema,
   requirementId: text.optional(),
-  sourceAttemptId: AttemptIDSchema.optional(),
+  sourceRunId: RunIDSchema.optional(),
   evidence: EvidenceInputSchema,
 })
 export type RecordEvidenceCommand = z.infer<typeof RecordEvidenceCommandSchema>
 
-export const RecordAttemptCheckpointCommandSchema = z.strictObject({
+export const RecordRunCheckpointCommandSchema = z.strictObject({
   version,
-  type: z.literal("record_attempt_checkpoint"),
-  attemptId: AttemptIDSchema,
+  type: z.literal("record_run_checkpoint"),
+  runId: RunIDSchema,
   sessionId: text.max(512),
   workspaceId: text.max(1_024),
-  leaseEpoch: z.number().int().positive().optional(),
+  generation: z.number().int().positive(),
   level: AgentCheckpointLevelSchema,
   summary: z.string().trim().min(1).max(1_000),
   evidenceIds: z.array(EvidenceIDSchema).max(100).default([]),
 })
-export type RecordAttemptCheckpointCommand = z.infer<typeof RecordAttemptCheckpointCommandSchema>
+export type RecordRunCheckpointCommand = z.infer<typeof RecordRunCheckpointCommandSchema>
 
-export const AttemptCompletionEvidenceInputSchema = z.strictObject({
+export const RunCompletionEvidenceInputSchema = z.strictObject({
   requirementId: text.optional(),
   evidence: EvidenceInputSchema,
 })
-export type AttemptCompletionEvidenceInput = z.infer<typeof AttemptCompletionEvidenceInputSchema>
+export type RunCompletionEvidenceInput = z.infer<typeof RunCompletionEvidenceInputSchema>
 
-export const CompleteAttemptCommandSchema = z.strictObject({
+export const CompleteRunCommandSchema = z.strictObject({
   version,
-  type: z.literal("complete_attempt"),
-  attemptId: AttemptIDSchema,
+  type: z.literal("complete_run"),
+  runId: RunIDSchema,
   sessionId: text.max(512),
   workspaceId: text.max(1_024),
-  leaseEpoch: z.number().int().positive().optional(),
+  generation: z.number().int().positive(),
   summary: z.string().trim().min(1).max(10_000),
   artifacts: z.array(text).max(100).default([]),
-  evidence: z.array(AttemptCompletionEvidenceInputSchema).min(1).max(100),
+  evidence: z.array(RunCompletionEvidenceInputSchema).min(1).max(100),
 })
-export type CompleteAttemptCommand = z.infer<typeof CompleteAttemptCommandSchema>
+export type CompleteRunCommand = z.infer<typeof CompleteRunCommandSchema>
 
 export const CloseOutcomeCommandSchema = z.strictObject({
   version,
@@ -496,7 +496,7 @@ export type DeleteStreamCommand = z.infer<typeof DeleteStreamCommandSchema>
 
 // Soft removal of a single Work Item: transitions it to the terminal
 // `abandoned` lifecycle (reusing the same state a stream/outcome close applies),
-// rather than a hard delete that would dangle attempt/lease/dependency refs.
+// rather than a hard delete that would dangle run/lease/dependency refs.
 export const CancelWorkItemCommandSchema = z.strictObject({
   version,
   type: z.literal("cancel_work_item"),
@@ -532,13 +532,13 @@ export const WorkGraphCommandSchema = z.discriminatedUnion("type", [
   ApproveWorkItemCommandSchema,
   RejectWorkItemCommandSchema,
   ApproveWorkItemsCommandSchema,
-  CancelAttemptCommandSchema,
+  CancelRunCommandSchema,
   RetryWorkItemCommandSchema,
   ProposeDecisionCommandSchema,
   AnswerDecisionCommandSchema,
   DismissDecisionCommandSchema,
-  RecordAttemptCheckpointCommandSchema,
-  CompleteAttemptCommandSchema,
+  RecordRunCheckpointCommandSchema,
+  CompleteRunCommandSchema,
   RecordEvidenceCommandSchema,
   CloseOutcomeCommandSchema,
   ReopenOutcomeCommandSchema,

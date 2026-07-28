@@ -14,7 +14,7 @@ export interface SettlementDispatcher {
   nudge(tenant: SettlementTenant): void
   /**
    * Optional fast path for control-effect commands (Stream delete/close,
-   * Attempt interrupt): drain the control outbox on a dedicated lane that does
+   * Run interrupt): drain the control outbox on a dedicated lane that does
    * not queue behind launch provisioning. Purely additive — a dispatcher
    * without it (or a command that skips it) still settles via `nudge` + sweep.
    */

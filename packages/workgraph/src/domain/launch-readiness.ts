@@ -15,7 +15,7 @@ export type WorkItemLaunchabilityReason =
   | "workspace_busy"
   | "deps_incomplete"
   | "blocking_decision"
-  | "attempt_in_flight"
+  | "run_in_flight"
   | "capability_invalid"
 
 export type WorkItemLaunchability =
@@ -32,19 +32,19 @@ export interface WorkItemLaunchabilityInput {
     replacementBarrier?: boolean
     /**
      * Derived per pass (never persisted): the Stream holds new launches while
-     * any Attempt is in `attention` or any Work Item is `failed`, exactly as
+     * any Run is `parked` or any Work Item is `failed`, exactly as
      * autonomous mode halted before. Resolve/retry clears the hold.
      */
     held?: boolean
-    /** A live Attempt already owns the Stream's shared workspace. */
-    hasRunningAttempt?: boolean
+    /** A live Run already owns the Stream's shared workspace. */
+    hasRunningRun?: boolean
   }>
   /** Lifecycle of every direct blocker; `completed` and `abandoned` both satisfy. */
   readonly blockerStates: readonly WorkItemState[]
   /** A `proposed`/`pending` Decision affects this item (directly or via a dependency). */
   readonly blockingDecision?: boolean
-  /** A live Attempt (`admitted`/`placing`/`running`) already exists for the item. */
-  readonly attemptInFlight?: boolean
+  /** A live Run (`admitted`/`placing`/`running`) already exists for the item. */
+  readonly runInFlight?: boolean
   /** The resolved execution profile passed capability validation. Defaults to true. */
   readonly capabilityValid?: boolean
 }
@@ -58,10 +58,10 @@ export function evaluateWorkItemLaunchability(input: WorkItemLaunchabilityInput)
     return unlaunchable("stream_not_active")
   if (input.stream.replacementBarrier) return unlaunchable("replacement_barrier")
   if (input.stream.held) return unlaunchable("stream_held")
-  if (input.stream.hasRunningAttempt) return unlaunchable("workspace_busy")
+  if (input.stream.hasRunningRun) return unlaunchable("workspace_busy")
   if (input.blockerStates.some((state) => !DEPENDENCY_SATISFIED.has(state))) return unlaunchable("deps_incomplete")
   if (input.blockingDecision) return unlaunchable("blocking_decision")
-  if (input.attemptInFlight) return unlaunchable("attempt_in_flight")
+  if (input.runInFlight) return unlaunchable("run_in_flight")
   if (input.capabilityValid === false) return unlaunchable("capability_invalid")
   return { launchable: true }
 }

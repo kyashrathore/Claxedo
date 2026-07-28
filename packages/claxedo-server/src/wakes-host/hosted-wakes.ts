@@ -33,7 +33,7 @@ const RETRY_MAX_MS = 30_000
 
 export const WORKGRAPH_SETTLE_KIND = "workgraph_settle"
 export const WORKGRAPH_MASTER_KIND = "workgraph_master"
-// Control effects (Stream delete/close, Attempt interrupt) drain on a lane
+// Control effects (Stream delete/close, Run interrupt) drain on a lane
 // distinct from `workgraph_settle` so they never queue behind a tenant's
 // launch-provision / running-history reconcile pass (measured settle-wake
 // lateness p90 22.8s / p95 32.2s on staging). Same ClaxedoWakeLane DO class,

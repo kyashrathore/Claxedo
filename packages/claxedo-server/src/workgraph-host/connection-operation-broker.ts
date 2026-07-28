@@ -24,7 +24,7 @@ export type ConnectionOperation =
   | Readonly<{ type: "open_pull_request"; repository: string; head: string; base: string; title: string; body?: string; draft: boolean; publicRepository: boolean; idempotencyKey: string }>
 
 export type ConnectionOperationIdentity = Readonly<{
-  attemptId: string
+  runId: string
   sessionId: string
   workspaceId: string
   connectionId: ConnectionID
@@ -33,7 +33,7 @@ export type ConnectionOperationIdentity = Readonly<{
 export type ConnectionOperationBinding = Readonly<{
   context: WorkGraphContext
   ownerPartition: string
-  attemptId: string
+  runId: string
   sessionId: string
   workspaceId: string
   connectionIds: readonly ConnectionID[]
@@ -67,9 +67,9 @@ export function createConnectionOperationBroker(input: Readonly<{
   ) => {
     const binding = await input.bindings.resolve(identity)
     if (!binding || binding.context.ownerUserId !== principal.ownerUserId || binding.ownerPartition !== principal.ownerPartition ||
-      binding.attemptId !== identity.attemptId || binding.sessionId !== identity.sessionId ||
+      binding.runId !== identity.runId || binding.sessionId !== identity.sessionId ||
       binding.workspaceId !== identity.workspaceId || !binding.connectionIds.includes(identity.connectionId) ||
-      !binding.tools.includes(tool)) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Attempt")
+      !binding.tools.includes(tool)) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Run")
     const handles = await input.connections.resolveCapabilities(binding.context, {
       connectionIds: [identity.connectionId],
       capability: "code-host",
@@ -103,9 +103,9 @@ export function createConnectionOperationBroker(input: Readonly<{
       const binding = await input.bindings.resolve(identity)
       const tool = CONNECTION_OPERATION_TOOLS[operation.type]
       if (!binding || binding.context.ownerUserId !== principal.ownerUserId || binding.ownerPartition !== principal.ownerPartition ||
-        binding.attemptId !== identity.attemptId || binding.sessionId !== identity.sessionId ||
+        binding.runId !== identity.runId || binding.sessionId !== identity.sessionId ||
         binding.workspaceId !== identity.workspaceId || !binding.connectionIds.includes(identity.connectionId) ||
-        !binding.tools.includes(tool)) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Attempt")
+        !binding.tools.includes(tool)) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Run")
       const capability = operation.type === "open_pull_request" ? "code-host" : "work-source"
       const handles = await input.connections.resolveCapabilities(binding.context, {
         connectionIds: [identity.connectionId],

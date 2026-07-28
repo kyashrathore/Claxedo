@@ -43,7 +43,7 @@ export const initializeWorkGraphAttention = migrations.define({
 export const backfillWorkGraphAdmissionAttention = attentionMigration("workgraph_admission_proposals")
 export const backfillWorkGraphDecisionAttention = attentionMigration("workgraph_decisions")
 export const backfillWorkGraphWorkItemAttention = attentionMigration("workgraph_work_items")
-export const backfillWorkGraphAttemptAttention = attentionMigration("workgraph_attempts")
+export const backfillWorkGraphRunAttention = attentionMigration("workgraph_runs")
 export const backfillWorkGraphGenerationAttention = attentionMigration("workgraph_due_jobs")
 
 export const backfillWorkGraphCandidateAttention = migrations.define({
@@ -55,7 +55,7 @@ export const backfillWorkGraphCandidateAttention = migrations.define({
 // `executionMode` concept was replaced by the durable `pending_approval`
 // ("Staged") task state plus a pause/resume launch gate, and the
 // one-shot migrations `reconcileStreamLifecycleFromExecutionState`,
-// `clearWorkGraphStreamExecutionMode`, `clearWorkGraphAttemptExecutionMode`,
+// `clearWorkGraphStreamExecutionMode`, `clearWorkGraphRunExecutionMode`,
 // plus the recap-removal cleanups `clearWorkGraphRecapFields` /
 // `clearWorkGraphStreamRecapFields`, ran to completion (recorded in the
 // component ledger) and their definitions were removed alongside the CONTRACT
@@ -76,9 +76,9 @@ export const scopeWorkGraphStreamsByOrganization = workGraphTenancyMigration("wo
 export const scopeWorkGraphOutcomesByOrganization = workGraphTenancyMigration("workgraph_outcomes")
 export const scopeWorkGraphWorkItemsByOrganization = workGraphTenancyMigration("workgraph_work_items")
 export const scopeWorkGraphDependenciesByOrganization = workGraphTenancyMigration("workgraph_work_item_dependencies")
-export const scopeWorkGraphAttemptsByOrganization = workGraphTenancyMigration("workgraph_attempts")
+export const scopeWorkGraphRunsByOrganization = workGraphTenancyMigration("workgraph_runs")
 export const scopeWorkGraphConnectionMetadataByOrganization = workGraphTenancyMigration("workgraph_connection_metadata")
-export const scopeWorkGraphAttemptConnectionBindingsByOrganization = workGraphTenancyMigration("workgraph_attempt_connection_bindings")
+export const scopeWorkGraphRunConnectionBindingsByOrganization = workGraphTenancyMigration("workgraph_run_connection_bindings")
 export const scopeWorkGraphLeasesByOrganization = workGraphTenancyMigration("workgraph_leases")
 export const scopeWorkGraphDecisionsByOrganization = workGraphTenancyMigration("workgraph_decisions")
 export const scopeWorkGraphDecisionItemsByOrganization = workGraphTenancyMigration("workgraph_decision_work_items")
@@ -107,7 +107,7 @@ export async function backfillCandidateAttention(ctx: Parameters<typeof syncCand
   await syncCandidateTransition(ctx, undefined, row)
 }
 
-function attentionMigration(table: "workgraph_admission_proposals" | "workgraph_decisions" | "workgraph_work_items" | "workgraph_attempts" | "workgraph_due_jobs") {
+function attentionMigration(table: "workgraph_admission_proposals" | "workgraph_decisions" | "workgraph_work_items" | "workgraph_runs" | "workgraph_due_jobs") {
   return migrations.define({
     table,
     migrateOne: async (ctx, row) => {
@@ -177,9 +177,9 @@ type WorkGraphTenantTable =
   | "workgraph_outcomes"
   | "workgraph_work_items"
   | "workgraph_work_item_dependencies"
-  | "workgraph_attempts"
+  | "workgraph_runs"
   | "workgraph_connection_metadata"
-  | "workgraph_attempt_connection_bindings"
+  | "workgraph_run_connection_bindings"
   | "workgraph_leases"
   | "workgraph_decisions"
   | "workgraph_decision_work_items"

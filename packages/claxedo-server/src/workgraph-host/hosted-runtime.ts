@@ -6,7 +6,7 @@ import {
   AdmissionAgentPlanSchema,
   DEFAULT_STREAM_CHARTER_HINTS,
   ResolvedExecutionProfileSchema,
-  WorkGraphAttemptToolNames,
+  WorkGraphRunToolNames,
   WorkGraphMasterToolNames,
   WorkGraphBrokerTokenHeader,
 } from "@claxedo/workgraph/contracts"
@@ -40,7 +40,7 @@ const api = anyApi as unknown as {
     listRunning: Mutation
     requestCompletionRetry: Mutation
     recordFailure: Mutation
-    markAttention: Mutation
+    markParked: Mutation
     claimControlEffects: Mutation
     completeControlEffect: Mutation
     confirmLaunch: Mutation
@@ -62,7 +62,7 @@ const api = anyApi as unknown as {
     failSourcePlan: Mutation
   }
   workgraphConnections: {
-    bindAttemptConnections: Mutation
+    bindRunConnections: Mutation
   }
 }
 
@@ -71,7 +71,7 @@ type Claim = {
   ownerSubject: string
   orgId: string
   outboxId: string
-  attemptId: string
+  runId: string
   streamId: string
   workItemId: string
   leaseEpoch: number
@@ -211,7 +211,7 @@ export function createHostedWorkGraphRuntime(
           })) as WorkerTenant[])
         // Fast control lane: a Stream delete/close/interrupt control effect has
         // ZERO launch dependency, yet on the shared per-tenant settle lane its
-        // settle wake queues behind a 15-20s launch-provision + running-attempt
+        // settle wake queues behind a 15-20s launch-provision + running-run
         // history-poll pass (measured: settle-wake fired_at - fire_at p90 22.8s,
         // p95 32.2s on staging), which blew a bare-Stream delete's <20s SLA.
         // The dedicated control WakeLane (serialKey `${tenant}:control`) nudges
@@ -243,7 +243,7 @@ export function createHostedWorkGraphRuntime(
         })) as Claim[]
         // Control effects (stream deletion/interrupt) are fast, budget-gated
         // operations that used to drain LAST, behind slow launch provisioning and
-        // running-attempt history polling. On the shared per-tenant settle lane a
+        // running-run history polling. On the shared per-tenant settle lane a
         // launch-heavy pass takes 18-24s, so a bare-Stream delete blew its <20s
         // SLA even though its own `completeControlEffect` needs only ~1s. Start the
         // background drain CONCURRENTLY so the deletion settles independent of
@@ -274,9 +274,9 @@ export function createHostedWorkGraphRuntime(
                 clean(env.CLAXEDO_PUBLIC_URL) ?? clean(env.CLAXEDO_SERVER_URL) ?? clean(env.CLAXEDO_CENTRAL_URL)
               const brokerOrigin = brokerUrl ? new URL(brokerUrl).origin : undefined
               if (claim.profile.connectionIds.length > 0 && (!connectionTools.length || !brokerUrl)) {
-                throw new Error("Connection-bound Attempts require explicit Connection tools and a central broker URL")
+                throw new Error("Connection-bound Runs require explicit Connection tools and a central broker URL")
               }
-              if (!brokerUrl) throw new Error("Hosted Attempts require a central broker URL")
+              if (!brokerUrl) throw new Error("Hosted Runs require a central broker URL")
               const manager = services.sandbox.sandboxManager
               const provider = services.relay.provider
               if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
@@ -367,7 +367,7 @@ export function createHostedWorkGraphRuntime(
                     id: claim.profile.model.modelId,
                     variant: claim.profile.effort,
                   },
-                  tools: [...new Set([...claim.profile.tools, ...WorkGraphAttemptToolNames])],
+                  tools: [...new Set([...claim.profile.tools, ...WorkGraphRunToolNames])],
                   location: { directory: "/workspace" },
                 }),
               })
@@ -389,7 +389,7 @@ export function createHostedWorkGraphRuntime(
                   organization_id: claim.orgId,
                   owner_user_id: claim.ownerUserId,
                   outbox_id: claim.outboxId,
-                  attempt_id: claim.attemptId,
+                  run_id: claim.runId,
                   worker_id: workerId,
                   session_id: sessionId,
                   workspace_id: workspaceId,
@@ -414,26 +414,26 @@ export function createHostedWorkGraphRuntime(
                 homeRegion: placement.homeRegion,
                 now: now(),
               })
-              await runtime("/api/workgraph/attempt-binding", {
+              await runtime("/api/workgraph/run-binding", {
                 method: "POST",
                 headers: { [WorkGraphBrokerTokenHeader]: token.token },
                 body: JSON.stringify({
                   version: 1,
                   identity: {
-                    attemptId: claim.attemptId,
+                    runId: claim.runId,
                     sessionId,
                     workspaceId,
-                    leaseEpoch: claim.leaseEpoch,
+                    generation: claim.leaseEpoch,
                   },
                   brokerUrl,
                 }),
               })
               if (claim.profile.connectionIds.length > 0) {
-                await client.mutation(api.workgraphConnections.bindAttemptConnections, {
+                await client.mutation(api.workgraphConnections.bindRunConnections, {
                   service_token: serviceToken,
                   ownerUserId: claim.ownerUserId,
                   orgId: claim.orgId,
-                  attemptId: claim.attemptId,
+                  runId: claim.runId,
                   sessionId,
                   workspaceId,
                   connectionIds: claim.profile.connectionIds,
@@ -444,7 +444,7 @@ export function createHostedWorkGraphRuntime(
                   headers: { [WorkGraphBrokerTokenHeader]: token.token },
                   body: JSON.stringify({
                     version: 1,
-                    identity: { attemptId: claim.attemptId, sessionId, workspaceId },
+                    identity: { runId: claim.runId, sessionId, workspaceId },
                     connectionIds: claim.profile.connectionIds,
                     tools: connectionTools,
                     brokerUrl,
@@ -454,8 +454,8 @@ export function createHostedWorkGraphRuntime(
               await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
                 method: "POST",
                 body: JSON.stringify({
-                  id: `msg_workgraph_${claim.attemptId}`,
-                  prompt: { text: managedAttemptPrompt(claim.prompt) },
+                  id: `msg_workgraph_${claim.runId}`,
+                  prompt: { text: managedRunPrompt(claim.prompt) },
                   delivery: "steer",
                   resume: true,
                 }),
@@ -469,7 +469,7 @@ export function createHostedWorkGraphRuntime(
                   organization_id: claim.orgId,
                   owner_user_id: claim.ownerUserId,
                   outbox_id: claim.outboxId,
-                  attempt_id: claim.attemptId,
+                  run_id: claim.runId,
                   worker_id: workerId,
                   session_id: compensationTarget.sessionId,
                   workspace_id: compensationTarget.workspaceId,
@@ -479,7 +479,7 @@ export function createHostedWorkGraphRuntime(
                 return { settled: false, state: "compensating", reason }
               }
               return await client.mutation(
-                api.workgraphRuntime.markAttention,
+                api.workgraphRuntime.markParked,
                 mutationArgs(claim, serviceToken, workerId, {
                   reason,
                   now: now(),
@@ -492,30 +492,30 @@ export function createHostedWorkGraphRuntime(
           service_token: serviceToken,
           limit: 10,
           now: now(),
-        })) as RunningAttempt[]
+        })) as RunningRun[]
         const results = await Promise.all(
-          running.map(async (attempt) => {
+          running.map(async (run) => {
             try {
               const provider = services.relay.provider
               const manager = services.sandbox.sandboxManager
               if (!provider || !manager) throw new Error("Hosted sandbox manager and relay provider are required")
-              const placement = await manager.target(attempt.workspaceId)
+              const placement = await manager.target(run.workspaceId)
               if (placement.status !== "ready")
                 throw new Error("Hosted workspace is unavailable during result reconciliation")
               const token = await provider.mintRuntimeAccessToken({
-                workspaceId: attempt.workspaceId,
+                workspaceId: run.workspaceId,
                 hostId: placement.hostId,
-                subject: attempt.ownerUserId,
-                orgId: attempt.orgId,
+                subject: run.ownerUserId,
+                orgId: run.orgId,
                 role: "owner",
                 ttlMs: 10 * 60_000,
               })
-              const relay = await provider.getRelayEndpoint(attempt.workspaceId, placement.homeRegion as never)
+              const relay = await provider.getRelayEndpoint(run.workspaceId, placement.homeRegion as never)
               const events: SessionEvent[] = []
               let after = 0
               for (;;) {
                 const history = await request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/session/${encodeURIComponent(attempt.sessionId)}/history?limit=100&after=${after}`,
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/session/${encodeURIComponent(run.sessionId)}/history?limit=100&after=${after}`,
                   {
                     headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
                   },
@@ -536,7 +536,7 @@ export function createHostedWorkGraphRuntime(
               )
               if (sessionPublisher) {
                 const snapshot = await request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/session/${encodeURIComponent(attempt.sessionId)}/message?snapshot=1`,
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/session/${encodeURIComponent(run.sessionId)}/message?snapshot=1`,
                   {
                     headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
                   },
@@ -550,10 +550,10 @@ export function createHostedWorkGraphRuntime(
                 // retained transcript with [] would drop durable messages.
                 if (messages.length > 0) {
                   await sessionPublisher.snapshot({
-                    organizationId: attempt.orgId,
-                    ownerUserId: attempt.ownerUserId,
-                    workspaceId: attempt.workspaceId,
-                    sessionId: attempt.sessionId,
+                    organizationId: run.orgId,
+                    ownerUserId: run.ownerUserId,
+                    workspaceId: run.workspaceId,
+                    sessionId: run.sessionId,
                     messages,
                     now: now(),
                   })
@@ -563,11 +563,11 @@ export function createHostedWorkGraphRuntime(
               if (terminal.type.startsWith("session.next.step.ended")) {
                 const terminalSeq = terminal.durable?.seq
                 if (terminalSeq === undefined) throw new SessionHistoryResponseError()
-                const retry = attempt.completionRetry
-                  ? { accepted: true as const, ...attempt.completionRetry }
+                const retry = run.completionRetry
+                  ? { accepted: true as const, ...run.completionRetry }
                   : await client.mutation(
                     api.workgraphRuntime.requestCompletionRetry,
-                    resultArgs(attempt, serviceToken, {
+                    resultArgs(run, serviceToken, {
                       terminal_seq: terminalSeq,
                       now: now(),
                     }),
@@ -577,7 +577,7 @@ export function createHostedWorkGraphRuntime(
                   let admitted: Response
                   try {
                     admitted = await request(
-                      `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/session/${encodeURIComponent(attempt.sessionId)}/prompt`,
+                      `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/session/${encodeURIComponent(run.sessionId)}/prompt`,
                       {
                         method: "POST",
                         headers: {
@@ -586,10 +586,10 @@ export function createHostedWorkGraphRuntime(
                           "x-opencode-directory": "/workspace",
                         },
                         body: JSON.stringify({
-                          id: `msg_workgraph_completion_${attempt.attemptId}`,
+                          id: `msg_workgraph_completion_${run.runId}`,
                           prompt: {
                             text: [
-                              "Your previous turn ended without completing the active WorkGraph Attempt.",
+                              "Your previous turn ended without completing the active WorkGraph Run.",
                               "Call workgraph_complete_task now with a concise summary and evidence for every completion requirement.",
                               "Each evidence entry must use the exact requirementId from the Task. Do not finish with another text-only response.",
                             ].join("\n"),
@@ -608,16 +608,16 @@ export function createHostedWorkGraphRuntime(
                   return { settled: false, state: "retrying_explicit_completion" }
                 }
               }
-              const [connectionCleanup, attemptCleanup] = await Promise.all([
+              const [connectionCleanup, runCleanup] = await Promise.all([
                 request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(attempt.sessionId)}`,
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(run.sessionId)}`,
                   {
                     method: "DELETE",
                     headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
                   },
                 ),
                 request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/attempt-binding/${encodeURIComponent(attempt.sessionId)}`,
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/workgraph/run-binding/${encodeURIComponent(run.sessionId)}`,
                   {
                     method: "DELETE",
                     headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
@@ -629,15 +629,15 @@ export function createHostedWorkGraphRuntime(
                   `Hosted Session Connection cleanup failed: ${connectionCleanup.status} ${await connectionCleanup.text()}`,
                 )
               }
-              if (!attemptCleanup.ok) {
+              if (!runCleanup.ok) {
                 throw new Error(
-                  `Hosted Session Attempt cleanup failed: ${attemptCleanup.status} ${await attemptCleanup.text()}`,
+                  `Hosted Session Run cleanup failed: ${runCleanup.status} ${await runCleanup.text()}`,
                 )
               }
               if (terminal.type.startsWith("session.next.step.failed")) {
                 return await client.mutation(
                   api.workgraphRuntime.recordFailure,
-                  resultArgs(attempt, serviceToken, {
+                  resultArgs(run, serviceToken, {
                     reason: sessionError(terminal.data.error),
                     now: now(),
                   }),
@@ -645,7 +645,7 @@ export function createHostedWorkGraphRuntime(
               }
               return await client.mutation(
                 api.workgraphRuntime.recordFailure,
-                resultArgs(attempt, serviceToken, {
+                resultArgs(run, serviceToken, {
                   reason: "Hosted Session ended without workgraph_complete_task after one completion retry",
                   now: now(),
                 }),
@@ -653,7 +653,7 @@ export function createHostedWorkGraphRuntime(
             } catch (error) {
               return await client.mutation(
                 api.workgraphRuntime.recordFailure,
-                resultArgs(attempt, serviceToken, {
+                resultArgs(run, serviceToken, {
                   reason: error instanceof Error ? error.message : String(error),
                   now: now(),
                 }),
@@ -664,7 +664,7 @@ export function createHostedWorkGraphRuntime(
         const backgroundOutcome = await backgroundSettled
         if (!backgroundOutcome.ok) throw backgroundOutcome.error
         const background = backgroundOutcome.value
-        recordAttemptTelemetry(telemetry, trigger, claims, running, launched, results, now() - claimedAt)
+        recordRunTelemetry(telemetry, trigger, claims, running, launched, results, now() - claimedAt)
         return { launched, results, ...(background ? { background } : {}) }
       } catch (error) {
         telemetry.reconciliation({
@@ -701,7 +701,7 @@ type HostedMasterClaim = Readonly<{
   failureCount?: number
   trigger?: "mailbox" | "task_settled" | "schedule"
   mailbox?: Array<{ id: string; message: string; provenance: unknown }>
-  attempts?: Array<{
+  runs?: Array<{
     id: string
     workItemId: string
     state: string
@@ -732,7 +732,7 @@ async function reconcileHostedMaster(input: Readonly<{
     now: input.now(),
   }) as HostedMasterClaim
   if (claim.state === "settled") return { settled: true, state: "hibernating" }
-  // A live task Attempt owns the shared Stream workspace — the master turn
+  // A live task Run owns the shared Stream workspace — the master turn
   // defers and the durable retry wake re-fires it after settlement.
   if (claim.state === "deferred") {
     return { settled: false, state: "deferred", retryAfterMs: claim.retryAfterMs ?? 30_000 }
@@ -811,23 +811,23 @@ async function reconcileHostedMaster(input: Readonly<{
       if ((body.id ?? body.data?.id) !== claim.sessionId) {
         throw new Error("Hosted master Session did not adopt its durable identity")
       }
-      const attemptId = `master_${claim.stream.id}`
-      await runtime("/api/workgraph/attempt-binding", {
+      const runId = `master_${claim.stream.id}`
+      await runtime("/api/workgraph/run-binding", {
         method: "POST",
         headers: { [WorkGraphBrokerTokenHeader]: token.token },
         body: JSON.stringify({
           version: 1,
-          identity: { attemptId, streamId: claim.stream.id, sessionId: claim.sessionId, workspaceId },
+          identity: { runId, streamId: claim.stream.id, sessionId: claim.sessionId, workspaceId, generation: 1 },
           tools: WorkGraphMasterToolNames,
           brokerUrl: input.brokerUrl,
         }),
       })
       if (profile.connectionIds.length > 0) {
-        await input.client.mutation(api.workgraphConnections.bindAttemptConnections, {
+        await input.client.mutation(api.workgraphConnections.bindRunConnections, {
           service_token: input.serviceToken,
           ownerUserId: input.intent.ownerUserId,
           orgId: input.intent.organizationId,
-          attemptId,
+          runId,
           sessionId: claim.sessionId,
           workspaceId,
           connectionIds: profile.connectionIds,
@@ -838,7 +838,7 @@ async function reconcileHostedMaster(input: Readonly<{
           headers: { [WorkGraphBrokerTokenHeader]: token.token },
           body: JSON.stringify({
             version: 1,
-            identity: { attemptId, sessionId: claim.sessionId, workspaceId },
+            identity: { runId, sessionId: claim.sessionId, workspaceId },
             connectionIds: profile.connectionIds,
             tools: connectionTools,
             brokerUrl: input.brokerUrl,
@@ -886,7 +886,7 @@ async function reconcileHostedMaster(input: Readonly<{
     if (profile.connectionIds.length > 0) {
       await runtime(`/api/workgraph/connection-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
     }
-    await runtime(`/api/workgraph/attempt-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
+    await runtime(`/api/workgraph/run-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
     if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
     const charter = await hostedMasterCharter(claim.stream.charter)
     return await input.client.mutation(api.workgraphRuntime.completeMasterTurn, {
@@ -920,7 +920,7 @@ async function reconcileHostedMaster(input: Readonly<{
 }
 
 function resolveHostedMasterProfile(claim: HostedMasterClaim) {
-  for (const candidate of [claim.stream?.executionDefaults, ...(claim.attempts ?? []).map((attempt) => attempt.resolvedExecution)]) {
+  for (const candidate of [claim.stream?.executionDefaults, ...(claim.runs ?? []).map((run) => run.resolvedExecution)]) {
     const parsed = ResolvedExecutionProfileSchema.safeParse(candidate)
     if (parsed.success && parsed.data.environment.kind === "hosted_workspace") return parsed.data
   }
@@ -937,11 +937,11 @@ async function hostedMasterPrompt(claim: HostedMasterClaim, connectionIds: reado
     stream: { id: claim.stream?.id ?? "", title: claim.stream?.title ?? "" },
     charter: await hostedMasterCharter(claim.stream?.charter),
     mailbox,
-    attempts: (claim.attempts ?? []).map((attempt) => ({
-      id: attempt.id,
-      workItemId: attempt.workItemId,
-      state: attempt.state,
-      result: JSON.stringify(attempt.result ?? null),
+    runs: (claim.runs ?? []).map((run) => ({
+      id: run.id,
+      workItemId: run.workItemId,
+      state: run.state,
+      result: JSON.stringify(run.result ?? null),
     })),
     connectionIds,
     // Hosted masters have no landing tool: the prompt must not assign a
@@ -977,19 +977,19 @@ function masterToolCalls(events: readonly SessionEvent[]) {
   }))].slice(0, 100)
 }
 
-function managedAttemptPrompt(prompt: string) {
+function managedRunPrompt(prompt: string) {
   return [
     prompt,
     "",
     "WorkGraph execution protocol:",
     "Before your final response, call workgraph_complete_task with a concise summary and evidence for every completion requirement.",
-    "Each evidence entry must identify its requirementId. A text response without this tool call does not complete the Attempt.",
+    "Each evidence entry must identify its requirementId. A text response without this tool call does not complete the Run.",
     "Use the exact input shape {\"summary\":\"...\",\"artifacts\":[],\"evidence\":[{\"requirementId\":\"<requirement id>\",\"evidence\":{\"kind\":\"test_result\",\"summary\":\"...\",\"passed\":true}}]} (select the appropriate supported evidence kind for the requirement).",
     "Use workgraph_report_progress only for meaningful intermediate boundaries.",
   ].join("\n")
 }
 
-// Drain ONLY the control-effect outbox (stream delete/close, attempt
+// Drain ONLY the control-effect outbox (stream delete/close, run
 // interrupt). Deliberately excludes session intake and source planning (both
 // of which reconcileBackground also runs) because source planning can
 // provision a sandbox — the control drain must stay fast (~1s) so the
@@ -1015,14 +1015,14 @@ async function drainControlEffects(
     orgId: string
     outboxId: string
     streamId: string
-    effectType: "interrupt_attempt" | "finalize_stream" | "cleanup_stream"
+    effectType: "interrupt_run" | "finalize_stream" | "cleanup_stream"
     payload: { finalize?: "close" | "delete" | "replace"; sessionId?: string; sessions?: string[] }
   }>
   const controlResults = await Promise.all(
     controls.map(async (control) => {
       const startedAt = now()
       const operation =
-        control.effectType === "interrupt_attempt"
+        control.effectType === "interrupt_run"
           ? ("cancel" as const)
           : control.payload.finalize === "delete"
             ? ("release" as const)
@@ -1035,8 +1035,8 @@ async function drainControlEffects(
         if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
         const workspaceId = await workGraphWorkspaceId(control.orgId, control.ownerUserId, control.streamId)
         const placement = await manager.target(workspaceId)
-        if (control.effectType === "interrupt_attempt" && placement.status !== "ready") {
-          throw new Error("Attempt Session placement is not ready for interruption")
+        if (control.effectType === "interrupt_run" && placement.status !== "ready") {
+          throw new Error("Run Session placement is not ready for interruption")
         }
         if (placement.status === "ready") {
           const token = await provider.mintRuntimeAccessToken({
@@ -1050,7 +1050,7 @@ async function drainControlEffects(
           const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
           const runtime = runtimeRequest(request, relay, workspaceId, token.token)
           const sessions =
-            control.effectType === "interrupt_attempt"
+            control.effectType === "interrupt_run"
               ? control.payload.sessionId
                 ? [control.payload.sessionId]
                 : []
@@ -1394,10 +1394,10 @@ class HostedSessionRequestError extends Error {
 }
 
 type SessionEvent = { type: string; durable?: { seq: number }; data: Record<string, unknown> }
-type RunningAttempt = {
+type RunningRun = {
   ownerUserId: string
   orgId: string
-  attemptId: string
+  runId: string
   leaseEpoch: number
   sessionId: string
   workspaceId: string
@@ -1412,21 +1412,21 @@ function mutationArgs(claim: Claim, serviceToken: string, workerId: string, extr
     organization_id: claim.orgId,
     owner_user_id: claim.ownerUserId,
     outbox_id: claim.outboxId,
-    attempt_id: claim.attemptId,
+    run_id: claim.runId,
     lease_epoch: claim.leaseEpoch,
     worker_id: workerId,
     ...extra,
   }
 }
 
-function resultArgs(attempt: RunningAttempt, serviceToken: string, extra: Record<string, unknown>) {
+function resultArgs(run: RunningRun, serviceToken: string, extra: Record<string, unknown>) {
   return {
     service_token: serviceToken,
-    organization_id: attempt.orgId,
-    owner_user_id: attempt.ownerUserId,
-    attempt_id: attempt.attemptId,
-    lease_epoch: attempt.leaseEpoch,
-    session_id: attempt.sessionId,
+    organization_id: run.orgId,
+    owner_user_id: run.ownerUserId,
+    run_id: run.runId,
+    lease_epoch: run.leaseEpoch,
+    session_id: run.sessionId,
     ...extra,
   }
 }
@@ -1461,17 +1461,17 @@ async function tenantRows(
   return results.flat()
 }
 
-function recordAttemptTelemetry(
+function recordRunTelemetry(
   telemetry: WorkGraphOperationalReporter,
   trigger: WorkGraphReconciliationTrigger,
   claims: readonly Claim[],
-  running: readonly RunningAttempt[],
+  running: readonly RunningRun[],
   launched: readonly unknown[],
   results: readonly unknown[],
   latencyMs: number,
 ) {
   const observations = [...launched, ...results]
-  recordQueueTelemetry(telemetry, "attempt", claims, running, observations)
+  recordQueueTelemetry(telemetry, "run", claims, running, observations)
   telemetry.reconciliation({
     trigger,
     outcome: "succeeded",
@@ -1497,7 +1497,7 @@ function recordAttemptTelemetry(
 
 function recordQueueTelemetry(
   telemetry: WorkGraphOperationalReporter,
-  kind: "attempt" | "source_plan",
+  kind: "run" | "source_plan",
   claims: readonly unknown[],
   running: readonly unknown[],
   observations: readonly unknown[],
@@ -1620,7 +1620,7 @@ async function hostedSessionHistory(
 }
 
 export class HostedTranscriptRetentionError extends Error {
-  readonly code = "attempt_transcript_not_retained"
+  readonly code = "run_transcript_not_retained"
   readonly retryable = true
 
   constructor(message: string) {
@@ -1630,14 +1630,14 @@ export class HostedTranscriptRetentionError extends Error {
 }
 
 /**
- * Durable transcript retention for hosted Attempt completion: pull the Session
+ * Durable transcript retention for hosted Run completion: pull the Session
  * transcript from the workspace runtime and sync it into the authority BEFORE
- * complete_attempt is accepted. Any failure — unavailable workspace, failed
+ * complete_run is accepted. Any failure — unavailable workspace, failed
  * pull, or a transcript without both user and assistant messages — is a
- * retryable HostedTranscriptRetentionError, so the Attempt stays incomplete
+ * retryable HostedTranscriptRetentionError, so the Run stays incomplete
  * instead of settling without a durable transcript.
  *
- * The caller (the attempt-operation broker) only holds the runtime token's
+ * The caller (the run-operation broker) only holds the runtime token's
  * Clerk subject, so the sync goes through the subject-resolving retention
  * mutation rather than the internal-id session publisher.
  */

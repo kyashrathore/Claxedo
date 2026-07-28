@@ -1,5 +1,5 @@
 import type {
-  AttemptDto,
+  RunDto,
   OutcomeDto,
   StreamDto,
   WorkItemDto,
@@ -39,7 +39,7 @@ export function WorkGraphProjectGroups(props: {
   streams: StreamDto[]
   outcomes: OutcomeDto[]
   items: WorkItemDto[]
-  attempts: AttemptDto[]
+  runs: RunDto[]
   empty: JSX.Element
   relativeTime: (timestamp: number) => string
   client: WorkGraphClient
@@ -76,7 +76,7 @@ export function WorkGraphProjectGroups(props: {
                 streams={group().streams}
                 outcomes={props.outcomes}
                 items={props.items}
-                attempts={props.attempts}
+                runs={props.runs}
                 relativeTime={props.relativeTime}
                 client={props.client}
                 mutate={props.mutate}
@@ -100,7 +100,7 @@ function ProjectSection(props: {
   streams: StreamDto[]
   outcomes: OutcomeDto[]
   items: WorkItemDto[]
-  attempts: AttemptDto[]
+  runs: RunDto[]
   relativeTime: (timestamp: number) => string
   client: WorkGraphClient
   mutate: Mutate
@@ -138,7 +138,7 @@ function ProjectSection(props: {
               stream={stream()}
               outcomes={props.outcomes.filter((outcome) => outcome.streamId === stream().id)}
               items={props.items.filter((item) => item.streamId === stream().id && item.state !== "abandoned")}
-              attempts={props.attempts.filter((attempt) => attempt.streamId === stream().id)}
+              runs={props.runs.filter((run) => run.streamId === stream().id)}
               relativeTime={props.relativeTime}
               client={props.client}
               mutate={props.mutate}
@@ -159,7 +159,7 @@ function StreamCard(props: {
   stream: StreamDto
   outcomes: OutcomeDto[]
   items: WorkItemDto[]
-  attempts: AttemptDto[]
+  runs: RunDto[]
   relativeTime: (timestamp: number) => string
   client: WorkGraphClient
   mutate: Mutate
@@ -244,19 +244,19 @@ function StreamCard(props: {
   const [pausing, setPausing] = createSignal(false)
   const [pauseOpen, setPauseOpen] = createSignal(false)
   const [stopRunningOnPause, setStopRunningOnPause] = createSignal(false)
-  const runningAttempts = () => props.attempts.filter((attempt) => attempt.state === "running")
+  const runningRuns = () => props.runs.filter((run) => run.state === "running")
   const retryableItems = () =>
     props.stream.lifecycleState === "active"
-      ? props.items.filter((item) => isRetryable(item, props.attempts))
+      ? props.items.filter((item) => isRetryable(item, props.runs))
       : []
   // Launch is automatic and continuous: the only launch control is the Stream's
-  // lifecycle. Pausing stops new admissions (running attempts continue);
+  // lifecycle. Pausing stops new admissions (running runs continue);
   // resuming re-arms the drain, which launches every approved, ready task.
   const pauseStream = async () => {
     if (pausing() || streamPaused()) return
     setPausing(true)
     try {
-      const attempts = runningAttempts()
+      const runs = runningRuns()
       const paused = await props.mutate(() =>
         props.client.setStreamLifecycle({
           streamId: props.stream.id,
@@ -267,9 +267,9 @@ function StreamCard(props: {
       )
       if (!paused) return
       if (stopRunningOnPause()) {
-        for (const attempt of attempts) {
+        for (const run of runs) {
           const stopped = await props.mutate(() =>
-            props.client.cancelAttempt(attempt.id, attempt.version, "Stopped while pausing Stream"),
+            props.client.cancelRun(run.id, run.version, "Stopped while pausing Stream"),
           )
           if (!stopped) return
         }
@@ -310,8 +310,8 @@ function StreamCard(props: {
   }
   const masterReceipts = () => masterStatus()?.receiptRefs.slice(-2) ?? []
   const masterReceiptOpener = (reference: string) => {
-    const attempt = props.attempts.find((candidate) => candidate.result?.artifactRefs.includes(reference))
-    const item = attempt ? props.items.find((candidate) => candidate.id === attempt.workItemId) : undefined
+    const run = props.runs.find((candidate) => candidate.result?.artifactRefs.includes(reference))
+    const item = run ? props.items.find((candidate) => candidate.id === run.workItemId) : undefined
     if (item) return (invoker: HTMLButtonElement) => props.onOpenTask(item, invoker)
     const sessionId = masterStatus()?.sessionId
     if (!sessionId || !props.onOpenSession) return
@@ -365,7 +365,7 @@ function StreamCard(props: {
           >
             <div class="workgraph-confirm">
               <p class="workgraph-confirm-text">Pause this Stream to stop new Tasks from launching.</p>
-              <Show when={runningAttempts().length}>
+              <Show when={runningRuns().length}>
                 <label class="workgraph-pause-running">
                   <input
                     type="checkbox"
@@ -424,7 +424,7 @@ function StreamCard(props: {
       <div class="workgraph-streamcard-tasks">
         <KeyedById records={previewItems()}>
           {(item) => (
-            <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
+            <WorkItemLeaf item={item()} runs={props.runs} client={props.client} mutate={props.mutate} depsComplete={depsComplete()(item())} streamPaused={streamPaused()} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
           )}
         </KeyedById>
         <Show when={!props.items.length}>

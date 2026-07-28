@@ -105,7 +105,7 @@ describe("WorkGraph ports", () => {
     expectTypeOf<Parameters<ConnectionsPort["resolveCapabilities"]>[0]>().toEqualTypeOf<WorkGraphContext>()
   })
 
-  it("models one Stream workspace and attempt lifecycle", () => {
+  it("models one Stream workspace and run lifecycle", () => {
     expectTypeOf<Parameters<WorkspaceExecutionPort["provisionOrAdopt"]>[0]>().toEqualTypeOf<WorkGraphContext>()
     expectTypeOf<Parameters<WorkspaceExecutionPort["launch"]>[0]>().toEqualTypeOf<WorkGraphContext>()
     expectTypeOf<Parameters<WorkspaceExecutionPort["cancel"]>[0]>().toEqualTypeOf<WorkGraphContext>()

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   AdmissionProposalDtoSchema,
-  AttemptDtoSchema,
+  RunDtoSchema,
   DecisionDtoSchema,
   OutcomeDtoSchema,
   OrderedSnapshotReferenceSchema,
@@ -110,16 +110,17 @@ describe("public WorkGraph record contracts", () => {
     expect(() => WorkItemDtoSchema.parse({ ...item, version: 0 })).toThrow()
   })
 
-  it("stores an immutable resolved execution snapshot on every Attempt", () => {
-    const attempt = AttemptDtoSchema.parse({
-      recordType: "attempt",
+  it("stores an immutable resolved execution snapshot on every Run", () => {
+    const run = RunDtoSchema.parse({
+      recordType: "run",
       schemaVersion: 1,
-      id: "attempt_01",
+      id: "run_01",
       ownerUserId: "user_01",
       streamId: "stream_01",
       workItemId: "item_01",
       version: 1,
-      attemptNumber: 1,
+      runNumber: 1,
+      generation: 1,
       state: "running",
       resolvedExecution: execution,
       admittedAt: timestamps.createdAt,
@@ -129,10 +130,10 @@ describe("public WorkGraph record contracts", () => {
       ...timestamps,
     })
 
-    expect(Object.isFrozen(attempt)).toBe(true)
-    expect(Object.isFrozen(attempt.resolvedExecution)).toBe(true)
-    expect(Reflect.set(attempt.resolvedExecution.model, "modelId", "other")).toBe(false)
-    expect(() => AttemptDtoSchema.parse({ ...attempt, resolvedExecution: { ...execution, model: undefined } })).toThrow()
+    expect(Object.isFrozen(run)).toBe(true)
+    expect(Object.isFrozen(run.resolvedExecution)).toBe(true)
+    expect(Reflect.set(run.resolvedExecution.model, "modelId", "other")).toBe(false)
+    expect(() => RunDtoSchema.parse({ ...run, resolvedExecution: { ...execution, model: undefined } })).toThrow()
   })
 
   it("captures Decision options and validates their recommendation", () => {

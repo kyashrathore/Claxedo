@@ -352,7 +352,7 @@
   min-width: 0;
 }
 
-.workgraph-attempt-error {
+.workgraph-run-error {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;

@@ -1,4 +1,4 @@
-import type { AttemptDetailDto, AttemptDto, ResolvedExecutionProfile, StreamMasterStatus } from "@claxedo/workgraph/contracts"
+import type { RunDetailDto, RunDto, ResolvedExecutionProfile, StreamMasterStatus } from "@claxedo/workgraph/contracts"
 import { For, Show } from "solid-js"
 import type { WorkGraphSessionOpener } from "../api"
 import { MasterReceiptLink } from "../master-receipt-link"
@@ -6,37 +6,37 @@ import { DialogField, DialogSection } from "./workgraph-dialog"
 
 /** Renders safe execution references and results without repository remotes,
  * lease/control-plane tokens, credentials, or other secret-bearing fields. */
-export function AttemptDetailView(props: {
-  detail: AttemptDetailDto
+export function RunDetailView(props: {
+  detail: RunDetailDto
   masterStatus?: StreamMasterStatus
-  streamAttempts?: AttemptDto[]
+  streamRuns?: RunDto[]
   onOpenSession?: WorkGraphSessionOpener
 }) {
-  const attempt = () => props.detail.attempt
-  const exec = (): ResolvedExecutionProfile => attempt().resolvedExecution
+  const run = () => props.detail.run
+  const exec = (): ResolvedExecutionProfile => run().resolvedExecution
   const references = () => props.detail.executionReferences
-  const receipts = () => attempt().result?.artifactRefs ?? []
-  const masterReceiptAttempt = (reference: string) => props.streamAttempts
+  const receipts = () => run().result?.artifactRefs ?? []
+  const masterReceiptRun = (reference: string) => props.streamRuns
     ?.find((candidate) => candidate.result?.artifactRefs.includes(reference))
-  const masterReceiptSession = (reference: string) => masterReceiptAttempt(reference)?.executionReferences?.sessionId ?? props.masterStatus?.sessionId
+  const masterReceiptSession = (reference: string) => masterReceiptRun(reference)?.executionReferences?.sessionId ?? props.masterStatus?.sessionId
   const openMasterReceipt = (reference: string) => {
-    const receiptAttempt = masterReceiptAttempt(reference)
-    const sessionId = receiptAttempt?.executionReferences?.sessionId ?? props.masterStatus?.sessionId
+    const receiptRun = masterReceiptRun(reference)
+    const sessionId = receiptRun?.executionReferences?.sessionId ?? props.masterStatus?.sessionId
     if (!sessionId || !props.onOpenSession) return
     void props.onOpenSession({
       sessionId,
-      ...(receiptAttempt?.executionReferences?.workspaceId ? { workspaceId: receiptAttempt.executionReferences.workspaceId } : {}),
-      harness: receiptAttempt?.resolvedExecution.harness,
-      environment: receiptAttempt?.resolvedExecution.environment,
+      ...(receiptRun?.executionReferences?.workspaceId ? { workspaceId: receiptRun.executionReferences.workspaceId } : {}),
+      harness: receiptRun?.resolvedExecution.harness,
+      environment: receiptRun?.resolvedExecution.environment,
     })
   }
   return (
     <div class="workgraph-detail-grid">
-      <DialogField label="Attempt">#{attempt().attemptNumber} · {attempt().state}</DialogField>
-      <Show when={attempt().attentionReason}>
+      <DialogField label="Run">#{run().runNumber} · {run().state}</DialogField>
+      <Show when={run().parkedReason}>
         {(reason) => (
-          <div class="workgraph-attempt-error" role="alert">
-            <span class="text-[11px] font-semibold text-text-strong">{attempt().state === "failed" ? "Attempt failed" : "Attempt needs attention"}</span>
+          <div class="workgraph-run-error" role="alert">
+            <span class="text-[11px] font-semibold text-text-strong">{run().state === "failed" ? "Run failed" : "Run needs attention"}</span>
             <span class="text-[12px] leading-5 text-text-base">{reason()}</span>
           </div>
         )}
@@ -83,7 +83,7 @@ export function AttemptDetailView(props: {
       <Show when={references()?.childWorkspaceId}>
         <DialogField label="Child workspace" mono>{references()!.childWorkspaceId}</DialogField>
       </Show>
-      <Show when={attempt().result}>
+      <Show when={run().result}>
         {(result) => (
           <div class="workgraph-detail-result">
             <span class="workgraph-dfield-label text-text-weaker">Result</span>

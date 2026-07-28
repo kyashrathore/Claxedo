@@ -78,7 +78,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: "https://central.example",
     })
     expect(boot.options.workgraphConnectionBrokerOrigin).toBe("https://central.example")
-    expect(boot.options.workgraphAttemptBrokerOrigin).toBe("https://central.example")
+    expect(boot.options.workgraphRunBrokerOrigin).toBe("https://central.example")
   })
 
   test("runner parsing: acp alias, named harness, acp binary connection", () => {

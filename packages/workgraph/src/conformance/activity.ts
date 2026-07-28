@@ -118,7 +118,7 @@ export function workGraphActivityConformance(
           limit: 100,
         })
         assert(full.entries.filter((entry) => entry.category === "checkpoint").length === 3, "Checkpoint retry duplicated activity")
-        assert(full.entries.some((entry) => entry.category === "attempt"), "Attached Attempt is absent from Task activity")
+        assert(full.entries.some((entry) => entry.category === "run"), "Attached Run is absent from Task activity")
         const first = await fixture.activity.list(owners.first, {
           workItemId: seeded.workItemId,
           granularity: "progress",

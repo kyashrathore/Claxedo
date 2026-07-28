@@ -40,7 +40,6 @@ describe("WorkGraph SQLite v2 schema", () => {
       "wg_v2_admission_proposals",
       "wg_v2_agent_checkpoints",
       "wg_v2_archive_restores",
-      "wg_v2_attempts",
       "wg_v2_attention_acknowledgements",
       "wg_v2_change_cursors",
       "wg_v2_changes",
@@ -59,6 +58,7 @@ describe("WorkGraph SQLite v2 schema", () => {
       "wg_v2_outbox",
       "wg_v2_outcomes",
       "wg_v2_record_source_revisions",
+      "wg_v2_runs",
       "wg_v2_runtime_effects",
       "wg_v2_session_bindings",
       "wg_v2_source_views",
@@ -99,7 +99,7 @@ describe("WorkGraph SQLite v2 schema", () => {
     db.exec(`
       ALTER TABLE wg_v2_streams ADD COLUMN execution_mode TEXT;
       ALTER TABLE wg_v2_streams ADD COLUMN execution_state TEXT;
-      ALTER TABLE wg_v2_attempts ADD COLUMN execution_mode TEXT;
+      ALTER TABLE wg_v2_runs ADD COLUMN execution_mode TEXT;
       CREATE INDEX wg_v2_streams_execution_idx ON wg_v2_streams(organization_id, owner_user_id, execution_state, updated_at);
       INSERT INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at) VALUES ('o','u','wg','1','1');
       INSERT INTO wg_v2_streams (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_mode, execution_state, created_at, updated_at)
@@ -114,7 +114,7 @@ describe("WorkGraph SQLite v2 schema", () => {
     const streamColumns = columns(db, "wg_v2_streams").map((column) => column.name)
     expect(streamColumns).not.toContain("execution_mode")
     expect(streamColumns).not.toContain("execution_state")
-    expect(columns(db, "wg_v2_attempts").map((column) => column.name)).not.toContain("execution_mode")
+    expect(columns(db, "wg_v2_runs").map((column) => column.name)).not.toContain("execution_mode")
     expect(indexes(db, "wg_v2_streams").find((index) => index.name === "wg_v2_streams_execution_idx")).toBeUndefined()
     // Only the previously-active autonomous Stream keeps running; stopped, never-executed
     // (NULL), and already-paused Streams end paused so nothing auto-launches on upgrade.
@@ -148,10 +148,10 @@ describe("WorkGraph SQLite v2 schema", () => {
       VALUES
         ('organization_a', 'user_a', 'source_ref_1', 'stream', 'stream_a', 'source_1', 'revision_1', 0, '2026-07-13T00:00:00.000Z'),
         ('organization_a', 'user_a', 'source_ref_2', 'stream', 'stream_a', 'source_1', 'revision_2', 1, '2026-07-13T00:00:01.000Z');
-      INSERT INTO wg_v2_attempts (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
-      VALUES ('organization_a', 'user_a', 'attempt_1', 'stream_a', 'item_1', 1, 'admitted', '{}', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_evidence (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id, source_attempt_id, evidence_kind, summary, provenance_json, created_at)
-      VALUES ('organization_a', 'user_a', 'evidence_1', 'stream_a', 'work_item', 'item_1', 'requirement_1', 'attempt_1', 'test', 'Focused proof', '{}', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_runs (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
+      VALUES ('organization_a', 'user_a', 'run_1', 'stream_a', 'item_1', 1, 'admitted', '{}', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_evidence (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id, source_run_id, evidence_kind, summary, provenance_json, created_at)
+      VALUES ('organization_a', 'user_a', 'evidence_1', 'stream_a', 'work_item', 'item_1', 'requirement_1', 'run_1', 'test', 'Focused proof', '{}', '2026-07-13T00:00:00.000Z');
       INSERT INTO wg_v2_events (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
       VALUES ('organization_a', 'user_a', 'event_1', 'stream_a', 1, 1, 'op_1', 'stream.created', 'user', 'user_a', 'request_1', '{}', '2026-07-13T00:00:00.000Z');
       INSERT INTO wg_v2_operation_results (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
@@ -165,9 +165,9 @@ describe("WorkGraph SQLite v2 schema", () => {
         "stream_a",
       ),
     ).toEqual([{ source_revision_id: "revision_1" }, { source_revision_id: "revision_2" }])
-    expect(db.prepare("SELECT requirement_id, source_attempt_id FROM wg_v2_evidence WHERE owner_user_id = ? AND id = ?").get("user_a", "evidence_1")).toEqual({
+    expect(db.prepare("SELECT requirement_id, source_run_id FROM wg_v2_evidence WHERE owner_user_id = ? AND id = ?").get("user_a", "evidence_1")).toEqual({
       requirement_id: "requirement_1",
-      source_attempt_id: "attempt_1",
+      source_run_id: "run_1",
     })
     expect(db.pragma("foreign_key_check")).toEqual([])
 

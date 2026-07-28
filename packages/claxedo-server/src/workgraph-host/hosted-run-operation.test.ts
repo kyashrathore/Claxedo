@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from "vitest"
 import { generateKeyPair } from "jose"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import {
-  createHostedAttemptOperationExecutor,
-  createHostedAttemptOperationHandler,
-} from "./hosted-attempt-operation"
+  createHostedRunOperationExecutor,
+  createHostedRunOperationHandler,
+} from "./hosted-run-operation"
 import { HostedTranscriptRetentionError, workGraphWorkspaceId } from "./hosted-runtime"
 
-describe("hosted Attempt operation endpoint", () => {
+describe("hosted Run operation endpoint", () => {
   it("maps verified runtime identity into one service-authenticated WorkGraph command", async () => {
     const mutations: Record<string, unknown>[] = []
-    const execute = createHostedAttemptOperationExecutor({
+    const execute = createHostedRunOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       executor: {
         mutation: async (_fn, args) => {
@@ -26,15 +26,15 @@ describe("hosted Attempt operation endpoint", () => {
       organization_id: "org-acme",
       owner_subject: "alice",
       actor_type: "agent",
-      actor_id: "attempt-1",
+      actor_id: "run-1",
       operation_id: "operation-1",
       command: {
         version: 1,
-        type: "record_attempt_checkpoint",
-        attemptId: "attempt-1",
+        type: "record_run_checkpoint",
+        runId: "run-1",
         sessionId: "session-1",
         workspaceId: "workspace-1",
-        leaseEpoch: 3,
+        generation: 3,
         level: "milestone",
         summary: "Boundary complete",
         evidenceIds: [],
@@ -44,7 +44,7 @@ describe("hosted Attempt operation endpoint", () => {
 
   it("maps an exact hosted master binding into a CAS-protected structured notes command", async () => {
     const mutations: Record<string, unknown>[] = []
-    const execute = createHostedAttemptOperationExecutor({
+    const execute = createHostedRunOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       executor: {
         mutation: async (_fn, args) => {
@@ -79,7 +79,7 @@ describe("hosted Attempt operation endpoint", () => {
       reference: "channel:slack:slack:team:channel:thread",
       duplicate: false,
     }))
-    const execute = createHostedAttemptOperationExecutor({
+    const execute = createHostedRunOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       notifyOwner,
       executor: {
@@ -117,7 +117,7 @@ describe("hosted Attempt operation endpoint", () => {
   it("rings live-sync after an agent command without failing the durable result when the nudge fails", async () => {
     const changed: unknown[] = []
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    const execute = createHostedAttemptOperationExecutor({
+    const execute = createHostedRunOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       executor: {
         mutation: async () => ({ ok: true, operationId: "operation-1", cursor: "1", value: null }),
@@ -147,7 +147,7 @@ describe("hosted Attempt operation endpoint", () => {
       role: "owner",
     }, keys.privateKey, "EdDSA")
     const principals: unknown[] = []
-    const handler = createHostedAttemptOperationHandler({
+    const handler = createHostedRunOperationHandler({
       env: {},
       runtimeKey: Promise.resolve(keys.publicKey),
       execute: async (principal, request) => {
@@ -160,8 +160,39 @@ describe("hosted Attempt operation endpoint", () => {
     expect(response.status).toBe(200)
     expect(principals).toEqual([{
       principal: { ownerUserId: "alice", orgId: "org-acme" },
-      identity: { attemptId: "attempt-1", sessionId: "session-1", workspaceId: "workspace-1", leaseEpoch: 3 },
+      identity: { runId: "run-1", sessionId: "session-1", workspaceId: "workspace-1", generation: 3 },
     }])
+  })
+
+  it("rejects an agent operation without generation", async () => {
+    const keys = await generateKeyPair("Ed25519")
+    const token = await mintRuntimeAccessToken({
+      subject: "alice",
+      orgId: "org-acme",
+      workspaceId: "workspace-1",
+      hostId: "host-1",
+      role: "owner",
+    }, keys.privateKey, "EdDSA")
+    const body = operation()
+    const response = await createHostedRunOperationHandler({
+      env: {},
+      runtimeKey: Promise.resolve(keys.publicKey),
+      execute: async (_principal, request) => ({
+        ok: true,
+        operationId: request.operation.operationId,
+        cursor: "1" as never,
+        value: null,
+      }),
+    })(request(token, {
+      ...body,
+      identity: {
+        runId: body.identity.runId,
+        sessionId: body.identity.sessionId,
+        workspaceId: body.identity.workspaceId,
+      },
+    }))
+
+    expect(response.status).toBe(400)
   })
 
   it("nudges the settlement dispatcher after a successful agent-tool operation", async () => {
@@ -174,7 +205,7 @@ describe("hosted Attempt operation endpoint", () => {
       role: "owner",
     }, keys.privateKey, "EdDSA")
     const nudged: Array<{ ownerUserId: string; orgId: string }> = []
-    const handler = createHostedAttemptOperationHandler({
+    const handler = createHostedRunOperationHandler({
       env: {},
       runtimeKey: Promise.resolve(keys.publicKey),
       execute: async (_principal, request) => ({ ok: true, operationId: request.operation.operationId, cursor: "1" as never, value: null }),
@@ -185,7 +216,7 @@ describe("hosted Attempt operation endpoint", () => {
     expect(nudged).toEqual([{ ownerUserId: "alice", orgId: "org-acme" }])
 
     // A failing durable command does not nudge settlement.
-    const failingHandler = createHostedAttemptOperationHandler({
+    const failingHandler = createHostedRunOperationHandler({
       env: {},
       runtimeKey: Promise.resolve(keys.publicKey),
       execute: async (_principal, request) => ({
@@ -199,9 +230,9 @@ describe("hosted Attempt operation endpoint", () => {
     expect(rejected).toEqual([])
   })
 
-  it("retains the transcript before accepting complete_attempt and not for checkpoints", async () => {
+  it("retains the transcript before accepting complete_run and not for checkpoints", async () => {
     const calls: string[] = []
-    const execute = createHostedAttemptOperationExecutor({
+    const execute = createHostedRunOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       executor: {
         mutation: async (_fn, args) => {
@@ -218,12 +249,12 @@ describe("hosted Attempt operation endpoint", () => {
     await execute({ ownerUserId: "alice", orgId: "org-acme" }, operation())
     expect(calls).toEqual([
       "retain:workspace-1/session-1:org-acme:alice",
-      "mutation:complete_attempt",
-      "mutation:record_attempt_checkpoint",
+      "mutation:complete_run",
+      "mutation:record_run_checkpoint",
     ])
   })
 
-  it("rejects completion as retryable when transcript retention fails, without settling the Attempt", async () => {
+  it("rejects completion as retryable when transcript retention fails, without settling the Run", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
       subject: "alice",
@@ -233,7 +264,7 @@ describe("hosted Attempt operation endpoint", () => {
       role: "owner",
     }, keys.privateKey, "EdDSA")
     let mutationCalls = 0
-    const execute = createHostedAttemptOperationExecutor({
+    const execute = createHostedRunOperationExecutor({
       env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       executor: {
         mutation: async () => {
@@ -245,7 +276,7 @@ describe("hosted Attempt operation endpoint", () => {
         throw new HostedTranscriptRetentionError("Hosted Session transcript failed: 502 boom")
       },
     })!
-    const response = await createHostedAttemptOperationHandler({
+    const response = await createHostedRunOperationHandler({
       env: {},
       runtimeKey: Promise.resolve(keys.publicKey),
       execute,
@@ -253,7 +284,7 @@ describe("hosted Attempt operation endpoint", () => {
 
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({
-      error: { code: "attempt_transcript_not_retained", retryable: true },
+      error: { code: "run_transcript_not_retained", retryable: true },
     })
     expect(mutationCalls).toBe(0)
   })
@@ -268,7 +299,7 @@ describe("hosted Attempt operation endpoint", () => {
       role: "owner",
     }, keys.privateKey, "EdDSA")
     let calls = 0
-    const response = await createHostedAttemptOperationHandler({
+    const response = await createHostedRunOperationHandler({
       env: {},
       runtimeKey: Promise.resolve(keys.publicKey),
       execute: async () => {
@@ -287,10 +318,10 @@ function operation() {
   return {
     version: 1 as const,
     identity: {
-      attemptId: "attempt-1" as never,
+      runId: "run-1" as never,
       sessionId: "session-1",
       workspaceId: "workspace-1",
-      leaseEpoch: 3,
+      generation: 3,
     },
     operation: {
       type: "record_checkpoint" as const,
@@ -306,10 +337,10 @@ function completion() {
   return {
     version: 1 as const,
     identity: {
-      attemptId: "attempt-1" as never,
+      runId: "run-1" as never,
       sessionId: "session-1",
       workspaceId: "workspace-1",
-      leaseEpoch: 3,
+      generation: 3,
     },
     operation: {
       type: "complete" as const,
@@ -330,7 +361,8 @@ function completion() {
  *  fixtures must claim exactly the workspace the runtime token would prove. */
 async function masterIdentity() {
   return {
-    attemptId: "master_stream-1" as never,
+    runId: "master_stream-1" as never,
+    generation: 1,
     streamId: "stream-1" as never,
     sessionId: "ses_master_stream-1",
     workspaceId: await workGraphWorkspaceId("org-acme", "alice", "stream-1"),
@@ -364,7 +396,7 @@ async function notificationOperation() {
 }
 
 function request(token?: string, body: Record<string, unknown> = operation()) {
-  return new Request("https://central.test/internal/workgraph/attempt-operation", {
+  return new Request("https://central.test/internal/workgraph/run-operation", {
     method: "POST",
     headers: {
       "content-type": "application/json",

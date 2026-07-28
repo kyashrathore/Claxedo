@@ -2,7 +2,7 @@ import BetterSqlite3 from "better-sqlite3"
 import { afterEach, describe, expect, it } from "vitest"
 import type { CompletionContract, OperationID, WorkGraphContext } from "../src/contracts"
 import type { WorkspaceExecutionPort } from "../src/ports"
-import { createSqliteWorkGraphService, renewSqliteAttemptLease } from "../src/adapters/sqlite/store"
+import { createSqliteWorkGraphService, renewSqliteRunLease } from "../src/adapters/sqlite/store"
 
 const databases: BetterSqlite3.Database[] = []
 afterEach(() => databases.splice(0).forEach((database) => database.close()))
@@ -12,9 +12,9 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     const fixture = setup(runtime())
     const { blockerId, dependentId } = await createDependentItems(fixture)
     // The blocker is auto-admitted on creation; the dependent waits for it.
-    const attemptId = attemptIdFor(fixture, blockerId)
-    await fixture.attemptResults.recordResult(owner(), {
-      attemptId: attemptId as never,
+    const runId = runIdFor(fixture, blockerId)
+    await fixture.runResults.recordResult(owner(), {
+      runId: runId as never,
       workItemId: blockerId as never,
       leaseEpoch: 1,
       state: "result",
@@ -31,33 +31,33 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         () =>
           (
             fixture.database
-              .prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?")
+              .prepare("SELECT COUNT(*) AS count FROM wg_v2_runs WHERE work_item_id = ?")
               .get(dependentId) as { count: number }
           ).count,
       )
       .toBe(1)
   })
 
-  it("launches a durable admitted autonomous Attempt after process restart", async () => {
+  it("launches a durable admitted autonomous Run after process restart", async () => {
     const launches: string[] = []
     const executionRuntime = runtime({
       launch: async (_context, input) => {
-        launches.push(input.attemptId)
-        return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
+        launches.push(input.runId)
+        return { sessionId: `session_${input.runId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
       },
     })
     const fixture = setup(executionRuntime)
     const itemId = await createItem(fixture)
     const streamId = streamFor(fixture, itemId)
     // Auto-admitted on creation; simulate a crash before launch by resetting it to `admitted`.
-    const attemptId = attemptIdFor(fixture, itemId)
+    const runId = runIdFor(fixture, itemId)
     fixture.database
       .prepare(
         `
-      UPDATE wg_v2_attempts SET lifecycle = 'admitted', session_id = NULL, started_at = NULL WHERE id = ?
+      UPDATE wg_v2_runs SET lifecycle = 'admitted', session_id = NULL, started_at = NULL WHERE id = ?
     `,
       )
-      .run(attemptId)
+      .run(runId)
 
     createSqliteWorkGraphService({
       database: fixture.database,
@@ -71,24 +71,24 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       .poll(
         () =>
           (
-            fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = ?").get(attemptId) as {
+            fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = ?").get(runId) as {
               lifecycle: string
             }
           ).lifecycle,
       )
       .toBe("running")
-    expect(launches).toEqual([attemptId, attemptId])
+    expect(launches).toEqual([runId, runId])
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_streams WHERE id = ?").get(streamId)).toEqual({
       lifecycle: "active",
     })
   })
 
-  it("admits exactly one lease-fenced Attempt for an approved Work Item", async () => {
+  it("admits exactly one lease-fenced Run for an approved Work Item", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
     // The drain admits the approved item once, under the per-item lease fence.
     expect(
-      (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count,
+      (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs").get() as { count: number }).count,
     ).toBe(1)
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(item)).toEqual({
       lifecycle: "active",
@@ -107,9 +107,9 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       title: "Ready but not executable",
       completionContract: contract,
     })
-    // The drain re-derives launchability and skips the item — no Attempt, task stays pending.
+    // The drain re-derives launchability and skips the item — no Run, task stays pending.
     expect(
-      (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count,
+      (fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs").get() as { count: number }).count,
     ).toBe(0)
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(resultId(item, "workItemId")))
       .toEqual({ lifecycle: "pending" })
@@ -183,8 +183,8 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
           await blocked
         },
         launch: async (_context, input) => {
-          launches.push(input.attemptId)
-          return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
+          launches.push(input.runId)
+          return { sessionId: `session_${input.runId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
         },
       }),
     )
@@ -199,7 +199,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     await command(fixture, "create_stream", { title: "Trigger reconciliation" })
 
     expect(
-      fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(itemId),
+      fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs WHERE work_item_id = ?").get(itemId),
     ).toEqual({ count: 0 })
     expect(launches).toEqual([])
     releaseCleanup()
@@ -231,7 +231,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
           }
         },
         launch: async (_context, input) => {
-          launches.push(input.attemptId)
+          launches.push(input.runId)
           return { sessionId: "session_1" as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
         },
         cleanup: async () => {
@@ -243,15 +243,15 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     // Resuming the Stream admits the item and enters provisioning (which blocks).
     const admitting = command(fixture, "set_stream_lifecycle", { streamId, expectedVersion: 2, state: "active", reason: "Run" })
     await started
-    const attempt = fixture.database
-      .prepare("SELECT id, row_version FROM wg_v2_attempts WHERE work_item_id = ?")
+    const run = fixture.database
+      .prepare("SELECT id, row_version FROM wg_v2_runs WHERE work_item_id = ?")
       .get(item) as { id: string; row_version: number }
-    // Cancel commits synchronously (marks the Attempt cancelled) before joining the
+    // Cancel commits synchronously (marks the Run cancelled) before joining the
     // in-flight drain; releasing provisioning then lets both settle. Placement finds
-    // the Attempt cancelled and never launches a ghost Session.
-    const cancelling = command(fixture, "cancel_attempt", {
-      attemptId: attempt.id,
-      expectedVersion: attempt.row_version,
+    // the Run cancelled and never launches a ghost Session.
+    const cancelling = command(fixture, "cancel_run", {
+      runId: run.id,
+      expectedVersion: run.row_version,
       reason: "Stop",
     })
     releaseProvision()
@@ -261,7 +261,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     expect(cleanups).toEqual([])
   })
 
-  it("keeps a failed cancellation effect durable and retryable before terminalizing the Attempt", async () => {
+  it("keeps a failed cancellation effect durable and retryable before terminalizing the Run", async () => {
     let failures = 1
     const fixture = setup(
       runtime({
@@ -271,20 +271,20 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       }),
     )
     const item = await createItem(fixture)
-    const attemptId = attemptIdFor(fixture, item)
-    const attempt = fixture.database.prepare("SELECT row_version FROM wg_v2_attempts WHERE id = ?").get(attemptId) as {
+    const runId = runIdFor(fixture, item)
+    const run = fixture.database.prepare("SELECT row_version FROM wg_v2_runs WHERE id = ?").get(runId) as {
       row_version: number
     }
     const operationId = `operation_${crypto.randomUUID()}` as OperationID
     const request = {
       operationId,
-      command: { version: 1, type: "cancel_attempt", attemptId, expectedVersion: attempt.row_version, reason: "Stop" },
+      command: { version: 1, type: "cancel_run", runId, expectedVersion: run.row_version, reason: "Stop" },
     } as never
     await expect(fixture.service.execute(owner(), request)).resolves.toMatchObject({
       ok: false,
       error: { retryable: true },
     })
-    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = ?").get(attemptId)).toEqual({
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = ?").get(runId)).toEqual({
       lifecycle: "running",
     })
     expect(
@@ -298,7 +298,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         .prepare("SELECT state, attempt_count FROM wg_v2_runtime_effects WHERE idempotency_key = ?")
         .get(operationId),
     ).toEqual({ state: "completed", attempt_count: 2 })
-    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = ?").get(attemptId)).toEqual({
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = ?").get(runId)).toEqual({
       lifecycle: "cancelled",
     })
   })
@@ -311,14 +311,14 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     const executionRuntime = runtime({
       launch: async (_context, input) => {
         expect(
-          renewSqliteAttemptLease(fixture.database, owner(), {
-            attemptId: input.attemptId,
+          renewSqliteRunLease(fixture.database, owner(), {
+            runId: input.runId,
             expectedLeaseEpoch: 1,
             occurredAt: 1_000_000,
             durationMs: 300_000,
           }),
         ).toMatchObject({ leaseEpoch: 2, recovered: true })
-        return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
+        return { sessionId: `session_${input.runId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
       },
       cancel: async (_context, input) => {
         cancellations.push(input.sessionId)
@@ -330,42 +330,42 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     })
     fixture = setup(executionRuntime)
     const item = await createItem(fixture)
-    const attemptId = attemptIdFor(fixture, item)
+    const runId = runIdFor(fixture, item)
 
     expect(
-      fixture.database.prepare("SELECT lifecycle, lease_epoch FROM wg_v2_attempts WHERE id = ?").get(attemptId),
-    ).toEqual({ lifecycle: "placing", lease_epoch: 2 })
+      fixture.database.prepare("SELECT lifecycle, generation FROM wg_v2_runs WHERE id = ?").get(runId),
+    ).toEqual({ lifecycle: "placing", generation: 2 })
     expect(
       fixture.database
         .prepare(
           `
       SELECT state, attempt_count, last_error FROM wg_v2_runtime_effects
-      WHERE effect_kind = 'compensate_attempt_placement' AND resource_id = ?
+      WHERE effect_kind = 'compensate_run_placement' AND resource_id = ?
     `,
         )
-        .get(attemptId),
+        .get(runId),
     ).toEqual({
       state: "pending",
       attempt_count: 1,
-      last_error: expect.stringContaining("Attempt lease ownership was lost after launch"),
+      last_error: expect.stringContaining("Run lease ownership was lost after launch"),
     })
     expect(
       (
         fixture.database
           .prepare("SELECT last_error FROM wg_v2_runtime_effects WHERE resource_id = ?")
-          .get(attemptId) as { last_error: string }
+          .get(runId) as { last_error: string }
       ).last_error,
     ).toContain("session cancellation unavailable")
     expect(cleanups).toEqual([])
 
     const persisted = fixture.database.prepare(`
       SELECT payload_json FROM wg_v2_runtime_effects
-      WHERE effect_kind = 'compensate_attempt_placement' AND resource_id = ?
-    `).get(attemptId) as { payload_json: string }
+      WHERE effect_kind = 'compensate_run_placement' AND resource_id = ?
+    `).get(runId) as { payload_json: string }
     fixture.database.prepare(`
       UPDATE wg_v2_runtime_effects SET payload_json = ?
-      WHERE effect_kind = 'compensate_attempt_placement' AND resource_id = ?
-    `).run(JSON.stringify({ ...JSON.parse(persisted.payload_json), childIsolationId: "child_legacy" }), attemptId)
+      WHERE effect_kind = 'compensate_run_placement' AND resource_id = ?
+    `).run(JSON.stringify({ ...JSON.parse(persisted.payload_json), childIsolationId: "child_legacy" }), runId)
 
     createSqliteWorkGraphService({
       database: fixture.database,
@@ -380,28 +380,28 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
           .prepare(
             `
       SELECT state, attempt_count, last_error FROM wg_v2_runtime_effects
-      WHERE effect_kind = 'compensate_attempt_placement' AND resource_id = ?
+      WHERE effect_kind = 'compensate_run_placement' AND resource_id = ?
     `,
           )
-          .get(attemptId),
+          .get(runId),
       )
       .toEqual({ state: "completed", attempt_count: 2, last_error: null })
     expect(
-      fixture.database.prepare("SELECT lifecycle, attention_reason FROM wg_v2_attempts WHERE id = ?").get(attemptId),
-    ).toEqual({ lifecycle: "attention", attention_reason: expect.stringContaining("session cancellation unavailable") })
+      fixture.database.prepare("SELECT lifecycle, parked_reason FROM wg_v2_runs WHERE id = ?").get(runId),
+    ).toEqual({ lifecycle: "parked", parked_reason: expect.stringContaining("session cancellation unavailable") })
     const compensation = fixture.database
       .prepare(
         `
       SELECT payload_json FROM wg_v2_runtime_effects
-      WHERE effect_kind = 'compensate_attempt_placement' AND resource_id = ?
+      WHERE effect_kind = 'compensate_run_placement' AND resource_id = ?
     `,
       )
-      .get(attemptId) as { payload_json: string }
+      .get(runId) as { payload_json: string }
     expect(JSON.parse(compensation.payload_json)).toMatchObject({
-      reason: "Attempt lease ownership was lost after launch",
+      reason: "Run lease ownership was lost after launch",
       failureHistory: [expect.stringContaining("session cancellation unavailable")],
     })
-    expect(cancellations).toEqual([`session_${attemptId}`, `session_${attemptId}`])
+    expect(cancellations).toEqual([`session_${runId}`, `session_${runId}`])
     expect(cleanups).toEqual([["child_legacy"]])
   })
 
@@ -417,18 +417,18 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     })
     const fixture = setup(failingRuntime)
     const item = await createItem(fixture)
-    const attemptId = attemptIdFor(fixture, item)
+    const runId = runIdFor(fixture, item)
 
     expect(
-      fixture.database.prepare("SELECT lifecycle, attention_reason FROM wg_v2_attempts WHERE id = ?").get(attemptId),
+      fixture.database.prepare("SELECT lifecycle, parked_reason FROM wg_v2_runs WHERE id = ?").get(runId),
     ).toEqual({
-      lifecycle: "attention",
-      attention_reason: expect.stringContaining("Session admission rejected"),
+      lifecycle: "parked",
+      parked_reason: expect.stringContaining("Session admission rejected"),
     })
     expect(fixture.database.prepare(`
       SELECT COUNT(*) AS count FROM wg_v2_runtime_effects
-      WHERE effect_kind = 'compensate_attempt_placement' AND resource_id = ?
-    `).get(attemptId)).toEqual({ count: 0 })
+      WHERE effect_kind = 'compensate_run_placement' AND resource_id = ?
+    `).get(runId)).toEqual({ count: 0 })
 
     expect(cleanups).toEqual([])
   })
@@ -436,9 +436,9 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
   it("persists one idempotent terminal result/change, sets result_ready, and leaves semantic completion pending", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const attemptId = attemptIdFor(fixture, item) as never
-    await fixture.attemptResults.recordResult(owner(), {
-      attemptId,
+    const runId = runIdFor(fixture, item) as never
+    await fixture.runResults.recordResult(owner(), {
+      runId,
       workItemId: item as never,
       leaseEpoch: 1,
       state: "result",
@@ -450,8 +450,8 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         .prepare("SELECT next_cursor FROM wg_v2_change_cursors WHERE owner_user_id = ?")
         .get(owner().ownerUserId) as { next_cursor: number }
     ).next_cursor
-    await fixture.attemptResults.recordResult(owner(), {
-      attemptId,
+    await fixture.runResults.recordResult(owner(), {
+      runId,
       workItemId: item as never,
       leaseEpoch: 1,
       state: "result",
@@ -468,7 +468,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(item)).toEqual({
       lifecycle: "result_ready",
     })
-    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = ?").get(attemptId)).toEqual({
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = ?").get(runId)).toEqual({
       lifecycle: "result",
     })
     expect(
@@ -479,32 +479,32 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
   it("rejects missing or blank semantic output instead of fabricating a successful result", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const attemptId = attemptIdFor(fixture, item) as never
-    const identity = { attemptId, workItemId: item as never, leaseEpoch: 1, state: "result" as const }
+    const runId = runIdFor(fixture, item) as never
+    const identity = { runId, workItemId: item as never, leaseEpoch: 1, state: "result" as const }
 
     await expect(
-      fixture.attemptResults.recordResult(owner(), { ...identity, summary: "   ", artifacts: [] }),
+      fixture.runResults.recordResult(owner(), { ...identity, summary: "   ", artifacts: [] }),
     ).rejects.toThrow("summary must be non-empty")
     await expect(
-      fixture.attemptResults.recordResult(owner(), { ...identity, summary: "Done" } as never),
+      fixture.runResults.recordResult(owner(), { ...identity, summary: "Done" } as never),
     ).rejects.toThrow("artifacts must be an explicit array")
     expect(
       fixture.database
-        .prepare("SELECT lifecycle, terminal_result_json FROM wg_v2_attempts WHERE id = ?")
-        .get(attemptId),
+        .prepare("SELECT lifecycle, terminal_result_json FROM wg_v2_runs WHERE id = ?")
+        .get(runId),
     ).toEqual({ lifecycle: "running", terminal_result_json: null })
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(item)).toEqual({
       lifecycle: "active",
     })
   })
 
-  it("recovers an expired same-Attempt lease with a fenced epoch and close terminalizes active Attempts", async () => {
+  it("recovers an expired same-Run lease with a fenced epoch and close terminalizes active Runs", async () => {
     const fixture = setup(runtime())
     const item = await createItem(fixture)
-    const attemptId = attemptIdFor(fixture, item)
+    const runId = runIdFor(fixture, item)
     expect(
-      renewSqliteAttemptLease(fixture.database, owner(), {
-        attemptId: attemptId as never,
+      renewSqliteRunLease(fixture.database, owner(), {
+        runId: runId as never,
         expectedLeaseEpoch: 1,
         occurredAt: 1_000_000,
         durationMs: 300_000,
@@ -514,8 +514,8 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       epoch: 2,
     })
     await expect(
-      fixture.attemptResults.recordResult(owner(), {
-        attemptId: attemptId as never,
+      fixture.runResults.recordResult(owner(), {
+        runId: runId as never,
         workItemId: item as never,
         leaseEpoch: 1,
         state: "result",
@@ -524,13 +524,13 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       }),
     ).resolves.toBe(false)
     expect(
-      fixture.database.prepare("SELECT lifecycle, lease_epoch FROM wg_v2_attempts WHERE id = ?").get(attemptId),
-    ).toEqual({ lifecycle: "running", lease_epoch: 2 })
+      fixture.database.prepare("SELECT lifecycle, generation FROM wg_v2_runs WHERE id = ?").get(runId),
+    ).toEqual({ lifecycle: "running", generation: 2 })
     const streamId = streamFor(fixture, item)
     await expect(
       command(fixture, "close_stream", { streamId, expectedVersion: 1, reason: "Stopping" }),
     ).resolves.toMatchObject({ ok: true })
-    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = ?").get(attemptId)).toEqual({
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = ?").get(runId)).toEqual({
       lifecycle: "cancelled",
     })
     expect(
@@ -613,13 +613,13 @@ function streamFor(fixture: ReturnType<typeof setup>, item: string) {
 
 /**
  * A user-created Work Item in an active Stream is auto-admitted by the drain that
- * runs after every command, so its Attempt already exists once creation resolves.
+ * runs after every command, so its Run already exists once creation resolves.
  */
-function attemptIdFor(fixture: ReturnType<typeof setup>, item: string) {
+function runIdFor(fixture: ReturnType<typeof setup>, item: string) {
   const row = fixture.database
-    .prepare("SELECT id FROM wg_v2_attempts WHERE work_item_id = ? ORDER BY attempt_number DESC LIMIT 1")
+    .prepare("SELECT id FROM wg_v2_runs WHERE work_item_id = ? ORDER BY run_number DESC LIMIT 1")
     .get(item) as { id: string } | undefined
-  if (!row) throw new Error(`No admitted Attempt for Work Item ${item}`)
+  if (!row) throw new Error(`No admitted Run for Work Item ${item}`)
   return row.id
 }
 
@@ -640,7 +640,7 @@ function runtime(overrides: Partial<WorkspaceExecutionPort> = {}): WorkspaceExec
       workspaceId: "/tmp/worktree",
     }),
     launch: async (_context, input) => ({
-      sessionId: `session_${input.attemptId}` as never,
+      sessionId: `session_${input.runId}` as never,
       envelopeId: input.envelopeId,
       projectId: "/tmp/workgraph",
     }),

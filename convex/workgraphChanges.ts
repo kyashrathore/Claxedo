@@ -1,5 +1,5 @@
 import { evaluateCompletionContract } from "@claxedo/workgraph/domain"
-import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ReplacementReviewSchema, SnapshotResumeCursorError, TaskActivityPageCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, decodeSnapshotResumeCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
+import { AdmissionProposalDtoSchema, RunDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ReplacementReviewSchema, SnapshotResumeCursorError, TaskActivityPageCursorError, WorkItemRunPageCursorError, WorkItemRunPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemRunPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemRunPageCursor, decodeSnapshotResumeCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readWorkItemRunPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
 import { ConvexError, v } from "convex/values"
 import { authedQuery, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
@@ -24,11 +24,11 @@ const query = v.union(
   v.object({ kind: v.literal("stream_changes"), streamId: v.string(), limit: v.number(), after: v.optional(v.string()) }),
   v.object({ kind: v.literal("work_item"), workItemId: v.string() }),
   v.object({ kind: v.literal("work_item_detail"), workItemId: v.string() }),
-  v.object({ kind: v.literal("work_item_attempts"), workItemId: v.string(), limit: v.number(), after: v.optional(v.string()) }),
+  v.object({ kind: v.literal("work_item_runs"), workItemId: v.string(), limit: v.number(), after: v.optional(v.string()) }),
   v.object({ kind: v.literal("work_item_activity"), workItemId: v.string(), granularity: v.union(v.literal("milestones"), v.literal("progress"), v.literal("detailed")), limit: v.number(), after: v.optional(v.string()) }),
   v.object({ kind: v.literal("admission_proposal"), proposalId: v.string() }),
   v.object({ kind: v.literal("replacement_review"), streamId: v.string(), previousSource: v.object({ workSourceId: v.string(), revisionId: v.string(), contentHash: v.string() }) }),
-  v.object({ kind: v.literal("attempt"), attemptId: v.string() }),
+  v.object({ kind: v.literal("run"), runId: v.string() }),
   v.object({ kind: v.literal("decision"), decisionId: v.string() }),
   v.object({ kind: v.literal("evidence"), evidenceId: v.string() }),
   v.object({ kind: v.literal("evidence_list"), subject: evidenceSubject, limit: v.number(), after: v.optional(v.string()) }),
@@ -102,11 +102,11 @@ export async function readWorkGraphProjection(ctx: any, organization: string, ow
     const item = await owned(ctx, "workgraph_work_items", organization, owner, requireText(input.workItemId, "workItemId"))
     return item ? workItemDto(ctx, organization, item, owner) : null
   }
-  if (kind === "work_item_attempts") {
+  if (kind === "work_item_runs") {
     try {
-      return await workItemAttemptsPage(ctx, organization, owner, input)
+      return await workItemRunsPage(ctx, organization, owner, input)
     } catch (error) {
-      if (error instanceof WorkItemAttemptPageCursorError) {
+      if (error instanceof WorkItemRunPageCursorError) {
         throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
       }
       throw error
@@ -127,9 +127,9 @@ export async function readWorkGraphProjection(ctx: any, organization: string, ow
     return proposal ? admissionDto(proposal, owner) : null
   }
   if (kind === "replacement_review") return replacementReview(ctx, organization, owner, input)
-  if (kind === "attempt") {
-    const attempt = await owned(ctx, "workgraph_attempts", organization, owner, requireText(input.attemptId, "attemptId"))
-    return attempt ? attemptDetailDto(attempt, owner) : null
+  if (kind === "run") {
+    const run = await owned(ctx, "workgraph_runs", organization, owner, requireText(input.runId, "runId"))
+    return run ? runDetailDto(run, owner) : null
   }
   if (kind === "decision") {
     const decision = await owned(ctx, "workgraph_decisions", organization, owner, requireText(input.decisionId, "decisionId"))
@@ -245,35 +245,35 @@ function decodeTenantCursor(value: string) {
   }
 }
 
-async function workItemAttemptsPage(ctx: any, organization: string, owner: string, input: Record<string, any>) {
+async function workItemRunsPage(ctx: any, organization: string, owner: string, input: Record<string, any>) {
   const workItemId = requireText(input.workItemId, "workItemId")
   const limit = requireLimit(input.limit)
-  const resume = input.after === undefined ? undefined : readWorkItemAttemptPageCursor(input.after, organization, owner, workItemId)
-  const rows = await ctx.db.query("workgraph_attempts").withIndex("by_tenant_item_attempt", (q: any) => {
+  const resume = input.after === undefined ? undefined : readWorkItemRunPageCursor(input.after, organization, owner, workItemId)
+  const rows = await ctx.db.query("workgraph_runs").withIndex("by_tenant_item_run", (q: any) => {
     const range = q.eq("organization_id", organization).eq("owner_user_id", owner).eq("work_item_id", workItemId)
-    return resume ? range.gt("attempt_number", resume.attemptNumber) : range
+    return resume ? range.gt("run_number", resume.runNumber) : range
   }).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit + 1)
   const ordered = rows
-    .filter((row: any) => !resume || compareWorkItemAttemptPosition(
-      { attemptNumber: row.attempt_number, id: row.id },
-      { attemptNumber: resume.attemptNumber, id: resume.attemptId },
+    .filter((row: any) => !resume || compareWorkItemRunPosition(
+      { runNumber: row.run_number, id: row.id },
+      { runNumber: resume.runNumber, id: resume.runId },
     ) > 0)
-    .sort((left: any, right: any) => compareWorkItemAttemptPosition(
-      { attemptNumber: left.attempt_number, id: left.id },
-      { attemptNumber: right.attempt_number, id: right.id },
+    .sort((left: any, right: any) => compareWorkItemRunPosition(
+      { runNumber: left.run_number, id: left.id },
+      { runNumber: right.run_number, id: right.id },
     ))
   const page = ordered.slice(0, limit)
   const hasMore = ordered.length > limit
-  return WorkItemAttemptPageSchema.parse({
-    attempts: page.map((row: any) => attemptDetailDto(row, owner)),
+  return WorkItemRunPageSchema.parse({
+    runs: page.map((row: any) => runDetailDto(row, owner)),
     hasMore,
     ...(hasMore ? {
-      nextCursor: createWorkItemAttemptPageCursor({
+      nextCursor: createWorkItemRunPageCursor({
         organizationId: organization,
         ownerUserId: owner,
         workItemId,
-        attemptNumber: page.at(-1)!.attempt_number,
-        attemptId: page.at(-1)!.id,
+        runNumber: page.at(-1)!.run_number,
+        runId: page.at(-1)!.id,
       }),
     } : {}),
   })
@@ -373,7 +373,7 @@ async function attentionProjectionItem(ctx: any, organization: string, owner: st
   if (entry.kind === "admission_proposal") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: admissionDto(row, owner) })
   if (entry.kind === "decision") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: await decisionDto(ctx, organization, row, owner) })
   if (entry.kind === "work_item") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: await workItemDto(ctx, organization, row, owner) })
-  if (entry.kind === "attempt") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: attemptDto(row, owner) })
+  if (entry.kind === "run") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: runDto(row, owner) })
   throw new Error(`Unsupported Attention projection kind ${String(entry.kind)}`)
 }
 async function evidencePage(ctx: any, organization: string, owner: string, subject: EvidenceSubject, input: Record<string, any>) {
@@ -499,7 +499,7 @@ async function snapshot(ctx: any, organization: string, owner: string, input: Re
     { table: "workgraph_streams", recordType: "stream", dto: (row: any) => streamDto(row, owner) },
     { table: "workgraph_outcomes", recordType: "outcome", dto: (row: any) => outcomeDto(row, owner) },
     { table: "workgraph_work_items", recordType: "work_item", dto: (row: any) => workItemDto(ctx, organization, row, owner) },
-    { table: "workgraph_attempts", recordType: "attempt", dto: (row: any) => attemptDto(row, owner) },
+    { table: "workgraph_runs", recordType: "run", dto: (row: any) => runDto(row, owner) },
     { table: "workgraph_decisions", recordType: "decision", dto: (row: any) => decisionDto(ctx, organization, row, owner) },
     { table: "workgraph_admission_proposals", recordType: "admission_proposal", dto: (row: any) => admissionDto(row, owner) },
   ]
@@ -670,34 +670,34 @@ async function workItemDto(ctx: any, organization: string, row: any, owner: stri
     ...(row.execution_defaults === undefined ? {} : { executionDefaults: row.execution_defaults }),
     ...(row.created_by_actor_type === undefined ? {} : { createdByActorType: row.created_by_actor_type }),
     ...(row.created_by_actor_id === undefined ? {} : { createdByActorId: row.created_by_actor_id }),
-    ...(row.origin_attempt_id === undefined ? {} : { originAttemptId: row.origin_attempt_id }),
+    ...(row.origin_run_id === undefined ? {} : { originRunId: row.origin_run_id }),
     ...(row.abandoned_at === undefined ? {} : { abandonedAt: row.abandoned_at }), ...(row.abandon_reason === undefined ? {} : { abandonReason: row.abandon_reason }),
   }
 }
 
-function attemptDto(row: any, owner: string) {
+function runDto(row: any, owner: string) {
   return {
-    recordType: "attempt", ...base(row, owner), id: row.id, streamId: row.stream_id, workItemId: row.work_item_id,
-    attemptNumber: row.attempt_number, state: row.state, resolvedExecution: row.resolved_execution, admittedAt: row.admitted_at,
+    recordType: "run", ...base(row, owner), id: row.id, streamId: row.stream_id, workItemId: row.work_item_id,
+    runNumber: row.run_number, generation: row.generation, state: row.state, resolvedExecution: row.resolved_execution, admittedAt: row.admitted_at,
     executionKind: row.execution_kind ?? "managed",
     ...(row.started_at === undefined ? {} : { startedAt: row.started_at }), ...(row.finished_at === undefined ? {} : { finishedAt: row.finished_at }),
     ...(row.result === undefined ? {} : { result: {
       summary: row.result.summary,
       artifactRefs: row.result.artifactRefs ?? row.result.artifacts,
       finishedAt: row.result.finishedAt ?? row.finished_at,
-    } }), ...(row.attention_reason === undefined ? {} : { attentionReason: row.attention_reason }),
+    } }), ...(row.parked_reason === undefined ? {} : { parkedReason: row.parked_reason }),
     sourceRevisionRefs: refs(row.source_revision_refs),
   }
 }
 
-function attemptDetailDto(row: any, owner: string) {
+function runDetailDto(row: any, owner: string) {
   const executionReferences = {
     ...(row.session_id === undefined ? {} : { sessionId: row.session_id }),
     ...(row.envelope_id === undefined ? {} : { workspaceId: row.envelope_id }),
     ...(row.child_workspace_id === undefined ? {} : { childWorkspaceId: row.child_workspace_id }),
   }
-  return AttemptDetailDtoSchema.parse({
-    attempt: attemptDto(row, owner),
+  return RunDetailDtoSchema.parse({
+    run: runDto(row, owner),
     ...(Object.keys(executionReferences).length ? { executionReferences } : {}),
   })
 }
@@ -736,7 +736,7 @@ function admissionDto(row: any, owner: string) {
     state: "planning_failed",
     generation: {
       method: "planning_failed",
-      attempt: 0,
+      run: 0,
       reason: "Retired deterministic or incomplete admission plan is non-authoritative",
       invalidatedAt: row.updated_at,
       retryable: Boolean(row.source),

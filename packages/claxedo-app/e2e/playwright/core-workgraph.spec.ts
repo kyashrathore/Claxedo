@@ -446,11 +446,11 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
         return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
       }, { timeout: 30_000 }).toBe("completed").catch(async (error) => {
         const workItem = await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)
-        const attempts = await readJson<AttemptPageResponse>(
+        const runs = await readJson<RunPageResponse>(
           request,
-          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
         )
-        throw new Error(`${String(error)}\nWork item diagnostics: ${JSON.stringify(workItem)}\nAttempt diagnostics: ${JSON.stringify(attempts)}\nExecution diagnostics: ${JSON.stringify(harness.controlledExecutionDiagnostics())}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+        throw new Error(`${String(error)}\nWork item diagnostics: ${JSON.stringify(workItem)}\nRun diagnostics: ${JSON.stringify(runs)}\nExecution diagnostics: ${JSON.stringify(harness.controlledExecutionDiagnostics())}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
       })
 
       const session = harness.realSessionEvidence().find((record) => record.title === taskTitle)
@@ -618,7 +618,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       execution: streamExecution(),
     })
     const streamId = String(stream.value.streamId)
-    harness.queueExecutionResults({ state: "failed", message: "Controlled first attempt failed" })
+    harness.queueExecutionResults({ state: "failed", message: "Controlled first run failed" })
     const task = await command(request, {
       version: 1,
       type: "create_work_item",
@@ -629,7 +629,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     const workItemId = String(task.value.workItemId)
     await page.goto("/workgraph")
     // The owner-authored task is approved on creation; the active stream's drain
-    // launches it automatically (reconcile drives the first attempt).
+    // launches it automatically (reconcile drives the first run).
     await expect(page.getByRole("article", { name: "Stream Execution inspection" })).toBeVisible()
     await expect
       .poll(async () => {
@@ -653,7 +653,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await expect(dialog).toBeVisible()
     await expectNoSeriousAxeViolations(page, '[role="dialog"]')
     await expect(dialog.getByText("#1 · failed", { exact: true })).toBeVisible()
-    await expect(dialog.getByText("Controlled first attempt failed", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("Controlled first run failed", { exact: true })).toBeVisible()
 
     harness.queueExecutionResults({
       state: "succeeded",
@@ -663,11 +663,11 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await dialog.getByRole("button", { name: "Run again" }).click()
     await expect
       .poll(async () => {
-        const attempts = await readJson<AttemptPageResponse>(
+        const runs = await readJson<RunPageResponse>(
           request,
-          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
         )
-        return attempts.attempts.at(-1)?.attempt.state
+        return runs.runs.at(-1)?.run.state
       })
       .toBe("running")
     await expect(harness.runReconcile()).resolves.toContainEqual({
@@ -675,7 +675,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       awaitingExplicitCompletion: true,
     })
     await expect(
-      harness.completeControlledAttempt(
+      harness.completeControlledRun(
         workItemId,
         "Retry completed in the retained worktree",
         ["commit:retry-e2e"],
@@ -689,12 +689,12 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       })
       .toBe("result_ready")
       .catch(async (error) => {
-        const attempts = await readJson<unknown>(
+        const runs = await readJson<unknown>(
           request,
-          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
         )
         throw new Error(
-          `${String(error)}\nAttempts: ${JSON.stringify(attempts)}\nControlled runtime: ${JSON.stringify(harness.controlledExecutionDiagnostics())}`,
+          `${String(error)}\nRuns: ${JSON.stringify(runs)}\nControlled runtime: ${JSON.stringify(harness.controlledExecutionDiagnostics())}`,
         )
       })
     await expect
@@ -754,8 +754,8 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       await harness.runReconcile()
       return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
     }, { timeout: 10_000 }).toBe("completed").catch(async (error) => {
-      const attempts = await readJson<unknown>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`)
-      throw new Error(`${String(error)}\nAttempts: ${JSON.stringify(attempts)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      const runs = await readJson<unknown>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`)
+      throw new Error(`${String(error)}\nRuns: ${JSON.stringify(runs)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
     })
 
     const session = harness.realSessionEvidence()[0]
@@ -826,8 +826,8 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       return Promise.all(workItemIds.map(async (workItemId) =>
         (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state))
     }, { timeout: 20_000 }).toEqual(["completed", "completed"]).catch(async (error) => {
-      const attempts = harness.embedded.database.prepare(
-        "SELECT id, work_item_id, lifecycle, session_id FROM wg_v2_attempts ORDER BY created_at",
+      const runs = harness.embedded.database.prepare(
+        "SELECT id, work_item_id, lifecycle, session_id FROM wg_v2_runs ORDER BY created_at",
       ).all()
       const due = harness.embedded.database.prepare(
         "SELECT id, job_type, status, last_error, lease_epoch, due_at FROM wg_v2_due_jobs",
@@ -835,7 +835,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       const status = harness.embedded.database.prepare(
         "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
       ).get(streamId)
-      throw new Error(`${String(error)}\nAttempts: ${JSON.stringify(attempts)}\nDue jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      throw new Error(`${String(error)}\nRuns: ${JSON.stringify(runs)}\nDue jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
     })
     await expect.poll(async () => {
       await harness.runReconcile()
@@ -1244,46 +1244,46 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await expect(page.getByText("worktree · from HEAD", { exact: true })).toBeVisible()
     await expect.poll(async () => {
       await harness.runReconcile()
-      const pages = await Promise.all(workItemIds.map((workItemId) => readJson<AttemptPageResponse>(
+      const pages = await Promise.all(workItemIds.map((workItemId) => readJson<RunPageResponse>(
         request,
-        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
       )))
-      return pages.flatMap((entry) => entry.attempts).map((entry) => entry.attempt.state)
+      return pages.flatMap((entry) => entry.runs).map((entry) => entry.run.state)
     }).toEqual(["running"])
     await expect(page.getByRole("button", { name: /Approve/ })).toHaveCount(0)
 
     await page.getByRole("button", { name: `Stop task ${taskTitles[0]}` }).click()
     await expect.poll(async () => {
       await harness.runReconcile()
-      const attempts = await readJson<AttemptPageResponse>(
+      const runs = await readJson<RunPageResponse>(
         request,
-        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[0]!)}/attempts?limit=10`,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[0]!)}/runs?limit=10`,
       )
-      return attempts.attempts.at(-1)?.attempt.state
+      return runs.runs.at(-1)?.run.state
     }).toBe("cancelled")
     await page.getByRole("button", { name: `Open task ${taskTitles[0]}` }).hover()
     await expect(page.getByText("Stopped · Retry", { exact: true })).toBeVisible()
     await page.getByRole("button", { name: `Retry task ${taskTitles[0]}` }).click()
     await expect.poll(async () => {
       await harness.runReconcile()
-      const attempts = await readJson<AttemptPageResponse>(
+      const runs = await readJson<RunPageResponse>(
         request,
-        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[0]!)}/attempts?limit=10`,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[0]!)}/runs?limit=10`,
       )
-      return attempts.attempts.length === 2 ? attempts.attempts.at(-1)?.attempt.state : undefined
+      return runs.runs.length === 2 ? runs.runs.at(-1)?.run.state : undefined
     }).toBe("running")
-    await expect(harness.completeControlledAttempt(
+    await expect(harness.completeControlledRun(
       workItemIds[0]!,
       "Stopped task resumed and reached its review boundary",
       ["commit:serialized-first"],
     )).resolves.toMatchObject({ ok: true })
     await expect.poll(async () => {
       await harness.runReconcile()
-      const attempts = await readJson<AttemptPageResponse>(
+      const runs = await readJson<RunPageResponse>(
         request,
-        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[1]!)}/attempts?limit=10`,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[1]!)}/runs?limit=10`,
       )
-      return attempts.attempts.at(-1)?.attempt.state
+      return runs.runs.at(-1)?.run.state
     }).toBe("running")
 
     // Re-enter from the durable snapshot after the controlled completion. The
@@ -1297,11 +1297,11 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await panel.getByRole("button", { name: `Stop task ${taskTitles[1]}` }).click()
     await expect.poll(async () => {
       await harness.runReconcile()
-      const attempts = await readJson<AttemptPageResponse>(
+      const runs = await readJson<RunPageResponse>(
         request,
-        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[1]!)}/attempts?limit=10`,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[1]!)}/runs?limit=10`,
       )
-      return attempts.attempts.at(-1)?.attempt.state
+      return runs.runs.at(-1)?.run.state
     }).toBe("cancelled")
     await expect(panel.getByText("Stopped · Retry", { exact: true })).toBeVisible()
     harness.assertHealthy()
@@ -1393,11 +1393,11 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     await harness.runReconcile()
     await expect
       .poll(async () => {
-        const attempts = await readJson<AttemptPageResponse>(
+        const runs = await readJson<RunPageResponse>(
           request,
-          `/api/workgraph/work-items/${encodeURIComponent(String(shippedTask.value.workItemId))}/attempts?limit=10`,
+          `/api/workgraph/work-items/${encodeURIComponent(String(shippedTask.value.workItemId))}/runs?limit=10`,
         )
-        return attempts.attempts.at(-1)?.attempt.state
+        return runs.runs.at(-1)?.run.state
       })
       .toBe("running")
     await expect(harness.runReconcile()).resolves.toContainEqual({
@@ -1405,7 +1405,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       awaitingExplicitCompletion: true,
     })
     await expect(
-      harness.completeControlledAttempt(
+      harness.completeControlledRun(
         String(shippedTask.value.workItemId),
         "Merged through the real retained worktree",
         ["pr:482"],
@@ -1536,7 +1536,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     harness.assertHealthy()
   })
 
-  test("continues an unrelated branch, shares one Stream envelope, and requires evidence beyond successful Attempts", async ({
+  test("continues an unrelated branch, shares one Stream envelope, and requires evidence beyond successful Runs", async ({
     page,
     request,
   }) => {
@@ -1638,19 +1638,19 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       })
       .toBe("result_ready")
 
-    const unrelatedAttempts = await readJson<AttemptPageResponse>(
+    const unrelatedRuns = await readJson<RunPageResponse>(
       request,
-      `/api/workgraph/work-items/${encodeURIComponent(unrelatedId)}/attempts?limit=100`,
+      `/api/workgraph/work-items/${encodeURIComponent(unrelatedId)}/runs?limit=100`,
     )
-    const affectedAttempts = await readJson<AttemptPageResponse>(
+    const affectedRuns = await readJson<RunPageResponse>(
       request,
-      `/api/workgraph/work-items/${encodeURIComponent(affectedId)}/attempts?limit=100`,
+      `/api/workgraph/work-items/${encodeURIComponent(affectedId)}/runs?limit=100`,
     )
-    expect(unrelatedAttempts.attempts).toHaveLength(1)
-    expect(affectedAttempts.attempts).toHaveLength(1)
-    expect(unrelatedAttempts.attempts[0]?.executionReferences?.workspaceId).toBe(harness.worktreeDirectory(streamId))
-    expect(affectedAttempts.attempts[0]?.executionReferences?.workspaceId).toBe(
-      unrelatedAttempts.attempts[0]?.executionReferences?.workspaceId,
+    expect(unrelatedRuns.runs).toHaveLength(1)
+    expect(affectedRuns.runs).toHaveLength(1)
+    expect(unrelatedRuns.runs[0]?.executionReferences?.workspaceId).toBe(harness.worktreeDirectory(streamId))
+    expect(affectedRuns.runs[0]?.executionReferences?.workspaceId).toBe(
+      unrelatedRuns.runs[0]?.executionReferences?.workspaceId,
     )
     expect(fs.existsSync(path.join(harness.worktreeDirectory(streamId), ".git"))).toBe(true)
 
@@ -1659,7 +1659,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       type: "record_evidence",
       subject: { type: "work_item", workItemId: unrelatedId as never },
       requirementId: "manifest-test",
-      sourceAttemptId: unrelatedAttempts.attempts[0]!.attempt.id as never,
+      sourceRunId: unrelatedRuns.runs[0]!.run.id as never,
       evidence: {
         kind: "test_result",
         summary: "Manifest validation passed",
@@ -1769,18 +1769,18 @@ async function completeControlledExecution(
 ) {
   await expect
     .poll(async () => {
-      const attempts = await readJson<AttemptPageResponse>(
+      const runs = await readJson<RunPageResponse>(
         request,
-        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
       )
-      return attempts.attempts.at(-1)?.attempt.state
+      return runs.runs.at(-1)?.run.state
     })
     .toBe("running")
   await expect(harness.runReconcile()).resolves.toContainEqual({
     settled: false,
     awaitingExplicitCompletion: true,
   })
-  const result = await harness.completeControlledAttempt(workItemId, summary, artifacts)
+  const result = await harness.completeControlledRun(workItemId, summary, artifacts)
   expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
 }
 
@@ -2017,10 +2017,10 @@ type CandidatePageResponse = Readonly<{
 }>
 type CandidateResponse = CandidatePageResponse["candidates"][number]
 type WorkItemResponse = Readonly<{ version: number; state: string }>
-type AttemptPageResponse = Readonly<{
-  attempts: Array<
+type RunPageResponse = Readonly<{
+  runs: Array<
     Readonly<{
-      attempt: Readonly<{ id: string; state: string }>
+      run: Readonly<{ id: string; state: string }>
       executionReferences?: Readonly<{ workspaceId?: string }>
     }>
   >

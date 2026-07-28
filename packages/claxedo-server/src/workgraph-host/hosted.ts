@@ -60,14 +60,14 @@ import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNames
 import type { WorkgraphChangedEvent } from "../bus"
 
 // Command types whose successful application enqueues a control-effect outbox
-// row (interrupt_attempt / finalize_stream / cleanup_stream). These get an
+// row (interrupt_run / finalize_stream / cleanup_stream). These get an
 // extra nudge to the dedicated fast control lane. Conservative by design: a
 // command absent here still drains via the settle lane + 15-min sweep.
 const CONTROL_EFFECT_COMMAND_TYPES = new Set<WorkGraphCommandRequest["command"]["type"]>([
   "delete_stream",
   "close_stream",
   "set_stream_lifecycle",
-  "cancel_attempt",
+  "cancel_run",
   "cancel_work_item",
   "confirm_admission",
 ])
@@ -242,7 +242,7 @@ export function createHostedWorkGraph(
         if (!tenant) throw new Error("Hosted WorkGraph settlement tenant is unavailable")
         dispatcher.nudge(tenant)
         // Commands that enqueue a control effect (Stream delete/close/lifecycle,
-        // Attempt/Task cancel, replace-mode admission → interrupt/finalize/cleanup
+        // Run/Task cancel, replace-mode admission → interrupt/finalize/cleanup
         // outbox rows) ALSO nudge the dedicated fast control lane so the drain
         // does not queue behind this tenant's launch-provision reconcile. Missing
         // a type here only falls back to the settle lane + sweep — never a

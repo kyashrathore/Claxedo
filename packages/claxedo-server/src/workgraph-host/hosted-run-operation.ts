@@ -5,11 +5,11 @@ import { z } from "zod"
 import { verifyRuntimeAccessToken, WorkspaceRelayAuthError, type RelayKey } from "@claxedo/workspace-relay"
 import {
   CommandResultSchema,
-  masterAttemptId,
+  masterRunId,
   masterSessionId,
-  WorkGraphAttemptOperationRequestSchema,
+  WorkGraphRunOperationRequestSchema,
   type CommandResult,
-  type WorkGraphAttemptOperationRequest,
+  type WorkGraphRunOperationRequest,
 } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
 import { HostedTranscriptRetentionError, workGraphWorkspaceId } from "./hosted-runtime"
@@ -26,13 +26,13 @@ type TranscriptRetention = (input: Readonly<{
   sessionId: string
 }>) => Promise<void>
 
-export function createHostedAttemptOperationExecutor(input: Readonly<{
+export function createHostedRunOperationExecutor(input: Readonly<{
   env: HostedWorkerEnv
   executor?: Executor
   /**
-   * When composed, complete_attempt is accepted only after the Session
+   * When composed, complete_run is accepted only after the Session
    * transcript is durably retained in the authority — a failed retention
-   * rejects the completion as retryable instead of settling the Attempt
+   * rejects the completion as retryable instead of settling the Run
    * without its transcript.
    */
   retainTranscript?: TranscriptRetention
@@ -50,7 +50,7 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
   const executor = input.executor ?? convexExecutor(url!)
   return async (
     principal: Readonly<{ ownerUserId: string; orgId: string }>,
-    request: WorkGraphAttemptOperationRequest,
+    request: WorkGraphRunOperationRequest,
   ): Promise<CommandResult> => {
     if (request.operation.type === "complete" && input.retainTranscript) {
       await input.retainTranscript({
@@ -84,17 +84,17 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
         actor_type: "agent",
         actor_id: request.operation.type === "update_stream_notes" || request.operation.type === "notify_owner"
           ? request.identity.sessionId
-          : request.identity.attemptId,
+          : request.identity.runId,
         operation_id: request.operation.operationId,
-        request_id: `attempt_tool_${crypto.randomUUID()}`,
+        request_id: `run_tool_${crypto.randomUUID()}`,
         command: request.operation.type === "record_checkpoint"
           ? {
               version: 1,
-              type: "record_attempt_checkpoint",
-              attemptId: request.identity.attemptId,
+              type: "record_run_checkpoint",
+              runId: request.identity.runId,
               sessionId: request.identity.sessionId,
               workspaceId: request.identity.workspaceId,
-              ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+              generation: request.identity.generation,
               level: request.operation.level,
               summary: request.operation.summary,
               evidenceIds: request.operation.evidenceIds,
@@ -102,11 +102,11 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
           : request.operation.type === "complete"
             ? {
               version: 1,
-              type: "complete_attempt",
-              attemptId: request.identity.attemptId,
+              type: "complete_run",
+              runId: request.identity.runId,
               sessionId: request.identity.sessionId,
               workspaceId: request.identity.workspaceId,
-              ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+              generation: request.identity.generation,
               summary: request.operation.summary,
               artifacts: request.operation.artifacts,
               evidence: request.operation.evidence,
@@ -148,15 +148,15 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
  *  workspaceId; the hosted master for a Stream lives in the deterministic
  *  per-stream workspace, so the claimed identity must resolve to exactly that
  *  workspace. Residual risk until per-principal runtime tokens land (plan
- *  2026-07-18-005 "Decisions required": master git identity): worker Attempts
+ *  2026-07-18-005 "Decisions required": master git identity): worker Runs
  *  of the SAME Stream share this workspace and could still claim its master
  *  identity — org-wide forgery is closed, same-stream is not. */
 async function requireMasterIdentity(
   principal: Readonly<{ ownerUserId: string; orgId: string }>,
-  request: WorkGraphAttemptOperationRequest,
+  request: WorkGraphRunOperationRequest,
 ) {
   const streamId = request.identity.streamId
-  if (!streamId || request.identity.sessionId !== masterSessionId(streamId) || request.identity.attemptId !== masterAttemptId(streamId)) {
+  if (!streamId || request.identity.sessionId !== masterSessionId(streamId) || request.identity.runId !== masterRunId(streamId)) {
     throw new Error("Master operation requires an exact hosted master identity")
   }
   const masterWorkspaceId = await workGraphWorkspaceId(principal.orgId, principal.ownerUserId, streamId)
@@ -182,9 +182,9 @@ async function readStreamVersion(
   return value.version as number
 }
 
-export function createHostedAttemptOperationHandler(input: Readonly<{
+export function createHostedRunOperationHandler(input: Readonly<{
   env: HostedWorkerEnv
-  execute: NonNullable<ReturnType<typeof createHostedAttemptOperationExecutor>>
+  execute: NonNullable<ReturnType<typeof createHostedRunOperationExecutor>>
   runtimeKey?: Promise<RelayKey>
 }>) {
   let runtimeKey = input.runtimeKey
@@ -202,11 +202,11 @@ export function createHostedAttemptOperationHandler(input: Readonly<{
       if (!token) return Response.json({ error: { code: "runtime_access_token_required" } }, { status: 401 })
       const declaredLength = Number(request.headers.get("content-length") ?? "0")
       if (Number.isFinite(declaredLength) && declaredLength > 256 * 1024) {
-        return Response.json({ error: { code: "attempt_operation_too_large" } }, { status: 413 })
+        return Response.json({ error: { code: "run_operation_too_large" } }, { status: 413 })
       }
       const raw = await request.text()
-      if (raw.length > 256 * 1024) return Response.json({ error: { code: "attempt_operation_too_large" } }, { status: 413 })
-      const body = WorkGraphAttemptOperationRequestSchema.parse(JSON.parse(raw))
+      if (raw.length > 256 * 1024) return Response.json({ error: { code: "run_operation_too_large" } }, { status: 413 })
+      const body = WorkGraphRunOperationRequestSchema.parse(JSON.parse(raw))
       runtimeKey ??= loadRuntimeKey(input.env)
       const claims = await verifyRuntimeToken(token, runtimeKey, body.identity.workspaceId).catch((error) => {
         if (error instanceof RuntimeAccessTokenVerificationUnavailableError) runtimeKey = undefined
@@ -237,7 +237,7 @@ export function createHostedAttemptOperationHandler(input: Readonly<{
 
 function operationFailure(error: unknown) {
   if (error instanceof SyntaxError || error instanceof z.ZodError) {
-    return failure(400, "attempt_operation_invalid_request", "Attempt operation request is invalid", false)
+    return failure(400, "run_operation_invalid_request", "Run operation request is invalid", false)
   }
   if (error instanceof WorkspaceRelayAuthError) {
     const mismatch = error.code === "relay_token_workspace_mismatch" || error.code === "relay_token_host_mismatch"
@@ -251,7 +251,7 @@ function operationFailure(error: unknown) {
   if (error instanceof HostedTranscriptRetentionError) {
     return failure(503, error.code, error.message, true)
   }
-  return failure(500, "attempt_operation_failed", "Attempt operation failed", false)
+  return failure(500, "run_operation_failed", "Run operation failed", false)
 }
 
 class RuntimeAccessTokenVerificationUnavailableError extends Error {

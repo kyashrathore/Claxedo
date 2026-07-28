@@ -239,11 +239,11 @@ describe("WorkGraph northbound HTTP router", () => {
       reviewQuery.set("contentHash", sourceRevision.contentHash)
       reviewQuery.set("ownerUserId", "other")
       expect((await app.request(`/streams/${createdBody.value.streamId}/replacement-review?${reviewQuery}`)).status).toBe(400)
-      expect(await (await app.request(`/work-items/${itemBody.value.workItemId}/attempts?limit=10`)).json()).toEqual({
-        attempts: [],
+      expect(await (await app.request(`/work-items/${itemBody.value.workItemId}/runs?limit=10`)).json()).toEqual({
+        runs: [],
         hasMore: false,
       })
-      expect((await app.request(`/work-items/${itemBody.value.workItemId}/attempts?after=malformed&limit=10`)).status).toBe(409)
+      expect((await app.request(`/work-items/${itemBody.value.workItemId}/runs?after=malformed&limit=10`)).status).toBe(409)
       expect(await (await app.request(`/work-items/${itemBody.value.workItemId}/activity?limit=10`)).json()).toMatchObject({
         entries: expect.any(Array),
         hasMore: false,
@@ -566,8 +566,8 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
     "create_work_source", "revise_work_source", "create_stream", "update_stream", "create_outcome", "update_outcome",
     "create_work_item", "update_work_item", "propose_admission", "retry_admission_planning", "dismiss_admission",
     "reopen_admission", "confirm_admission", "set_stream_lifecycle",
-    "set_stream_visibility", "approve_work_item", "reject_work_item", "approve_work_items", "cancel_attempt", "retry_work_item",
-    "propose_decision", "answer_decision", "dismiss_decision", "record_attempt_checkpoint", "complete_attempt",
+    "set_stream_visibility", "approve_work_item", "reject_work_item", "approve_work_items", "cancel_run", "retry_work_item",
+    "propose_decision", "answer_decision", "dismiss_decision", "record_run_checkpoint", "complete_run",
     "record_evidence", "close_outcome", "reopen_outcome",
     "close_stream", "delete_stream",
   ].map((type) => [type, execute])) as WorkGraphCommandHandlers
@@ -618,11 +618,11 @@ function createFixture(options?: Readonly<{ reportError?: (report: WorkGraphHttp
         return stream?.ownerUserId === context.ownerUserId ? stream : undefined
       } },
       proposals: { read: async () => undefined, replacementReview: async () => undefined },
-      attempts: { read: async () => undefined },
+      runs: { read: async () => undefined },
       decisions: { read: async () => undefined },
       workItems: {
         readDetail: async () => undefined,
-        listAttempts: async () => ({ attempts: [], hasMore: false }),
+        listRuns: async () => ({ runs: [], hasMore: false }),
         listActivity: async () => ({ entries: [], hasMore: false }),
       },
       sources: {

@@ -1,4 +1,4 @@
-/** Connection-authorized issue connectors used by WorkGraph v2 intake and Attempt tools. */
+/** Connection-authorized issue connectors used by WorkGraph v2 intake and Run tools. */
 export type {
   SourceIssue,
   SourceIssueAuthorization,

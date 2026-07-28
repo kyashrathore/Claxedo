@@ -24,7 +24,7 @@ Reusable Stream/Outcome templates, loadout marketplaces, and shared operating pa
 
 ## Durable external waits
 
-Time, webhook, approval, and provider-event suspension can extend Decisions and triggers after Attempt reconciliation is production-ready.
+Time, webhook, approval, and provider-event suspension can extend Decisions and triggers after Run reconciliation is production-ready.
 
 ## Additional storage adapters
 

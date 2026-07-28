@@ -28,7 +28,7 @@ const resolvedProfile = {
 afterEach(() => databases.splice(0).forEach((database) => database.close()))
 
 describe("SQLite WorkGraph public commands", () => {
-  it("records the active origin Attempt for Tasks discovered by an attached agent Session", async () => {
+  it("records the active origin Run for Tasks discovered by an attached agent Session", async () => {
     const fixture = await setup()
     const streamId = await createStream(fixture)
     const parentWorkItemId = await createItem(fixture, streamId, undefined, "Inspect the repository")
@@ -64,13 +64,13 @@ describe("SQLite WorkGraph public commands", () => {
     const discoveredId = resultId(discovered as Awaited<ReturnType<typeof execute>>, "workItemId")
 
     expect(fixture.database.prepare(`
-      SELECT lifecycle, created_by_actor_type, created_by_actor_id, origin_attempt_id
+      SELECT lifecycle, created_by_actor_type, created_by_actor_id, origin_run_id
       FROM wg_v2_work_items WHERE organization_id = ? AND owner_user_id = ? AND id = ?
     `).get(owner().organizationId, owner().ownerUserId, discoveredId)).toMatchObject({
       lifecycle: "pending_approval",
       created_by_actor_type: "agent",
       created_by_actor_id: sessionId,
-      origin_attempt_id: attached.currentAttemptId,
+      origin_run_id: attached.currentRunId,
     })
   })
 
@@ -234,7 +234,7 @@ describe("SQLite WorkGraph public commands", () => {
     await expect(fixture.adapter.service.query(owner(), "attention", "list", { limit: 50 })).resolves.toMatchObject({ items: [] })
   })
 
-  it("admits only one live Attempt per Stream", async () => {
+  it("admits only one live Run per Stream", async () => {
     const fixture = await setup(replacementExecution({}))
     const streamId = resultId(await execute(fixture, "create_stream", {
       title: "Serialized Stream",
@@ -244,7 +244,7 @@ describe("SQLite WorkGraph public commands", () => {
     const second = await createItem(fixture, streamId, undefined, "Second")
 
     await vi.waitFor(() => expect(fixture.database.prepare(`
-        SELECT work_item_id, lifecycle FROM wg_v2_attempts
+        SELECT work_item_id, lifecycle FROM wg_v2_runs
         WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND stream_id = ?
         ORDER BY created_at, id
       `).all(streamId)).toEqual([{ work_item_id: first, lifecycle: "running" }]))
@@ -258,7 +258,7 @@ describe("SQLite WorkGraph public commands", () => {
     const cancelled: string[] = []
     const cleaned: Array<{ streamId: string; reason: string }> = []
     const execution = replacementExecution({
-      cancel: async (_context, input) => { cancelled.push(input.attemptId) },
+      cancel: async (_context, input) => { cancelled.push(input.runId) },
       cleanup: async (_context, input) => {
         cleaned.push({ streamId: input.streamId, reason: input.reason })
         await cleanupFinished
@@ -275,15 +275,15 @@ describe("SQLite WorkGraph public commands", () => {
     fixture.database.prepare("UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?")
       .run(JSON.stringify({ id: "envelope_replace" }), replacement.streamId)
     fixture.database.prepare(`
-      INSERT INTO wg_v2_attempts
-        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json,
-          envelope_id, session_id, lease_epoch, created_at, updated_at, started_at)
-      VALUES ('organization', 'owner', 'attempt_replace', ?, ?, 1, 'running', ?, 'envelope_replace', 'session_replace', 1, 1, 1, 1)
+      INSERT INTO wg_v2_runs
+        (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle, resolved_execution_profile_json,
+          envelope_id, session_id, generation, created_at, updated_at, started_at)
+      VALUES ('organization', 'owner', 'run_replace', ?, ?, 1, 'running', ?, 'envelope_replace', 'session_replace', 1, 1, 1, 1)
     `).run(replacement.streamId, replacement.workItemId, JSON.stringify(resolvedProfile))
     fixture.database.prepare(`
       INSERT INTO wg_v2_leases
         (organization_id, owner_user_id, id, resource_type, resource_id, holder_id, epoch, expires_at, created_at, updated_at)
-      VALUES ('organization', 'owner', 'lease_replace', 'work_item', ?, 'attempt_replace', 1, 999999, 1, 1)
+      VALUES ('organization', 'owner', 'lease_replace', 'work_item', ?, 'run_replace', 1, 999999, 1, 1)
     `).run(replacement.workItemId)
 
     await expect(execute(fixture, "confirm_admission", {
@@ -300,19 +300,19 @@ describe("SQLite WorkGraph public commands", () => {
 
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(replacement.workItemId)).toEqual({ lifecycle: "abandoned" })
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(completedId)).toEqual({ lifecycle: "completed" })
-    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = 'attempt_replace'").get()).toEqual({ lifecycle: "attention" })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = 'run_replace'").get()).toEqual({ lifecycle: "parked" })
     expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_leases WHERE id = 'lease_replace'").get()).toEqual({ count: 0 })
     expect(fixture.database.prepare("SELECT state FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get()).toEqual({ state: "claimed" })
     const replacementId = (fixture.database.prepare("SELECT id FROM wg_v2_work_items WHERE title = 'Replacement Task'").get() as { id: string }).id
-    // The durable reset barrier blocks admission: the drain admits no Attempt for the replacement item yet.
-    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(replacementId))
+    // The durable reset barrier blocks admission: the drain admits no Run for the replacement item yet.
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs WHERE work_item_id = ?").get(replacementId))
       .toEqual({ count: 0 })
 
     finishCleanup()
     await vi.waitFor(() => {
-      expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = 'attempt_replace'").get()).toEqual({ lifecycle: "cancelled" })
+      expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = 'run_replace'").get()).toEqual({ lifecycle: "cancelled" })
     })
-    expect(cancelled).toEqual(["attempt_replace"])
+    expect(cancelled).toEqual(["run_replace"])
     expect(cleaned).toEqual([{ streamId: replacement.streamId, reason: "replace" }])
     expect(fixture.database.prepare("SELECT state FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get()).toEqual({ state: "completed" })
     expect(ChangeEnvelopeSchema.array().parse(await fixture.adapter.service.query(owner(), "changes", "list", { limit: 100 })).at(-1))
@@ -362,12 +362,12 @@ describe("SQLite WorkGraph public commands", () => {
   })
 
   it("retries a transient replacement cleanup without restarting the SQLite runtime", async () => {
-    let cleanupAttempts = 0
+    let cleanupRuns = 0
     const fixture = await setup(
       replacementExecution({
         cleanup: async () => {
-          cleanupAttempts += 1
-          if (cleanupAttempts === 1) throw new Error("transient cleanup failure")
+          cleanupRuns += 1
+          if (cleanupRuns === 1) throw new Error("transient cleanup failure")
         },
       }),
       5,
@@ -388,7 +388,7 @@ describe("SQLite WorkGraph public commands", () => {
     })).resolves.toMatchObject({ ok: true })
 
     await vi.waitFor(() => {
-      expect(cleanupAttempts).toBe(2)
+      expect(cleanupRuns).toBe(2)
       expect(fixture.database.prepare("SELECT state, last_error FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get())
         .toEqual({ state: "completed", last_error: null })
     })
@@ -742,21 +742,21 @@ describe("SQLite WorkGraph public commands", () => {
 
     const live = await createItem(fixture, streamId, undefined, "Running")
     fixture.database.prepare(`
-      INSERT INTO wg_v2_attempts
-        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
-      VALUES ('organization', 'owner', 'attempt_running', ?, ?, 1, 'running', '{}', 1000, 1000)
+      INSERT INTO wg_v2_runs
+        (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
+      VALUES ('organization', 'owner', 'run_running', ?, ?, 1, 'running', '{}', 1000, 1000)
     `).run(streamId, live)
     fixture.database.prepare(`
       INSERT INTO wg_v2_leases
         (organization_id, owner_user_id, id, resource_type, resource_id, holder_id, expires_at, created_at, updated_at)
-      VALUES ('organization', 'owner', 'lease_running', 'work_item', ?, 'attempt_running', 999999, 1000, 1000)
+      VALUES ('organization', 'owner', 'lease_running', 'work_item', ?, 'run_running', 999999, 1000, 1000)
     `).run(live)
     expect(await execute(fixture, "cancel_work_item", { workItemId: live, expectedVersion: 1, reason: "unsafe" })).toMatchObject({
       ok: false,
       error: { code: "blocked" },
     })
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(live)).toEqual({ lifecycle: "pending" })
-    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = 'attempt_running'").get()).toEqual({ lifecycle: "running" })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_runs WHERE id = 'run_running'").get()).toEqual({ lifecycle: "running" })
     expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_leases WHERE id = 'lease_running'").get()).toEqual({ count: 1 })
   })
 
@@ -1085,7 +1085,7 @@ describe("SQLite WorkGraph public commands", () => {
   })
 
   it("truthfully exposes the remaining runtime-only command gap", () => {
-    expect(SQLITE_WORKGRAPH_UNSUPPORTED_COMMANDS).toEqual(["cancel_attempt"])
+    expect(SQLITE_WORKGRAPH_UNSUPPORTED_COMMANDS).toEqual(["cancel_run"])
     expect(SQLITE_WORKGRAPH_SUPPORTED_COMMANDS).toEqual(expect.arrayContaining([
       "approve_work_item",
       "reject_work_item",
@@ -1121,8 +1121,8 @@ describe("SQLite WorkGraph public commands", () => {
     ))).toEqual([1, 2])
 
     const rowsBefore = fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_operation_results").get()
-    // cancel_attempt is the only runtime-dependent command; without an execution port it rejects without persisting.
-    expect(await execute(fixture, "cancel_attempt", { attemptId: "attempt_missing", expectedVersion: 0, reason: "Stop" })).toMatchObject({
+    // cancel_run is the only runtime-dependent command; without an execution port it rejects without persisting.
+    expect(await execute(fixture, "cancel_run", { runId: "run_missing", expectedVersion: 0, reason: "Stop" })).toMatchObject({
       ok: false,
       error: { code: "execution_unavailable" },
     })
@@ -1156,7 +1156,7 @@ describe("SQLite WorkGraph public commands", () => {
     await execute(fixture, "call_master", {
       streamId,
       expectedVersion: 1,
-      message: "Land the ready Attempt.",
+      message: "Land the ready Run.",
     })
     fixture.database.prepare(`
       UPDATE wg_v2_streams SET master_status_json = ?, updated_at = 9000
@@ -1164,7 +1164,7 @@ describe("SQLite WorkGraph public commands", () => {
     `).run(JSON.stringify({
       state: "attention",
       sessionId: `ses_master_${streamId}`,
-      message: "Landing conflict remained after three attempts",
+      message: "Landing conflict remained after three runs",
       receiptRefs: ["diff:ours", "diff:theirs"],
       updatedAt: 9000,
     }), streamId)
@@ -1172,14 +1172,14 @@ describe("SQLite WorkGraph public commands", () => {
       UPDATE wg_v2_due_jobs SET status = 'attention', last_error = ?, updated_at = 9000
       WHERE organization_id = 'organization' AND owner_user_id = 'owner'
         AND stream_id = ? AND job_type = 'master_wake' AND subject_id = ?
-    `).run("Landing conflict remained after three attempts", streamId, streamId)
+    `).run("Landing conflict remained after three runs", streamId, streamId)
 
     const page = AttentionPageSchema.parse(await fixture.adapter.service.query(owner(), "attention", "list", { limit: 50 }))
     expect(page.items).toEqual(expect.arrayContaining([expect.objectContaining({
       kind: "master_escalation",
       streamId,
       sessionId: `ses_master_${streamId}`,
-      reason: "Landing conflict remained after three attempts",
+      reason: "Landing conflict remained after three runs",
       receiptRefs: ["diff:ours", "diff:theirs"],
     })]))
     expect(page.items.every((item) => item.ownerUserId === "owner")).toBe(true)
@@ -1289,7 +1289,7 @@ function replacementExecution(overrides: Partial<WorkspaceExecutionPort>): Works
       repository: input.repository,
       workspaceId: "/tmp/replacement",
     }),
-    launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/replacement" }),
+    launch: async (_context, input) => ({ sessionId: `session_${input.runId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/replacement" }),
     cancel: async () => undefined,
     result: async () => ({ state: "running" }),
     cleanup: async () => undefined,

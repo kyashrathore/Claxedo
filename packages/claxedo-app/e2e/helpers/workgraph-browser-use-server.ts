@@ -95,7 +95,7 @@ async function seedVisualStates() {
     title: "Land the reviewed change",
     completionContract: completionContract("Owner reviews the landing"),
   })
-  await harness.completeControlledAttempt(
+  await harness.completeControlledRun(
     String(completed.workItemId),
     "The landing reached its review boundary",
     ["diff:visual-landing"],

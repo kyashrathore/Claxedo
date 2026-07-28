@@ -237,7 +237,7 @@ describe("WorkGraph doorbell publish points", () => {
     await settle()
     expect(published).toEqual([])
 
-    // Stand in for any writer outside `service.execute` (attempt settlement,
+    // Stand in for any writer outside `service.execute` (run settlement,
     // source planning, activity, intake) by appending a change row.
     appendForeignChange(embedded.database)
 
@@ -342,7 +342,7 @@ function appendForeignChangeFor(database: Database.Database, organizationId: str
          (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(organizationId, ownerUserId, operationId, "complete_attempt", "hash", 1, "{}", String(Date.now()))
+    .run(organizationId, ownerUserId, operationId, "complete_run", "hash", 1, "{}", String(Date.now()))
   database
     .prepare(
       `INSERT INTO wg_v2_changes
@@ -356,9 +356,9 @@ function appendForeignChangeFor(database: Database.Database, organizationId: str
       `change_${crypto.randomUUID()}`,
       null,
       operationId,
-      "attempt",
-      "attempt_1",
-      "attempt_completed",
+      "run",
+      "run_1",
+      "run_completed",
       "{}",
       String(Date.now()),
     )
@@ -372,7 +372,7 @@ function appendForeignChange(database: Database.Database) {
          (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run("local", "local", operationId, "complete_attempt", "hash", 1, "{}", String(Date.now()))
+    .run("local", "local", operationId, "complete_run", "hash", 1, "{}", String(Date.now()))
   database
     .prepare(
       `INSERT INTO wg_v2_changes
@@ -386,9 +386,9 @@ function appendForeignChange(database: Database.Database) {
       `change_${crypto.randomUUID()}`,
       null,
       operationId,
-      "attempt",
-      "attempt_1",
-      "attempt_completed",
+      "run",
+      "run_1",
+      "run_completed",
       "{}",
       String(Date.now()),
     )

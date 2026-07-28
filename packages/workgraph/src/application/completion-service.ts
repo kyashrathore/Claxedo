@@ -1,14 +1,14 @@
-import type { AttemptID, WorkGraphContext, WorkItemID } from "../contracts"
-import type { AttemptRuntimePort, ExecutionResult } from "../ports"
+import type { RunID, WorkGraphContext, WorkItemID } from "../contracts"
+import type { RunRuntimePort, ExecutionResult } from "../ports"
 
-export type AttemptResultStore = Pick<AttemptRuntimePort, "recordResult">
+export type RunResultStore = Pick<RunRuntimePort, "recordResult">
 
 /** Runtime termination records progress; explicit evidence evaluation completes work later. */
-export async function recordSemanticAttemptResult(
+export async function recordSemanticRunResult(
   context: WorkGraphContext,
-  ids: Readonly<{ attemptId: AttemptID; workItemId: WorkItemID; leaseEpoch: number }>,
+  ids: Readonly<{ runId: RunID; workItemId: WorkItemID; leaseEpoch: number }>,
   result: ExecutionResult,
-  store: AttemptResultStore,
+  store: RunResultStore,
 ) {
   if (result.state === "pending" || result.state === "running") return { settled: false as const }
   if (result.state === "succeeded") {

@@ -2,7 +2,7 @@ import { z } from "zod"
 import { WorkGraphActorSchema } from "./context"
 import {
   AgentCheckpointIDSchema,
-  AttemptIDSchema,
+  RunIDSchema,
   DecisionIDSchema,
   DurableEffectReceiptIDSchema,
   EvidenceIDSchema,
@@ -36,7 +36,7 @@ export const SessionBindingDtoSchema = z
     sessionId: text.max(512),
     projectId: text.max(512),
     currentWorkItemId: WorkItemIDSchema.optional(),
-    currentAttemptId: AttemptIDSchema.optional(),
+    currentRunId: RunIDSchema.optional(),
     state: SessionBindingStateSchema,
     boundAt: timestamp,
     releasedAt: timestamp.optional(),
@@ -45,11 +45,11 @@ export const SessionBindingDtoSchema = z
     provenance: z.strictObject({ actor: WorkGraphActorSchema, operationId: OperationIDSchema.optional() }),
   })
   .superRefine((binding, context) => {
-    if (binding.currentAttemptId && !binding.currentWorkItemId) {
+    if (binding.currentRunId && !binding.currentWorkItemId) {
       context.addIssue({
         code: "custom",
-        path: ["currentAttemptId"],
-        message: "A bound Attempt requires a current Work Item",
+        path: ["currentRunId"],
+        message: "A bound Run requires a current Work Item",
       })
     }
     if ((binding.state === "released") === (binding.releasedAt !== undefined)) return
@@ -72,7 +72,7 @@ export const AgentCheckpointDtoSchema = z.strictObject({
   version: z.number().int().positive(),
   streamId: StreamIDSchema,
   workItemId: WorkItemIDSchema,
-  attemptId: AttemptIDSchema,
+  runId: RunIDSchema,
   sessionBindingId: SessionBindingIDSchema,
   level: AgentCheckpointLevelSchema,
   summary,
@@ -86,7 +86,7 @@ export type AgentCheckpointDto = z.infer<typeof AgentCheckpointDtoSchema>
 
 export const TaskActivitySourceSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("event"), id: text }),
-  z.strictObject({ type: z.literal("attempt"), id: AttemptIDSchema }),
+  z.strictObject({ type: z.literal("run"), id: RunIDSchema }),
   z.strictObject({ type: z.literal("checkpoint"), id: AgentCheckpointIDSchema }),
   z.strictObject({ type: z.literal("decision"), id: DecisionIDSchema }),
   z.strictObject({ type: z.literal("evidence"), id: EvidenceIDSchema }),
@@ -98,7 +98,7 @@ export const TaskActivityEntrySchema = z.strictObject({
   id: text.max(1_024),
   streamId: StreamIDSchema,
   workItemId: WorkItemIDSchema,
-  category: z.enum(["lifecycle", "attempt", "checkpoint", "decision", "evidence", "external_effect"]),
+  category: z.enum(["lifecycle", "run", "checkpoint", "decision", "evidence", "external_effect"]),
   importance: StreamActivityGranularitySchema,
   summary,
   occurredAt: timestamp,

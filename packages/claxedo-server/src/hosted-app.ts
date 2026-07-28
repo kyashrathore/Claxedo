@@ -69,9 +69,9 @@ import {
   createHostedConnectionOperationHandler,
 } from "./workgraph-host/hosted-connection-operation"
 import {
-  createHostedAttemptOperationExecutor,
-  createHostedAttemptOperationHandler,
-} from "./workgraph-host/hosted-attempt-operation"
+  createHostedRunOperationExecutor,
+  createHostedRunOperationHandler,
+} from "./workgraph-host/hosted-run-operation"
 import { createHostedSessionTranscriptRetention } from "./workgraph-host/hosted-runtime"
 import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/documents"
@@ -99,8 +99,8 @@ export type HostedAppOverrides = {
   workGraphSettlementDispatcherForRequest?: (
     waitUntil: (promise: Promise<unknown>) => void,
   ) => SettlementDispatcher
-  /** Test seam for the complete_attempt transcript-retention gate. */
-  attemptTranscriptRetention?: (input: {
+  /** Test seam for the complete_run transcript-retention gate. */
+  runTranscriptRetention?: (input: {
     organizationId: string
     ownerSubject: string
     workspaceId: string
@@ -295,12 +295,12 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const connectionOperationHandler = connectionOperationExecutor
     ? createHostedConnectionOperationHandler({ env: plane.env, execute: connectionOperationExecutor })
     : undefined
-  const attemptTranscriptRetention =
-    overrides.attemptTranscriptRetention ?? createHostedSessionTranscriptRetention(plane.env, services)
-  const attemptOperationExecutor = createHostedAttemptOperationExecutor({
+  const runTranscriptRetention =
+    overrides.runTranscriptRetention ?? createHostedSessionTranscriptRetention(plane.env, services)
+  const runOperationExecutor = createHostedRunOperationExecutor({
     env: plane.env,
     ...(overrides.workGraphExecutor ? { executor: overrides.workGraphExecutor } : {}),
-    ...(attemptTranscriptRetention ? { retainTranscript: attemptTranscriptRetention } : {}),
+    ...(runTranscriptRetention ? { retainTranscript: runTranscriptRetention } : {}),
     ...(overrides.workGraphNotifyOwner ? { notifyOwner: overrides.workGraphNotifyOwner } : {}),
     ...(liveSyncRoom
       ? {
@@ -328,8 +328,8 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
         }
       : {}),
   })
-  const attemptOperationHandler = attemptOperationExecutor
-    ? createHostedAttemptOperationHandler({ env: plane.env, execute: attemptOperationExecutor })
+  const runOperationHandler = runOperationExecutor
+    ? createHostedRunOperationHandler({ env: plane.env, execute: runOperationExecutor })
     : undefined
   const forwardWorkGraph = (context: Context) => {
     const url = new URL(context.req.url)
@@ -532,11 +532,11 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     }
     app.post("/internal/workgraph/connection-operation", (context) => connectionOperationHandler(context.req.raw))
   }
-  if (attemptOperationHandler) {
+  if (runOperationHandler) {
     if (workgraph.operationalTelemetry) {
-      app.use("/internal/workgraph/attempt-operation", workGraphHttpTelemetry(workgraph.operationalTelemetry))
+      app.use("/internal/workgraph/run-operation", workGraphHttpTelemetry(workgraph.operationalTelemetry))
     }
-    app.post("/internal/workgraph/attempt-operation", (context) => {
+    app.post("/internal/workgraph/run-operation", (context) => {
       // Build the per-request settlement dispatcher from the ExecutionContext
       // `waitUntil` (same as forwardWorkGraph) so a successful agent-tool operation
       // nudges continuous execution without waiting for the CF cron backstop.
@@ -545,7 +545,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
         waitUntil && overrides.workGraphSettlementDispatcherForRequest
           ? overrides.workGraphSettlementDispatcherForRequest(waitUntil)
           : undefined
-      return attemptOperationHandler(
+      return runOperationHandler(
         context.req.raw,
         dispatcher
           ? (principal) => dispatcher.nudge({ organizationId: principal.orgId, ownerUserId: principal.ownerUserId })

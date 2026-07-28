@@ -3,13 +3,13 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import type { CodeHostConnector, SourceIssueConnector } from "@claxedo/workgraph/connectors"
-import { WorkGraphAttemptToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
+import { WorkGraphRunToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
 import {
-  WorkGraphAttemptIdentitySchema,
-  WorkGraphAttemptToolNames,
+  WorkGraphRunIdentitySchema,
+  WorkGraphRunToolNames,
   type CommandResult,
   type WorkGraphConnectionOperationResponse,
-  type WorkGraphAttemptOperationRequest,
+  type WorkGraphRunOperationRequest,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import { OPENCODE_INTERNAL_BASE } from "./opencode-engine"
@@ -27,14 +27,14 @@ type SessionV2WorkGraphGatewayOptions = (Readonly<{
   codeHostConnectors?: Readonly<Record<string, CodeHostConnector>>
   resolveTeamOwner(context: WorkGraphContext): string | undefined
 }>) & Readonly<{
-  executeAttempt?: (
+  executeRun?: (
     context: WorkGraphContext,
-    request: WorkGraphAttemptOperationRequest,
+    request: WorkGraphRunOperationRequest,
     signal: AbortSignal,
   ) => Promise<CommandResult>
-  attemptContexts?: Readonly<{
+  runContexts?: Readonly<{
     bind(input: Readonly<{
-      identity: WorkGraphAttemptOperationRequest["identity"]
+      identity: WorkGraphRunOperationRequest["identity"]
       context: WorkGraphContext
     }>): Promise<void>
     release(sessionId: string): Promise<void>
@@ -43,7 +43,7 @@ type SessionV2WorkGraphGatewayOptions = (Readonly<{
     context: WorkGraphContext,
     input: Readonly<{
       streamId: string
-      attemptId: string
+      runId: string
       idempotencyKey: string
       pullRequestId: string
       url: string
@@ -59,7 +59,7 @@ type SessionV2WorkGraphGatewayOptions = (Readonly<{
       context: WorkGraphContext,
       input: Readonly<{
         streamId: string
-        attemptId: string
+        runId: string
         idempotencyKey: string
         repository: string
         head: string
@@ -87,22 +87,22 @@ type SessionV2WorkGraphGatewayOptions = (Readonly<{
 }>
 
 export type WorkGraphSessionBinding = Readonly<{
-  attemptId: string
+  runId: string
   sessionId: string
   runtimeSessionId?: string
   directory: string
   harness: string
   workspaceId?: string
-  leaseEpoch?: number
+  generation?: number
   baseCommit?: string
 }>
 
 export type WorkGraphSessionBindingStore = Readonly<{
   all(): Promise<readonly WorkGraphSessionBinding[]>
-  findByAttempt(attemptId: string): Promise<WorkGraphSessionBinding | undefined>
+  findByRun(runId: string): Promise<WorkGraphSessionBinding | undefined>
   findBySession(sessionId: string): Promise<WorkGraphSessionBinding | undefined>
   save(binding: WorkGraphSessionBinding): Promise<void>
-  deleteByAttempt?(attemptId: string): Promise<void>
+  deleteByRun?(runId: string): Promise<void>
   deleteByDirectory(directory: string): Promise<void>
 }>
 
@@ -123,27 +123,27 @@ export function createFileWorkGraphSessionBindingStore(file: string): WorkGraphS
     }
     return root.bindings.map((value): WorkGraphSessionBinding => {
       const row = record(value)
-      const attemptId = clean(row?.attemptId)
+      const runId = clean(row?.runId)
       const sessionId = clean(row?.sessionId)
       const runtimeSessionId = clean(row?.runtimeSessionId)
       const directory = clean(row?.directory)
       const harness = clean(row?.harness)
       const workspaceId = clean(row?.workspaceId)
       const baseCommit = clean(row?.baseCommit)
-      const leaseEpoch = typeof row?.leaseEpoch === "number" && Number.isInteger(row.leaseEpoch)
-        ? row.leaseEpoch
+      const generation = typeof row?.generation === "number" && Number.isInteger(row.generation)
+        ? row.generation
         : undefined
-      if (!attemptId || !sessionId || !directory || !harness) {
+      if (!runId || !sessionId || !directory || !harness) {
         throw new Error("WorkGraph Session binding index contains an invalid binding")
       }
       return {
-        attemptId,
+        runId,
         sessionId,
         ...(runtimeSessionId ? { runtimeSessionId } : {}),
         directory,
         harness,
         ...(workspaceId ? { workspaceId } : {}),
-        ...(leaseEpoch !== undefined ? { leaseEpoch } : {}),
+        ...(generation !== undefined ? { generation } : {}),
         ...(baseCommit ? { baseCommit } : {}),
       }
     })
@@ -172,14 +172,14 @@ export function createFileWorkGraphSessionBindingStore(file: string): WorkGraphS
   }
   return {
     all: async () => [...await read()],
-    findByAttempt: async (attemptId) => (await read()).find((binding) => binding.attemptId === attemptId),
+    findByRun: async (runId) => (await read()).find((binding) => binding.runId === runId),
     findBySession: async (sessionId) => (await read()).find((binding) => binding.sessionId === sessionId),
     save: async (binding) => update((bindings) => [
-      ...bindings.filter((item) => item.attemptId !== binding.attemptId && item.sessionId !== binding.sessionId),
+      ...bindings.filter((item) => item.runId !== binding.runId && item.sessionId !== binding.sessionId),
       binding,
     ]),
-    deleteByAttempt: async (attemptId) => update((bindings) => {
-      const next = bindings.filter((binding) => binding.attemptId !== attemptId)
+    deleteByRun: async (runId) => update((bindings) => {
+      const next = bindings.filter((binding) => binding.runId !== runId)
       return next.length === bindings.length ? bindings : next
     }),
     deleteByDirectory: async (directory) => update((bindings) => {
@@ -203,13 +203,13 @@ export function createHarnessWorkGraphGateway(
   const memory = new Map<string, WorkGraphSessionBinding>()
   const bindings = options.bindings ?? {
     all: async () => [...memory.values()],
-    findByAttempt: async (attemptId: string) => memory.get(attemptId),
+    findByRun: async (runId: string) => memory.get(runId),
     findBySession: async (sessionId: string) => [...memory.values()].find((binding) => binding.sessionId === sessionId),
-    save: async (binding: WorkGraphSessionBinding) => { memory.set(binding.attemptId, binding) },
-    deleteByAttempt: async (attemptId: string) => { memory.delete(attemptId) },
+    save: async (binding: WorkGraphSessionBinding) => { memory.set(binding.runId, binding) },
+    deleteByRun: async (runId: string) => { memory.delete(runId) },
     deleteByDirectory: async (directory: string) => {
-      for (const [attemptId, binding] of memory) {
-        if (binding.directory === directory) memory.delete(attemptId)
+      for (const [runId, binding] of memory) {
+        if (binding.directory === directory) memory.delete(runId)
       }
     },
   }
@@ -228,11 +228,11 @@ export function createHarnessWorkGraphGateway(
     if (response.ok) return response
     throw new HarnessSessionRequestError(pathname, response.status, await response.text())
   }
-  const cleanupAttemptBinding = async (binding: WorkGraphSessionBinding) => {
-    if (!options.attemptContexts) return
+  const cleanupRunBinding = async (binding: WorkGraphSessionBinding) => {
+    if (!options.runContexts) return
     const cleanup = await Promise.allSettled([
-      request(binding, `/api/workgraph/attempt-binding/${encodeURIComponent(binding.sessionId)}`, { method: "DELETE" }),
-      options.attemptContexts.release(binding.sessionId),
+      request(binding, `/api/workgraph/run-binding/${encodeURIComponent(binding.sessionId)}`, { method: "DELETE" }),
+      options.runContexts.release(binding.sessionId),
     ])
     const failure = cleanup.find((result): result is PromiseRejectedResult => result.status === "rejected")
     if (failure) throw failure.reason
@@ -244,22 +244,22 @@ export function createHarnessWorkGraphGateway(
     admit: async (input) => {
       if (input.profile.harness === "opencode") return v2.admit(input)
       if (input.profile.connectionIds.length > 0) {
-        throw new Error("Connection-bound Attempts currently require the OpenCode harness")
+        throw new Error("Connection-bound Runs currently require the OpenCode harness")
       }
-      if (input.leaseEpoch !== undefined && options.executeAttempt) {
-        if (!input.context) throw new Error("WorkGraph Attempt tools require the owner context")
-        if (!options.attemptContexts) throw new Error("WorkGraph Attempt tools require a trusted local context registry")
+      if (input.generation !== undefined && options.executeRun) {
+        if (!input.context) throw new Error("WorkGraph Run tools require the owner context")
+        if (!options.runContexts) throw new Error("WorkGraph Run tools require a trusted local context registry")
       }
-      const existing = await bindings.findByAttempt(input.attemptId)
+      const existing = await bindings.findByRun(input.runId)
       if (
         existing
         && (
           existing.directory !== input.directory
           || (existing.workspaceId && existing.workspaceId !== input.workspaceId)
-          || (existing.leaseEpoch !== undefined && existing.leaseEpoch !== input.leaseEpoch)
+          || (existing.generation !== undefined && existing.generation !== input.generation)
           || (existing.baseCommit && existing.baseCommit !== input.baseCommit)
         )
-      ) throw new Error(`WorkGraph Attempt ${input.attemptId} is already admitted with different workspace placement`)
+      ) throw new Error(`WorkGraph Run ${input.runId} is already admitted with different workspace placement`)
       const binding = existing ?? await (async () => {
         const created = await request({ directory: input.directory, harness: input.profile.harness }, "/session", {
           method: "POST",
@@ -275,31 +275,31 @@ export function createHarnessWorkGraphGateway(
         const runtimeSessionId = clean(body?.id)
         if (!runtimeSessionId) throw new Error("Harness Session create response did not include a Session ID")
         const next = {
-          attemptId: input.attemptId,
+          runId: input.runId,
           sessionId: input.sessionId ?? runtimeSessionId,
           ...(input.sessionId && input.sessionId !== runtimeSessionId ? { runtimeSessionId } : {}),
           directory: input.directory,
           harness: input.profile.harness,
           ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-          ...(input.leaseEpoch !== undefined ? { leaseEpoch: input.leaseEpoch } : {}),
+          ...(input.generation !== undefined ? { generation: input.generation } : {}),
           ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
         }
         await bindings.save(next)
         return next
       })()
       try {
-        if (input.leaseEpoch !== undefined && options.executeAttempt) {
-          const identity = WorkGraphAttemptIdentitySchema.parse({
-            attemptId: input.attemptId,
+        if (input.generation !== undefined && options.executeRun) {
+          const identity = WorkGraphRunIdentitySchema.parse({
+            runId: input.runId,
             sessionId: binding.sessionId,
             workspaceId: input.workspaceId ?? input.directory,
-            leaseEpoch: input.leaseEpoch,
+            generation: input.generation,
           })
-          await options.attemptContexts!.bind({ identity, context: input.context! }).catch(async (error) => {
-            await bindings.deleteByAttempt?.(input.attemptId)
+          await options.runContexts!.bind({ identity, context: input.context! }).catch(async (error) => {
+            await bindings.deleteByRun?.(input.runId)
             throw error
           })
-          await request(binding, "/api/workgraph/attempt-binding", {
+          await request(binding, "/api/workgraph/run-binding", {
             method: "POST",
             body: JSON.stringify({
               version: 1,
@@ -316,7 +316,7 @@ export function createHarnessWorkGraphGateway(
           method: "POST",
           ...(existing ? { headers: { "x-claxedo-idempotency-retry": "1" } } : {}),
           body: JSON.stringify({
-            messageID: `msg_workgraph_${input.attemptId}`,
+            messageID: `msg_workgraph_${input.runId}`,
             parts: [{ type: "text", text: input.prompt }],
             agent: input.profile.agent,
             model: {
@@ -329,8 +329,8 @@ export function createHarnessWorkGraphGateway(
       } catch (error) {
         if (error instanceof HarnessSessionRequestError) {
           await Promise.allSettled([
-            cleanupAttemptBinding(binding),
-            bindings.deleteByAttempt?.(input.attemptId),
+            cleanupRunBinding(binding),
+            bindings.deleteByRun?.(input.runId),
           ])
         }
         throw error
@@ -342,7 +342,7 @@ export function createHarnessWorkGraphGateway(
       if (!binding) return v2.cancel(sessionId, reason)
       const results = await Promise.allSettled([
         request(binding, `/session/${encodeURIComponent(runtimeSessionId(binding))}/abort`, { method: "POST" }),
-        cleanupAttemptBinding(binding),
+        cleanupRunBinding(binding),
       ])
       const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
       if (failure) throw failure.reason
@@ -356,15 +356,15 @@ export function createHarnessWorkGraphGateway(
       if (status === "busy" || status === "recovering" || status === "retry") return { state: "running" }
       const lastTurn = record(session?.lastTurn)
       if (lastTurn?.status === "failed") {
-        await cleanupAttemptBinding(binding)
+        await cleanupRunBinding(binding)
         return { state: "failed", message: clean(lastTurn.error) ?? "Harness Session failed" }
       }
       if (lastTurn?.status === "cancelled") {
-        await cleanupAttemptBinding(binding)
+        await cleanupRunBinding(binding)
         return { state: "cancelled" }
       }
       if (lastTurn?.status !== "completed") return { state: "pending" }
-      await cleanupAttemptBinding(binding)
+      await cleanupRunBinding(binding)
       const messages = await request(binding, `/session/${encodeURIComponent(runtimeId)}/message`).then((response) => response.json())
       const summary = assistantSummary(messages)
       if (!summary) return { state: "failed", message: "session_output_missing" }
@@ -372,7 +372,7 @@ export function createHarnessWorkGraphGateway(
     },
     releaseDirectory: async (directory) => {
       const cleanup = await Promise.allSettled(
-        (await bindings.all()).filter((binding) => binding.directory === directory).map(cleanupAttemptBinding),
+        (await bindings.all()).filter((binding) => binding.directory === directory).map(cleanupRunBinding),
       )
       await bindings.deleteByDirectory(directory)
       await options.releaseSessionRuntime?.(directory)
@@ -392,7 +392,7 @@ export function createSessionV2WorkGraphGateway(
   options: SessionV2WorkGraphGatewayOptions = {},
 ): WorkGraphSessionGateway {
   const bridges = new Map<string, ReturnType<typeof WorkGraphConnectionToolRoutes>>()
-  const attemptBridges = new Map<string, ReturnType<typeof WorkGraphAttemptToolRoutes>>()
+  const runBridges = new Map<string, ReturnType<typeof WorkGraphRunToolRoutes>>()
   type ToolRegistration = Readonly<{
     sessionId: string
     callbackUrl: string
@@ -459,7 +459,7 @@ export function createSessionV2WorkGraphGateway(
       return "indeterminate"
     },
     admit: async (input) => {
-      const messageId = input.messageId ?? `msg_workgraph_${input.attemptId}`
+      const messageId = input.messageId ?? `msg_workgraph_${input.runId}`
       const workspaceId = input.workspaceId ?? input.directory
       const created = await request(
         "/api/session",
@@ -476,7 +476,7 @@ export function createSessionV2WorkGraphGateway(
             },
             tools: [
               ...input.profile.tools,
-              ...(input.leaseEpoch !== undefined && options.executeAttempt ? WorkGraphAttemptToolNames : []),
+              ...(input.generation !== undefined && options.executeRun ? WorkGraphRunToolNames : []),
             ].filter((tool, index, tools) => tools.indexOf(tool) === index),
             location: { directory: input.directory },
           }),
@@ -486,51 +486,51 @@ export function createSessionV2WorkGraphGateway(
       const body = (await created.json()) as { id?: string; data?: { id?: string } }
       const adoptedId = body.id ?? body.data?.id
       if (!adoptedId) throw new Error("Session V2 create response did not include a Session ID")
-      await cleanupBridge(attemptBridges, adoptedId, "/api/workgraph/attempt-binding", "Attempt")
+      await cleanupBridge(runBridges, adoptedId, "/api/workgraph/run-binding", "Run")
       await cleanupBridge(bridges, adoptedId, "/api/workgraph/connection-binding", "Connection")
-      if (input.leaseEpoch !== undefined && options.executeAttempt) {
+      if (input.generation !== undefined && options.executeRun) {
         const context = input.context
-        if (!context) throw new Error("WorkGraph Attempt tools require the owner context")
-        const bridge = WorkGraphAttemptToolRoutes({
+        if (!context) throw new Error("WorkGraph Run tools require the owner context")
+        const bridge = WorkGraphRunToolRoutes({
           workspaceId,
-          broker: (operation, signal) => options.executeAttempt!(context, operation, signal),
-          registerSessionTools: registerToolGroup("attempt", input.directory),
-          unregisterSessionTools: unregisterToolGroup("attempt", input.directory),
+          broker: (operation, signal) => options.executeRun!(context, operation, signal),
+          registerSessionTools: registerToolGroup("run", input.directory),
+          unregisterSessionTools: unregisterToolGroup("run", input.directory),
         })
-        const registered = await bridge.request("/api/workgraph/attempt-binding", {
+        const registered = await bridge.request("/api/workgraph/run-binding", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             version: 1,
             identity: {
-              attemptId: input.attemptId,
+              runId: input.runId,
               sessionId: adoptedId,
               workspaceId,
-              leaseEpoch: input.leaseEpoch,
+              generation: input.generation,
             },
             brokerUrl: "http://127.0.0.1",
           }),
         })
         if (!registered.ok) {
           bridge.dispose()
-          throw new Error(`Local Session Attempt binding failed: ${registered.status} ${await registered.text()}`)
+          throw new Error(`Local Session Run binding failed: ${registered.status} ${await registered.text()}`)
         }
-        attemptBridges.set(adoptedId, bridge)
+        runBridges.set(adoptedId, bridge)
       }
       if (input.profile.connectionIds.length > 0) {
-        if (!options.connections) throw new Error("Connection-bound Attempts require the Connections service")
+        if (!options.connections) throw new Error("Connection-bound Runs require the Connections service")
         const context = input.context
-        if (!context) throw new Error("Connection-bound Attempts require the WorkGraph owner context")
+        if (!context) throw new Error("Connection-bound Runs require the WorkGraph owner context")
         const ownerPartition = options.resolveTeamOwner(context)
-        if (!ownerPartition) throw new Error("Connection-bound Attempts require an organization-owned Connection scope")
+        if (!ownerPartition) throw new Error("Connection-bound Runs require an organization-owned Connection scope")
         const connectionTools = input.profile.tools.filter((tool) =>
           tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update" ||
           tool === "connection_code_host_open_pr")
-        if (!connectionTools.length) throw new Error("Connection-bound Attempts require explicit Connection tools")
+        if (!connectionTools.length) throw new Error("Connection-bound Runs require explicit Connection tools")
         const binding = {
           context,
           ownerPartition,
-          attemptId: input.attemptId,
+          runId: input.runId,
           sessionId: adoptedId,
           workspaceId,
           connectionIds: input.profile.connectionIds,
@@ -579,7 +579,7 @@ export function createSessionV2WorkGraphGateway(
             const effect = pullRequest && input.streamId && options.pullRequestEffects
               ? await options.pullRequestEffects.claim(context, {
                   streamId: input.streamId,
-                  attemptId: input.attemptId,
+                  runId: input.runId,
                   idempotencyKey: pullRequest.idempotencyKey,
                   repository: pullRequest.repository,
                   head: pullRequest.head,
@@ -610,7 +610,7 @@ export function createSessionV2WorkGraphGateway(
               ...result,
               ...await options.recordPullRequest(context, {
                 streamId: input.streamId,
-                attemptId: input.attemptId,
+                runId: input.runId,
                 idempotencyKey: pullRequest.idempotencyKey,
                 pullRequestId: result.pullRequestId,
                 url: result.url,
@@ -628,7 +628,7 @@ export function createSessionV2WorkGraphGateway(
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             version: 1,
-            identity: { attemptId: input.attemptId, sessionId: adoptedId, workspaceId },
+            identity: { runId: input.runId, sessionId: adoptedId, workspaceId },
             connectionIds: input.profile.connectionIds,
             tools: connectionTools,
             brokerUrl: "http://127.0.0.1",
@@ -653,7 +653,7 @@ export function createSessionV2WorkGraphGateway(
     cancel: async (sessionId) => {
       await request(`/api/session/${sessionId}/interrupt`, { method: "POST" })
       await cleanupBridge(bridges, sessionId, "/api/workgraph/connection-binding", "Connection")
-      await cleanupBridge(attemptBridges, sessionId, "/api/workgraph/attempt-binding", "Attempt")
+      await cleanupBridge(runBridges, sessionId, "/api/workgraph/run-binding", "Run")
     },
     result: async (sessionId) => {
       const active = (await request("/api/session/active").then((response) => response.json())) as {
@@ -671,7 +671,7 @@ export function createSessionV2WorkGraphGateway(
         } catch (error) {
           if (!(error instanceof SessionHistoryResponseError)) throw error
           await cleanupBridge(bridges, sessionId, "/api/workgraph/connection-binding", "Connection")
-          await cleanupBridge(attemptBridges, sessionId, "/api/workgraph/attempt-binding", "Attempt")
+          await cleanupBridge(runBridges, sessionId, "/api/workgraph/run-binding", "Run")
           return { state: "failed", message: error.code }
         }
         events.push(...page.data)
@@ -679,7 +679,7 @@ export function createSessionV2WorkGraphGateway(
         const next = page.data.at(-1)?.durable?.seq
         if (next === undefined || next <= after) {
           await cleanupBridge(bridges, sessionId, "/api/workgraph/connection-binding", "Connection")
-          await cleanupBridge(attemptBridges, sessionId, "/api/workgraph/attempt-binding", "Attempt")
+          await cleanupBridge(runBridges, sessionId, "/api/workgraph/run-binding", "Run")
           return { state: "failed", message: "session_history_invalid" }
         }
         after = next
@@ -695,7 +695,7 @@ export function createSessionV2WorkGraphGateway(
           : { state: "pending" }
       }
       await cleanupBridge(bridges, sessionId, "/api/workgraph/connection-binding", "Connection")
-      await cleanupBridge(attemptBridges, sessionId, "/api/workgraph/attempt-binding", "Attempt")
+      await cleanupBridge(runBridges, sessionId, "/api/workgraph/run-binding", "Run")
       if (settlement.type.startsWith("session.next.step.failed")) {
         return { state: "failed", message: stringifySessionError(settlement.data.error) }
       }
@@ -760,7 +760,7 @@ class SessionV2RequestError extends Error {
 }
 
 async function cleanupBridge(
-  bridges: Map<string, ReturnType<typeof WorkGraphConnectionToolRoutes> | ReturnType<typeof WorkGraphAttemptToolRoutes>>,
+  bridges: Map<string, ReturnType<typeof WorkGraphConnectionToolRoutes> | ReturnType<typeof WorkGraphRunToolRoutes>>,
   sessionId: string,
   bindingPath: string,
   label: string,

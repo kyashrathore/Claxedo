@@ -7,7 +7,7 @@ import {
 } from "@claxedo/workgraph/contracts"
 import type {
   ChangeCursor,
-  AttemptID,
+  RunID,
   CommandErrorCode,
   CommandResult,
   CompletionContract,
@@ -27,7 +27,7 @@ import type {
 import { transitionStream } from "@claxedo/workgraph/domain"
 import { createWorkGraphService } from "@claxedo/workgraph/hosted"
 import { defineAtomicWorkGraphStore, type WorkGraphCommandHandler } from "@claxedo/workgraph/ports"
-import type { AttemptRuntimePort } from "@claxedo/workgraph/ports"
+import type { RunRuntimePort } from "@claxedo/workgraph/ports"
 import { describe, it } from "vitest"
 import {
   type ConformanceChangeView,
@@ -50,8 +50,8 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
   const outcomes = new Map<OutcomeID, Readonly<{ ownerUserId: OwnerUserID; streamId: StreamID }>>()
   const workItems = new Map<WorkItemID, MutableWorkItem>()
   const changes = new Map<OwnerUserID, ConformanceChangeView[]>()
-  const attempts = new Map<AttemptID, { ownerUserId: OwnerUserID; workItemId: WorkItemID; leaseEpoch: number; state: "running" | "result" }>()
-  const leases = new Map<WorkItemID, { attemptId: AttemptID; epoch: number; expiresAt: number }>()
+  const runs = new Map<RunID, { ownerUserId: OwnerUserID; workItemId: WorkItemID; leaseEpoch: number; state: "running" | "result" }>()
+  const leases = new Map<WorkItemID, { runId: RunID; epoch: number; expiresAt: number }>()
   let failNextAppend = false
 
   const execute: WorkGraphCommandHandler = async (context, request) => {
@@ -290,38 +290,38 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
     delete_stream: execute,
   } satisfies ConformanceCommands
   const store = defineAtomicWorkGraphStore({ commands, queries })
-  const attemptRuntime: AttemptRuntimePort = {
+  const runRuntime: RunRuntimePort = {
     listReconcilable: async () => [],
     renewLease: async (context, request) => {
-      const attempt = attempts.get(request.attemptId)
-      const lease = attempt ? leases.get(attempt.workItemId) : undefined
+      const run = runs.get(request.runId)
+      const lease = run ? leases.get(run.workItemId) : undefined
       if (
-        !attempt ||
-        attempt.ownerUserId !== context.ownerUserId ||
+        !run ||
+        run.ownerUserId !== context.ownerUserId ||
         !lease ||
-        lease.attemptId !== request.attemptId ||
+        lease.runId !== request.runId ||
         lease.epoch !== request.expectedLeaseEpoch ||
-        attempt.leaseEpoch !== request.expectedLeaseEpoch
+        run.leaseEpoch !== request.expectedLeaseEpoch
       ) return undefined
       const leaseEpoch = lease.expiresAt <= request.occurredAt ? lease.epoch + 1 : lease.epoch
       const expiresAt = request.occurredAt + request.durationMs
-      leases.set(attempt.workItemId, { ...lease, epoch: leaseEpoch, expiresAt })
-      if (leaseEpoch !== attempt.leaseEpoch) attempts.set(request.attemptId, { ...attempt, leaseEpoch })
+      leases.set(run.workItemId, { ...lease, epoch: leaseEpoch, expiresAt })
+      if (leaseEpoch !== run.leaseEpoch) runs.set(request.runId, { ...run, leaseEpoch })
       return { leaseEpoch, expiresAt, recovered: leaseEpoch !== lease.epoch }
     },
     recordResult: async (context, request) => {
-      const attempt = attempts.get(request.attemptId)
-      const lease = attempt ? leases.get(attempt.workItemId) : undefined
+      const run = runs.get(request.runId)
+      const lease = run ? leases.get(run.workItemId) : undefined
       if (
-        !attempt ||
-        attempt.ownerUserId !== context.ownerUserId ||
-        attempt.workItemId !== request.workItemId ||
-        attempt.leaseEpoch !== request.leaseEpoch ||
+        !run ||
+        run.ownerUserId !== context.ownerUserId ||
+        run.workItemId !== request.workItemId ||
+        run.leaseEpoch !== request.leaseEpoch ||
         !lease ||
-        lease.attemptId !== request.attemptId ||
+        lease.runId !== request.runId ||
         lease.epoch !== request.leaseEpoch
       ) return false
-      attempts.set(request.attemptId, { ...attempt, state: "result" })
+      runs.set(request.runId, { ...run, state: "result" })
       leases.delete(request.workItemId)
       return true
     },
@@ -337,11 +337,11 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
       return failure(operationId, "not_found", "Work item not found")
     const active = leases.get(workItem.id)
     if (active && active.expiresAt > input.clock.now())
-      return failure(operationId, "blocked", "Work item already has an active Attempt")
-    const attemptId = branded<AttemptID>(input.ids.next("attempt"))
+      return failure(operationId, "blocked", "Work item already has an active Run")
+    const runId = branded<RunID>(input.ids.next("run"))
     const leaseEpoch = (active?.epoch ?? 0) + 1
-    attempts.set(attemptId, { ownerUserId: owner.ownerUserId, workItemId: workItem.id, leaseEpoch, state: "running" })
-    leases.set(workItem.id, { attemptId, epoch: leaseEpoch, expiresAt: input.clock.now() + 300_000 })
+    runs.set(runId, { ownerUserId: owner.ownerUserId, workItemId: workItem.id, leaseEpoch, state: "running" })
+    leases.set(workItem.id, { runId, epoch: leaseEpoch, expiresAt: input.clock.now() + 300_000 })
     const ownerChanges = changes.get(owner.ownerUserId) ?? []
     const cursor = createChangeCursor({
       organizationId: owner.organizationId,
@@ -350,17 +350,17 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
     })
     ownerChanges.push({
       cursor,
-      event: { streamId: workItem.streamId, type: "attempt_admitted", occurredAt: input.clock.now() },
+      event: { streamId: workItem.streamId, type: "run_admitted", occurredAt: input.clock.now() },
     })
     changes.set(owner.ownerUserId, ownerChanges)
-    return success(operationId, cursor, { attemptId, workItemId: workItem.id, leaseEpoch })
+    return success(operationId, cursor, { runId, workItemId: workItem.id, leaseEpoch })
   }
 
   return {
     service: createWorkGraphService(store),
-    attemptRuntime,
+    runRuntime,
     admit,
-    restart: async () => ({ attemptRuntime }),
+    restart: async () => ({ runRuntime }),
     faults: { failNextAppend: () => { failNextAppend = true } },
   }
 }

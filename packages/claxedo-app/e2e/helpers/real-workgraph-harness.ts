@@ -18,7 +18,7 @@ import type { CodeHostConnector, SourceIssueConnector } from "@claxedo/workgraph
 import {
   WorkGraphConnectionToolNames,
   type CommandResult,
-  type WorkGraphAttemptOperationRequest,
+  type WorkGraphRunOperationRequest,
   type WorkGraphContext,
   type WorkSourceRevisionRef,
 } from "@claxedo/workgraph/contracts"
@@ -54,7 +54,7 @@ export type RealWorkGraphHarness = Readonly<{
   worktreeDirectory: (streamId: string) => string
   runReconcile: () => ReturnType<LocalEmbeddedWorkGraph["reconcile"]>
   runSourcePlanning: () => ReturnType<LocalEmbeddedWorkGraph["sourcePlanning"]["runDue"]>
-  completeControlledAttempt: (
+  completeControlledRun: (
     workItemId: string,
     summary: string,
     artifacts: readonly string[],
@@ -69,8 +69,8 @@ export type RealWorkGraphHarness = Readonly<{
   }>
   controlledExecutionDiagnostics: () => Readonly<{
     queued: readonly ControlledExecutionResult[]
-    attempts: readonly (readonly [string, "running" | ControlledExecutionResult])[]
-    durableAttempts: readonly unknown[]
+    runs: readonly (readonly [string, "running" | ControlledExecutionResult])[]
+    durableRuns: readonly unknown[]
     leases: readonly unknown[]
     pendingWork: readonly unknown[]
     capabilityReads: readonly unknown[]
@@ -146,7 +146,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   const database = new Database(path.join(directory, "workgraph.sqlite"))
   const pullRequestEffects = createSqlitePullRequestEffects(database)
   const queuedExecutionResults: ControlledExecutionResult[] = []
-  const attempts = new Map<string, "running" | ControlledExecutionResult>()
+  const runs = new Map<string, "running" | ControlledExecutionResult>()
   const sourceIssueRequests: ControlledSourceIssueRequest[] = []
   const sourceIssueEffects: ControlledSourceIssueEffect[] = []
   const pullRequestRequests: ControlledPullRequestRequest[] = []
@@ -213,11 +213,11 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       requests: pullRequestRequests,
     }),
   }
-  let executeAttempt: ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>) | undefined
+  let executeRun: ((context: WorkGraphContext, request: WorkGraphRunOperationRequest) => Promise<CommandResult>) | undefined
   let recordPullRequest:
     | ((context: WorkGraphContext, input: Readonly<{
         streamId: string
-        attemptId: string
+        runId: string
         idempotencyKey: string
         pullRequestId: string
         url: string
@@ -236,10 +236,10 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   diagMark("before createRealSessionRuntime")
   const realSessions = input.realSessions
     ? await createRealSessionRuntime(directory, `http://127.0.0.1:${input.port}`, (forward) => createSessionV2WorkGraphGateway(forward, {
-        executeAttempt: (context, request, signal) => {
+        executeRun: (context, request, signal) => {
           if (signal.aborted) throw signal.reason
-          if (!executeAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
-          return executeAttempt(context, request)
+          if (!executeRun) throw new Error("WorkGraph Run command broker is not ready")
+          return executeRun(context, request)
         },
         connections,
         connectors: Object.fromEntries(sourceIssueConnectors.map((connector) => [connector.provider, connector])),
@@ -261,17 +261,17 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     worktreeRoot: path.join(directory, "worktrees"),
     repositoryDirectory: async () => repository,
     sessions: realSessions?.gateway ?? {
-      admit: async ({ attemptId, sessionId }) => {
-        const adopted = sessionId ?? `session:${attemptId}`
-        attempts.set(adopted, "running")
+      admit: async ({ runId, sessionId }) => {
+        const adopted = sessionId ?? `session:${runId}`
+        runs.set(adopted, "running")
         const result = queuedExecutionResults.shift()
-        if (!result) throw new Error(`Execution ${attemptId} had no explicit controlled Session result`)
-        queueMicrotask(() => attempts.set(adopted, result))
+        if (!result) throw new Error(`Execution ${runId} had no explicit controlled Session result`)
+        queueMicrotask(() => runs.set(adopted, result))
         return adopted
       },
-      cancel: async (sessionId) => { attempts.delete(sessionId) },
+      cancel: async (sessionId) => { runs.delete(sessionId) },
       result: async (sessionId) => {
-        const result = attempts.get(sessionId)
+        const result = runs.get(sessionId)
         return !result || result === "running" ? { state: "running" } : result
       },
     },
@@ -343,19 +343,19 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     }),
     sourcePlanning: { sessions: generationSessions, directory: repository },
   })
-  executeAttempt = (context, request) => {
-    // `WorkGraphAttemptOperation` is a FOUR-member union (record_checkpoint |
+  executeRun = (context, request) => {
+    // `WorkGraphRunOperation` is a FOUR-member union (record_checkpoint |
     // complete | update_stream_notes | notify_owner). This used to be a
     // `type === "record_checkpoint" ? … : …` ternary, so the else branch silently
-    // mapped update_stream_notes/notify_owner onto a `complete_attempt` command with
+    // mapped update_stream_notes/notify_owner onto a `complete_run` command with
     // `summary`/`artifacts`/`evidence` all undefined. Narrow explicitly instead, and
     // fail loudly on the operations this harness genuinely does not implement rather
     // than issuing a malformed command.
     const identity = {
-      attemptId: request.identity.attemptId,
+      runId: request.identity.runId,
       sessionId: request.identity.sessionId,
       workspaceId: request.identity.workspaceId,
-      ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+      generation: request.identity.generation,
     }
     const operation = request.operation
     if (operation.type === "record_checkpoint") {
@@ -363,7 +363,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         operationId: operation.operationId,
         command: {
           version: 1,
-          type: "record_attempt_checkpoint",
+          type: "record_run_checkpoint",
           ...identity,
           level: operation.level,
           summary: operation.summary,
@@ -376,7 +376,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         operationId: operation.operationId,
         command: {
           version: 1,
-          type: "complete_attempt",
+          type: "complete_run",
           ...identity,
           summary: operation.summary,
           artifacts: operation.artifacts,
@@ -385,10 +385,10 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       })
     }
     throw new Error(
-      `real-workgraph-harness does not implement the "${operation.type}" attempt operation. `
+      `real-workgraph-harness does not implement the "${operation.type}" run operation. `
         + `It reaches the ledger through a different command shape (update_stream_notes needs a `
-        + `streamId + expectedVersion; notify_owner has no attempt command at all), so mapping it `
-        + `onto complete_attempt — which is what this helper used to do silently — produces a `
+        + `streamId + expectedVersion; notify_owner has no run command at all), so mapping it `
+        + `onto complete_run — which is what this helper used to do silently — produces a `
         + `malformed command. Implement it properly here if a spec needs it.`,
     )
   }
@@ -524,31 +524,31 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     worktreeDirectory: (streamId) => path.join(directory, "worktrees", encode(organizationId), encode(ownerUserId), encode(streamId), "envelope"),
     runReconcile,
     runSourcePlanning: () => serialized(() => embedded.sourcePlanning.runDue(context())),
-    completeControlledAttempt: (workItemId, summary, artifacts) => serialized(async () => {
-      const attempt = database.prepare(
-        `SELECT attempts.id, attempts.session_id, attempts.lease_epoch, bindings.project_id
-         FROM wg_v2_attempts attempts
+    completeControlledRun: (workItemId, summary, artifacts) => serialized(async () => {
+      const run = database.prepare(
+        `SELECT runs.id, runs.session_id, runs.generation, bindings.project_id
+         FROM wg_v2_runs runs
          JOIN wg_v2_session_bindings bindings
-           ON bindings.organization_id = attempts.organization_id
-          AND bindings.owner_user_id = attempts.owner_user_id
-          AND bindings.session_id = attempts.session_id
-          AND bindings.current_attempt_id = attempts.id
+           ON bindings.organization_id = runs.organization_id
+          AND bindings.owner_user_id = runs.owner_user_id
+          AND bindings.session_id = runs.session_id
+          AND bindings.current_run_id = runs.id
           AND bindings.state = 'active'
-         WHERE attempts.organization_id = ? AND attempts.owner_user_id = ? AND attempts.work_item_id = ?
-         ORDER BY attempt_number DESC LIMIT 1`,
+         WHERE runs.organization_id = ? AND runs.owner_user_id = ? AND runs.work_item_id = ?
+         ORDER BY run_number DESC LIMIT 1`,
       ).get(organizationId, ownerUserId, workItemId) as
-        | { id: string; session_id: string; lease_epoch: number; project_id: string }
+        | { id: string; session_id: string; generation: number; project_id: string }
         | undefined
-      if (!attempt) throw new Error("Controlled Attempt is not running")
+      if (!run) throw new Error("Controlled Run is not running")
       return embedded.service.execute(context(), {
         operationId: crypto.randomUUID() as never,
         command: {
           version: 1,
-          type: "complete_attempt",
-          attemptId: attempt.id as never,
-          sessionId: attempt.session_id,
-          workspaceId: attempt.project_id,
-          leaseEpoch: attempt.lease_epoch,
+          type: "complete_run",
+          runId: run.id as never,
+          sessionId: run.session_id,
+          workspaceId: run.project_id,
+          generation: run.generation,
           summary,
           artifacts: [...artifacts],
           evidence: [{
@@ -574,9 +574,9 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     }),
     controlledExecutionDiagnostics: () => ({
       queued: [...queuedExecutionResults],
-      attempts: [...attempts.entries()],
-      durableAttempts: database.prepare(
-        "SELECT id, lifecycle, lease_epoch, session_id FROM wg_v2_attempts ORDER BY created_at, id",
+      runs: [...runs.entries()],
+      durableRuns: database.prepare(
+        "SELECT id, lifecycle, generation, session_id FROM wg_v2_runs ORDER BY created_at, id",
       ).all(),
       leases: database.prepare(
         "SELECT resource_id, holder_id, epoch, expires_at FROM wg_v2_leases ORDER BY resource_id",
@@ -1643,7 +1643,7 @@ async function availablePort() {
 
 async function waitForOpenCode(port: number, process: ReturnType<typeof spawn>, logs: string[]) {
   const diagT0 = Date.now()
-  // Budget the whole boot rather than a fixed attempt count, and bound every
+  // Budget the whole boot rather than a fixed run count, and bound every
   // probe with an AbortSignal timeout. On a cold CI runner the engine's first
   // `bun run ./src/index.ts serve` transpiles the entire Effect server tree on
   // demand: `NodeHttpServer.layer` binds the listen socket early in that layer
@@ -1653,27 +1653,27 @@ async function waitForOpenCode(port: number, process: ReturnType<typeof spawn>, 
   // that void and hangs forever, because Node's HTTP parser consumes the request
   // before any `request` listener exists and never replays it once the handler
   // attaches. That is exactly the observed ~240s silent hook timeout (no throw,
-  // no per-attempt log). Timing out each probe lets the loop keep retrying with
+  // no per-run log). Timing out each probe lets the loop keep retrying with
   // fresh connections until the handler is live, and the total deadline turns a
   // genuinely stuck boot into a fast failure that carries the engine's own logs.
   const deadlineMs = 120_000
-  let attempt = 0
+  let run = 0
   while (Date.now() - diagT0 < deadlineMs) {
-    attempt++
+    run++
     if (process.exitCode !== null) throw new Error(`OpenCode exited before readiness:\n${logs.join("")}`)
     const fetchT0 = Date.now()
     const ready = await fetch(`http://127.0.0.1:${port}/global/health`, {
       signal: AbortSignal.timeout(2_000),
     }).then((response) => response.ok, () => false)
     const fetchMs = Date.now() - fetchT0
-    // Unconditional (throttled) per-attempt checkpoint so CI shows the probe loop
+    // Unconditional (throttled) per-run checkpoint so CI shows the probe loop
     // is progressing and pinpoints where a boot stalls instead of going silent.
-    if (attempt <= 3 || attempt % 10 === 0 || fetchMs > 500)
+    if (run <= 3 || run % 10 === 0 || fetchMs > 500)
       console.error(
-        `[harness-diag] waitForOpenCode attempt ${attempt} ready=${ready} fetch=${fetchMs}ms (total +${Date.now() - diagT0}ms)`,
+        `[harness-diag] waitForOpenCode run ${run} ready=${ready} fetch=${fetchMs}ms (total +${Date.now() - diagT0}ms)`,
       )
     if (ready) {
-      console.error(`[harness-diag] waitForOpenCode ready at attempt ${attempt}, total +${Date.now() - diagT0}ms`)
+      console.error(`[harness-diag] waitForOpenCode ready at run ${run}, total +${Date.now() - diagT0}ms`)
       return
     }
     await new Promise((resolve) => setTimeout(resolve, 100))

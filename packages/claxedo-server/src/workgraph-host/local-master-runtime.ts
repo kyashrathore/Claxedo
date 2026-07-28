@@ -2,7 +2,7 @@ import type BetterSqlite3 from "better-sqlite3"
 import { createHash } from "node:crypto"
 import {
   DEFAULT_STREAM_CHARTER_HINTS,
-  masterAttemptId,
+  masterRunId,
   masterSessionId,
   nextDailyMasterRun,
   ResolvedExecutionProfileSchema,
@@ -42,7 +42,7 @@ type MasterMailboxRow = Readonly<{
   created_at: string | number
 }>
 
-type MasterAttemptRow = Readonly<{
+type MasterRunRow = Readonly<{
   id: string
   work_item_id: string
   lifecycle: string
@@ -111,23 +111,23 @@ async function runTurn(
     // A missing or closed Stream cancels its master wake outright — closed
     // Streams must never launch master sessions, and schedule wakes must not
     // re-arm for them.
-    if (!stream || stream.lifecycle === "closed") return { retired: true as const, mailbox: [], attempts: [] }
+    if (!stream || stream.lifecycle === "closed") return { retired: true as const, mailbox: [], runs: [] }
     if (wake.status === "pending") {
-      // The master and task Attempts share the Stream envelope worktree. A
-      // master turn never starts while an Attempt is live in the workspace —
-      // the wake defers and the lane re-fires after the Attempt settles.
-      const liveAttempt = input.database.prepare(`
-        SELECT 1 FROM wg_v2_attempts
+      // The master and task Runs share the Stream envelope worktree. A
+      // master turn never starts while an Run is live in the workspace —
+      // the wake defers and the lane re-fires after the Run settles.
+      const liveRun = input.database.prepare(`
+        SELECT 1 FROM wg_v2_runs
         WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
           AND lifecycle IN ('admitted', 'placing', 'running') LIMIT 1
       `).get(context.organizationId, context.ownerUserId, wake.stream_id)
-      if (liveAttempt) {
+      if (liveRun) {
         input.database.prepare(`
           UPDATE wg_v2_due_jobs SET status = 'pending', claimed_by = NULL, claim_expires_at = NULL,
             due_at = ?, lease_epoch = lease_epoch - 1, updated_at = ?
           WHERE organization_id = ? AND owner_user_id = ? AND id = ?
         `).run(now() + 30_000, now(), context.organizationId, context.ownerUserId, wake.id)
-        return { deferred: true as const, mailbox: [], attempts: [] }
+        return { deferred: true as const, mailbox: [], runs: [] }
       }
       setMasterStatus(input.database, context, stream.id, {
         state: "acting",
@@ -145,20 +145,20 @@ async function runTurn(
       UPDATE wg_v2_master_mailbox SET status = 'claimed', updated_at = ?
       WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'pending'
     `).run(now(), context.organizationId, context.ownerUserId, message.id))
-    const attempts = input.database.prepare(`
+    const runs = input.database.prepare(`
       SELECT id, work_item_id, lifecycle, terminal_result_json, resolved_execution_profile_json, updated_at
-      FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+      FROM wg_v2_runs WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
         AND lifecycle IN ('result', 'failed', 'cancelled')
       ORDER BY CAST(updated_at AS INTEGER) DESC, id DESC LIMIT 20
-    `).all(context.organizationId, context.ownerUserId, wake.stream_id) as MasterAttemptRow[]
-    return { stream, mailbox, attempts }
+    `).all(context.organizationId, context.ownerUserId, wake.stream_id) as MasterRunRow[]
+    return { stream, mailbox, runs }
   })()
   if (!claimed) return { status: "skipped" as const }
   if ("deferred" in claimed) return { status: "deferred" as const }
   if ("retired" in claimed || !claimed.stream) return complete(input.database, context, wake, now(), "cancelled")
   try {
     const sessionId = masterSessionId(claimed.stream.id)
-    const profile = resolveProfile(claimed.stream, claimed.attempts)
+    const profile = resolveProfile(claimed.stream, claimed.runs)
     if (wake.status === "running") {
       const result = await input.sessions.result(sessionId)
       if (result.state === "pending" || result.state === "running") return { status: "running" as const, sessionId }
@@ -166,7 +166,7 @@ async function runTurn(
       if (result.state === "cancelled") throw new Error("Master Session was cancelled")
       if (result.state !== "succeeded") throw new Error("Master Session returned an unsupported result")
       const charter = charterDetails(claimed.stream)
-      const resultingDiffs = [...new Set([...artifactRefs(claimed.attempts), ...result.artifacts])]
+      const resultingDiffs = [...new Set([...artifactRefs(claimed.runs), ...result.artifacts])]
       const audit = await input.execute(masterContext(context, sessionId), {
         operationId: `audit_master_${claimed.stream.id}_${wake.row_version}` as never,
         command: {
@@ -182,7 +182,7 @@ async function runTurn(
           reasoningSummary: result.summary,
           toolCalls: [],
           resultingDiffs,
-          evidenceIds: evidenceIds(input.database, context, claimed.attempts),
+          evidenceIds: evidenceIds(input.database, context, claimed.runs),
           outcome: "succeeded",
         },
       })
@@ -209,7 +209,8 @@ async function runTurn(
     })
     const mailbox = claimed.mailbox.filter((message) => actorId(message.provenance_json) !== sessionId)
     await input.sessions.admit({
-      attemptId: masterAttemptId(claimed.stream.id),
+      runId: masterRunId(claimed.stream.id),
+      generation: 1,
       streamId: claimed.stream.id,
       sessionId,
       messageId: `msg_master_${claimed.stream.id}_${wake.row_version}`,
@@ -220,11 +221,11 @@ async function runTurn(
         stream: claimed.stream,
         charter: charterDetails(claimed.stream),
         mailbox,
-        attempts: claimed.attempts.map((attempt) => ({
-          id: attempt.id,
-          workItemId: attempt.work_item_id,
-          state: attempt.lifecycle,
-          result: attempt.terminal_result_json ?? "none",
+        runs: claimed.runs.map((run) => ({
+          id: run.id,
+          workItemId: run.work_item_id,
+          state: run.lifecycle,
+          result: run.terminal_result_json ?? "none",
         })),
         connectionIds: profile.connectionIds,
         capabilities: { landing: true },
@@ -278,8 +279,8 @@ async function runTurn(
   }
 }
 
-function resolveProfile(stream: MasterStreamRow, attempts: readonly MasterAttemptRow[]) {
-  const candidates = [stream.execution_defaults_json, ...attempts.map((attempt) => attempt.resolved_execution_profile_json)]
+function resolveProfile(stream: MasterStreamRow, runs: readonly MasterRunRow[]) {
+  const candidates = [stream.execution_defaults_json, ...runs.map((run) => run.resolved_execution_profile_json)]
   for (const candidate of candidates) {
     const parsed = ResolvedExecutionProfileSchema.safeParse(JSON.parse(candidate))
     if (parsed.success) return parsed.data
@@ -301,23 +302,23 @@ function wakeTrigger(payload: string) {
   return value.trigger === "mailbox" || value.trigger === "schedule" ? value.trigger : "task_settled"
 }
 
-function artifactRefs(attempts: readonly MasterAttemptRow[]) {
-  return attempts.flatMap((attempt) => {
-    if (!attempt.terminal_result_json) return []
-    const result = JSON.parse(attempt.terminal_result_json) as { artifactRefs?: unknown }
+function artifactRefs(runs: readonly MasterRunRow[]) {
+  return runs.flatMap((run) => {
+    if (!run.terminal_result_json) return []
+    const result = JSON.parse(run.terminal_result_json) as { artifactRefs?: unknown }
     return Array.isArray(result.artifactRefs)
       ? result.artifactRefs.filter((value): value is string => typeof value === "string" && !!value.trim())
       : []
   }).slice(0, 100)
 }
 
-function evidenceIds(database: Database, context: WorkGraphContext, attempts: readonly MasterAttemptRow[]) {
-  if (!attempts.length) return []
+function evidenceIds(database: Database, context: WorkGraphContext, runs: readonly MasterRunRow[]) {
+  if (!runs.length) return []
   return (database.prepare(`
     SELECT id FROM wg_v2_evidence WHERE organization_id = ? AND owner_user_id = ?
-      AND source_attempt_id IN (${attempts.map(() => "?").join(",")})
+      AND source_run_id IN (${runs.map(() => "?").join(",")})
     ORDER BY created_at, id LIMIT 100
-  `).all(context.organizationId, context.ownerUserId, ...attempts.map((attempt) => attempt.id)) as Array<{ id: string }>)
+  `).all(context.organizationId, context.ownerUserId, ...runs.map((run) => run.id)) as Array<{ id: string }>)
     .map((row) => row.id as never)
 }
 

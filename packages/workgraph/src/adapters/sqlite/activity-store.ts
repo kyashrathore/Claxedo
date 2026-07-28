@@ -9,7 +9,7 @@ import {
   createTaskActivityPageCursor,
   readTaskActivityPageCursor,
   type AgentCheckpointDto,
-  type AttemptID,
+  type RunID,
   type SessionBindingDto,
   type StreamActivityGranularity,
   type StreamID,
@@ -102,19 +102,19 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
         | { id: WorkItemID; stream_id: StreamID; lifecycle: string }
         | undefined
       if (!item || item.stream_id !== binding.stream_id) throw new WorkGraphSessionBindingError("not_found", "Work Item not found in the bound Stream")
-      if (binding.current_work_item_id === item.id && binding.current_attempt_id) {
+      if (binding.current_work_item_id === item.id && binding.current_run_id) {
         throw new WorkGraphSessionBindingError("invalid_transition", "Session is already attached to this Work Item")
       }
       if (binding.current_work_item_id) {
         const current = database.prepare(`
           SELECT lifecycle FROM wg_v2_work_items WHERE organization_id = ? AND owner_user_id = ? AND id = ?
         `).get(context.organizationId, context.ownerUserId, binding.current_work_item_id) as { lifecycle: string } | undefined
-        const currentAttempt = binding.current_attempt_id ? database.prepare(`
-          SELECT lifecycle FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-        `).get(context.organizationId, context.ownerUserId, binding.current_attempt_id) as { lifecycle: string } | undefined : undefined
+        const currentRun = binding.current_run_id ? database.prepare(`
+          SELECT lifecycle FROM wg_v2_runs WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, binding.current_run_id) as { lifecycle: string } | undefined : undefined
         if (!current || !["completed", "abandoned"].includes(current.lifecycle) ||
-          !currentAttempt || !["result", "failed", "cancelled"].includes(currentAttempt.lifecycle)) {
-          throw new WorkGraphSessionBindingError("invalid_transition", "Settle the current Work Item and Attempt before attaching another")
+          !currentRun || !["result", "failed", "cancelled"].includes(currentRun.lifecycle)) {
+          throw new WorkGraphSessionBindingError("invalid_transition", "Settle the current Work Item and Run before attaching another")
         }
       }
       if (item.lifecycle !== "pending" || database.prepare(`
@@ -141,31 +141,31 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
         throw new WorkGraphSessionBindingError("not_ready", "Work Item requires a pending Decision")
       }
       if (database.prepare(`
-        SELECT 1 FROM wg_v2_attempts
+        SELECT 1 FROM wg_v2_runs
         WHERE organization_id = ? AND owner_user_id = ? AND work_item_id = ?
           AND lifecycle IN ('admitted', 'placing', 'running')
         LIMIT 1
       `).get(context.organizationId, context.ownerUserId, item.id)) {
-        throw new WorkGraphSessionBindingError("not_ready", "Work Item already has an active Attempt")
+        throw new WorkGraphSessionBindingError("not_ready", "Work Item already has an active Run")
       }
       const now = clock.now()
-      const attemptId = ids.next("attempt")
-      const attemptNumber = (database.prepare(`
-        SELECT COALESCE(MAX(attempt_number), 0) + 1 AS value FROM wg_v2_attempts
+      const runId = ids.next("run")
+      const runNumber = (database.prepare(`
+        SELECT COALESCE(MAX(run_number), 0) + 1 AS value FROM wg_v2_runs
         WHERE organization_id = ? AND owner_user_id = ? AND work_item_id = ?
       `).get(context.organizationId, context.ownerUserId, item.id) as { value: number }).value
       database.prepare(`
-        INSERT INTO wg_v2_attempts
-          (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
-           execution_kind, resolved_execution_profile_json, session_id, created_at, updated_at, started_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'running', 'attached', ?, ?, ?, ?, ?)
+        INSERT INTO wg_v2_runs
+          (organization_id, owner_user_id, id, stream_id, work_item_id, run_number, lifecycle,
+           generation, execution_kind, resolved_execution_profile_json, session_id, created_at, updated_at, started_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'running', 1, 'attached', ?, ?, ?, ?, ?)
       `).run(
         context.organizationId,
         context.ownerUserId,
-        attemptId,
+        runId,
         binding.stream_id,
         item.id,
-        attemptNumber,
+        runNumber,
         JSON.stringify(attachment.resolvedExecution),
         binding.session_id,
         now,
@@ -177,12 +177,12 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
         WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'pending'
       `).run(now, context.organizationId, context.ownerUserId, item.id)
       database.prepare(`
-        UPDATE wg_v2_session_bindings SET current_work_item_id = ?, current_attempt_id = ?,
+        UPDATE wg_v2_session_bindings SET current_work_item_id = ?, current_run_id = ?,
           row_version = row_version + 1, updated_at = ?, provenance_json = ?
         WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
       `).run(
         item.id,
-        attemptId,
+        runId,
         now,
         JSON.stringify({ actor: context.actor, operationId: attachment.operationId }),
         context.organizationId,
@@ -197,7 +197,7 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
         eventType: "session_task_attached",
         streamId: binding.stream_id,
         resource: { type: "session_binding", id: binding.id as never },
-        payload: { bindingId: binding.id, workItemId: item.id, attemptId },
+        payload: { bindingId: binding.id, workItemId: item.id, runId },
         request,
         resultValue: ownerNeutral(result),
         snapshotRelevant: true,
@@ -212,18 +212,18 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
       const replay = operationReplay(database, context, checkpoint.operationId, "record_agent_checkpoint", request)
       if (replay) return AgentCheckpointDtoSchema.parse({ ...object(replay), ownerUserId: context.ownerUserId })
       const binding = requireBinding(database, context, checkpoint.bindingId)
-      if (binding.state !== "active" || !binding.current_work_item_id || !binding.current_attempt_id) {
+      if (binding.state !== "active" || !binding.current_work_item_id || !binding.current_run_id) {
         throw new WorkGraphSessionBindingError("invalid_transition", "Session binding has no active Work Item")
       }
       const evidence = checkpoint.evidenceIds.map((id) => database.prepare(`
-        SELECT subject_type, subject_id, source_attempt_id FROM wg_v2_evidence
+        SELECT subject_type, subject_id, source_run_id FROM wg_v2_evidence
         WHERE organization_id = ? AND owner_user_id = ? AND id = ?
       `).get(context.organizationId, context.ownerUserId, id) as
-        | { subject_type: string; subject_id: string; source_attempt_id: string | null }
+        | { subject_type: string; subject_id: string; source_run_id: string | null }
         | undefined)
       if (evidence.some((row) => !row ||
         !((row.subject_type === "work_item" && row.subject_id === binding.current_work_item_id) ||
-          row.source_attempt_id === binding.current_attempt_id))) {
+          row.source_run_id === binding.current_run_id))) {
         throw new WorkGraphSessionBindingError("not_found", "Checkpoint evidence does not belong to the active Task")
       }
       const now = clock.now()
@@ -231,7 +231,7 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
       const id = ids.next("agent_checkpoint")
       database.prepare(`
         INSERT INTO wg_v2_agent_checkpoints
-          (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_id, session_binding_id,
+          (organization_id, owner_user_id, id, stream_id, work_item_id, run_id, session_binding_id,
            level, summary, evidence_ids_json, occurred_at, provenance_json, operation_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
@@ -240,7 +240,7 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
         id,
         binding.stream_id,
         binding.current_work_item_id,
-        binding.current_attempt_id,
+        binding.current_run_id,
         binding.id,
         checkpoint.level,
         checkpoint.summary,
@@ -258,7 +258,7 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
         eventType: "agent_checkpoint_recorded",
         streamId: binding.stream_id,
         resource: { type: "agent_checkpoint", id: id as never },
-        payload: { checkpointId: id, workItemId: binding.current_work_item_id, attemptId: binding.current_attempt_id },
+        payload: { checkpointId: id, workItemId: binding.current_work_item_id, runId: binding.current_run_id },
         request,
         resultValue: ownerNeutral(result),
         occurredAt: now,
@@ -274,12 +274,12 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
       const binding = requireBinding(database, context, release.bindingId)
       if (binding.state === "released") return bindingDto(context, binding)
       if (binding.row_version !== release.expectedVersion) throw new WorkGraphSessionBindingError("conflict", "Session binding version changed")
-      if (binding.current_attempt_id) {
-        const attempt = database.prepare(`
-          SELECT lifecycle FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND id = ?
-        `).get(context.organizationId, context.ownerUserId, binding.current_attempt_id) as { lifecycle: string } | undefined
-        if (!attempt || !["result", "failed", "cancelled"].includes(attempt.lifecycle)) {
-          throw new WorkGraphSessionBindingError("invalid_transition", "Settle the attached Attempt before releasing its Session")
+      if (binding.current_run_id) {
+        const run = database.prepare(`
+          SELECT lifecycle FROM wg_v2_runs WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, binding.current_run_id) as { lifecycle: string } | undefined
+        if (!run || !["result", "failed", "cancelled"].includes(run.lifecycle)) {
+          throw new WorkGraphSessionBindingError("invalid_transition", "Settle the attached Run before releasing its Session")
         }
       }
       const now = clock.now()
@@ -385,11 +385,11 @@ function taskActivitySql(importanceCount: number) {
       WHERE events.organization_id = @organization AND events.owner_user_id = @owner
         AND changes.resource_type = 'work_item' AND changes.resource_id = @workItem
       UNION ALL
-      SELECT 'attempt:' || id || ':' || lifecycle, 'attempt',
+      SELECT 'run:' || id || ':' || lifecycle, 'run',
         CASE WHEN lifecycle IN ('result', 'failed', 'cancelled') THEN 'milestones' ELSE 'progress' END,
-        'Attempt ' || attempt_number || ' ' || lifecycle, CAST(updated_at AS INTEGER),
-        'system', 'workgraph_runtime', 'attempt', id
-      FROM wg_v2_attempts WHERE organization_id = @organization AND owner_user_id = @owner AND work_item_id = @workItem
+        'Run ' || run_number || ' ' || lifecycle, CAST(updated_at AS INTEGER),
+        'system', 'workgraph_runtime', 'run', id
+      FROM wg_v2_runs WHERE organization_id = @organization AND owner_user_id = @owner AND work_item_id = @workItem
       UNION ALL
       SELECT 'checkpoint:' || id, 'checkpoint',
         CASE level WHEN 'milestone' THEN 'milestones' WHEN 'detail' THEN 'detailed' ELSE 'progress' END,
@@ -413,8 +413,8 @@ function taskActivitySql(importanceCount: number) {
         COALESCE(json_extract(provenance_json, '$.actor.type'), 'agent'),
         COALESCE(json_extract(provenance_json, '$.actor.id'), 'workgraph_agent'), 'evidence', id
       FROM wg_v2_evidence WHERE organization_id = @organization AND owner_user_id = @owner
-        AND ((subject_type = 'work_item' AND subject_id = @workItem) OR source_attempt_id IN (
-          SELECT id FROM wg_v2_attempts WHERE organization_id = @organization AND owner_user_id = @owner AND work_item_id = @workItem
+        AND ((subject_type = 'work_item' AND subject_id = @workItem) OR source_run_id IN (
+          SELECT id FROM wg_v2_runs WHERE organization_id = @organization AND owner_user_id = @owner AND work_item_id = @workItem
         ))
       UNION ALL
       SELECT 'external_effect:' || receipts.id, 'external_effect', 'milestones', receipts.effect_kind,
@@ -423,8 +423,8 @@ function taskActivitySql(importanceCount: number) {
         COALESCE(json_extract(receipts.provenance_json, '$.actor.id'), 'workgraph_runtime'),
         'external_effect', receipts.id
       FROM wg_v2_durable_effect_receipts receipts
-      WHERE receipts.organization_id = @organization AND receipts.owner_user_id = @owner AND receipts.attempt_id IN (
-        SELECT id FROM wg_v2_attempts WHERE organization_id = @organization AND owner_user_id = @owner AND work_item_id = @workItem
+      WHERE receipts.organization_id = @organization AND receipts.owner_user_id = @owner AND receipts.run_id IN (
+        SELECT id FROM wg_v2_runs WHERE organization_id = @organization AND owner_user_id = @owner AND work_item_id = @workItem
       )
     ) activity
     WHERE importance IN (${Array.from({ length: importanceCount }, (_, index) => `@importance${index}`).join(", ")})
@@ -643,7 +643,7 @@ function bindingDto(context: WorkGraphContext, row: BindingRow): SessionBindingD
     sessionId: row.session_id,
     projectId: row.project_id,
     ...(row.current_work_item_id ? { currentWorkItemId: row.current_work_item_id } : {}),
-    ...(row.current_attempt_id ? { currentAttemptId: row.current_attempt_id } : {}),
+    ...(row.current_run_id ? { currentRunId: row.current_run_id } : {}),
     state: row.state,
     boundAt: Number(row.bound_at),
     ...(row.released_at === null ? {} : { releasedAt: Number(row.released_at) }),
@@ -662,7 +662,7 @@ function checkpointDto(context: WorkGraphContext, row: CheckpointRow): AgentChec
     version: row.row_version,
     streamId: row.stream_id,
     workItemId: row.work_item_id,
-    attemptId: row.attempt_id,
+    runId: row.run_id,
     sessionBindingId: row.session_binding_id,
     level: row.level,
     summary: row.summary,
@@ -689,7 +689,7 @@ type BindingRow = {
   session_id: string
   project_id: string
   current_work_item_id: WorkItemID | null
-  current_attempt_id: AttemptID | null
+  current_run_id: RunID | null
   state: "active" | "released"
   bound_at: string | number
   released_at: string | number | null
@@ -703,7 +703,7 @@ type CheckpointRow = {
   id: string
   stream_id: StreamID
   work_item_id: WorkItemID
-  attempt_id: AttemptID
+  run_id: RunID
   session_binding_id: string
   level: "milestone" | "progress" | "detail"
   summary: string

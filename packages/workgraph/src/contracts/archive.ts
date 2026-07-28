@@ -22,7 +22,7 @@ import {
 } from "./events"
 import { SourceViewTargetSchema } from "./source-view"
 import {
-  AttemptIDSchema,
+  RunIDSchema,
   CompletionRequirementIDSchema,
   DecisionIDSchema,
   DurableEffectReceiptIDSchema,
@@ -39,7 +39,7 @@ import {
   WorkSourceRevisionIDSchema,
 } from "./ids"
 import {
-  AttemptStateSchema,
+  RunStateSchema,
   DecisionStateSchema,
   OutcomeStateSchema,
   StreamLifecycleStateSchema,
@@ -52,7 +52,7 @@ import {
   AdmissionProposedOutcomeSchema,
   AdmissionProposedWorkItemSchema,
   AdmissionSuggestedPlacementSchema,
-  AttemptResultSchema,
+  RunResultSchema,
   DecisionAnswerSchema,
   DecisionOptionSchema,
   RecordProvenanceSchema,
@@ -83,7 +83,7 @@ export const WorkGraphArchiveRecordKindSchema = z.enum([
   "outcome",
   "work_item",
   "work_item_dependency",
-  "attempt",
+  "run",
   "session_binding",
   "agent_checkpoint",
   "decision",
@@ -279,7 +279,7 @@ const WorkItemArchiveValueSchema = z.strictObject({
   executionDefaults: ExecutionProfileDefaultsSchema.optional(),
   createdByActorType: z.enum(["user", "agent", "system"]).optional(),
   createdByActorId: text.optional(),
-  originAttemptId: AttemptIDSchema.optional(),
+  originRunId: RunIDSchema.optional(),
   completedAt: timestamp.optional(),
   abandonedAt: timestamp.optional(),
   abandonReason: text.optional(),
@@ -294,19 +294,20 @@ const WorkItemDependencyArchiveValueSchema = z
   })
   .refine((value) => value.workItemId !== value.dependsOnWorkItemId, "A Work Item cannot depend on itself")
 
-const AttemptArchiveValueSchema = z.strictObject({
+const RunArchiveValueSchema = z.strictObject({
   ...publicMutable,
   streamId: StreamIDSchema,
   workItemId: WorkItemIDSchema,
-  attemptNumber: z.number().int().positive(),
-  state: AttemptStateSchema,
+  runNumber: z.number().int().positive(),
+  generation: z.number().int().positive(),
+  state: RunStateSchema,
   executionKind: z.enum(["managed", "attached"]).default("managed"),
   resolvedExecution: ResolvedExecutionProfileSchema,
   admittedAt: timestamp,
   startedAt: timestamp.optional(),
   finishedAt: timestamp.optional(),
-  result: AttemptResultSchema.optional(),
-  attentionReason: text.optional(),
+  result: RunResultSchema.optional(),
+  parkedReason: text.optional(),
   executionIdentity: z
     .strictObject({
       envelopeId: text.optional(),
@@ -323,13 +324,13 @@ const SessionBindingArchiveValueSchema = z.strictObject({
   sessionId: text.max(512),
   projectId: text.max(512),
   currentWorkItemId: WorkItemIDSchema.optional(),
-  currentAttemptId: AttemptIDSchema.optional(),
+  currentRunId: RunIDSchema.optional(),
   state: SessionBindingStateSchema,
   boundAt: timestamp,
   releasedAt: timestamp.optional(),
 }).superRefine((binding, context) => {
-  if (binding.currentAttemptId && !binding.currentWorkItemId) {
-    context.addIssue({ code: "custom", path: ["currentAttemptId"], message: "A bound Attempt requires a current Work Item" })
+  if (binding.currentRunId && !binding.currentWorkItemId) {
+    context.addIssue({ code: "custom", path: ["currentRunId"], message: "A bound Run requires a current Work Item" })
   }
   if ((binding.state === "released") === (binding.releasedAt !== undefined)) return
   context.addIssue({ code: "custom", path: ["releasedAt"], message: "Released bindings require releasedAt" })
@@ -339,7 +340,7 @@ const AgentCheckpointArchiveValueSchema = z.strictObject({
   ...publicMutable,
   streamId: StreamIDSchema,
   workItemId: WorkItemIDSchema,
-  attemptId: AttemptIDSchema,
+  runId: RunIDSchema,
   sessionBindingId: SessionBindingIDSchema,
   level: AgentCheckpointLevelSchema,
   summary: text.max(1_000),
@@ -373,7 +374,7 @@ const evidenceBase = {
   schemaVersion,
   subject: EvidenceSubjectSchema,
   requirementId: CompletionRequirementIDSchema.optional(),
-  sourceAttemptId: AttemptIDSchema.optional(),
+  sourceRunId: RunIDSchema.optional(),
   summary: text,
   recordedAt: timestamp,
   recordedBy: WorkGraphActorSchema,
@@ -416,7 +417,7 @@ const EvidenceArchiveValueSchema = z
 const DurableEffectReceiptArchiveValueSchema = z.strictObject({
   ...storedImmutable,
   streamId: StreamIDSchema,
-  attemptId: AttemptIDSchema.optional(),
+  runId: RunIDSchema.optional(),
   effectKind: text,
   idempotencyKey: text,
   externalReference: jsonRecord,
@@ -425,7 +426,7 @@ const DurableEffectReceiptArchiveValueSchema = z.strictObject({
 
 const RecordSourceRevisionArchiveValueSchema = z.strictObject({
   ...storedImmutable,
-  recordType: z.enum(["stream", "outcome", "work_item", "attempt", "decision"]),
+  recordType: z.enum(["stream", "outcome", "work_item", "run", "decision"]),
   recordId: text,
   workSourceId: WorkSourceIDSchema,
   sourceRevisionId: WorkSourceRevisionIDSchema,
@@ -523,7 +524,7 @@ const MigrationIntakeArchiveValueSchema = z.strictObject({
   ...storedMutable,
   legacyTable: text,
   legacyRecordId: text,
-  intakeKind: z.enum(["source_review", "work_mapping_review", "attempt_mapping_review"]),
+  intakeKind: z.enum(["source_review", "work_mapping_review", "run_mapping_review"]),
   reason: text,
   rawReference: jsonRecord,
   status: z.enum(["pending_review", "resolved", "dismissed"]),
@@ -595,7 +596,7 @@ export const WorkGraphArchiveRecordSchema = z.discriminatedUnion("kind", [
   archiveRecord("outcome", OutcomeArchiveValueSchema),
   archiveRecord("work_item", WorkItemArchiveValueSchema),
   archiveRecord("work_item_dependency", WorkItemDependencyArchiveValueSchema),
-  archiveRecord("attempt", AttemptArchiveValueSchema),
+  archiveRecord("run", RunArchiveValueSchema),
   archiveRecord("session_binding", SessionBindingArchiveValueSchema),
   archiveRecord("agent_checkpoint", AgentCheckpointArchiveValueSchema),
   archiveRecord("decision", DecisionArchiveValueSchema),
@@ -714,7 +715,7 @@ export async function validateWorkGraphArchive(input: unknown): Promise<WorkGrap
   if (!parsed.success) throw new WorkGraphArchiveRestoreError("malformed")
   if (
     parsed.data.records.some(
-      (record) => record.kind === "attempt" && ["admitted", "placing", "running"].includes(record.value.state),
+      (record) => record.kind === "run" && ["admitted", "placing", "running"].includes(record.value.state),
     )
   ) {
     throw new WorkGraphArchiveRestoreError("not_quiescent")

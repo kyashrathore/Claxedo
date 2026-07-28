@@ -16,13 +16,13 @@ import {
   AdmissionProposalReadInputSchema,
   ReplacementReviewInputSchema,
   ReplacementReviewSchema,
-  AttemptDetailDtoSchema,
-  AttemptReadInputSchema,
+  RunDetailDtoSchema,
+  RunReadInputSchema,
   DecisionDtoSchema,
   DecisionReadInputSchema,
-  WorkItemAttemptListInputSchema,
-  WorkItemAttemptPageCursorSchema,
-  WorkItemAttemptPageSchema,
+  WorkItemRunListInputSchema,
+  WorkItemRunPageCursorSchema,
+  WorkItemRunPageSchema,
   StreamActivityGranularitySchema,
   TaskActivityPageCursorSchema,
   TaskActivityPageSchema,
@@ -88,10 +88,10 @@ export const WorkGraphHttpProposalReadSchema = AdmissionProposalReadInputSchema
 export const WorkGraphHttpReplacementReviewQuerySchema = ReplacementReviewInputSchema
 export const WorkGraphHttpReplacementReviewResponseSchema = ReplacementReviewSchema
 export const WorkGraphHttpWorkItemReadSchema = WorkItemReadInputSchema
-export const WorkGraphHttpAttemptReadSchema = AttemptReadInputSchema
+export const WorkGraphHttpRunReadSchema = RunReadInputSchema
 export const WorkGraphHttpDecisionReadSchema = DecisionReadInputSchema
-export const WorkGraphHttpWorkItemAttemptsQuerySchema = z.strictObject({
-  after: WorkItemAttemptPageCursorSchema.optional(),
+export const WorkGraphHttpWorkItemRunsQuerySchema = z.strictObject({
+  after: WorkItemRunPageCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
 export const WorkGraphHttpWorkItemActivityQuerySchema = z.strictObject({
@@ -223,10 +223,10 @@ export type WorkGraphHttpQueries = Readonly<{
       context: z.infer<typeof WorkGraphContextSchema>,
       input: z.infer<typeof WorkItemReadInputSchema>,
     ) => Promise<z.infer<typeof WorkItemDtoSchema> | undefined>
-    listAttempts: (
+    listRuns: (
       context: z.infer<typeof WorkGraphContextSchema>,
-      input: z.infer<typeof WorkItemAttemptListInputSchema>,
-    ) => Promise<z.infer<typeof WorkItemAttemptPageSchema>>
+      input: z.infer<typeof WorkItemRunListInputSchema>,
+    ) => Promise<z.infer<typeof WorkItemRunPageSchema>>
     listActivity: (
       context: z.infer<typeof WorkGraphContextSchema>,
       input: Readonly<{
@@ -237,11 +237,11 @@ export type WorkGraphHttpQueries = Readonly<{
       }>,
     ) => Promise<z.infer<typeof TaskActivityPageSchema>>
   }>
-  attempts: Readonly<{
+  runs: Readonly<{
     read: (
       context: z.infer<typeof WorkGraphContextSchema>,
-      input: z.infer<typeof AttemptReadInputSchema>,
-    ) => Promise<z.infer<typeof AttemptDetailDtoSchema> | undefined>
+      input: z.infer<typeof RunReadInputSchema>,
+    ) => Promise<z.infer<typeof RunDetailDtoSchema> | undefined>
   }>
   decisions: Readonly<{
     read: (

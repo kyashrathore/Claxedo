@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { isMasterSessionId, MASTER_ATTEMPT_PREFIX, masterSessionId } from "@claxedo/workgraph/contracts"
+import { isMasterSessionId, MASTER_RUN_PREFIX, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { GenericMutationCtx } from "convex/server"
 import type { DataModel, Id } from "./_generated/dataModel"
 import { serviceMutation, serviceQuery } from "./model"
@@ -124,11 +124,11 @@ export const deleteMetadata = serviceMutation({
   },
 })
 
-export const bindAttemptConnections = serviceMutation({
+export const bindRunConnections = serviceMutation({
   args: {
     ownerUserId: v.id("users"),
     orgId: v.id("orgs"),
-    attemptId: v.string(),
+    runId: v.string(),
     sessionId: v.string(),
     workspaceId: v.string(),
     connectionIds: v.array(v.string()),
@@ -137,21 +137,21 @@ export const bindAttemptConnections = serviceMutation({
   handler: async (ctx, args) => {
     await requireOrgMember(ctx, args.ownerUserId, args.orgId)
     await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
-    const attemptId = required(args.attemptId, "attemptId")
+    const runId = required(args.runId, "runId")
     const sessionId = required(args.sessionId, "sessionId")
     const workspaceId = required(args.workspaceId, "workspaceId")
     const connectionIds = unique(args.connectionIds.map((id) => required(id, "connectionId")))
     const tools = unique(args.tools.map((tool) => required(tool, "tool")))
     if (!connectionIds.length || !tools.length) throw new Error("Connection binding requires connections and tools")
     if (tools.some((tool) => !connectionTools.has(tool))) throw new Error("Unsupported Connection operation tool")
-    const attempt = await ownedAttempt(ctx, args.orgId, args.ownerUserId, attemptId)
-    const master = attempt ? undefined : await ownedMasterStream(ctx, args.orgId, args.ownerUserId, attemptId, sessionId)
-    if ((!attempt || attempt.session_id !== sessionId || attempt.envelope_id !== workspaceId || attempt.state !== "running") && !master) {
-      throw new Error("Attempt placement does not match the Connection binding")
+    const run = await ownedRun(ctx, args.orgId, args.ownerUserId, runId)
+    const master = run ? undefined : await ownedMasterStream(ctx, args.orgId, args.ownerUserId, runId, sessionId)
+    if ((!run || run.session_id !== sessionId || run.envelope_id !== workspaceId || run.state !== "running") && !master) {
+      throw new Error("Run placement does not match the Connection binding")
     }
-    const profile = (attempt?.resolved_execution ?? master?.execution_defaults) as { connectionIds?: unknown; tools?: unknown }
+    const profile = (run?.resolved_execution ?? master?.execution_defaults) as { connectionIds?: unknown; tools?: unknown }
     if (!sameSet(connectionIds, strings(profile.connectionIds)) || !tools.every((tool) => strings(profile.tools).includes(tool))) {
-      throw new Error("Connection binding exceeds the immutable Attempt profile")
+      throw new Error("Connection binding exceeds the immutable Run profile")
     }
     const metadata = await Promise.all(connectionIds.map((id) => connectionMetadata(ctx, args.orgId, id)))
     const requiredCapabilities = new Set(tools.map((tool) => tool === "connection_code_host_open_pr" ? "code-host" : "work-source"))
@@ -159,7 +159,7 @@ export const bindAttemptConnections = serviceMutation({
       [...requiredCapabilities].some((capability) => !connection.capabilities.includes(capability)))) {
       throw new Error("Connection metadata is unavailable")
     }
-    const existing = await attemptBinding(ctx, args.orgId, args.ownerUserId, attemptId)
+    const existing = await runBinding(ctx, args.orgId, args.ownerUserId, runId)
     const now = Date.now()
     const value = {
       session_id: sessionId,
@@ -173,10 +173,10 @@ export const bindAttemptConnections = serviceMutation({
       await ctx.db.patch(existing._id, { ...value, row_version: existing.row_version + 1 })
       return { bound: true as const }
     }
-    await ctx.db.insert("workgraph_attempt_connection_bindings", {
+    await ctx.db.insert("workgraph_run_connection_bindings", {
       organization_id: args.orgId,
       owner_user_id: args.ownerUserId,
-      attempt_id: attemptId,
+      run_id: runId,
       ...value,
       row_version: 1,
       schema_version: 1,
@@ -190,7 +190,7 @@ export const resolveOperationBinding = serviceQuery({
   args: {
     ownerUserId: v.id("users"),
     orgId: v.id("orgs"),
-    attemptId: v.string(),
+    runId: v.string(),
     sessionId: v.string(),
     workspaceId: v.string(),
     connectionId: v.string(),
@@ -199,24 +199,24 @@ export const resolveOperationBinding = serviceQuery({
   handler: async (ctx, args) => {
     if (!await isOrgMember(ctx, args.ownerUserId, args.orgId)) return null
     await assertWorkGraphOwnerReadable(ctx, args.orgId, args.ownerUserId)
-    const binding = await attemptBinding(ctx, args.orgId, args.ownerUserId, args.attemptId)
+    const binding = await runBinding(ctx, args.orgId, args.ownerUserId, args.runId)
     if (!binding || binding.revoked_at || binding.organization_id !== args.orgId || binding.session_id !== args.sessionId ||
       binding.workspace_id !== args.workspaceId || !binding.connection_ids.includes(args.connectionId) ||
       !binding.tools.includes(args.tool)) return null
-    const attempt = await ownedAttempt(ctx, args.orgId, args.ownerUserId, args.attemptId)
-    const master = attempt ? undefined : await ownedMasterStream(ctx, args.orgId, args.ownerUserId, args.attemptId, args.sessionId)
-    if ((!attempt || attempt.state !== "running" || attempt.session_id !== args.sessionId || attempt.envelope_id !== args.workspaceId) && !master) return null
+    const run = await ownedRun(ctx, args.orgId, args.ownerUserId, args.runId)
+    const master = run ? undefined : await ownedMasterStream(ctx, args.orgId, args.ownerUserId, args.runId, args.sessionId)
+    if ((!run || run.state !== "running" || run.session_id !== args.sessionId || run.envelope_id !== args.workspaceId) && !master) return null
     const connection = await connectionMetadata(ctx, args.orgId, args.connectionId)
     const capability = args.tool === "connection_code_host_open_pr" ? "code-host" : "work-source"
     if (!connection || connection.status !== "connected" || !connection.capabilities.includes(capability)) return null
     return {
       context: { ownerUserId: String(args.ownerUserId), ownerPartition: `org:${String(args.orgId)}` },
-      attemptId: binding.attempt_id,
+      runId: binding.run_id,
       sessionId: binding.session_id,
       workspaceId: binding.workspace_id,
       connectionIds: binding.connection_ids,
       tools: binding.tools,
-      ...(master ? { streamId: master.id } : { streamId: attempt!.stream_id }),
+      ...(master ? { streamId: master.id } : { streamId: run!.stream_id }),
       connection: metadataResult(connection),
     }
   },
@@ -227,7 +227,7 @@ export const recordPullRequestReceipt = serviceMutation({
     ownerUserId: v.id("users"),
     orgId: v.id("orgs"),
     streamId: v.string(),
-    attemptId: v.string(),
+    runId: v.string(),
     idempotencyKey: v.string(),
     pullRequestId: v.string(),
     url: v.string(),
@@ -241,18 +241,18 @@ export const recordPullRequestReceipt = serviceMutation({
         .eq("owner_user_id", args.ownerUserId).eq("idempotency_key", args.idempotencyKey))
       .unique()
     if (existing) return { durableEffectReceiptId: existing.id, recorded: false as const }
-    const attempt = await ctx.db.query("workgraph_attempts")
+    const run = await ctx.db.query("workgraph_runs")
       .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
-        .eq("owner_user_id", args.ownerUserId).eq("id", args.attemptId))
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.runId))
       .unique()
-    const master = attempt ? undefined : await ownedMasterStream(
+    const master = run ? undefined : await ownedMasterStream(
       ctx,
       args.orgId,
       args.ownerUserId,
-      args.attemptId,
+      args.runId,
       masterSessionId(args.streamId),
     )
-    if ((!attempt || attempt.state !== "running" || attempt.stream_id !== args.streamId) && !master) {
+    if ((!run || run.state !== "running" || run.stream_id !== args.streamId) && !master) {
       throw new Error("Pull request receipt requires an active WorkGraph execution")
     }
     return persistPullRequestReceipt(ctx, { ...args, now: Date.now() })
@@ -264,7 +264,7 @@ export const claimPullRequestEffect = serviceMutation({
     ownerUserId: v.id("users"),
     orgId: v.id("orgs"),
     streamId: v.string(),
-    attemptId: v.string(),
+    runId: v.string(),
     workerId: v.string(),
     idempotencyKey: v.string(),
     repository: v.string(),
@@ -291,23 +291,23 @@ export const claimPullRequestEffect = serviceMutation({
     if (existing?.status === "claimed" && Number(existing.claim_expires_at) > args.now) {
       return { state: "busy" as const }
     }
-    const attempt = await ctx.db.query("workgraph_attempts")
+    const run = await ctx.db.query("workgraph_runs")
       .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", args.orgId)
-        .eq("owner_user_id", args.ownerUserId).eq("id", args.attemptId))
+        .eq("owner_user_id", args.ownerUserId).eq("id", args.runId))
       .unique()
-    const master = attempt ? undefined : await ownedMasterStream(
+    const master = run ? undefined : await ownedMasterStream(
       ctx,
       args.orgId,
       args.ownerUserId,
-      args.attemptId,
+      args.runId,
       masterSessionId(args.streamId),
     )
-    if ((!attempt || attempt.state !== "running" || attempt.stream_id !== args.streamId) && !master) {
+    if ((!run || run.state !== "running" || run.stream_id !== args.streamId) && !master) {
       throw new Error("Pull request effect requires an active WorkGraph execution")
     }
     const payload = {
       streamId: args.streamId,
-      attemptId: args.attemptId,
+      runId: args.runId,
       repository: args.repository,
       head: args.head,
       base: args.base,
@@ -374,12 +374,12 @@ export const completePullRequestEffect = serviceMutation({
     if (outbox.status !== "claimed" || outbox.claimed_by !== args.workerId) {
       throw new Error("Pull request effect lease is no longer owned by this worker")
     }
-    const payload = outbox.payload as { streamId: string; attemptId: string; draft: boolean }
+    const payload = outbox.payload as { streamId: string; runId: string; draft: boolean }
     const receipt = await persistPullRequestReceipt(ctx, {
       ownerUserId: args.ownerUserId,
       orgId: args.orgId,
       streamId: payload.streamId,
-      attemptId: payload.attemptId,
+      runId: payload.runId,
       idempotencyKey: outbox.idempotency_key,
       pullRequestId: args.pullRequestId,
       url: args.url,
@@ -437,7 +437,7 @@ async function persistPullRequestReceipt(ctx: GenericMutationCtx<DataModel>, arg
   ownerUserId: Id<"users">
   orgId: Id<"orgs">
   streamId: string
-  attemptId: string
+  runId: string
   idempotencyKey: string
   pullRequestId: string
   url: string
@@ -451,7 +451,7 @@ async function persistPullRequestReceipt(ctx: GenericMutationCtx<DataModel>, arg
   if (!stream) throw new Error("Pull request Stream is unavailable")
   const receiptId = `receipt_pr_${crypto.randomUUID()}`
   const evidenceId = `evidence_pr_${crypto.randomUUID()}`
-  const provenance = { actor: { type: "agent", id: args.attemptId } } as const
+  const provenance = { actor: { type: "agent", id: args.runId } } as const
   await ctx.db.insert("workgraph_durable_effect_receipts", {
     organization_id: args.orgId,
     owner_user_id: args.ownerUserId,
@@ -493,7 +493,7 @@ async function persistPullRequestReceipt(ctx: GenericMutationCtx<DataModel>, arg
     resourceId: args.streamId,
     changeType: "master_audit_recorded",
     payload: { streamId: args.streamId, evidenceId, durableEffectReceiptId: receiptId, url: args.url, draft: args.draft },
-    actorId: args.attemptId,
+    actorId: args.runId,
     now: args.now,
   })
   return { durableEffectReceiptId: receiptId, evidenceId, recorded: true as const }
@@ -504,7 +504,7 @@ export const authorizePullRequest = serviceMutation({
     ownerUserId: v.id("users"),
     orgId: v.id("orgs"),
     streamId: v.string(),
-    attemptId: v.string(),
+    runId: v.string(),
     repository: v.string(),
     title: v.string(),
     draft: v.boolean(),
@@ -521,7 +521,7 @@ export const authorizePullRequest = serviceMutation({
     if (!stream) throw new Error("Pull request Stream is unavailable")
     if (stream.public_pr_confirmed_at !== undefined) return { allowed: true as const }
     const sessionId = masterSessionId(stream.id)
-    if (args.attemptId !== `master_${stream.id}` || stream.master_status?.sessionId !== sessionId) {
+    if (args.runId !== `master_${stream.id}` || stream.master_status?.sessionId !== sessionId) {
       throw new Error("Only the Stream master can request public PR confirmation")
     }
     // Idempotent-by-design: an already-pending confirmation is a success
@@ -552,11 +552,11 @@ export const authorizePullRequest = serviceMutation({
   },
 })
 
-export const revokeAttemptBinding = serviceMutation({
-  args: { ownerUserId: v.id("users"), orgId: v.id("orgs"), attemptId: v.string() },
+export const revokeRunBinding = serviceMutation({
+  args: { ownerUserId: v.id("users"), orgId: v.id("orgs"), runId: v.string() },
   handler: async (ctx, args) => {
     await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
-    const binding = await attemptBinding(ctx, args.orgId, args.ownerUserId, required(args.attemptId, "attemptId"))
+    const binding = await runBinding(ctx, args.orgId, args.ownerUserId, required(args.runId, "runId"))
     if (!binding || binding.revoked_at) return { revoked: false as const }
     await ctx.db.patch(binding._id, {
       revoked_at: Date.now(),
@@ -586,21 +586,21 @@ function connectionMetadata(ctx: any, orgId: string, connectionId: string) {
     .unique()
 }
 
-function attemptBinding(ctx: any, orgId: string, ownerUserId: string, attemptId: string) {
-  return ctx.db.query("workgraph_attempt_connection_bindings")
-    .withIndex("by_tenant_attempt", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("attempt_id", attemptId))
+function runBinding(ctx: any, orgId: string, ownerUserId: string, runId: string) {
+  return ctx.db.query("workgraph_run_connection_bindings")
+    .withIndex("by_tenant_run", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("run_id", runId))
     .unique()
 }
 
-function ownedAttempt(ctx: any, orgId: string, ownerUserId: string, attemptId: string) {
-  return ctx.db.query("workgraph_attempts")
-    .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", attemptId))
+function ownedRun(ctx: any, orgId: string, ownerUserId: string, runId: string) {
+  return ctx.db.query("workgraph_runs")
+    .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", runId))
     .unique()
 }
 
-async function ownedMasterStream(ctx: any, orgId: string, ownerUserId: string, attemptId: string, sessionId: string) {
-  if (!attemptId.startsWith(MASTER_ATTEMPT_PREFIX) || !isMasterSessionId(sessionId)) return
-  const streamId = attemptId.slice("master_".length)
+async function ownedMasterStream(ctx: any, orgId: string, ownerUserId: string, runId: string, sessionId: string) {
+  if (!runId.startsWith(MASTER_RUN_PREFIX) || !isMasterSessionId(sessionId)) return
+  const streamId = runId.slice("master_".length)
   if (sessionId !== masterSessionId(streamId)) return
   const stream = await ctx.db.query("workgraph_streams")
     .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", streamId))

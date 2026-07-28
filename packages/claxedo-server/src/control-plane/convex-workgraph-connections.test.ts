@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from "vitest"
 import {
-  bindAttemptConnections,
+  bindRunConnections,
   listMetadata,
   resolveWebhookMetadata,
   resolveOperationBinding,
-  revokeAttemptBinding,
+  revokeRunBinding,
   upsertMetadata,
 } from "../../../../convex/workgraphConnections"
 
@@ -95,15 +95,15 @@ describe("Convex WorkGraph Connection bindings", () => {
     await expect(invoke(resolveWebhookMetadata, db, { connectionId: "connection-github" })).resolves.toBeNull()
   })
 
-  test("binds only the immutable Attempt profile and resolves an exact connected operation", async () => {
+  test("binds only the immutable Run profile and resolves an exact connected operation", async () => {
     const db = fixture()
     await invoke(upsertMetadata, db, metadata())
-    await expect(invoke(bindAttemptConnections, db, binding())).resolves.toEqual({ bound: true })
+    await expect(invoke(bindRunConnections, db, binding())).resolves.toEqual({ bound: true })
 
     const resolved = await invoke(resolveOperationBinding, db, operation())
     expect(resolved).toEqual({
       context: { ownerUserId: "user-a", ownerPartition: "org:org-a" },
-      attemptId: "attempt-a",
+      runId: "run-a",
       sessionId: "session-a",
       workspaceId: "workspace-a",
       connectionIds: ["connection-github"],
@@ -134,18 +134,18 @@ describe("Convex WorkGraph Connection bindings", () => {
   test("fails closed for profile escalation, degraded metadata, and revoked bindings", async () => {
     const db = fixture()
     await invoke(upsertMetadata, db, metadata())
-    await expect(invoke(bindAttemptConnections, db, binding({ connectionIds: ["connection-other"] })))
-      .rejects.toThrow("immutable Attempt profile")
-    await expect(invoke(bindAttemptConnections, db, binding({ tools: ["connection_work_source_update"] })))
-      .rejects.toThrow("immutable Attempt profile")
+    await expect(invoke(bindRunConnections, db, binding({ connectionIds: ["connection-other"] })))
+      .rejects.toThrow("immutable Run profile")
+    await expect(invoke(bindRunConnections, db, binding({ tools: ["connection_work_source_update"] })))
+      .rejects.toThrow("immutable Run profile")
 
-    await invoke(bindAttemptConnections, db, binding())
+    await invoke(bindRunConnections, db, binding())
     await invoke(upsertMetadata, db, metadata({ status: "degraded" }))
     await expect(invoke(resolveOperationBinding, db, operation())).resolves.toBeNull()
     await invoke(upsertMetadata, db, metadata())
-    await expect(invoke(revokeAttemptBinding, db, { ownerUserId: "user-a", orgId: "org-a", attemptId: "attempt-a" })).resolves.toEqual({ revoked: true })
+    await expect(invoke(revokeRunBinding, db, { ownerUserId: "user-a", orgId: "org-a", runId: "run-a" })).resolves.toEqual({ revoked: true })
     await expect(invoke(resolveOperationBinding, db, operation())).resolves.toBeNull()
-    await expect(invoke(revokeAttemptBinding, db, { ownerUserId: "user-a", orgId: "org-a", attemptId: "attempt-a" })).resolves.toEqual({ revoked: false })
+    await expect(invoke(revokeRunBinding, db, { ownerUserId: "user-a", orgId: "org-a", runId: "run-a" })).resolves.toEqual({ revoked: false })
   })
 })
 
@@ -168,7 +168,7 @@ function binding(overrides: Record<string, unknown> = {}) {
   return {
     ownerUserId: "user-a",
     orgId: "org-a",
-    attemptId: "attempt-a",
+    runId: "run-a",
     sessionId: "session-a",
     workspaceId: "workspace-a",
     connectionIds: ["connection-github"],
@@ -193,11 +193,11 @@ function fixture() {
       { _id: "membership-b", org_id: "org-a", user_id: "user-b" },
       { _id: "membership-c", org_id: "org-b", user_id: "user-c" },
     ],
-    workgraph_attempts: [{
-      _id: "attempt-row",
+    workgraph_runs: [{
+      _id: "run-row",
       organization_id: "org-a",
       owner_user_id: "user-a",
-      id: "attempt-a",
+      id: "run-a",
       state: "running",
       session_id: "session-a",
       envelope_id: "workspace-a",
@@ -207,7 +207,7 @@ function fixture() {
       },
     }],
     workgraph_connection_metadata: [],
-    workgraph_attempt_connection_bindings: [],
+    workgraph_run_connection_bindings: [],
   })
 }
 

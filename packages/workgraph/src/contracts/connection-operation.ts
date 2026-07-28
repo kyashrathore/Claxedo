@@ -9,7 +9,7 @@ export const WorkGraphConnectionToolNames = [
 export type WorkGraphConnectionToolName = typeof WorkGraphConnectionToolNames[number]
 
 const identity = z.object({
-  attemptId: z.string().min(1),
+  runId: z.string().min(1),
   sessionId: z.string().min(1),
   workspaceId: z.string().min(1),
   connectionId: z.string().min(1),

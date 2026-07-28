@@ -9,7 +9,7 @@ type AttentionKind =
   | "admission_proposal"
   | "decision"
   | "work_item"
-  | "attempt"
+  | "run"
   | "unorganized_ai_work"
   | "configuration_required"
   | "master_escalation"
@@ -94,8 +94,8 @@ export async function syncAttentionRecord(ctx: Ctx, table: string, row: any) {
   if (table === "workgraph_work_items") {
     return setAttentionEntry(ctx, organization, row.owner_user_id, "work_item", row.id, table, row.updated_at, attentionWorkItemStates.has(row.state))
   }
-  if (table === "workgraph_attempts") {
-    return setAttentionEntry(ctx, organization, row.owner_user_id, "attempt", row.id, table, row.updated_at, row.state === "attention")
+  if (table === "workgraph_runs") {
+    return setAttentionEntry(ctx, organization, row.owner_user_id, "run", row.id, table, row.updated_at, row.state === "parked")
   }
   if (table === "workgraph_streams") {
     return setAttentionEntry(
@@ -125,8 +125,8 @@ export async function removeAttentionRecord(ctx: Ctx, organization: string, owne
           ? { kind: "decision" as const, id }
           : table === "workgraph_work_items"
             ? { kind: "work_item" as const, id }
-            : table === "workgraph_attempts"
-              ? { kind: "attempt" as const, id }
+            : table === "workgraph_runs"
+              ? { kind: "run" as const, id }
               : table === "workgraph_streams"
                 ? { kind: "master_escalation" as const, id }
               : undefined

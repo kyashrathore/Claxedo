@@ -263,7 +263,7 @@ if (!READ_ONLY) {
         env: z.record(z.string(), z.string()).optional().describe("Extra environment variables."),
         autoStart: z.boolean().optional().describe("Auto-start when project opens. Default: false."),
         restartPolicy: z.enum(["never", "on-failure", "always"]).optional().describe("Restart policy. Default: never."),
-        maxRestarts: z.number().int().min(0).optional().describe("Max restart attempts. Default: 3."),
+        maxRestarts: z.number().int().min(0).optional().describe("Max restart runs. Default: 3."),
         color: z.string().optional().describe("Hex color for the process status dot."),
         dependsOn: z.array(z.string()).optional().describe("Names of processes that must start first."),
         port: z

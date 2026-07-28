@@ -2,11 +2,11 @@ import { serve } from "@hono/node-server"
 import {
   CommandResultSchema,
   WorkGraphBrokerTokenHeader,
-  WorkGraphAttemptOperationRequestSchema,
-  WorkGraphAttemptToolNames,
+  WorkGraphRunOperationRequestSchema,
+  WorkGraphRunToolNames,
   WorkGraphRuntimeToolNames,
   type CommandResult,
-  type WorkGraphAttemptOperationRequest,
+  type WorkGraphRunOperationRequest,
   type WorkGraphRuntimeToolName,
 } from "@claxedo/workgraph/contracts"
 import { Hono } from "hono"
@@ -14,17 +14,17 @@ import z from "zod/v3"
 import { zodToJsonSchema } from "zod-to-json-schema"
 import { bearerToken, boundedJsonBody, errorBody } from "./http"
 
-export const WORKGRAPH_ATTEMPT_TOOL_NAMES = WorkGraphAttemptToolNames
-export const WORKGRAPH_ATTEMPT_BINDING_PATH = "/api/workgraph/attempt-binding"
-export const WORKGRAPH_ATTEMPT_TOOL_PATH = "/api/workgraph/attempt-tools"
-const CENTRAL_BROKER_PATH = "/internal/workgraph/attempt-operation"
+export const WORKGRAPH_RUN_TOOL_NAMES = WorkGraphRunToolNames
+export const WORKGRAPH_RUN_BINDING_PATH = "/api/workgraph/run-binding"
+export const WORKGRAPH_RUN_TOOL_PATH = "/api/workgraph/run-tools"
+const CENTRAL_BROKER_PATH = "/internal/workgraph/run-operation"
 
 const identity = z.strictObject({
-  attemptId: z.string().trim().min(1),
+  runId: z.string().trim().min(1),
   streamId: z.string().trim().min(1).optional(),
   sessionId: z.string().trim().min(1),
   workspaceId: z.string().trim().min(1),
-  leaseEpoch: z.number().int().positive().optional(),
+  generation: z.number().int().positive(),
 })
 const binding = z.strictObject({
   version: z.literal(1),
@@ -47,7 +47,7 @@ const completionEvidence = z.strictObject({
   evidence,
 })
 
-export const WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS = {
+export const WORKGRAPH_RUN_TOOL_INPUT_SCHEMAS = {
   workgraph_report_progress: z.strictObject({
     level: z.enum(["milestone", "progress", "detail"]),
     summary: z.string().trim().min(1).max(1_000),
@@ -75,12 +75,12 @@ export const WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS = {
   }),
 } satisfies Record<WorkGraphRuntimeToolName, z.ZodType>
 
-export const WORKGRAPH_ATTEMPT_TOOL_SCHEMAS = {
+export const WORKGRAPH_RUN_TOOL_SCHEMAS = {
   workgraph_report_progress: {
     description: "Record one meaningful WorkGraph Task checkpoint. Use milestones and logical boundaries, not raw command-by-command logs.",
   },
   workgraph_complete_task: {
-    description: "Explicitly finish the current WorkGraph Attempt with a concise result and evidence for its completion requirements.",
+    description: "Explicitly finish the current WorkGraph Run with a concise result and evidence for its completion requirements.",
   },
   workgraph_update_stream_notes: {
     description: "Replace the Stream master's structured status, learnings, and fenced external references.",
@@ -90,18 +90,18 @@ export const WORKGRAPH_ATTEMPT_TOOL_SCHEMAS = {
   },
 } as const
 
-export type WorkGraphAttemptOperationBroker = (
-  request: WorkGraphAttemptOperationRequest,
+export type WorkGraphRunOperationBroker = (
+  request: WorkGraphRunOperationRequest,
   signal: AbortSignal,
 ) => Promise<CommandResult>
 
-export type WorkGraphAttemptToolRouteHandle = Hono & { dispose(): void }
+export type WorkGraphRunToolRouteHandle = Hono & { dispose(): void }
 
-type BoundAttempt = z.infer<typeof binding> & { authorization?: string; callbackNonce: string }
+type BoundRun = z.infer<typeof binding> & { authorization?: string; callbackNonce: string }
 
-export function WorkGraphAttemptToolRoutes(input: {
+export function WorkGraphRunToolRoutes(input: {
   workspaceId: string
-  broker?: WorkGraphAttemptOperationBroker
+  broker?: WorkGraphRunOperationBroker
   brokerOrigin?: string
   fetch?: typeof fetch
   timeoutMs?: number
@@ -114,9 +114,9 @@ export function WorkGraphAttemptToolRoutes(input: {
   }) => Promise<void>
   unregisterSessionTools?: (sessionId: string) => Promise<void>
 }) {
-  const app = new Hono() as WorkGraphAttemptToolRouteHandle
+  const app = new Hono() as WorkGraphRunToolRouteHandle
   const callbacks = new Hono()
-  const bindings = new Map<string, BoundAttempt>()
+  const bindings = new Map<string, BoundRun>()
   const callbackSessions = new Map<string, string>()
   const request = input.fetch ?? fetch
   const brokerOrigin = input.brokerOrigin ? validatedOrigin(input.brokerOrigin) : undefined
@@ -128,21 +128,21 @@ export function WorkGraphAttemptToolRoutes(input: {
 
   callbacks.post("/callback/:nonce", async (context) => {
     const sessionId = callbackSessions.get(context.req.param("nonce"))
-    if (!sessionId) return context.json({ error: "Attempt tool callback is unavailable" }, 404)
+    if (!sessionId) return context.json({ error: "Run tool callback is unavailable" }, 404)
     const bound = bindings.get(sessionId)
-    if (!bound) return context.json(errorBody("attempt_binding_missing", "Session has no Attempt binding"), 403)
+    if (!bound) return context.json(errorBody("run_binding_missing", "Session has no Run binding"), 403)
     const body = await boundedJsonBody<Record<string, unknown>>(context, {})
-    const names = bound.tools ?? WorkGraphAttemptToolNames
+    const names = bound.tools ?? WorkGraphRunToolNames
     const name = typeof body.name === "string" && names.includes(body.name as never)
       ? body.name as WorkGraphRuntimeToolName
       : undefined
     const toolCallId = typeof body.toolCallID === "string" && body.toolCallID.trim() ? body.toolCallID.trim() : undefined
     if (body.sessionID !== (bound.runtimeSessionId ?? sessionId) || !name || !toolCallId) {
-      return context.json({ error: "Attempt tool callback identity is invalid" }, 403)
+      return context.json({ error: "Run tool callback identity is invalid" }, 403)
     }
-    const parsed = WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS[name].safeParse(body.input)
-    if (!parsed.success) return context.json(errorBody("attempt_tool_input_invalid", "Attempt tool input is invalid"), 400)
-    const operationId = `attempt_tool_${bound.identity.attemptId}_${toolCallId}`
+    const parsed = WORKGRAPH_RUN_TOOL_INPUT_SCHEMAS[name].safeParse(body.input)
+    if (!parsed.success) return context.json(errorBody("run_tool_input_invalid", "Run tool input is invalid"), 400)
+    const operationId = `run_tool_${bound.identity.runId}_${toolCallId}`
     const operation = name === "workgraph_report_progress"
       ? { type: "record_checkpoint" as const, operationId, ...parsed.data }
       : name === "workgraph_complete_task"
@@ -150,7 +150,7 @@ export function WorkGraphAttemptToolRoutes(input: {
         : name === "workgraph_update_stream_notes"
           ? { type: "update_stream_notes" as const, operationId, ...parsed.data }
           : { type: "notify_owner" as const, operationId, ...parsed.data }
-    const brokerRequest = WorkGraphAttemptOperationRequestSchema.parse({
+    const brokerRequest = WorkGraphRunOperationRequestSchema.parse({
       version: 1,
       identity: bound.identity,
       operation,
@@ -162,40 +162,40 @@ export function WorkGraphAttemptToolRoutes(input: {
         : await callBroker(request, bound, brokerOrigin, brokerRequest, signal, maxResponseBytes)
       return context.json(CommandResultSchema.parse(response))
     } catch {
-      return context.json(errorBody("attempt_operation_failed", "WorkGraph Attempt operation failed"), 502)
+      return context.json(errorBody("run_operation_failed", "WorkGraph Run operation failed"), 502)
     }
   })
 
-  app.post(WORKGRAPH_ATTEMPT_BINDING_PATH, async (context) => {
-    if (disposed) return context.json(errorBody("attempt_binding_unavailable", "Attempt binding is unavailable"), 503)
+  app.post(WORKGRAPH_RUN_BINDING_PATH, async (context) => {
+    if (disposed) return context.json(errorBody("run_binding_unavailable", "Run binding is unavailable"), 503)
     const parsed = binding.safeParse(await boundedJsonBody(context, {}))
-    if (!parsed.success) return context.json(errorBody("attempt_binding_invalid", "Attempt binding is invalid"), 400)
+    if (!parsed.success) return context.json(errorBody("run_binding_invalid", "Run binding is invalid"), 400)
     if (parsed.data.identity.workspaceId !== input.workspaceId) {
-      return context.json(errorBody("attempt_binding_workspace_mismatch", "Attempt binding workspace does not match runtime"), 403)
+      return context.json(errorBody("run_binding_workspace_mismatch", "Run binding workspace does not match runtime"), 403)
     }
     let requestedOrigin: string
     try {
       requestedOrigin = validatedOrigin(parsed.data.brokerUrl)
     } catch {
-      return context.json(errorBody("attempt_binding_broker_invalid", "Attempt broker URL is invalid"), 400)
+      return context.json(errorBody("run_binding_broker_invalid", "Run broker URL is invalid"), 400)
     }
     const token = context.req.header(WorkGraphBrokerTokenHeader)?.trim() || bearerToken(context.req.header("authorization"))
     if (!input.broker && (!token || !brokerOrigin)) {
-      return context.json(errorBody("attempt_binding_auth_required", "A trusted Attempt broker is required"), 401)
+      return context.json(errorBody("run_binding_auth_required", "A trusted Run broker is required"), 401)
     }
     if (!input.broker && requestedOrigin !== brokerOrigin) {
-      return context.json(errorBody("attempt_binding_broker_mismatch", "Attempt broker does not match the trusted central origin"), 403)
+      return context.json(errorBody("run_binding_broker_mismatch", "Run broker does not match the trusted central origin"), 403)
     }
     if (!input.registerSessionTools) {
-      return context.json(errorBody("attempt_tool_registration_unavailable", "Core Session tool registration is unavailable"), 503)
+      return context.json(errorBody("run_tool_registration_unavailable", "Core Session tool registration is unavailable"), 503)
     }
     const existing = bindings.get(parsed.data.identity.sessionId)
     if (existing && (
-      existing.identity.attemptId !== parsed.data.identity.attemptId ||
+      existing.identity.runId !== parsed.data.identity.runId ||
       existing.identity.workspaceId !== parsed.data.identity.workspaceId ||
       existing.runtimeSessionId !== parsed.data.runtimeSessionId ||
       existing.harness !== parsed.data.harness
-    )) return context.json(errorBody("attempt_binding_conflict", "Session is bound to another Attempt"), 409)
+    )) return context.json(errorBody("run_binding_conflict", "Session is bound to another Run"), 409)
     const callbackNonce = crypto.randomUUID()
     const next = {
       ...parsed.data,
@@ -209,20 +209,20 @@ export function WorkGraphAttemptToolRoutes(input: {
         sessionId: parsed.data.runtimeSessionId ?? parsed.data.identity.sessionId,
         ...(parsed.data.harness ? { harness: parsed.data.harness } : {}),
         callbackUrl: `${await localCallbackOrigin()}/callback/${callbackNonce}`,
-        tools: (parsed.data.tools ?? WorkGraphAttemptToolNames).map(toolDefinition),
+        tools: (parsed.data.tools ?? WorkGraphRunToolNames).map(toolDefinition),
       })
     } catch {
       callbackSessions.delete(callbackNonce)
       if (existing) bindings.set(parsed.data.identity.sessionId, existing)
       else bindings.delete(parsed.data.identity.sessionId)
       closeCallbackServerIfUnused()
-      return context.json(errorBody("attempt_tool_registration_failed", "Core Session tools could not be registered"), 503)
+      return context.json(errorBody("run_tool_registration_failed", "Core Session tools could not be registered"), 503)
     }
     if (existing) callbackSessions.delete(existing.callbackNonce)
     return context.json({ bound: true, sessionId: parsed.data.identity.sessionId })
   })
 
-  app.delete(`${WORKGRAPH_ATTEMPT_BINDING_PATH}/:sessionId`, async (context) => {
+  app.delete(`${WORKGRAPH_RUN_BINDING_PATH}/:sessionId`, async (context) => {
     const sessionId = context.req.param("sessionId")
     const existing = bindings.get(sessionId)
     if (!existing) return context.json({ unbound: false })
@@ -233,15 +233,15 @@ export function WorkGraphAttemptToolRoutes(input: {
     return context.json({ unbound: true })
   })
 
-  app.get(WORKGRAPH_ATTEMPT_TOOL_PATH, (context) => context.json({ tools: WORKGRAPH_ATTEMPT_TOOL_SCHEMAS }))
+  app.get(WORKGRAPH_RUN_TOOL_PATH, (context) => context.json({ tools: WORKGRAPH_RUN_TOOL_SCHEMAS }))
 
   function localCallbackOrigin() {
-    if (disposed) return Promise.reject(new Error("Attempt tool callback is unavailable"))
+    if (disposed) return Promise.reject(new Error("Run tool callback is unavailable"))
     return callbackOrigin ??= new Promise<string>((resolve, reject) => {
       callbackServer = serve({ fetch: callbacks.fetch, hostname: "127.0.0.1", port: 0 })
       const ready = () => {
         const address = callbackServer?.address()
-        if (!address || typeof address === "string") return reject(new Error("Attempt callback did not bind"))
+        if (!address || typeof address === "string") return reject(new Error("Run callback did not bind"))
         resolve(`http://127.0.0.1:${address.port}`)
       }
       const address = callbackServer.address()
@@ -275,8 +275,8 @@ export function WorkGraphAttemptToolRoutes(input: {
 function toolDefinition(name: WorkGraphRuntimeToolName) {
   return {
     name,
-    description: WORKGRAPH_ATTEMPT_TOOL_SCHEMAS[name].description,
-    inputSchema: zodToJsonSchema(WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS[name], { target: "jsonSchema7", $refStrategy: "none" }) as Record<string, unknown>,
+    description: WORKGRAPH_RUN_TOOL_SCHEMAS[name].description,
+    inputSchema: zodToJsonSchema(WORKGRAPH_RUN_TOOL_INPUT_SCHEMAS[name], { target: "jsonSchema7", $refStrategy: "none" }) as Record<string, unknown>,
     outputSchema: { type: "object" },
   }
 }
@@ -284,20 +284,20 @@ function toolDefinition(name: WorkGraphRuntimeToolName) {
 function validatedOrigin(value: string) {
   const url = new URL(value)
   if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
-    throw new Error("Attempt broker origin is invalid")
+    throw new Error("Run broker origin is invalid")
   }
   return url.origin
 }
 
 async function callBroker(
   request: typeof fetch,
-  binding: BoundAttempt,
+  binding: BoundRun,
   brokerOrigin: string | undefined,
-  body: WorkGraphAttemptOperationRequest,
+  body: WorkGraphRunOperationRequest,
   signal: AbortSignal,
   maxResponseBytes: number,
 ) {
-  if (!binding.authorization || !brokerOrigin) throw new Error("Attempt broker is unavailable")
+  if (!binding.authorization || !brokerOrigin) throw new Error("Run broker is unavailable")
   const response = await request(`${brokerOrigin}${CENTRAL_BROKER_PATH}`, {
     method: "POST",
     headers: { authorization: binding.authorization, "content-type": "application/json" },
@@ -305,7 +305,7 @@ async function callBroker(
     signal,
   })
   const value = await boundedResponseJson(response, maxResponseBytes, signal)
-  if (!response.ok) throw new Error(`Attempt broker failed with status ${response.status}`)
+  if (!response.ok) throw new Error(`Run broker failed with status ${response.status}`)
   return CommandResultSchema.parse(value)
 }
 
@@ -320,8 +320,8 @@ function abortable<Value>(promise: Promise<Value>, signal: AbortSignal) {
 
 async function boundedResponseJson(response: Response, limit: number, signal: AbortSignal) {
   const declared = response.headers.get("content-length")
-  if (declared !== null && Number(declared) > limit) throw new Error("Attempt broker response is too large")
-  if (!response.body) throw new Error("Attempt broker response is empty")
+  if (declared !== null && Number(declared) > limit) throw new Error("Run broker response is too large")
+  if (!response.body) throw new Error("Run broker response is empty")
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let bytes = 0
@@ -332,7 +332,7 @@ async function boundedResponseJson(response: Response, limit: number, signal: Ab
     bytes += chunk.value.byteLength
     if (bytes > limit) {
       await reader.cancel()
-      throw new Error("Attempt broker response is too large")
+      throw new Error("Run broker response is too large")
     }
     body += decoder.decode(chunk.value, { stream: true })
   }

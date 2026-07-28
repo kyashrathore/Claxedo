@@ -6,29 +6,29 @@ This ledger records delivery status against the personal-first contracts in [PRD
 
 ## Delivered foundation
 
-- Runtime-neutral contracts cover Streams, Tasks (`Work Item` in the service contract), optional Outcomes, Attempts, Decisions, Work Sources, execution profiles, completion evidence, events, changes, and lifecycle commands.
+- Runtime-neutral contracts cover Streams, Tasks (`Work Item` in the service contract), optional Outcomes, Runs, Decisions, Work Sources, execution profiles, completion evidence, events, changes, and lifecycle commands.
 - The host supplies a trusted `(organization_id, owner_user_id)` context. Public commands, queries, cursors, jobs, and archives carry no tenant selector.
 - SQLite is the verified local and default single-node OSS adapter. Convex is the Claxedo Cloud default. Both adapters implement trusted tuple tenancy, bounded reads and workers, archive, cleanup, and deletion barriers in repository verification.
 - `claxedo-server` is the embedding boundary for local and Worker-safe hosted composition. The full server, Convex, typecheck, Worker-safety, and package verification is green; deployed environment checks remain open.
 - The approved app surface is one global WorkGraph destination after Marketplace. Streams expand inline and Add task is the canonical manual Task action.
-- Local execution uses one Stream workspace, immutable Attempt profiles, Session V2 admission, reconciliation, cancellation, and deletion-time worktree removal. The harness or agent owns any branch or nested-worktree strategy. Hosted close/delete finalization interrupts active Sessions and releases workspace ownership on deletion while the sandbox manager owns idle compute lifecycle.
+- Local execution uses one Stream workspace, immutable Run profiles, Session V2 admission, reconciliation, cancellation, and deletion-time worktree removal. The harness or agent owns any branch or nested-worktree strategy. Hosted close/delete finalization interrupts active Sessions and releases workspace ownership on deletion while the sandbox manager owns idle compute lifecycle.
 - Connections-backed GitHub, Linear, and Jira Source Views use organization-owned credentials and metadata plus user-owned provider mappings, allowlisted filters, WorkGraph bindings, and receipts.
 - External-issue and independent-Session candidates share one tenant-scoped backend DTO and `unorganized` lifecycle. Staging freezes one immutable Work Source revision and starts the same strict Session-backed admission path.
-- Session-scoped Connection tools let local and hosted Attempts consume only their organization Connection and user binding; the callback is removed when the Session ends.
+- Session-scoped Connection tools let local and hosted Runs consume only their organization Connection and user binding; the callback is removed when the Session ends.
 - Source admission begins in `planning`. A valid agent Session may publish placement alternatives, duplicate evidence, optional Outcomes, Tasks and dependencies, completion contracts, and execution defaults. Invalid or unavailable output records `planning_failed`; confirmation compares against the exact rendered proposal version before creating target or source-link records.
 - Reviewable admission proposals support versioned dismiss and reopen commands. Reopen restores the exact unchanged Session-authored proposal while preserving its Work Source revision and candidate binding.
-- Tenant-scoped bounded Attention pages unify reviewable proposals, Decisions, Task and Attempt attention, configuration requirements, and aggregated external-issue or independent-Session candidates without loading the full snapshot.
+- Tenant-scoped bounded Attention pages unify reviewable proposals, Decisions, Task and Run attention, configuration requirements, and aggregated external-issue or independent-Session candidates without loading the full snapshot.
 - Provider webhook paths use Connections-owned signing credentials, user-filtered Source View routing, durable delivery deduplication, bounded fan-out, and refresh enqueueing; hosted verification remains open.
-- Core adapter conformance version 6 covers opaque tenant-and-filter-bound cursors, snapshot pagination and restart convergence, leases, Attempt runtime recovery, source-revision replacement fencing, Session-binding exact retry, and bounded Task-activity pagination across maintained repository compositions.
+- Core adapter conformance version 6 covers opaque tenant-and-filter-bound cursors, snapshot pagination and restart convergence, leases, Run runtime recovery, source-revision replacement fencing, Session-binding exact retry, and bounded Task-activity pagination across maintained repository compositions.
 - Archive conformance version 1 covers canonical tenant export/restore and rejection semantics for SQLite and Convex.
 - SQLite and Convex cover snapshot resume, archive, cleanup, owner deletion, and concurrent deletion/write barriers in repository verification.
 - Targeted Evidence reads provide exact tenant/subject-bound paginated inspection in SQLite and Convex.
 - Candidate staging transactionally rejects a proposal already bound to another candidate while preserving the rejected candidate's state and version in both maintained adapters.
-- Targeted proposal, candidate, Task/Attempt, Decision, and Evidence reads are implemented locally and hosted. Background source planning requires an explicit configured profile and publishes only valid Session output.
+- Targeted proposal, candidate, Task/Run, Decision, and Evidence reads are implemented locally and hosted. Background source planning requires an explicit configured profile and publishes only valid Session output.
 - Candidate-v2 migration preserves tenant scope and the unified external-issue/independent-Session candidate contract while keeping `intake` as backend-only lifecycle vocabulary.
 - Tenant-scoped execution capability discovery uses one exact server-attested catalog revision with observation and exclusive expiry timestamps. Its maximum lifetime is five minutes. GET is side-effect free and accepts no tenant or workspace selector; settings and execution admission reject stale, wrong-tenant, or unsupported selections explicitly.
 - Signed hosted bootstrap schedules tenant owner activation as background work. Explicit refresh provisions the deterministic catalog workspace, attests its live runtime catalog, and destroys and releases the transient workspace on both successful and failed discovery. Concurrent owner activations and refreshes coalesce by trusted tenant.
-- Attempt placement reserves durable compensation before external cancellation and cleanup. Reconciliation retries both operations across process restart and preserves each failure until compensation completes.
+- Run placement reserves durable compensation before external cancellation and cleanup. Reconciliation retries both operations across process restart and preserves each failure until compensation completes.
 - Local embedded agent tools invoke WorkGraph directly in-process. The standalone stdio MCP uses authenticated northbound HTTP. Hosted embedded tools remain fail-closed until durable Session tenant provenance is available.
 - Repository integration behavior is carried by Task instructions and completion contracts and executed by the selected harness; it is not an execution-catalog choice.
 - The Docs v2 adapter seam admits exact immutable revisions into WorkGraph. The native document action sends only its persisted project, document, and revision identifiers into the strict planning path and opens WorkGraph Needs you for review.
@@ -43,7 +43,7 @@ This ledger records delivery status against the personal-first contracts in [PRD
 - Reuse the existing app-global WorkspacePanel and top-level toggle. WorkGraph contributes top-level Needs you and Settings views; its header controls select those views in the same panel. Zero attention renders no dot, card, list, or empty body content.
 - Keep WorkGraph Settings tabless and limited to execution defaults. Keep Stream Settings tabless and Stream-scoped for execution overrides, with flush content, adjacent descriptions/errors, and a pinned footer.
 - Present external-issue and independent-session candidates as aggregated Unorganized AI work in Needs you, with **Add to WorkGraph** as the user action; `intake` remains backend lifecycle vocabulary.
-- Open focused proposal, candidate, Task/Attempt, and Decision inspectors as dialogs over the single `/workgraph` surface.
+- Open focused proposal, candidate, Task/Run, and Decision inspectors as dialogs over the single `/workgraph` surface.
 - Align component and browser tests with the single `/workgraph` surface and dialog-based interaction.
 - Preserve the passing real-local browser journey and independent headless inspection as repository acceptance evidence; the deployed Cloud journey remains an external release gate.
 - Make WorkGraph Settings consume the side-effect-free execution-capabilities GET and render typed unavailable state. The UI does not provision a catalog runtime and does not select a catalog or Stream workspace.
@@ -65,7 +65,7 @@ This ledger records delivery status against the personal-first contracts in [PRD
 - Deploy in strict order: additive Convex schema/functions, Worker-safe Claxedo Server composition, then the Claxedo app. Staging has not been deployed and requires real Convex, Cloudflare, Clerk, control-plane, sandbox, relay, and smoke credentials.
 - Provision or refresh each tenant's deterministic execution catalog runtime during hosted setup/background work, and verify Settings GET observes it without invoking sandbox ensure.
 - Run signed cross-tenant hosted policy checks and the canonical browser journey against the deployed Cloud app, Convex persistence, and hosted workspace runtime.
-- Exercise production rollout, rollback/roll-forward, secret rotation, telemetry, alerts, stuck-Attempt dashboards, and migration observation in the real environment.
+- Exercise production rollout, rollback/roll-forward, secret rotation, telemetry, alerts, stuck-Run dashboards, and migration observation in the real environment.
 - Retain deployment identifiers, browser traces, screenshots/video, and smoke output as release evidence.
 
 ## Later product scope

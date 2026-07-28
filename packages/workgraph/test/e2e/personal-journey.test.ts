@@ -7,9 +7,9 @@ import {
   createSqliteIntakeStores,
   createSqliteSourcePlanningRuntime,
   createSqliteWorkGraphService,
-  listSqliteReconcilableAttempts,
-  recordSemanticAttemptResult,
-  renewSqliteAttemptLease,
+  listSqliteReconcilableRuns,
+  recordSemanticRunResult,
+  renewSqliteRunLease,
   type ConnectionsPort,
   type WorkspaceExecutionPort,
 } from "../../src"
@@ -81,8 +81,8 @@ describe("canonical personal WorkGraph journey", () => {
       execution: profile,
     })).toMatchObject({ ok: true })
     // Setting the execution profile admits one ready item. The other independent
-    // item waits for the Stream's running Attempt to settle.
-    expect((fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count).toBe(1)
+    // item waits for the Stream's running Run to settle.
+    expect((fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs").get() as { count: number }).count).toBe(1)
     expect(fixture.runtime.provisioned).toEqual([streamId])
     expect(new Set(fixture.runtime.envelopes)).toEqual(new Set([`envelope:${streamId}`]))
 
@@ -94,7 +94,7 @@ describe("canonical personal WorkGraph journey", () => {
       affectedWorkItemIds: [backend.id],
     })
     const running = await fixture.snapshot()
-    expect(running.records.filter((candidate) => candidate.recordType === "attempt").map((attempt) => attempt.state)).toEqual(["running"])
+    expect(running.records.filter((candidate) => candidate.recordType === "run").map((run) => run.state)).toEqual(["running"])
     expect(record(running, "decision", (candidate) => candidate.id === resultId(decision, "decisionId"))).toMatchObject({ state: "pending", affectedWorkItemIds: [backend.id] })
     expect(record(running, "work_item", (candidate) => candidate.id === frontend.id).state).toBe("pending")
 
@@ -105,13 +105,13 @@ describe("canonical personal WorkGraph journey", () => {
     })).toMatchObject({ ok: true })
     fixture.runtime.succeedAll()
     await fixture.reconcile()
-    expect((await fixture.snapshot()).records.filter((candidate) => candidate.recordType === "attempt").map((attempt) => attempt.state))
+    expect((await fixture.snapshot()).records.filter((candidate) => candidate.recordType === "run").map((run) => run.state))
       .toEqual(["running"])
-    await fixture.completeAttempt(backend.id, "backend-proof")
+    await fixture.completeRun(backend.id, "backend-proof")
     expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === frontend.id).state).toBe("active")
-    await fixture.completeAttempt(frontend.id, "frontend-proof")
+    await fixture.completeRun(frontend.id, "frontend-proof")
     const settled = await fixture.snapshot()
-    expect(settled.records.filter((candidate) => candidate.recordType === "attempt")).toEqual(expect.arrayContaining([
+    expect(settled.records.filter((candidate) => candidate.recordType === "run")).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "result", result: expect.objectContaining({ artifactRefs: expect.arrayContaining(["commit:e2e"]) }) }),
       expect.objectContaining({ state: "result", result: expect.objectContaining({ artifactRefs: expect.arrayContaining(["commit:e2e"]) }) }),
     ]))
@@ -182,7 +182,7 @@ describe("canonical personal WorkGraph journey", () => {
     fixture.runtime.succeedAll()
     await fixture.reconcile()
     expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === workItemId).state).toBe("active")
-    await fixture.completeAttempt(workItemId, "proof")
+    await fixture.completeRun(workItemId, "proof")
     await fixture.execute("record_evidence", {
       subject: { type: "work_item", workItemId },
       requirementId: "proof",
@@ -245,27 +245,27 @@ function setup() {
       if (result.state !== "completed") throw new Error(JSON.stringify(result))
     },
     snapshot: () => adapter.service.query(owner(), "snapshot", "page", { limit: 500 }),
-    completeAttempt: async (workItemId: string, requirementId: string) => {
-      const attempt = database.prepare(`
-        SELECT attempts.id, attempts.session_id, attempts.lease_epoch, bindings.project_id
-        FROM wg_v2_attempts attempts
+    completeRun: async (workItemId: string, requirementId: string) => {
+      const run = database.prepare(`
+        SELECT runs.id, runs.session_id, runs.generation, bindings.project_id
+        FROM wg_v2_runs runs
         JOIN wg_v2_session_bindings bindings
-          ON bindings.organization_id = attempts.organization_id
-          AND bindings.owner_user_id = attempts.owner_user_id
-          AND bindings.session_id = attempts.session_id
-          AND bindings.current_attempt_id = attempts.id
+          ON bindings.organization_id = runs.organization_id
+          AND bindings.owner_user_id = runs.owner_user_id
+          AND bindings.session_id = runs.session_id
+          AND bindings.current_run_id = runs.id
           AND bindings.state = 'active'
-        WHERE attempts.organization_id = ? AND attempts.owner_user_id = ?
-          AND attempts.work_item_id = ? AND attempts.lifecycle = 'running'
+        WHERE runs.organization_id = ? AND runs.owner_user_id = ?
+          AND runs.work_item_id = ? AND runs.lifecycle = 'running'
       `).get(owner().organizationId, owner().ownerUserId, workItemId) as
-        | { id: string; session_id: string; lease_epoch: number; project_id: string }
+        | { id: string; session_id: string; generation: number; project_id: string }
         | undefined
-      if (!attempt) throw new Error("Expected a running Attempt binding")
-      return execute("complete_attempt", {
-        attemptId: attempt.id,
-        sessionId: attempt.session_id,
-        workspaceId: attempt.project_id,
-        leaseEpoch: attempt.lease_epoch,
+      if (!run) throw new Error("Expected a running Run binding")
+      return execute("complete_run", {
+        runId: run.id,
+        sessionId: run.session_id,
+        workspaceId: run.project_id,
+        generation: run.generation,
         summary: "Execution completed",
         artifacts: ["commit:e2e"],
         evidence: [{
@@ -274,21 +274,21 @@ function setup() {
         }],
       })
     },
-    reconcile: async () => Promise.all(listSqliteReconcilableAttempts(database, owner()).map(async (attempt) => {
-      const renewal = renewSqliteAttemptLease(database, owner(), {
-        attemptId: attempt.attemptId,
-        expectedLeaseEpoch: attempt.leaseEpoch,
+    reconcile: async () => Promise.all(listSqliteReconcilableRuns(database, owner()).map(async (run) => {
+      const renewal = renewSqliteRunLease(database, owner(), {
+        runId: run.runId,
+        expectedLeaseEpoch: run.leaseEpoch,
         occurredAt: now++,
         durationMs: 300_000,
       })
       if (!renewal) return
-      const result = await runtime.port.result(owner(), { attemptId: attempt.attemptId, sessionId: attempt.sessionId })
+      const result = await runtime.port.result(owner(), { runId: run.runId, sessionId: run.sessionId })
       if (result.state !== "succeeded") return
-      return recordSemanticAttemptResult(
+      return recordSemanticRunResult(
         owner(),
-        { ...attempt, leaseEpoch: renewal.leaseEpoch },
+        { ...run, leaseEpoch: renewal.leaseEpoch },
         result,
-        adapter.attemptResults,
+        adapter.runResults,
       )
     })),
   }
@@ -306,7 +306,7 @@ function controlledExecution() {
       return { id, streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: `/tmp/${id}` }
     },
     launch: async (_context, input) => {
-      const sessionId = `session:${input.attemptId}` as never
+      const sessionId = `session:${input.runId}` as never
       results.set(sessionId, "running")
       return { sessionId, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-e2e" }
     },

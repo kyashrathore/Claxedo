@@ -49,7 +49,7 @@ type Executor = {
 }
 type BindingResult = Readonly<{
   context: { ownerUserId: string; ownerPartition: string }
-  attemptId: string
+  runId: string
   sessionId: string
   workspaceId: string
   connectionIds: string[]
@@ -76,24 +76,24 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
       service_token: serviceToken,
       ownerUserId: principal.ownerUserId,
       orgId: principal.orgId,
-      attemptId: request.identity.attemptId,
+      runId: request.identity.runId,
       sessionId: request.identity.sessionId,
       workspaceId: request.identity.workspaceId,
       connectionId: request.identity.connectionId,
       tool,
     }) as BindingResult | null
-    if (!resolved) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Attempt")
+    if (!resolved) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Run")
     const context: WorkGraphContext = {
       organizationId: principal.orgId as never,
       ownerUserId: resolved.context.ownerUserId as never,
-      actor: { type: "agent", id: request.identity.attemptId as never },
+      actor: { type: "agent", id: request.identity.runId as never },
       requestId: crypto.randomUUID() as never,
       access: { mode: "owner" },
     }
     const binding: ConnectionOperationBinding = {
       context,
       ownerPartition: resolved.context.ownerPartition,
-      attemptId: resolved.attemptId,
+      runId: resolved.runId,
       sessionId: resolved.sessionId,
       workspaceId: resolved.workspaceId,
       connectionIds: resolved.connectionIds as never,
@@ -126,7 +126,7 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
         ownerUserId: principal.ownerUserId,
         orgId: principal.orgId,
         streamId: resolved.streamId,
-        attemptId: resolved.attemptId,
+        runId: resolved.runId,
         repository: pullRequest.repository,
         title: pullRequest.title,
         draft: pullRequest.draft,
@@ -140,7 +140,7 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
         ownerUserId: principal.ownerUserId,
         orgId: principal.orgId,
         streamId: resolved.streamId,
-        attemptId: resolved.attemptId,
+        runId: resolved.runId,
         workerId,
         idempotencyKey: pullRequest.idempotencyKey,
         repository: pullRequest.repository,

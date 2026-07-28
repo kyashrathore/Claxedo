@@ -34,7 +34,7 @@ describe("hosted WorkGraph background jobs", () => {
 
 
   test("enqueues meaningful independent Sessions once and excludes WorkGraph execution Sessions", async () => {
-    const db = new BackgroundDb({ workgraph_attempts: [], workgraph_due_jobs: [] })
+    const db = new BackgroundDb({ workgraph_runs: [], workgraph_due_jobs: [] })
     const context = { db } as never
     const input = {
       organizationId: "org-a" as never,
@@ -47,8 +47,8 @@ describe("hosted WorkGraph background jobs", () => {
 
     await expect(enqueueIndependentSessionIntake(context, input)).resolves.toBe("created")
     await expect(enqueueIndependentSessionIntake(context, input)).resolves.toBe("existing")
-    db.rows.workgraph_attempts.push({
-      _id: "attempt-row",
+    db.rows.workgraph_runs.push({
+      _id: "run-row",
       organization_id: "org-a",
       owner_user_id: "user-a",
       session_id: "session-workgraph",

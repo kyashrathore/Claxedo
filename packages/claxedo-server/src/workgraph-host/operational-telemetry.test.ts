@@ -126,7 +126,7 @@ describe("WorkGraph operational telemetry", () => {
       },
     )
     await runtime?.reconcile({ trigger: "nudge" })
-    expect(capture).toHaveBeenCalledWith("system", "workgraph.queue", expect.objectContaining({ kind: "attempt" }))
+    expect(capture).toHaveBeenCalledWith("system", "workgraph.queue", expect.objectContaining({ kind: "run" }))
     expect(capture).toHaveBeenCalledWith(
       "system",
       "workgraph.reconciliation",

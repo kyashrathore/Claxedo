@@ -99,7 +99,7 @@ const commandSamples = [
   { version: 1, type: "approve_work_item", workItemId: "work-item-1", expectedVersion: 4 },
   { version: 1, type: "reject_work_item", workItemId: "work-item-1", expectedVersion: 4, reason: "Not needed" },
   { version: 1, type: "approve_work_items", approvals: [{ workItemId: "work-item-1", expectedVersion: 4 }] },
-  { version: 1, type: "cancel_attempt", attemptId: "attempt-1", expectedVersion: 1, reason: "Owner cancelled" },
+  { version: 1, type: "cancel_run", runId: "run-1", expectedVersion: 1, reason: "Owner cancelled" },
   { version: 1, type: "retry_work_item", workItemId: "work-item-1", expectedVersion: 5 },
   {
     version: 1,

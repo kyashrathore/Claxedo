@@ -1632,7 +1632,7 @@ describe("hosted shell boot surface", () => {
 // resolves the SAME id at connect to key the subscriber's room and visibility.
 // These tests pin the two deliveries the earlier Clerk-claims room keying made
 // impossible: an org-stamped document.changed reaching a signed subscriber,
-// and an agent attempt-operation nudge reaching a subscriber whose bearer
+// and an agent run-operation nudge reaching a subscriber whose bearer
 // carries an active-org Clerk claim.
 
 // In-memory DO namespace holding REAL LiveSyncRoom instances, one per name —
@@ -1760,7 +1760,7 @@ describe("hosted live-sync delivery — internal org identity end-to-end", () =>
     await reader.cancel()
   })
 
-  test("an agent attempt-operation nudge reaches a subscriber connected with an active-org token", async () => {
+  test("an agent run-operation nudge reaches a subscriber connected with an active-org token", async () => {
     const keyPair = await generateKeyPair("EdDSA", { extractable: true })
     const namespace = liveRoomNamespace()
     const plane = activeOrgPlane()
@@ -1791,12 +1791,12 @@ describe("hosted live-sync delivery — internal org identity end-to-end", () =>
       "EdDSA",
     )
     const operation = await app.fetch(
-      new Request("http://cp.test/internal/workgraph/attempt-operation", {
+      new Request("http://cp.test/internal/workgraph/run-operation", {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({
           version: 1,
-          identity: { attemptId: "attempt_1", sessionId: "ses_1", workspaceId: "ws_wg_stream_1" },
+          identity: { runId: "run_1", sessionId: "ses_1", workspaceId: "ws_wg_stream_1", generation: 1 },
           operation: {
             type: "record_checkpoint",
             operationId: "op_checkpoint_1",

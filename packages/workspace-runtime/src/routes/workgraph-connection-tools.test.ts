@@ -5,7 +5,7 @@ import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 
 const binding = {
   version: 1,
-  identity: { attemptId: "attempt-1", sessionId: "session-1", workspaceId: "workspace-1" },
+  identity: { runId: "run-1", sessionId: "session-1", workspaceId: "workspace-1" },
   connectionIds: ["connection-1"],
   tools: ["connection_work_source_list", "connection_work_source_comment", "connection_work_source_update"],
   brokerUrl: "https://central.test",
@@ -85,7 +85,7 @@ describe("WorkGraph Connection tools", () => {
       body: {
         version: 1,
         identity: {
-          attemptId: "attempt-1",
+          runId: "run-1",
           sessionId: "session-1",
           workspaceId: "workspace-1",
           connectionId: "connection-1",
@@ -124,7 +124,7 @@ describe("WorkGraph Connection tools", () => {
     expect(calls).toEqual([{
       version: 1,
       identity: {
-        attemptId: "attempt-1",
+        runId: "run-1",
         sessionId: "session-1",
         workspaceId: "workspace-1",
         connectionId: "connection-1",
@@ -242,7 +242,7 @@ describe("WorkGraph Connection tools", () => {
     expect(calls).toEqual([{
       version: 1,
       identity: {
-        attemptId: "attempt-1",
+        runId: "run-1",
         sessionId: "session-1",
         workspaceId: "workspace-1",
         connectionId: "connection-1",
@@ -263,13 +263,13 @@ describe("WorkGraph Connection tools", () => {
       },
       registerSessionTools: async (input) => { registrations.set(input.sessionId, input.callbackUrl) },
     })
-    for (const [sessionId, attemptId] of [["session-1", "attempt-1"], ["session-2", "attempt-2"]]) {
+    for (const [sessionId, runId] of [["session-1", "run-1"], ["session-2", "run-2"]]) {
       expect((await app.request("/api/workgraph/connection-binding", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           ...binding,
-          identity: { ...binding.identity, sessionId, attemptId },
+          identity: { ...binding.identity, sessionId, runId },
           tools: ["connection_work_source_comment"],
         }),
       })).status).toBe(200)
@@ -360,7 +360,7 @@ describe("WorkGraph Connection tools", () => {
     expect((await app.request("/api/workgraph/connection-binding", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...binding, identity: { ...binding.identity, attemptId: "attempt-2" } }),
+      body: JSON.stringify({ ...binding, identity: { ...binding.identity, runId: "run-2" } }),
     })).status).toBe(409)
     expect((await invokeCallback(registration!.callbackUrl, {
       connectionId: "connection-1",

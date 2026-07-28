@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vitest"
-import { classifyAttemptPlacement, workGraphSmoke } from "./smoke-workgraph"
+import { classifyRunPlacement, workGraphSmoke } from "./smoke-workgraph"
 
 describe("WorkGraph deployment smoke", () => {
-  test("accepts only a claimed or launched Attempt as placement evidence", () => {
-    expect(classifyAttemptPlacement("admitted")).toBe("pending")
+  test("accepts only a claimed or launched Run as placement evidence", () => {
+    expect(classifyRunPlacement("admitted")).toBe("pending")
     for (const state of ["placing", "running", "result"]) {
-      expect(classifyAttemptPlacement(state)).toBe("started")
+      expect(classifyRunPlacement(state)).toBe("started")
     }
-    for (const state of ["attention", "failed", "cancelled"]) {
-      expect(() => classifyAttemptPlacement(state)).toThrow(`reached ${state} before placement start was observed`)
+    for (const state of ["parked", "failed", "cancelled"]) {
+      expect(() => classifyRunPlacement(state)).toThrow(`reached ${state} before placement start was observed`)
     }
   })
 
@@ -108,7 +108,7 @@ describe("WorkGraph deployment smoke", () => {
         }
         if (body.command.type === "create_work_item") {
           // Execution modes are gone: a user-created Task is born approved and the
-          // continuous drain (nudged by this command) admits it. The Attempt then
+          // continuous drain (nudged by this command) admits it. The Run then
           // surfaces in the snapshot for the smoke to discover.
           executionAdmitted = true
           return Response.json({ ok: true, value: { workItemId: "item_1" } })
@@ -143,16 +143,16 @@ describe("WorkGraph deployment smoke", () => {
         }
         return Response.json({ id: "item_1" })
       }
-      if (url.pathname === "/api/workgraph/attempts/attempt_1") {
+      if (url.pathname === "/api/workgraph/runs/run_1") {
         if (!executionAdmitted) return Response.json({ error: { code: "not_found" } }, { status: 404 })
         if (manualReconciles === 0) {
           return Response.json({
-            attempt: { id: "attempt_1", state: "running", startedAt: Date.now() },
+            run: { id: "run_1", state: "running", startedAt: Date.now() },
             executionReferences: { workspaceId: "workgraph_workspace_1", sessionId: "session_runtime_1" },
           })
         }
         return Response.json({
-          attempt: { id: "attempt_1", state: "result" },
+          run: { id: "run_1", state: "result" },
           executionReferences: { workspaceId: "workgraph_workspace_1", sessionId: "session_runtime_1" },
         })
       }
@@ -189,13 +189,13 @@ describe("WorkGraph deployment smoke", () => {
         if (url.searchParams.get("limit") === "1") {
           return Response.json({ records: [{ id: "workgraph_1" }], nextCursor: "cursor_org_a_user_a" })
         }
-        // The continuous drain admitted the approved Task; its Attempt is visible
+        // The continuous drain admitted the approved Task; its Run is visible
         // in the snapshot so the smoke can discover it without an execute command.
         return Response.json({
           records: [
             { id: "stream_1" },
             { id: "item_1" },
-            ...(executionAdmitted ? [{ recordType: "attempt", id: "attempt_1", workItemId: "item_1", state: "admitted" }] : []),
+            ...(executionAdmitted ? [{ recordType: "run", id: "run_1", workItemId: "item_1", state: "admitted" }] : []),
           ],
         })
       }
@@ -254,13 +254,13 @@ describe("WorkGraph deployment smoke", () => {
       ),
     ).toBe(true)
     const firstManualReconcile = requests.findIndex((entry) => entry.url.pathname === "/internal/workgraph/reconcile")
-    expect(requests.findIndex((entry) => entry.url.pathname === "/api/workgraph/attempts/attempt_1")).toBeLessThan(
+    expect(requests.findIndex((entry) => entry.url.pathname === "/api/workgraph/runs/run_1")).toBeLessThan(
       firstManualReconcile,
     )
     for (const pathname of ["/api/workgraph/streams/stream_2", "/api/workgraph/streams/stream_3"]) {
       expect(requests.findLastIndex((entry) => entry.url.pathname === pathname)).toBeLessThan(firstManualReconcile)
     }
-    // The continuous-execution Attempt discovery (snapshot limit=200) is the fast
+    // The continuous-execution Run discovery (snapshot limit=200) is the fast
     // path; it runs before the concurrent tenant B deletion, which runs before any
     // manual reconcile.
     const executeRequest = requests.findIndex(

@@ -25,7 +25,7 @@ export {
 } from "./application/webhook-intake-service"
 export { createAttentionAcknowledgementService } from "./application/attention-acknowledgement-service"
 export type { AttentionAcknowledgementStore } from "./application/attention-acknowledgement-service"
-export { buildAttemptPrompt } from "./application/attempt-prompt"
+export { buildRunPrompt } from "./application/run-prompt"
 export {
   createSourceViewService,
   SourceViewConnectionError,

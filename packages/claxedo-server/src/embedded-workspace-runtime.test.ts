@@ -281,38 +281,38 @@ describe("embedded workspace runtime", () => {
     }
   })
 
-  test("passes the trusted WorkGraph Attempt broker into new embedded runtimes", async () => {
-    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-attempt-broker-")
+  test("passes the trusted WorkGraph Run broker into new embedded runtimes", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-run-broker-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     process.env.CLAXEDO_AGENT_TYPE = "pi"
 
     try {
       configureEmbeddedWorkspaceRuntime({
         opencodeRequest: async () => new Response(null, { status: 404 }),
-        workgraphAttemptBroker: async () => {
+        workgraphRunBroker: async () => {
           throw new Error("not invoked while binding")
         },
       })
-      const ws = workspace("ws_attempt_broker", project)
+      const ws = workspace("ws_run_broker", project)
       const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       const query = `directory=${encodeURIComponent(project)}&runner=pi`
       const created = await runtime.app.request(`http://localhost/session?${query}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: "Managed Attempt" }),
+        body: JSON.stringify({ title: "Managed Run" }),
       })
       expect(created.status, await created.clone().text()).toBe(201)
       const session = await created.json() as { id: string }
-      const bound = await runtime.app.request(`http://localhost/api/workgraph/attempt-binding?${query}`, {
+      const bound = await runtime.app.request(`http://localhost/api/workgraph/run-binding?${query}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           version: 1,
           identity: {
-            attemptId: "attempt-1",
+            runId: "run-1",
             sessionId: session.id,
             workspaceId: ws.id,
-            leaseEpoch: 1,
+            generation: 1,
           },
           harness: "pi",
           brokerUrl: "http://127.0.0.1",

@@ -47,14 +47,14 @@ describe("WorkGraph connection operation broker", () => {
       }),
       connectors: { github: connector([]) },
     })
-    const attempts = [
-      { ...identity(), attemptId: "forged" },
+    const runs = [
+      { ...identity(), runId: "forged" },
       { ...identity(), sessionId: "forged" },
       { ...identity(), workspaceId: "forged" },
       { ...identity(), connectionId: ConnectionIDSchema.parse("foreign") },
     ]
 
-    for (const value of attempts) await expect(broker.execute(value, list(), principal())).rejects.toBeInstanceOf(ConnectionOperationDeniedError)
+    for (const value of runs) await expect(broker.execute(value, list(), principal())).rejects.toBeInstanceOf(ConnectionOperationDeniedError)
     await expect(broker.execute(identity(), list(), { ownerUserId: "mallory", ownerPartition: "org:acme" })).rejects.toBeInstanceOf(ConnectionOperationDeniedError)
     await expect(broker.execute(identity(), list(), { ownerUserId: "alice", ownerPartition: "org:other" })).rejects.toBeInstanceOf(ConnectionOperationDeniedError)
     const withoutTool = binding({ tools: [] })
@@ -187,21 +187,21 @@ function context(): WorkGraphContext {
   return {
     organizationId: "org-acme" as never,
     ownerUserId: OwnerUserIDSchema.parse("alice"),
-    actor: { type: "agent", id: ActorIDSchema.parse("attempt-agent") },
+    actor: { type: "agent", id: ActorIDSchema.parse("run-agent") },
     requestId: RequestIDSchema.parse("request"),
     access: { mode: "owner" },
   }
 }
 
 function identity(): ConnectionOperationIdentity {
-  return { attemptId: "attempt", sessionId: "session", workspaceId: "workspace", connectionId: ConnectionIDSchema.parse("connection") }
+  return { runId: "run", sessionId: "session", workspaceId: "workspace", connectionId: ConnectionIDSchema.parse("connection") }
 }
 
 function binding(overrides: Partial<ConnectionOperationBinding> = {}): ConnectionOperationBinding {
   return {
     context: context(),
     ownerPartition: "org:acme",
-    attemptId: "attempt",
+    runId: "run",
     sessionId: "session",
     workspaceId: "workspace",
     connectionIds: [ConnectionIDSchema.parse("connection")],

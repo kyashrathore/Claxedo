@@ -19,7 +19,7 @@ type SessionState = Readonly<{
     Record<
       string,
       Readonly<{
-        attemptId: string
+        runId: string
         directory: string
         admissionCount: number
         result: ExecutionResult
@@ -43,14 +43,14 @@ const writeSessions = async (state: SessionState) => {
 
 const sessions: WorkGraphSessionGateway = {
   admit: async (input) => {
-    const sessionId = `session_${input.attemptId}`
+    const sessionId = `session_${input.runId}`
     const state = await readSessions()
     const previous = state.sessions[sessionId]
     await writeSessions({
       sessions: {
         ...state.sessions,
         [sessionId]: {
-          attemptId: input.attemptId,
+          runId: input.runId,
           directory: input.directory,
           admissionCount: (previous?.admissionCount ?? 0) + 1,
           result: { state: "pending" },

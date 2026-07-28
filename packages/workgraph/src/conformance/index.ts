@@ -1,7 +1,7 @@
 import { SnapshotResumeCursorError, readChangeCursor } from "../contracts"
 import type {
   ChangeCursor,
-  AttemptID,
+  RunID,
   CommandResult,
   OperationID,
   OwnerUserID,
@@ -15,7 +15,7 @@ import type {
   SnapshotResumeCursor,
 } from "../contracts"
 import type { WorkGraphService } from "../application/workgraph-service"
-import type { AttemptRuntimePort } from "../ports/attempt-runtime"
+import type { RunRuntimePort } from "../ports/run-runtime"
 import type { WorkGraphCommandHandlers } from "../ports/store"
 
 export * from "./archive"
@@ -42,7 +42,7 @@ export const WORKGRAPH_ADAPTER_CONFORMANCE_SCOPE = {
     "completion_evidence",
     "durable_effect_delete_arbitration",
     "lease_acquire_renew_expire",
-    "attempt_runtime_recovery",
+    "run_runtime_recovery",
     "source_revision_replacement_fencing",
     "session_binding_owner_isolation_and_exact_retry",
     "bounded_task_activity_pagination_and_restart",
@@ -139,13 +139,13 @@ export type StoreConformanceFactory = (input: Readonly<{
   owners: Readonly<{ first: WorkGraphContext; second: WorkGraphContext }>
 }>) => Promise<Readonly<{
   service: WorkGraphService<ConformanceCommands, ConformanceQueries>
-  attemptRuntime: AttemptRuntimePort
+  runRuntime: RunRuntimePort
   executionProfile?: ResolvedExecutionProfile
-  restart: () => Promise<Readonly<{ attemptRuntime: AttemptRuntimePort }>>
+  restart: () => Promise<Readonly<{ runRuntime: RunRuntimePort }>>
   faults: Readonly<{ failNextAppend: () => void }>
   /**
-   * Ensure the given approved (`pending`) Work Item has an admitted Attempt and
-   * return it as a CommandResult whose value carries `{ attemptId, leaseEpoch }`.
+   * Ensure the given approved (`pending`) Work Item has an admitted Run and
+   * return it as a CommandResult whose value carries `{ runId, leaseEpoch }`.
    * Execution-mode commands are gone: adapters admit through their own launch
    * path (the SQLite drain auto-admits; the reference adapter admits on demand).
    */
@@ -420,7 +420,7 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
       assert(receipt.ok, "Durable receipt did not commit after winning arbitration")
       assert((await fixture.service.query(fixture.owners.first, "streams", "read", { streamId }))?.durableEffectCount === 1, "Durable receipt was not reflected on Stream")
     }),
-    testCase("fences Attempt leases across acquisition, renewal, expiry, and runtime restart", async () => {
+    testCase("fences Run leases across acquisition, renewal, expiry, and runtime restart", async () => {
       const fixture = await setup(factory)
       const stream = await fixture.service.execute(fixture.owners.first, {
         operationId: operation("lease_stream"),
@@ -451,23 +451,23 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
       // across competing admissions — is exercised by the adapter's own suite).
       const admitted = await fixture.admit(fixture.owners.first, { workItemId })
       assert(admitted.ok, `Approved Work Item was not admitted: ${canonicalJson(admitted)}`)
-      const attemptId = valueId(admitted, "attemptId") as AttemptID
+      const runId = valueId(admitted, "runId") as RunID
       const leaseEpoch = valueNumber(admitted, "leaseEpoch")
       assert(leaseEpoch === 1, "Initial admission did not start at lease epoch one")
-      assert(await fixture.attemptRuntime.renewLease(fixture.owners.second, {
-        attemptId,
+      assert(await fixture.runRuntime.renewLease(fixture.owners.second, {
+        runId,
         expectedLeaseEpoch: leaseEpoch,
         occurredAt: 2_000,
         durationMs: 300_000,
-      }) === undefined, "Another owner renewed the Attempt lease")
-      assert(await fixture.attemptRuntime.renewLease(fixture.owners.first, {
-        attemptId,
+      }) === undefined, "Another owner renewed the Run lease")
+      assert(await fixture.runRuntime.renewLease(fixture.owners.first, {
+        runId,
         expectedLeaseEpoch: leaseEpoch + 1,
         occurredAt: 2_000,
         durationMs: 300_000,
-      }) === undefined, "A non-current epoch renewed the Attempt lease")
-      const renewed = await fixture.attemptRuntime.renewLease(fixture.owners.first, {
-        attemptId,
+      }) === undefined, "A non-current epoch renewed the Run lease")
+      const renewed = await fixture.runRuntime.renewLease(fixture.owners.first, {
+        runId,
         expectedLeaseEpoch: leaseEpoch,
         occurredAt: 2_000,
         durationMs: 300_000,
@@ -475,29 +475,29 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
       assert(renewed?.leaseEpoch === leaseEpoch && !renewed.recovered, "Current holder could not renew its active epoch")
 
       const restarted = await fixture.restart()
-      const recovered = await restarted.attemptRuntime.renewLease(fixture.owners.first, {
-        attemptId,
+      const recovered = await restarted.runRuntime.renewLease(fixture.owners.first, {
+        runId,
         expectedLeaseEpoch: leaseEpoch,
         occurredAt: 1_000_000,
         durationMs: 300_000,
       })
-      assert(recovered?.leaseEpoch === leaseEpoch + 1 && recovered.recovered, "Restarted runtime did not recover the expired durable Attempt")
-      assert(await restarted.attemptRuntime.renewLease(fixture.owners.first, {
-        attemptId,
+      assert(recovered?.leaseEpoch === leaseEpoch + 1 && recovered.recovered, "Restarted runtime did not recover the expired durable Run")
+      assert(await restarted.runRuntime.renewLease(fixture.owners.first, {
+        runId,
         expectedLeaseEpoch: leaseEpoch,
         occurredAt: 1_000_001,
         durationMs: 300_000,
       }) === undefined, "Recovered lease accepted its stale epoch")
-      assert(!(await restarted.attemptRuntime.recordResult(fixture.owners.first, {
-        attemptId,
+      assert(!(await restarted.runRuntime.recordResult(fixture.owners.first, {
+        runId,
         workItemId,
         leaseEpoch,
         state: "result",
         summary: "stale worker",
         artifacts: [],
       })), "Stale runtime completion crossed the recovered epoch fence")
-      assert(await restarted.attemptRuntime.recordResult(fixture.owners.first, {
-        attemptId,
+      assert(await restarted.runRuntime.recordResult(fixture.owners.first, {
+        runId,
         workItemId,
         leaseEpoch: recovered.leaseEpoch,
         state: "result",

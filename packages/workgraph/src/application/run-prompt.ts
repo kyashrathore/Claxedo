@@ -1,4 +1,4 @@
-export function buildAttemptPrompt(input: Readonly<{
+export function buildRunPrompt(input: Readonly<{
   title: string
   description?: string
   completionContract: unknown

@@ -12,19 +12,19 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     const file = path.join(directory, "bindings.json")
     try {
       await createFileWorkGraphSessionBindingStore(file).save({
-        attemptId: "attempt_persisted",
+        runId: "run_persisted",
         sessionId: "ses_persisted",
         directory: "/repo",
         harness: "claude-sdk",
       })
       const restored = createFileWorkGraphSessionBindingStore(file)
-      await expect(restored.findByAttempt("attempt_persisted")).resolves.toMatchObject({ sessionId: "ses_persisted" })
+      await expect(restored.findByRun("run_persisted")).resolves.toMatchObject({ sessionId: "ses_persisted" })
       await expect(restored.findBySession("ses_persisted")).resolves.toMatchObject({ harness: "claude-sdk" })
       await expect(restored.all()).resolves.toEqual([
         expect.objectContaining({ sessionId: "ses_persisted", directory: "/repo" }),
       ])
       await restored.deleteByDirectory("/repo")
-      await expect(restored.findByAttempt("attempt_persisted")).resolves.toBeUndefined()
+      await expect(restored.findByRun("run_persisted")).resolves.toBeUndefined()
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
@@ -42,9 +42,9 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     const suffix = harness.replaceAll("-", "_")
     const runtimeSessionId = `ses_runtime_${suffix}`
     const sessionId = `ses_workgraph_${suffix}`
-    const attemptId = `attempt_${suffix}`
+    const runId = `run_${suffix}`
     const calls: Array<{ path: string; harness: string | null; body?: unknown }> = []
-    const byAttempt = new Map<string, { attemptId: string; sessionId: string; directory: string; harness: string }>()
+    const byRun = new Map<string, { runId: string; sessionId: string; directory: string; harness: string }>()
     const released: string[] = []
     const gateway = createHarnessWorkGraphGateway(async () => {
       throw new Error("non-OpenCode harnesses must not use Session V2")
@@ -70,14 +70,14 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         throw new Error(`Unexpected request ${url.pathname}`)
       },
       bindings: {
-        all: async () => [...byAttempt.values()],
-        findByAttempt: async (attemptId) => byAttempt.get(attemptId),
-        findBySession: async (sessionId) => [...byAttempt.values()].find((binding) => binding.sessionId === sessionId),
-        save: async (binding) => { byAttempt.set(binding.attemptId, binding) },
-        deleteByAttempt: async (attemptId) => { byAttempt.delete(attemptId) },
+        all: async () => [...byRun.values()],
+        findByRun: async (runId) => byRun.get(runId),
+        findBySession: async (sessionId) => [...byRun.values()].find((binding) => binding.sessionId === sessionId),
+        save: async (binding) => { byRun.set(binding.runId, binding) },
+        deleteByRun: async (runId) => { byRun.delete(runId) },
         deleteByDirectory: async (directory) => {
-          for (const [attemptId, binding] of byAttempt) {
-            if (binding.directory === directory) byAttempt.delete(attemptId)
+          for (const [runId, binding] of byRun) {
+            if (binding.directory === directory) byRun.delete(runId)
           }
         },
       },
@@ -85,7 +85,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     })
 
     await expect(gateway.admit({
-      attemptId,
+      runId,
       sessionId,
       directory: "/repo",
       title: "Item",
@@ -105,7 +105,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         path: `/session/${runtimeSessionId}/prompt_async`,
         harness,
         body: {
-          messageID: `msg_workgraph_${attemptId}`,
+          messageID: `msg_workgraph_${runId}`,
           parts: [{ type: "text", text: "Ship it" }],
           agent: "build",
           model: { providerID: "openai", modelID: "gpt-5" },
@@ -123,7 +123,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     await expect(gateway.result(sessionId)).rejects.toThrow("non-OpenCode harnesses must not use Session V2")
   })
 
-  it("binds non-OpenCode harness tools before prompting without exposing durable Attempt identity", async () => {
+  it("binds non-OpenCode harness tools before prompting without exposing durable Run identity", async () => {
     const calls: Array<{ path: string; method: string; body?: unknown }> = []
     const contexts: unknown[] = []
     const released: string[] = []
@@ -137,13 +137,13 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     const gateway = createHarnessWorkGraphGateway(async () => {
       throw new Error("Pi must use the workspace runtime")
     }, {
-      executeAttempt: async (_context, request) => ({
+      executeRun: async (_context, request) => ({
         ok: true,
         operationId: request.operation.operationId,
         cursor: "1" as never,
         value: {},
       }),
-      attemptContexts: {
+      runContexts: {
         bind: async (input) => { contexts.push(input) },
         release: async (sessionId) => { released.push(sessionId) },
       },
@@ -155,17 +155,17 @@ describe("mounted WorkGraph Session V2 gateway", () => {
           ...(request.body ? { body: await request.clone().json() } : {}),
         })
         if (path === "/session") return Response.json({ id: "runtime-pi-session" }, { status: 201 })
-        if (path === "/api/workgraph/attempt-binding") return Response.json({ bound: true })
+        if (path === "/api/workgraph/run-binding") return Response.json({ bound: true })
         if (path.endsWith("/prompt_async")) return new Response(null, { status: 204 })
         if (path.endsWith("/abort")) return Response.json({ aborted: true })
-        if (path.startsWith("/api/workgraph/attempt-binding/")) return Response.json({ unbound: true })
+        if (path.startsWith("/api/workgraph/run-binding/")) return Response.json({ unbound: true })
         throw new Error(`Unexpected request ${path}`)
       },
     })
 
     await expect(gateway.admit({
-      attemptId: "attempt-pi",
-      leaseEpoch: 9,
+      runId: "run-pi",
+      generation: 9,
       sessionId: "workgraph-pi-session",
       directory: "/repo/worktree",
       workspaceId: "workspace-stream",
@@ -176,50 +176,50 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     })).resolves.toBe("workgraph-pi-session")
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       "POST /session",
-      "POST /api/workgraph/attempt-binding",
+      "POST /api/workgraph/run-binding",
       "POST /session/runtime-pi-session/prompt_async",
     ])
     expect(calls[1]?.body).toEqual({
       version: 1,
       identity: {
-        attemptId: "attempt-pi",
+        runId: "run-pi",
         sessionId: "workgraph-pi-session",
         workspaceId: "workspace-stream",
-        leaseEpoch: 9,
+        generation: 9,
       },
       runtimeSessionId: "runtime-pi-session",
       harness: "pi",
       brokerUrl: "http://127.0.0.1",
     })
     expect(contexts).toEqual([{
-      identity: expect.objectContaining({ attemptId: "attempt-pi", sessionId: "workgraph-pi-session" }),
+      identity: expect.objectContaining({ runId: "run-pi", sessionId: "workgraph-pi-session" }),
       context,
     }])
     const prompt = calls[2]?.body as { parts: unknown[] }
-    expect(JSON.stringify(prompt.parts)).not.toContain("attempt-pi")
+    expect(JSON.stringify(prompt.parts)).not.toContain("run-pi")
     expect(JSON.stringify(prompt.parts)).not.toContain("workspace-stream")
 
     await gateway.cancel("workgraph-pi-session", "test cleanup")
     expect(calls.map((call) => `${call.method} ${call.path}`).slice(-2)).toEqual([
       "POST /session/runtime-pi-session/abort",
-      "DELETE /api/workgraph/attempt-binding/workgraph-pi-session",
+      "DELETE /api/workgraph/run-binding/workgraph-pi-session",
     ])
     expect(released).toEqual(["workgraph-pi-session"])
   })
 
-  it("releases non-OpenCode Attempt tools when the Session reaches a terminal turn", async () => {
+  it("releases non-OpenCode Run tools when the Session reaches a terminal turn", async () => {
     const calls: string[] = []
     const released: string[] = []
     const gateway = createHarnessWorkGraphGateway(async () => {
       throw new Error("Pi must use the workspace runtime")
     }, {
-      executeAttempt: async (_context, request) => ({
+      executeRun: async (_context, request) => ({
         ok: true,
         operationId: request.operation.operationId,
         cursor: "1" as never,
         value: {},
       }),
-      attemptContexts: {
+      runContexts: {
         bind: async () => {},
         release: async (sessionId) => { released.push(sessionId) },
       },
@@ -227,7 +227,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         const pathname = new URL(request.url).pathname
         calls.push(`${request.method} ${pathname}`)
         if (pathname === "/session") return Response.json({ id: "runtime-pi-session" }, { status: 201 })
-        if (pathname === "/api/workgraph/attempt-binding") return Response.json({ bound: true })
+        if (pathname === "/api/workgraph/run-binding") return Response.json({ bound: true })
         if (pathname.endsWith("/prompt_async")) return new Response(null, { status: 204 })
         if (pathname === "/session/runtime-pi-session") {
           return Response.json({ lastTurn: { status: "completed", completedAt: 2 } })
@@ -237,7 +237,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
             { info: { role: "assistant" }, parts: [{ type: "text", text: "Implemented and verified" }] },
           ])
         }
-        if (pathname === "/api/workgraph/attempt-binding/workgraph-pi-session") {
+        if (pathname === "/api/workgraph/run-binding/workgraph-pi-session") {
           return Response.json({ unbound: true })
         }
         throw new Error(`Unexpected request ${pathname}`)
@@ -252,8 +252,8 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }
 
     await gateway.admit({
-      attemptId: "attempt-pi",
-      leaseEpoch: 9,
+      runId: "run-pi",
+      generation: 9,
       sessionId: "workgraph-pi-session",
       directory: "/repo/worktree",
       workspaceId: "workspace-stream",
@@ -269,7 +269,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     })
     expect(calls.slice(-3)).toEqual([
       "GET /session/runtime-pi-session",
-      "DELETE /api/workgraph/attempt-binding/workgraph-pi-session",
+      "DELETE /api/workgraph/run-binding/workgraph-pi-session",
       "GET /session/runtime-pi-session/message",
     ])
     expect(released).toEqual(["workgraph-pi-session"])
@@ -296,8 +296,8 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       },
     })
     const input = {
-      attemptId: "attempt_retry",
-      sessionId: "ses_workgraph_attempt_retry",
+      runId: "run_retry",
+      sessionId: "ses_workgraph_run_retry",
       directory: "/repo",
       title: "Retry",
       prompt: "Ship it",
@@ -305,7 +305,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }
 
     await expect(gateway.admit(input)).rejects.toThrow("response lost")
-    await expect(gateway.admit(input)).resolves.toBe("ses_workgraph_attempt_retry")
+    await expect(gateway.admit(input)).resolves.toBe("ses_workgraph_run_retry")
     expect(promptRequests).toBe(2)
     expect(executions).toBe(1)
   })
@@ -317,13 +317,13 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         path: new URL(request.url).pathname,
         ...(request.body ? { body: await request.clone().json() } : {}),
       })
-      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_workgraph_attempt_1" })
+      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_workgraph_run_1" })
       return Response.json({ data: { admittedSeq: 1 } })
     })
 
     await expect(
-      gateway.admit({ attemptId: "attempt_1", directory: "/repo", title: "Item", prompt: "Ship it", profile }),
-    ).resolves.toBe("ses_workgraph_attempt_1")
+      gateway.admit({ runId: "run_1", directory: "/repo", title: "Item", prompt: "Ship it", profile }),
+    ).resolves.toBe("ses_workgraph_run_1")
     expect(calls).toEqual([
       {
         path: "/api/session",
@@ -336,8 +336,8 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         },
       },
       {
-        path: "/api/session/ses_workgraph_attempt_1/prompt",
-        body: { id: "msg_workgraph_attempt_1", prompt: { text: "Ship it" }, delivery: "steer", resume: true },
+        path: "/api/session/ses_workgraph_run_1/prompt",
+        body: { id: "msg_workgraph_run_1", prompt: { text: "Ship it" }, delivery: "steer", resume: true },
       },
     ])
     expect(calls.some((call) => call.path.endsWith("/message"))).toBe(false)
@@ -346,13 +346,13 @@ describe("mounted WorkGraph Session V2 gateway", () => {
   it("rejects a create response without a real Session ID", async () => {
     const gateway = createSessionV2WorkGraphGateway(async () => Response.json({ data: {} }))
     await expect(
-      gateway.admit({ attemptId: "attempt_1", directory: "/repo", title: "Item", prompt: "Ship it", profile }),
+      gateway.admit({ runId: "run_1", directory: "/repo", title: "Item", prompt: "Ship it", profile }),
     ).rejects.toThrow("did not include a Session ID")
   })
 
   it("classifies only definitive create unavailability as unavailable", async () => {
     const unavailable = createSessionV2WorkGraphGateway(async () => new Response("missing", { status: 404 }))
-    const unavailableError = await unavailable.admit({ attemptId: "missing", directory: "/repo", title: "Missing", prompt: "Plan", profile })
+    const unavailableError = await unavailable.admit({ runId: "missing", directory: "/repo", title: "Missing", prompt: "Plan", profile })
       .then(() => undefined, (error) => error)
     expect(unavailable.classifyAdmissionError?.(unavailableError)).toBe("unavailable")
 
@@ -360,14 +360,14 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       new URL(request.url).pathname === "/api/session"
         ? Response.json({ id: "ses_rejected" })
         : new Response("invalid prompt", { status: 400 }))
-    const rejectedError = await rejected.admit({ attemptId: "rejected", sessionId: "ses_rejected", directory: "/repo", title: "Rejected", prompt: "Plan", profile })
+    const rejectedError = await rejected.admit({ runId: "rejected", sessionId: "ses_rejected", directory: "/repo", title: "Rejected", prompt: "Plan", profile })
       .then(() => undefined, (error) => error)
     expect(rejected.classifyAdmissionError?.(rejectedError)).toBe("rejected")
 
     const indeterminate = createSessionV2WorkGraphGateway(async () => {
       throw new Error("response lost")
     })
-    const indeterminateError = await indeterminate.admit({ attemptId: "retry", sessionId: "ses_retry", directory: "/repo", title: "Retry", prompt: "Plan", profile })
+    const indeterminateError = await indeterminate.admit({ runId: "retry", sessionId: "ses_retry", directory: "/repo", title: "Retry", prompt: "Plan", profile })
       .then(() => undefined, (error) => error)
     expect(indeterminate.classifyAdmissionError?.(indeterminateError)).toBe("indeterminate")
   })
@@ -419,7 +419,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }
 
     await expect(gateway.admit({
-      attemptId: "attempt-1",
+      runId: "run-1",
       directory: "/repo",
       title: "Item",
       prompt: "Update it",
@@ -490,7 +490,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       },
     })
     const admission = {
-      attemptId: "master_stream_1",
+      runId: "master_stream_1",
       streamId: "stream_1",
       sessionId: "ses_master_stream_1",
       directory: "/repo",
@@ -592,7 +592,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }
 
     await gateway.admit({
-      attemptId: "master_stream_1",
+      runId: "master_stream_1",
       streamId: "stream_1",
       sessionId: "ses_master_stream_1",
       directory: "/repo",
@@ -627,13 +627,13 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     })
     expect(recordPullRequest).toHaveBeenCalledWith(context, expect.objectContaining({
       streamId: "stream_1",
-      attemptId: "master_stream_1",
+      runId: "master_stream_1",
       idempotencyKey: "stream-1:pr",
       draft: true,
     }))
     expect(claim).toHaveBeenCalledWith(context, expect.objectContaining({
       streamId: "stream_1",
-      attemptId: "master_stream_1",
+      runId: "master_stream_1",
       idempotencyKey: "stream-1:pr",
       draft: true,
     }))
@@ -644,7 +644,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }))
   })
 
-  it("binds Attempt tools to trusted execution identity and removes them on cancel", async () => {
+  it("binds Run tools to trusted execution identity and removes them on cancel", async () => {
     const calls: Array<{ path: string; method: string; body?: unknown }> = []
     const operations: unknown[] = []
     const gateway = createSessionV2WorkGraphGateway(async (request) => {
@@ -653,10 +653,10 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         method: request.method,
         ...(request.body ? { body: await request.clone().json() } : {}),
       })
-      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_attempt" })
+      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_run" })
       return request.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ data: { admittedSeq: 1 } })
     }, {
-      executeAttempt: async (_context, request) => {
+      executeRun: async (_context, request) => {
         operations.push(request)
         return { ok: true, operationId: request.operation.operationId, cursor: "1" as never, value: { recorded: true } }
       },
@@ -670,18 +670,18 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }
 
     await expect(gateway.admit({
-      attemptId: "attempt-1",
-      leaseEpoch: 7,
+      runId: "run-1",
+      generation: 7,
       directory: "/repo",
       title: "Item",
       prompt: "Ship it",
       profile,
       context,
-    })).resolves.toBe("ses_attempt")
+    })).resolves.toBe("ses_run")
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       "POST /api/session",
-      "POST /api/session/ses_attempt/tool",
-      "POST /api/session/ses_attempt/prompt",
+      "POST /api/session/ses_run/tool",
+      "POST /api/session/ses_run/prompt",
     ])
     expect(calls[0]?.body).toMatchObject({
       tools: ["terminal", "workgraph_report_progress", "workgraph_complete_task"],
@@ -700,7 +700,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        sessionID: "ses_attempt",
+        sessionID: "ses_run",
         name: "workgraph_report_progress",
         toolCallID: "call-1",
         input: { level: "milestone", summary: "Implemented the boundary" },
@@ -710,24 +710,24 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     expect(operations).toEqual([{
       version: 1,
       identity: {
-        attemptId: "attempt-1",
-        sessionId: "ses_attempt",
+        runId: "run-1",
+        sessionId: "ses_run",
         workspaceId: "/repo",
-        leaseEpoch: 7,
+        generation: 7,
       },
       operation: {
         type: "record_checkpoint",
-        operationId: "attempt_tool_attempt-1_call-1",
+        operationId: "run_tool_run-1_call-1",
         level: "milestone",
         summary: "Implemented the boundary",
         evidenceIds: [],
       },
     }])
 
-    await gateway.cancel("ses_attempt", "test cleanup")
+    await gateway.cancel("ses_run", "test cleanup")
     expect(calls.map((call) => `${call.method} ${call.path}`).slice(-2)).toEqual([
-      "POST /api/session/ses_attempt/interrupt",
-      "DELETE /api/session/ses_attempt/tool",
+      "POST /api/session/ses_run/interrupt",
+      "DELETE /api/session/ses_run/tool",
     ])
   })
 
@@ -747,7 +747,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       throw new Error(`Unexpected request ${url.pathname}`)
     })
 
-    await expect(gateway.result("ses_workgraph_attempt_1")).resolves.toEqual({
+    await expect(gateway.result("ses_workgraph_run_1")).resolves.toEqual({
       state: "succeeded",
       summary: "Implemented and verified",
       artifacts: ["file:src/a.ts"],
@@ -770,7 +770,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       throw new Error(`Unexpected request ${url.pathname}`)
     })
 
-    await expect(gateway.result("ses_workgraph_attempt_1")).resolves.toEqual({
+    await expect(gateway.result("ses_workgraph_run_1")).resolves.toEqual({
       state: "failed",
       message: "Session stopped before the provider step settled",
     })
@@ -793,7 +793,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         throw new Error(`Unexpected request ${url.pathname}`)
       })
 
-      await expect(gateway.result("ses_workgraph_attempt_1")).resolves.toEqual({
+      await expect(gateway.result("ses_workgraph_run_1")).resolves.toEqual({
         state: "failed",
         message: "session_output_missing",
       })
@@ -810,7 +810,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         new URL(request.url).pathname === "/api/session/active"
           ? Response.json({ data: {} })
           : Response.json(history))
-      await expect(gateway.result("ses_workgraph_attempt_1")).resolves.toEqual({
+      await expect(gateway.result("ses_workgraph_run_1")).resolves.toEqual({
         state: "failed",
         message: "session_history_invalid",
       })

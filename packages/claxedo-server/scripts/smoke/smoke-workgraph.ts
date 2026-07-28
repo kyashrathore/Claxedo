@@ -9,10 +9,10 @@ type SmokeStream = Readonly<{
   reason: string
 }>
 
-export function classifyAttemptPlacement(state: string) {
+export function classifyRunPlacement(state: string) {
   if (["placing", "running", "result"].includes(state)) return "started" as const
   if (state === "admitted") return "pending" as const
-  throw new Error(`Hosted Attempt reached ${state} before placement start was observed`)
+  throw new Error(`Hosted Run reached ${state} before placement start was observed`)
 }
 
 export async function workGraphSmoke(env: SmokeEnvironment = process.env, request: typeof fetch = fetch) {
@@ -204,10 +204,10 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       // Execution modes are gone: a user-created Task is born `pending` (approved),
       // and the active Stream's continuous drain — nudged by every command's hosted
       // settlement dispatcher and re-derived on the CF cron — admits it with no
-      // execute command. Discover the drained Attempt, then hold the same placement
+      // execute command. Discover the drained Run, then hold the same placement
       // SLA and reconcile polling as before.
       const executeStartedAt = Date.now()
-      const attemptId = await waitForAdmittedAttempt(
+      const runId = await waitForAdmittedRun(
         request,
         base,
         tokenA,
@@ -217,11 +217,11 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         progress,
       )
       const fastPathResults = await Promise.allSettled([
-        waitForAttemptPlacement(
+        waitForRunPlacement(
           request,
           base,
           tokenA,
-          attemptId,
+          runId,
           executeStartedAt,
           retryDelayMs,
           progress,
@@ -231,14 +231,14 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       if (fastPathResults[1]!.status === "fulfilled") cleanupStreams.delete(tenantBStream.streamId)
       const fastPathFailure = fastPathResults.find((result) => result.status === "rejected")
       if (fastPathFailure?.status === "rejected") throw fastPathFailure.reason
-      progress(`created Attempt ${attemptId}; reconciling execution`)
-      const references = await reconcileAttempt(
+      progress(`created Run ${runId}; reconciling execution`)
+      const references = await reconcileRun(
         request,
         base,
         clerkSecret,
         sessionAOrganizationA,
         reconcileToken,
-        attemptId,
+        runId,
         progress,
       )
       progress(`verifying retained Session ${references.sessionId} in Workspace ${references.workspaceId}`)
@@ -631,7 +631,7 @@ async function createBareStream(
   }
 }
 
-async function waitForAdmittedAttempt(
+async function waitForAdmittedRun(
   request: typeof fetch,
   base: string,
   token: string,
@@ -646,49 +646,49 @@ async function waitForAdmittedAttempt(
       headers: authorization(token),
       signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
     })
-    const attempt = records(snapshot).find(
-      (row) => row.recordType === "attempt" && row.workItemId === workItemId && typeof row.id === "string",
+    const run = records(snapshot).find(
+      (row) => row.recordType === "run" && row.workItemId === workItemId && typeof row.id === "string",
     )
-    if (attempt && typeof attempt.id === "string") {
+    if (run && typeof run.id === "string") {
       const latencyMs = Date.now() - startedAt
-      progress(`continuous drain admitted Attempt ${attempt.id} for Task ${workItemId} after ${latencyMs}ms`)
-      return attempt.id
+      progress(`continuous drain admitted Run ${run.id} for Task ${workItemId} after ${latencyMs}ms`)
+      return run.id
     }
     await wait(Math.min(retryDelayMs, 500, Math.max(0, deadline - Date.now())))
   }
-  throw new Error(`Continuous execution did not admit an Attempt for Task ${workItemId} within <10000ms`)
+  throw new Error(`Continuous execution did not admit an Run for Task ${workItemId} within <10000ms`)
 }
 
-async function waitForAttemptPlacement(
+async function waitForRunPlacement(
   request: typeof fetch,
   base: string,
   token: string,
-  attemptId: string,
+  runId: string,
   startedAt: number,
   retryDelayMs: number,
   progress: (message: string) => void,
 ) {
   const deadline = startedAt + 10_000
   while (Date.now() < deadline) {
-    const response = await request(`${base}/api/workgraph/attempts/${encodeURIComponent(attemptId)}`, {
+    const response = await request(`${base}/api/workgraph/runs/${encodeURIComponent(runId)}`, {
       headers: authorization(token),
       signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
     })
-    const body = parseJson(await response.text(), "/api/workgraph/attempts placement latency")
-    if (!response.ok) throw new Error(`Hosted Attempt placement verification failed: ${response.status}`)
-    const attempt = record(record(body)?.attempt)
-    if (attempt?.id !== attemptId || typeof attempt.state !== "string") {
-      throw new Error("Hosted Attempt detail returned an invalid envelope")
+    const body = parseJson(await response.text(), "/api/workgraph/runs placement latency")
+    if (!response.ok) throw new Error(`Hosted Run placement verification failed: ${response.status}`)
+    const run = record(record(body)?.run)
+    if (run?.id !== runId || typeof run.state !== "string") {
+      throw new Error("Hosted Run detail returned an invalid envelope")
     }
-    if (classifyAttemptPlacement(attempt.state) === "started") {
+    if (classifyRunPlacement(run.state) === "started") {
       const latencyMs = Date.now() - startedAt
-      if (latencyMs >= 10_000) throw new Error(`Hosted Attempt placement started after ${latencyMs}ms; budget is <10000ms`)
-      progress(`Attempt ${attemptId} placement reached ${attempt.state} after ${latencyMs}ms without manual reconciliation`)
+      if (latencyMs >= 10_000) throw new Error(`Hosted Run placement started after ${latencyMs}ms; budget is <10000ms`)
+      progress(`Run ${runId} placement reached ${run.state} after ${latencyMs}ms without manual reconciliation`)
       return
     }
     await wait(Math.min(retryDelayMs, 500, Math.max(0, deadline - Date.now())))
   }
-  throw new Error("Hosted Attempt placement did not start within <10000ms without manual reconciliation")
+  throw new Error("Hosted Run placement did not start within <10000ms without manual reconciliation")
 }
 
 async function deleteStreamWithinBudget(
@@ -727,20 +727,20 @@ async function deleteStreamWithinBudget(
   throw new Error(`Hosted Stream ${stream.streamId} control effect did not settle within <20000ms without manual reconciliation`)
 }
 
-async function reconcileAttempt(
+async function reconcileRun(
   request: typeof fetch,
   base: string,
   clerkSecret: string,
   session: Session,
   reconcileToken: string,
-  attemptId: string,
+  runId: string,
   progress: (message: string) => void,
 ) {
   const deadline = Date.now() + 6 * 60_000
   let cycle = 0
   while (Date.now() < deadline) {
     cycle += 1
-    progress(`reconciling Attempt ${attemptId} (cycle ${cycle})`)
+    progress(`reconciling Run ${runId} (cycle ${cycle})`)
     try {
       await triggerReconciliation(request, base, reconcileToken, Math.max(1, deadline - Date.now()))
     } catch (error) {
@@ -748,29 +748,29 @@ async function reconcileAttempt(
       throw error
     }
     const detail = record(
-      await jsonRequest(request, `${base}/api/workgraph/attempts/${encodeURIComponent(attemptId)}`, {
+      await jsonRequest(request, `${base}/api/workgraph/runs/${encodeURIComponent(runId)}`, {
         headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
       }),
     )
-    const attempt = record(detail?.attempt)
-    if (attempt?.id !== attemptId || typeof attempt.state !== "string") {
-      throw new Error("Hosted Attempt detail returned an invalid envelope")
+    const run = record(detail?.run)
+    if (run?.id !== runId || typeof run.state !== "string") {
+      throw new Error("Hosted Run detail returned an invalid envelope")
     }
-    progress(`Attempt ${attemptId} is ${attempt.state}`)
-    if (attempt.state === "result") {
+    progress(`Run ${runId} is ${run.state}`)
+    if (run.state === "result") {
       const references = record(detail?.executionReferences)
       if (typeof references?.workspaceId !== "string" || typeof references.sessionId !== "string") {
-        throw new Error("Hosted Attempt result has no durable Workspace and Session references")
+        throw new Error("Hosted Run result has no durable Workspace and Session references")
       }
       return { workspaceId: references.workspaceId, sessionId: references.sessionId }
     }
-    if (attempt.state === "attention" || attempt.state === "failed" || attempt.state === "cancelled") {
-      const reason = typeof attempt.attentionReason === "string" ? `: ${attempt.attentionReason}` : ""
-      throw new Error(`Hosted Attempt reached ${attempt.state} instead of a result${reason}`)
+    if (run.state === "parked" || run.state === "failed" || run.state === "cancelled") {
+      const reason = typeof run.parkedReason === "string" ? `: ${run.parkedReason}` : ""
+      throw new Error(`Hosted Run reached ${run.state} instead of a result${reason}`)
     }
     await wait(Math.min(12_000, Math.max(0, deadline - Date.now())))
   }
-  throw new Error("Hosted Attempt did not produce a result within six minutes")
+  throw new Error("Hosted Run did not produce a result within six minutes")
 }
 
 async function verifyHostedSession(

@@ -35,7 +35,7 @@ WorkGraph            "whose board is this?"        one per (org, user) — perso
     ├─ Outcome       "what goal?"                  success criteria + evidence; only YOU can close it
     │   └─ Work Item "what task?"                  state machine + completion contract + priority
     │       │                                      + dependency edges (a DAG) + the approval gate
-    │       └─ Attempt "which agent run?"          one numbered execution: a real agent session
+    │       └─ Run "which agent run?"              one numbered execution: a real agent session
     │                                              in the stream's workspace
     ├─ Decision      "agent asks human"            a blocking question with options; freezes
     │                                              the tasks it names until answered
@@ -87,15 +87,15 @@ const bornState = context.actor.type === "user" ? "pending" : "pending_approval"
 
 That line exists **identically in both backends** (`adapters/sqlite/store.ts:1858`, `convex/workgraphCommands.ts:840`). Human-created tasks are born approved (`pending`); anything an agent creates — including follow-up tasks invented mid-run — is born **Staged** and cannot launch until you approve it in the Needs-you panel (per-item, or "Approve all staged" scoped to one stream). If an agent later *edits* an approved task, it drops back to Staged for re-approval; your own edits don't.
 
-**⑥ Launch.** A background "drain" continuously evaluates `pending` items against a pure **launchability oracle** (`domain/launch-readiness.ts:54`) that returns one of ~10 concrete blockers: `not_approved`, `deps_incomplete` (its DAG parents aren't done), `blocking_decision` (an open question names it), `workspace_busy` (a stream runs **one attempt at a time** in its shared envelope), `stream_held`, `capability_invalid`, etc. When an item passes, an **Attempt** is admitted and placed: provision-or-adopt the stream's workspace → mark placing → launch a real agent session → mark running — with an ownership lease re-checked at four points, and a **compensation path** on any failure (cancel the half-launched session, surface the attempt as "needs attention" with the reason) so you get a Needs-you card instead of a ghost process.
+**⑥ Launch.** A background "drain" continuously evaluates `pending` items against a pure **launchability oracle** (`domain/launch-readiness.ts:54`) that returns one of ~10 concrete blockers: `not_approved`, `deps_incomplete` (its DAG parents aren't done), `blocking_decision` (an open question names it), `workspace_busy` (a stream runs **one run at a time** in its shared envelope), `stream_held`, `capability_invalid`, etc. When an item passes, a **Run** is admitted and placed: provision-or-adopt the stream's workspace → mark placing → launch a real agent session → mark running — with an ownership lease re-checked at four points, and a **compensation path** on any failure (cancel the half-launched session, surface the run as "needs attention" with the reason) so you get a Needs-you card instead of a ghost process.
 
-**⑦ During the run.** The agent (via ~50 MCP tools plus attempt-scoped callback routes) can: report **checkpoints** (milestone/progress/detail — this is the Activity feed you see), record **evidence** and findings, create follow-up work (born Staged), open **Decisions** — a question with options that *freezes the tasks it names* until you answer — and post to the master's mailbox. External actions (comment on the issue, open a PR) go through connection operations that are idempotency-keyed, **default to draft PRs**, and never hand the agent credentials (it holds secret-free references; the server exchanges them).
+**⑦ During the run.** The agent (via ~50 MCP tools plus run-scoped callback routes) can: report **checkpoints** (milestone/progress/detail — this is the Activity feed you see), record **evidence** and findings, create follow-up work (born Staged), open **Decisions** — a question with options that *freezes the tasks it names* until you answer — and post to the master's mailbox. External actions (comment on the issue, open a PR) go through connection operations that are idempotency-keyed, **default to draft PRs**, and never hand the agent credentials (it holds secret-free references; the server exchanges them).
 
 **⑧ Completion — proof, not vibes.** `complete_attempt` requires **at least one evidence record** by schema. A work item can only reach `completed` from a review-ish state *and* only if its **completion contract** is satisfied — the contract's requirements are matched against the *latest* typed evidence per requirement (`domain/completion.ts:22,55`). Two more gates sit above that:
 - **Landing integrity** (`domain/landing-integrity.ts`): a merge whose diff adds an `any`, adds `@ts-ignore`/`@ts-expect-error`, or weakens any of 10 tsconfig strict flags is rejected. A stream's charter can *extend* this floor, never lower it.
 - **Outcome closure is owner-only**: closing an outcome demands every child task be terminal *and* an `owner_confirmation` evidence record signed by you. An agent literally cannot close an outcome (`domain/completion.ts:100-111`).
 
-**⑨ Supervision — the master.** Each stream has a long-lived supervisor agent, woken by three triggers: mailbox messages, `task_settled` (something finished), and a daily 06:00Z schedule. Concurrency is guaranteed by construction: its wake lane key `workgraph-master:{org}:{owner}:{stream}` *is* the one-turn-per-stream lock. Its authority is deliberately clipped — the shared prompt envelope forbids it from approving agent-proposed work and from pushing/merging protected refs, and if it wasn't granted the landing tool it is explicitly told "landing runs elsewhere; never merge by hand." Every master turn writes a **receipt** (`RecordMasterAudit`): which wake triggered it, which charter clause it cited, model version, tool calls, resulting diffs, and outcome — that's the "Master activity / Receipts" section in the attempt view. When it's stuck it **escalates** on a typed discriminant (`public_pr_confirmation` — making a PR public needs your click; `failure_halt` — repeated failures stopped the lane), which becomes a Needs-you card.
+**⑨ Supervision — the master.** Each stream has a long-lived supervisor agent, woken by three triggers: mailbox messages, `task_settled` (something finished), and a daily 06:00Z schedule. Concurrency is guaranteed by construction: its wake lane key `workgraph-master:{org}:{owner}:{stream}` *is* the one-turn-per-stream lock. Its authority is deliberately clipped — the shared prompt envelope forbids it from approving agent-proposed work and from pushing/merging protected refs, and if it wasn't granted the landing tool it is explicitly told "landing runs elsewhere; never merge by hand." Every master turn writes a **receipt** (`RecordMasterAudit`): which wake triggered it, which charter clause it cited, model version, tool calls, resulting diffs, and outcome — that's the "Master activity / Receipts" section in the run view. When it's stuck it **escalates** on a typed discriminant (`public_pr_confirmation` — making a PR public needs your click; `failure_halt` — repeated failures stopped the lane), which becomes a Needs-you card.
 
 ---
 
@@ -107,10 +107,10 @@ All in `packages/claxedo-app/src/features/workgraph/`:
 |---|---|
 | **Home ("Streams")** | Stat strip (Active / Agents working / Needs you) + stream cards grouped by project (grouping = the stream's real execution target — a local dir or repo URL — never invented). Each card previews 4 tasks. "New stream." |
 | **Needs-you card → panel** | The attention inbox. Staged tasks lead, grouped per stream with scoped "Approve all staged (N)"; inline Approve / Reject-with-reason; decisions; master escalations; broken-connection fixes; mark-read/clear. |
-| **Task rows / stream panel** | Per-task status glyph, inline start/stop/retry, live-attempt indicator, inline add-task; full task list per stream. |
-| **Task dialog** | Detail + latest attempt + the Activity feed (checkpoint granularity: milestones / progress / detailed) + approve/reject. |
+| **Task rows / stream panel** | Per-task status glyph, inline start/stop/retry, live-run indicator, inline add-task; full task list per stream. |
+| **Task dialog** | Detail + latest run + the Activity feed (checkpoint granularity: milestones / progress / detailed) + approve/reject. |
 | **Decision dialog** | The agent's question, its options and recommendation, or answer free-text. |
-| **Attempt detail** | Attempt state, Master activity, Receipts (linked). |
+| **Run detail** | Run state, Master activity, Receipts (linked). |
 | **Proposal / replacement review** | The admission review: what changed, the proposed plan, **Keep / Replace / Fork**, with the exact server-computed list of tasks a Replace would abandon. |
 | **Intake** | "Unorganized AI work" — external issues + idle sessions; Stage or Dismiss. |
 | **Settings / notes** | WorkGraph defaults, per-stream charter and settings, stream status+learnings notes. |
@@ -127,7 +127,7 @@ This is the part of the design with real teeth, enforced server-side in both bac
 | Approve / reject work items | ❌ `forbidden` | ✅ |
 | Answer / propose decisions | ✅ both | ✅ |
 | Record evidence, checkpoints, findings | ✅ | ✅ |
-| Complete an attempt | ✅ (must attach evidence) | — |
+| Complete a run | ✅ (must attach evidence) | — |
 | Close an outcome | ❌ (needs your signed confirmation) | ✅ |
 | Make a PR public | ❌ (typed escalation to you) | ✅ |
 | Merge / land | ❌ unless explicitly granted the landing tool (hosted masters never are) | ✅ |

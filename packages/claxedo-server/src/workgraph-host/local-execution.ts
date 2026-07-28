@@ -17,9 +17,9 @@ export type WorkGraphSessionGateway = Readonly<{
   classifyAdmissionError?: (error: unknown) => "unavailable" | "rejected" | "indeterminate"
   admit: (
     input: Readonly<{
-      attemptId: string
+      runId: string
       streamId?: string
-      leaseEpoch?: number
+      generation?: number
       sessionId?: string
       messageId?: string
       directory: string
@@ -148,15 +148,15 @@ export function createLocalWorkspaceExecution(
       }),
     launch: async (context, request) => {
       if (request.connectionIds.length > 0 && !input.sessions.supportsConnections) {
-        throw new Error("Connection-bound Attempts require a Session connection capability bridge")
+        throw new Error("Connection-bound Runs require a Session connection capability bridge")
       }
       const directory = envelopeDirectory(context, request.streamId)
       if (!(await exists(path.join(directory, ".git")))) throw new Error("Execution workspace is not provisioned")
       return {
         sessionId: (await input.sessions.admit({
-        attemptId: request.attemptId,
+        runId: request.runId,
         streamId: request.streamId,
-          leaseEpoch: request.leaseEpoch,
+          generation: request.leaseEpoch,
           directory,
           workspaceId: request.workspaceId,
           title: request.title,
@@ -205,8 +205,8 @@ export function createLocalWorkspaceExecution(
         const selected = request.childIsolationIds
           ?.map((id) => {
             const prefix = `child_${encode(context.organizationId)}.${encode(context.ownerUserId)}.`
-            const encodedAttempt = String(id).startsWith(prefix) ? String(id).slice(prefix.length) : undefined
-            return encodedAttempt ? contained(path.join(childrenRoot, encodedAttempt)) : undefined
+            const encodedRun = String(id).startsWith(prefix) ? String(id).slice(prefix.length) : undefined
+            return encodedRun ? contained(path.join(childrenRoot, encodedRun)) : undefined
           })
           .filter((directory): directory is string => !!directory)
         const children =

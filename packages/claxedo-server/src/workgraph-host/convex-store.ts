@@ -15,12 +15,12 @@ import type {
   EvidencePage,
   EvidenceReadInput,
   AdmissionProposalDto,
-  AttemptDetailDto,
+  RunDetailDto,
   DecisionDto,
   ReplacementReview,
   ReplacementReviewInput,
-  WorkItemAttemptListInput,
-  WorkItemAttemptPage,
+  WorkItemRunListInput,
+  WorkItemRunPage,
   TaskActivityListInput,
   TaskActivityPage,
   AgentCheckpointDto,
@@ -48,7 +48,7 @@ import {
   AttentionPageSchema,
   ChangeCursorError,
   AdmissionProposalDtoSchema,
-  AttemptDetailDtoSchema,
+  RunDetailDtoSchema,
   DecisionDtoSchema,
   EvidenceDtoSchema,
   EvidencePageCursorError,
@@ -59,8 +59,8 @@ import {
   TaskActivityPageSchema,
   AgentCheckpointDtoSchema,
   SessionBindingDtoSchema,
-  WorkItemAttemptPageCursorError,
-  WorkItemAttemptPageSchema,
+  WorkItemRunPageCursorError,
+  WorkItemRunPageSchema,
   WorkItemDtoSchema,
   WorkSourcePageCursorError,
   WorkGraphArchiveRestoreError,
@@ -69,7 +69,7 @@ import {
   hashWorkGraphArchive,
   validateWorkGraphArchive,
 } from "@claxedo/workgraph/contracts"
-import type { AttentionCursorErrorReason, ChangeCursorErrorReason, EvidencePageCursorErrorReason, SnapshotResumeCursorErrorReason, TaskActivityPageCursorErrorReason, WorkItemAttemptPageCursorErrorReason, WorkSourcePageCursorErrorReason } from "@claxedo/workgraph/contracts"
+import type { AttentionCursorErrorReason, ChangeCursorErrorReason, EvidencePageCursorErrorReason, SnapshotResumeCursorErrorReason, TaskActivityPageCursorErrorReason, WorkItemRunPageCursorErrorReason, WorkSourcePageCursorErrorReason } from "@claxedo/workgraph/contracts"
 import { WorkGraphSessionBindingError } from "@claxedo/workgraph/ports"
 import type { WorkGraphActivityPort, WorkGraphArchivePort, WorkGraphArchiveRestoreResult, WorkGraphSessionBindingErrorCode, WorkGraphSessionBindingPort } from "@claxedo/workgraph/ports"
 import { createWorkGraphService, defineAtomicWorkGraphStore } from "@claxedo/workgraph/hosted"
@@ -103,8 +103,8 @@ export const CONVEX_WORKGRAPH_SUPPORTED_COMMANDS = [
   "propose_decision",
   "answer_decision",
   "dismiss_decision",
-  "record_attempt_checkpoint",
-  "complete_attempt",
+  "record_run_checkpoint",
+  "complete_run",
   "record_evidence",
   "close_outcome",
   "reopen_outcome",
@@ -113,7 +113,7 @@ export const CONVEX_WORKGRAPH_SUPPORTED_COMMANDS = [
   "approve_work_item",
   "reject_work_item",
   "approve_work_items",
-  "cancel_attempt",
+  "cancel_run",
   "retry_work_item",
 ] as const
 
@@ -196,8 +196,8 @@ export function createConvexWorkGraphStore(input: Input) {
       if (evidenceReason) throw new EvidencePageCursorError(evidenceReason)
       const attentionReason = kind === "attention" ? attentionCursorErrorReason(error) : undefined
       if (attentionReason) throw new AttentionCursorError(attentionReason)
-      const attemptReason = kind === "work_item_attempts" ? attemptCursorErrorReason(error) : undefined
-      if (attemptReason) throw new WorkItemAttemptPageCursorError(attemptReason)
+      const runReason = kind === "work_item_runs" ? runCursorErrorReason(error) : undefined
+      if (runReason) throw new WorkItemRunPageCursorError(runReason)
       const activityReason = kind === "work_item_activity" ? taskActivityCursorErrorReason(error) : undefined
       if (activityReason) throw new TaskActivityPageCursorError(activityReason)
       const changeReason = kind === "changes" || kind === "stream_changes" ? changeCursorErrorReason(error) : undefined
@@ -247,12 +247,12 @@ export function createConvexWorkGraphStore(input: Input) {
           return review ? ReplacementReviewSchema.parse(review) : undefined
         },
       },
-      attempts: {
-        read: async (context: WorkGraphContext, queryInput: Readonly<{ attemptId: string }>): Promise<AttemptDetailDto | undefined> => {
-          const detail = await read(context, "attempt", queryInput)
+      runs: {
+        read: async (context: WorkGraphContext, queryInput: Readonly<{ runId: string }>): Promise<RunDetailDto | undefined> => {
+          const detail = await read(context, "run", queryInput)
           if (!detail) return undefined
-          const parsed = AttemptDetailDtoSchema.parse(detail)
-          return { ...parsed, attempt: publicOwner(context, parsed.attempt) }
+          const parsed = RunDetailDtoSchema.parse(detail)
+          return { ...parsed, run: publicOwner(context, parsed.run) }
         },
       },
       decisions: {
@@ -292,9 +292,9 @@ export function createConvexWorkGraphStore(input: Input) {
           const item = await read(context, "work_item_detail", queryInput)
           return item ? publicOwner(context, WorkItemDtoSchema.parse(item)) : undefined
         },
-        listAttempts: async (context: WorkGraphContext, queryInput: WorkItemAttemptListInput): Promise<WorkItemAttemptPage> => {
-          const page = WorkItemAttemptPageSchema.parse(await read(context, "work_item_attempts", queryInput))
-          page.attempts.forEach((detail) => publicOwner(context, detail.attempt))
+        listRuns: async (context: WorkGraphContext, queryInput: WorkItemRunListInput): Promise<WorkItemRunPage> => {
+          const page = WorkItemRunPageSchema.parse(await read(context, "work_item_runs", queryInput))
+          page.runs.forEach((detail) => publicOwner(context, detail.run))
           return page
         },
         listActivity: async (context: WorkGraphContext, queryInput: TaskActivityListInput): Promise<TaskActivityPage> =>
@@ -382,20 +382,20 @@ function workSourceCursorErrorReason(error: unknown): WorkSourcePageCursorErrorR
   if (value.reason === "filter_mismatch") return "invalid"
 }
 
-function attemptCursorErrorReason(error: unknown): WorkItemAttemptPageCursorErrorReason | undefined {
-  if (error instanceof WorkItemAttemptPageCursorError) return error.reason
+function runCursorErrorReason(error: unknown): WorkItemRunPageCursorErrorReason | undefined {
+  if (error instanceof WorkItemRunPageCursorError) return error.reason
   if (error && typeof error === "object" && "code" in error && error.code === "cursor_invalid") {
-    if (!("reason" in error) || !attemptCursorReason(error.reason)) return
+    if (!("reason" in error) || !runCursorReason(error.reason)) return
     return error.reason
   }
   if (!error || typeof error !== "object" || !("data" in error)) return
   const data = error.data
   if (!data || typeof data !== "object" || !("code" in data) || data.code !== "cursor_invalid") return
-  if (!("reason" in data) || !attemptCursorReason(data.reason)) return
+  if (!("reason" in data) || !runCursorReason(data.reason)) return
   return data.reason
 }
 
-function attemptCursorReason(value: unknown): value is WorkItemAttemptPageCursorErrorReason {
+function runCursorReason(value: unknown): value is WorkItemRunPageCursorErrorReason {
   return value === "invalid" || value === "owner_mismatch" || value === "work_item_mismatch"
 }
 
