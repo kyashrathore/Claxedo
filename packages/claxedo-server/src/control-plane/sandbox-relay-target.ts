@@ -41,7 +41,7 @@ export function sandboxRelayTargetLookup(input: {
   // the moment the relay LEARNS an interval ended without anyone asking for it
   // — the idle path. The relay resolves targets for a tunnel and holds no
   // session identity, so this lands on the ops plane; the authoritative
-  // duration is settled in Convex by the lease close path, which is why
+  // duration is settled in the ledger by the lease close path, which is why
   // `active_ms` is omitted here rather than guessed.
   const closedByIdle = (workspaceId: string, status: string) => {
     try {
