@@ -792,6 +792,58 @@ describe("cached Agent Extension install flow", () => {
     })).rejects.toThrow("cache checksum mismatch")
   })
 
+  test("enable refuses a remote install whose lock pins no package digest", async () => {
+    await writeSource("SKILL.md", "---\nname: review\n---\n")
+    await installCachedAgentExtension({
+      sourceRoot: source,
+      source: { type: "github", owner: "acme", repo: "review" },
+      resolvedSha: "abcdef1234567890",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["cursor"],
+      id: "review",
+      now: 100,
+    })
+    await disableAgentExtension({
+      id: "review",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      now: 200,
+    })
+    // A hand-edited or pre-verification lock that pins the commit but no
+    // content. There is nothing to check the cache against, so enabling it
+    // must refuse rather than replay whatever is sitting in the cache.
+    const stateRoot = agentExtensionStateRoot({ scope: "project", projectDir: project, dataRoot: data })
+    await writeExtensionLock(lockStatePath(stateRoot), {
+      version: 1,
+      packages: {
+        review: {
+          source: { type: "github", owner: "acme", repo: "review" },
+          resolved_sha: "abcdef1234567890",
+          manifest_digests: {},
+          component_digests: {},
+          targets: ["cursor"],
+        },
+      },
+    })
+
+    await expect(enableAgentExtension({
+      id: "review",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      now: 300,
+    })).rejects.toThrow("records no package digest")
+
+    await expect(fs.readFile(path.join(project, ".agent-extensions", "installed.json"), "utf8").then(JSON.parse)).resolves.toMatchObject({
+      installs: [{ id: "review", enabled: false, updated_at: 200 }],
+    })
+  })
+
   test("uninstall removes desired, lock, materialized, and owned artifacts only", async () => {
     await writeSource("mcp.json", JSON.stringify({ servers: { docs: { command: "node" } } }))
     await installCachedAgentExtension({
