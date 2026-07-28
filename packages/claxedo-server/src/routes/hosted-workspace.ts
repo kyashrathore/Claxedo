@@ -23,6 +23,8 @@
 
 import { Hono, type Context } from "hono"
 import { z } from "zod"
+import { anyApi } from "convex/server"
+import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthConfig,
@@ -30,7 +32,12 @@ import {
 } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
-import { createFixedWindowConnectionRateLimiter } from "../control-plane/rate-limit"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../control-plane/rate-limit"
+import { newWorkspaceId } from "../control-plane/workspace-id"
+import {
+  requireExecutor,
+  requireServiceToken,
+} from "../control-plane/adapters/convex/convex-authority-executor"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -45,6 +52,7 @@ import {
   txt,
   type WorkspaceRouteOptions,
 } from "./workspace-user-hosted"
+import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "./workspace-runtime-token-guards"
 import { normalizeClaxedoRegion } from "../region"
 import { emitSandboxLeaseOpened } from "../telemetry/metering"
 import { recordSandboxLeaseTenant } from "../telemetry/convex-usage-ledger"
@@ -53,7 +61,100 @@ import { productIdentity } from "../telemetry/product"
 // `requireCloudWorkspaceEntitlement` (the D6/B4 paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
 // choke point (workspace-hosted-connection-info.ts) reads the same hook.
-export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions
+//
+// The three additions here are hosted-only knobs for `POST /create`, the one
+// route in this file that provisions real infrastructure. They are optional, so
+// every existing composition keeps type-checking and gets the safe defaults.
+export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
+  /**
+   * Rate limiter for `POST /create` SPECIFICALLY. Deliberately not the shared
+   * 120/min control-plane limiter: a heartbeat is a Convex patch, a create is a
+   * VM. See `DEFAULT_CREATE_LIMIT` for the number.
+   */
+  createWorkspaceRateLimiter?: ConnectionRateLimiter
+  /**
+   * Max concurrently-live sandbox leases per tenant — the caller's org when the
+   * token carries one, and always the caller themselves. `0` disables the cap.
+   */
+  sandboxLeaseCap?: number
+  /** Injection seam for the cap's Convex read (tests, alternative authorities). */
+  countActiveOrgSandboxLeases?: ActiveSandboxLeaseCounter
+  /**
+   * Extra hostnames appended to the hosted sandbox egress allowlist.
+   *
+   * The baseline in `hostedSandboxNetworkPolicy` covers the control plane, the
+   * workspace's git host, model providers, and package registries. A
+   * deployment that needs anything beyond that — a private registry, a
+   * self-hosted model gateway — names it here, so widening the sandbox's
+   * reachable surface is an explicit configuration decision rather than a
+   * default nobody chose.
+   */
+  sandboxEgressExtraHosts?: string[]
+}
+
+/**
+ * `POST /create` requests per minute, per caller.
+ *
+ * Sized against what the operation COSTS, not against what the transport can
+ * take. Every accepted create clones a repo into a freshly provisioned sandbox
+ * VM — seconds to minutes of cold start, billed. Nothing legitimate approaches
+ * this: the app creates one workspace per explicit user action, and even an
+ * impatient human retrying a failed create stays in low single digits per
+ * minute. Five leaves room for retries and double-submits while cutting the
+ * worst case a single isolate can provision from the 120/min control-plane
+ * class to 5/min — a 24x reduction in the cost of a create flood.
+ */
+const DEFAULT_CREATE_LIMIT = 5
+const DEFAULT_CREATE_WINDOW_MS = 60_000
+
+/**
+ * Concurrently-live sandbox leases per tenant.
+ *
+ * This is a blast-radius bound, not a business quota — the billing entitlement
+ * gate is what expresses "what did you pay for". At roughly one live sandbox
+ * per actively-working seat plus headroom for background/agent workspaces, 25
+ * comfortably covers a ~10-seat team without ever being reached in normal use,
+ * while capping what a compromised token or a runaway client can leave running
+ * at 25 VMs instead of "as many as it can ask for". Deployments that need a
+ * different number set `sandboxLeaseCap`.
+ *
+ * The same number bounds a personal account, where the tenant is the single
+ * signing subject rather than an org — generous for one human, and still a
+ * bound, which is what a stolen personal token had none of before.
+ */
+const DEFAULT_SANDBOX_LEASE_CAP = 25
+
+const leaseApi = anyApi as unknown as {
+  sandboxLeases: { countActiveForOrg: unknown }
+}
+
+/**
+ * Default lease counter: the `sandboxLeases.countActiveForOrg` service query on
+ * the same Convex deployment the rest of the control plane uses. Resolves url +
+ * service token at CALL time (matching `recordSandboxLeaseTenant`) so a Worker
+ * that gains its secret after boot starts enforcing without a redeploy.
+ *
+ * Returns `undefined` — "could not count" — rather than throwing. See
+ * `sandboxLeaseCapError` for why that is safe.
+ */
+const convexActiveLeaseCounter: ActiveSandboxLeaseCounter = async ({ orgId, ownerSubject }) => {
+  try {
+    const executor = requireExecutor({}, undefined, { allowUnsigned: true })
+    const result = await executor.query(leaseApi.sandboxLeases.countActiveForOrg, {
+      // Spread conditionally rather than passing `undefined`: both scopes are
+      // optional args on the Convex side and at least one is required, so an
+      // omitted key and a present-but-empty one must stay distinguishable.
+      // Passing both is a union — a lease matching both is counted once.
+      ...(orgId ? { org_id: orgId } : {}),
+      ...(ownerSubject ? { owner_subject: ownerSubject } : {}),
+      service_token: requireServiceToken(),
+    })
+    const active = rec(result)?.active
+    return typeof active === "number" ? active : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const refreshConnectionBody = z
   .object({
@@ -162,6 +263,17 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       limit: 120,
       windowMs: 60_000,
     })
+  // Its OWN bucket, not a slice of the 120/min one: creates must not be able to
+  // consume the budget every other control-plane call shares, and the shared
+  // budget must not be able to hide a create flood.
+  const createWorkspaceRateLimiter =
+    options.createWorkspaceRateLimiter ??
+    createFixedWindowConnectionRateLimiter({
+      limit: DEFAULT_CREATE_LIMIT,
+      windowMs: DEFAULT_CREATE_WINDOW_MS,
+    })
+  const sandboxLeaseCap = options.sandboxLeaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
+  const countActiveOrgSandboxLeases = options.countActiveOrgSandboxLeases ?? convexActiveLeaseCounter
 
   const authOptions = () => ({
     ...options,
@@ -272,6 +384,22 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
+
+        // FIRST, before the body is even read, and long before the Convex
+        // round-trip or `sandboxManager.ensure` — same reasoning as the
+        // connection handler above: a flood must be rejected while it is still
+        // cheap to reject. This route is the only one in the file that
+        // provisions real infrastructure, so it was also the only one with no
+        // limiter at all before the 2026-07-27 security review (§4.3).
+        //
+        // Keyed on the caller alone (`workspaces.create`) because no workspace
+        // exists yet — the same shape the workspace LIST handler uses.
+        const createLimit = await controlPlaneRateLimitError(services, createWorkspaceRateLimiter, auth, {
+          key: "workspaces.create",
+          action: "workspace.create.denied",
+        })
+        if (createLimit) return c.json(createLimit.body, createLimit.status)
+
         const parsed = parsedBody(createCloudBody, await c.req.json().catch(() => ({})))
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
@@ -308,7 +436,11 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (denied) return c.json(denied.body as never, denied.status)
         }
 
-        const workspaceId = `ws_${Date.now().toString(36)}`
+        // Timestamp-prefixed + 80 bits of cryptographic randomness. The old
+        // `ws_${Date.now().toString(36)}` was guessable inside any plausible
+        // creation window (security review Chain A) and published its own
+        // creation time.
+        const workspaceId = newWorkspaceId()
         const projectId = body.projectId?.trim() || workspaceId
         const displayName =
           body.workspaceName?.trim() || body.projectName?.trim() || body.repoName?.trim() || workspaceId
@@ -317,6 +449,32 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         try {
           const authority = requireAuthority(services)
+          // Per-tenant CONCURRENT sandbox cap, read from durable Convex state.
+          // The rate limiter above bounds requests per minute inside ONE
+          // isolate; this bounds how many sandboxes the caller can have running
+          // at once, and it is the only one of the two that survives an isolate
+          // boundary (§6.7 — the limiters are per-isolate in-memory Maps). A
+          // slow drip that never trips a rate limit still stops here.
+          //
+          // Keyed on `auth.user.orgId` — the Clerk org claim — because that is
+          // the id space `sandboxLeases.recordTenant` stamps onto the lease row
+          // below (and the same one the metering events key on). Using the
+          // authority's internally-resolved org id here would compare two
+          // different id spaces and count zero forever.
+          //
+          // The org claim is the OPTIONAL half of the scope. The other half,
+          // the caller's subject, is not passed: `sandboxLeaseCapError` reads
+          // it off this same verified `auth`, so it cannot be forgotten here
+          // and the cap binds for a personal account exactly as it does for an
+          // org — see the stamping call below, which writes the matching
+          // `owner_subject`.
+          const leaseCapped = await sandboxLeaseCapError(services, auth, {
+            orgId: auth.user.orgId,
+            cap: sandboxLeaseCap,
+            action: "workspace.create.denied",
+            countActiveLeases: countActiveOrgSandboxLeases,
+          })
+          if (leaseCapped) return c.json(leaseCapped.body, leaseCapped.status)
           await authority.usersMe(auth)
           await authority.createCloudWorkspace(auth, {
             workspaceId,
@@ -352,6 +510,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           systemReason: "workspace_create_without_org_claim",
         })
 
+        const source = {
+          kind: "git" as const,
+          repoUrl,
+          ...(body.gitBranch?.trim() ? { branch: body.gitBranch.trim() } : {}),
+        }
+
         // Kick off provisioning. The lease state machine + driver.ensureHost are
         // idempotent and re-polled by the app via /connection, so this is
         // fire-and-forget: a slow cold-start must not block the create response.
@@ -362,11 +526,25 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               projectId,
             },
             workspaceRoot: directory,
-            source: {
-              kind: "git",
-              repoUrl,
-              ...(body.gitBranch?.trim() ? { branch: body.gitBranch.trim() } : {}),
-            },
+            source,
+            // Security review 2026-07-27 §6.14 — this is the hosted, multi-tenant
+            // create path, so the sandbox it provisions runs agent-authored code
+            // over someone's private checkout. `net` was omitted here, and an
+            // omitted policy means allow-all: every hosted sandbox has been
+            // running with the open internet available to it. It is now always
+            // restricted, and never conditionally — a driver that cannot enforce
+            // the policy is refused by the manager (`sandbox_egress_uncontained`)
+            // rather than quietly provisioning an uncontained sandbox.
+            //
+            // The allowlist is deliberately assembled from this request (its own
+            // relay/control plane, the one git host it clones from) plus the
+            // model-provider and package-registry floor. See
+            // `hostedSandboxNetworkPolicy` for what is excluded and why.
+            net: hostedSandboxNetworkPolicy({
+              controlPlane: [configuredRelayUrl(options, homeRegion), new URL(c.req.url).origin],
+              source,
+              ...(options.sandboxEgressExtraHosts ? { extraHosts: options.sandboxEgressExtraHosts } : {}),
+            }),
           })
           // The lease row exists once `ensure` has acquired it, so the tenant is
           // stamped here rather than before: the sandbox manager's acquire port
@@ -374,12 +552,44 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // point that holds both the verified tenant and a lease to attach it
           // to. Metering attribution never gates provisioning, so a deployment
           // with no Convex authority configured simply records nothing.
-          .then(() => {
-            if (!leaseIdentity) return
+          .then((result) => {
+            // A containment refusal is a DEPLOYMENT fault, not a transient
+            // one: the composed driver cannot enforce the egress policy this
+            // path always supplies, so no retry helps and no sandbox will ever
+            // come up. `ensure` is fire-and-forget, so without this the only
+            // signal an operator gets is a workspace that provisions forever.
+            // There is also no lease to attribute, so metering is skipped.
+            if (result.status === "unavailable" && result.error?.startsWith("sandbox_egress_")) {
+              captureWorkspaceTelemetry({
+                services,
+                auth,
+                event: "workspace.create.sandbox_egress_refused",
+                workspaceId,
+                properties: {
+                  reason: result.error,
+                  driver: services?.sandbox.defaultDriver ?? "unknown",
+                },
+              })
+              return
+            }
+            // Two independent stamps, matching `recordTenant`'s two:
+            //
+            //  - `owner_subject` ALWAYS, because it is what the concurrency cap
+            //    counts on and every signed request carries a subject. This
+            //    used to be gated behind `leaseIdentity`, so a personal-account
+            //    create stamped nothing, its lease was unattributed, and the
+            //    cap could not bind for it — the hole this closes.
+            //  - the W5 metering pair only when a signed org claim produced a
+            //    `leaseIdentity`. A usage fact keyed on a fabricated org (say
+            //    `personal:<subject>`) would corrupt every per-org aggregate
+            //    downstream, which is why the owner is a separate column rather
+            //    than an org id we invent to make the count work.
             void recordSandboxLeaseTenant({
               workspace_id: workspaceId,
-              org_id: leaseIdentity.org_id,
-              user_id: leaseIdentity.user_id,
+              owner_subject: auth.user.subject,
+              ...(leaseIdentity
+                ? { metering: { org_id: leaseIdentity.org_id, user_id: leaseIdentity.user_id } }
+                : {}),
             })
           })
           .catch(() => undefined)
@@ -548,6 +758,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
         try {
+          // Pause was the other mutating route with no limiter. It writes to
+          // Convex and audits on every call, so an unthrottled loop is a Convex
+          // write amplifier even though it provisions nothing.
+          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
+            key: `userHosted.pause:${workspaceId}`,
+            action: "local_host_link.pause.denied",
+            workspaceId,
+          })
+          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
           const authority = requireAuthority(services)
           await authority.usersMe(auth)
           const result = await authority.pauseLocalHostLink(auth, {

@@ -29,7 +29,13 @@ import {
 } from "./markdown-worker"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
-import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
+import {
+  getCachedMarkdown,
+  sanitizeMarkdown,
+  sanitizeSvg,
+  touchCachedMarkdown,
+  type MarkdownCacheEntry,
+} from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 
 type RenderedBlock =
@@ -178,6 +184,13 @@ const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console",
  * session-ui stays dependency-free and just calls back. Rendering is idempotent and
  * self-healing: if the block cache replaces the DOM node, decorate re-runs and re-renders.
  * Errors fall back to the plain code block (never mermaid's own error graphics).
+ *
+ * SECURITY: the diagram source is assistant output, so the SVG that comes back is
+ * untrusted no matter what the registered renderer does internally — mermaid's own
+ * `securityLevel: "strict"` pass is the exact control its >=11.1.0 <11.10.0
+ * advisories bypass. Every SVG therefore goes through `sanitizeSvg` before it can
+ * reach `innerHTML`, and an empty result is treated as a render failure rather
+ * than a reason to fall back to the raw string.
  */
 let mermaidRenderer: ((source: string) => Promise<string>) | undefined
 
@@ -201,17 +214,24 @@ function renderMermaidBlocks(root: HTMLElement) {
       .then((svg) => {
         // Guard against streaming: skip if the source changed while rendering.
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
+        // Fail closed. `sanitizeSvg` returns "" when it cannot vouch for the
+        // markup (no DOMPurify, or the sanitizer threw); throwing here routes
+        // into the catch below, which keeps the plain code block visible. The
+        // raw `svg` must never reach the DOM.
+        const safe = sanitizeSvg(svg)
+        if (!safe) throw new Error("mermaid: SVG failed sanitization")
         let diagram = wrapper.querySelector('[data-slot="mermaid-diagram"]')
         if (!diagram) {
           diagram = document.createElement("div")
           diagram.setAttribute("data-slot", "mermaid-diagram")
           wrapper.appendChild(diagram)
         }
-        diagram.innerHTML = svg
+        diagram.innerHTML = safe
         wrapper.setAttribute("data-mermaid-state", "rendered")
       })
       .catch(() => {
         // Fallback: keep the code block, clear the marker so a later retry is possible.
+        wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
         wrapper.removeAttribute("data-mermaid-source")
         wrapper.removeAttribute("data-mermaid-state")
       })

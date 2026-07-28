@@ -26,6 +26,7 @@ import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../workspa
 import { Log } from "../log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../control-plane/auth"
 import { createFixedWindowConnectionRateLimiter } from "../control-plane/rate-limit"
+import { newWorkspaceId } from "../control-plane/workspace-id"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -392,7 +393,11 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           )
         }
 
-        const workspaceId = `ws_${Date.now().toString(36)}`
+        // Same generator as the hosted Worker route (`newWorkspaceId` is
+        // Web-Crypto-only, so one module serves both runtimes). Timestamp
+        // prefix + 80 bits of randomness: the old bare-timestamp id was
+        // guessable inside any plausible creation window.
+        const workspaceId = newWorkspaceId()
         const projectId = body.projectId?.trim() || workspaceId
         const rawWorkspaceName = body.workspaceName?.trim()
         const name = slug(rawWorkspaceName, "main")

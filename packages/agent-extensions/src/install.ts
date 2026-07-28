@@ -17,6 +17,7 @@ import {
   type DesiredExtensionState,
 } from "./state"
 import { readExtensionLock, writeExtensionLock, type ExtensionLock } from "./lock"
+import { verifyPackageIntegrity } from "./integrity"
 import { withAgentExtensionStateLock } from "./fs-safe"
 
 export class AgentExtensionConflictError extends Error {
@@ -287,26 +288,33 @@ function materializationInstalls(input: {
         enabled: desired.enabled,
         targets: desired.targets,
       },
-      ...(locked ? { lock: { resolved_sha: locked.resolved_sha } } : {}),
+      // Forward the whole lock entry, not just the SHA: the materializer
+      // verifies the package tree against the pinned digest and source before
+      // writing anything, and it can only do that with the full entry.
+      ...(locked ? { lock: locked } : {}),
       status: input.materialized?.packages[desired.id]?.status,
     }
   })
 }
 
-function expectedPackageDigest(input: ExtensionLock["packages"][string] | undefined) {
-  return input?.component_digests.package ?? input?.manifest_digests.package
-}
-
+// Runs before installed.json/lock.json are written so a package that fails
+// verification leaves the recorded state exactly as it was. The materializer
+// re-checks the same thing immediately before it writes to disk; this is the
+// earlier, cheaper failure, not the authoritative one.
 async function verifyPackageRoots(input: {
+  state: DesiredExtensionState
   lock: ExtensionLock
   packageRoots?: Record<string, string>
 }) {
   await Promise.all(Object.entries(input.packageRoots ?? {}).map(async ([id, packageRoot]) => {
-    const expected = expectedPackageDigest(input.lock.packages[id])
-    if (!expected) return
-    if (await digestDirectory(packageRoot) !== expected) {
-      throw new Error(`Agent Extension ${id} cache checksum mismatch; run \`agent-extensions update ${id}\` to refetch the package`)
-    }
+    const desired = input.state.installs.find((item) => item.id === id)
+    if (desired?.enabled === false) return
+    await verifyPackageIntegrity({
+      id,
+      ...(desired?.source ? { source: desired.source } : {}),
+      ...(input.lock.packages[id] ? { lock: input.lock.packages[id] } : {}),
+      packageRoot,
+    })
   }))
 }
 
@@ -320,7 +328,7 @@ async function applyProjection(input: {
   packageRoots?: Record<string, string>
   replaceOwned?: boolean
 }) {
-  await verifyPackageRoots({ lock: input.lock, packageRoots: input.packageRoots })
+  await verifyPackageRoots({ state: input.state, lock: input.lock, packageRoots: input.packageRoots })
   await Promise.all([
     writeDesiredExtensionState(input.files.installed, input.state),
     writeExtensionLock(input.files.lock, input.lock),

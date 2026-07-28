@@ -55,6 +55,7 @@ function canonicalLeaseDocument(row: Record<string, unknown>) {
   const restore = optionalObject(row, "restore_status")
   const orgId = optionalString(row, "org_id")
   const userId = optionalString(row, "user_id")
+  const ownerSubject = optionalString(row, "owner_subject")
   const startedAt = optionalNumber(row, "started_at")
   const endedAt = optionalNumber(row, "ended_at")
   return {
@@ -66,6 +67,12 @@ function canonicalLeaseDocument(row: Record<string, unknown>) {
     // and empty is indistinguishable from a tenant we recorded as blank.
     ...(orgId ? { org_id: orgId } : {}),
     ...(userId ? { user_id: userId } : {}),
+    // Cap attribution, carried through every `db.replace` for the same reason
+    // as the pair above: `acquire`, `update`, `recordFailure` and the reaper all
+    // rewrite the whole document, so a field omitted here is a field the next
+    // heartbeat silently erases — and an erased owner is a cap that stops
+    // binding halfway through a lease's life.
+    ...(ownerSubject ? { owner_subject: ownerSubject } : {}),
     ...(startedAt === undefined ? {} : { started_at: startedAt }),
     ...(endedAt === undefined ? {} : { ended_at: endedAt }),
     ...(optionalString(row, "driver") ? { driver: optionalString(row, "driver") } : {}),
@@ -343,7 +350,7 @@ export const release = serviceMutation({
 })
 
 /**
- * Stamp the tenant a lease is held for, after the fact.
+ * Stamp the identities a lease is held for, after the fact.
  *
  * The lease is acquired by the sandbox manager, whose `SandboxLeaseAcquireInput`
  * port carries a workspace and a driver but no tenant — and the acquire happens
@@ -352,14 +359,26 @@ export const release = serviceMutation({
  * contract, the ONE call site that holds a verified tenant (the hosted cloud
  * workspace create route) stamps it onto the lease it just caused.
  *
- * Write-once by design: a lease already carrying a tenant keeps it, so a retried
- * create cannot re-attribute a running sandbox to a different org.
+ * TWO independent write-once stamps, because they answer different questions:
+ *
+ * - `org_id` + `user_id` are the W5 METERING pair and are written only
+ *   TOGETHER. A fact keyed on half a tenant is worse than a missing fact, so a
+ *   caller with no org claim writes neither.
+ * - `owner_subject` is the CONCURRENCY-CAP key and is written on its own. Every
+ *   signed request carries a subject; only the org claim is optional. Before it
+ *   existed, a personal-account create stamped nothing at all, so its lease was
+ *   invisible to `countActiveForOrg` and the per-org cap simply did not bind
+ *   for those callers — the documented hole this closes.
+ *
+ * Write-once each, so a retried create cannot re-attribute a running sandbox to
+ * a different org or a different owner.
  */
 export const recordTenant = serviceMutation({
   args: {
     ...workspaceId,
-    org_id: v.string(),
-    user_id: v.string(),
+    owner_subject: v.optional(v.string()),
+    org_id: v.optional(v.string()),
+    user_id: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const current = await ctx.db
@@ -367,12 +386,18 @@ export const recordTenant = serviceMutation({
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
       .first()
     if (!current) return { stamped: false, reason: "no_lease" as const }
-    if (current.org_id || current.user_id) return { stamped: false, reason: "already_attributed" as const }
-    await ctx.db.patch(current._id, {
-      org_id: args.org_id,
-      user_id: args.user_id,
-      updated_at: Date.now(),
-    })
+    const ownerSubject = args.owner_subject?.trim()
+    const orgId = args.org_id?.trim()
+    const userId = args.user_id?.trim()
+    if (!ownerSubject && !(orgId && userId)) return { stamped: false, reason: "no_identity" as const }
+    const patch: Record<string, unknown> = {}
+    if (ownerSubject && !current.owner_subject) patch.owner_subject = ownerSubject
+    if (orgId && userId && !current.org_id && !current.user_id) {
+      patch.org_id = orgId
+      patch.user_id = userId
+    }
+    if (Object.keys(patch).length === 0) return { stamped: false, reason: "already_attributed" as const }
+    await ctx.db.patch(current._id, { ...patch, updated_at: Date.now() })
     return { stamped: true, reason: null }
   },
 })
@@ -394,6 +419,89 @@ export const list = serviceQuery({
   args: {},
   handler: async (ctx) => {
     return (await ctx.db.query("runtime_leases").collect()).map(normalizeLease)
+  },
+})
+
+/**
+ * A lease is LIVE if it is holding — or actively trying to hold — real
+ * provisioned infrastructure. `acquiring` counts: a cold start that has not
+ * finished is already costing a VM, and excluding it would let a caller open
+ * unbounded provisions simply by never letting them reach `ready`.
+ *
+ * `stopped`/`unavailable`/`destroyed` do not count: those are the reaper's and
+ * the driver-side sweep's terminal states, where the resource is either already
+ * reclaimed or queued for reclamation.
+ */
+export function isLiveLeaseStatus(status: unknown) {
+  return status === "acquiring" || status === "ready"
+}
+
+/**
+ * A lease is LIVE if its status is live AND its interval has not been closed.
+ * Exported so the org purge (`convex/orgs.ts`) refuses to destroy lease rows
+ * out from under running infrastructure using this exact predicate rather than
+ * a second copy of it.
+ */
+export function isLiveLease(row: Record<string, unknown>) {
+  return isLiveLeaseStatus(row.status) && typeof row.ended_at !== "number"
+}
+
+/**
+ * How many sandbox leases an org currently holds live.
+ *
+ * This is the DURABLE half of the `POST /create` resource-exhaustion defence
+ * (security review 2026-07-27 §4.3). The route's in-memory rate limiter bounds
+ * requests-per-minute inside ONE Cloudflare isolate; it cannot bound the total
+ * number of live sandboxes, and it does not survive an isolate boundary at all
+ * (§6.7). This count does both, because `runtime_leases` is one shared table
+ * that every isolate and every driver writes through.
+ *
+ * Full scan rather than an index: `runtime_leases` holds at most one row per
+ * workspace and is already scanned end-to-end by `list`, `sweepStaleLeases`,
+ * and `listNeedingDriverReconciliation`. Adding a `by_org_id` index would be a
+ * schema change; if this table ever grows past the point where a scan is
+ * cheap, that index is the fix and this handler is the only caller to update.
+ *
+ * SCOPE. `org_id` counts an org's leases. `owner_subject` counts one signed
+ * caller's leases, and exists because a personal-account token carries no org
+ * claim: with `org_id` as the only key, those leases were unattributable, the
+ * count was structurally zero, and the cap could not bind for them at all.
+ * Passing both counts a row once if EITHER matches — the caller's own leases
+ * plus their org's, never double.
+ *
+ * At least one scope is required. A call with neither would count every live
+ * lease in the deployment and hand one tenant another tenant's budget, so it
+ * throws rather than defaulting to "everything".
+ *
+ * Rows matching no scope stay invisible by construction — pre-W5 leases and
+ * leases acquired by an unsigned/local composition carry no identity at all,
+ * and counting them against an arbitrary org would be worse than not counting
+ * them.
+ */
+export const countActiveForOrg = serviceQuery({
+  args: {
+    org_id: v.optional(v.string()),
+    owner_subject: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const orgId = args.org_id?.trim()
+    const ownerSubject = args.owner_subject?.trim()
+    if (!orgId && !ownerSubject) throw new Error("A lease count needs an org_id or an owner_subject")
+    const rows = await ctx.db.query("runtime_leases").collect()
+    let active = 0
+    for (const row of rows) {
+      const scoped = (!!orgId && row.org_id === orgId) || (!!ownerSubject && row.owner_subject === ownerSubject)
+      if (!scoped) continue
+      // A lease whose interval was already closed is not holding anything, even
+      // if the status write that follows the close has not landed yet.
+      if (!isLiveLease(row)) continue
+      active += 1
+    }
+    return {
+      ...(orgId ? { org_id: orgId } : {}),
+      ...(ownerSubject ? { owner_subject: ownerSubject } : {}),
+      active,
+    }
   },
 })
 

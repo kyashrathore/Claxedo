@@ -219,7 +219,7 @@ async function fetchGitHubPackageToCache(input) {
     await execFile2("git", ["init", tempRoot]);
     await execFile2("git", ["remote", "add", "origin", githubRepoUrl(input.source)], { cwd: tempRoot });
     await execFile2("git", ["fetch", "--depth", "1", "origin", resolvedSha2], { cwd: tempRoot });
-    await execFile2("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: tempRoot });
+    await execFile2("git", ["checkout", "--detach", resolvedSha2], { cwd: tempRoot });
     return {
       ...await copyPackageToCache({
         sourceRoot: tempRoot,
@@ -945,7 +945,7 @@ async function removeStandaloneMcpEntries(input) {
     const names = new Set(input.names);
     const sections = codexMcpSections(raw).filter((section) => names.has(section.name));
     if (sections.length === 0) return;
-    const next2 = [...sections].reverse().reduce((text, section) => `${text.slice(0, section.start)}${text.slice(section.end)}`, raw);
+    const next2 = [...sections].reverse().reduce((text2, section) => `${text2.slice(0, section.start)}${text2.slice(section.end)}`, raw);
     await writeFileAtomic(input.file, next2.replace(/\n{3,}/g, "\n\n"));
     return;
   }
@@ -953,19 +953,19 @@ async function removeStandaloneMcpEntries(input) {
     const raw = await readText(input.file);
     if (!raw.trim()) return;
     readJsonFromText(raw, input.file);
-    let text = raw;
+    let text2 = raw;
     for (const name of input.names) {
-      text = applyEdits(text, modify(text, ["mcp", name], void 0, JSONC_FORMAT));
+      text2 = applyEdits(text2, modify(text2, ["mcp", name], void 0, JSONC_FORMAT));
     }
-    const withoutEntries = readJsonFromText(text, input.file);
+    const withoutEntries = readJsonFromText(text2, input.file);
     if (Object.keys(asRecord(withoutEntries.mcp)).length === 0) {
-      text = applyEdits(text, modify(text, ["mcp"], void 0, JSONC_FORMAT));
+      text2 = applyEdits(text2, modify(text2, ["mcp"], void 0, JSONC_FORMAT));
     }
-    if (Object.keys(readJsonFromText(text, input.file)).length === 0) {
+    if (Object.keys(readJsonFromText(text2, input.file)).length === 0) {
       await fs8.rm(input.file, { force: true });
       return;
     }
-    await writeFileAtomic(input.file, `${text.trimEnd()}
+    await writeFileAtomic(input.file, `${text2.trimEnd()}
 `);
     return;
   }
@@ -1028,7 +1028,7 @@ async function materializeStandaloneMcp(input) {
       });
     }
     const names = new Set(Object.keys(nextSections));
-    const withoutOwned = sections.filter((section) => names.has(section.name)).reverse().reduce((text, section) => `${text.slice(0, section.start)}${text.slice(section.end)}`, raw).replace(/\n{3,}/g, "\n\n");
+    const withoutOwned = sections.filter((section) => names.has(section.name)).reverse().reduce((text2, section) => `${text2.slice(0, section.start)}${text2.slice(section.end)}`, raw).replace(/\n{3,}/g, "\n\n");
     const prefix = withoutOwned.trim() ? `${withoutOwned.trimEnd()}
 
 ` : "";
@@ -1069,7 +1069,7 @@ async function materializeStandaloneMcp(input) {
         existing: new Set(Object.keys(current2))
       });
     }
-    const next = Object.entries(nextServers2).reduce((text, [name, value]) => applyEdits(text, modify(text, ["mcp", name], value, {
+    const next = Object.entries(nextServers2).reduce((text2, [name, value]) => applyEdits(text2, modify(text2, ["mcp", name], value, {
       formattingOptions: { tabSize: 2, insertSpaces: true }
     })), raw.trim() ? raw : "{}");
     await fs8.mkdir(path9.dirname(target), { recursive: true, mode: 493 });
@@ -1153,6 +1153,83 @@ async function materializeStandaloneSkill(input) {
   };
 }
 
+// src/integrity.ts
+var HEX_SHA = /^[A-Fa-f0-9]{7,64}$/;
+var AgentExtensionIntegrityError = class extends Error {
+  constructor(message, code, details = {}) {
+    super(message);
+    this.code = code;
+    this.details = details;
+    this.name = "AgentExtensionIntegrityError";
+  }
+};
+function text(input) {
+  return typeof input === "string" && input.trim() ? input.trim() : void 0;
+}
+function lockedPackageDigest(lock) {
+  return text(lock?.component_digests?.package) ?? text(lock?.manifest_digests?.package);
+}
+function isRemotePackageSource(source3) {
+  return (source3?.type ?? "") !== "project";
+}
+function sourceIdentity(source3) {
+  if (!source3) return void 0;
+  if (source3.type === "project") return JSON.stringify(["project", source3.package_path ?? ""]);
+  return JSON.stringify([
+    source3.type ?? "",
+    source3.owner ?? "",
+    source3.repo ?? "",
+    source3.ref ?? "",
+    source3.package_path ?? ""
+  ]);
+}
+function samePackageSourceIdentity(left, right) {
+  const key = sourceIdentity(left);
+  return !!key && key === sourceIdentity(right);
+}
+async function verifyPackageIntegrity(input) {
+  const expected = lockedPackageDigest(input.lock);
+  if (isRemotePackageSource(input.source)) {
+    if (!input.lock) {
+      throw new AgentExtensionIntegrityError(
+        `Agent Extension ${input.id} has no lock entry; refusing to materialize an unverified package (reinstall it or run \`agent-extensions update ${input.id}\`)`,
+        "agent_extension_unverifiable_package",
+        { id: input.id, missing: "lock" }
+      );
+    }
+    if (!text(input.lock.resolved_sha) || !HEX_SHA.test(input.lock.resolved_sha.trim())) {
+      throw new AgentExtensionIntegrityError(
+        `Agent Extension ${input.id} is missing resolved SHA in its lock; refusing to materialize an unpinned package`,
+        "agent_extension_unverifiable_package",
+        { id: input.id, missing: "resolved_sha" }
+      );
+    }
+    if (!expected) {
+      throw new AgentExtensionIntegrityError(
+        `Agent Extension ${input.id} lock records no package digest; refusing to materialize an unverified package (reinstall it or run \`agent-extensions update ${input.id}\`)`,
+        "agent_extension_unverifiable_package",
+        { id: input.id, missing: "package_digest" }
+      );
+    }
+  }
+  if (input.lock?.source && !samePackageSourceIdentity(input.source, input.lock.source)) {
+    throw new AgentExtensionIntegrityError(
+      `Agent Extension ${input.id} requested source does not match its locked source; reinstall it to change the pinned source`,
+      "agent_extension_source_mismatch",
+      { id: input.id, requestedSource: input.source, lockedSource: input.lock.source }
+    );
+  }
+  const actual = await (input.digest ?? digestDirectory)(input.packageRoot);
+  if (expected && actual !== expected) {
+    throw new AgentExtensionIntegrityError(
+      `Agent Extension ${input.id} cache checksum mismatch; run \`agent-extensions update ${input.id}\` to refetch the package`,
+      "agent_extension_digest_mismatch",
+      { id: input.id, expected, actual }
+    );
+  }
+  return actual;
+}
+
 // src/materialize.ts
 function sorted(input) {
   return Object.fromEntries(Object.entries(input).sort(([a], [b]) => a.localeCompare(b)));
@@ -1209,6 +1286,7 @@ function claxedoMcpWorkspaceId() {
 }
 function isFirstPartyClaxedoMcpInstall(input) {
   const source3 = input.desired.source;
+  if (!input.lock?.source || !samePackageSourceIdentity(source3, input.lock.source)) return false;
   return input.desired.id === "claxedo-mcp" && source3.type === "github" && source3.owner === "kyashrathore" && source3.repo?.toLowerCase() === "claxedo" && source3.ref === "dev" && source3.package_path === "packages/claxedo-mcp";
 }
 function managedClaxedoMcpEnv(input) {
@@ -1394,7 +1472,21 @@ async function materializePackage(input) {
     failures
   };
 }
+async function verifyMaterializationIntegrity(input) {
+  await Promise.all(input.installs.map(async (install) => {
+    if (install.desired.enabled === false) return;
+    const packageRoot = input.packageRoots[install.desired.id];
+    if (!packageRoot) return;
+    await verifyPackageIntegrity({
+      id: install.desired.id,
+      source: install.desired.source,
+      ...install.lock ? { lock: install.lock } : {},
+      packageRoot
+    });
+  }));
+}
 async function materializeAgentExtensionSnapshot(input) {
+  await verifyMaterializationIntegrity(input);
   const materializedFile = path11.join(input.stateRoot, "materialized.json");
   const previous = await readMaterializedRuntimeRecord(materializedFile);
   const materializedAt = now(input);
@@ -1719,25 +1811,28 @@ function materializationInstalls(input) {
         enabled: desired.enabled,
         targets: desired.targets
       },
-      ...locked ? { lock: { resolved_sha: locked.resolved_sha } } : {},
+      // Forward the whole lock entry, not just the SHA: the materializer
+      // verifies the package tree against the pinned digest and source before
+      // writing anything, and it can only do that with the full entry.
+      ...locked ? { lock: locked } : {},
       status: input.materialized?.packages[desired.id]?.status
     };
   });
 }
-function expectedPackageDigest(input) {
-  return input?.component_digests.package ?? input?.manifest_digests.package;
-}
 async function verifyPackageRoots(input) {
   await Promise.all(Object.entries(input.packageRoots ?? {}).map(async ([id, packageRoot]) => {
-    const expected = expectedPackageDigest(input.lock.packages[id]);
-    if (!expected) return;
-    if (await digestDirectory(packageRoot) !== expected) {
-      throw new Error(`Agent Extension ${id} cache checksum mismatch; run \`agent-extensions update ${id}\` to refetch the package`);
-    }
+    const desired = input.state.installs.find((item) => item.id === id);
+    if (desired?.enabled === false) return;
+    await verifyPackageIntegrity({
+      id,
+      ...desired?.source ? { source: desired.source } : {},
+      ...input.lock.packages[id] ? { lock: input.lock.packages[id] } : {},
+      packageRoot
+    });
   }));
 }
 async function applyProjection(input) {
-  await verifyPackageRoots({ lock: input.lock, packageRoots: input.packageRoots });
+  await verifyPackageRoots({ state: input.state, lock: input.lock, packageRoots: input.packageRoots });
   await Promise.all([
     writeDesiredExtensionState(input.files.installed, input.state),
     writeExtensionLock(input.files.lock, input.lock)
@@ -1957,18 +2052,30 @@ function source2(input) {
     packagePath: relative(str(value.package_path))
   };
 }
-function expectedDigest(input) {
+function digestMap(input) {
+  return Object.fromEntries(Object.entries(rec(input)).flatMap(([key, value]) => {
+    const text2 = str(value);
+    return text2 ? [[key, text2]] : [];
+  }));
+}
+function integrityLock(input) {
+  if (!input.lock) return void 0;
   const lock = rec(input.lock);
-  const component = str(rec(lock.component_digests).package);
-  return component ?? str(rec(lock.manifest_digests).package);
+  return {
+    ...str(lock.resolved_sha) ? { resolved_sha: str(lock.resolved_sha) } : {},
+    ...str(rec(lock.source).type) ? { source: packageSource(lock.source) } : {},
+    manifest_digests: digestMap(lock.manifest_digests),
+    component_digests: digestMap(lock.component_digests)
+  };
 }
 async function verifyPackageDigest(input) {
-  const expected = expectedDigest(input.install);
-  if (!expected) return;
-  const actual = await digestDirectory(input.packageRoot);
-  if (actual !== expected) {
-    throw new Error(`Agent Extension ${String(input.install.desired.id ?? "unknown")} cache checksum mismatch`);
-  }
+  const lock = integrityLock(input.install);
+  await verifyPackageIntegrity({
+    id: String(input.install.desired.id ?? "unknown"),
+    source: packageSource(input.install.desired.source),
+    ...lock ? { lock } : {},
+    packageRoot: input.packageRoot
+  });
 }
 function resolvedSha(input) {
   const sha = str(input.lock?.resolved_sha);
@@ -1994,7 +2101,7 @@ async function fetchToCache(input) {
       repo: info.repo
     })], { cwd: root });
     await input.execFile("git", ["fetch", "--depth", "1", "origin", sha], { cwd: root });
-    await input.execFile("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: root });
+    await input.execFile("git", ["checkout", "--detach", sha], { cwd: root });
     const sourceRoot = info.packagePath ? path14.join(root, info.packagePath) : root;
     const staging = `${target}.${crypto3.randomBytes(6).toString("hex")}.tmp`;
     await fs11.mkdir(path14.dirname(target), { recursive: true, mode: 493 });
@@ -2035,7 +2142,9 @@ function canonicalInstall(input) {
       ...typeof input.desired.enabled === "boolean" ? { enabled: input.desired.enabled } : {},
       targets: stringList(input.desired.targets)
     },
-    ...input.lock ? { lock: { ...typeof input.lock.resolved_sha === "string" ? { resolved_sha: input.lock.resolved_sha } : {} } } : {},
+    // The materializer re-verifies integrity as the last gate before disk, so
+    // it needs the pinned digest and source — not just the SHA.
+    ...integrityLock(input) ? { lock: integrityLock(input) } : {},
     ...typeof input.status === "string" ? { status: input.status } : {}
   };
 }
@@ -2059,7 +2168,8 @@ async function packageRoots(input) {
     const packageRoot = await fetchToCache(fetchInput);
     try {
       await verifyPackageDigest({ install, packageRoot });
-    } catch {
+    } catch (err) {
+      if (!(err instanceof AgentExtensionIntegrityError) || err.code !== "agent_extension_digest_mismatch") throw err;
       await fs11.rm(packageRoot, { recursive: true, force: true });
       const refetched = await fetchToCache(fetchInput);
       await verifyPackageDigest({ install, packageRoot: refetched });
@@ -2951,6 +3061,7 @@ export {
   AgentExtensionCacheError,
   AgentExtensionConflictError,
   AgentExtensionFetchError,
+  AgentExtensionIntegrityError,
   AgentExtensionManifestError,
   AgentExtensionMaterializationError,
   AgentExtensionSourceError,
@@ -2988,8 +3099,10 @@ export {
   installGitHubAgentExtension,
   installedStatePath,
   isHarnessTarget,
+  isRemotePackageSource,
   linkOrCopyOwnedDirectory,
   lockStatePath,
+  lockedPackageDigest,
   materializeAgentExtensionSnapshot,
   materializeAgentHooks,
   materializeCursorLocalPlugin,
@@ -3015,6 +3128,7 @@ export {
   resolveGitHubSource,
   resolveGitHubWorkspaceAgentExtension,
   safeRelativePath,
+  samePackageSourceIdentity,
   sameSource,
   setDesiredExtensionEnabled,
   setMirroredWorkspaceAgentExtensionEnabled,
@@ -3024,6 +3138,7 @@ export {
   uninstallOwnedComponents,
   updateAgentExtension,
   upsertDesiredExtensionInstall,
+  verifyPackageIntegrity,
   workspaceAgentExtensionFiles,
   workspaceAgentExtensionRecords,
   writeDesiredExtensionState,

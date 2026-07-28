@@ -1,5 +1,19 @@
 import { v } from "convex/values"
-import { authedMutation, authedQuery, orgByClerkOrgId, readUser, serviceQuery, upsertUser, userByClerkSubject, webhookMutation } from "./model"
+import {
+  authedMutation,
+  authedQuery,
+  cronMutation,
+  orgByClerkOrgId,
+  readUser,
+  serviceMutation,
+  serviceQuery,
+  sha256Hex,
+  upsertUser,
+  userByClerkSubject,
+  webhookMutation,
+} from "./model"
+import { isLiveLease } from "./sandboxLeases"
+import { WORKGRAPH_OWNER_TABLES } from "./workgraphOwnerDeletion"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
@@ -157,6 +171,10 @@ async function upsertClerkOrg(ctx: any, data: Record<string, any>) {
     name: data.name ?? data.slug ?? clerkOrgId,
     kind: "clerk" as const,
     deleted_at: undefined,
+    // §6.12: an org that reappears in Clerk inside the retention grace window
+    // CANCELS its own purge. Clearing this here, next to `deleted_at`, is what
+    // makes the window a real undo rather than a countdown nobody can stop.
+    purge_requested_at: undefined,
     clerk_updated_at: updatedAt,
     updated_at: Date.now(),
   }
@@ -256,7 +274,19 @@ export const applyClerkWebhook = webhookMutation({
     if (args.type === "organizationMembership.deleted") await deleteClerkMembership(ctx, data)
     if (args.type === "organization.deleted") {
       const org = typeof data.id === "string" ? await orgByClerkOrgId(ctx.db, data.id) : undefined
-      if (org) await ctx.db.patch(org._id, { deleted_at: Date.now(), updated_at: Date.now() })
+      // §6.12: `deleted_at` alone revokes ACCESS (`directOrgRole` stops
+      // resolving a role) but retains every row forever. `purge_requested_at`
+      // is the separate, explicit request that the data itself go — the only
+      // write of that field anywhere, and the clock the grace window measures
+      // from. The purge is driven from here, not performed here: see
+      // `purgeDeletedOrgs`.
+      if (org && !org.purge_requested_at) {
+        await ctx.db.patch(org._id, {
+          deleted_at: Date.now(),
+          purge_requested_at: Date.now(),
+          updated_at: Date.now(),
+        })
+      }
     }
     return { ok: true }
   },
@@ -291,5 +321,639 @@ export const membershipByClerkIds = serviceQuery({
     return membership
       ? { member: true as const, org_id: String(org._id), user_id: String(user._id), role: membership.role as string }
       : { member: false as const }
+  },
+})
+
+// ===========================================================================
+// Pre-launch security review §6.12 — organization deletion cascade.
+//
+// `organization.deleted` used to patch `deleted_at` and stop. Every workspace,
+// session, message, audit row, WorkGraph record, usage fact and stored policy
+// belonging to that org survived indefinitely: a data-retention and privacy
+// problem, and a real one for a product about to take public signups.
+//
+// This is a deliberate mirror of the WorkGraph owner-deletion machinery in
+// convex/workgraphOwnerDeletion.ts — same barrier/receipt pair, same lease
+// renewal, same quiescence precondition, same bounded-batch resumability —
+// because that design has already been through conformance and there is no
+// reason for two shapes of destructive cascade in one codebase.
+//
+// WHAT IS DIFFERENT, and why:
+//
+// - No `targets` snapshot for external cleanup. WorkGraph needs one because an
+//   execution envelope is an external object with no independent sweep: if the
+//   rows naming it are deleted first, nothing remembers to destroy it. Sandbox
+//   infrastructure is not like that. `sandboxManager.garbageCollect()` is
+//   level-triggered from the DRIVER's own inventory (`driver.list()`) and
+//   destroys any resource without a live lease, so deleting lease rows cannot
+//   orphan a VM — it makes the sweep MORE likely to reclaim it, not less.
+//   Copying a field with no consumer would be cargo-culting the prior art
+//   rather than mirroring it.
+//
+// - The receipt's `scope_hash` fingerprints the purge REQUEST (org + clerk org
+//   id + `purge_requested_at`) rather than the row set. A row-set hash
+//   necessarily drifts as batches delete rows, which is why the prior art only
+//   re-verifies it in its pre-deletion state; a request fingerprint is stable
+//   across every batch AND still refuses a receipt left over from an earlier
+//   delete-restore-delete cycle, because a restore clears `purge_requested_at`
+//   and the next deletion stamps a new one.
+//
+// FIRING IT IS DELIBERATELY HARD. Six independent conditions, none of which a
+// single mistake satisfies:
+//   1. `purge_requested_at` is set, and the ONLY writer is the Svix-verified
+//      `organization.deleted` applier above.
+//   2. `deleted_at` is set.
+//   3. The org has a `clerk_org_id`. Personal orgs have none, so the entire
+//      cascade is structurally unreachable for them — the one org every user
+//      has, and the one whose loss would be unrecoverable.
+//   4. The caller echoes that `clerk_org_id` back as an explicit confirmation.
+//   5. The org is quiescent (below).
+//   6. The retention grace window has elapsed (cron path), during which a
+//      restore in Clerk cancels the purge outright.
+// ===========================================================================
+
+/** Mirrors `WORKGRAPH_OWNER_DELETION_BATCH_SIZE`: the service-driven budget. */
+export const ORG_DELETION_BATCH_SIZE = 8
+
+/**
+ * Retention grace window for the cron-driven purge. A week is long enough for
+ * "we deleted the wrong org in Clerk" to be noticed and undone by re-creating
+ * it (which clears `purge_requested_at`), and short enough that a deleted
+ * tenant's data is not retained indefinitely.
+ */
+export const ORG_DELETION_GRACE_MS = 7 * 24 * 60 * 60 * 1_000
+
+const orgDeletionLeaseMs = 5 * 60 * 1_000
+
+type ScopedRows = Readonly<{ table: string; index: string; field: string }>
+type ChildRows = ScopedRows & Readonly<{ parentKey: string }>
+type ParentCascade = Readonly<ScopedRows & { children: readonly ChildRows[] }>
+
+/**
+ * Tables keyed DIRECTLY on the org's Convex document id.
+ *
+ * The WorkGraph half is imported rather than re-listed: `WORKGRAPH_OWNER_TABLES`
+ * is already the maintained enumeration of owner-scoped WorkGraph state, every
+ * one of those tables carries `organization_id` as the first column of its
+ * `by_tenant` index, and a second copy here would be a list that silently rots.
+ */
+export const ORG_DIRECT_TABLES: readonly ScopedRows[] = [
+  ...WORKGRAPH_OWNER_TABLES.map((table) => ({ table, index: "by_tenant", field: "organization_id" })),
+  // Org+owner scoped exactly like the tables above, but MISSING from
+  // `WORKGRAPH_OWNER_TABLES` — so personal WorkGraph deletion leaves it behind
+  // today. Included here so the org cascade is complete regardless.
+  { table: "workgraph_master_mailbox", index: "by_tenant", field: "organization_id" },
+  // A leftover fence from an interrupted per-owner deletion. Quiescence refuses
+  // while one is LIVE; this clears any that outlived their operation.
+  { table: "workgraph_owner_deletion_barriers", index: "by_tenant", field: "organization_id" },
+  { table: "org_memberships", index: "by_org_user", field: "org_id" },
+  { table: "agent_extension_policy_overrides", index: "by_org", field: "org_id" },
+  // Grants handed TO this org over OTHER orgs' workspaces. The reverse
+  // direction (grants over this org's workspaces) is a workspace child below.
+  { table: "workspace_share_grants", index: "by_org", field: "granted_to_org_id" },
+]
+
+/**
+ * Tables keyed on the CLERK org id string rather than the Convex document id —
+ * the W5 metering id space (convex/schema.ts, `runtime_leases.org_id`). Both
+ * carry per-user usage history and are personal data under any retention
+ * policy.
+ *
+ * `sandbox_lease_events` also lives in this id space but has no org index, so
+ * it is purged as a workspace child instead; every fact names the workspace
+ * whose lease produced it, which is exact.
+ */
+export const ORG_CLERK_TABLES: readonly ScopedRows[] = [
+  { table: "sandbox_usage_daily", index: "by_org_date", field: "org_id" },
+  { table: "llm_usage_events", index: "by_org_user", field: "org_id" },
+]
+
+/** Workspace children keyed on the workspace DOCUMENT id. */
+export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
+  { table: "workspace_memberships", index: "by_workspace_user", field: "workspace_id" },
+  { table: "workspace_share_grants", index: "by_workspace", field: "workspace_id" },
+  { table: "local_host_links", index: "by_workspace", field: "workspace_id" },
+  { table: "runtime_access_tokens", index: "by_workspace_user", field: "workspace_id" },
+  { table: "agent_extension_installs", index: "by_workspace", field: "workspace_id" },
+  { table: "agent_extension_policy_overrides", index: "by_workspace", field: "workspace_id" },
+  { table: "audit_events", index: "by_workspace_created", field: "workspace_id" },
+]
+
+/** Workspace children keyed on the PUBLIC workspace id string. */
+export const ORG_WORKSPACE_PUBLIC_TABLES: readonly ScopedRows[] = [
+  { table: "host_attestation_challenges", index: "by_workspace", field: "workspace_id" },
+  { table: "runtime_leases", index: "by_workspace_id", field: "workspace_id" },
+  { table: "sandbox_lease_events", index: "by_workspace_id", field: "workspace_id" },
+  { table: "wakes", index: "by_workspace_created", field: "workspace_id" },
+]
+
+const ORG_SESSION_CASCADE: ParentCascade = {
+  table: "session_history",
+  index: "by_workspace_updated",
+  field: "workspace_id",
+  children: [
+    // `session_messages` has no workspace index at all — only
+    // `by_session_ordinal` — so transcripts are only reachable through their
+    // session row. Deleting sessions first would strand every message.
+    { table: "session_messages", index: "by_session_ordinal", field: "session_id", parentKey: "session_id" },
+  ],
+}
+
+const ORG_PROJECT_CASCADE: ParentCascade = {
+  table: "projects",
+  index: "by_org",
+  field: "org_id",
+  children: [
+    { table: "project_memberships", index: "by_project_user", field: "project_id", parentKey: "_id" },
+  ],
+}
+
+const ORG_CONNECTION_CASCADE: ParentCascade = {
+  table: "workgraph_connection_metadata",
+  index: "by_organization_connection",
+  field: "organization_id",
+  children: [
+    // Carries no tenant column of its own; its only scoping is the connection.
+    { table: "workgraph_webhook_deliveries", index: "by_delivery", field: "connection_id", parentKey: "connection_id" },
+  ],
+}
+
+/** Every table the cascade purges, flattened — the auditable enumeration. */
+export const ORG_PURGED_TABLES: readonly string[] = [
+  ...ORG_DIRECT_TABLES.map((plan) => plan.table),
+  ...ORG_CLERK_TABLES.map((plan) => plan.table),
+  ...ORG_WORKSPACE_DOC_TABLES.map((plan) => plan.table),
+  ...ORG_WORKSPACE_PUBLIC_TABLES.map((plan) => plan.table),
+  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_CONNECTION_CASCADE]
+    .flatMap((cascade) => [cascade.table, ...cascade.children.map((child) => child.table)]),
+  "workspaces",
+]
+
+/**
+ * Tables the cascade deliberately does NOT purge. Enumerated as data, not
+ * prose, because `convex-org-deletion-policy.test.ts` asserts that this list
+ * plus everything the cascade touches accounts for EVERY table in the schema —
+ * so a new table cannot be added without someone deciding which side it is on.
+ */
+export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
+  // Not org-owned: a user belongs to many orgs and always owns a personal one.
+  // Deleting users here would destroy other orgs' data. User erasure is a
+  // different subject (`user.deleted`) with a different scope.
+  users: "user-owned, not org-owned",
+  channel_identities: "keyed on the user, with no org linkage",
+  // Same class as `users` above, and the reasoning matters because these rows
+  // ARE live credentials — the usual argument for purging.
+  //
+  // They are not org credentials. A CLI session token is minted at
+  // `/api/auth/cli/exchange` before any workspace or org exists; it names a
+  // `token_identifier` and nothing else, and the table has no org column to
+  // scope a purge by. It authenticates the HUMAN, so purging on org deletion
+  // would sign a multi-org user out of every OTHER org's CLI as well.
+  //
+  // Nor does one survive as authority over the deleted tenant. The token proves
+  // identity only: every org-scoped read and write re-resolves the caller's
+  // role through `org_memberships` / workspace grants on each request, and the
+  // cascade destroys those. So a retained token can still say who you are and
+  // can no longer reach anything belonging to the purged org.
+  //
+  // Retention is bounded without this cascade: each row carries the login
+  // chain's absolute expiry (90 days, un-extendable by rotation) and the hourly
+  // `cliSessionTokens.reapExpired` cron deletes it after that. User erasure is
+  // the correct scope for these, exactly as for `users`.
+  cli_session_tokens: "user-owned, not org-owned; identity only, self-expiring and reaped on a cron",
+  // Opaque idempotency keys with no tenant column and no tenant index. Scoping
+  // them would mean guessing at key structure, and a wrong predicate on a
+  // destructive sweep is worse than the residue.
+  wake_receipts: "no tenant column or index; scoping would require guessing",
+  // Hash-only by construction (`owner_subject_hash`, `operation_hash`) and
+  // deliberately retained so a repeated owner deletion replays exactly. Holds
+  // no identity to erase.
+  workgraph_owner_deletion_receipts: "hashes only, retained for replay",
+  // Org is AMBIGUOUS by construction here — `candidate_organization_ids` is a
+  // list and `reason` may literally be "ambiguous_organization". Deleting on a
+  // candidate match would destroy rows that may belong to another tenant,
+  // which is the exact wrong-predicate failure this cascade must not have.
+  workgraph_tenancy_migration_quarantine: "organization is ambiguous by construction",
+  // This cascade's own bookkeeping.
+  org_deletion_receipts: "the purge receipt itself; hashes only",
+  org_deletion_barriers: "transient fence, removed by finalize/release",
+  orgs: "deleted by finalize once every owned row is gone",
+}
+
+function orgDeletionBarrier(ctx: any, orgId: unknown) {
+  return ctx.db.query("org_deletion_barriers")
+    .withIndex("by_org", (query: any) => query.eq("org_id", orgId))
+    .unique()
+}
+
+function orgDeletionReceipt(ctx: any, orgKeyHash: string, operationHash: string) {
+  return ctx.db.query("org_deletion_receipts")
+    .withIndex("by_org_operation", (query: any) =>
+      query.eq("org_key_hash", orgKeyHash).eq("operation_hash", operationHash))
+    .unique()
+}
+
+function orgKey(org: any) {
+  return sha256Hex(`${String(org._id)} ${String(org.clerk_org_id)}`)
+}
+
+function orgScope(org: any) {
+  return sha256Hex(`${String(org._id)} ${String(org.clerk_org_id)} ${String(org.purge_requested_at)}`)
+}
+
+/**
+ * The four standing preconditions on the ORG itself, checked identically by
+ * prepare and finalize. Re-checked on every finalize rather than trusted from
+ * prepare: a purge runs across many transactions, and an org that stops being
+ * purgeable partway through must stop being purged.
+ */
+function orgPurgeRefusal(org: any, confirmClerkOrgId: string) {
+  if (!org) return "org_not_found" as const
+  const clerkOrgId = typeof org.clerk_org_id === "string" ? org.clerk_org_id : ""
+  if (!clerkOrgId) return "not_a_clerk_org" as const
+  if (clerkOrgId !== confirmClerkOrgId) return "confirmation_mismatch" as const
+  if (typeof org.deleted_at !== "number") return "org_not_deleted" as const
+  if (typeof org.purge_requested_at !== "number") return "purge_not_requested" as const
+  return undefined
+}
+
+/**
+ * Refuses while anything is still holding real resources for this org.
+ *
+ * - A LIVE lease (`acquiring`/`ready`, interval still open) means a sandbox is
+ *   running or coming up. Deleting its lease row would make the driver-side
+ *   sweep reclaim a VM mid-flight; the D13 reaper marks abandoned leases
+ *   `stopped` within its grace period, so this precondition resolves itself
+ *   without anyone intervening.
+ * - A live per-owner WorkGraph deletion barrier means another destructive
+ *   operation is mid-flight over a subset of these same rows. Two cascades
+ *   interleaving over one tenant is exactly the situation barriers exist to
+ *   prevent.
+ */
+async function isOrgQuiescent(ctx: any, org: any, now: number) {
+  const barriers = await ctx.db.query("workgraph_owner_deletion_barriers")
+    .withIndex("by_tenant", (query: any) => query.eq("organization_id", org._id))
+    .collect()
+  if (barriers.some((barrier: any) => barrier.lease_expires_at > now)) return false
+  const workspaces = await ctx.db.query("workspaces")
+    .withIndex("by_org", (query: any) => query.eq("org_id", org._id))
+    .collect()
+  for (const workspace of workspaces) {
+    if (typeof workspace.workspace_id !== "string") continue
+    const leases = await ctx.db.query("runtime_leases")
+      .withIndex("by_workspace_id", (query: any) => query.eq("workspace_id", workspace.workspace_id))
+      .collect()
+    if (leases.some(isLiveLease)) return false
+  }
+  return true
+}
+
+type BatchState = { remaining: number; deleted: number }
+
+async function drainScoped(ctx: any, plan: ScopedRows, value: unknown, state: BatchState) {
+  if (value === undefined || value === null) return true
+  if (state.remaining === 0) return false
+  const candidates = await ctx.db.query(plan.table)
+    .withIndex(plan.index, (query: any) => query.eq(plan.field, value))
+    .take(state.remaining + 1)
+  const rows = candidates.slice(0, state.remaining)
+  for (const row of rows) await ctx.db.delete(row._id)
+  state.deleted += rows.length
+  state.remaining -= rows.length
+  return candidates.length === rows.length
+}
+
+async function drainAll(ctx: any, plans: readonly ScopedRows[], value: unknown, state: BatchState) {
+  for (const plan of plans) {
+    if (!await drainScoped(ctx, plan, value, state)) return false
+  }
+  return true
+}
+
+/**
+ * Delete parent rows one at a time, each only after its own children are gone.
+ *
+ * Take-ONE rather than "collect the parents, then drain them" on purpose: a
+ * bounded batch must never depend on an unbounded read, and a loop that always
+ * removes the parent it just drained is guaranteed to make progress across
+ * resumptions instead of re-deriving the same stuck head forever.
+ */
+async function drainCascade(ctx: any, plan: ParentCascade, value: unknown, state: BatchState) {
+  for (;;) {
+    if (state.remaining === 0) return false
+    const [parent] = await ctx.db.query(plan.table)
+      .withIndex(plan.index, (query: any) => query.eq(plan.field, value))
+      .take(1)
+    if (!parent) return true
+    for (const child of plan.children) {
+      if (!await drainScoped(ctx, child, parent[child.parentKey], state)) return false
+    }
+    if (state.remaining === 0) return false
+    await ctx.db.delete(parent._id)
+    state.deleted += 1
+    state.remaining -= 1
+  }
+}
+
+async function drainWorkspaces(ctx: any, orgId: unknown, state: BatchState) {
+  for (;;) {
+    if (state.remaining === 0) return false
+    const [workspace] = await ctx.db.query("workspaces")
+      .withIndex("by_org", (query: any) => query.eq("org_id", orgId))
+      .take(1)
+    if (!workspace) return true
+    // Sessions carry their own children, so they cascade before the flat lists.
+    if (!await drainCascade(ctx, ORG_SESSION_CASCADE, workspace._id, state)) return false
+    if (!await drainAll(ctx, ORG_WORKSPACE_DOC_TABLES, workspace._id, state)) return false
+    if (!await drainAll(ctx, ORG_WORKSPACE_PUBLIC_TABLES, workspace.workspace_id, state)) return false
+    if (state.remaining === 0) return false
+    await ctx.db.delete(workspace._id)
+    state.deleted += 1
+    state.remaining -= 1
+  }
+}
+
+/**
+ * One bounded, resumable pass. Strictly ordered children-before-parents, and it
+ * stops the moment the budget runs out — which is what guarantees a group is
+ * fully drained before the next group (and therefore before any parent whose
+ * children that group holds) is touched at all.
+ */
+export async function deleteOrgRecordBatch(ctx: any, org: any, budget: number) {
+  const state: BatchState = { remaining: Math.max(1, Math.floor(budget)), deleted: 0 }
+  const drain = async () => {
+    if (!await drainWorkspaces(ctx, org._id, state)) return false
+    if (!await drainCascade(ctx, ORG_PROJECT_CASCADE, org._id, state)) return false
+    if (!await drainCascade(ctx, ORG_CONNECTION_CASCADE, org._id, state)) return false
+    if (!await drainAll(ctx, ORG_CLERK_TABLES, org.clerk_org_id, state)) return false
+    return await drainAll(ctx, ORG_DIRECT_TABLES, org._id, state)
+  }
+  // `complete` is resolved BEFORE the object is built: an object literal
+  // evaluates its properties in order, so `{ deleted: state.deleted, complete:
+  // await drain() }` would snapshot the counter at zero and report every batch
+  // as having deleted nothing.
+  const complete = await drain()
+  return { deleted: state.deleted, complete }
+}
+
+export async function prepareOrgDeletion(
+  ctx: any,
+  orgId: unknown,
+  confirmClerkOrgId: string,
+  operationId: string,
+  now: number,
+) {
+  const org = await ctx.db.get(orgId)
+  const refusal = orgPurgeRefusal(org, confirmClerkOrgId)
+  if (refusal) return { ok: false as const, reason: refusal }
+  const orgKeyHash = await orgKey(org)
+  const operationHash = await sha256Hex(operationId)
+  const scopeHash = await orgScope(org)
+  const receipt = await orgDeletionReceipt(ctx, orgKeyHash, operationHash)
+  if (receipt?.state === "completed") {
+    return { ok: true as const, state: "completed" as const, scopeHash, result: receipt.result }
+  }
+  const barrier = await orgDeletionBarrier(ctx, orgId)
+  if (barrier?.operation_hash === operationHash && receipt) {
+    await renewOrgLease(ctx, barrier, receipt, now)
+    return { ok: true as const, state: "deleting" as const, scopeHash: receipt.scope_hash as string }
+  }
+  if (barrier) {
+    // Someone else's operation. Only an EXPIRED lease may be taken over — that
+    // is the whole point of the lease, and stealing a live one would run two
+    // cascades over one tenant.
+    if (barrier.lease_expires_at > now) return { ok: true as const, state: "in_progress" as const, scopeHash }
+    await ctx.db.delete(barrier._id)
+  }
+  if (!await isOrgQuiescent(ctx, org, now)) return { ok: false as const, reason: "not_quiescent" as const }
+  await ctx.db.insert("org_deletion_barriers", {
+    org_id: orgId,
+    operation_hash: operationHash,
+    lease_expires_at: now + orgDeletionLeaseMs,
+    created_at: now,
+    updated_at: now,
+  })
+  const next = {
+    org_key_hash: orgKeyHash,
+    operation_hash: operationHash,
+    state: "deleting" as const,
+    scope_hash: scopeHash,
+    deleted_record_count: receipt?.deleted_record_count ?? 0,
+    lease_expires_at: now + orgDeletionLeaseMs,
+    updated_at: now,
+  }
+  if (receipt) await ctx.db.patch(receipt._id, next)
+  else await ctx.db.insert("org_deletion_receipts", { ...next, created_at: now })
+  return { ok: true as const, state: "acquired" as const, scopeHash }
+}
+
+export async function finalizeOrgDeletion(
+  ctx: any,
+  orgId: unknown,
+  confirmClerkOrgId: string,
+  operationId: string,
+  scopeHash: string,
+  now: number,
+) {
+  const org = await ctx.db.get(orgId)
+  const operationHash = await sha256Hex(operationId)
+  if (!org) return { ok: false as const, reason: "org_not_found" as const }
+  const receipt = await orgDeletionReceipt(ctx, await orgKey(org), operationHash)
+  if (receipt?.state === "completed") return { ok: true as const, result: receipt.result }
+  const refusal = orgPurgeRefusal(org, confirmClerkOrgId)
+  if (refusal) return { ok: false as const, reason: refusal }
+  const barrier = await orgDeletionBarrier(ctx, orgId)
+  if (
+    !receipt || receipt.state !== "deleting" || receipt.scope_hash !== scopeHash ||
+    barrier?.operation_hash !== operationHash ||
+    receipt.lease_expires_at <= now || barrier.lease_expires_at <= now
+  ) {
+    return { ok: false as const, reason: "in_progress" as const }
+  }
+  // Re-checked every batch, not just at prepare: a sandbox that comes back up
+  // mid-purge must halt it.
+  if (!await isOrgQuiescent(ctx, org, now)) return { ok: false as const, reason: "not_quiescent" as const }
+
+  const batch = await deleteOrgRecordBatch(ctx, org, ORG_DELETION_BATCH_SIZE)
+  const recordCount = (receipt.deleted_record_count ?? 0) + batch.deleted
+  if (!batch.complete) {
+    await ctx.db.patch(barrier._id, { lease_expires_at: now + orgDeletionLeaseMs, updated_at: now })
+    await ctx.db.patch(receipt._id, {
+      deleted_record_count: recordCount,
+      lease_expires_at: now + orgDeletionLeaseMs,
+      updated_at: now,
+    })
+    return { ok: true as const, state: "deleting" as const, scopeHash }
+  }
+  // Every owned row is gone; the org row itself goes last so that a purge
+  // interrupted at any earlier point is still resumable from it.
+  await ctx.db.delete(org._id)
+  const result = { deleted: true as const, recordCount: recordCount + 1, completedAt: now }
+  await ctx.db.delete(barrier._id)
+  await ctx.db.patch(receipt._id, {
+    state: "completed",
+    deleted_record_count: undefined,
+    result,
+    lease_expires_at: 0,
+    updated_at: now,
+  })
+  return { ok: true as const, result }
+}
+
+export async function renewOrgDeletion(
+  ctx: any,
+  orgId: unknown,
+  operationId: string,
+  scopeHash: string,
+  now: number,
+) {
+  const org = await ctx.db.get(orgId)
+  if (!org) return { ok: false as const, reason: "org_not_found" as const }
+  const operationHash = await sha256Hex(operationId)
+  const receipt = await orgDeletionReceipt(ctx, await orgKey(org), operationHash)
+  const barrier = await orgDeletionBarrier(ctx, orgId)
+  if (
+    receipt?.state !== "deleting" || receipt.scope_hash !== scopeHash ||
+    barrier?.operation_hash !== operationHash ||
+    receipt.lease_expires_at <= now || barrier.lease_expires_at <= now
+  ) {
+    return { ok: false as const, reason: "in_progress" as const }
+  }
+  await renewOrgLease(ctx, barrier, receipt, now)
+  return { ok: true as const, state: "renewed" as const }
+}
+
+export async function releaseOrgDeletion(ctx: any, orgId: unknown, operationId: string) {
+  const org = await ctx.db.get(orgId)
+  if (!org) return { ok: true as const }
+  const operationHash = await sha256Hex(operationId)
+  const receipt = await orgDeletionReceipt(ctx, await orgKey(org), operationHash)
+  const barrier = await orgDeletionBarrier(ctx, orgId)
+  // Only an unfinished operation is releasable; a completed receipt is the
+  // durable record and is never withdrawn.
+  if (receipt?.state === "deleting") {
+    if (barrier?.operation_hash === operationHash) await ctx.db.delete(barrier._id)
+    await ctx.db.delete(receipt._id)
+  }
+  return { ok: true as const }
+}
+
+async function renewOrgLease(ctx: any, barrier: any, receipt: any, now: number) {
+  await ctx.db.patch(barrier._id, { lease_expires_at: now + orgDeletionLeaseMs, updated_at: now })
+  await ctx.db.patch(receipt._id, { lease_expires_at: now + orgDeletionLeaseMs, updated_at: now })
+}
+
+/**
+ * Operator/Worker-driven purge. Service-token gated because there is no
+ * end-user who may authorize the destruction of an org's entire footprint —
+ * the org's admins are exactly the people whose access `deleted_at` just
+ * revoked.
+ */
+export const prepareDeletionForService = serviceMutation({
+  args: {
+    org_id: v.id("orgs"),
+    confirm_clerk_org_id: v.string(),
+    operation_id: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) =>
+    prepareOrgDeletion(ctx, args.org_id, args.confirm_clerk_org_id, args.operation_id, args.now),
+})
+
+export const finalizeDeletionForService = serviceMutation({
+  args: {
+    org_id: v.id("orgs"),
+    confirm_clerk_org_id: v.string(),
+    operation_id: v.string(),
+    scope_hash: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) =>
+    finalizeOrgDeletion(ctx, args.org_id, args.confirm_clerk_org_id, args.operation_id, args.scope_hash, args.now),
+})
+
+export const renewDeletionForService = serviceMutation({
+  args: {
+    org_id: v.id("orgs"),
+    operation_id: v.string(),
+    scope_hash: v.string(),
+    renew_only: v.literal(true),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => renewOrgDeletion(ctx, args.org_id, args.operation_id, args.scope_hash, args.now),
+})
+
+export const releaseDeletionForService = serviceMutation({
+  args: {
+    org_id: v.id("orgs"),
+    operation_id: v.string(),
+  },
+  handler: async (ctx, args) => releaseOrgDeletion(ctx, args.org_id, args.operation_id),
+})
+
+/**
+ * The retention driver (convex/crons.ts). Internal visibility — not callable by
+ * any client at all, only the Convex scheduler.
+ *
+ * Handles ONE org per tick, deliberately: a cascade is destructive, and a bug
+ * that escapes its scoping should be able to damage one tenant before the next
+ * tick, not every deleted tenant in one transaction. The oldest request goes
+ * first so the queue cannot starve.
+ *
+ * The operation id is DERIVED (`org_purge:<doc id>:<purge_requested_at>`)
+ * rather than random, which is what makes ticks resume one another instead of
+ * each starting a fresh operation that trips over the previous barrier. It also
+ * ties the operation to the specific request: a restore-then-delete produces a
+ * new `purge_requested_at`, hence a new operation and a new receipt.
+ */
+export const purgeDeletedOrgs = cronMutation({
+  args: {
+    retain_ms: v.number(),
+    batch_limit: v.optional(v.number()),
+    now: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now()
+    const cutoff = now - args.retain_ms
+    const due = (await ctx.db.query("orgs").collect())
+      .filter((org: any) =>
+        typeof org.purge_requested_at === "number" &&
+        org.purge_requested_at <= cutoff &&
+        typeof org.deleted_at === "number" &&
+        typeof org.clerk_org_id === "string" &&
+        org.clerk_org_id.length > 0)
+      .sort((left: any, right: any) => left.purge_requested_at - right.purge_requested_at)
+    const org = due[0]
+    if (!org) return { due: 0, state: "idle" as string, deleted: 0 }
+
+    const operationId = `org_purge:${String(org._id)}:${org.purge_requested_at}`
+    const prepared = await prepareOrgDeletion(ctx, org._id, org.clerk_org_id as string, operationId, now)
+    if (!prepared.ok) return { due: due.length, state: prepared.reason as string, deleted: 0 }
+    if (prepared.state !== "acquired" && prepared.state !== "deleting") {
+      return { due: due.length, state: prepared.state as string, deleted: 0 }
+    }
+
+    let deleted = 0
+    // Several batches per tick: the service-path budget of 8 exists for a tight
+    // external driver loop, and at one tick an hour it would take years. Each
+    // batch is still individually bounded and individually resumable, so an
+    // interrupted tick costs at most one batch of progress.
+    const batches = Math.max(1, Math.floor((args.batch_limit ?? 256) / ORG_DELETION_BATCH_SIZE))
+    for (let index = 0; index < batches; index += 1) {
+      const finalized = await finalizeOrgDeletion(
+        ctx,
+        org._id,
+        org.clerk_org_id as string,
+        operationId,
+        prepared.scopeHash,
+        now,
+      )
+      if (!finalized.ok) return { due: due.length, state: finalized.reason as string, deleted }
+      if ("result" in finalized) {
+        return { due: due.length, state: "completed" as string, deleted: finalized.result?.recordCount ?? deleted }
+      }
+      deleted += ORG_DELETION_BATCH_SIZE
+    }
+    return { due: due.length, state: "deleting" as string, deleted }
   },
 })

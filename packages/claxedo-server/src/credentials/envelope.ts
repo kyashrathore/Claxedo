@@ -47,6 +47,16 @@
  * (generate with `openssl rand -base64 32`). A missing or malformed KEK
  * throws at construction time — absent KEK in a hosted context means the
  * credential store refuses to exist.
+ *
+ * ROTATION IS A DRAIN, NOT A SWAP. "New writes use the new key-id" alone never
+ * retires anything: every value written before the rotation stays readable ONLY
+ * under the old KEK, so the old KEK must stay configured forever and a
+ * suspected-compromised key can never actually be taken out of service. The
+ * `EnvelopeAdmin` surface below is what closes that: it exposes the key-id a
+ * stored value carries WITHOUT decrypting it, so `credentials/rotate.ts` can
+ * sweep every stored ciphertext, re-encrypt it under the current KEK, and then
+ * answer the only question that gates removing the old key from configuration —
+ * "is any ciphertext still under the retired key-id?".
  */
 
 import type { SecretBackend } from "./types"
@@ -71,6 +81,42 @@ export interface EnvelopeKeyProvider {
   current(): Promise<{ keyId: string; kek: Uint8Array }>
   /** KEK bytes for a key-id found in stored ciphertext; undefined if unknown. */
   lookup(keyId: string): Promise<Uint8Array | undefined>
+}
+
+/** What a storage slot currently holds, established WITHOUT decrypting it. */
+export type StoredEnvelopeState =
+  /** Nothing stored at this ref. */
+  | { state: "absent" }
+  /** A well-formed `cenc1` envelope carrying this key-id. */
+  | { state: "envelope"; keyId: string }
+  /**
+   * Something is stored but it is not a `cenc1` envelope — legacy plaintext, a
+   * foreign format, or corruption. Reads of this slot already fail closed;
+   * rotation reports it loudly rather than skipping past it.
+   */
+  | { state: "foreign" }
+
+/**
+ * The rotation surface an envelope-wrapped backend exposes.
+ *
+ * Deliberately minimal: it reveals the KEY-ID a slot was written under (public
+ * metadata that is already the ciphertext's plaintext prefix) and nothing else.
+ * It does NOT expose the raw byte store, the ciphertext, or the KEK, so it
+ * cannot be used to reopen the "reach the bytes unencrypted" hole that D10
+ * closes — `credentials/rotate.ts` re-encrypts through the ordinary
+ * `get`/`put` pair, which never lets plaintext touch the inner store.
+ */
+export interface EnvelopeAdmin {
+  /** The key-id new writes encrypt under. */
+  currentKeyId(): Promise<string>
+  /** What `ref` holds, without decrypting or authenticating it. */
+  inspect(ref: string): Promise<StoredEnvelopeState>
+}
+
+/** Narrows a `SecretBackend` to one that can be swept by a KEK rotation. */
+export function isEnvelopeBackend(backend: SecretBackend): backend is SecretBackend & EnvelopeAdmin {
+  const candidate = backend as Partial<EnvelopeAdmin>
+  return typeof candidate.currentKeyId === "function" && typeof candidate.inspect === "function"
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -176,7 +222,7 @@ export function envelopeKeyProviderFromEnv(env: EnvLike = process.env): Envelope
  * the same id by stripping the scheme, so the two match for the rightful slot
  * and diverge (→ auth failure) if a blob is relocated to another slot.
  */
-function credentialIdFromRef(ref: string): string {
+export function credentialIdFromRef(ref: string): string {
   const colon = ref.indexOf(":")
   return colon >= 0 ? ref.slice(colon + 1) : ref
 }
@@ -211,6 +257,16 @@ function parseEnvelope(stored: string): ParsedEnvelope {
 }
 
 /**
+ * The key-id a stored value carries, or undefined when the value is not a
+ * well-formed envelope. Non-throwing on purpose: rotation must be able to
+ * CLASSIFY every slot (including foreign/corrupt ones) before deciding what to
+ * do with it, where `parseEnvelope`'s fail-closed throw is the read path's job.
+ */
+export function envelopeKeyIdOf(stored: string): string | undefined {
+  return ENVELOPE_RE.exec(stored)?.[1]
+}
+
+/**
  * Wrap a `SecretBackend` so every value it stores is an AES-256-GCM envelope
  * under a per-org HKDF subkey. The inner backend only ever sees ciphertext.
  */
@@ -218,7 +274,7 @@ export function encryptedSecretBackend(
   inner: SecretBackend,
   keys: EnvelopeKeyProvider,
   opts: { orgId: string },
-): SecretBackend {
+): SecretBackend & EnvelopeAdmin {
   const orgId = opts.orgId?.trim()
   if (!orgId) throw new Error("encryptedSecretBackend requires a non-empty orgId partition")
 
@@ -301,6 +357,17 @@ export function encryptedSecretBackend(
 
     async probe() {
       return inner.probe()
+    },
+
+    async currentKeyId() {
+      return (await keys.current()).keyId
+    },
+
+    async inspect(ref) {
+      const stored = await inner.get(ref)
+      if (stored === null) return { state: "absent" }
+      const keyId = envelopeKeyIdOf(stored)
+      return keyId ? { state: "envelope", keyId } : { state: "foreign" }
     },
   }
 }

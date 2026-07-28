@@ -214,6 +214,7 @@ export function createCloudflareSandboxDriver(
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "proxy",
+      egressControl: "none",
       persistence: sandboxDriverCatalog.cloudflare.metadata.persistence,
     },
 

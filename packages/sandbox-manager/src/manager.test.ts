@@ -17,6 +17,7 @@ function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      egressControl: "hosts-and-cidrs",
       persistence: {
         resume: "same-sandbox",
         capture: "none",

@@ -83,12 +83,76 @@ export default defineSchema({
      * leaves past_due (recovers or terminates). Additive/optional → pure EXPAND.
      */
     past_due_since: v.optional(v.number()),
+    /**
+     * §6.12 org cascade — the PURGE REQUEST clock.
+     *
+     * Set ONLY by the Svix-verified `organization.deleted` applier
+     * (convex/orgs.ts), alongside `deleted_at`. Nothing else writes it, and
+     * `upsertClerkOrg` CLEARS it on any later `organization.created/updated`,
+     * so an org restored inside the grace window cancels its own purge.
+     *
+     * `deleted_at` alone is an access flag — `directOrgRole` stops resolving a
+     * role, so the data becomes unreachable but is retained forever. This field
+     * is the separate, explicit statement that the rows themselves must go, and
+     * it is the clock the retention grace window measures from. Both must be
+     * present before anything is destroyed.
+     */
+    purge_requested_at: v.optional(v.number()),
     created_at: v.number(),
     updated_at: v.number(),
   })
     .index("by_clerk_org_id", ["clerk_org_id"])
     .index("by_owner", ["owner_user_id"])
     .index("by_polar_customer_id", ["polar_customer_id"]),
+
+  // ── §6.12 org deletion cascade (convex/orgs.ts) ──
+  //
+  // Deliberate mirror of `workgraph_owner_deletion_receipts` /
+  // `workgraph_owner_deletion_barriers`: a transient barrier that is the
+  // transaction-visible fence while a batched purge runs, plus a durable
+  // receipt that outlives the org row and therefore carries HASHES only.
+
+  /**
+   * The durable record of one org purge. `org_key_hash` is
+   * `sha256(orgDocId \0 clerkOrgId)` and `operation_hash` is `sha256(operationId)`
+   * — the org row is deleted by the purge, so a receipt holding the real ids
+   * would be the one place the deleted tenant's identity survived.
+   */
+  org_deletion_receipts: defineTable({
+    org_key_hash: v.string(),
+    operation_hash: v.string(),
+    state: v.union(v.literal("deleting"), v.literal("completed")),
+    /**
+     * `sha256(orgDocId \0 clerkOrgId \0 purge_requested_at)` — the fingerprint
+     * of the PURGE REQUEST, not of the row set. Stable across batches (so a
+     * resumed purge still verifies) while a restore-then-delete produces a new
+     * `purge_requested_at` and therefore a new fingerprint, which a stale
+     * receipt can never match.
+     */
+    scope_hash: v.string(),
+    result: v.optional(
+      v.object({
+        deleted: v.literal(true),
+        recordCount: v.number(),
+        completedAt: v.number(),
+      }),
+    ),
+    deleted_record_count: v.optional(v.number()),
+    lease_expires_at: v.number(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_org_operation", ["org_key_hash", "operation_hash"])
+    .index("by_org_key", ["org_key_hash"]),
+
+  /** Write fence for an in-flight org purge. Removed by finalize or release. */
+  org_deletion_barriers: defineTable({
+    org_id: v.id("orgs"),
+    operation_hash: v.string(),
+    lease_expires_at: v.number(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  }).index("by_org", ["org_id"]),
 
   org_memberships: defineTable({
     org_id: v.id("orgs"),
@@ -273,6 +337,43 @@ export default defineSchema({
     .index("by_jti", ["jti"])
     .index("by_workspace_user", ["workspace_id", "minted_for_user_id"]),
 
+  // Revocation registry for CLI session tokens (`claxedo login` credentials).
+  //
+  // Deliberately NOT `runtime_access_tokens`: that table requires BOTH a
+  // `workspace_id` and a `host_id`, and its `active` check matches on both. A
+  // CLI session token has neither — it is minted at `/api/auth/cli/exchange`
+  // before any workspace exists and authenticates the HUMAN, everywhere. Its
+  // identity is the (`jti`, owner) pair plus the login chain it belongs to.
+  //
+  // `token_identifier` is the stable per-user key (the same value Clerk hands
+  // `users.token_identifier`) rather than `v.id("users")`, because the mint and
+  // rotation paths are service-authenticated and must not depend on a user row
+  // existing yet — and because it is exactly the field every revocation is
+  // scoped by, which is what stops one user revoking another's sessions.
+  cli_session_tokens: defineTable({
+    jti: v.string(),
+    kind: v.union(v.literal("access"), v.literal("refresh")),
+    token_identifier: v.string(),
+    subject: v.string(),
+    // Login-chain id: every access/refresh pair descended from one
+    // `claxedo login` shares it, so a device can be signed out as a unit.
+    session_id: v.string(),
+    // Expiry of THIS token; `session_expires_at` is the chain's absolute
+    // deadline, which rotation carries through and may never extend.
+    expires_at: v.number(),
+    session_expires_at: v.number(),
+    revoked_at: v.optional(v.number()),
+    created_at: v.number(),
+  })
+    .index("by_jti", ["jti"])
+    // Owner-scoped from the leading field so a chain lookup can never span
+    // users: `revokeSession` reads (owner, chain), never chain alone.
+    .index("by_user_session", ["token_identifier", "session_id"])
+    .index("by_token_identifier", ["token_identifier"])
+    // Reaper key. A row is dead once its own token expires — an expired JWT
+    // fails signature verification before the registry is ever consulted.
+    .index("by_expires_at", ["expires_at"]),
+
   runtime_leases: defineTable({
     workspace_id: v.string(),
     home_region: v.string(),
@@ -292,6 +393,24 @@ export default defineSchema({
     // no tenant and are excluded from the rollup by construction.
     org_id: v.optional(v.string()),
     user_id: v.optional(v.string()),
+    /**
+     * The Clerk SUBJECT of the caller whose signed request caused this lease —
+     * the concurrency cap's attribution key, deliberately separate from the W5
+     * metering pair above.
+     *
+     * `org_id`/`user_id` are only ever written TOGETHER, because a metering
+     * fact keyed on a fabricated org silently corrupts every per-org aggregate
+     * (see `closeLeaseInterval`). A personal-account token carries no `org_id`
+     * claim, so those leases are unattributable for metering BY DESIGN — and
+     * that made `countActiveForOrg` unable to see them, so the per-org
+     * concurrent-sandbox cap could not bind for personal accounts at all.
+     *
+     * A subject claim, unlike an org claim, is present on EVERY signed request.
+     * Recording it here gives the cap a total attribution key without inventing
+     * an org: this column never reaches `sandbox_lease_events` or the rollups,
+     * so W5 semantics are untouched by construction.
+     */
+    owner_subject: v.optional(v.string()),
     /** Wall-clock of the CURRENT open interval, re-stamped on every acquire. */
     started_at: v.optional(v.number()),
     /** Set when the lease closes; cleared by the next acquire. */
@@ -344,9 +463,9 @@ export default defineSchema({
   // indefinitely, so the long-range answer survives the prune.
   //
   // Every one of these ships a reader (`usageMetering.leaseEventsForSandbox`,
-  // `llmUsageForSession`, `llmUsageTotals`, `sandboxUsageDaily`) — deliberately
-  // NOT repeating `audit_events`, which is write-only with zero readers
-  // anywhere in the repo.
+  // `llmUsageForSession`, `llmUsageTotals`, `sandboxUsageDaily`) — the rule
+  // `audit_events` used to break, and no longer does (§6.11: it now ships
+  // `auditEvents.listForWorkspace` / `listMine` / `listForOrg`).
 
   /**
    * One row per CLOSED lease interval — the raw sandbox-compute fact.

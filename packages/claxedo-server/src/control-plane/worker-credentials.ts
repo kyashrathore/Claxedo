@@ -34,7 +34,7 @@
 import type { ControlPlaneCredentials } from "./services"
 import type { CredentialMetadata, CredentialWrite, SecretBackend } from "../credentials/types"
 import { createEncryptedCloudflareBackend } from "../credentials/cloudflare"
-import { envelopeKeyProviderFromEnv } from "../credentials/envelope"
+import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "../credentials/envelope"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 
@@ -51,8 +51,15 @@ export function hostedCredentialsEnabled(env: WorkerCredentialEnv = process.env)
  * or KV configuration is missing. Later waves resolve `orgId` from the
  * authenticated principal (Decision 1 org partitioning) and call this
  * per-request or per-org — never the raw KV store.
+ *
+ * Carries the `EnvelopeAdmin` surface so a KEK rotation drain
+ * (`credentials/rotate.ts`) can classify each slot's key-id without the
+ * backend having to be reconstructed a second way.
  */
-export function createHostedOrgSecretBackend(orgId: string, env: WorkerCredentialEnv = process.env): SecretBackend {
+export function createHostedOrgSecretBackend(
+  orgId: string,
+  env: WorkerCredentialEnv = process.env,
+): SecretBackend & EnvelopeAdmin {
   return createEncryptedCloudflareBackend({ orgId, env })
 }
 

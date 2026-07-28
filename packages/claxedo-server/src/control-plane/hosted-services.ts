@@ -33,10 +33,12 @@ import { createControlPlaneRelayProvider } from "../relay-provider"
 import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../routes/internal-relay"
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import type { CliSessionTokenRegistry } from "./cli-session-registry"
 import {
   HostedWorkerCompositionError,
   clean,
   composeWorkerAuthority,
+  composeWorkerCliSessionTokenRegistry,
   composeWorkerSandboxManager,
   composeWorkerUserHostedResolver,
   positiveInteger,
@@ -226,6 +228,16 @@ export type HostedControlPlane = {
    * consumed by both the relay provider and the internal relay resolver route.
    */
   relayTargetLookup: RelayTargetLookup
+  /**
+   * Durable revocation registry for `claxedo login` credentials.
+   *
+   * REQUIRED, not optional: the CLI token path fails closed without a registry,
+   * so an optional field would let a composition typecheck its way into a plane
+   * that 503s every login and rejects every CLI bearer at runtime. Making it
+   * part of the plane's shape means no hosted composition — production or test
+   * — can exist without answering "where do revocations live?".
+   */
+  cliSessionTokenRegistry: CliSessionTokenRegistry
   /** Device-login provider; undefined until a trusted CLI issuer is configured. */
   deviceAuthProvider?: HostedDeviceAuthProvider
   env: HostedWorkerEnv
@@ -324,6 +336,7 @@ export function composeHostedControlPlane(env: HostedWorkerEnv): HostedControlPl
     resolverToken,
     safetyLimits: limits,
     relayTargetLookup,
+    cliSessionTokenRegistry: composeWorkerCliSessionTokenRegistry(env),
     ...(deviceAuth ? { deviceAuthProvider: deviceAuth } : {}),
     env,
   }

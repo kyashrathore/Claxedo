@@ -127,6 +127,13 @@
       "import": "./dist/materialization.mjs",
       "default": "./dist/materialization.mjs"
     },
+    "./integrity": {
+      "types": "./dist/integrity.d.ts",
+      "bun": "./dist/integrity.mjs",
+      "development": "./dist/integrity.mjs",
+      "import": "./dist/integrity.mjs",
+      "default": "./dist/integrity.mjs"
+    },
     "./types": {
       "types": "./dist/types.d.ts",
       "bun": "./dist/types.mjs",

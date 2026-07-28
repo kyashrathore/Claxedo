@@ -20,6 +20,12 @@ export type CredentialConsent = {
 /** Metadata stored in claxedo.db — never contains raw secret material. */
 export interface CredentialMetadata {
   id: string
+  /**
+   * Owning tenant. Optional on the type because the hosted Worker store is
+   * partitioned by its KV key rather than by a column; the local SQLite
+   * registry always populates it (`__local__` for single-tenant self-host).
+   */
+  org_id?: string
   provider_id: string
   kind: CredentialKind
   source: CredentialSource

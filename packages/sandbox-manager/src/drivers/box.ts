@@ -323,6 +323,7 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",
+      egressControl: "none",
       persistence: sandboxDriverCatalog.box.metadata.persistence,
     },
     ensureHost,

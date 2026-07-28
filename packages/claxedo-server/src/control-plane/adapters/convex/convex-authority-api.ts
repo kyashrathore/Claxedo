@@ -63,6 +63,14 @@ type ConvexApi = {
     revoke: ConvexMutation
     revokeForWorkspaceUser: ConvexMutation
   }
+  cliSessionTokens: {
+    recordMint: ConvexMutation
+    rotate: ConvexMutation
+    active: ConvexQuery
+    revoke: ConvexMutation
+    revokeSession: ConvexMutation
+    revokeForUser: ConvexMutation
+  }
   agentExtensions: {
     list: ConvexQuery
     listForRuntime: ConvexQuery

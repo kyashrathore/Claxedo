@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "../control-plane/services"
+import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./openai-oauth"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
@@ -37,9 +38,11 @@ export type ProviderAuthorization = {
 
 type CodexPending = {
   providerId: "codex-acp" | "openai"
+  org: string
   deviceAuthId: string
   userCode: string
   intervalMs: number
+  startedAt: number
 }
 
 type TokenResponse = {
@@ -64,10 +67,24 @@ export class ProviderAuthError extends Error {
   }
 }
 
+/**
+ * The tenant an OAuth login belongs to.
+ *
+ * Same convention as the credential router's `requestOrg` (routes/credential.ts):
+ * unsigned/local self-host resolves to the NAMED single-tenant partition,
+ * signed resolves to the verified `org_id` claim (or the subject when the
+ * principal has no org). Blank is NOT a wildcard — it collapses to the named
+ * partition, so a call site that forgets to thread the org fails closed into
+ * self-host's own tenant rather than into someone else's.
+ */
+export function providerAuthOrg(org?: string | null): string {
+  return org?.trim() || SINGLE_TENANT_ORG
+}
+
 export type ProviderAuthService = {
   methods: () => ProviderAuthMethods
-  authorize: (input: { providerId: string; method?: number; inputs?: Record<string, string> }) => Promise<ProviderAuthorization | null>
-  callback: (input: { providerId: string; method?: number; code?: string }) => Promise<boolean>
+  authorize: (input: { providerId: string; method?: number; inputs?: Record<string, string>; org?: string }) => Promise<ProviderAuthorization | null>
+  callback: (input: { providerId: string; method?: number; code?: string; org?: string }) => Promise<boolean>
 }
 
 type ProviderAuthOptions = {
@@ -75,7 +92,17 @@ type ProviderAuthOptions = {
   now?: () => number
   sleep?: (ms: number) => Promise<void>
   pollingSafetyMs?: number
+  /** How long an unclaimed in-flight authorization stays claimable. */
+  pendingTtlMs?: number
 }
+
+/**
+ * Upstream device codes expire on their own; this only bounds how long a
+ * started-but-never-completed authorization sits in memory waiting to be
+ * consumed. The UI posts the callback immediately after authorize, so the
+ * real gap is seconds.
+ */
+const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
 export function providerAuthMethods(): ProviderAuthMethods {
   return {
@@ -98,15 +125,34 @@ export function createProviderAuthService(
   credentials: ControlPlaneCredentials,
   options: ProviderAuthOptions = {},
 ): ProviderAuthService {
+  /**
+   * In-flight device authorizations, keyed by TENANT + provider.
+   *
+   * Keying by `providerId` alone made this a cross-tenant hole on any
+   * multi-org box: org A starting a `codex-acp` login and org B posting the
+   * callback let org B consume org A's in-flight authorization and have the
+   * resulting ChatGPT/OpenAI token written into org B's credential store.
+   *
+   * There is no OAuth `state` to bind to here — this is OpenAI's DEVICE
+   * authorization flow (device_auth_id + user_code, polled server-side), not a
+   * redirect flow, so no `state` ever leaves or returns and the route's `code`
+   * body field is unused. The pending map IS the binding, which is exactly why
+   * its key has to carry the tenant.
+   *
+   * Key is JSON-encoded rather than concatenated so an org id containing the
+   * separator cannot forge another tenant's key.
+   */
   const pending = new Map<string, CodexPending>()
+  const pendingKey = (org: string, providerId: string) => JSON.stringify([org, providerId])
   const request = options.fetch ?? globalThis.fetch
   const clock = options.now ?? Date.now
   const wait = options.sleep ?? sleep
   const pollingSafetyMs = options.pollingSafetyMs ?? 3_000
+  const pendingTtlMs = options.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS
 
   const methods = () => providerAuthMethods()
 
-  const authorize = async (input: { providerId: string; method?: number }) => {
+  const authorize = async (input: { providerId: string; method?: number; org?: string }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)
     if (method.type !== "oauth") {
       throw new ProviderAuthError("provider_auth_method_not_oauth", "Selected provider method is not OAuth")
@@ -136,11 +182,14 @@ export function createProviderAuthService(
       throw new ProviderAuthError("provider_auth_authorize_failed", "Device authorization returned an invalid body")
     }
 
-    pending.set(input.providerId, {
+    const org = providerAuthOrg(input.org)
+    pending.set(pendingKey(org, input.providerId), {
       providerId: input.providerId,
+      org,
       deviceAuthId: body.device_auth_id,
       userCode: body.user_code,
       intervalMs: Math.max(typeof body.interval === "string" ? Number.parseInt(body.interval) : Number(body.interval) || 5, 1) * 1000,
+      startedAt: clock(),
     })
 
     return {
@@ -150,7 +199,7 @@ export function createProviderAuthService(
     }
   }
 
-  const callback = async (input: { providerId: string; method?: number }) => {
+  const callback = async (input: { providerId: string; method?: number; org?: string }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)
     if (method.type !== "oauth") {
       throw new ProviderAuthError("provider_auth_method_not_oauth", "Selected provider method is not OAuth")
@@ -159,14 +208,25 @@ export function createProviderAuthService(
       throw new ProviderAuthError("provider_auth_unknown_provider", `OAuth is not supported for ${input.providerId}`)
     }
 
-    const item = pending.get(input.providerId)
+    const org = providerAuthOrg(input.org)
+    const key = pendingKey(org, input.providerId)
+    const item = pending.get(key)
+    // An authorization started by ANOTHER tenant is not visible here at all —
+    // this reads as "never started", which is what it is for this caller.
     if (!item) throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has not been started")
+    if (clock() - item.startedAt > pendingTtlMs) {
+      pending.delete(key)
+      throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has expired — start it again")
+    }
     const tokens = await exchangeDeviceTokens(request, item, wait, pollingSafetyMs)
-    pending.delete(input.providerId)
+    pending.delete(key)
 
     const expires = clock() + (tokens.expires_in ?? 3600) * 1000
     const accountId = extractAccountId(tokens)
-    await credentials.deleteCredentialsByProvider(input.providerId)
+    // Org-scoped writes: without the scope both statements ran against the
+    // single-tenant partition, so a signed multi-org box wrote every tenant's
+    // OAuth login into the same rows.
+    await credentials.deleteCredentialsByProvider(input.providerId, undefined, org)
     await credentials.putCredential({
       provider_id: input.providerId,
       kind: "oauth_token",
@@ -177,7 +237,7 @@ export function createProviderAuthService(
       secret: input.providerId === "codex-acp"
         ? JSON.stringify(codexSecret(tokens, expires, accountId))
         : JSON.stringify(openaiSecret(tokens, expires, accountId)),
-    })
+    }, org)
     return true
   }
 

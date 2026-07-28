@@ -23,6 +23,7 @@ const ENTRIES = [
   "src/workspace.ts",
   "src/materialization.ts",
   "src/materialize.ts",
+  "src/integrity.ts",
   "src/types.ts",
   "src/cli.ts",
   "src/materializers/mcp.ts",

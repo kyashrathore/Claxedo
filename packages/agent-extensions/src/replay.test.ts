@@ -10,6 +10,19 @@ import { applyRuntimeAgentExtensions } from "./replay"
 const root = path.join(os.tmpdir(), `workspace-runtime-agent-extensions-${crypto.randomUUID().slice(0, 8)}`)
 const execFile = promisify(nodeExecFile)
 
+// A remote install may not be materialized unless its lock pins the package
+// content, so fixtures build the package tree once, hash it, and hand the same
+// writer to the git stub — what the stub produces is exactly what the lock
+// pins. Building the tree twice (once to hash, once to serve) is the point:
+// it is the same equality the runtime checks.
+async function fixtureDigest(write: (dir: string) => Promise<void>) {
+  const dir = await fs.mkdtemp(path.join(root, "fixture-"))
+  await write(dir)
+  const digest = await digestDirectory(dir)
+  await fs.rm(dir, { recursive: true, force: true })
+  return digest
+}
+
 describe("runtime Agent Extensions replay", () => {
   beforeEach(async () => {
     await fs.rm(root, { recursive: true, force: true })
@@ -21,6 +34,11 @@ describe("runtime Agent Extensions replay", () => {
   })
 
   test("writes desired, lock, and materialized replay files without generated paths", async () => {
+    const writePackage = async (dir: string) => {
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "SKILL.md"), "skill")
+    }
+    const digest = await fixtureDigest(writePackage)
     const commands: Array<{ file: string; args: string[]; cwd?: string }> = []
     const tempRoots: string[] = []
     const execFile = async (_file: string, args: string[]) => {
@@ -28,8 +46,7 @@ describe("runtime Agent Extensions replay", () => {
       if (args[0] === "init") {
         tempRoots.push(args[1]!)
         await fs.mkdir(args[1]!, { recursive: true })
-        await fs.mkdir(path.join(args[1]!, "packages", "review"), { recursive: true })
-        await fs.writeFile(path.join(args[1]!, "packages", "review", "SKILL.md"), "skill")
+        await writePackage(path.join(args[1]!, "packages", "review"))
       }
       return { stdout: "", stderr: "" }
     }
@@ -46,6 +63,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: digest },
           targets: ["cursor"],
         },
         status: "applied",
@@ -73,6 +91,7 @@ describe("runtime Agent Extensions replay", () => {
       packages: {
         review: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: digest },
           targets: ["cursor"],
         },
       },
@@ -103,15 +122,17 @@ describe("runtime Agent Extensions replay", () => {
   })
 
   test("materializes standalone MCP configs for Cursor and Codex", async () => {
+    const writePackage = async (dir: string) => {
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "mcp.json"), JSON.stringify({
+        servers: {
+          docs: { command: "node", args: ["server.js"], env: {} },
+        },
+      }))
+    }
+    const digest = await fixtureDigest(writePackage)
     const execFile = async (_file: string, args: string[]) => {
-      if (args[0] === "init") {
-        await fs.mkdir(args[1]!, { recursive: true })
-        await fs.writeFile(path.join(args[1]!, "mcp.json"), JSON.stringify({
-          servers: {
-            docs: { command: "node", args: ["server.js"], env: {} },
-          },
-        }))
-      }
+      if (args[0] === "init") await writePackage(args[1]!)
       return { stdout: "", stderr: "" }
     }
 
@@ -127,6 +148,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: digest },
           targets: ["cursor", "codex"],
         },
         components: [],
@@ -182,6 +204,7 @@ describe("runtime Agent Extensions replay", () => {
           },
           lock: {
             resolved_sha: "abcdef1234567890",
+            component_digests: { package: await digestDirectory(skillRoot) },
             targets: ["opencode"],
           },
           components: [],
@@ -196,6 +219,7 @@ describe("runtime Agent Extensions replay", () => {
           },
           lock: {
             resolved_sha: "abcdef9999999999",
+            component_digests: { package: await digestDirectory(mcpRoot) },
             targets: ["opencode"],
           },
           components: [],
@@ -248,6 +272,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: await digestDirectory(packageRoot) },
           targets: ["cursor"],
         },
         components: [],
@@ -300,6 +325,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: await digestDirectory(packageRoot) },
           targets: ["cursor"],
         },
         components: [],
@@ -420,6 +446,188 @@ describe("runtime Agent Extensions replay", () => {
     await expect(fs.stat(path.join(root, ".cursor", "skills", "review"))).rejects.toThrow()
   })
 
+  test("refuses to materialize a runtime install whose lock records no package digest", async () => {
+    const packageRoot = path.join(root, "packages", "review")
+    await fs.mkdir(packageRoot, { recursive: true })
+    await fs.writeFile(path.join(packageRoot, "SKILL.md"), "review skill")
+
+    await expect(applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github", owner: "acme", repo: "review" },
+          enabled: true,
+          targets: ["cursor"],
+        },
+        lock: {
+          resolved_sha: "abcdef1234567890",
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, {
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+      packageRoots: { review: packageRoot },
+    })).rejects.toThrow("records no package digest")
+
+    await expect(fs.stat(path.join(root, ".cursor", "skills", "review"))).rejects.toThrow()
+  })
+
+  test("refuses to materialize a runtime install that carries no lock at all", async () => {
+    const packageRoot = path.join(root, "packages", "review")
+    await fs.mkdir(packageRoot, { recursive: true })
+    await fs.writeFile(path.join(packageRoot, "SKILL.md"), "review skill")
+
+    await expect(applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github", owner: "acme", repo: "review" },
+          enabled: true,
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, {
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+      packageRoots: { review: packageRoot },
+    })).rejects.toThrow("no lock entry")
+
+    await expect(fs.stat(path.join(root, ".cursor", "skills", "review"))).rejects.toThrow()
+  })
+
+  test("refuses to materialize when the pushed source disagrees with the locked source", async () => {
+    const packageRoot = path.join(root, "packages", "review")
+    await fs.mkdir(packageRoot, { recursive: true })
+    await fs.writeFile(path.join(packageRoot, "SKILL.md"), "review skill")
+
+    await expect(applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          // The snapshot claims a repo the lock never pinned. Changing the
+          // pinned owner/repo/ref is a deliberate re-install, never something
+          // a pushed snapshot gets to do implicitly.
+          source: { type: "github", owner: "evil", repo: "review" },
+          enabled: true,
+          targets: ["cursor"],
+        },
+        lock: {
+          source: { type: "github", owner: "acme", repo: "review" },
+          resolved_sha: "abcdef1234567890",
+          component_digests: { package: await digestDirectory(packageRoot) },
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, {
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+      packageRoots: { review: packageRoot },
+    })).rejects.toThrow("does not match its locked source")
+
+    await expect(fs.stat(path.join(root, ".cursor", "skills", "review"))).rejects.toThrow()
+  })
+
+  test("refuses to re-materialize a package root that was tampered with after the first apply", async () => {
+    const packageRoot = path.join(root, "packages", "review")
+    await fs.mkdir(packageRoot, { recursive: true })
+    await fs.writeFile(path.join(packageRoot, "SKILL.md"), "review skill")
+    const snapshot = {
+      version: 1 as const,
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github" as const, owner: "acme", repo: "review" },
+          enabled: true,
+          targets: ["cursor"],
+        },
+        lock: {
+          source: { type: "github" as const, owner: "acme", repo: "review" },
+          resolved_sha: "abcdef1234567890",
+          component_digests: { package: await digestDirectory(packageRoot) },
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }
+    const options = {
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+      packageRoots: { review: packageRoot },
+    }
+
+    await applyRuntimeAgentExtensions(snapshot, root, { ...options, now: 100 })
+    await expect(fs.readFile(path.join(root, ".cursor", "skills", "review", "SKILL.md"), "utf8")).resolves.toBe("review skill")
+
+    await fs.writeFile(path.join(packageRoot, "SKILL.md"), "attacker payload")
+
+    await expect(applyRuntimeAgentExtensions(snapshot, root, { ...options, now: 200 }))
+      .rejects.toThrow("cache checksum mismatch")
+    // Nothing was rewritten: the ownership record still describes the first,
+    // verified apply.
+    await expect(fs.readFile(path.join(root, ".agent-extensions", "materialized.json"), "utf8").then(JSON.parse))
+      .resolves.toMatchObject({ packages: { review: { materialized_at: 100 } } })
+  })
+
+  test("does not grant first-party Claxedo MCP env rewriting to a package whose lock does not pin that source", async () => {
+    const packageRoot = path.join(root, "packages", "claxedo-mcp")
+    await fs.mkdir(packageRoot, { recursive: true })
+    await fs.writeFile(path.join(packageRoot, "mcp.json"), JSON.stringify({
+      servers: {
+        claxedo: { command: "node", args: ["server.js"], env: { CLAXEDO_SERVER_URL: "http://attacker.example" } },
+      },
+    }))
+    const source = {
+      type: "github" as const,
+      owner: "kyashrathore",
+      repo: "Claxedo",
+      ref: "dev",
+      package_path: "packages/claxedo-mcp",
+    }
+
+    await applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "claxedo-mcp",
+          package_name: "claxedo-mcp",
+          source,
+          enabled: true,
+          targets: ["cursor"],
+        },
+        // Lock pins the content but records no source, so the snapshot's claim
+        // to be the first-party package is unbacked and the package is
+        // materialized verbatim like any third party.
+        lock: {
+          resolved_sha: "abcdef1234567890",
+          component_digests: { package: await digestDirectory(packageRoot) },
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, {
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+      packageRoots: { "claxedo-mcp": packageRoot },
+    })
+
+    await expect(fs.readFile(path.join(root, ".cursor", "mcp.json"), "utf8").then(JSON.parse)).resolves.toEqual({
+      mcpServers: {
+        claxedo: { command: "node", args: ["server.js"], env: { CLAXEDO_SERVER_URL: "http://attacker.example" } },
+      },
+    })
+  })
+
   test("fetches from git once and reuses the runtime cache on later applies", async () => {
     const repo = path.join(root, "source")
     const bare = path.join(root, "source.git")
@@ -454,6 +662,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: sha,
+          component_digests: { package: await digestDirectory(path.join(repo, "packages", "review")) },
           targets: ["cursor"],
         },
         components: [],
@@ -553,7 +762,7 @@ describe("runtime Agent Extensions replay", () => {
     await fs.writeFile(path.join(firstRoot, "assets", "old.svg"), "old")
     await fs.writeFile(path.join(secondRoot, "SKILL.md"), "second skill")
 
-    const install = (sha: string) => ({
+    const install = (sha: string, digest: string) => ({
       version: 1,
       installs: [{
         desired: {
@@ -565,18 +774,19 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: sha,
+          component_digests: { package: digest },
           targets: ["cursor"],
         },
         components: [],
       }],
     })
 
-    await applyRuntimeAgentExtensions(install("abcdef1234567890"), root, {
+    await applyRuntimeAgentExtensions(install("abcdef1234567890", await digestDirectory(firstRoot)), root, {
       tempRoot: root,
       homeDir: path.join(root, "home"),
       packageRoots: { review: firstRoot },
     })
-    await applyRuntimeAgentExtensions(install("abcdef9999999999"), root, {
+    await applyRuntimeAgentExtensions(install("abcdef9999999999", await digestDirectory(secondRoot)), root, {
       tempRoot: root,
       homeDir: path.join(root, "home"),
       packageRoots: { review: secondRoot },
@@ -587,11 +797,13 @@ describe("runtime Agent Extensions replay", () => {
   })
 
   test("removes previously materialized owned artifacts when runtime replay disables an install", async () => {
+    const writePackage = async (dir: string) => {
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "SKILL.md"), "review skill")
+    }
+    const digest = await fixtureDigest(writePackage)
     const execFile = async (_file: string, args: string[]) => {
-      if (args[0] === "init") {
-        await fs.mkdir(args[1]!, { recursive: true })
-        await fs.writeFile(path.join(args[1]!, "SKILL.md"), "review skill")
-      }
+      if (args[0] === "init") await writePackage(args[1]!)
       return { stdout: "", stderr: "" }
     }
 
@@ -607,6 +819,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: digest },
           targets: ["cursor"],
         },
         components: [],
@@ -646,15 +859,17 @@ describe("runtime Agent Extensions replay", () => {
   })
 
   test("removes disabled runtime MCP entries without deleting unmanaged config", async () => {
+    const writePackage = async (dir: string) => {
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "mcp.json"), JSON.stringify({
+        servers: {
+          docs: { command: "node", args: ["docs.js"], env: {} },
+        },
+      }))
+    }
+    const digest = await fixtureDigest(writePackage)
     const execFile = async (_file: string, args: string[]) => {
-      if (args[0] === "init") {
-        await fs.mkdir(args[1]!, { recursive: true })
-        await fs.writeFile(path.join(args[1]!, "mcp.json"), JSON.stringify({
-          servers: {
-            docs: { command: "node", args: ["docs.js"], env: {} },
-          },
-        }))
-      }
+      if (args[0] === "init") await writePackage(args[1]!)
       return { stdout: "", stderr: "" }
     }
     const enabled = {
@@ -669,6 +884,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: digest },
           targets: ["cursor", "codex"],
         },
         components: [],
@@ -715,15 +931,17 @@ describe("runtime Agent Extensions replay", () => {
   })
 
   test("removes disabled OpenCode runtime MCP entries without deleting unmanaged config", async () => {
+    const writePackage = async (dir: string) => {
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, "mcp.json"), JSON.stringify({
+        servers: {
+          docs: { command: "node", args: ["docs.js"], env: {} },
+        },
+      }))
+    }
+    const digest = await fixtureDigest(writePackage)
     const execFile = async (_file: string, args: string[]) => {
-      if (args[0] === "init") {
-        await fs.mkdir(args[1]!, { recursive: true })
-        await fs.writeFile(path.join(args[1]!, "mcp.json"), JSON.stringify({
-          servers: {
-            docs: { command: "node", args: ["docs.js"], env: {} },
-          },
-        }))
-      }
+      if (args[0] === "init") await writePackage(args[1]!)
       return { stdout: "", stderr: "" }
     }
     const enabled = {
@@ -738,6 +956,7 @@ describe("runtime Agent Extensions replay", () => {
         },
         lock: {
           resolved_sha: "abcdef1234567890",
+          component_digests: { package: digest },
           targets: ["opencode"],
         },
         components: [],

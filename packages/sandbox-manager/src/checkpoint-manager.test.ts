@@ -21,6 +21,7 @@ function driver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
       hostResumeBehavior: "replacement-host",
       targetAccess: "relay",
       secretBrokering: "native",
+      egressControl: "hosts-and-cidrs",
       persistence: {
         resume: "replacement-restore",
         capture: "filesystem",

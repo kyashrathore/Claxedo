@@ -47,14 +47,17 @@ describe("deriveHostname", () => {
     })).toBe("web.myapp.localhost")
   })
 
-  test("appends 6-char workspaceId discriminator on pick-new", () => {
+  test("appends a hash-based workspaceId discriminator on pick-new", () => {
+    // Discriminator is sha256("abcdef1234567890").digest("hex").slice(0, 10),
+    // not a substring of the workspaceId itself — see the "discriminator
+    // collisions (regression)" describe block below for why that matters.
     expect(deriveHostname({
       portName: "web",
       workspaceName: "main",
       workspaceId: "abcdef1234567890",
       tld: "localhost",
       withDiscriminator: true,
-    })).toBe("web.main-abcdef.localhost")
+    })).toBe("web.main-840881e18c.localhost")
   })
 
   test("returns null when port name sanitizes to empty", () => {
@@ -82,7 +85,7 @@ describe("deriveHostname", () => {
       workspaceId: "abcdef1234567890",
       tld: "localhost",
       withDiscriminator: true,
-    })).toBe("web.abcdef.localhost")
+    })).toBe("web.840881e18c.localhost")
   })
 
   test("returns null on pick-new when workspaceId missing", () => {
@@ -111,6 +114,117 @@ describe("deriveHostname", () => {
       workspaceId: "ws_123",
       tld: "localhost",
     })).toBe("api-v2.my-app.localhost")
+  })
+})
+
+// Regression coverage for the hostname-collision bug: the discriminator used
+// to be `sanitize(workspaceId).slice(0, 6)`. For the real
+// `ws_<base36 millis>_<random>` id shape, six sanitized characters barely
+// clears the `ws-` prefix and lands inside the (slow-changing) timestamp, so
+// every workspace minted within the same ~46-hour window produced the same
+// discriminator — precisely when it needed to disambiguate. These tests
+// exercise the fixed hash-based scheme against that exact failure mode.
+describe("deriveHostname discriminator collisions (regression)", () => {
+  // Mirrors control-plane/workspace-id.ts's real shape: `ws_` + 8 base36
+  // timestamp chars + `_` + 16 random chars. idA/idB share everything but the
+  // last character of the random suffix — the old scheme could not tell
+  // these apart because six sanitized chars never reaches that far.
+  const idA = "ws_m1n2o3p4_nm0p1q2r3s4t5u6v"
+  const idB = "ws_m1n2o3p4_nm0p1q2r3s4t5u6w"
+
+  test("two ids sharing a timestamp prefix, differing only in the random suffix, produce different discriminators", () => {
+    // Sanity check that this pair really does defeat the old scheme (first 6
+    // sanitized chars identical) — confirms this test targets the real bug.
+    expect(sanitize(idA).slice(0, 6)).toBe(sanitize(idB).slice(0, 6))
+
+    const hostnameA = deriveHostname({
+      portName: "web",
+      workspaceName: "main",
+      workspaceId: idA,
+      tld: "localhost",
+      withDiscriminator: true,
+    })
+    const hostnameB = deriveHostname({
+      portName: "web",
+      workspaceName: "main",
+      workspaceId: idB,
+      tld: "localhost",
+      withDiscriminator: true,
+    })
+    expect(hostnameA).not.toBeNull()
+    expect(hostnameB).not.toBeNull()
+    expect(hostnameA).not.toBe(hostnameB)
+  })
+
+  test("a batch of 100 realistic ids minted in the same window all produce distinct hostnames", () => {
+    // Same `ws_<millis>_` prefix for every id (same millisecond window is the
+    // whole point of the bug); sequential suffixes stand in for the random
+    // part real ids carry, varying only near the end of the string exactly
+    // like real random suffixes do.
+    const hostnames = new Set<string>()
+    for (let i = 0; i < 100; i++) {
+      const workspaceId = `ws_m1n2o3p4_${String(i).padStart(16, "0")}`
+      const hostname = deriveHostname({
+        portName: "web",
+        workspaceName: "main",
+        workspaceId,
+        tld: "localhost",
+        withDiscriminator: true,
+      })
+      expect(hostname).not.toBeNull()
+      hostnames.add(hostname as string)
+    }
+    expect(hostnames.size).toBe(100)
+  })
+
+  test("the same workspace id yields an identical hostname across repeated calls", () => {
+    const input = {
+      portName: "web",
+      workspaceName: "main",
+      workspaceId: idA,
+      tld: "localhost",
+      withDiscriminator: true,
+    }
+    const first = deriveHostname(input)
+    const second = deriveHostname(input)
+    const third = deriveHostname({ ...input })
+    expect(first).not.toBeNull()
+    expect(second).toBe(first)
+    expect(third).toBe(first)
+  })
+
+  test("stays within DNS label limits and uses only legal characters with a long workspaceName (discriminator path)", () => {
+    const longName = "a".repeat(200)
+    const hostname = deriveHostname({
+      portName: "web",
+      workspaceName: longName,
+      workspaceId: idA,
+      tld: "localhost",
+      withDiscriminator: true,
+    })
+    expect(hostname).not.toBeNull()
+    const wsLabel = (hostname as string).split(".")[1]!
+    expect(wsLabel.length).toBeLessThanOrEqual(63)
+    expect(wsLabel).toMatch(/^[a-z0-9-]+$/)
+    expect(wsLabel.startsWith("-")).toBe(false)
+    expect(wsLabel.endsWith("-")).toBe(false)
+    // The 10-hex-char discriminator must survive truncation in full — it's
+    // the part actually doing disambiguation, so it's never what gets cut.
+    expect(wsLabel).toMatch(/-[0-9a-f]{10}$/)
+  })
+
+  test("stays within DNS label limits and uses only legal characters with a long workspaceName (no discriminator)", () => {
+    const longName = "b".repeat(200)
+    const hostname = deriveHostname({
+      portName: "web",
+      workspaceName: longName,
+      workspaceId: undefined,
+      tld: "localhost",
+    })
+    expect(hostname).not.toBeNull()
+    const wsLabel = (hostname as string).split(".")[1]!
+    expect(wsLabel.length).toBeLessThanOrEqual(63)
+    expect(wsLabel).toMatch(/^[a-z0-9-]+$/)
   })
 })
 

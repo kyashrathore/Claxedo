@@ -6,6 +6,11 @@ import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/hosted-device-auth"
+import {
+  configureCliSessionTokenRegistry,
+  type CliSessionTokenRegistry,
+} from "./control-plane/cli-session-registry"
+import { durableCliSessionTokenRegistry } from "./test-helpers/cli-session-registry"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount
@@ -15,7 +20,17 @@ import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/
 const originalFetch = globalThis.fetch
 
 function fakePlane(
-  input: { sandboxManager?: SandboxManager; deviceAuthProvider?: HostedDeviceAuthProvider } = {},
+  input: {
+    sandboxManager?: SandboxManager
+    deviceAuthProvider?: HostedDeviceAuthProvider
+    /**
+     * The plane's durable CLI session token registry. Tests that mint on one
+     * app and verify on another must pass the SAME one to both: in production
+     * every isolate reads the same Convex table, and a per-plane registry would
+     * make a token minted by one app read as `unknown` on the next.
+     */
+    cliSessionTokenRegistry?: CliSessionTokenRegistry
+  } = {},
 ): HostedControlPlane {
   const services = {
     auth: {
@@ -107,6 +122,7 @@ function fakePlane(
       ...(input.sandboxManager ? { sandboxManager: input.sandboxManager } : {}),
       telemetry: services.telemetry,
     }),
+    cliSessionTokenRegistry: input.cliSessionTokenRegistry ?? durableCliSessionTokenRegistry().registry,
     ...(input.deviceAuthProvider ? { deviceAuthProvider: input.deviceAuthProvider } : {}),
     // D9: hosted apps must declare their mode explicitly. No JWKS keys
     // configured → /.well-known/jwks.json returns 503.
@@ -129,6 +145,8 @@ async function ed25519Pair() {
 describe("hosted app", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
+    // Back to fail-closed: no test may inherit another's CLI token registry.
+    configureCliSessionTokenRegistry(undefined)
   })
 
   test("health reports hosted mode without local execution", async () => {
@@ -322,8 +340,16 @@ describe("hosted app", () => {
   })
 
   test("browser CLI exchange issues a refreshable self-host token without configured device login", async () => {
+    // CLI session tokens are revocable: mint and verify both consult a `jti`
+    // registry and fail closed without one. Nothing is installed here on
+    // purpose — `createHostedApp` installs the plane's registry, so this test
+    // exercises the production wiring instead of reaching around it, and it
+    // fails if that wiring is ever removed. The registry itself is the real
+    // adapter stack over the real convex/cliSessionTokens.ts handlers (see
+    // test-helpers/cli-session-registry.ts); only the Convex deployment is fake.
+    const durable = durableCliSessionTokenRegistry().registry
     const keys = await ed25519Pair()
-    const plane = fakePlane()
+    const plane = fakePlane({ cliSessionTokenRegistry: durable })
     plane.env = {
       ...plane.env,
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
@@ -366,7 +392,9 @@ describe("hosted app", () => {
       expires_in: 600,
     })
 
-    const fallbackPlane = fakePlane()
+    // Same registry: a second isolate reads the same durable table, so the
+    // token minted above must still verify here.
+    const fallbackPlane = fakePlane({ cliSessionTokenRegistry: durable })
     fallbackPlane.env = plane.env
     fallbackPlane.services.auth.verifier = vi.fn(async () => {
       throw new Error("not a clerk token")

@@ -30,6 +30,7 @@ describe("Convex generated API artifacts", () => {
       "auditEvents",
       "billing",
       "channelIdentities",
+      "cliSessionTokens",
       "crons",
       "http",
       "localHostLinks",

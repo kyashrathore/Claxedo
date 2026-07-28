@@ -77,11 +77,14 @@ describe("Agent Extension GitHub fetch", () => {
       execFile,
     })
 
+    // The checkout names the resolved SHA rather than FETCH_HEAD so a remote
+    // that served a different commit fails the checkout instead of quietly
+    // becoming the content we cache and lock.
     expect(commands.map((item) => item.args.slice(0, 3))).toEqual([
       ["init", commands[0]!.args[1]!],
       ["remote", "add", "origin"],
       ["fetch", "--depth", "1"],
-      ["checkout", "--detach", "FETCH_HEAD"],
+      ["checkout", "--detach", "0123456789abcdef0123456789abcdef01234567"],
     ])
     await expect(fs.readFile(path.join(result.path, "SKILL.md"), "utf8")).resolves.toBe("skill")
     await expect(fs.stat(commands[0]!.args[1]!)).rejects.toThrow()

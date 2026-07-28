@@ -7,6 +7,9 @@ import {
   type ProviderAuthService,
 } from "../provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "./control-plane-route-auth"
+import { requestOrg } from "./credential"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../control-plane/auth"
+import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 import { errorBody } from "./http"
 
 const authorizeBody = z.object({
@@ -21,6 +24,13 @@ const callbackBody = z.object({
 
 type ProviderAuthRouteOptions = ControlPlaneRouteAuthOptions & {
   service?: ProviderAuthService
+  /**
+   * Test/composition override for tenant resolution, matching
+   * `CredentialRoutesOptions.resolveOrg`. Left unset, the OAuth routes resolve
+   * the caller's org through the credential router's `requestOrg` — the same
+   * function, not a second copy of the rules.
+   */
+  resolveOrg?: (request: Request) => Promise<string> | string
   /**
    * Answered by a LATER-registered `/provider/auth` when this returns true.
    *
@@ -44,6 +54,7 @@ function authError(error: unknown) {
   return errorBody("provider_auth_failed", error instanceof Error ? error.message : String(error))
 }
 
+
 /**
  * Gated because a control-plane router with no per-route verification is open
  * the moment signed auth is enabled — and here there is more at stake than a
@@ -59,12 +70,38 @@ function authError(error: unknown) {
 export function ProviderAuthRoutes(services: ControlPlaneServices, options: ProviderAuthRouteOptions = {}) {
   const service = options.service ?? createProviderAuthService(services.credentials)
 
+  /**
+   * The tenant each OAuth request runs as, resolved once and read by both
+   * handlers so neither can run unscoped.
+   *
+   * The in-flight authorization the callback consumes lives in a server-side
+   * map. Without a tenant in its key, org A could complete an authorization
+   * org B had started and take delivery of its provider token; and the
+   * callback's `deleteCredentialsByProvider` + `putCredential` pair ran against
+   * the single-tenant partition for every caller. Resolution is the credential
+   * router's own `requestOrg`, so an OAuth login lands in exactly the partition
+   * the credential list reads back from.
+   */
+  const orgs = new WeakMap<Request, string>()
+  const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
+
   return new Hono()
     // Registered BEFORE the routes below, so it runs first for every
     // `/provider/*` request — including one the handler defers with `next()`.
     // The fall-through therefore reaches the compat route already authenticated
     // rather than around the gate. `provider-auth-defer-gate.test.ts` pins that.
     .use("/provider/*", controlPlaneRouteAuth(options))
+    // Scoped to the OAuth paths only: `/provider/auth` may be deferred to the
+    // harness compat route, which has no tenant of its own to resolve.
+    .use("/provider/:providerId/oauth/*", async (c, next) => {
+      try {
+        orgs.set(c.req.raw, await requestOrg(c.req.raw, options))
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        throw error
+      }
+      await next()
+    })
     .get("/provider/auth", async (c, next) => {
       const harness = c.req.query("harness") ?? c.req.query("runner") ?? undefined
       if (await options.deferToHarnessRoute?.(harness)) return next()
@@ -78,6 +115,7 @@ export function ProviderAuthRoutes(services: ControlPlaneServices, options: Prov
           providerId: c.req.param("providerId"),
           method: body.data.method,
           inputs: body.data.inputs,
+          org: org(c.req.raw),
         }))
       } catch (error) {
         return c.json(authError(error), 400)
@@ -91,6 +129,7 @@ export function ProviderAuthRoutes(services: ControlPlaneServices, options: Prov
           providerId: c.req.param("providerId"),
           method: body.data.method,
           code: body.data.code,
+          org: org(c.req.raw),
         }))
       } catch (error) {
         return c.json(authError(error), 400)

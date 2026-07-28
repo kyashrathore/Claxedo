@@ -1109,7 +1109,13 @@ describe("hosted cloud workspace create (POST /create)", () => {
     })
     // provisioning kicked off for the same workspace id (fire-and-forget)
     await Promise.resolve()
-    expect(ensure).toHaveBeenCalledWith(body.workspaceId, {
+    expect(ensure).toHaveBeenCalledTimes(1)
+    const [ensuredWorkspaceId, ensured] = ensure.mock.calls[0] as unknown as [
+      string,
+      Record<string, unknown>,
+    ]
+    expect(ensuredWorkspaceId).toBe(body.workspaceId)
+    expect(ensured).toMatchObject({
       homeRegion: "us-east",
       labels: {
         projectId: "proj_1",
@@ -1120,6 +1126,10 @@ describe("hosted cloud workspace create (POST /create)", () => {
         repoUrl: "https://github.com/a/b",
       },
     })
+    // Hosted creates are always egress-contained (security review §6.14). The
+    // allowlist contents are pinned in `hosted-workspace-egress.test.ts`; what
+    // matters here is that this call site cannot go back to allow-all.
+    expect(ensured.net).toMatchObject({ mode: "restricted" })
   })
 
   test("rejects hosted cloud create without a clone source", async () => {

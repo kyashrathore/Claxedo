@@ -33,6 +33,7 @@
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "./cors-origins"
+import { securityHeaders } from "./security-headers"
 import { JwksRoutes } from "./control-plane/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "./routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./routes/hosted-workspace"
@@ -45,6 +46,7 @@ import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
 import { HostedControlRoutes } from "./routes/hosted-control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
+import { configureCliSessionTokenRegistry } from "./control-plane/cli-session-registry"
 import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import { BillingRoutes } from "./billing/billing-routes"
@@ -224,6 +226,15 @@ function assertHostedAppBootConfig(plane: HostedControlPlane) {
 
 export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
   assertHostedAppBootConfig(plane)
+  // Install the plane's durable CLI session token registry process-wide.
+  //
+  // This is the `configureX(...)` composition seam the registry port defines,
+  // and this is the right moment to call it: the CLI routes are mounted below,
+  // and CLI bearer verification happens deep inside `controlPlaneAuthContext`
+  // on every request, far from any place a registry could be threaded through
+  // by hand. Without this line minting returns 503 and no CLI bearer verifies —
+  // the port fails closed when nothing is configured, on purpose.
+  configureCliSessionTokenRegistry(plane.cliSessionTokenRegistry)
   const { services } = plane
   const app = new Hono()
   const liveSyncRoom = overrides.liveSyncRoom
@@ -300,6 +311,15 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     }
     return workgraph.router.fetch(request)
   }
+
+  // Outermost middleware ON PURPOSE, registered ahead of CORS so it also
+  // covers the preflight response CORS short-circuits, the 404 handler, and
+  // anything `onError` produces. Registering it here — once, at composition —
+  // is what makes "no hosted route can ship without security headers" a
+  // property of the shell rather than a per-route review item.
+  // See src/security-headers.ts for why its CSP is safe to ENFORCE (this app
+  // serves no HTML) and why HSTS is gated on HTTPS.
+  app.use(securityHeaders())
 
   app.use(
     corsMiddleware(

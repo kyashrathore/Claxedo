@@ -95,6 +95,9 @@ materializer helpers live only in `@claxedo/agent-extensions`;
   and materialize extension packages across harness targets.
 - [Relay And Deployment](./relay-and-deployment.md): local, private VM,
   config-token, and relay-attached runtime shapes.
+- [Sandbox Egress Containment](./sandbox-egress.md): which drivers can contain a
+  sandbox's outbound network, which production configurations run unrestricted,
+  and how to get enforcement.
 - [Self-Host on Fly.io](./self-host-fly.md): the `claxedo deploy` wizard —
   a zero-Convex/Clerk unsigned single-user control plane on your own Fly account.
 - [MCP](./mcp.md): current MCP server tools and environment variables.

@@ -185,15 +185,50 @@ function orgWorkspaceRole(role: OrgRole) {
   return "viewer"
 }
 
-async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
-  const org = await db.get(orgId as never)
-  if (org?.deleted_at) return
+// The user's role in an ORG, straight from `org_memberships` — deliberately
+// distinct from `directOrgRole`, which projects that role onto a WORKSPACE.
+// Anything asking "may this caller act on the whole org?" must read this, not a
+// workspace role: a workspace role can be conferred by a single-workspace share
+// grant that carries no org membership at all (see `orgAdminForUser`).
+export async function orgMembershipRole(db: Db, userId: unknown, orgId: unknown) {
   const memberships = await db
     .query("org_memberships")
     .withIndex("by_org_user", (q) => q.eq("org_id", orgId))
     .collect()
   const membership = memberships.find((item) => item.user_id === userId)
-  return typeof membership?.role === "string" ? orgWorkspaceRole(membership.role as OrgRole) : undefined
+  return typeof membership?.role === "string" ? membership.role as OrgRole : undefined
+}
+
+// Pre-launch security review §4.2 — the authority bar for org-WIDE writes.
+//
+// `authorizeWorkspace(workspace, "admin")` proves authority over one workspace
+// and says nothing about the org: `shareRole` above resolves
+// `workspace_share_grants` with no `org_memberships` lookup anywhere, so an
+// outsider handed a narrow single-workspace admin share passes it. That share
+// is intentional and correct; what is not correct is treating it as proof of
+// org authority.
+//
+// The bar is org ADMIN, not mere membership, because `orgWorkspaceRole` above
+// already maps a plain org "member" to a workspace VIEWER — read-only. Letting
+// that same member perform an org-wide write would hand them more authority
+// org-wide than the model gives them on any single workspace in it.
+//
+// `owner_user_id` counts even without a membership row: `requireWorkGraphOwner`
+// in convex/workspaces.ts already treats the two as equivalent, and orgs
+// created before the membership row existed would otherwise have no admin.
+export async function orgAdminForUser(db: Db, userId: unknown, orgId: unknown) {
+  const org = await db.get(orgId as never)
+  if (!org || org.deleted_at) return false
+  const role = await orgMembershipRole(db, userId, orgId)
+  if (role) return role === "owner" || role === "admin"
+  return org.owner_user_id === userId
+}
+
+async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
+  const org = await db.get(orgId as never)
+  if (org?.deleted_at) return
+  const role = await orgMembershipRole(db, userId, orgId)
+  return role ? orgWorkspaceRole(role) : undefined
 }
 
 async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
@@ -291,6 +326,18 @@ export async function userByTokenIdentifier(db: Db, tokenIdentifier: string) {
     .unique()
 }
 
+/**
+ * Hex SHA-256. Used where a durable record must OUTLIVE the rows it describes
+ * without retaining their identity — see `workgraph_owner_deletion_receipts`
+ * and `org_deletion_receipts`. Self-contained (`crypto.subtle` is available in
+ * the Convex runtime) because the convex bundle cannot import from
+ * packages/claxedo-server.
+ */
+export async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export async function userByClerkSubject(db: Db, clerkSubject: string) {
   return await db
     .query("users")
@@ -375,10 +422,21 @@ function controlPlaneServiceTokens() {
 // match the timing-safe posture the webhook/web-crypto verifiers use rather
 // than a short-circuiting `!==` (F15). Self-contained because the convex
 // bundle cannot import from packages/claxedo-server.
+//
+// Loop structure deliberately mirrors `timingSafeEqualStrings` in
+// packages/claxedo-server/src/control-plane/web-crypto.ts so the two copies do
+// not drift: iterate to the LONGER length and treat a missing character as 0.
+// The previous `i % b.length` wraparound was not exploitable (the loop ran over
+// the caller-supplied value, never the secret, and an empty expected value is
+// filtered out before it gets here) but it was a different shape for no reason,
+// and `i % 0` on an empty `b` is a latent NaN.
 function timingSafeEqual(a: string, b: string): boolean {
   let diff = a.length ^ b.length
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i % b.length)
+  const length = Math.max(a.length, b.length)
+  for (let i = 0; i < length; i++) {
+    // `charCodeAt` out of range is NaN; `|| 0` normalizes it (a real NUL is
+    // already 0, so the two collapse identically).
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
   }
   return diff === 0
 }

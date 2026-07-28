@@ -66,8 +66,11 @@ project path via `copyPackageToCache`, or from GitHub via
 4. reads back `materialized.json` to return the caller a concrete result
 
 **materialize** (`src/materialize.ts`) is the pure application step. Given a
-list of desired installs plus a map of `{ id: packageRoot }`, it discovers
-each package's components (`discoverAgentExtensionComponents`,
+list of desired installs plus a map of `{ id: packageRoot }`, it first runs
+every package root through `verifyPackageIntegrity` (`src/integrity.ts`) —
+all of them, before any of them writes, so a package that verifies alongside
+one that fails can't leave applied-but-unowned artifacts on disk. Then it
+discovers each package's components (`discoverAgentExtensionComponents`,
 `src/discovery.ts` — walks `skills/`, `mcp/`, `plugins/cursor/`, `hooks/`),
 dispatches each discovered component to the matching materializer for each
 target runner, and writes the resulting `MaterializedComponent` list back
@@ -85,9 +88,13 @@ snapshot's `desired`/`lock` fields, resolves each install's package root
 (from a caller-supplied override, a project-relative path, or by fetching
 the resolved SHA from GitHub into the state root's `cache/` directory), and
 then calls the same `materializeAgentExtensionSnapshot` used by the lifecycle
-commands. Every fetched package root is checksummed against the lock's
-digest before it's trusted (`verifyPackageDigest`); a mismatch discards the
-cache entry and refetches once before giving up. Concurrent replay calls are
+commands. Every package root is checksummed against the lock's digest before
+it's trusted (`verifyPackageDigest` → `verifyPackageIntegrity`); a mismatch on
+a *fetched* root discards the cache entry and refetches once before giving up,
+because a partial copy from an old crash would otherwise poison every future
+replay. Any other integrity failure — no lock, no resolved SHA, no recorded
+digest, a source that disagrees with the locked one — is refused outright: a
+refetch cannot make an unpinnable install verifiable. Concurrent replay calls are
 serialized through a module-level `applyQueue` promise chain so overlapping
 `applyRuntimeAgentExtensions` calls in one process run one at a time, on top
 of the cross-process lock described below.
@@ -189,8 +196,9 @@ as-is for compatibility with older processes that might still be running
 against the same state root during a rolling deploy.
 
 This is a distinct mechanism from `lock.json` / `ExtensionLock`
-(`src/lock.ts`): that file records what package content is trusted
-(resolved SHA and digests) so replay can verify a fetched or cached package
-root before materializing it. `withAgentExtensionStateLock` is the mutex
+(`src/lock.ts`): that file records what package content is trusted (source
+tuple, resolved SHA, and digests) so materialization can verify a fetched or
+cached package root before writing it. A remote install with nothing pinned
+there cannot be materialized at all. `withAgentExtensionStateLock` is the mutex
 that protects concurrent writes to that file (and to `installed.json` and
 `materialized.json`) from interleaving in the first place.

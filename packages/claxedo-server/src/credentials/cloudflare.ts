@@ -14,31 +14,39 @@
 
 import type { SecretBackend } from "./types"
 import { Log } from "../log"
-import { encryptedSecretBackend, envelopeKeyProviderFromEnv, type EnvelopeKeyProvider } from "./envelope"
+import {
+  encryptedSecretBackend,
+  envelopeKeyProviderFromEnv,
+  type EnvelopeAdmin,
+  type EnvelopeKeyProvider,
+} from "./envelope"
 
 const log = Log.create({ service: "credentials-cloudflare" })
 
 type EnvLike = Record<string, string | undefined>
+
+function kvHeaders(env: EnvLike) {
+  const token = env.CLAXEDO_CF_KV_TOKEN?.trim()
+  if (!token) throw new Error("CLAXEDO_CF_KV_TOKEN not configured")
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  }
+}
+
+function kvBaseUrl(env: EnvLike) {
+  const url = env.CLAXEDO_CF_KV_URL?.trim()
+  if (!url) throw new Error("CLAXEDO_CF_KV_URL not configured")
+  return url.replace(/\/$/, "")
+}
 
 /**
  * Raw Cloudflare KV byte store. INTERNAL ON PURPOSE: it stores whatever bytes
  * it is given, so exporting it would reopen the plaintext hole. Do not export.
  */
 function createCloudflareKvByteStore(env: EnvLike): SecretBackend {
-  function headers() {
-    const token = env.CLAXEDO_CF_KV_TOKEN?.trim()
-    if (!token) throw new Error("CLAXEDO_CF_KV_TOKEN not configured")
-    return {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    }
-  }
-
-  function baseUrl() {
-    const url = env.CLAXEDO_CF_KV_URL?.trim()
-    if (!url) throw new Error("CLAXEDO_CF_KV_URL not configured")
-    return url.replace(/\/$/, "")
-  }
+  const headers = () => kvHeaders(env)
+  const baseUrl = () => kvBaseUrl(env)
 
   return {
     async put(id, secret) {
@@ -115,7 +123,7 @@ export function createEncryptedCloudflareBackend(opts: {
   env?: EnvLike
   /** Override the env-sourced KEK provider (tests / future CF Secrets Store). */
   keyProvider?: EnvelopeKeyProvider
-}): SecretBackend {
+}): SecretBackend & EnvelopeAdmin {
   const env = opts.env ?? process.env
   for (const name of ["CLAXEDO_CF_KV_URL", "CLAXEDO_CF_KV_TOKEN"] as const) {
     if (!env[name]?.trim()) {
@@ -124,4 +132,67 @@ export function createEncryptedCloudflareBackend(opts: {
   }
   const keys = opts.keyProvider ?? envelopeKeyProviderFromEnv(env)
   return encryptedSecretBackend(createCloudflareKvByteStore(env), keys, { orgId: opts.orgId })
+}
+
+/**
+ * Enumerate the KV KEY NAMES the credential backend owns — the only sanctioned
+ * enumeration of the hosted store, and the reason a KEK rotation can be
+ * completed at all: KV has no other directory, and `hostedOrgCredentials`
+ * deliberately returns `[]` from `listCredentials`.
+ *
+ * This is NOT a hole in the D10 posture and must not grow into one: it reads
+ * `/keys`, which returns names only, and has no path that returns a VALUE. A
+ * key name is `cf:org/<orgId>/credential/<providerId>` — routing information
+ * the KV token holder can already list; the secret stays behind the envelope.
+ *
+ * Names are returned verbatim because the KV key name IS the backend `ref`
+ * (`put` stores under `cf:<id>` and `get` fetches `/values/<ref>`), so the
+ * result feeds straight into a rotation sweep. Foreign keys that do not carry
+ * the `cf:` scheme are dropped: they were not written by this backend.
+ */
+export async function listCloudflareCredentialRefs(opts: {
+  env?: EnvLike
+  /** Restrict to one prefix (e.g. `cf:org/<orgId>/`). */
+  prefix?: string
+  /** Page size; Cloudflare caps this at 1000. */
+  pageSize?: number
+  fetchImpl?: typeof fetch
+} = {}): Promise<string[]> {
+  const env = opts.env ?? process.env
+  const request = opts.fetchImpl ?? fetch
+  const base = kvBaseUrl(env)
+  const headers = kvHeaders(env)
+  const refs: string[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+
+  while (true) {
+    const url = new URL(`${base}/keys`)
+    url.searchParams.set("limit", String(opts.pageSize ?? 1000))
+    if (opts.prefix) url.searchParams.set("prefix", opts.prefix)
+    if (cursor) url.searchParams.set("cursor", cursor)
+
+    const res = await request(url.toString(), { headers, signal: AbortSignal.timeout(30_000) })
+    if (!res.ok) {
+      log.error("Cloudflare KV key listing failed", { status: res.status })
+      throw new Error(`Cloudflare KV key listing failed: ${res.status}`)
+    }
+    const body = await res.json() as {
+      result?: Array<{ name?: unknown }>
+      result_info?: { cursor?: unknown }
+    }
+    const page = Array.isArray(body.result) ? body.result : []
+    for (const entry of page) {
+      if (typeof entry?.name === "string" && entry.name.startsWith("cf:")) refs.push(entry.name)
+    }
+
+    const next = typeof body.result_info?.cursor === "string" ? body.result_info.cursor.trim() : ""
+    // Terminate on an empty/absent cursor (Cloudflare's end-of-list signal) and
+    // on a repeated one, so a misbehaving proxy cannot spin this loop forever.
+    if (!next || seenCursors.has(next) || page.length === 0) break
+    seenCursors.add(next)
+    cursor = next
+  }
+
+  return refs
 }

@@ -24,9 +24,38 @@ describe("cloudflare KV backend guard", () => {
   })
 
   test("the raw (unwrapped) KV backend is not exported — only the encrypted factory is", () => {
-    expect(Object.keys(cloudflare).sort()).toEqual(["createEncryptedCloudflareBackend"])
+    // `listCloudflareCredentialRefs` is the KEK-rotation enumeration and is NOT
+    // a byte-store escape hatch: it reads `/keys`, which returns NAMES only,
+    // and exposes no path that returns a VALUE. Anything added here that can
+    // return a stored value reopens the D10 plaintext hole.
+    expect(Object.keys(cloudflare).sort()).toEqual([
+      "createEncryptedCloudflareBackend",
+      "listCloudflareCredentialRefs",
+    ])
     expect((cloudflare as Record<string, unknown>)["createCloudflareBackend"]).toBeUndefined()
     expect((cloudflare as Record<string, unknown>)["createCloudflareKvByteStore"]).toBeUndefined()
+  })
+
+  test("the ref lister never touches /values — it can only enumerate key names", async () => {
+    const urls: string[] = []
+    const listed = await cloudflare.listCloudflareCredentialRefs({
+      env: { ...FULL_ENV },
+      fetchImpl: (async (input: string | URL) => {
+        urls.push(String(input))
+        return new Response(
+          JSON.stringify({
+            result: [{ name: "cf:org/org-a/credential/openai" }, { name: "unrelated:key" }],
+            result_info: { cursor: "" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      }) as typeof fetch,
+    })
+
+    expect(listed).toEqual(["cf:org/org-a/credential/openai"])
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toContain("/keys?")
+    expect(urls.some((url) => url.includes("/values/"))).toBe(false)
   })
 
   test("construction fails closed without the envelope KEK", () => {

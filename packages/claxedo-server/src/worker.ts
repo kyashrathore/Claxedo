@@ -31,6 +31,7 @@ import { createHostedApp, type HostedAppOverrides } from "./hosted-app"
 import { runScheduledBillingReconciliation } from "./billing/reconcile"
 import { reportError, setErrorReporterSink } from "./observability/report"
 import { observabilityOptions, type ObservabilityEnv } from "./observability/config"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "./security-headers"
 import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
 import { skipOverlappingReconcile } from "./workgraph-host/reconcile-serialize"
 import type { WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
@@ -251,11 +252,19 @@ export function createHostedDocumentJobReauthorizer(services: Pick<HostedControl
   }
 }
 
-function compositionErrorResponse(err: HostedWorkerCompositionError): Response {
+function compositionErrorResponse(err: HostedWorkerCompositionError, request: Request): Response {
   // Fail closed and loud when a required hosted dependency/secret is missing.
-  return Response.json(
-    { error: { code: err.code, message: err.message } },
-    { status: 503 },
+  //
+  // This is the ONE hosted response that never reaches the Hono app — the app
+  // failed to compose, so `hosted-app.ts`'s outermost `securityHeaders()`
+  // middleware never runs. Stamp the same set by hand: a misconfigured deploy
+  // answering EVERY request must not also be the deploy that answers every
+  // request without `nosniff` or a CSP.
+  return withSecurityHeaders(
+    Response.json({ error: { code: err.code, message: err.message } }, { status: 503 }),
+    securityHeaderEntries({
+      https: requestIsHttps({ url: request.url, header: (name) => request.headers.get(name) ?? undefined }),
+    }),
   )
 }
 
@@ -276,7 +285,7 @@ const handler = {
         // A misconfigured hosted deploy is exactly the incident nobody sees
         // without error tracking; one issue groups the whole flood.
         reportError(err, { tags: { source: "worker_composition" } })
-        return compositionErrorResponse(err)
+        return compositionErrorResponse(err, request)
       }
       reportError(err, { tags: { source: "worker_boot" } })
       throw err

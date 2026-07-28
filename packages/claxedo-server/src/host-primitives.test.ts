@@ -119,6 +119,7 @@ describe("host primitives package surface", () => {
           hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
           targetAccess: "relay",
           secretBrokering: "none",
+          egressControl: "hosts-and-cidrs",
           persistence: {
             resume: "same-sandbox",
             capture: "none",
