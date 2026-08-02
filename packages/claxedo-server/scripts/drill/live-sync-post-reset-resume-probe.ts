@@ -31,7 +31,7 @@ const ORG = "org_resume_probe"
 const bundled = await build({
   stdin: {
     contents: `
-      import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/live-sync-room.ts", import.meta.url).pathname)}
+      import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/deployments/hosted-workerd/live-sync-room.cf.ts", import.meta.url).pathname)}
       export { LiveSyncRoom }
       export default {
         fetch(request, env) {

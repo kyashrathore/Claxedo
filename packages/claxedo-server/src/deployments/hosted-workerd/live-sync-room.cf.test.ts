@@ -11,9 +11,9 @@ import {
   type LiveSyncRoomState,
   type LiveSyncSocket,
   type LiveSyncSubscriber,
-} from "./live-sync-room"
-import type { ClaxedoEvent } from "./bus"
-import type { ControlPlaneAuthContext } from "./control-plane/auth"
+} from "./live-sync-room.cf"
+import type { ClaxedoEvent } from "../../bus"
+import type { ControlPlaneAuthContext } from "../../control-plane/auth"
 
 // A faithful in-memory emulation of the Cloudflare DO namespace contract:
 // `idFromName(name)` is deterministic and `get(id)` returns a stub bound to the

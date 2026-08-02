@@ -3,7 +3,7 @@ import type { ControlPlaneAuthContext } from "../control-plane/auth"
 
 // Worker-safe home of the per-event visibility predicate. Both the local Node
 // bus SSE (`routes/events.ts`) and the hosted `LiveSyncRoom` Durable Object
-// (`src/live-sync-room.ts`) import this ONE function so the central event
+// (`src/deployments/hosted-workerd/live-sync-room.cf.ts`) import this ONE function so the central event
 // stream applies identical scoping in both deployments. The imports here are
 // TYPE-ONLY (both `ClaxedoEvent` and `ControlPlaneAuthContext` erase at build),
 // so nothing runtime (e.g. the process-local `claxedoBus`) is pulled — this

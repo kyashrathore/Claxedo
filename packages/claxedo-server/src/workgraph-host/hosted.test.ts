@@ -16,7 +16,7 @@ import type { WorkspaceAuthority } from "../control-plane/authority"
 import { createHostedWorkGraph } from "./hosted"
 import type { SettlementDispatcher } from "./settlement-dispatcher"
 import type { ClaxedoEvent } from "../bus"
-import type { LiveSyncRoomNamespace } from "../live-sync-room"
+import type { LiveSyncRoomNamespace } from "../deployments/hosted-workerd/live-sync-room.cf"
 
 afterEach(() => vi.unstubAllEnvs())
 

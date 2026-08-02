@@ -2,14 +2,14 @@ import {
   composeHostedControlPlane,
   HostedWorkerCompositionError,
   type HostedWorkerEnv,
-} from "../control-plane/hosted-services"
-import { reportError } from "../observability/report"
-import { createHostedWorkGraphRuntime } from "./hosted-runtime"
+} from "../../control-plane/hosted-services"
+import { reportError } from "../../observability/report"
+import { createHostedWorkGraphRuntime } from "../../workgraph-host/hosted-runtime"
 import {
   settlementTenantKey,
   type SettlementDispatcher,
   type SettlementTenant,
-} from "./settlement-dispatcher"
+} from "../../workgraph-host/settlement-dispatcher"
 
 const MAX_BACKOFF_MS = 30_000
 const MIN_BACKOFF_MS = 1_000

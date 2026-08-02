@@ -17,7 +17,7 @@ import {
   type CliSessionTokenRegistry,
 } from "./control-plane/cli-session-registry"
 import { durableCliSessionTokenRegistry } from "./test-helpers/cli-session-registry"
-import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
+import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import type { DocumentsRouteBackend } from "./routes/documents"
 

@@ -7,7 +7,7 @@ import {
   wakeLaneName,
   type WakeLaneNamespace,
   type WakeLaneStorage,
-} from "./wake-lane"
+} from "./wake-lane.cf"
 
 function fakeStorage(): WakeLaneStorage & { alarm: number | null; data: Map<string, unknown> } {
   const data = new Map<string, unknown>()

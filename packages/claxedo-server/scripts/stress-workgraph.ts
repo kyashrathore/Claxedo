@@ -12,7 +12,7 @@ import schema from "../../../convex/schema"
 import { createHostedWorkGraph } from "../src/workgraph-host/hosted"
 import type { ClaxedoEvent } from "../src/bus"
 import type { WorkspaceAuthority } from "../src/control-plane/authority"
-import type { LiveSyncRoomNamespace } from "../src/live-sync-room"
+import type { LiveSyncRoomNamespace } from "../src/deployments/hosted-workerd/live-sync-room.cf"
 
 declare global {
   interface ImportMeta {

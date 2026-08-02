@@ -122,7 +122,7 @@ async function bundleWorker() {
       contents: `
         import { Hono } from "hono"
         import { HostedShellRoutes } from ${JSON.stringify(new URL("../../src/routes/hosted-shell.ts", import.meta.url).pathname)}
-        import { LiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/live-sync-room.ts", import.meta.url).pathname)}
+        import { LiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/deployments/hosted-workerd/live-sync-room.cf.ts", import.meta.url).pathname)}
 
         export { LiveSyncRoom }
 
@@ -441,7 +441,7 @@ async function main() {
     // scenario teeth — asserting only that the missed frame arrived passes even
     // with the `id:` contract reverted, because the full-ring replay happens to
     // include it. Verified by running this drill against a reverted
-    // `live-sync-room.ts:773`.
+    // `live-sync-room.cf.ts:773`.
     const liveSeenBefore = (await bob.frames()).filter(
       (f) => (f.payload as { documentId?: string })?.documentId === "doc_live",
     ).length

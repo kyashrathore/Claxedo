@@ -41,7 +41,7 @@ const DEFAULT_STEPS = [256, 1_000, 2_000, 4_000]
  *
  * NOTE: the room CLAMPS this to `MAX_CONNECTIONS_CEILING` (16,000), so steps
  * above that will report `capRefused` rather than a capacity result. To probe
- * higher, raise the ceiling in `live-sync-room.ts` for the duration of the run —
+ * higher, raise the ceiling in `live-sync-room.cf.ts` for the duration of the run —
  * and read the `capRefused` column, which exists so a clamp can never be
  * mistaken for a measured limit.
  */
@@ -60,7 +60,7 @@ const OPEN_TIMEOUT_MS = 30_000
 const FANOUT_TIMEOUT_MS = 60_000
 
 async function bundleWorker() {
-  const roomModule = new URL("../../src/live-sync-room.ts", import.meta.url).pathname
+  const roomModule = new URL("../../src/deployments/hosted-workerd/live-sync-room.cf.ts", import.meta.url).pathname
   const bundled = await build({
     stdin: {
       contents: `

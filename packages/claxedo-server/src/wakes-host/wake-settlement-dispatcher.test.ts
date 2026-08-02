@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { getFunctionName } from "convex/server"
 import { createWakeSettlementDispatcher } from "./wake-settlement-dispatcher"
-import type { WakeLaneNamespace } from "./wake-lane"
+import type { WakeLaneNamespace } from "../deployments/hosted-workerd/wake-lane.cf"
 
 const TENANT = { organizationId: "org_1", ownerUserId: "user_1" }
 

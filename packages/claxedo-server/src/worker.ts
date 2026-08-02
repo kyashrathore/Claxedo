@@ -43,9 +43,9 @@ import {
   dispatchCloudflareSettlement,
   WorkGraphSettler,
   type WorkGraphSettlerNamespace,
-} from "./workgraph-host/cloudflare-settlement-dispatcher"
-import { WakeLane, type WakeLaneNamespace, type WakeLaneState } from "./wakes-host/wake-lane"
-import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./live-sync-room"
+} from "./deployments/hosted-workerd/settlement-dispatcher.cf"
+import { WakeLane, type WakeLaneNamespace, type WakeLaneState } from "./deployments/hosted-workerd/wake-lane.cf"
+import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./deployments/hosted-workerd/live-sync-room.cf"
 import { composeHostedWakes } from "./wakes-host/hosted-wakes"
 import { createWakeSettlementDispatcher } from "./wakes-host/wake-settlement-dispatcher"
 import { clean } from "./control-plane/adapters/worker/hosted-compose"
@@ -62,7 +62,7 @@ export { WorkGraphSettler }
 // W5.1: the per-owner live-sync fan-out Durable Object. Cloudflare instantiates
 // DO classes itself, so it must be exported from the Worker entry module and
 // bound (LIVE_SYNC_ROOM) + migrated in wrangler.toml. It holds hosted client
-// SSE streams and fans nudges POSTed from any isolate; see src/live-sync-room.ts.
+// SSE streams and fans nudges POSTed from any isolate; see src/deployments/hosted-workerd/live-sync-room.cf.ts.
 export { LiveSyncRoom }
 
 /**

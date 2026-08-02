@@ -4,7 +4,7 @@
  * with no `stream.replay-gap` notice.
  *
  * The hypothesis is Durable Object eviction: the replay ring is deliberately
- * in-memory (`live-sync-room.ts:415-434` argues the case), so eviction resets
+ * in-memory (`live-sync-room.cf.ts:415-434` argues the case), so eviction resets
  * the sequence. `cursorAhead` converts a stale cursor into a gap notice — but it
  * is only consulted on CONNECT (`replayFrames` is called from
  * `handleWebSocketConnect`), so a connection HELD across an eviction never
@@ -26,7 +26,7 @@ const ORG = "org_probe"
 const bundled = await build({
   stdin: {
     contents: `
-      import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/live-sync-room.ts", import.meta.url).pathname)}
+      import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/deployments/hosted-workerd/live-sync-room.cf.ts", import.meta.url).pathname)}
       export { LiveSyncRoom }
       export default {
         fetch(request, env) {

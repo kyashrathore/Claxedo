@@ -100,19 +100,19 @@ export const CORE_ROUTE_GUARD_EXEMPTIONS: readonly RouteGuardExemption[] = [
     bodyCap: true,
     reason:
       "Long-lived SSE stream: a GET with no request body, held open for the session. A body cap is meaningless and the streaming response must not be wrapped.",
-    enforcedBy: "src/routes/hosted-shell.ts (auth-gated; connection count bounded by src/live-sync-room.ts)",
+    enforcedBy: "src/routes/hosted-shell.ts (auth-gated; connection count bounded by src/deployments/hosted-workerd/live-sync-room.cf.ts)",
   },
   {
     prefix: "/api/wr/events",
     bodyCap: true,
     reason: "SSE alias of /api/claxedo/events — same stream, same reasoning.",
-    enforcedBy: "src/routes/hosted-shell.ts (auth-gated; connection count bounded by src/live-sync-room.ts)",
+    enforcedBy: "src/routes/hosted-shell.ts (auth-gated; connection count bounded by src/deployments/hosted-workerd/live-sync-room.cf.ts)",
   },
   {
     prefix: "/global/event",
     bodyCap: true,
     reason: "SSE alias of /api/claxedo/events — same stream, same reasoning.",
-    enforcedBy: "src/routes/hosted-shell.ts (auth-gated; connection count bounded by src/live-sync-room.ts)",
+    enforcedBy: "src/routes/hosted-shell.ts (auth-gated; connection count bounded by src/deployments/hosted-workerd/live-sync-room.cf.ts)",
   },
 ]
 

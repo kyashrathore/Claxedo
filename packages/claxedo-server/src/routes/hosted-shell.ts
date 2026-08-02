@@ -10,7 +10,7 @@
  *
  *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream,
  *                                 resumable by `Last-Event-ID` when a
- *                                 LiveSyncRoom is bound (see live-sync-room.ts)
+ *                                 LiveSyncRoom is bound (see deployments/hosted-workerd/live-sync-room.cf.ts)
  *   GET /api/claxedo/bootstrap  — aggregate boot payload (signed → Convex workspaces)
  *   GET /global/health          — { healthy, version }
  *   GET /global/config          — {}
@@ -39,7 +39,7 @@ import {
   type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
 } from "../control-plane/auth"
-import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../live-sync-room"
+import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../deployments/hosted-workerd/live-sync-room.cf"
 
 export type HostedShellRouteOptions = {
   authConfig: ControlPlaneAuthConfig
