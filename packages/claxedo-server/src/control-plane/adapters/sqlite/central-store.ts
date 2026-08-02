@@ -3,14 +3,14 @@ import {
   countChannelDeliveriesByUserDay,
   rememberChannelDeliverySession,
   releaseChannelDelivery,
-} from "../../../channel-delivery"
+} from "../../../channels/delivery"
 import {
   channelThreadSession,
   channelRunAudit,
   channelRunAudits,
   clearChannelThreadSession,
   recordChannelRunAudit,
-} from "../../../channel-run-audit"
+} from "../../../channels/run-audit"
 import {
   deleteSessionMeta,
   listSessionMetas,

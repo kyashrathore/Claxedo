@@ -48,7 +48,7 @@
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "../../routes/event-visibility"
 import { isTerminalClaxedoEvent } from "../../routes/event-retention"
-import type { ClaxedoEvent } from "../../bus"
+import type { ClaxedoEvent } from "../../lib/bus"
 import type { ControlPlaneAuthContext } from "../../control-plane/auth"
 
 const DEFAULT_HEARTBEAT_MS = 30_000

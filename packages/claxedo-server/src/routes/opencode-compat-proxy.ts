@@ -1,5 +1,5 @@
 import type { ControlPlaneServices } from "../control-plane/services"
-import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode-engine"
+import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode/engine"
 import { resolveWorkspace } from "../workspace-store"
 import type { ControlPlaneRouteAuthOptions } from "./control-plane-route-auth"
 import { errorBody } from "./http"

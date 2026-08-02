@@ -7,7 +7,7 @@ import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
-import { OPENCODE_INTERNAL_BASE } from "../opencode-engine"
+import { OPENCODE_INTERNAL_BASE } from "../opencode/engine"
 import { piProviderCatalog } from "../pi-provider-catalog"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"
 

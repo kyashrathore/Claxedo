@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { ClaxedoDB } from "./storage/db"
+import { ClaxedoDB } from "../storage/db"
 import {
   boundAccountId,
   createSqliteChannelAccessStore,
   createSqliteChannelIdentityBindingStore,
-} from "./channel-access-store"
+} from "./access-store"
 
 function clearTables() {
   const db = ClaxedoDB.raw()

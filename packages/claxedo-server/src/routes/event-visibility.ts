@@ -1,4 +1,4 @@
-import type { ClaxedoEvent } from "../bus"
+import type { ClaxedoEvent } from "../lib/bus"
 import type { ControlPlaneAuthContext } from "../control-plane/auth"
 
 // Worker-safe home of the per-event visibility predicate. Both the local Node

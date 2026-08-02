@@ -3,7 +3,7 @@ import type { EmbeddedWorkGraphTransport, WorkGraphCreationContext } from "@clax
 import { masterSessionId } from "@claxedo/workgraph/contracts"
 import type { ExecutionProfileDefaults, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import type { LocalEmbeddedWorkGraph } from "./server-workgraph"
-import { OPENCODE_INTERNAL_BASE, type OpenCodeApplicationToolRegistration, type OpenCodeRequestFn } from "./opencode-engine"
+import { OPENCODE_INTERNAL_BASE, type OpenCodeApplicationToolRegistration, type OpenCodeRequestFn } from "./opencode/engine"
 
 export function createLocalEmbeddedWorkGraphTransport(
   embedded: LocalEmbeddedWorkGraph,

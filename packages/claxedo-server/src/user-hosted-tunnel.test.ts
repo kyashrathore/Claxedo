@@ -75,7 +75,7 @@ vi.mock("./workspace-store", () => ({
   getWorkspace: mocks.getWorkspace,
 }))
 
-vi.mock("./log", () => ({
+vi.mock("./lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },

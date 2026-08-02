@@ -31,7 +31,7 @@ import { OpenCodeCompatRoutes } from "./routes/opencode-compat"
 import { resolveHarnessId } from "./routes/opencode-compat-provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "./proxy"
-import { configureOpencodeMcpSync } from "./opencode-mcp-sync"
+import { configureOpencodeMcpSync } from "./opencode/mcp-sync"
 import {
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
@@ -39,9 +39,9 @@ import {
   drainOpenCodeEngine,
   opencodeEngineMode,
   opencodeRequest,
-} from "./opencode-engine"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode-events"
-import { claxedoBus, globalBus } from "./bus"
+} from "./opencode/engine"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode/events"
+import { claxedoBus, globalBus } from "./lib/bus"
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
@@ -53,7 +53,7 @@ import {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
-import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
+import { configureOpenCodeAuth, opencodeHeaders } from "./opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
 import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
 import { migrateCredentials } from "./credentials/migrate"
@@ -101,7 +101,7 @@ import {
   subscribeLocalWorkspaceChanges,
 } from "./workspace-store"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
-import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels-control-plane"
+import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import {
   createClaxedoSessionEnvFactory,
@@ -115,7 +115,7 @@ import {
 } from "./server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "./central-session-runtime"
-import { dataDir } from "./paths"
+import { dataDir } from "./lib/paths"
 import { withDataDirOwnership } from "./data-dir-owner"
 import { createLocalDocumentsBackend } from "./documents/local-backend"
 import { setDocumentChangedSink } from "./documents/backend"

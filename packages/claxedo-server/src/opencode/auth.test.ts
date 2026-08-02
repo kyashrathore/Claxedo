@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest"
-import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
+import { configureOpenCodeAuth, opencodeHeaders } from "./auth"
 
 describe("opencodeHeaders", () => {
   beforeEach(() => {

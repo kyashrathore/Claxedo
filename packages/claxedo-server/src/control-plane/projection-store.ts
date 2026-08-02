@@ -1,7 +1,7 @@
 import type { Workspace } from "../workspace-store"
 import type { SessionAttachment, SessionMeta, SessionMetaNavigationListInput, SessionToolSandbox } from "../session-meta"
-import type { ChannelDeliveryClaimInput, ChannelDeliveryDecision } from "../channel-delivery"
-import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "../channel-run-audit"
+import type { ChannelDeliveryClaimInput, ChannelDeliveryDecision } from "../channels/delivery"
+import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "../channels/run-audit"
 
 export type ProjectionStore = {
   sync_session_meta: (ws: Workspace | undefined, input: unknown) => Promise<void>

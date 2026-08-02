@@ -11,7 +11,7 @@ import {
   setMirroredWorkspaceAgentExtensionEnabled as setPackageMirroredWorkspaceAgentExtensionEnabled,
   type WorkspaceAgentExtensionRecord,
 } from "@claxedo/agent-extensions"
-import { dataDir } from "../paths"
+import { dataDir } from "../lib/paths"
 
 function withDataRoot<T extends { dataRoot?: string }>(input: T): T & { dataRoot: string } {
   return {

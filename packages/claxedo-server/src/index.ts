@@ -121,15 +121,15 @@ export {
   rememberChannelDeliverySession,
   type ChannelDeliveryClaimInput,
   type ChannelDeliveryDecision,
-} from "./channel-delivery"
+} from "./channels/delivery"
 export {
   channelRunAudit,
   channelRunAudits,
   recordChannelRunAudit,
   type ChannelRunAuditInput,
   type ChannelRunAuditRecord,
-} from "./channel-run-audit"
-export { createProjectionDedupStore } from "./channels-dedup"
+} from "./channels/run-audit"
+export { createProjectionDedupStore } from "./channels/dedup"
 export {
   createMirrorController,
   noopAdapter as noopMirrorAdapter,
@@ -144,8 +144,8 @@ export {
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel"
 export { initPostHog, shutdownPostHog, capture, getPostHog } from "./posthog"
-export { claxedoBus } from "./bus"
-export type { ClaxedoEvent, PtyInfo } from "./bus"
+export { claxedoBus } from "./lib/bus"
+export type { ClaxedoEvent, PtyInfo } from "./lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"
 export { ClaxedoDB } from "./storage/db"
-export { dataDir, stateDir } from "./paths"
+export { dataDir, stateDir } from "./lib/paths"

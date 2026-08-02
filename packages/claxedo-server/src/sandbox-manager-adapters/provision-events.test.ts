@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { claxedoBus, type ClaxedoEvent } from "../bus"
+import { claxedoBus, type ClaxedoEvent } from "../lib/bus"
 import { emitProvision } from "./provision-events"
 
 describe("sandbox provision events", () => {

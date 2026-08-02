@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import { randomUUID } from "crypto"
-import { dataDir } from "./paths"
+import { dataDir } from "./lib/paths"
 import type { Workspace } from "./workspace-store"
 
 const GLOBAL_ID = "global"

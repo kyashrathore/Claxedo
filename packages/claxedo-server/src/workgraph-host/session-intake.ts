@@ -2,7 +2,7 @@ import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import { createSessionIntakeService, type SessionIntakePort } from "@claxedo/workgraph"
 import { isMasterSessionId } from "@claxedo/workgraph/contracts"
 import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
-import { OPENCODE_INTERNAL_BASE } from "../opencode-engine"
+import { OPENCODE_INTERNAL_BASE } from "../opencode/engine"
 
 type SessionEvent = Readonly<{
   directory?: string

@@ -76,7 +76,7 @@ vi.mock("./workspace-store", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("./opencode-auth", () => ({
+vi.mock("./opencode/auth", () => ({
   configureOpenCodeAuth: vi.fn(),
   opencodeHeaders: mocks.opencodeHeaders,
 }))

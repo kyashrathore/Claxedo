@@ -1,6 +1,6 @@
 import { loadUserConfig, sandboxDriverConfig } from "../agent-config"
 import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { Log } from "../log"
+import { Log } from "../lib/log"
 import { getCredentialByProvider, putCredential } from "./registry"
 import type { CredentialKind, CredentialSource } from "./types"
 import { execFileSync } from "child_process"

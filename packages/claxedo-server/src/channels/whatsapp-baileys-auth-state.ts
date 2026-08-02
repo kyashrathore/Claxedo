@@ -1,5 +1,5 @@
 import type { WhatsAppBaileysAuthStateStore } from "@claxedo/channels"
-import type { ControlPlaneCredentials } from "./control-plane/services"
+import type { ControlPlaneCredentials } from "../control-plane/services"
 
 export const defaultWhatsAppBaileysCredentialId = "channel:whatsapp:baileys:auth-state"
 

@@ -1,4 +1,4 @@
-import { Log } from "../log"
+import { Log } from "../lib/log"
 
 const log = Log.create({ service: "network-daytona-allow-list" })
 

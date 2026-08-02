@@ -1,6 +1,6 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { claxedoBus, type ClaxedoEvent } from "../bus"
+import { claxedoBus, type ClaxedoEvent } from "../lib/bus"
 import type { Context } from "hono"
 import {
   ControlPlaneAuthError,

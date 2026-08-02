@@ -25,15 +25,15 @@ import {
   type WhatsAppBaileysSocket,
   type InboundEnvelope,
 } from "@claxedo/channels"
-import { createSqliteChannelAccessStore, createSqliteChannelIdentityBindingStore } from "./channel-access-store"
+import { createSqliteChannelAccessStore, createSqliteChannelIdentityBindingStore } from "./access-store"
 import type { Hono as HonoType } from "hono"
-import type { createCentralControlApp } from "./central-runtime"
-import { createProjectionDedupStore } from "./channels-dedup"
-import type { ControlPlaneServices } from "./control-plane/services"
-import type { ProjectAction } from "./control-plane/authority"
-import { isLoopbackLocalRequest } from "./routes/local-only-projection"
-import { errorBody } from "./routes/http"
-import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "./workspace-store"
+import type { createCentralControlApp } from "../central-runtime"
+import { createProjectionDedupStore } from "./dedup"
+import type { ControlPlaneServices } from "../control-plane/services"
+import type { ProjectAction } from "../control-plane/authority"
+import { isLoopbackLocalRequest } from "../routes/local-only-projection"
+import { errorBody } from "../routes/http"
+import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "../workspace-store"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
 
 type CentralRuntime = ReturnType<typeof createCentralControlApp>["runtime"]

@@ -4,7 +4,7 @@ import {
   type WorkspaceRelayHostTunnel,
   type WorkspaceRelayHostTunnelEvent,
 } from "@claxedo/workspace-runtime/relay"
-import { Log } from "./log"
+import { Log } from "./lib/log"
 import { defaultHomeRegion } from "./region"
 import {
   createWorkspaceSupervisorSandboxManager,

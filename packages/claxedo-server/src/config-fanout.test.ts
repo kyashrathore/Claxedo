@@ -17,11 +17,11 @@ vi.mock("./embedded-workspace-runtime", () => ({
   syncEmbeddedWorkspaceRuntimes: mocks.syncEmbeddedWorkspaceRuntimes,
 }))
 
-vi.mock("./opencode-mcp-sync", () => ({
+vi.mock("./opencode/mcp-sync", () => ({
   syncOpencodeMcpConfig: mocks.syncOpencodeMcpConfig,
 }))
 
-vi.mock("./log", () => ({
+vi.mock("./lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },

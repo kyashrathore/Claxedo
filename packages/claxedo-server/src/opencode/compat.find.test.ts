@@ -11,7 +11,7 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
-const { OpenCodeCompatRoutes } = await import("./routes/opencode-compat")
+const { OpenCodeCompatRoutes } = await import("../routes/opencode-compat")
 
 const app = new Hono()
 app.route("/", OpenCodeCompatRoutes())
@@ -20,7 +20,7 @@ app.route("/", OpenCodeCompatRoutes())
 // or the frontend silently 404s (that is exactly how `/find` went missing).
 const ENGINE_FILE_GROUP = path.resolve(
   import.meta.dirname,
-  "../../opencode/src/server/routes/instance/httpapi/groups/file.ts",
+  "../../../opencode/src/server/routes/instance/httpapi/groups/file.ts",
 )
 
 function enginePaths() {

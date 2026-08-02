@@ -16,8 +16,8 @@
 import * as fs from "fs"
 import * as path from "path"
 import os from "os"
-import { Log } from "./log"
-import { dataDir } from "./paths"
+import { Log } from "./lib/log"
+import { dataDir } from "./lib/paths"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-manager/driver-catalog"
 import {
   bundledAcpBinary,

@@ -12,8 +12,8 @@ import {
   OpenCodeEngineUnavailableError,
   opencodeRequest,
   OPENCODE_INTERNAL_BASE,
-} from "./opencode-engine"
-import { configureOpenCodeAuth } from "./opencode-auth"
+} from "./engine"
+import { configureOpenCodeAuth } from "./auth"
 
 const originalFetch = globalThis.fetch
 

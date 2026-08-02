@@ -34,7 +34,7 @@ const [
 ] = await Promise.all([
   import("./message-replay"),
   import("../storage/db"),
-  import("../bus"),
+  import("../lib/bus"),
   import("../storage/cloud-session.sql"),
   import("../storage/session-meta.sql"),
 ])

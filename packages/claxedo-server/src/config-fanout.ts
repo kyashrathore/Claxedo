@@ -7,8 +7,8 @@
 
 import { broadcastRuntimeConfig } from "./workspace-supervisor"
 import { syncEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
-import { syncOpencodeMcpConfig } from "./opencode-mcp-sync"
-import { Log } from "./log"
+import { syncOpencodeMcpConfig } from "./opencode/mcp-sync"
+import { Log } from "./lib/log"
 
 const log = Log.create({ service: "config-fanout" })
 

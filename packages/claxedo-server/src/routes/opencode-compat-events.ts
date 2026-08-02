@@ -2,7 +2,7 @@ import { randomUUID } from "crypto"
 import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../bus"
+import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../lib/bus"
 import { isTerminalClaxedoEvent } from "./event-retention"
 
 /** A `globalBus` envelope after `normalizeGlobalEvent` has filled in its defaults. */

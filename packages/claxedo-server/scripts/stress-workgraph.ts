@@ -10,7 +10,7 @@ import { percentile, round2 } from "../../workspace-relay/bench/lib/stats"
 import { api } from "../../../convex/_generated/api"
 import schema from "../../../convex/schema"
 import { createHostedWorkGraph } from "../src/workgraph-host/hosted"
-import type { ClaxedoEvent } from "../src/bus"
+import type { ClaxedoEvent } from "../src/lib/bus"
 import type { WorkspaceAuthority } from "../src/control-plane/authority"
 import type { LiveSyncRoomNamespace } from "../src/deployments/hosted-workerd/live-sync-room.cf"
 

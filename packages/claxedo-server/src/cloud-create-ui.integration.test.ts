@@ -9,7 +9,7 @@ import { createServer } from "node:net"
 
 vi.mock("./workspace-supervisor", async () => {
   const ensureMockSandbox = async (workspaceId: string) => {
-    const bus = await import("./bus")
+    const bus = await import("./lib/bus")
     const store = await import("./workspace-store")
     bus.claxedoBus.publish({
       type: "provision",

@@ -3,7 +3,7 @@ import path from "path"
 import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "../agent-config"
 import { putCredential, deleteCredentialsByProvider } from "../credentials/registry"
 import { fanOutConfig } from "../config-fanout"
-import { syncOpencodeMcpConfig } from "../opencode-mcp-sync"
+import { syncOpencodeMcpConfig } from "../opencode/mcp-sync"
 import { sandboxFetch } from "../sandbox-target-fetch"
 import { listProjects, resolveWorkspace } from "../workspace-store"
 import { controlPlaneRouteAuth } from "./control-plane-route-auth"
@@ -18,7 +18,7 @@ import { PI_LAUNCH_PROVIDERS } from "../pi-credentials"
 
 // Back-compat: local callers/tests configure the compat transport by URL; this
 // maps onto the engine transport as an explicit external-URL opt-in.
-export { configureOpenCodeCompat } from "../opencode-engine"
+export { configureOpenCodeCompat } from "../opencode/engine"
 
 function version(options: OpenCodeCompatRouteOptions) {
   return options.env?.npm_package_version || "1.0.0"

@@ -137,7 +137,7 @@ const supervisor = await import("./workspace-supervisor")
 const store = await import("./workspace-store")
 const agent = await import("./agent-config")
 const embedded = await import("./embedded-workspace-runtime")
-const opauth = await import("./opencode-auth")
+const opauth = await import("./opencode/auth")
 
 const upstreamProvider = {
   all: [

@@ -29,8 +29,8 @@ import {
   type EmbeddedHost,
   type EmbeddedModule,
 } from "@opencode-ai/sdk-next/embedded"
-import { dataDir } from "./paths"
-import { opencodeHeaders } from "./opencode-auth"
+import { dataDir } from "../lib/paths"
+import { opencodeHeaders } from "./auth"
 
 // Re-export so host modules that must NOT depend on @claxedo/agent-sdk-runtime
 // directly (architecture guard: embedded-workspace-runtime.ts) can still name

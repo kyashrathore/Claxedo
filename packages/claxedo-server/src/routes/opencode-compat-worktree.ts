@@ -1,8 +1,8 @@
 import fs from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
-import { claxedoBus, globalBus } from "../bus"
-import { dataDir } from "../paths"
+import { claxedoBus, globalBus } from "../lib/bus"
+import { dataDir } from "../lib/paths"
 import { gitRun } from "./opencode-compat-git"
 
 function slug(input: string) {

@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
-import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../bus"
+import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../lib/bus"
 import { createGlobalEventsHandler, streamGlobalEvents } from "./opencode-compat-events"
 
 // Regression coverage for the BUG A root cause: `claxedoBus` (aka

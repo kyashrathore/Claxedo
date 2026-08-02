@@ -5,7 +5,7 @@ import Database from "better-sqlite3"
 import { betterAuth, type BetterAuthOptions } from "better-auth"
 import { bearer } from "better-auth/plugins"
 import { getMigrations } from "better-auth/db/migration"
-import { dataDir } from "./paths"
+import { dataDir } from "./lib/paths"
 import type { BetterAuthVerifier } from "./control-plane/auth"
 
 /**

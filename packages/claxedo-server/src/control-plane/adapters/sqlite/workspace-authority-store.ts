@@ -1,8 +1,8 @@
 import fs from "node:fs"
 import path from "path"
 import Database from "better-sqlite3"
-import { dataDir } from "../../../paths"
-import { lazy } from "../../../lazy"
+import { dataDir } from "../../../lib/paths"
+import { lazy } from "../../../lib/lazy"
 import { randomToken } from "../../web-crypto"
 
 // Claxedo's LOCAL workspace-authority storage: the SQLite tables and the

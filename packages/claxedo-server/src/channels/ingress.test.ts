@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { WhatsAppBaileysSocket } from "@claxedo/channels"
-import { createApp } from "./server"
-import { localOnlyAuthAdapter } from "./control-plane/auth"
-import type { ControlPlaneServices } from "./control-plane/services"
-import { createCentralControlApp } from "./central-runtime"
-import { createControlPlaneChannels } from "./channels-control-plane"
-import { ensureWorkspace } from "./workspace-store"
-import type { ControlPlaneAuthConfig } from "./control-plane/auth"
-import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./channel-run-audit"
+import { createApp } from "../server"
+import { localOnlyAuthAdapter } from "../control-plane/auth"
+import type { ControlPlaneServices } from "../control-plane/services"
+import { createCentralControlApp } from "../central-runtime"
+import { createControlPlaneChannels } from "./control-plane"
+import { ensureWorkspace } from "../workspace-store"
+import type { ControlPlaneAuthConfig } from "../control-plane/auth"
+import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 
 afterEach(() => {
   vi.useRealTimers()

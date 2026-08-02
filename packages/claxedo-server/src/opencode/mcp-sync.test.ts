@@ -6,7 +6,7 @@ import {
   mergeSyncedMcpStatus,
   syncMcpConfigToOpencode,
   syncOpencodeMcpConfig,
-} from "./opencode-mcp-sync"
+} from "./mcp-sync"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 
 const servers: Server[] = []

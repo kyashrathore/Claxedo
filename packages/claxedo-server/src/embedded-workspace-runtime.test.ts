@@ -9,8 +9,8 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
-import type { OpencodeEvent } from "./opencode-events"
-import type { OpenCodeRequestFn } from "./opencode-engine"
+import type { OpencodeEvent } from "./opencode/events"
+import type { OpenCodeRequestFn } from "./opencode/engine"
 import type { Workspace } from "./workspace-store"
 
 async function makeWorkspaceRoot(prefix: string) {

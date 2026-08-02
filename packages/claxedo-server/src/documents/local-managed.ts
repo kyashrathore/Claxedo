@@ -4,7 +4,7 @@ import fs from "node:fs/promises"
 import type { FileHandle } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { dataDir } from "../paths"
+import { dataDir } from "../lib/paths"
 import {
   DocumentAlreadyExistsError,
   DocumentInvalidEntryError,

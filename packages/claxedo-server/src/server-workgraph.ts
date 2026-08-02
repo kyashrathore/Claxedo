@@ -33,7 +33,7 @@ import {
   instrumentAttentionDoorbell,
   instrumentWorkGraphChangeDoorbell,
 } from "./workgraph-host/change-doorbell"
-import { claxedoBus, type WorkgraphChangedEvent } from "./bus"
+import { claxedoBus, type WorkgraphChangedEvent } from "./lib/bus"
 import { createLocalWorkGraphMasterRuntime } from "./workgraph-host/local-master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{

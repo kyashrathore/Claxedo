@@ -1,6 +1,6 @@
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
-import { getEffectiveConfig } from "./agent-config"
-import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "./opencode-engine"
+import { getEffectiveConfig } from "../agent-config"
+import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "./engine"
 
 export type McpSyncResult = {
   name: string

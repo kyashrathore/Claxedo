@@ -15,7 +15,7 @@ import { createConvexAuthority } from "../control-plane/adapters/convex/convex-a
 import type { WorkspaceAuthority } from "../control-plane/authority"
 import { createHostedWorkGraph } from "./hosted"
 import type { SettlementDispatcher } from "./settlement-dispatcher"
-import type { ClaxedoEvent } from "../bus"
+import type { ClaxedoEvent } from "../lib/bus"
 import type { LiveSyncRoomNamespace } from "../deployments/hosted-workerd/live-sync-room.cf"
 
 afterEach(() => vi.unstubAllEnvs())

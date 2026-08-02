@@ -14,7 +14,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace-supervisor"
 import { configureEmbeddedWorkspaceRuntime } from "./embedded-workspace-runtime"
-import { configureOpenCodeEngine, opencodeRequest } from "./opencode-engine"
+import { configureOpenCodeEngine, opencodeRequest } from "./opencode/engine"
 import { ensureWorkspace } from "./workspace-store"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
 import { createApp } from "./server"

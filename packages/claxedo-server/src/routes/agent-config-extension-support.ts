@@ -21,7 +21,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "../control-plane/auth"
-import { dataDir } from "../paths"
+import { dataDir } from "../lib/paths"
 import {
   AgentExtensionConflictError,
   installGitHubAgentExtension,

@@ -9,9 +9,9 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
-import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "./opencode-engine"
+import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "./opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
-import { dataDir } from "./paths"
+import { dataDir } from "./lib/paths"
 import type { Workspace } from "./workspace-store"
 import type { WorkspaceAgentExtensionRecord } from "./agent-extensions/workspace"
 import type { AgentExtensionPolicyOverride } from "./agent-extensions/runtime-config"
@@ -19,7 +19,7 @@ import { createClaxedoRuntimeExposure } from "./workspace-runtime-integration/ex
 import { claxedoCorsOrigin } from "./workspace-runtime-integration/runtime-boot"
 import { createClaxedoAppliedRuntimeConfig } from "./workspace-runtime-integration/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "./workspace-runtime-integration/target"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode-events"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {

@@ -1,6 +1,6 @@
 import type BetterSqlite3 from "better-sqlite3"
 import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
-import type { WorkgraphChangedEvent } from "../bus"
+import type { WorkgraphChangedEvent } from "../lib/bus"
 
 /**
  * WorkGraph live-sync doorbell (plan 2026-07-17-004).

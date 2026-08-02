@@ -7,8 +7,8 @@ import {
 } from "../agent-config"
 import { providerAuthMethods } from "../provider-auth/service"
 import { listProjects } from "../workspace-store"
-import { dataDir, stateDir } from "../paths"
-import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../opencode-engine"
+import { dataDir, stateDir } from "../lib/paths"
+import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../opencode/engine"
 import type { ControlPlaneServices } from "../control-plane/services"
 import {
   ControlPlaneAuthError,
