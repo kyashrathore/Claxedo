@@ -95,7 +95,11 @@ describe("platform boundary", () => {
       .filter((file) => file.endsWith(".test.ts"))
       .flatMap(escapes)
 
-    expect(offenders.length).toBeLessThanOrEqual(28)
+    // 28 -> 32 (W11.1): route-posture-inventory.test.ts composes the real
+    // hosted app to drive anonymous requests at every mounted route. Reaching
+    // for domains is the point — a posture guard that asserted against a mock
+    // route table would prove nothing about the app that ships.
+    expect(offenders.length).toBeLessThanOrEqual(32)
   })
 
 })
