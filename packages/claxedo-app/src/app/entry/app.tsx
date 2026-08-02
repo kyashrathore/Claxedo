@@ -184,7 +184,11 @@ export function AppBaseProviders(props: ParentProps) {
     <MetaProvider>
       <Font />
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
+        {/* Vercel is the app's default theme. Set here rather than by changing the
+            "oc-2" fallback inside @opencode-ai/ui, so the shared package keeps its
+            own default for other consumers. A stored THEME_ID still wins, so this
+            only applies to users who have never picked a theme. */}
+        <ThemeProvider defaultTheme="vercel">
           <LanguageProvider strings={getExtensions().app.strings}>
             <UiI18nBridge>
               <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
