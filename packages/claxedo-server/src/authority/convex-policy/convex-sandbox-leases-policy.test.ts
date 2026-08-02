@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { acquire, get, list, normalizeLegacyFields, recordFailure, release, update } from "../../../../../convex/sandboxLeases"
-import { indexRangeBuilder, orderByIndex } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder, orderByIndex } from "../../test-support/convex-index-harness"
 
 type Row = Record<string, unknown> & { _id: string; workspace_id: string; epoch: number; status: string; updated_at: number; retry_count: number }
 

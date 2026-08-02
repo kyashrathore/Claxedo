@@ -2,6 +2,7 @@ import { deleteLease, getLease, leaseTransaction, listLeases, upsertLease } from
 import { applySandboxLeasePatch } from "@claxedo/sandbox-manager"
 import type { SandboxLeaseAcquireInput, SandboxLeaseAcquireResult, SandboxLeasePatch, SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
 import { normalizeClaxedoRegion } from "../../../region"
+import { sandboxLeaseStatus } from "./lease-status"
 
 type StoredLeaseStatus =
   | "pending"
@@ -15,10 +16,18 @@ type StoredLeaseStatus =
   | "stopped"
   | "destroyed"
 
+/**
+ * Stored row status -> port status. Delegates to `sandboxLeaseStatus` so this
+ * adapter and the supervisor-state compatibility layer cannot disagree.
+ *
+ * They previously diverged on `"stopping"`: this file fell through to
+ * `"acquiring"` (coming UP) while sibling mapped it to `"stopped"` (going
+ * DOWN) — opposite meanings for the same row. No writer emits `"stopping"`
+ * today, so the split never fired, but two hand-maintained copies of one
+ * conversion is how it would.
+ */
 function status(input: StoredLeaseStatus): SandboxLease["status"] {
-  if (input === "ready" || input === "stopped" || input === "destroyed") return input
-  if (input === "unhealthy" || input === "backoff" || input === "failed") return "unavailable"
-  return "acquiring"
+  return sandboxLeaseStatus(input as Parameters<typeof sandboxLeaseStatus>[0])
 }
 
 type StoredLease = NonNullable<ReturnType<typeof getLease>>

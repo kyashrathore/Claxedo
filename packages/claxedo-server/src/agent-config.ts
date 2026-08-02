@@ -50,7 +50,7 @@ import {
 } from "./hosts/agent-extensions/workspace"
 import { ControlPlaneAuthError } from "./authority/auth"
 import type { WorkspaceAuthority } from "./authority/authority"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./authority/adapters/convex/authority"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority"
 
 const log = Log.create({ service: "agent-config" })

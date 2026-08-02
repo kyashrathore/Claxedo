@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
 import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
 import { createCentralSessionRuntime } from "./central-session-runtime"
-import { ControlPlaneSessionRoutes } from "./authority/routes/control-plane-session"
+import { ControlPlaneSessionRoutes } from "./authority/routes/session"
 import { isLoopbackLocalRequest } from "./routes/local-only-projection"
 import {
   ControlPlaneAuthError,

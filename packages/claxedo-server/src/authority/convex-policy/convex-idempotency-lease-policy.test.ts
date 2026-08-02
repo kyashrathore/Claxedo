@@ -19,7 +19,7 @@ import {
   sweepExpired,
 } from "../../../../../convex/idempotency"
 import { acquire, CRON_LEASE_MS, get, heartbeat, release as releaseLease } from "../../../../../convex/cronLease"
-import { indexRangeBuilder, orderByIndex, type Row } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder, orderByIndex, type Row } from "../../test-support/convex-index-harness"
 
 const prevServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
 

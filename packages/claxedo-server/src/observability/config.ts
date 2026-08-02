@@ -1,3 +1,4 @@
+import { cleanString as clean } from "../lib/strings"
 /**
  * Env → observability init options. PostHog carries product analytics AND
  * error tracking for every runtime, so one key resolves both planes and there
@@ -48,10 +49,6 @@ export type ObservabilityEnv = {
 /** Canonical PostHog Cloud ingest host. `app.posthog.com` is the legacy alias. */
 export const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 
-function clean(value: string | undefined): string | undefined {
-  const trimmed = value?.trim()
-  return trimmed ? trimmed : undefined
-}
 
 /**
  * Release = git SHA from the D11 deploy pipeline ("this issue first appeared

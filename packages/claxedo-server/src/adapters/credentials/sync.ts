@@ -1,3 +1,4 @@
+import { cleanString as clean } from "../../lib/strings"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import { Log } from "../../lib/log"
@@ -363,10 +364,6 @@ function opencodeCopilot(input: unknown, providerId: "github-copilot" | "github-
   }
 }
 
-function clean(input: string | undefined) {
-  const txt = input?.trim()
-  return txt ? txt : undefined
-}
 
 function kind(providerId: string): CredentialKind {
   return (sandboxDriverIds as readonly string[]).includes(providerId) ? "sandbox_driver" : "api_key"

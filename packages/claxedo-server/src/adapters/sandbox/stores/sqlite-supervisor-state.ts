@@ -13,6 +13,8 @@ import {
   upsertLease,
 } from "../../storage/workspace-lease.sql"
 import { createSqliteLeaseStore } from "./sqlite"
+import { sandboxLeaseStatus } from "./lease-status"
+export { sandboxLeaseStatus }
 
 // SQLite-only compatibility adapter for local supervisor row/hold state.
 // Keep raw row operations here so workspace-supervisor does not become a
@@ -80,13 +82,7 @@ export function sandboxLeaseFromRow(lease: SandboxLeaseRow): SandboxLease {
   }
 }
 
-export function sandboxLeaseStatus(status: SandboxLeaseRow["status"]): SandboxLease["status"] {
-  if (status === "ready") return "ready"
-  if (status === "destroyed") return "destroyed"
-  if (status === "stopped" || status === "stopping") return "stopped"
-  if (status === "pending" || status === "acquiring" || status === "starting") return "acquiring"
-  return "unavailable"
-}
+
 
 export function pendingSandboxLease(
   workspaceId: string,

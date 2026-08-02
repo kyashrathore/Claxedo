@@ -15,7 +15,6 @@
   "files": [
     ".env.example",
     "README.md",
-    "scripts/**/*",
     "src/**/*",
     "!src/**/.cache",
     "!src/**/.cache/**",
@@ -25,13 +24,6 @@
     "!src/**/dist/**",
     "!src/**/node_modules",
     "!src/**/node_modules/**",
-    "!scripts/sandbox/Dockerfile",
-    "!scripts/sandbox/.build",
-    "!scripts/sandbox/.build/**",
-    "!scripts/sandbox/cloudflare-worker",
-    "!scripts/sandbox/cloudflare-worker/**",
-    "!scripts/sandbox/live",
-    "!scripts/sandbox/live/**",
     "tsconfig.json",
     "vitest.config.ts",
     "wrangler.toml"

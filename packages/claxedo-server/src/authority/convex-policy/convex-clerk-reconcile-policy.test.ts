@@ -20,7 +20,7 @@ import {
   type ClerkMembership,
 } from "../../../../../convex/clerkReconcile"
 import { applyClerkWebhook } from "../../../../../convex/orgs"
-import { indexRangeBuilder, orderByIndex, type Row } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder, orderByIndex, type Row } from "../../test-support/convex-index-harness"
 
 /**
  * W6.3 — Clerk membership drift (cf-reliability review W6.3).

@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
 import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
 import { routeOwnership, RouteHandler } from "./route-ownership"
-import { importPattern, walk } from "../test-helpers/guards"
+import { importPattern, walk } from "../test-support/guards"
 
 describe("architecture boundaries", () => {
   test("classifies host primitive architecture modules with owners and removal conditions", () => {
@@ -305,5 +305,54 @@ describe("architecture boundaries", () => {
     expect(serverWorkgraph).not.toMatch(/from ["']\.\/workgraph-execution["']/)
     expect(serverWorkgraph).toContain('import("@claxedo/workgraph")')
     expect(server).toContain('import("../../hosts/workgraph/composition/session-gateway")')
+  })
+
+  test("keeps test-support/ out of production modules", () => {
+    // test-support/ is the ONE home for test-only in-process helpers. A
+    // production module importing it would drag test doubles into runtime
+    // bundles — and, worse, invert the dependency direction the directory
+    // exists to make legible.
+    const serverSrc = path.resolve(import.meta.dirname, "..")
+    const offenders = walk(serverSrc)
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !/\.(test|workerd\.test|miniflare\.test)\.ts$/.test(file))
+      .filter((file) => !file.includes(`${path.sep}test-support${path.sep}`))
+      .filter((file) => !path.basename(file).includes("test-helper"))
+      .filter((file) => !path.basename(file).includes(".fixture."))
+      .flatMap((file) => {
+        const text = fs.readFileSync(file, "utf-8")
+        return /from ["'][^"']*test-support\//.test(text) ? [path.relative(serverSrc, file)] : []
+      })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps hand-written SQL out of feature code — drizzle tables are the only query surface", () => {
+    // adapters/storage owns the schema; everything else queries through the
+    // typed tables so a column rename is a compile error rather than a runtime
+    // surprise. The channel stores were the last holdouts: 28 raw prepare()
+    // calls against tables whose drizzle schemas existed but were never
+    // imported (the schemas had even drifted — two were missing the composite
+    // PRIMARY KEY the live DDL declares).
+    //
+    // `ClaxedoDB.raw()` on its own is NOT the violation — server.ts calls it
+    // with no statement to eagerly open SQLite before serving. Executing a
+    // hand-written statement is.
+    const serverSrc = path.resolve(import.meta.dirname, "..")
+    const allowed = new Set([
+      // The one documented escape hatch: a dynamic cursor-paginated query
+      // whose shape drizzle's builder cannot express.
+      path.join("session", "meta", "index.ts"),
+    ])
+    const offenders = walk(serverSrc)
+      .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+      .map((file) => path.relative(serverSrc, file))
+      .filter((rel) => !allowed.has(rel) && !rel.startsWith(`adapters${path.sep}storage${path.sep}`))
+      .filter((rel) => {
+        const text = fs.readFileSync(path.join(serverSrc, rel), "utf-8")
+        return /ClaxedoDB\.raw\(\)[\s\S]{0,40}?\.(prepare|exec)\(/.test(text)
+      })
+
+    expect(offenders).toEqual([])
   })
 })

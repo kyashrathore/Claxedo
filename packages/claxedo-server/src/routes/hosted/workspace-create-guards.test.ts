@@ -7,7 +7,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { countActiveForOrg } from "../../../../../convex/sandboxLeases"
-import { indexRangeBuilder } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder } from "../../test-support/convex-index-harness"
 
 /**
  * The create path stamps the lease's tenant through this, fire-and-forget,

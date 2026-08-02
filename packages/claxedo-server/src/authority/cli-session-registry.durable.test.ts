@@ -45,7 +45,7 @@ import {
   cliSessionHandler,
   durableCliSessionTokenRegistry,
   fakeCliSessionTokenDb,
-} from "../test-helpers/cli-session-registry"
+} from "../test-support/cli-session-registry"
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,

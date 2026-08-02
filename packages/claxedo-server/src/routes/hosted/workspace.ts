@@ -37,7 +37,7 @@ import { newWorkspaceId } from "../../authority/workspace-id"
 import {
   requireExecutor,
   requireServiceToken,
-} from "../../authority/adapters/convex/authority/executor"
+} from "../../authority/adapters/convex/workspace-authority/executor"
 import {
   apiError,
   captureWorkspaceTelemetry,

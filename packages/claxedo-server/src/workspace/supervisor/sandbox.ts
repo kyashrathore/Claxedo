@@ -1,3 +1,4 @@
+import { cleanString as clean } from "../../lib/strings"
 import { randomUUID } from "crypto"
 import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import {
@@ -552,10 +553,6 @@ function missingSandboxDriverAuth(driverId: SandboxDriverID, fields: string) {
   return new Error(`Sandbox driver ${driverId} is not configured; missing ${fields}`)
 }
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
 
 function bootSourceForAction(action: SandboxDecision): SandboxBootSource {
   if (action.action === "restore_snapshot") return { kind: "driver-snapshot", snapshotId: action.snapshot_id }

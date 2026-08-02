@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { sweepStaleLeases } from "../../../../../convex/sandboxLeases"
 import crons from "../../../../../convex/crons"
-import { indexRangeBuilder, orderByIndex } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder, orderByIndex } from "../../test-support/convex-index-harness"
 
 // D13 sandbox lease reaper — Convex-side sweep policy
 // (ADR 016 §4 Decision 3).

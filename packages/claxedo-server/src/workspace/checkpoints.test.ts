@@ -4,7 +4,7 @@ import type {
   SandboxCheckpointRestoreInput,
   SandboxManager,
 } from "@claxedo/sandbox-manager"
-import { createWorkspaceCheckpointService } from "./service"
+import { createWorkspaceCheckpointService } from "./checkpoints"
 
 function manager() {
   const checkpoint = vi.fn(async (_workspaceId: string, input: SandboxCheckpointCaptureInput) => {

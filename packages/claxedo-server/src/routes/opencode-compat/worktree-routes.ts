@@ -7,7 +7,7 @@ import { workspaceInput } from "./context"
 import { contains, defaultBranch, gitRun, locate, shell, trees } from "./git"
 import { dataDir } from "../../lib/paths"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./worktree"
-import { provisionRegisteredWorktree, WorktreeProvisionError } from "../../worktree/service"
+import { provisionRegisteredWorktree, WorktreeProvisionError } from "../../workspace/worktree"
 
 type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
 

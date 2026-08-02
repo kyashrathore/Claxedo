@@ -1,3 +1,4 @@
+import { cleanString as clean } from "../lib/strings"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
 
 export const CLAXEDO_COMPATIBILITY_SCHEMA_VERSION = 1
@@ -33,10 +34,6 @@ type ComponentCompatibility = {
   expectedVersion?: string
 }
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
 
 function numberEnv(input: string | undefined, fallback: number) {
   const parsed = Number(clean(input))

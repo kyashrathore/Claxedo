@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { declaredIndexes, indexFields, knownMissingIndexes } from "../../test-helpers/convex-index-harness"
+import { declaredIndexes, indexFields, knownMissingIndexes } from "../../test-support/convex-index-harness"
 import {
   WORKGRAPH_OWNER_DELETION_INDEXES,
   WORKGRAPH_OWNER_TABLES,

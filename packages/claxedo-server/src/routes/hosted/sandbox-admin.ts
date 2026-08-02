@@ -1,3 +1,4 @@
+import { cleanString as clean } from "../../lib/strings"
 import { Hono } from "hono"
 import { errorBody } from "../http"
 import type { ControlPlaneTelemetry } from "../../authority/services"
@@ -11,10 +12,6 @@ export type HostedSandboxAdminOptions = {
   telemetry?: ControlPlaneTelemetry
 }
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
 
 function capture(options: HostedSandboxAdminOptions, event: string, properties: Record<string, unknown>) {
   try {

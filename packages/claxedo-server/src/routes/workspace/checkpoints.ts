@@ -4,7 +4,7 @@ import type { SignedControlPlaneAuth } from "../../authority/auth"
 import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "../../authority/auth"
 import { requireAuthority } from "../../authority/authority"
 import { sandboxFetch } from "../../http/sandbox-target-fetch"
-import { createWorkspaceCheckpointService } from "../../workspace-checkpoints/service"
+import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "./user-hosted"
 
 export function WorkspaceCheckpointRoutes(

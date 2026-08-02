@@ -15,7 +15,7 @@ vi.mock("../../session/harness/resolution", () => ({
   resolveHarnessHostForRequest: mocks.resolveHarnessHostForRequest,
 }))
 
-import { ControlPlaneSessionRoutes } from "./control-plane-session"
+import { ControlPlaneSessionRoutes } from "./session"
 
 function services(): ControlPlaneServices {
   return {

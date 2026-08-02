@@ -3,7 +3,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 // Recursive file listing. Aliased because this module already has a local
 // `walk()` that walks the IMPORT graph rather than the filesystem.
-import { walk as walkAll } from "../../test-helpers/guards"
+import { walk as walkAll } from "../../test-support/guards"
 
 /**
  * Worker import-graph guard.

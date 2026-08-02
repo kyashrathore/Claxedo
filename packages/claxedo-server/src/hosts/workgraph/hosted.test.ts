@@ -11,7 +11,7 @@ import {
   type CommandResult,
 } from "@claxedo/workgraph/contracts"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../authority/auth"
-import { createConvexAuthority } from "../../authority/adapters/convex/authority"
+import { createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import type { WorkspaceAuthority } from "../../authority/authority"
 import { createHostedWorkGraph } from "./hosted"
 import type { SettlementDispatcher } from "./settlement-dispatcher"

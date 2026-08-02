@@ -22,11 +22,11 @@ export type ArchitectureOwnershipEntry = {
 export const ARCHITECTURE_OWNERSHIP = [
   {
     area: "authority",
-    module: "authority/adapters/convex/authority/index.ts",
+    module: "authority/adapters/convex/workspace-authority/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane Convex authority adapter",
     tests: [
-      "authority/adapters/convex/authority/index.test.ts",
+      "authority/adapters/convex/workspace-authority/index.test.ts",
       "authority/services.test.ts",
     ],
   },
@@ -317,12 +317,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   // services/port-only and Worker-safe. Rehomed under authority/routes/.
   {
     area: "route",
-    module: "authority/routes/control-plane-session.ts",
+    module: "authority/routes/session.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane session routes",
     reason:
       "Unit 5 MOVE: imports only ControlPlaneServices, the authority port, authority/http, authority/auth, and type-only session-meta/session-list — no workspace-store, SQLite, or fs. Generic control-plane core, rehomed from routes/.",
-    tests: ["authority/routes/control-plane-session.test.ts"],
+    tests: ["authority/routes/session.test.ts"],
     routeSamples: ["/api/control/sessions/s1/gateway"],
   },
   {

@@ -17,7 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { acquire, recordTenant, release, sweepStaleLeases } from "../../../../../convex/sandboxLeases"
-import { indexRangeBuilder, orderByIndex } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder, orderByIndex } from "../../test-support/convex-index-harness"
 import {
   leaseEventsForSandbox,
   llmUsageForSession,

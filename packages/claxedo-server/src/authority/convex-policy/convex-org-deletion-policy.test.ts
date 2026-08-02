@@ -16,7 +16,7 @@ import {
   purgeDeletedOrgs,
   releaseOrgDeletion,
 } from "../../../../../convex/orgs"
-import { indexRangeBuilder, orderByIndex } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder, orderByIndex } from "../../test-support/convex-index-harness"
 
 /**
  * Pre-launch security review §6.12 — `organization.deleted` must CASCADE.

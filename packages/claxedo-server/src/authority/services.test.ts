@@ -915,7 +915,7 @@ describe("control-plane services", () => {
   })
 
   test("hosted session bootstrap exposes a real frontend gateway resolution seam", () => {
-    const routeFile = path.resolve(import.meta.dirname, "./routes/control-plane-session.ts")
+    const routeFile = path.resolve(import.meta.dirname, "./routes/session.ts")
     const routeText = fs.readFileSync(routeFile, "utf8")
     const extensionFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/features/extensions/data/server.tsx")
     const extensionText = fs.readFileSync(extensionFile, "utf8")

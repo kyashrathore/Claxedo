@@ -1,4 +1,6 @@
+import { and, count as countFn, eq, gte, isNull, lt } from "drizzle-orm"
 import { ClaxedoDB } from "../adapters/storage/db"
+import { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "../adapters/storage/channel-delivery.sql"
 
 export type ChannelDeliveryDecision =
   | { ok: true; duplicate: false }
@@ -18,103 +20,86 @@ export type ChannelDeliveryClaimInput = {
   reserveSessionCreate?: boolean
 }
 
-type Row = Record<string, unknown>
-
 const INITIALIZED_AT_KEY = "channel_dedup.initialized_at"
-
-function row(input: unknown): Row | undefined {
-  return input && typeof input === "object" ? input as Row : undefined
-}
-
-function text(input: unknown) {
-  return typeof input === "string" && input.trim() ? input : undefined
-}
-
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
+const DAY_MS = 24 * 60 * 60 * 1000
 
 function dayStart(input: number) {
   const date = new Date(input)
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
 }
 
-function initializedAt(now: number) {
-  const sqlite = ClaxedoDB.raw()
-  const seeded = now - 24 * 60 * 60 * 1000
-  sqlite.prepare(`
-    INSERT OR IGNORE INTO claxedo_channel_state (key, value, updated_at)
-    VALUES (?, ?, ?)
-  `).run(INITIALIZED_AT_KEY, String(seeded), now)
-  const hit = row(sqlite.prepare("SELECT value FROM claxedo_channel_state WHERE key = ?").get(INITIALIZED_AT_KEY))
-  return Number(text(hit?.value) ?? now)
+type Tx = Parameters<Parameters<typeof ClaxedoDB.transaction>[0]>[0]
+
+function initializedAt(tx: Tx, now: number) {
+  const seeded = now - DAY_MS
+  tx.insert(ClaxedoChannelStateTable)
+    .values({ key: INITIALIZED_AT_KEY, value: String(seeded), updated_at: now })
+    .onConflictDoNothing()
+    .run()
+  const hit = tx.select({ value: ClaxedoChannelStateTable.value }).from(ClaxedoChannelStateTable)
+    .where(eq(ClaxedoChannelStateTable.key, INITIALIZED_AT_KEY))
+    .get()
+  const parsed = Number(hit?.value)
+  return Number.isFinite(parsed) ? parsed : now
 }
 
-function duplicate(input: unknown): Extract<ChannelDeliveryDecision, { duplicate: true }> | undefined {
-  const hit = row(input)
-  if (!hit) return
-  return {
-    ok: true,
-    duplicate: true,
-    ...(text(hit.session_id) ? { sessionId: text(hit.session_id) } : {}),
-  }
+function sessionCreateCountForDay(tx: Tx, input: { channel: string; externalUserId: string; start: number }) {
+  const hit = tx.select({ count: countFn() }).from(ClaxedoChannelDeliveryTable)
+    .where(and(
+      eq(ClaxedoChannelDeliveryTable.channel, input.channel),
+      eq(ClaxedoChannelDeliveryTable.external_user_id, input.externalUserId),
+      eq(ClaxedoChannelDeliveryTable.session_create, 1),
+      gte(ClaxedoChannelDeliveryTable.first_seen_at, input.start),
+      lt(ClaxedoChannelDeliveryTable.first_seen_at, input.start + DAY_MS),
+    ))
+    .get()
+  return hit?.count ?? 0
 }
 
 export async function claimChannelDelivery(input: ChannelDeliveryClaimInput): Promise<ChannelDeliveryDecision> {
-  const sqlite = ClaxedoDB.raw()
-  return sqlite.transaction(() => {
-    const storeInitializedAt = initializedAt(input.now)
+  return ClaxedoDB.transaction((tx): ChannelDeliveryDecision => {
+    const storeInitializedAt = initializedAt(tx, input.now)
     if (input.receivedAt < input.now - input.replayWindowMs || input.receivedAt < storeInitializedAt) {
       return {
         ok: false,
         reason: "stale_delivery",
         message: "Channel delivery is outside the replay acceptance window",
-      } satisfies ChannelDeliveryDecision
+      }
     }
 
-    const existing = duplicate(sqlite.prepare(`
-      SELECT session_id
-      FROM claxedo_channel_delivery
-      WHERE channel = ? AND idempotency_key = ?
-    `).get(input.channel, input.idempotencyKey))
-    if (existing) return existing
+    const existing = tx.select({ session_id: ClaxedoChannelDeliveryTable.session_id })
+      .from(ClaxedoChannelDeliveryTable)
+      .where(and(
+        eq(ClaxedoChannelDeliveryTable.channel, input.channel),
+        eq(ClaxedoChannelDeliveryTable.idempotency_key, input.idempotencyKey),
+      ))
+      .get()
+    if (existing) {
+      const sessionId = existing.session_id && existing.session_id.trim() ? existing.session_id : undefined
+      return { ok: true, duplicate: true, ...(sessionId ? { sessionId } : {}) }
+    }
 
     const start = dayStart(input.now)
-    const count = num(row(sqlite.prepare(`
-      SELECT COUNT(*) AS count
-      FROM claxedo_channel_delivery
-      WHERE channel = ? AND external_user_id = ? AND session_create = 1 AND first_seen_at >= ? AND first_seen_at < ?
-    `).get(input.channel, input.externalUserId, start, start + 24 * 60 * 60 * 1000))?.count) ?? 0
+    const count = sessionCreateCountForDay(tx, { channel: input.channel, externalUserId: input.externalUserId, start })
     if (input.reserveSessionCreate === true && count >= input.dailyCeiling) {
       return {
         ok: false,
         reason: "daily_ceiling_exceeded",
         message: "Daily channel session ceiling exceeded",
-      } satisfies ChannelDeliveryDecision
+      }
     }
 
-    sqlite.prepare(`
-      INSERT INTO claxedo_channel_delivery (
-        channel,
-        idempotency_key,
-        external_user_id,
-        received_at,
-        first_seen_at,
-        session_id,
-        session_create
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      input.channel,
-      input.idempotencyKey,
-      input.externalUserId,
-      input.receivedAt,
-      input.now,
-      input.sessionId ?? null,
-      input.reserveSessionCreate === true ? 1 : 0,
-    )
-    return { ok: true, duplicate: false } satisfies ChannelDeliveryDecision
-  })() as ChannelDeliveryDecision
+    tx.insert(ClaxedoChannelDeliveryTable).values({
+      channel: input.channel,
+      idempotency_key: input.idempotencyKey,
+      external_user_id: input.externalUserId,
+      received_at: input.receivedAt,
+      first_seen_at: input.now,
+      session_id: input.sessionId ?? null,
+      session_create: input.reserveSessionCreate === true ? 1 : 0,
+    }).run()
+    return { ok: true, duplicate: false }
+  })
 }
 
 export async function rememberChannelDeliverySession(input: {
@@ -123,21 +108,26 @@ export async function rememberChannelDeliverySession(input: {
   sessionId: string
   sessionCreate?: boolean
 }) {
-  ClaxedoDB.raw().prepare(`
-    UPDATE claxedo_channel_delivery
-    SET session_id = ?, session_create = ?
-    WHERE channel = ? AND idempotency_key = ?
-  `).run(input.sessionId, input.sessionCreate === true ? 1 : 0, input.channel, input.idempotencyKey)
+  ClaxedoDB.use((db) => db.update(ClaxedoChannelDeliveryTable)
+    .set({ session_id: input.sessionId, session_create: input.sessionCreate === true ? 1 : 0 })
+    .where(and(
+      eq(ClaxedoChannelDeliveryTable.channel, input.channel),
+      eq(ClaxedoChannelDeliveryTable.idempotency_key, input.idempotencyKey),
+    ))
+    .run())
 }
 
 export async function releaseChannelDelivery(input: {
   channel: string
   idempotencyKey: string
 }) {
-  ClaxedoDB.raw().prepare(`
-    DELETE FROM claxedo_channel_delivery
-    WHERE channel = ? AND idempotency_key = ? AND session_id IS NULL
-  `).run(input.channel, input.idempotencyKey)
+  ClaxedoDB.use((db) => db.delete(ClaxedoChannelDeliveryTable)
+    .where(and(
+      eq(ClaxedoChannelDeliveryTable.channel, input.channel),
+      eq(ClaxedoChannelDeliveryTable.idempotency_key, input.idempotencyKey),
+      isNull(ClaxedoChannelDeliveryTable.session_id),
+    ))
+    .run())
 }
 
 export async function countChannelDeliveriesByUserDay(input: {
@@ -147,9 +137,9 @@ export async function countChannelDeliveriesByUserDay(input: {
 }) {
   const start = Date.parse(`${input.day}T00:00:00.000Z`)
   if (!Number.isFinite(start)) return 0
-  return num(row(ClaxedoDB.raw().prepare(`
-    SELECT COUNT(*) AS count
-    FROM claxedo_channel_delivery
-    WHERE channel = ? AND external_user_id = ? AND session_create = 1 AND first_seen_at >= ? AND first_seen_at < ?
-  `).get(input.channel, input.externalUserId, start, start + 24 * 60 * 60 * 1000))?.count) ?? 0
+  return ClaxedoDB.use((db) => sessionCreateCountForDay(db as unknown as Tx, {
+    channel: input.channel,
+    externalUserId: input.externalUserId,
+    start,
+  }))
 }

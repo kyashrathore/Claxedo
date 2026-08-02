@@ -80,7 +80,7 @@ import {
   unsignedLocalRequestGuard,
 } from "../../authority/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/authority"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "../../authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { createCentralControlApp } from "../../central-runtime"
@@ -124,7 +124,7 @@ import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../
 import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local-execution-capabilities"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
-import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "../../worktree/service"
+import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "../../workspace/worktree"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "../../session/meta"

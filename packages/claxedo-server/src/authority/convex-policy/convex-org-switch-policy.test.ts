@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { membershipByClerkIds, resolveForMe, setActive } from "../../../../../convex/orgs"
-import { indexRangeBuilder } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder } from "../../test-support/convex-index-harness"
 
 /**
  * `orgs.setActive` — the org switch, and W5.1's headline conversion.

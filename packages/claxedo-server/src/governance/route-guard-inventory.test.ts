@@ -25,7 +25,7 @@ import { Hono } from "hono"
 import { createHostedApp } from "../deployments/hosted-shared/hosted-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../authority/hosted-services"
 import type { ControlPlaneServices } from "../authority/services"
-import { durableCliSessionTokenRegistry } from "../test-helpers/cli-session-registry"
+import { durableCliSessionTokenRegistry } from "../test-support/cli-session-registry"
 import {
   DEFAULT_MAX_BODY_BYTES,
   defaultRequestGuard,

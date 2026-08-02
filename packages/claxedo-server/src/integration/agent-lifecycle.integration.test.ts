@@ -5,7 +5,7 @@
  * message streaming across all four runner types (opencode, claude-acp,
  * codex-acp, cursor-acp) on local workspaces.
  *
- * ACP runners are driven by a fake ACP binary (fixtures/fake-acp.ts) that
+ * ACP runners are driven by a fake ACP binary (test-support/fake-acp.ts) that
  * implements the ndjson JSON-RPC protocol without requiring real API keys.
  * The opencode runner proxies to a lightweight Node HTTP upstream mock.
  *
@@ -14,7 +14,7 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { defined } from "../fixtures/assert-helpers"
+import { defined } from "../test-support/assert-helpers"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -138,7 +138,7 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("../deployments/local/embedded-workspace-runtime.js"),
 ])
 
-const fakeBinaryPath = path.resolve(__dirname, "../fixtures/fake-acp.ts")
+const fakeBinaryPath = path.resolve(__dirname, "../test-support/fake-acp.ts")
 
 const upstreamProvider = {
   all: [

@@ -17,7 +17,7 @@ import {
   type InstallGitHubAgentExtensionInput as PackageInstallGitHubAgentExtensionInput,
 } from "@claxedo/agent-extensions"
 import { fanOutConfig } from "../../config-fanout"
-import { dataDir } from "../../lib/paths"
+import { withDataRoot } from "./data-root"
 
 export type InstallCachedAgentExtensionInput = Omit<PackageInstallCachedAgentExtensionInput, "dataRoot"> & { dataRoot?: string }
 export type InstallFetchedAgentExtensionInput = Omit<PackageInstallFetchedAgentExtensionInput, "dataRoot"> & { dataRoot?: string }
@@ -28,12 +28,6 @@ async function broadcastExtensionChange() {
   await fanOutConfig().catch(() => undefined)
 }
 
-function withDataRoot<T extends { dataRoot?: string }>(input: T): T & { dataRoot: string } {
-  return {
-    ...input,
-    dataRoot: input.dataRoot ?? dataDir(),
-  }
-}
 
 async function withBroadcast<T>(operation: Promise<T>) {
   const result = await operation

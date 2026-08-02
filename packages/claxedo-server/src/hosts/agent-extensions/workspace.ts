@@ -11,14 +11,8 @@ import {
   setMirroredWorkspaceAgentExtensionEnabled as setPackageMirroredWorkspaceAgentExtensionEnabled,
   type WorkspaceAgentExtensionRecord,
 } from "@claxedo/agent-extensions"
-import { dataDir } from "../../lib/paths"
+import { withDataRoot } from "./data-root"
 
-function withDataRoot<T extends { dataRoot?: string }>(input: T): T & { dataRoot: string } {
-  return {
-    ...input,
-    dataRoot: input.dataRoot ?? dataDir(),
-  }
-}
 
 export function resolveGitHubWorkspaceAgentExtension(
   input: Omit<Parameters<typeof resolvePackageGitHubWorkspaceAgentExtension>[0], "dataRoot"> & { dataRoot?: string },

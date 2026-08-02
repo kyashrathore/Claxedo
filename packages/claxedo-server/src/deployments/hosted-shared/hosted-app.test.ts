@@ -16,7 +16,7 @@ import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
 } from "../../authority/cli-session-registry"
-import { durableCliSessionTokenRegistry } from "../../test-helpers/cli-session-registry"
+import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import type { DocumentsRouteBackend } from "../../routes/documents"
@@ -359,7 +359,7 @@ describe("hosted app", () => {
     // exercises the production wiring instead of reaching around it, and it
     // fails if that wiring is ever removed. The registry itself is the real
     // adapter stack over the real convex/cliSessionTokens.ts handlers (see
-    // test-helpers/cli-session-registry.ts); only the Convex deployment is fake.
+    // test-support/cli-session-registry.ts); only the Convex deployment is fake.
     const durable = durableCliSessionTokenRegistry().registry
     const keys = await ed25519Pair()
     const plane = fakePlane({ cliSessionTokenRegistry: durable })

@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { importPattern } from "../test-helpers/guards"
+import { importPattern } from "../test-support/guards"
 
 // Control-plane central persistence is separate from workspace-runtime and
 // agent-sdk-runtime execution persistence. The

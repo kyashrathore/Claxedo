@@ -7,7 +7,7 @@ import {
   flagStaleBillingSync,
   listReconcileFlagged,
 } from "../../../../../convex/billing"
-import { indexRangeBuilder } from "../../test-helpers/convex-index-harness"
+import { indexRangeBuilder } from "../../test-support/convex-index-harness"
 import { applyClerkWebhook, membershipByClerkIds } from "../../../../../convex/orgs"
 
 /**

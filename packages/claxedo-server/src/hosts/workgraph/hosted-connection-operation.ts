@@ -1,9 +1,9 @@
+import { failure, loadRuntimeKey, pem, RuntimeAccessTokenVerificationUnavailableError, verifyRuntimeToken } from "./hosted-runtime-auth"
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import { createRemoteJWKSet, importSPKI } from "jose"
 import { z } from "zod"
 import { ConnectionTokenError, ConnectionsUnavailableError } from "@claxedo/connections"
-import { verifyRuntimeAccessToken, WorkspaceRelayAuthError, type RelayKey } from "@claxedo/workspace-relay"
+import { WorkspaceRelayAuthError, type RelayKey } from "@claxedo/workspace-relay"
 import {
   WorkGraphConnectionOperationRequestSchema,
   WorkGraphConnectionOperationResponseSchema,
@@ -279,32 +279,12 @@ function operationFailure(error: unknown) {
   return failure(500, "connection_operation_failed", "Connection operation failed", false)
 }
 
-class RuntimeAccessTokenVerificationUnavailableError extends Error {
-  readonly code = "runtime_access_token_verification_unavailable"
-}
 
 class PullRequestEffectBusyError extends Error {
   readonly code = "pull_request_effect_busy"
 }
 
-async function verifyRuntimeToken(token: string, key: Promise<RelayKey>, workspaceId: string) {
-  let resolved: RelayKey
-  try {
-    resolved = await key
-  } catch {
-    throw new RuntimeAccessTokenVerificationUnavailableError()
-  }
-  try {
-    return await verifyRuntimeAccessToken(token, resolved, { workspaceId })
-  } catch (error) {
-    if (error instanceof WorkspaceRelayAuthError) throw error
-    throw new RuntimeAccessTokenVerificationUnavailableError()
-  }
-}
 
-function failure(status: number, code: string, message: string, retryable: boolean) {
-  return { status, code, message, retryable }
-}
 
 function providerErrorCode(status: number) {
   if (status === 401) return "connection_provider_unauthorized"
@@ -333,14 +313,4 @@ function bearer(header: string | null) {
   return match?.[1]
 }
 
-function pem(input?: string) {
-  return clean(input)?.replaceAll("\\n", "\n")
-}
 
-async function loadRuntimeKey(env: HostedWorkerEnv): Promise<RelayKey> {
-  const jwks = clean(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
-  if (jwks) return createRemoteJWKSet(new URL(jwks))
-  const publicKey = pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
-  if (!publicKey) throw new Error("Runtime Access Token verification key is unavailable")
-  return importSPKI(publicKey, "EdDSA")
-}

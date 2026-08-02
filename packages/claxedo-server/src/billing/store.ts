@@ -9,6 +9,7 @@
  * Worker-safe: ConvexHttpClient is fetch-based; no node:* imports.
  */
 
+import { cleanString as clean } from "../lib/strings"
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { controlPlaneTimeoutMs, withTimeout } from "../authority/adapters/convex/timeout"
@@ -95,10 +96,6 @@ export type BillingStore = {
 
 export type BillingStoreEnv = Record<string, string | undefined>
 
-function clean(value?: string) {
-  const trimmed = value?.trim()
-  return trimmed ? trimmed : undefined
-}
 
 /**
  * Convex-backed store. Construction never touches the network; missing config

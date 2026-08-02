@@ -1,3 +1,4 @@
+import { cleanString as clean } from "../../lib/strings"
 import { getCredentialByProvider, resolveSecret } from "../credentials/registry"
 import {
   sandboxDriverAuth,
@@ -7,10 +8,6 @@ import {
   type SandboxDriverID,
 } from "@claxedo/sandbox-manager/driver-catalog"
 
-function clean(input: string | undefined) {
-  const txt = input?.trim()
-  return txt ? txt : undefined
-}
 
 function json(secret: string) {
   try {

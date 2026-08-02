@@ -22,6 +22,7 @@
  * → 401 and the state is never applied.
  */
 
+import { cleanString as clean } from "../lib/strings"
 import { Hono } from "hono"
 import { z } from "zod"
 import { Polar } from "@polar-sh/sdk"
@@ -107,10 +108,6 @@ export type PolarClientLike = {
   }
 }
 
-function clean(value?: string) {
-  const trimmed = value?.trim()
-  return trimmed ? trimmed : undefined
-}
 
 /**
  * Rate-limit key for the unauthenticated webhook: the caller's IP.

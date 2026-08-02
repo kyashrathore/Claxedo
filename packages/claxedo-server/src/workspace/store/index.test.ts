@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterAll } from "vitest"
-import { defined } from "../../fixtures/assert-helpers"
+import { defined } from "../../test-support/assert-helpers"
 import { execSync } from "child_process"
 import { realpathSync } from "fs"
 import fs from "fs/promises"

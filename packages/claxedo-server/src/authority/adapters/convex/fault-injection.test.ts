@@ -25,7 +25,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { requireExecutor } from "./authority/executor"
+import { requireExecutor } from "./workspace-authority/executor"
 
 const originalFetch = globalThis.fetch
 

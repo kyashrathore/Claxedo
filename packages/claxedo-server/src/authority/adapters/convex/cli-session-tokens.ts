@@ -11,9 +11,9 @@
  */
 
 import type { CliSessionTokenAuthority } from "../../cli-session-registry"
-import { convexApi } from "./authority/api"
-import { requireExecutor, requireServiceToken } from "./authority/executor"
-import type { ConvexAuthorityInput } from "./authority/types"
+import { convexApi } from "./workspace-authority/api"
+import { requireExecutor, requireServiceToken } from "./workspace-authority/executor"
+import type { ConvexAuthorityInput } from "./workspace-authority/types"
 
 export function cliSessionTokenAuthority(input: ConvexAuthorityInput): CliSessionTokenAuthority {
   const call = () => requireExecutor(input, undefined, { allowUnsigned: true })

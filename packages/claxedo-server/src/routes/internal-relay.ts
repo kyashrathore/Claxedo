@@ -1,15 +1,12 @@
+import { cleanString as clean } from "../lib/strings"
 import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 import { errorBody } from "./http"
-import { createConvexAuthority } from "../authority/adapters/convex/authority"
+import { createConvexAuthority } from "../authority/adapters/convex/workspace-authority"
 import { ControlPlaneRequestTimeoutError } from "../authority/adapters/convex/timeout"
 import type { WorkspaceAuthority } from "../authority/services"
 import { timingSafeEqualStrings } from "../authority/web-crypto"
 
-function clean(input: string | undefined) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
 
 function authorized(request: Request, expected: string | undefined) {
   const header = request.headers.get("authorization")
