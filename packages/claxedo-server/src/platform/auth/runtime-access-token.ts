@@ -1,3 +1,4 @@
+import { ClaxedoError } from "../errors/base"
 import { exportJWK, importJWK, importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
 import { randomToken, sha256Hex16 } from "./web-crypto"
 
@@ -15,15 +16,18 @@ import { ControlPlaneAuthError } from "./auth"
 
 export const RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA" as const
 
-export class RuntimeAccessTokenConfigurationError extends Error {
-  constructor(
-    public readonly code:
-      | "runtime_access_token_algorithm_unsupported"
-      | "runtime_access_token_public_key_missing"
-      | "runtime_access_token_key_pair_mismatch",
-    message: string,
-  ) {
-    super(message)
+export type RuntimeAccessTokenConfigurationErrorCode =
+  | "runtime_access_token_algorithm_unsupported"
+  | "runtime_access_token_public_key_missing"
+  | "runtime_access_token_key_pair_mismatch"
+
+export class RuntimeAccessTokenConfigurationError extends ClaxedoError {
+  declare readonly code: RuntimeAccessTokenConfigurationErrorCode
+
+  constructor(code: RuntimeAccessTokenConfigurationErrorCode, message: string) {
+    // Misconfiguration, not load: retrying cannot fix an absent or mismatched
+    // key, so this fails closed at 503 and stays non-retryable.
+    super({ code, message, status: 503 })
   }
 }
 

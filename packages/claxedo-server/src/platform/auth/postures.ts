@@ -7,6 +7,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "./auth"
+import { ClaxedoError } from "../errors/base"
 import { internalAdminAuthorized } from "../http/routes/internal-admin-auth"
 import { isLoopbackLocalRequest } from "../http/routes/peer-address"
 
@@ -66,13 +67,9 @@ export type PostureResult = {
  * refusal anywhere claim "not found". The narrow union is doing real work, so
  * this carries its own type instead.
  */
-export class RouteNotFoundError extends Error {
-  readonly status = 404 as const
-  readonly code = "not_found" as const
-
+export class RouteNotFoundError extends ClaxedoError {
   constructor() {
-    super("not found")
-    this.name = "RouteNotFoundError"
+    super({ code: "not_found", message: "not found", status: 404 })
   }
 }
 

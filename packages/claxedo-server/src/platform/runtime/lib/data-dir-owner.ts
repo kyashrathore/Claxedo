@@ -1,3 +1,4 @@
+import { ClaxedoError } from "../../errors/base"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -19,15 +20,17 @@ type InspectedOwner = Readonly<{
   record?: OwnerRecord
 }>
 
-export class DataDirOwnershipError extends Error {
-  readonly code = "data_dir_already_owned"
+export class DataDirOwnershipError extends ClaxedoError {
   readonly owner: Omit<OwnerRecord, "token"> | undefined
 
   constructor(owner: OwnerRecord | undefined) {
-    super(owner
-      ? `Claxedo data directory is already owned by process ${owner.pid} on ${owner.hostname} (since ${owner.startedAt})`
-      : "Claxedo data directory has an active ownership claim")
-    this.name = "DataDirOwnershipError"
+    super({
+      code: "data_dir_already_owned",
+      message: owner
+        ? `Claxedo data directory is already owned by process ${owner.pid} on ${owner.hostname} (since ${owner.startedAt})`
+        : "Claxedo data directory has an active ownership claim",
+      status: 409,
+    })
     this.owner = owner
       ? { pid: owner.pid, hostname: owner.hostname, startedAt: owner.startedAt }
       : undefined

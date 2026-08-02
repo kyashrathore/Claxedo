@@ -21,6 +21,8 @@
  */
 
 /** Access tokens authenticate API calls; refresh tokens only mint new pairs. */
+import { ClaxedoError } from "../errors/base"
+
 export type CliSessionTokenKind = "access" | "refresh"
 
 export type CliSessionTokenRecord = {
@@ -105,12 +107,11 @@ export type CliSessionTokenRegistry = {
   revokeForUser(args: { tokenIdentifier: string }): Promise<{ revoked: number }>
 }
 
-export class CliSessionRegistryUnavailableError extends Error {
-  readonly code = "cli_session_registry_unavailable"
+export class CliSessionRegistryUnavailableError extends ClaxedoError {
   constructor(
     message = "CLI session token registry is not configured; CLI tokens cannot be minted or verified",
   ) {
-    super(message)
+    super({ code: "cli_session_registry_unavailable", message, status: 503 })
   }
 }
 

@@ -1,10 +1,20 @@
-export class ControlPlaneRequestTimeoutError extends Error {
-  readonly status = 503 as const
-  readonly code = "control_plane_request_timeout" as const
+import { ClaxedoError } from "../errors/base"
+
+export class ControlPlaneRequestTimeoutError extends ClaxedoError {
+  // Narrowed back to the literal the base widens to `number`: callers pass it
+  // straight to `c.json(body, status)`, which takes a status-code union.
+  declare readonly status: 503
 
   constructor() {
-    super("Control Plane request timed out")
-    this.name = "ControlPlaneRequestTimeoutError"
+    // Retryable, but only jointly with the caller's own idempotency check: the
+    // request was not cancelled and may still commit, so a store adapter must
+    // gate a replay on the OPERATION being safe to repeat, not on this flag.
+    super({
+      code: "control_plane_request_timeout",
+      message: "Control Plane request timed out",
+      status: 503,
+      retryable: true,
+    })
   }
 }
 

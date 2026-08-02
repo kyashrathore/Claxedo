@@ -1,3 +1,4 @@
+import { ClaxedoError } from "../platform/errors/base"
 import type { DocumentVersion } from "./port"
 
 export type DocumentErrorCode =
@@ -14,41 +15,58 @@ export type DocumentErrorCode =
   | "document_too_large"
   | "document_version_conflict"
 
-export class DocumentWorkspaceError extends Error {
-  readonly code: DocumentErrorCode
+export class DocumentWorkspaceError extends ClaxedoError {
+  declare readonly code: DocumentErrorCode
 
   constructor(code: DocumentErrorCode, message: string, options?: ErrorOptions) {
-    super(message, options)
-    this.name = "DocumentWorkspaceError"
-    this.code = code
+    super({
+      code,
+      message,
+      status: DOCUMENT_ERROR_STATUS[code],
+      // A lock timeout is the one document failure a second attempt can clear
+      // on its own; the rest describe the request or the stored state.
+      retryable: code === "document_lock_timeout",
+      ...(options?.cause !== undefined ? { cause: options.cause } : {}),
+    })
   }
+}
+
+const DOCUMENT_ERROR_STATUS: Record<DocumentErrorCode, number> = {
+  document_already_exists: 409,
+  document_invalid_entry: 400,
+  document_lock_timeout: 503,
+  document_not_found: 404,
+  document_not_text: 415,
+  document_path_outside_root: 400,
+  document_permission_denied: 403,
+  document_snapshot_corrupt: 500,
+  document_snapshot_not_found: 404,
+  document_storage_failed: 500,
+  document_too_large: 413,
+  document_version_conflict: 409,
 }
 
 export class DocumentAlreadyExistsError extends DocumentWorkspaceError {
   constructor(documentId: string) {
     super("document_already_exists", `Document ${documentId} already exists`)
-    this.name = "DocumentAlreadyExistsError"
   }
 }
 
 export class DocumentInvalidEntryError extends DocumentWorkspaceError {
   constructor(message: string) {
     super("document_invalid_entry", message)
-    this.name = "DocumentInvalidEntryError"
   }
 }
 
 export class DocumentLockTimeoutError extends DocumentWorkspaceError {
   constructor(documentId: string) {
     super("document_lock_timeout", `Timed out waiting for document ${documentId}`)
-    this.name = "DocumentLockTimeoutError"
   }
 }
 
 export class DocumentNotFoundError extends DocumentWorkspaceError {
   constructor(documentId: string, options?: ErrorOptions) {
     super("document_not_found", `Document ${documentId} is missing`, options)
-    this.name = "DocumentNotFoundError"
   }
 }
 
@@ -57,7 +75,6 @@ export class DocumentNotTextError extends DocumentWorkspaceError {
 
   constructor(documentId: string, currentVersion: DocumentVersion, options?: ErrorOptions) {
     super("document_not_text", `Document ${documentId} is not valid UTF-8 text`, options)
-    this.name = "DocumentNotTextError"
     this.currentVersion = currentVersion
   }
 }
@@ -65,7 +82,6 @@ export class DocumentNotTextError extends DocumentWorkspaceError {
 export class DocumentPathError extends DocumentWorkspaceError {
   constructor(message: string, options?: ErrorOptions) {
     super("document_path_outside_root", message, options)
-    this.name = "DocumentPathError"
   }
 }
 
@@ -74,7 +90,6 @@ export class DocumentStorageError extends DocumentWorkspaceError {
 
   constructor(code: "document_permission_denied" | "document_storage_failed", operation: string, options?: ErrorOptions) {
     super(code, code === "document_permission_denied" ? `Permission denied while ${operation}` : `Failed while ${operation}`, options)
-    this.name = "DocumentStorageError"
     this.operation = operation
   }
 }
@@ -82,14 +97,12 @@ export class DocumentStorageError extends DocumentWorkspaceError {
 export class DocumentSnapshotCorruptError extends DocumentWorkspaceError {
   constructor(snapshotId: string, options?: ErrorOptions) {
     super("document_snapshot_corrupt", `Document snapshot ${snapshotId} failed its content hash check`, options)
-    this.name = "DocumentSnapshotCorruptError"
   }
 }
 
 export class DocumentSnapshotNotFoundError extends DocumentWorkspaceError {
   constructor(snapshotId: string, options?: ErrorOptions) {
     super("document_snapshot_not_found", `Document snapshot ${snapshotId} is missing`, options)
-    this.name = "DocumentSnapshotNotFoundError"
   }
 }
 
@@ -99,7 +112,6 @@ export class DocumentTooLargeError extends DocumentWorkspaceError {
 
   constructor(actualBytes: number, maxBytes: number) {
     super("document_too_large", `Document is ${actualBytes} bytes; the limit is ${maxBytes} bytes`)
-    this.name = "DocumentTooLargeError"
     this.actualBytes = actualBytes
     this.maxBytes = maxBytes
   }
@@ -110,7 +122,6 @@ export class DocumentVersionConflictError extends DocumentWorkspaceError {
 
   constructor(currentVersion: DocumentVersion | null) {
     super("document_version_conflict", "Document content changed since it was read")
-    this.name = "DocumentVersionConflictError"
     this.currentVersion = currentVersion
   }
 }

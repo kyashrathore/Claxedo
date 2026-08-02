@@ -1,3 +1,4 @@
+import { ClaxedoError } from "../errors/base"
 import { exportJWK, importPKCS8, importSPKI, jwtVerify, SignJWT, type JWTPayload } from "jose"
 import { randomToken, sha256Hex16 } from "./web-crypto"
 import type { SignedControlPlaneAuth, VerifiedClerkAuth } from "./auth"
@@ -48,20 +49,23 @@ export const CLI_REFRESH_TOKEN_TTL_BOUNDS_SECONDS = { min: 60 * 60, max: 30 * 24
  */
 export const CLI_SESSION_MAX_LIFETIME_SECONDS = 90 * 24 * 60 * 60
 
-export class CliSessionTokenError extends Error {
-  constructor(
-    public readonly code:
-      | "cli_session_token_ttl_out_of_bounds"
-      | "cli_session_token_claims_invalid"
-      | "cli_session_token_kind_mismatch"
-      | "cli_session_token_unknown"
-      | "cli_session_token_revoked"
-      | "cli_session_token_expired"
-      | "cli_session_token_mismatch"
-      | "cli_session_expired",
-    message: string,
-  ) {
-    super(message)
+export type CliSessionTokenErrorCode =
+  | "cli_session_token_ttl_out_of_bounds"
+  | "cli_session_token_claims_invalid"
+  | "cli_session_token_kind_mismatch"
+  | "cli_session_token_unknown"
+  | "cli_session_token_revoked"
+  | "cli_session_token_expired"
+  | "cli_session_token_mismatch"
+  | "cli_session_expired"
+
+export class CliSessionTokenError extends ClaxedoError {
+  declare readonly code: CliSessionTokenErrorCode
+
+  constructor(code: CliSessionTokenErrorCode, message: string) {
+    // Every case is a token the caller must replace, not one that becomes valid
+    // on a second read — so 401, and never retryable.
+    super({ code, message, status: 401 })
   }
 }
 

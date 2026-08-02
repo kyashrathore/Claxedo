@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { describe, expect, test, vi } from "vitest"
-import { withTimeout } from "../../authority/adapters/convex/timeout"
+import { withTimeout } from "../../platform/runtime/timeout"
 import {
   InternalRelayResolverRoutes,
   type RelayTargetLookup,

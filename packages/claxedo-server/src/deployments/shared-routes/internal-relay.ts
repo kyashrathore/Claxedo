@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "../../platform/http/routes/peer-address"
 import { errorBody } from "../../platform/http/routes/http"
 import { createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
-import { ControlPlaneRequestTimeoutError } from "../../authority/adapters/convex/timeout"
+import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
 import { timingSafeEqualStrings } from "../../platform/auth/web-crypto"
 
