@@ -26,9 +26,9 @@ import {
 } from "../agent-config"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 import { apiError, type WorkspaceRouteOptions } from "./workspace/user-hosted"
-import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../adapters/credentials/sandbox-verify"
-import { CredentialVerificationError } from "../adapters/credentials/verification-error"
-import type { CredentialProbe } from "../adapters/credentials/discovery"
+import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../adapters/credentials/operations/sandbox-verify"
+import { CredentialVerificationError } from "../adapters/credentials/operations/verification-error"
+import type { CredentialProbe } from "../adapters/credentials/operations/discovery"
 
 const authBody = z.object({
   auth: z.record(z.string(), z.string()).default({}),

@@ -157,7 +157,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "local credential registry",
     tests: [
       "adapters/credentials/registry.test.ts",
-      "adapters/credentials/sync.test.ts",
+      "adapters/credentials/operations/sync.test.ts",
     ],
   },
   {
@@ -420,7 +420,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "adapters/credentials/local.ts",
+    module: "adapters/credentials/backends/local.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential secret backend",
     reason:

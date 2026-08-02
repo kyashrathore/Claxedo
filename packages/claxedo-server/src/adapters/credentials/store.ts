@@ -13,8 +13,8 @@
  */
 
 import type { SecretBackend } from "./types"
-import { createLocalBackend } from "./local"
-import { createEncryptedCloudflareBackend } from "./cloudflare"
+import { createLocalBackend } from "./backends/local"
+import { createEncryptedCloudflareBackend } from "./backends/cloudflare"
 import { Log } from "../../platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-store" })

@@ -12,8 +12,8 @@
  * (throws) when the KEK or KV configuration is absent.
  */
 
-import type { SecretBackend } from "./types"
-import { Log } from "../../platform/runtime/lib/log"
+import type { SecretBackend } from "../types"
+import { Log } from "../../../platform/runtime/lib/log"
 import {
   encryptedSecretBackend,
   envelopeKeyProviderFromEnv,

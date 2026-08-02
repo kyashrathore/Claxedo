@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { SecretBackend } from "./types"
+import type { SecretBackend } from "../types"
 import {
   CREDENTIALS_KEK_ENV,
   CREDENTIALS_KEK_NEXT_ENV,

@@ -13,17 +13,17 @@ vi.mock("fs", () => ({
     writeFileSync: vi.fn(),
   },
 }))
-vi.mock("../../agent-config", () => ({
+vi.mock("../../../agent-config", () => ({
   loadUserConfig: vi.fn(async () => mocks.config),
   saveUserConfig: mocks.saveUserConfig,
   sandboxDriverConfig: vi.fn(() => ({})),
   setSandboxDriverConfig: vi.fn(),
 }))
-vi.mock("./registry", () => ({ putCredential: mocks.putCredential }))
-vi.mock("./store", () => ({ getBackend: () => ({ probe: async () => true }) }))
-vi.mock("../../platform/runtime/lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
-vi.mock("../sandbox/network/policy", () => ({ syncMcpHosts: vi.fn() }))
-vi.mock("../../platform/runtime/lib/log", () => ({
+vi.mock("../registry", () => ({ putCredential: mocks.putCredential }))
+vi.mock("../store", () => ({ getBackend: () => ({ probe: async () => true }) }))
+vi.mock("../../../platform/runtime/lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
+vi.mock("../../sandbox/network/policy", () => ({ syncMcpHosts: vi.fn() }))
+vi.mock("../../../platform/runtime/lib/log", () => ({
   Log: {
     create: () => ({
       info: vi.fn(),

@@ -6,7 +6,7 @@ import {
   hostedOrgCredentials,
   workerCredentials,
 } from "./index"
-import { CREDENTIALS_KEK_ENV } from "../envelope"
+import { CREDENTIALS_KEK_ENV } from "../backends/envelope"
 
 const KV_ENV = {
   CLAXEDO_CF_KV_URL: "https://kv.example.test/ns",

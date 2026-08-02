@@ -1,4 +1,4 @@
-import { Log } from "../../platform/runtime/lib/log"
+import { Log } from "../../../platform/runtime/lib/log"
 import { CredentialVerificationError } from "./verification-error"
 import {
   credentialRefreshToken,
@@ -7,11 +7,11 @@ import {
   type RefreshedCredentialSecret,
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
-import type { CredentialHealth, CredentialMetadata } from "./types"
+import type { CredentialHealth, CredentialMetadata } from "../types"
 
 const log = Log.create({ service: "credentials-verify" })
 
-export type { CredentialHealth } from "./types"
+export type { CredentialHealth } from "../types"
 
 export { CredentialVerificationError } from "./verification-error"
 

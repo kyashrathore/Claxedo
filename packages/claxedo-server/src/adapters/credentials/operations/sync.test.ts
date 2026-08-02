@@ -31,11 +31,11 @@ const prevCursor = process.env.CURSOR_API_KEY
 const prevXdgData = process.env.XDG_DATA_HOME
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("./store")
-const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("./registry")
+const { createTestBackend, setBackendOverride } = await import("../store")
+const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("../registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
-const { saveUserConfig } = await import("../../agent-config")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { saveUserConfig } = await import("../../../agent-config")
+const { ClaxedoDB } = await import("../../../platform/db/db")
 ClaxedoDB.Drizzle()
 
 describe("syncLocalCredentials", () => {

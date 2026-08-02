@@ -42,10 +42,10 @@
  * the retired KEK from configuration.
  */
 
-import { credentialIdFromRef, type EnvelopeAdmin } from "./envelope"
-import { listCloudflareCredentialRefs, createEncryptedCloudflareBackend } from "./cloudflare"
-import type { SecretBackend } from "./types"
-import { Log } from "../../platform/runtime/lib/log"
+import { credentialIdFromRef, type EnvelopeAdmin } from "../backends/envelope"
+import { listCloudflareCredentialRefs, createEncryptedCloudflareBackend } from "../backends/cloudflare"
+import type { SecretBackend } from "../types"
+import { Log } from "../../../platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-rotate" })
 

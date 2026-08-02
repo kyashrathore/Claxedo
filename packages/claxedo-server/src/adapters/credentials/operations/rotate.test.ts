@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { SecretBackend } from "./types"
-import { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } from "./envelope"
+import type { SecretBackend } from "../types"
+import { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } from "../backends/envelope"
 import {
   auditEnvelopeKeys,
   hostedCredentialOrgFromRef,
@@ -8,7 +8,7 @@ import {
   rotateHostedCredentialKeys,
   type RotatableBackend,
 } from "./rotate"
-import { CREDENTIALS_KEK_ENV, CREDENTIALS_KEK_NEXT_ENV } from "./envelope"
+import { CREDENTIALS_KEK_ENV, CREDENTIALS_KEK_NEXT_ENV } from "../backends/envelope"
 
 function memoryBackend(): SecretBackend & { values: Map<string, string> } {
   const values = new Map<string, string>()

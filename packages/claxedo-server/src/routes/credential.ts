@@ -13,8 +13,8 @@ import {
 } from "../authority/services"
 import { errorBody } from "./http"
 import { timingSafeEqualStrings } from "../platform/auth/web-crypto"
-import { CredentialVerificationError, verifyCredential } from "../adapters/credentials/verify"
-import { CredentialDiscoveryError } from "../adapters/credentials/discovery"
+import { CredentialVerificationError, verifyCredential } from "../adapters/credentials/operations/verify"
+import { CredentialDiscoveryError } from "../adapters/credentials/operations/discovery"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,

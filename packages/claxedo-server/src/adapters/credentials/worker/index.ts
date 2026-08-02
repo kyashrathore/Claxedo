@@ -33,8 +33,8 @@
 
 import type { ControlPlaneCredentials } from "../../../authority/services"
 import type { CredentialMetadata, CredentialWrite, SecretBackend } from "../types"
-import { createEncryptedCloudflareBackend } from "../cloudflare"
-import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "../envelope"
+import { createEncryptedCloudflareBackend } from "../backends/cloudflare"
+import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "../backends/envelope"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 type StoredCredential = { meta: CredentialMetadata; secret: string }

@@ -59,7 +59,7 @@
  * "is any ciphertext still under the retired key-id?".
  */
 
-import type { SecretBackend } from "./types"
+import type { SecretBackend } from "../types"
 
 const FORMAT_TAG = "cenc1"
 const IV_LEN = 12

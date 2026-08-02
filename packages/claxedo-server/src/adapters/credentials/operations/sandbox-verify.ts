@@ -1,6 +1,6 @@
 import { isSandboxDriverID, sandboxDriverCatalog, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import { CredentialVerificationError } from "./verification-error"
-import type { CredentialHealth } from "./types"
+import type { CredentialHealth } from "../types"
 
 /**
  * Probe a sandbox provider's credential against that provider.

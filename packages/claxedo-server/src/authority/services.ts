@@ -2,7 +2,7 @@ import type { ControlPlaneTelemetry } from "../platform/telemetry/ports"
 import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/runtime-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../adapters/credentials/types"
-import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../adapters/credentials/discovery"
+import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../adapters/credentials/operations/discovery"
 import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { DurableSessionLog } from "../platform/auth/durable-session-log"
 import type { SessionWriteMode } from "../platform/governance/architecture"
@@ -114,7 +114,7 @@ async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string
     const registry = await credentialRegistry()
     const credential = registry.getCredential(id, org)
     if (!credential || !credential.account_id) return
-    const codex = await import("../adapters/credentials/codex-auth-file")
+    const codex = await import("../adapters/credentials/backends/codex-auth-file")
     if (!codex.shouldMirrorCodexTokens(credential)) return
     const tokens = codex.renewedCodexTokens(secret, credential.account_id)
     if (!tokens) return
@@ -173,7 +173,7 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       const registry = await credentialRegistry()
       registry.updateCredentialHealth(id, health, validatedAt, org)
     },
-    discoverLocalCredentials: async (org) => (await import("../adapters/credentials/discovery")).credentialDiscovery.discover(org),
+    discoverLocalCredentials: async (org) => (await import("../adapters/credentials/operations/discovery")).credentialDiscovery.discover(org),
     updateCredentialScope: async (id, scope, consentAt, org) => (await credentialRegistry()).updateCredentialScope(id, scope, consentAt, org),
     updateCredentialSecret: async (id, secret, expiresAt, org) => {
       const registry = await credentialRegistry()
@@ -186,12 +186,12 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       return stored
     },
     saveDiscoveredCredentials: async (input, org) => {
-      const saved = await (await import("../adapters/credentials/discovery")).credentialDiscovery.save(input, org)
+      const saved = await (await import("../adapters/credentials/operations/discovery")).credentialDiscovery.save(input, org)
       await syncEngineAuth(org)
       return saved
     },
     syncLocalCredentials: async (providerIds, org) => {
-      const result = await (await import("../adapters/credentials/sync")).syncLocalCredentials(providerIds, org)
+      const result = await (await import("../adapters/credentials/operations/sync")).syncLocalCredentials(providerIds, org)
       await syncEngineAuth(org)
       return result
     },
