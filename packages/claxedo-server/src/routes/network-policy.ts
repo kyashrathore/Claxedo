@@ -24,8 +24,8 @@ import {
   resolveEffectivePolicy,
   updatePolicy,
   isTargetAllowed,
-} from "../network/policy"
-import { DEFAULT_ALLOWLIST } from "../network/types"
+} from "../adapters/sandbox/network/policy"
+import { DEFAULT_ALLOWLIST } from "../adapters/sandbox/network/types"
 import { errorBody } from "./http"
 
 const createBody = z.object({

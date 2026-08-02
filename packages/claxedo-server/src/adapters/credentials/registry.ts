@@ -26,7 +26,7 @@ import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "../../platfor
 import { getBackend } from "./store"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialWrite, CredentialStatus } from "./types"
 import { Log } from "../../platform/runtime/lib/log"
-import { ensurePresetForProvider, removeAutoPresetForProvider } from "../../network/policy"
+import { ensurePresetForProvider, removeAutoPresetForProvider } from "../sandbox/network/policy"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
 
 export { SINGLE_TENANT_ORG } from "../../platform/db/provider-credential.sql"

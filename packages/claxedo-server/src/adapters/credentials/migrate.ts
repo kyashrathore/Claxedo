@@ -17,7 +17,7 @@ import { putCredential } from "./registry"
 import { getBackend } from "./store"
 import { dataDir } from "../../platform/runtime/lib/paths"
 import { Log } from "../../platform/runtime/lib/log"
-import { syncMcpHosts } from "../../network/policy"
+import { syncMcpHosts } from "../sandbox/network/policy"
 import type { CredentialKind } from "./types"
 import { sandboxDriverIds } from "@claxedo/sandbox-manager/driver-catalog"
 

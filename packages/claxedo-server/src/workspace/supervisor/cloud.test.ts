@@ -308,11 +308,11 @@ vi.mock("../store", () => ({
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
 }))
 
-vi.mock("../../network/policy", () => ({
+vi.mock("../../adapters/sandbox/network/policy", () => ({
   listPolicies: vi.fn(() => []),
 }))
 
-vi.mock("../../network/resolve", () => ({
+vi.mock("../../adapters/sandbox/network/resolve", () => ({
   resolveSandboxNetworkPolicy: vi.fn(() => Promise.resolve(undefined)),
 }))
 
@@ -804,8 +804,8 @@ describe("workspace-supervisor", () => {
     })
 
     test("passes resolved Daytona network policy CIDRs into SandboxManager", async () => {
-      const policy = await import("../../network/policy")
-      const resolve = await import("../../network/resolve")
+      const policy = await import("../../adapters/sandbox/network/policy")
+      const resolve = await import("../../adapters/sandbox/network/resolve")
       ;(policy.listPolicies as any).mockReturnValueOnce([
         { target: "api.example.test", kind: "host" },
       ])

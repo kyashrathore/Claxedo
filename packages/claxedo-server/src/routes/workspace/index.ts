@@ -12,7 +12,7 @@ import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { type ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "../../platform/auth/authority"
 import { workspaceBacking } from "../../workspace/store/backing"
-import { ensureHostForRepo } from "../../network/policy"
+import { ensureHostForRepo } from "../../adapters/sandbox/network/policy"
 import {
   deleteWorkspace,
   ensureWorkspace,

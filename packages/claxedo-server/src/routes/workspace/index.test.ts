@@ -113,7 +113,7 @@ vi.mock("../../adapters/credentials/registry", () => ({
   deleteCredentialsByProvider: mocks.deleteCredentialsByProvider,
 }))
 
-vi.mock("../../network/policy", () => ({
+vi.mock("../../adapters/sandbox/network/policy", () => ({
   ensureHostForRepo: mocks.ensureHostForRepo,
 }))
 

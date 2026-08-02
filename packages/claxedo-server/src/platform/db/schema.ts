@@ -7,7 +7,7 @@ export {
   ClaxedoSessionTagTable,
 } from "./session-meta.sql"
 export { ClaxedoProviderCredentialTable } from "./provider-credential.sql"
-export { ClaxedoNetworkPolicyTable } from "./network-policy.sql"
+export { ClaxedoNetworkPolicyTable } from "../../adapters/sandbox/network/policy.sql"
 export { ClaxedoWorkspaceLeaseTable, ClaxedoWorkspaceHoldTable } from "./workspace-lease.sql"
 export { ClaxedoPreparedImageTable, ClaxedoRuntimeSnapshotTable } from "./prepared-image.sql"
 export { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "../../channels/delivery.sql"
