@@ -193,7 +193,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
     tests: [
-      "routes/documents.test.ts",
+      "documents/routes/index.test.ts",
       "platform/governance/architecture.test.ts",
     ],
   },
@@ -364,11 +364,11 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/documents.ts",
+    module: "documents/routes/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "Documents HTTP adapter",
     reason: "Thin Worker-safe route adapter composed with placement-specific index and DocumentWorkspace backends.",
-    tests: ["routes/documents.test.ts"],
+    tests: ["documents/routes/index.test.ts"],
     routeSamples: ["/documents", "/documents/document_1/content"],
   },
   {

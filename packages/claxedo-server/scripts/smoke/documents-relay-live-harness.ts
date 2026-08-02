@@ -9,7 +9,7 @@ import { LocalInstallationDocumentBroker } from "../../src/documents/local-insta
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../../src/documents/local-managed"
 import { mintDocumentRelayJobToken } from "../../src/platform/auth/runtime-access-token"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../workspace-runtime/src/internal-secrets"
-import type { DocumentsRouteBackend } from "../../src/routes/documents"
+import type { DocumentsRouteBackend } from "../../src/documents/routes/index"
 import type { DocumentIndexEntry } from "../../src/documents/index-store"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "documents-relay-live-"))

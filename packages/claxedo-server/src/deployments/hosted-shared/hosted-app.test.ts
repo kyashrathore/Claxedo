@@ -19,7 +19,7 @@ import {
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
-import type { DocumentsRouteBackend } from "../../routes/documents"
+import type { DocumentsRouteBackend } from "../../documents/routes/index"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount

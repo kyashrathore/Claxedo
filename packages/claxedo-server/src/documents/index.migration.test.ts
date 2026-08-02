@@ -5,22 +5,22 @@ import os from "node:os"
 import path from "node:path"
 import { getTableConfig } from "drizzle-orm/sqlite-core"
 import { describe, expect, test } from "vitest"
-import { ClaxedoDB } from "./db"
-import { ClaxedoDocumentIndexTable } from "./document-index.sql"
-import { repair } from "./repair"
+import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDocumentIndexTable } from "./index.sql"
+import { repair } from "../platform/db/repair"
 
 const resetMigration = "20260716000100_documents_reset"
 const retiredPageTable = ["claxedo", "page"].join("_")
 const retiredArenaTable = ["claxedo", "page", "arena"].join("_")
 
 function migrations() {
-  return readdirSync(path.join(import.meta.dirname, "claxedo-migration"), { withFileTypes: true })
+  return readdirSync(path.join(import.meta.dirname, "../platform/db/claxedo-migration"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
     .map((name) => ({
       name,
-      sql: readFileSync(path.join(import.meta.dirname, "claxedo-migration", name, "migration.sql"), "utf8"),
+      sql: readFileSync(path.join(import.meta.dirname, "../platform/db/claxedo-migration", name, "migration.sql"), "utf8"),
     }))
 }
 

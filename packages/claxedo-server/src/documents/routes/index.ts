@@ -7,23 +7,23 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../platform/auth/auth"
+} from "../../platform/auth/auth"
 import {
   requireAuthority,
   type ProjectAction,
   type ProjectId,
   type WorkspaceAuthority,
-} from "../platform/auth/authority"
-import type { ControlPlaneServices } from "../authority/services"
-import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../documents/backend"
-import type { DocumentIndexEntry } from "../documents/index-store"
-import { DocumentVersionConflictError, DocumentWorkspaceError } from "../documents/errors"
-import type { DocumentHandle, DocumentVersion, SnapshotID } from "../documents/port"
-import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../documents/service"
-import { isLoopbackLocalRequest } from "./local-only-projection"
+} from "../../platform/auth/authority"
+import type { ControlPlaneServices } from "../../authority/services"
+import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../backend"
+import type { DocumentIndexEntry } from "../index-store"
+import { DocumentVersionConflictError, DocumentWorkspaceError } from "../errors"
+import type { DocumentHandle, DocumentVersion, SnapshotID } from "../port"
+import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../../documents/service"
+import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
 
-export { DocumentAgentOpenError } from "../documents/backend"
-export type { DocumentsBackend as DocumentsRouteBackend } from "../documents/backend"
+export { DocumentAgentOpenError } from "../backend"
+export type { DocumentsBackend as DocumentsRouteBackend } from "../backend"
 
 const LOCAL_ORG = "__local__"
 const MAX_BODY_BYTES = 2 * 1024 * 1024

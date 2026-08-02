@@ -8,7 +8,7 @@ import {
   ClaxedoDocumentIndexTable,
   ClaxedoDocumentStatusTable,
   ClaxedoLocalProjectTable,
-} from "../platform/db/document-index.sql"
+} from "./index.sql"
 import {
   defaultDocumentStatuses,
   DocumentIndexEntrySchema,

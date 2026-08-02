@@ -19,7 +19,7 @@ import {
 } from "../../../workspace-runtime/src/index"
 import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "../routes/documents"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/index"
 import { createHostedDocumentsBackend } from "./hosted-backend"
 import { createHostedLocalDocumentRelay } from "./hosted-local-relay"
 import { createHostedDocumentRuntimeBroker } from "./hosted-runtime-broker"

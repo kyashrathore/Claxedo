@@ -151,7 +151,7 @@ describe("worker import-graph", () => {
     expect(visitedRel).toContain("deployments/hosted-shared/hosted-app.ts")
     expect(visitedRel).toContain("hosts/workgraph/hosted.ts")
     expect(visitedRel).toContain("hosts/workgraph/hosted-runtime.ts")
-    expect(visitedRel).toContain("routes/documents.ts")
+    expect(visitedRel).toContain("documents/routes/index.ts")
     expect(visitedRel).not.toContain("routes/docs.ts")
     expect(visitedRel).not.toContain("document-store.ts")
     expect(visitedRel).not.toContain("doc-store.ts")

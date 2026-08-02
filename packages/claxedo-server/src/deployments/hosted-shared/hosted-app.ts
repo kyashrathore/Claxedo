@@ -79,7 +79,7 @@ import {
 } from "../../hosts/workgraph/hosted-run-operation"
 import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/hosted-runtime"
 import { createHostedConnectionsSetup } from "../../hosts/workgraph/hosted-connections-setup"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "../../routes/documents"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "../../documents/routes/index"
 import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-telemetry"
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"

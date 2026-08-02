@@ -7,18 +7,18 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../platform/auth/auth"
-import type { ProjectAction, WorkspaceAuthority } from "../platform/auth/authority"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../documents/local-managed"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../platform/auth/auth"
+import type { ProjectAction, WorkspaceAuthority } from "../../platform/auth/authority"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../local-managed"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
   type RepositoryDocumentHandle,
-} from "../documents/repository"
-import type { LocalManagedDocumentHandle } from "../documents/local-managed"
-import type { DocumentEntry } from "../documents/port"
-import { DocumentStorageError } from "../documents/errors"
+} from "../repository"
+import type { LocalManagedDocumentHandle } from "../local-managed"
+import type { DocumentEntry } from "../port"
+import { DocumentStorageError } from "../errors"
 import {
   archiveDocumentIndexEntry,
   createDocumentIndexEntry,
@@ -31,17 +31,17 @@ import {
   restoreDocumentIndexEntry,
   transitionDocumentStatus,
   updateDocumentIndexMetadata,
-} from "../documents/index-store"
-import type { DocumentIndexEntry } from "../documents/index-store"
-import { setDocumentChangedSink, subscribeDocumentEvents } from "../documents/backend"
-import { ClaxedoDB } from "../platform/db/db"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "./documents"
-import { peerAddressStamp } from "./local-only-projection"
+} from "../index-store"
+import type { DocumentIndexEntry } from "../index-store"
+import { setDocumentChangedSink, subscribeDocumentEvents } from "../backend"
+import { ClaxedoDB } from "../../platform/db/db"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "./index"
+import { peerAddressStamp } from "../../routes/local-only-projection"
 import {
   disposeHydratedSessionDocuments,
   hydrateSessionDocument,
   hydratedSessionDocumentPaths,
-} from "../documents/session-hydration"
+} from "../session-hydration"
 
 const execFileAsync = promisify(execFile)
 
