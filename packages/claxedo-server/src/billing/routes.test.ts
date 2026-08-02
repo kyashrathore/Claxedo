@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
-import { BillingRoutes, POLAR_INTERACTIVE_TIMEOUT_MS, type PolarClientLike } from "./billing-routes"
-import type { BillingStore } from "./billing-store"
+import { BillingRoutes, POLAR_INTERACTIVE_TIMEOUT_MS, type PolarClientLike } from "./routes"
+import type { BillingStore } from "./store"
 import { signStandardWebhook } from "./standard-webhooks"
 
 /**

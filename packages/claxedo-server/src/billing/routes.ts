@@ -38,7 +38,7 @@ import type { RouteGuardExemption } from "../control-plane/request-guard"
 import { durableIdempotencyStore, type DurableIdempotencyStore } from "../control-plane/http/idempotency"
 import { polarWebhookCacheKey } from "./polar-webhook-dedup"
 import { reportPaymentError } from "../observability/report"
-import { createBillingStore, type BillingStore, type CheckoutContext } from "./billing-store"
+import { createBillingStore, type BillingStore, type CheckoutContext } from "./store"
 import { webhookEventToApplyArgs, isBillingRelevantEventType, type PolarProductConfig } from "./apply-polar-state"
 import { verifyStandardWebhook, WebhookSignatureError } from "./standard-webhooks"
 
@@ -209,7 +209,7 @@ export const BILLING_WEBHOOK_GUARD_EXEMPTION = {
   rateLimit: true,
   reason:
     "Polar delivers this route unauthenticated, so it needs an IP-keyed limiter and a content-length precheck that runs BEFORE the body is buffered for signature verification — both tighter than the defaults. The default per-IP limiter would also let a webhook flood spend the budget the rest of the plane shares with that client.",
-  enforcedBy: "src/billing/billing-routes.ts (readCappedBody + webhookRateLimiter on POST /polar/webhook)",
+  enforcedBy: "src/billing/routes.ts (readCappedBody + webhookRateLimiter on POST /polar/webhook)",
 } as const satisfies RouteGuardExemption
 
 /**

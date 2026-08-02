@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { EntitlementState } from "./billing-store"
+import type { EntitlementState } from "./store"
 import {
   BillingEntitlementError,
   createEntitlementGate,

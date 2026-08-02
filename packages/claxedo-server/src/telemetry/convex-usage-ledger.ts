@@ -10,8 +10,8 @@
  */
 
 import { anyApi } from "convex/server"
-import { requireExecutor, requireServiceToken } from "../control-plane/adapters/convex/convex-authority-executor"
-import type { ConvexExecutor } from "../control-plane/adapters/convex/convex-authority-types"
+import { requireExecutor, requireServiceToken } from "../control-plane/adapters/convex/authority/executor"
+import type { ConvexExecutor } from "../control-plane/adapters/convex/authority/types"
 import { controlPlaneTimeoutMs, withTimeout } from "../control-plane/adapters/convex/timeout"
 import type { LlmTurnRecord, UsageLedger } from "./metering"
 

@@ -34,8 +34,8 @@ import { observabilityOptions, type ObservabilityEnv } from "../../observability
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../http/security-headers"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
 import { leaseFencedReconcile, skipOverlappingReconcile } from "../../hosts/workgraph/reconcile-serialize"
-import { createConvexCronLease } from "../../control-plane/adapters/convex/convex-cron-lease"
-import { createConvexIdempotencyStore } from "../../control-plane/adapters/convex/convex-idempotency-store"
+import { createConvexCronLease } from "../../control-plane/adapters/convex/cron-lease"
+import { createConvexIdempotencyStore } from "../../control-plane/adapters/convex/idempotency-store"
 import { setDurableIdempotencyStore } from "../../control-plane/http/idempotency"
 import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import {

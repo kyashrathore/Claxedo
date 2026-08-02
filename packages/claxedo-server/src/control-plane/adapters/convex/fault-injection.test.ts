@@ -25,7 +25,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { requireExecutor } from "./convex-authority-executor"
+import { requireExecutor } from "./authority/executor"
 
 const originalFetch = globalThis.fetch
 

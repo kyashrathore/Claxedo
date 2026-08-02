@@ -1,7 +1,7 @@
-import type { SignedControlPlaneAuth } from "../../auth"
-import { convexApi } from "./convex-authority-api"
-import { requireExecutor } from "./convex-authority-executor"
-import type { ConvexAuthorityInput } from "./convex-authority-types"
+import type { SignedControlPlaneAuth } from "../../../auth"
+import { convexApi } from "./api"
+import { requireExecutor } from "./executor"
+import type { ConvexAuthorityInput } from "./types"
 
 export function auditAuthority(input: ConvexAuthorityInput) {
   return {

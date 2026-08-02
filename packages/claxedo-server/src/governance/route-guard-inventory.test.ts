@@ -33,7 +33,7 @@ import {
   hostedRouteGuardExemptions,
   pathMatchesPrefix,
 } from "../control-plane/request-guard"
-import { BILLING_WEBHOOK_GUARD_EXEMPTION } from "../billing/billing-routes"
+import { BILLING_WEBHOOK_GUARD_EXEMPTION } from "../billing/routes"
 
 /**
  * The exemption set the hosted app actually composes: the core list plus every

@@ -37,7 +37,7 @@ import { newWorkspaceId } from "../../control-plane/workspace-id"
 import {
   requireExecutor,
   requireServiceToken,
-} from "../../control-plane/adapters/convex/convex-authority-executor"
+} from "../../control-plane/adapters/convex/authority/executor"
 import {
   apiError,
   captureWorkspaceTelemetry,

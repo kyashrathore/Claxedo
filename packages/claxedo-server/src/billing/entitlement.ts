@@ -24,7 +24,7 @@
  */
 
 import { reportPaymentError } from "../observability/report"
-import { createBillingStore, type BillingStore, type EntitlementState, type EntitlementStateRef } from "./billing-store"
+import { createBillingStore, type BillingStore, type EntitlementState, type EntitlementStateRef } from "./store"
 
 export type EntitlementCapability = "cloud-workspace" | "hosted-connections"
 

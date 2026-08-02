@@ -1,8 +1,8 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../auth"
-import { isCliAccessAuth } from "../../cli-session-token"
-import { convexApi } from "./convex-authority-api"
-import { requireAllowed, requireExecutor } from "./convex-authority-executor"
-import type { ConvexAuthorityInput, ServiceArgs } from "./convex-authority-types"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../auth"
+import { isCliAccessAuth } from "../../../cli-session-token"
+import { convexApi } from "./api"
+import { requireAllowed, requireExecutor } from "./executor"
+import type { ConvexAuthorityInput, ServiceArgs } from "./types"
 
 export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: ServiceArgs) {
   return {

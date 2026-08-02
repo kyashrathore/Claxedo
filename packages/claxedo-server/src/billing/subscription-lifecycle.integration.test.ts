@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import { BillingRoutes, POLAR_INTERACTIVE_TIMEOUT_MS, type PolarClientLike } from "./billing-routes"
-import type { ApplyPolarStateArgs, BillingStore, EntitlementStateRef } from "./billing-store"
+import { BillingRoutes, POLAR_INTERACTIVE_TIMEOUT_MS, type PolarClientLike } from "./routes"
+import type { ApplyPolarStateArgs, BillingStore, EntitlementStateRef } from "./store"
 import { signStandardWebhook } from "./standard-webhooks"
 import {
   BillingEntitlementError,

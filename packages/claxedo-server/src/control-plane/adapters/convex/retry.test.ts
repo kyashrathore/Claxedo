@@ -24,7 +24,7 @@ import {
   isRetryableConvexError,
   withConvexRetry,
 } from "./retry"
-import { mutationIsReplaySafe } from "./convex-authority-executor"
+import { mutationIsReplaySafe } from "./authority/executor"
 import { ControlPlaneRequestTimeoutError } from "./timeout"
 
 /** No real sleeping; the delays handed to it are asserted directly. */

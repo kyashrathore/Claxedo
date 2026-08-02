@@ -54,7 +54,7 @@ import {
   type SharedRateLimitStore,
 } from "../../control-plane/rate-limit"
 import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../control-plane/request-guard"
-import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/billing-routes"
+import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../control-plane/auth"
 import { deploymentCompatibilityReport } from "../../governance/deployment-compatibility"

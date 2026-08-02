@@ -22,11 +22,11 @@ export type ArchitectureOwnershipEntry = {
 export const ARCHITECTURE_OWNERSHIP = [
   {
     area: "authority",
-    module: "control-plane/adapters/convex/convex-authority.ts",
+    module: "control-plane/adapters/convex/authority/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane Convex authority adapter",
     tests: [
-      "control-plane/adapters/convex/convex-authority.test.ts",
+      "control-plane/adapters/convex/authority/index.test.ts",
       "control-plane/services.test.ts",
     ],
   },

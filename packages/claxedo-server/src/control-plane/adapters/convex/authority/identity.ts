@@ -1,7 +1,7 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../auth"
-import { cliServiceUser, isCliAccessAuth } from "../../cli-session-token"
-import { convexApi } from "./convex-authority-api"
-import { projectResult, requireAllowed, requireExecutor, requireServiceToken } from "./convex-authority-executor"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../auth"
+import { cliServiceUser, isCliAccessAuth } from "../../../cli-session-token"
+import { convexApi } from "./api"
+import { projectResult, requireAllowed, requireExecutor, requireServiceToken } from "./executor"
 import type {
   AuthorizeProjectArgs,
   AuthorizeProjectResult,
@@ -11,7 +11,7 @@ import type {
   ProjectRoleArgs,
   ProjectRoleResult,
   ServiceArgs,
-} from "./convex-authority-types"
+} from "./types"
 
 export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: ServiceArgs) {
   return {

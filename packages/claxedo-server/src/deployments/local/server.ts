@@ -20,7 +20,7 @@ import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../.
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
 import { eventsHandler } from "../../routes/events"
 import { peerAddressStamp } from "../../routes/local-only-projection"
-import { createConnectionsHost } from "../../hosts/connections/connections-host"
+import { createConnectionsHost } from "../../hosts/connections"
 import { createConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
 import { mirrorProcessEvents } from "../../lib/process-events"
 import { DocumentsRoutes } from "../../routes/documents"
@@ -80,7 +80,7 @@ import {
   unsignedLocalRequestGuard,
 } from "../../control-plane/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../control-plane/adapters/convex/convex-authority"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../control-plane/adapters/convex/authority"
 import { createSqliteWorkspaceAuthority } from "../../control-plane/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../control-plane/http"
 import { createCentralControlApp } from "../../central-runtime"

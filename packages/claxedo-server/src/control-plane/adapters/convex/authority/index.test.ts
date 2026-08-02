@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../auth"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./convex-authority"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../auth"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./index"
 
 const auth: SignedControlPlaneAuth = {
   mode: "signed",

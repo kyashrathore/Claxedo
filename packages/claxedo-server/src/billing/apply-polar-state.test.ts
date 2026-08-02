@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { customerStateToApplyArgs, subscriptionEventToApplyArgs, webhookEventToApplyArgs } from "./apply-polar-state"
-import { polarProductConfig } from "./billing-routes"
+import { polarProductConfig } from "./routes"
 
 /**
  * D5 payload translation: Polar wire/SDK payloads → the normalized org-state

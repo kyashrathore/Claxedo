@@ -30,7 +30,7 @@ import {
   revokeSession,
   rotate,
 } from "../../../../convex/cliSessionTokens"
-import { cliSessionTokenAuthority } from "../control-plane/adapters/convex/convex-authority-cli-session-tokens"
+import { cliSessionTokenAuthority } from "../control-plane/adapters/convex/cli-session-tokens"
 import { authorityCliSessionTokenRegistry } from "../control-plane/cli-session-registry"
 
 type Row = Record<string, any> & { _id: string }

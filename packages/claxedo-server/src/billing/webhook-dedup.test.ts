@@ -22,8 +22,8 @@
  */
 
 import { describe, expect, test, vi } from "vitest"
-import { BillingRoutes, type PolarClientLike } from "./billing-routes"
-import type { BillingStore } from "./billing-store"
+import { BillingRoutes, type PolarClientLike } from "./routes"
+import type { BillingStore } from "./store"
 import type { DurableIdempotencyStore } from "../control-plane/http/idempotency"
 import { signStandardWebhook } from "./standard-webhooks"
 

@@ -1,14 +1,14 @@
-import type { SignedControlPlaneAuth } from "../../auth"
-import type { WorkspaceAuthority } from "../../authority"
-import { cliServiceUser } from "../../cli-session-token"
-import { agentExtensionAuthority } from "./convex-authority-agent-extensions"
-import { auditAuthority } from "./convex-authority-audit"
-import { requireServiceToken } from "./convex-authority-executor"
-import { identityAuthority } from "./convex-authority-identity"
-import { runtimeTokenAuthority } from "./convex-authority-runtime-tokens"
-import { sessionAuthority } from "./convex-authority-sessions"
-import type { ConvexAuthorityInput } from "./convex-authority-types"
-import { workspaceAuthority } from "./convex-authority-workspaces"
+import type { SignedControlPlaneAuth } from "../../../auth"
+import type { WorkspaceAuthority } from "../../../authority"
+import { cliServiceUser } from "../../../cli-session-token"
+import { agentExtensionAuthority } from "./agent-extensions"
+import { auditAuthority } from "./audit"
+import { requireServiceToken } from "./executor"
+import { identityAuthority } from "./identity"
+import { runtimeTokenAuthority } from "./runtime-tokens"
+import { sessionAuthority } from "./sessions"
+import type { ConvexAuthorityInput } from "./types"
+import { workspaceAuthority } from "./workspaces"
 
 export type {
   AuthorizeProjectArgs,
@@ -20,7 +20,7 @@ export type {
   ProjectRoleArgs,
   ProjectRoleResult,
   WorkspaceId,
-} from "./convex-authority-types"
+} from "./types"
 
 /**
  * Resolve the workspace-authority backend URL from deployment env.

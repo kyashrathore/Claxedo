@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 import { errorBody } from "./http"
-import { createConvexAuthority } from "../control-plane/adapters/convex/convex-authority"
+import { createConvexAuthority } from "../control-plane/adapters/convex/authority"
 import { ControlPlaneRequestTimeoutError } from "../control-plane/adapters/convex/timeout"
 import type { WorkspaceAuthority } from "../control-plane/services"
 import { timingSafeEqualStrings } from "../control-plane/web-crypto"

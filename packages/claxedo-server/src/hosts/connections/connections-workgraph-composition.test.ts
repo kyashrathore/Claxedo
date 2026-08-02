@@ -16,7 +16,7 @@ const registry = await import("../../adapters/credentials/registry")
 const { ClaxedoDB } = await import("../../adapters/storage/db")
 ClaxedoDB.Drizzle()
 
-const { createConnectionsHost } = await import("./connections-host")
+const { createConnectionsHost } = await import("./index")
 const { createConnectionStoreAdapter } = await import("./store-adapter")
 const { createWorkGraphConnectionsPort } = await import("../workgraph/connections")
 import type { ControlPlaneCredentials } from "../../control-plane/services"
