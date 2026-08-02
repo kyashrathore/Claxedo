@@ -28,8 +28,8 @@ import {
   readSessionMessages,
   readSessionMaxEventOrdinal,
   subscribeMessageReplay,
-} from "../../../cloud/message-replay"
-import { syncCloudMessages } from "../../../cloud/session-sync"
+} from "../../../session/message-replay"
+import { syncCloudMessages } from "../../../session/sync"
 import type { SessionWriteMode } from "../../../platform/governance/architecture"
 
 import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "../../../platform/auth/durable-session-log"

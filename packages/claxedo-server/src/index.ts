@@ -136,7 +136,7 @@ export {
   type AuditEntry,
   type MirrorAdapter,
   type MirrorController,
-} from "./cloud/mirror"
+} from "./adapters/central-store/mirror"
 export { createClaxedoClient, type ClaxedoClientOptions, type ClaxedoRequestOptions } from "./client"
 export {
   startUserHostedWorkspaceTunnel,

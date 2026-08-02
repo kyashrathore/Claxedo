@@ -128,7 +128,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "mirror",
-    module: "cloud/mirror.ts",
+    module: "adapters/central-store/mirror.ts",
     status: OwnershipStatus.Canonical,
     owner: "MirrorController",
     reason: "createMirrorController owns each mirror adapter, subscription, pending lease set, and flush timer.",
@@ -136,19 +136,19 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
-    module: "cloud/message-replay.ts",
+    module: "session/message-replay.ts",
     status: OwnershipStatus.Canonical,
     owner: "local session message replay projection",
     reason: "Persists streamed workspace-runtime message events into the local projection store; it is not sandbox driver or lease code.",
-    tests: ["cloud/message-replay.test.ts"],
+    tests: ["session/message-replay.test.ts"],
   },
   {
     area: "projection",
-    module: "cloud/session-sync.ts",
+    module: "session/sync.ts",
     status: OwnershipStatus.Canonical,
     owner: "local cloud session projection sync",
     reason: "Mirrors cloud workspace session summaries and messages into claxedo.db for local reads; it is not sandbox driver or lease code.",
-    tests: ["cloud/session-sync.test.ts"],
+    tests: ["session/sync.test.ts"],
   },
   {
     area: "registry",
