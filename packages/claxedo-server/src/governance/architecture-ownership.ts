@@ -130,7 +130,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "MirrorController",
     reason: "createMirrorController owns each mirror adapter, subscription, pending lease set, and flush timer.",
-    tests: ["host-primitives.test.ts"],
+    tests: ["integration/host-primitives.test.ts"],
   },
   {
     area: "projection",
@@ -181,7 +181,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     tests: [
       "governance/architecture.test.ts",
       "http/proxy.timeout.test.ts",
-      "control-plane.integration.test.ts",
+      "integration/control-plane.integration.test.ts",
     ],
   },
   {

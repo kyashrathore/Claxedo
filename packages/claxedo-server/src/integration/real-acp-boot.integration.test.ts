@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { defined } from "./fixtures/assert-helpers"
+import { defined } from "../fixtures/assert-helpers"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import { existsSync } from "fs"
@@ -48,18 +48,18 @@ const prev: Record<string, string | undefined> = {
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
-process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../..")
+process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../..")
 process.env.POSTHOG_KEY = ""
 process.env.CLAXEDO_ACP_IDLE_TIMEOUT_MS = "60000"
 process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "15000"
 process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "1000"
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("./deployments/local/server.js"),
-  import("./workspace/supervisor/index.js"),
-  import("./workspace/store/index.js"),
-  import("./agent-config.js"),
-  import("./deployments/local/embedded-workspace-runtime.js"),
+  import("../deployments/local/server.js"),
+  import("../workspace/supervisor/index.js"),
+  import("../workspace/store/index.js"),
+  import("../agent-config.js"),
+  import("../deployments/local/embedded-workspace-runtime.js"),
 ])
 
 const realBinary = path.resolve(__dirname, "../../workspace-runtime/node_modules/.bin/claude-agent-acp")

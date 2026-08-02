@@ -7,10 +7,10 @@ import { randomUUID } from "crypto"
 import { execSync } from "child_process"
 import { createServer } from "node:net"
 
-vi.mock("./workspace/supervisor", async () => {
+vi.mock("../workspace/supervisor", async () => {
   const ensureMockSandbox = async (workspaceId: string) => {
-    const bus = await import("./lib/bus")
-    const store = await import("./workspace/store")
+    const bus = await import("../lib/bus")
+    const store = await import("../workspace/store")
     bus.claxedoBus.publish({
       type: "provision",
       workspaceId,
@@ -193,13 +193,13 @@ const prev = {
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
-process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../..")
+process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../..")
 process.env.POSTHOG_KEY = ""
 
 const [serverMod, store, agent] = await Promise.all([
-  import("./deployments/local/server"),
-  import("./workspace/store"),
-  import("./agent-config"),
+  import("../deployments/local/server"),
+  import("../workspace/store"),
+  import("../agent-config"),
 ])
 
 async function repo(label: string) {
