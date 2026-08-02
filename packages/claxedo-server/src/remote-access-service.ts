@@ -2,7 +2,7 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./control-pl
 import type { WorkspaceAuthority } from "./control-plane/authority"
 import type { HostTunnelTokenSigner } from "./control-plane/runtime-access-token"
 import type { RemoteAccessService } from "./routes/remote-access"
-import type { LocalHostIdentity } from "./routes/workspace-local-host"
+import type { LocalHostIdentity } from "./routes/workspace/local-host"
 
 type LocalWorkspace = {
   id: string

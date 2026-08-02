@@ -270,7 +270,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/opencode-compat.ts",
+    module: "routes/opencode-compat/index.ts",
     status: OwnershipStatus.Compatibility,
     owner: "OpenCode HTTP compatibility routes",
     canonicalReplacement: "Control-plane and workspace-runtime route domains in route-ownership.ts",
@@ -390,12 +390,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/workspace.ts",
+    module: "routes/workspace/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "local workspace routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict DOCUMENT: imports ../workspace-store and ../workspace-supervisor (both FORBIDDEN_LOCAL). Local-only workspace-store coupling, so the workspace* route family stays in place under routes/.",
-    tests: ["routes/workspace.test.ts"],
+    tests: ["routes/workspace/index.test.ts"],
     routeSamples: ["/api/workspace"],
   },
   {

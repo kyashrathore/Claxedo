@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { HostedWorkspaceRoutes } from "../routes/hosted-workspace"
+import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
 import type { ClerkVerifier } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"

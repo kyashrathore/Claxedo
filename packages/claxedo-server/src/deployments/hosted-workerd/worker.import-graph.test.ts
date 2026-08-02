@@ -156,7 +156,7 @@ describe("worker import-graph", () => {
     expect(visitedRel).not.toContain("document-store.ts")
     expect(visitedRel).not.toContain("doc-store.ts")
     // A representative deep node-safe dependency should be reachable.
-    expect(visitedRel).toContain("routes/hosted-workspace.ts")
+    expect(visitedRel).toContain("routes/hosted/workspace.ts")
   })
 
   test("no local-only source module is in the Worker graph", () => {

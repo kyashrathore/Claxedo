@@ -11,7 +11,7 @@ import {
   type SandboxManager,
 } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
-import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "../../routes/hosted-device-auth"
+import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "../../routes/hosted/device-auth"
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,

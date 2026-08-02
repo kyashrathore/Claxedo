@@ -33,7 +33,7 @@ import {
   WORKGRAPH_RECONCILE_LEASE,
   type CronLease,
 } from "./reconcile-serialize"
-import type { WorkGraphReconcileResult } from "../../routes/hosted-workgraph-admin"
+import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 
 const EMPTY: WorkGraphReconcileResult = { launched: [], results: [] }
 

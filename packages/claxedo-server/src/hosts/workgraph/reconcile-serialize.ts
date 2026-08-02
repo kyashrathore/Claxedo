@@ -1,4 +1,4 @@
-import type { WorkGraphReconcileResult } from "../../routes/hosted-workgraph-admin"
+import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 
 /**
  * The bounded reconciler is not written for parallel runs: overlapping runs

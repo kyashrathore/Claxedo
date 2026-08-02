@@ -40,7 +40,7 @@ import {
   rotate,
 } from "../../../../convex/cliSessionTokens"
 import { createHostedApp } from "../deployments/hosted-shared/hosted-app"
-import { HostedDeviceAuthRoutes } from "../routes/hosted-device-auth"
+import { HostedDeviceAuthRoutes } from "../routes/hosted/device-auth"
 import {
   cliSessionHandler,
   durableCliSessionTokenRegistry,

@@ -33,7 +33,7 @@ import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
 import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "../region"
-import type { HostedDeviceAuthProvider } from "../routes/hosted-device-auth"
+import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import { createControlPlaneRelayProvider } from "../adapters/relay"
 import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../routes/internal-relay"

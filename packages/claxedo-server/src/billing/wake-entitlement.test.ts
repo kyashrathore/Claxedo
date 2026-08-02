@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { hostedConnectionInfo } from "../routes/workspace-hosted-connection-info"
+import { hostedConnectionInfo } from "../routes/workspace/hosted-connection-info"
 import type { ControlPlaneServices } from "../control-plane/services"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 

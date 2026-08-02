@@ -108,7 +108,7 @@ const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod] = await Promi
   import("../deployments/local/server"),
   import("../control-plane/services"),
   import("../control-plane/adapters/sqlite/central-store"),
-  import("../routes/opencode-compat"),
+  import("../routes/opencode-compat/index"),
   import("../agent-config"),
 ])
 

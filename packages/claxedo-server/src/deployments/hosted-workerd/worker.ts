@@ -37,7 +37,7 @@ import { leaseFencedReconcile, skipOverlappingReconcile } from "../../hosts/work
 import { createConvexCronLease } from "../../control-plane/adapters/convex/convex-cron-lease"
 import { createConvexIdempotencyStore } from "../../control-plane/adapters/convex/convex-idempotency-store"
 import { setDurableIdempotencyStore } from "../../control-plane/http-idempotency"
-import type { WorkGraphReconcileResult } from "../../routes/hosted-workgraph-admin"
+import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import {
   createCloudflareSettlementDispatcher,
   dispatchCloudflareSettlement,

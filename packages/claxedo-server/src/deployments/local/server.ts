@@ -24,11 +24,11 @@ import { createConnectionsHost } from "../../hosts/connections/connections-host"
 import { createConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
 import { mirrorProcessEvents } from "../../process-events"
 import { DocumentsRoutes } from "../../routes/documents"
-import { AgentConfigRoutes } from "../../routes/agent-config"
+import { AgentConfigRoutes } from "../../routes/agent-config/index"
 import { SessionMetaRoutes } from "../../routes/session-meta"
-import { WorkspaceRoutes } from "../../routes/workspace"
-import { OpenCodeCompatRoutes } from "../../routes/opencode-compat"
-import { resolveHarnessId } from "../../routes/opencode-compat-provider-config"
+import { WorkspaceRoutes } from "../../routes/workspace/index"
+import { OpenCodeCompatRoutes } from "../../routes/opencode-compat/index"
+import { resolveHarnessId } from "../../routes/opencode-compat/provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../proxy"
 import { configureOpencodeMcpSync } from "../../opencode/mcp-sync"
@@ -91,7 +91,7 @@ import { BootstrapRoutes } from "../../routes/bootstrap"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "../../adapters/relay"
 import { sandboxFetch } from "../../sandbox-target-fetch"
-import { WorkspaceCheckpointRoutes } from "../../routes/workspace-checkpoints"
+import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
 import {
   ensureWorkspace,
   getWorkspaceByDirectory,
@@ -132,7 +132,7 @@ import { llmTurnRecord, workGraphSessionAttribution } from "../../telemetry/mete
 import { ClaxedoDB } from "../../adapters/storage/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "../../remote-access-service"
-import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace-local-host"
+import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 
 const execFileAsync = promisify(execFile)

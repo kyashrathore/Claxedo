@@ -934,7 +934,7 @@ describe("control-plane services", () => {
   })
 
   test("cloud workspace creation uses normalized provider, branch, and credential inputs", () => {
-    const file = path.resolve(import.meta.dirname, "../routes/workspace.ts")
+    const file = path.resolve(import.meta.dirname, "../routes/workspace/index.ts")
     const text = fs.readFileSync(file, "utf8")
 
     expect(text).toContain("gitBranch: z.string().optional()")

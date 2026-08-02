@@ -25,7 +25,7 @@ import {
   setSandboxDriverConfig,
 } from "../agent-config"
 import { isLoopbackLocalRequest } from "./local-only-projection"
-import { apiError, type WorkspaceRouteOptions } from "./workspace-user-hosted"
+import { apiError, type WorkspaceRouteOptions } from "./workspace/user-hosted"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../adapters/credentials/sandbox-verify"
 import { CredentialVerificationError } from "../adapters/credentials/verification-error"
 import type { CredentialProbe } from "../adapters/credentials/discovery"
