@@ -81,15 +81,38 @@ function scheduleDelayedTask(task: () => void, delay: number) {
  * The fallback keys on `parentID`, which is the same fact the announced id
  * encodes (`${userMessageId}_r` is derived from it), so this recognises the
  * merged message without widening to "any assistant message in the session".
+ *
+ * The parent-matched path additionally requires the message to have FINISHED
+ * the turn — errored, or carrying a `finish` other than "tool-calls". The
+ * exact-id path needs no guard (the announced envelope only ever holds the
+ * turn's reply), but a parent-matched sibling can be a mid-turn STEP: a
+ * multi-step tool turn emits an assistant message per step, each parented to
+ * the same user message, each acquiring parts AND a completed time when its
+ * step ends — so neither parts nor `time.completed` distinguishes a step from
+ * the reply (a completed-time guard was tried and failed for exactly that
+ * reason). The engine's own vocabulary does: a step that ended in tool calls
+ * gets `finish = "tool-calls"` while the turn's true end gets "stop"/etc —
+ * the same rule the engine itself uses to decide whether a turn is resumable
+ * (prompt.ts's `!["tool-calls"].includes(lastAssistant.finish)`). Without
+ * this guard the predicate answered "yes" on step one, and its caller — the
+ * accepted-prompt refresh below — dispatched a synthetic `session.idle` into
+ * a running turn, derailing every multi-round tool flow (found as the
+ * workgraph-real lane failing while single-step lanes stayed green).
  */
 export function conversationHasAssistantMessage(sessionID: string, assistantMessageId: string | undefined) {
   if (!assistantMessageId) return false
   const conversation = registeredConversationSnapshot(sessionID)
   const userMessageId = assistantMessageId.endsWith("_r") ? assistantMessageId.slice(0, -2) : undefined
+  const turnFinished = (item: (typeof conversation.messages)[number]) => {
+    if ("error" in item && item.error) return true
+    const finish = (item as { finish?: unknown }).finish
+    return typeof finish === "string" && finish !== "tool-calls"
+  }
   const message = conversation.messages.find(
     (item) =>
       item.role === "assistant" &&
-      (item.id === assistantMessageId || (!!userMessageId && item.parentID === userMessageId)),
+      (item.id === assistantMessageId ||
+        (!!userMessageId && item.parentID === userMessageId && turnFinished(item))),
   )
   if (!message) return false
   return "error" in message && !!message.error || (conversation.parts[message.id]?.length ?? 0) > 0
