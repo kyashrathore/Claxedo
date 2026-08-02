@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
-import type { SessionMeta } from "../session/meta/meta"
+import type { SessionMeta } from "../session/meta"
 import type { SessionWriteMode } from "../governance/architecture"
 import { createDurableSessionLog } from "./durable-session-log"
 import { createProjectionStore } from "./projection-store"
@@ -528,9 +528,9 @@ describe("control-plane services", () => {
   })
 
   test("runtime control-plane HTTP protocol exposes pull session and runtime handlers", () => {
-    const file = path.resolve(import.meta.dirname, "./http.ts")
+    const file = path.resolve(import.meta.dirname, "./http/index.ts")
     const text = fs.readFileSync(file, "utf8")
-    const sessionPull = fs.readFileSync(path.resolve(import.meta.dirname, "./http-session-pull.ts"), "utf8")
+    const sessionPull = fs.readFileSync(path.resolve(import.meta.dirname, "./http/session-pull.ts"), "utf8")
 
     expect(text).not.toContain("app.post(\"/sessions/sync\"")
     expect(text).not.toContain("app.post(\"/sessions/sync-many\"")
@@ -904,7 +904,7 @@ describe("control-plane services", () => {
   })
 
   test("workspace supervisor accepts an explicit default sandbox driver override", async () => {
-    const supervisor = await import("../workspace/supervisor/supervisor")
+    const supervisor = await import("../workspace/supervisor")
     const supervisorOptions = await import("../workspace/supervisor/options")
     supervisor.configureWorkspaceSupervisor({
       server_url: "http://127.0.0.1:0",

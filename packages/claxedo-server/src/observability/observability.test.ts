@@ -9,7 +9,7 @@ import {
   telemetryEnabled,
 } from "./config"
 import { initNodeObservability } from "./node"
-import { initPostHog, shutdownPostHog } from "../posthog"
+import { initPostHog, shutdownPostHog } from "../observability/posthog"
 import { deploymentMode } from "../control-plane/deployment-mode"
 
 /**

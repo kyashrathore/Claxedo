@@ -1,7 +1,7 @@
 import fs from "fs"
 import type { Context } from "hono"
 import path from "path"
-import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "../../workspace/store/store"
+import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "../../workspace/store"
 import { errorBody } from "../http"
 import { workspaceInput } from "./context"
 import { contains, defaultBranch, gitRun, locate, shell, trees } from "./git"

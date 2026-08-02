@@ -25,7 +25,7 @@ import {
   broadcastRuntimeConfig,
   configureWorkspaceSupervisor,
   syncWorkspaceRuntimeAgentExtensions,
-} from "../../workspace/supervisor/supervisor"
+} from "../../workspace/supervisor"
 import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "../../workspace/supervisor/test-helper"
 import type { WorkspaceAgentExtensionRecord } from "./workspace"
 

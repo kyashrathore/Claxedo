@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { z } from "zod"
-import { globalWorkspace, isGlobalDirectory } from "../../global-session"
+import { globalWorkspace, isGlobalDirectory } from "../../session/global"
 import {
   defaultSandboxDriverID,
   isSandboxDriverID,
@@ -21,8 +21,8 @@ import {
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
   type Workspace,
-} from "../../workspace/store/store"
-import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor/supervisor"
+} from "../../workspace/store"
+import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
 import { Log } from "../../lib/log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../control-plane/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"

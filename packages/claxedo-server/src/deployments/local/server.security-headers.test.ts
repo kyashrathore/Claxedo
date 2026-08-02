@@ -4,7 +4,7 @@ import path from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/central-store"
 import { createControlPlaneServices } from "../../control-plane/services"
-import { API_CONTENT_SECURITY_POLICY, HSTS_VALUE } from "../../security-headers"
+import { API_CONTENT_SECURITY_POLICY, HSTS_VALUE } from "../../http/security-headers"
 import {
   createApp,
   SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY,

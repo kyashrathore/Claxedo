@@ -8,12 +8,12 @@ import type {
   SessionEnvFileStat,
 } from "@claxedo/agent-sdk-runtime"
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime"
-import type { SandboxFetchOptions } from "../../sandbox-target-fetch"
-import { sandboxFetch } from "../../sandbox-target-fetch"
+import type { SandboxFetchOptions } from "../../http/sandbox-target-fetch"
+import { sandboxFetch } from "../../http/sandbox-target-fetch"
 import { ensureEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded-workspace-runtime"
 import { normalizeClaxedoRegion } from "../../region"
-import { resolveWorkspace } from "../../workspace/store/store"
-import type { Workspace } from "../../workspace/store/store"
+import { resolveWorkspace } from "../../workspace/store"
+import type { Workspace } from "../../workspace/store"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../connections/turn-credentials"
 import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments } from "../../documents/session-hydration"
 

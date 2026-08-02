@@ -4,7 +4,7 @@ import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WorkspaceExecutionPort } from "@claxedo/workgraph"
-import { createLocalEmbeddedWorkGraph } from "../../server-workgraph"
+import { createLocalEmbeddedWorkGraph } from "./composition/server-workgraph"
 import type { WorkgraphChangedEvent } from "../../lib/bus"
 import { createWorkGraphChangeDoorbell, createWorkGraphChangeTipWatcher } from "./change-doorbell"
 

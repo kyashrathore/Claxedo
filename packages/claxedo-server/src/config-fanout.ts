@@ -5,7 +5,7 @@
  * after any MCP mutation. Called from agent-config routes.
  */
 
-import { broadcastRuntimeConfig } from "./workspace/supervisor/supervisor"
+import { broadcastRuntimeConfig } from "./workspace/supervisor"
 import { syncEmbeddedWorkspaceRuntimes } from "./deployments/local/embedded-workspace-runtime"
 import { syncOpencodeMcpConfig } from "./opencode/mcp-sync"
 import { Log } from "./lib/log"
@@ -14,7 +14,7 @@ const log = Log.create({ service: "config-fanout" })
 
 export async function fanOutConfig(): Promise<void> {
   const targets = [
-    { name: "workspace/supervisor/supervisor", run: broadcastRuntimeConfig },
+    { name: "workspace/supervisor", run: broadcastRuntimeConfig },
     { name: "deployments/local/embedded-workspace-runtime", run: syncEmbeddedWorkspaceRuntimes },
     { name: "opencode-mcp-sync", run: syncOpencodeMcpConfig },
   ] as const

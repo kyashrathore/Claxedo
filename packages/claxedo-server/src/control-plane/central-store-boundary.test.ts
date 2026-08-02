@@ -11,7 +11,7 @@ import { importPattern } from "../test-helpers/guards"
 
 // Files that make up the control-plane central-storage seam.
 const centralStoreFiles = [
-  "http-session-pull.ts",
+  "http/session-pull.ts",
   "hosted-session-pull.ts",
   "projection-store.ts",
   "durable-session-log.ts",

@@ -4,8 +4,8 @@ import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "..
 import { putCredential, deleteCredentialsByProvider } from "../../adapters/credentials/registry"
 import { fanOutConfig } from "../../config-fanout"
 import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"
-import { sandboxFetch } from "../../sandbox-target-fetch"
-import { listProjects, resolveWorkspace } from "../../workspace/store/store"
+import { sandboxFetch } from "../../http/sandbox-target-fetch"
+import { listProjects, resolveWorkspace } from "../../workspace/store"
 import { controlPlaneRouteAuth } from "../control-plane-route-auth"
 import { errorBody } from "../http"
 import { bootPath, queryHarnessId, requestHarnessId, runner, workspaceInput } from "./context"
@@ -14,7 +14,7 @@ import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, fi
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./provider-config"
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./proxy"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
-import { PI_LAUNCH_PROVIDERS } from "../../pi-credentials"
+import { PI_LAUNCH_PROVIDERS } from "../../adapters/credentials/pi-credentials"
 
 // Back-compat: local callers/tests configure the compat transport by URL; this
 // maps onto the engine transport as an explicit external-URL opt-in.

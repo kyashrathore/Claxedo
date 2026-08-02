@@ -303,7 +303,7 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
 
 // ── Module mocks (must be before import) ─────────────────────────────────
 
-vi.mock("../store/store", () => ({
+vi.mock("../store", () => ({
   getWorkspace: (...args: unknown[]) => (mockGetWorkspace as any)(...args),
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
 }))
@@ -634,7 +634,7 @@ globalThis.fetch = vi.fn((url: string | URL | Request) => {
 
 // ── Import module under test (after mocks) ───────────────────────────────
 
-const supervisor = await import("./supervisor")
+const supervisor = await import("./index")
 const testSupervisor = await import("./test-helper")
 
 // ── Tests ────────────────────────────────────────────────────────────────

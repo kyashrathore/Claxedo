@@ -1,6 +1,6 @@
 import fs from "fs"
 import path from "path"
-import { resolveWorkspace } from "../../workspace/store/store"
+import { resolveWorkspace } from "../../workspace/store"
 import { workspaceInput, workspacePath, workspaceRoot, type OpenCodeCompatRequestContext } from "./context"
 import { fileStatus, gitListAll, globSearch, grepSearch, walkAll } from "./files"
 

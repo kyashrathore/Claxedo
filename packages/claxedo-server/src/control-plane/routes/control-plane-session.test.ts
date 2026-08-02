@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   resolveHarnessHostForRequest: vi.fn(),
 }))
 
-vi.mock("../../workspace/store/store", () => ({
+vi.mock("../../workspace/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 

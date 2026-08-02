@@ -12,8 +12,8 @@ import {
 } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
-import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "../session/meta/meta"
-import { resolveWorkspace } from "../workspace/store/store"
+import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "../session/meta"
+import { resolveWorkspace } from "../workspace/store"
 
 type Options = {
   services?: ControlPlaneServices

@@ -38,7 +38,7 @@ import {
   resolveEffectiveAgentExtensionPolicy,
   type AgentExtensionPolicyOverride,
 } from "../../hosts/agent-extensions/runtime-config"
-import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor/supervisor"
+import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
 import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../../deployments/local/embedded-workspace-runtime"
 import { errorBody } from "../http"
 

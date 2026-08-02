@@ -32,8 +32,8 @@
 
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
-import { allowedOriginPatterns } from "../../cors-origins"
-import { securityHeaders } from "../../security-headers"
+import { allowedOriginPatterns } from "../../http/cors-origins"
+import { securityHeaders } from "../../http/security-headers"
 import { JwksRoutes } from "../../control-plane/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../../routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"

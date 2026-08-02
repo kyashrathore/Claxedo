@@ -18,12 +18,12 @@ const mocks = vi.hoisted(() => ({
   updateWorkspace: vi.fn(async () => undefined),
 }))
 
-vi.mock("../workspace/store/store", () => ({
+vi.mock("../workspace/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   updateWorkspace: mocks.updateWorkspace,
 }))
 
-import { pullControlSession, pullControlSessionMessages } from "./http-session-pull"
+import { pullControlSession, pullControlSessionMessages } from "./http/session-pull"
 import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
 
 const originalFetch = globalThis.fetch

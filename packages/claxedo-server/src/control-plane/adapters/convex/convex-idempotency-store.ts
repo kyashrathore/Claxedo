@@ -15,7 +15,7 @@
 
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import type { DurableIdempotencyStore } from "../../http-idempotency"
+import type { DurableIdempotencyStore } from "../../http/idempotency"
 import { controlPlaneTimeoutMs, withTimeout } from "./timeout"
 import { withConvexRetry } from "./retry"
 

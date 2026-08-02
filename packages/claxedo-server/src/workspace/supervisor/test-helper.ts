@@ -1,5 +1,5 @@
 import { runtimes, type WorkspaceRuntimeState } from "./store"
-import type { Workspace } from "../store/store"
+import type { Workspace } from "../store"
 
 export function __registerReadyRuntimeForTest(input: {
   workspaceId: string

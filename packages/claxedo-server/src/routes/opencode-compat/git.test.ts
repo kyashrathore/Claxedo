@@ -39,7 +39,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 const { Hono } = await import("hono")
 const { contains, gitRun, locate, trees } = await import("./git")
 const { OpenCodeCompatRoutes } = await import("./index")
-const { ensureWorkspace } = await import("../../workspace/store/store")
+const { ensureWorkspace } = await import("../../workspace/store")
 const { dataDir } = await import("../../lib/paths")
 const { unsignedLocalRequestGuard } = await import("../../control-plane/deployment-mode")
 

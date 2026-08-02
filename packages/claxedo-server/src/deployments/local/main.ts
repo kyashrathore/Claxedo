@@ -1,5 +1,5 @@
 import { startServer } from "./server"
-import { getPostHog } from "../../posthog"
+import { getPostHog } from "../../observability/posthog"
 import { reportError } from "../../observability/report"
 
 /**

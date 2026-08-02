@@ -3,7 +3,7 @@ import type { ControlPlaneServices } from "../../control-plane/services"
 import { requireAuthority } from "../../control-plane/authority"
 import type { ClaxedoRegion } from "../../region"
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
-import { resolveWorkspace, type Workspace } from "../../workspace/store/store"
+import { resolveWorkspace, type Workspace } from "../../workspace/store"
 import {
   apiError,
   captureWorkspaceTelemetry,

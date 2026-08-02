@@ -13,16 +13,16 @@ import { createNodeWebSocket } from "@hono/node-ws"
 import { z } from "zod"
 import { optionalGit, setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import type { ProcessObserver } from "@claxedo/workspace-runtime"
-import { capture, initPostHog, shutdownPostHog } from "../../posthog"
+import { capture, initPostHog, shutdownPostHog } from "../../observability/posthog"
 import { initNodeObservability } from "../../observability/node"
 import { reportError } from "../../observability/report"
-import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../security-headers"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
 import { eventsHandler } from "../../routes/events"
 import { peerAddressStamp } from "../../routes/local-only-projection"
 import { createConnectionsHost } from "../../hosts/connections/connections-host"
 import { createConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
-import { mirrorProcessEvents } from "../../process-events"
+import { mirrorProcessEvents } from "../../lib/process-events"
 import { DocumentsRoutes } from "../../routes/documents"
 import { AgentConfigRoutes } from "../../routes/agent-config/index"
 import { SessionMetaRoutes } from "../../routes/session-meta"
@@ -30,7 +30,7 @@ import { WorkspaceRoutes } from "../../routes/workspace/index"
 import { OpenCodeCompatRoutes } from "../../routes/opencode-compat/index"
 import { resolveHarnessId } from "../../routes/opencode-compat/provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../proxy"
+import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../http/proxy"
 import { configureOpencodeMcpSync } from "../../opencode/mcp-sync"
 import {
   configureOpenCodeApplicationTools,
@@ -46,7 +46,7 @@ import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
   shutdownWorkspaceSupervisor,
-} from "../../workspace/supervisor/supervisor"
+} from "../../workspace/supervisor"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
@@ -90,7 +90,7 @@ import { localRelayTargetExists, localRelayTargetLookup } from "../../routes/int
 import { BootstrapRoutes } from "../../routes/bootstrap"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "../../adapters/relay"
-import { sandboxFetch } from "../../sandbox-target-fetch"
+import { sandboxFetch } from "../../http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
 import {
   ensureWorkspace,
@@ -99,10 +99,10 @@ import {
   listWorkspaces,
   resolveWorkspace,
   subscribeLocalWorkspaceChanges,
-} from "../../workspace/store/store"
+} from "../../workspace/store"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "../../region"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { mountWorkspaceRuntimePtyWebSocketProxy } from "../../server-workspace-pty-proxy"
+import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import {
   createClaxedoSessionEnvFactory,
   prepareWorkspaceRuntimeSession,
@@ -112,26 +112,26 @@ import {
   mountLazyEmbeddedWorkGraph,
   recordLocalWorkGraphLlmUsage,
   requireLocalWorkGraphRepositoryDirectory,
-} from "../../server-workgraph"
-import { mountLocalOnlyUsageLimits } from "../../server-usage-limits"
+} from "../../hosts/workgraph/composition/server-workgraph"
+import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "../../central-session-runtime"
 import { dataDir } from "../../lib/paths"
-import { withDataDirOwnership } from "../../data-dir-owner"
+import { withDataDirOwnership } from "../../lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "../../documents/local-backend"
 import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/local-installation-broker"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../hosts/workgraph/local-execution"
 import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local-execution-capabilities"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
-import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../workgraph-agent-tools"
+import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "../../worktree/service"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
-import { sessionMeta } from "../../session/meta/meta"
+import { sessionMeta } from "../../session/meta"
 import { llmTurnRecord, workGraphSessionAttribution } from "../../telemetry/metering"
 import { ClaxedoDB } from "../../adapters/storage/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
-import { createRemoteAccessService, unavailableRemoteAccessService } from "../../remote-access-service"
+import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 
@@ -1276,7 +1276,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     workgraphRuntimes.set(directory, loading)
     return loading
   }
-  const workgraphSessionModule = import("../../workgraph-session-gateway")
+  const workgraphSessionModule = import("../../hosts/workgraph/composition/session-gateway")
   const workgraphBindings = workgraphSessionModule.then((gateway) =>
     gateway.createFileWorkGraphSessionBindingStore(path.join(dataDir(), "workgraph-session-bindings.json")),
   )

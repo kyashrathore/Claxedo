@@ -6,7 +6,7 @@ import {
   controlPlaneAuthErrorBody,
 } from "../../control-plane/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
-import { resolveWorkspace } from "../../workspace/store/store"
+import { resolveWorkspace } from "../../workspace/store"
 import { isLoopbackLocalRequest } from "../local-only-projection"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "./cloud-connection"
 import {

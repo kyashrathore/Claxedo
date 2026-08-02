@@ -49,7 +49,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps the server host bridge out of harness adapter execution", () => {
-    const files = ["deployments/local/embedded-workspace-runtime.ts", "sandbox-target-fetch.ts", "proxy.ts", "config-fanout.ts"]
+    const files = ["deployments/local/embedded-workspace-runtime.ts", "http/sandbox-target-fetch.ts", "http/proxy.ts", "config-fanout.ts"]
     const forbidden = [
       "@claxedo/agent-sdk-runtime",
       "AcpHarnessAdapter",
@@ -212,7 +212,7 @@ describe("architecture boundaries", () => {
       "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN",
       "storage/workspace-lease.sql",
       "better-sqlite",
-      "workspace/store/store",
+      "workspace/store",
       "workspaceStore",
       "process.env",
       "Bun.file",
@@ -256,7 +256,7 @@ describe("architecture boundaries", () => {
   test("keeps API error response bodies structured", () => {
     const files = [
       path.resolve(import.meta.dirname, "../deployments/local/server.ts"),
-      path.resolve(import.meta.dirname, "../proxy.ts"),
+      path.resolve(import.meta.dirname, "../http/proxy.ts"),
       ...walk(path.resolve(import.meta.dirname, "../routes")).filter((file) => file.endsWith(".ts")),
     ]
     const rawScalarErrorBodies = files.flatMap((file) => {
@@ -285,7 +285,7 @@ describe("architecture boundaries", () => {
       "storage.ts",
       "workspace.ts",
     ]
-    const forbidden = ["../paths", "config-fanout", "workspace/supervisor/supervisor", "ControlPlane", "Convex", "Hono"]
+    const forbidden = ["../paths", "config-fanout", "workspace/supervisor", "ControlPlane", "Convex", "Hono"]
     const leaks = lifecycleFiles.flatMap((file) => {
       const text = fs.readFileSync(path.join(root, file), "utf-8")
       return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))
@@ -297,13 +297,13 @@ describe("architecture boundaries", () => {
 
   test("keeps WorkGraph out of Control Plane module load", () => {
     const server = fs.readFileSync(path.resolve(import.meta.dirname, "../deployments/local/server.ts"), "utf-8")
-    const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "../server-workgraph.ts"), "utf-8")
+    const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "../hosts/workgraph/composition/server-workgraph.ts"), "utf-8")
 
     expect(server).not.toMatch(/from ["']@claxedo\/workgraph["']/)
     expect(server).not.toMatch(/from ["']\.\/workgraph-execution["']/)
     expect(serverWorkgraph).not.toMatch(/^import (?!type\b).*from ["']@claxedo\/workgraph["']/m)
     expect(serverWorkgraph).not.toMatch(/from ["']\.\/workgraph-execution["']/)
     expect(serverWorkgraph).toContain('import("@claxedo/workgraph")')
-    expect(server).toContain('import("../../workgraph-session-gateway")')
+    expect(server).toContain('import("../../hosts/workgraph/composition/session-gateway")')
   })
 })

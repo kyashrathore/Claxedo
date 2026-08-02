@@ -1,5 +1,5 @@
 import type { SandboxTarget } from "@claxedo/sandbox-manager"
-import type { Workspace } from "../store/store"
+import type { Workspace } from "../store"
 
 export type WorkspaceRuntimeState = {
   ws: Workspace

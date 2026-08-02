@@ -4,7 +4,7 @@ import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPla
 import type { ConnectionRateLimiter } from "../../control-plane/rate-limit"
 import type { ControlPlaneServices } from "../../control-plane/services"
 import { requireAuthority } from "../../control-plane/authority"
-import { resolveWorkspace } from "../../workspace/store/store"
+import { resolveWorkspace } from "../../workspace/store"
 import { startUserHostedWorkspaceTunnel, stopUserHostedWorkspaceTunnel } from "../../user-hosted-tunnel"
 import {
   apiError,

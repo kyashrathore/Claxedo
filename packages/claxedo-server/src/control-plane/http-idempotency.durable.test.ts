@@ -22,14 +22,14 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
-import type { DurableIdempotencyStore } from "./http-idempotency"
+import type { DurableIdempotencyStore } from "./http/idempotency"
 
-type IdempotencyModule = typeof import("./http-idempotency")
+type IdempotencyModule = typeof import("./http/idempotency")
 
 /** A fresh module instance = a fresh isolate, with its own per-isolate maps. */
 async function isolate(store?: DurableIdempotencyStore): Promise<IdempotencyModule> {
   vi.resetModules()
-  const mod = await import("./http-idempotency")
+  const mod = await import("./http/idempotency")
   if (store) mod.setDurableIdempotencyStore(store)
   return mod
 }

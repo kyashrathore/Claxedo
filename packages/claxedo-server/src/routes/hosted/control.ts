@@ -13,7 +13,7 @@ import {
   lockKey,
   parseIdempotencyKey,
   serialized,
-} from "../../control-plane/http-idempotency"
+} from "../../control-plane/http/idempotency"
 import { rec, signedOrError, txt } from "../workspace/user-hosted"
 
 type Options = {

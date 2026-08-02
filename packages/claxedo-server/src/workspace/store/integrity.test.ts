@@ -26,7 +26,7 @@ const root = path.join(realpathSync(os.tmpdir()), `ws-integrity-${randomUUID().s
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const mod = await import("./store")
+const mod = await import("./index")
 
 /** Read the persisted workspaces.json from disk */
 function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }

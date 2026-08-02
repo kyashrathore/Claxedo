@@ -133,8 +133,8 @@ process.env.POSTHOG_KEY = ""
 
 // Vitest can deadlock resolving this graph when these top-level imports run concurrently.
 const serverMod = await import("./deployments/local/server")
-const supervisor = await import("./workspace/supervisor/supervisor")
-const store = await import("./workspace/store/store")
+const supervisor = await import("./workspace/supervisor")
+const store = await import("./workspace/store")
 const agent = await import("./agent-config")
 const embedded = await import("./deployments/local/embedded-workspace-runtime")
 const opauth = await import("./opencode/auth")
@@ -857,7 +857,7 @@ describe("control plane integration", () => {
   })
 
   test("lists experimental sessions through the sandbox", async () => {
-    const ws = await workspace("session/meta/meta")
+    const ws = await workspace("session/meta")
     const rootRes = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

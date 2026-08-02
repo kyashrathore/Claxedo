@@ -35,7 +35,7 @@ import {
 } from "../control-plane/auth"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../control-plane/rate-limit"
 import type { RouteGuardExemption } from "../control-plane/request-guard"
-import { durableIdempotencyStore, type DurableIdempotencyStore } from "../control-plane/http-idempotency"
+import { durableIdempotencyStore, type DurableIdempotencyStore } from "../control-plane/http/idempotency"
 import { polarWebhookCacheKey } from "./polar-webhook-dedup"
 import { reportPaymentError } from "../observability/report"
 import { createBillingStore, type BillingStore, type CheckoutContext } from "./billing-store"

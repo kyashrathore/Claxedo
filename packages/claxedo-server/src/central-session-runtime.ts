@@ -38,10 +38,10 @@ import {
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import { createSessionRoutes, runtimeEventsHandler, type RuntimeSessionBusEvent } from "@claxedo/workspace-runtime/routes"
 import type { ControlPlaneServices } from "./control-plane/services"
-import type { SessionMeta } from "./session/meta/meta"
+import type { SessionMeta } from "./session/meta"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./hosts/connections/turn-credentials"
-import { piRegistryCredentialProvider } from "./pi-credentials"
-import { piProviderCatalog, validatePiPromptModel } from "./pi-provider-catalog"
+import { piRegistryCredentialProvider } from "./adapters/credentials/pi-credentials"
+import { piProviderCatalog, validatePiPromptModel } from "./adapters/credentials/pi-provider-catalog"
 import {
   emitLlmTurnCompleted,
   emitSessionStarted,

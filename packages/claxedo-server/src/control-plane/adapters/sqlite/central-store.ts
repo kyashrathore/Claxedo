@@ -22,7 +22,7 @@ import {
   syncSessionMetas,
   sourceChannelSessionCountsByWeek,
   taggedSessionMetas,
-} from "../../../session/meta/meta"
+} from "../../../session/meta"
 import {
   persistMessageEvent,
   readSessionMessages,

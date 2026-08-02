@@ -143,7 +143,7 @@ export {
   stopAllUserHostedWorkspaceTunnels,
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel"
-export { initPostHog, shutdownPostHog, capture, getPostHog } from "./posthog"
+export { initPostHog, shutdownPostHog, capture, getPostHog } from "./observability/posthog"
 export { claxedoBus } from "./lib/bus"
 export type { ClaxedoEvent, PtyInfo } from "./lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"

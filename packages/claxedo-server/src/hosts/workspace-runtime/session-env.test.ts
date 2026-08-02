@@ -13,13 +13,13 @@ vi.mock("../../deployments/local/embedded-workspace-runtime", () => ({
   ensureEmbeddedWorkspaceRuntime: mocks.ensureEmbeddedWorkspaceRuntime,
 }))
 
-vi.mock("../../workspace/store/store", () => ({
+vi.mock("../../workspace/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-import type { SandboxFetchOptions } from "../../sandbox-target-fetch"
+import type { SandboxFetchOptions } from "../../http/sandbox-target-fetch"
 import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
-import type { Workspace } from "../../workspace/store/store"
+import type { Workspace } from "../../workspace/store"
 import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../connections/turn-credentials"
 import {
   disposeHydratedSessionDocuments,

@@ -32,7 +32,7 @@ import { defaultHomeRegion } from "../../region"
 import { listPolicies } from "../../network/policy"
 import { resolveSandboxNetworkPolicy } from "../../network/resolve"
 import { insertSnapshot } from "../../adapters/storage/prepared-image.sql"
-import { updateWorkspace } from "../store/store"
+import { updateWorkspace } from "../store"
 import {
   configToken,
   configTokenHeaders,

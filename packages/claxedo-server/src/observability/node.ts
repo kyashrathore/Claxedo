@@ -14,7 +14,7 @@
  * reportError call a silent no-op.
  */
 
-import { initPostHog } from "../posthog"
+import { initPostHog } from "../observability/posthog"
 import { setErrorReporterSink } from "./report"
 import { observabilityOptions, type ObservabilityEnv } from "./config"
 

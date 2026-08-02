@@ -31,12 +31,12 @@ import { createHostedApp, type HostedAppOverrides } from "../hosted-shared/hoste
 import { runScheduledBillingReconciliation } from "../../billing/reconcile"
 import { reportError, setErrorReporterSink } from "../../observability/report"
 import { observabilityOptions, type ObservabilityEnv } from "../../observability/config"
-import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../security-headers"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../http/security-headers"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
 import { leaseFencedReconcile, skipOverlappingReconcile } from "../../hosts/workgraph/reconcile-serialize"
 import { createConvexCronLease } from "../../control-plane/adapters/convex/convex-cron-lease"
 import { createConvexIdempotencyStore } from "../../control-plane/adapters/convex/convex-idempotency-store"
-import { setDurableIdempotencyStore } from "../../control-plane/http-idempotency"
+import { setDurableIdempotencyStore } from "../../control-plane/http/idempotency"
 import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import {
   createCloudflareSettlementDispatcher,

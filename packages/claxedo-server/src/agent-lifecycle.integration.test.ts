@@ -132,8 +132,8 @@ delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("./deployments/local/server.js"),
-  import("./workspace/supervisor/supervisor.js"),
-  import("./workspace/store/store.js"),
+  import("./workspace/supervisor/index.js"),
+  import("./workspace/store/index.js"),
   import("./agent-config.js"),
   import("./deployments/local/embedded-workspace-runtime.js"),
 ])
@@ -771,7 +771,7 @@ describe("agent lifecycle integration", () => {
         updated_at: Date.now(),
       })
 
-      const runner = await import("./session/harness/harness.js")
+      const runner = await import("./session/harness/index.js")
       runner.setSessionHarness(ws.id, "ses_duplicate", {
         id: "claude",
         access: "acp",

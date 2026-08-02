@@ -46,8 +46,8 @@ const FORBIDDEN_BARE = [
 
 // Local-only source modules that must never reach the Worker bundle.
 const FORBIDDEN_LOCAL = [
-  "workspace/store/store",
-  "workspace/supervisor/supervisor",
+  "workspace/store",
+  "workspace/supervisor",
   "embedded-workspace-runtime",
   "user-hosted-tunnel",
   "adapters/credentials/store",

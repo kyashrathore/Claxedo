@@ -21,7 +21,7 @@ import {
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
 } from "../../hosts/agent-extensions/workspace"
-import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor/supervisor"
+import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
 import { errorBody } from "../http"
 import { localAgentConfigAllowed } from "./local-auth"
 import {

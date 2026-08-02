@@ -19,7 +19,7 @@ import { createControlPlaneServices } from "./control-plane/services.ts"
 import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store.ts"
 import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/supervisor.ts"
 import { recordSupervisorSandboxLeaseReady } from "./adapters/sandbox/stores/sqlite-supervisor-state.ts"
-import { ensureWorkspace, updateWorkspace } from "./workspace/store/store.ts"
+import { ensureWorkspace, updateWorkspace } from "./workspace/store/index.ts"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
 
 const execFileAsync = promisify(execFile)

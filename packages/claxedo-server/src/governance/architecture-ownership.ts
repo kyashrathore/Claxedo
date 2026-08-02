@@ -83,7 +83,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "SandboxLeaseStore hosted durable driver",
     tests: [
       "adapters/sandbox/stores/lease-store-equivalence.test.ts",
-      "control-plane/convex-sandbox-leases-policy.test.ts",
+      "control-plane/convex-policy/convex-sandbox-leases-policy.test.ts",
     ],
   },
   {
@@ -94,7 +94,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     canonicalReplacement: "../../sandbox-manager/src/index.ts plus sandbox-manager/stores/sqlite.ts",
     reason: "Keeps local workspace-supervisor row and hold compatibility under the SandboxManager storage boundary instead of a second top-level lease authority.",
     removalCondition: "Delete when the local supervisor consumes only SandboxManager and SandboxLeaseStore operations.",
-    tests: ["workspace/supervisor/cloud.test.ts", "workspace/store/store.test.ts"],
+    tests: ["workspace/supervisor/cloud.test.ts", "workspace/store/index.test.ts"],
   },
   {
     area: "host",
@@ -117,12 +117,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "lease",
-    module: "control-plane/http.ts",
+    module: "control-plane/http/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane runtime register and heartbeat routes",
     canonicalReplacement: "../../sandbox-manager/src/index.ts plus SandboxLeaseStore heartbeat/touch methods",
     reason: "Runtime register and heartbeat routes update the canonical SandboxManager lease; legacy cloud authority rows are no longer written.",
-    tests: ["control-plane/http.test.ts"],
+    tests: ["control-plane/http/index.test.ts"],
   },
   {
     area: "mirror",
@@ -180,13 +180,13 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",
     tests: [
       "governance/architecture.test.ts",
-      "proxy.timeout.test.ts",
+      "http/proxy.timeout.test.ts",
       "control-plane.integration.test.ts",
     ],
   },
   {
     area: "host",
-    module: "sandbox-target-fetch.ts",
+    module: "http/sandbox-target-fetch.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
@@ -232,13 +232,13 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "proxy.ts",
+    module: "http/proxy.ts",
     status: OwnershipStatus.Canonical,
     owner: "Workspace Runtime proxy dispatcher",
     reason: "The local server dispatches runtime-owned routes to embedded or cloud Workspace Runtime hosts through this module.",
     tests: [
-      "proxy.test.ts",
-      "proxy.timeout.test.ts",
+      "http/proxy.test.ts",
+      "http/proxy.timeout.test.ts",
       "governance/architecture.test.ts",
     ],
     routeSamples: [
@@ -250,7 +250,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "governance/route-ownership.ts",
     status: OwnershipStatus.Canonical,
     owner: "central route ownership classifier",
-    tests: ["proxy.test.ts"],
+    tests: ["http/proxy.test.ts"],
     routeSamples: [
       "/api/control",
       "/api/workspace",
@@ -277,7 +277,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Existing local OpenCode-compatible clients still call these paths.",
     removalCondition: "All local app and CLI callers use canonical control-plane/workspace-runtime routes.",
     tests: [
-      "proxy.test.ts",
+      "http/proxy.test.ts",
       "governance/architecture.test.ts",
     ],
     routeSamples: ["/command", "/mcp", "/agent"],

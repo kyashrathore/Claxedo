@@ -11,10 +11,10 @@ import {
   saveUserConfig,
 } from "../../agent-config"
 import { fanOutConfig } from "../../config-fanout"
-import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "../../session/harness/harness"
-import { resolveWorkspace } from "../../workspace/store/store"
+import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "../../session/harness"
+import { resolveWorkspace } from "../../workspace/store"
 import { resolveHarnessForRequest } from "../../session/harness/resolution"
-import { sessionMeta } from "../../session/meta/meta"
+import { sessionMeta } from "../../session/meta"
 import { errorBody } from "../http"
 import {
   cloudRuntimeSessionHarness,
@@ -32,9 +32,9 @@ import {
 } from "./harness"
 import { localAgentConfigAllowed } from "./local-auth"
 import type { AgentConfigRouteOptions } from "./extension-support"
-import type { SandboxFetchOptions } from "../../sandbox-target-fetch"
+import type { SandboxFetchOptions } from "../../http/sandbox-target-fetch"
 import { isLoopbackLocalRequest } from "../local-only-projection"
-import { validatePiPromptModel } from "../../pi-provider-catalog"
+import { validatePiPromptModel } from "../../adapters/credentials/pi-provider-catalog"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
