@@ -83,7 +83,9 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "SandboxLeaseStore hosted durable driver",
     tests: [
       "adapters/sandbox/stores/lease-store-equivalence.test.ts",
-      "authority/convex-policy/convex-sandbox-leases-policy.test.ts",
+      // Convex-side lease policy the hosted store depends on. Lives in
+      // convex/ per Convex's testing layout, not under src/.
+      "../../../convex/sandbox-leases.policy.test.ts",
     ],
   },
   {

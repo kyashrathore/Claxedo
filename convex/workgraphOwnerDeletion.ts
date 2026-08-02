@@ -398,7 +398,7 @@ async function isQuiescent(ctx: any, organization: string, owner: string) {
  * completion, and the rows it was supposed to erase stayed. It was invisible in
  * tests because every hand-rolled Convex `db` double ignored the index NAME and
  * behaved like a plain field filter (now fixed — see
- * `claxedo-server/src/test-helpers/convex-index-harness.ts`).
+ * `claxedo-server/src/test-support/convex-index-harness.ts`).
  *
  * No schema change was needed: each of the three already carries an index whose
  * first two fields are exactly `["organization_id", "owner_user_id"]`, so a

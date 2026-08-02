@@ -45,7 +45,11 @@ function walk(dir: string): string[] {
 describe("billing single-writer guard (I-3)", () => {
   test("no convex module outside schema.ts/billing.ts names a mirrored billing field", () => {
     const offenders = fs.readdirSync(convexRoot)
-      .filter((file) => file.endsWith(".ts") && !CONVEX_ALLOWED.has(file))
+      // `*.test.ts` are not function modules — they cannot be a second writer,
+      // and a policy test naming a mirrored field is exactly what it should do.
+      // (The `applyPolarState` sweep below already excluded them; this one was
+      // written before `convex/` held any tests.)
+      .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && !CONVEX_ALLOWED.has(file))
       .flatMap((file) => {
         const text = fs.readFileSync(path.join(convexRoot, file), "utf8")
         return BILLING_FIELDS.filter((field) => text.includes(field)).map((field) => `convex/${file}:${field}`)
