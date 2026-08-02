@@ -9,7 +9,7 @@ describe("workspace-runtime startup contract", () => {
 
   test("the claxedo host entry exists and is the bundler input", () => {
     const entry = claxedoWorkspaceRuntimeEntry()
-    expect(entry.endsWith("workspace-runtime-integration/host-entry.ts")).toBe(true)
+    expect(entry.endsWith("hosts/workspace-runtime/host-entry.ts")).toBe(true)
     expect(fs.existsSync(entry)).toBe(true)
   })
 })

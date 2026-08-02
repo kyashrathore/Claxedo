@@ -5,11 +5,11 @@ import path from "path"
 import { localOnlyAuthAdapter, type ClerkVerifier } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { createAgentConfigRoutes } from "./agent-config"
-import { AgentExtensionConflictError, installCachedAgentExtension } from "../agent-extensions/install"
+import { AgentExtensionConflictError, installCachedAgentExtension } from "../hosts/agent-extensions/install"
 import {
   mirrorWorkspaceAgentExtensionRecord,
   readMirroredWorkspaceAgentExtensions,
-} from "../agent-extensions/workspace"
+} from "../hosts/agent-extensions/workspace"
 import { AgentExtensionMaterializationError } from "@claxedo/agent-extensions"
 
 const root = `${process.env.TMPDIR ?? "/tmp"}/agent-config-extensions-route-${Date.now()}-${Math.random().toString(16).slice(2)}`

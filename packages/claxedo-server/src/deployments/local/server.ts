@@ -20,8 +20,8 @@ import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../.
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
 import { eventsHandler } from "../../routes/events"
 import { peerAddressStamp } from "../../routes/local-only-projection"
-import { createConnectionsHost } from "../../connections-host/connections-host"
-import { createConnectionTurnCredentials } from "../../connections-host/turn-credentials"
+import { createConnectionsHost } from "../../hosts/connections/connections-host"
+import { createConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
 import { mirrorProcessEvents } from "../../process-events"
 import { DocumentsRoutes } from "../../routes/documents"
 import { AgentConfigRoutes } from "../../routes/agent-config"
@@ -106,7 +106,7 @@ import { mountWorkspaceRuntimePtyWebSocketProxy } from "../../server-workspace-p
 import {
   createClaxedoSessionEnvFactory,
   prepareWorkspaceRuntimeSession,
-} from "../../workspace-runtime-integration/session-env"
+} from "../../hosts/workspace-runtime/session-env"
 import {
   createLocalEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
@@ -120,9 +120,9 @@ import { withDataDirOwnership } from "../../data-dir-owner"
 import { createLocalDocumentsBackend } from "../../documents/local-backend"
 import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/local-installation-broker"
-import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../workgraph-host/local-execution"
-import { createLocalExecutionCapabilities } from "../../workgraph-host/local-execution-capabilities"
-import { createSqlitePullRequestEffects } from "../../workgraph-host/sqlite-pull-request-effects"
+import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../hosts/workgraph/local-execution"
+import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local-execution-capabilities"
+import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../workgraph-agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "../../worktree/service"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
@@ -1581,7 +1581,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   let unsubscribeWorkGraphSessionIntake = () => {}
   if (!services.auth.config.enabled && services.auth.config.mode === "local-only") {
-    void Promise.all([workgraph, import("../../workgraph-host/session-intake")]).then(([embedded, intake]) => {
+    void Promise.all([workgraph, import("../../hosts/workgraph/session-intake")]).then(([embedded, intake]) => {
       unsubscribeWorkGraphSessionIntake = intake.subscribeSessionIntake({
         events: globalBus,
         opencodeRequest,

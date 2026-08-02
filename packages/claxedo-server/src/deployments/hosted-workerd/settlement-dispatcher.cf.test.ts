@@ -4,7 +4,7 @@ import {
   createCloudflareSettlementDispatcher,
   type WorkGraphSettlerStorage,
 } from "./settlement-dispatcher.cf"
-import { settlementTenantKey } from "../../workgraph-host/settlement-dispatcher"
+import { settlementTenantKey } from "../../hosts/workgraph/settlement-dispatcher"
 
 const tenant = { organizationId: "org-a", ownerUserId: "user-a" }
 

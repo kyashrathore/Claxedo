@@ -1,4 +1,4 @@
-import type { AgentExtensionPolicyOverride } from "../agent-extensions/runtime-config"
+import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/runtime-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/discovery"

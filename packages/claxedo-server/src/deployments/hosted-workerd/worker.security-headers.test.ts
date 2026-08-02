@@ -29,7 +29,7 @@ vi.mock("../hosted-shared/hosted-app", () => ({
   createHostedApp: vi.fn(() => ({ fetch: vi.fn(async () => new Response("unreachable")) })),
 }))
 
-vi.mock("../../workgraph-host/hosted-runtime", () => ({
+vi.mock("../../hosts/workgraph/hosted-runtime", () => ({
   createHostedWorkGraphRuntime: vi.fn(() => undefined),
   createHostedSessionTranscriptRetention: vi.fn(() => undefined),
 }))

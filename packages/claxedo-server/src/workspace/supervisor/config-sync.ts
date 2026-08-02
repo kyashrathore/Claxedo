@@ -1,5 +1,5 @@
 import type { RuntimeConfigSnapshot } from "../../agent-config"
-import { createClaxedoRuntimeConfig } from "../../workspace-runtime-integration/runtime-config"
+import { createClaxedoRuntimeConfig } from "../../hosts/workspace-runtime/runtime-config"
 import {
   configTokenHeaders,
   stateConfigToken,

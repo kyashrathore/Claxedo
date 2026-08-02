@@ -1,4 +1,4 @@
-import { workspaceAgentExtensionRecords } from "../agent-extensions/workspace"
+import { workspaceAgentExtensionRecords } from "../hosts/agent-extensions/workspace"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { ConnectionRateLimiter } from "../control-plane/rate-limit"
@@ -98,7 +98,7 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
       ? authority.listAgentExtensionPolicyOverrides(auth, { workspaceId })
       : [],
   ])
-  const overrides = policyOverrides as import("../agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
+  const overrides = policyOverrides as import("../hosts/agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
   const records = workspaceAgentExtensionRecords(installs)
   const supervisorMod = "../workspace/supervisor/supervisor"
   const embeddedMod = "../deployments/local/embedded-workspace-runtime"

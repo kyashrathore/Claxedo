@@ -9,18 +9,18 @@ import {
   installGitHubAgentExtension,
   uninstallAgentExtension,
   updateAgentExtension,
-} from "../agent-extensions/install"
+} from "../hosts/agent-extensions/install"
 import {
   detachDiscoveredAgentExtensionConfig,
   scanExistingAgentExtensionConfig,
   setDiscoveredAgentExtensionConfigState,
-} from "../agent-extensions/scan"
+} from "../hosts/agent-extensions/scan"
 import {
   mirrorWorkspaceAgentExtensionRecord,
   readMirroredWorkspaceAgentExtensions,
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
-} from "../agent-extensions/workspace"
+} from "../hosts/agent-extensions/workspace"
 import { syncWorkspaceRuntimeAgentExtensions } from "../workspace/supervisor/supervisor"
 import { errorBody } from "./http"
 import { localAgentConfigAllowed } from "./agent-config-local-auth"
@@ -54,12 +54,12 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
   const resolveWorkspaceExtension = options.resolveGitHubWorkspaceAgentExtension ?? resolveGitHubWorkspaceAgentExtension
   return new Hono()
     .get("/extensions/catalog", async (c) => {
-      const { loadAgentExtensionsCatalog } = await import("../agent-extensions/catalog")
+      const { loadAgentExtensionsCatalog } = await import("../hosts/agent-extensions/catalog")
       return c.json(loadAgentExtensionsCatalog())
     })
 
     .get("/extensions/machine-scan", async (c) => {
-      const { scanMachineInstalledExtensions } = await import("../agent-extensions/machine-scan")
+      const { scanMachineInstalledExtensions } = await import("../hosts/agent-extensions/machine-scan")
       return c.json(await scanMachineInstalledExtensions())
     })
 

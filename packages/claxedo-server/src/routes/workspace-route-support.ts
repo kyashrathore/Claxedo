@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import type { RepositoryAccessResult } from "../connections-host/connections-host"
+import type { RepositoryAccessResult } from "../hosts/connections/connections-host"
 import {
   ControlPlaneAuthError,
   bearerToken,

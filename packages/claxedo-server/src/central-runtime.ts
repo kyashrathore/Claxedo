@@ -15,8 +15,8 @@ import {
 } from "./control-plane/auth"
 import type { ControlPlaneServices } from "./control-plane/services"
 import { requireAuthority } from "./control-plane/authority"
-import type { ConnectionTurnCredentials } from "./connections-host/turn-credentials"
-import type { WorkspaceSessionAdmission } from "./workspace-runtime-integration/session-env"
+import type { ConnectionTurnCredentials } from "./hosts/connections/turn-credentials"
+import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/session-env"
 import type { UsageLedger } from "./telemetry/metering"
 import type { ProductDeploymentMode } from "./telemetry/product"
 

@@ -1,8 +1,8 @@
-import type { AgentExtensionPolicyOverride } from "../../agent-extensions/runtime-config"
-import type { WorkspaceAgentExtensionRecord } from "../../agent-extensions/workspace"
+import type { AgentExtensionPolicyOverride } from "../../hosts/agent-extensions/runtime-config"
+import type { WorkspaceAgentExtensionRecord } from "../../hosts/agent-extensions/workspace"
 import { Log } from "../../lib/log"
 import { updateWorkspace, getWorkspace, type Workspace } from "../store/store"
-import { createClaxedoRuntimeConfig } from "../../workspace-runtime-integration/runtime-config"
+import { createClaxedoRuntimeConfig } from "../../hosts/workspace-runtime/runtime-config"
 import { IDLE_MS, now } from "./clock"
 import {
   pushRuntimeConfig,

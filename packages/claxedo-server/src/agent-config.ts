@@ -41,13 +41,13 @@ import {
   getRuntimeAgentExtensionsSnapshot,
   type AgentExtensionPolicyOverride,
   type RuntimeAgentExtensionsSnapshot,
-} from "./agent-extensions/runtime-config"
+} from "./hosts/agent-extensions/runtime-config"
 import {
   readMirroredWorkspaceAgentExtensions,
   sameSource,
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
-} from "./agent-extensions/workspace"
+} from "./hosts/agent-extensions/workspace"
 import { ControlPlaneAuthError } from "./control-plane/auth"
 import type { WorkspaceAuthority } from "./control-plane/authority"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./control-plane/adapters/convex/convex-authority"

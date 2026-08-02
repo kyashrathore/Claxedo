@@ -167,10 +167,10 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "agent-extensions/catalog.ts",
+    module: "hosts/agent-extensions/catalog.ts",
     status: OwnershipStatus.Canonical,
     owner: "agent extension catalog",
-    tests: ["agent-extensions/scan.test.ts"],
+    tests: ["hosts/agent-extensions/scan.test.ts"],
   },
   {
     area: "host",

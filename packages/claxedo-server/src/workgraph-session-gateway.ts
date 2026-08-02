@@ -13,9 +13,9 @@ import {
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import { OPENCODE_INTERNAL_BASE } from "./opencode/engine"
-import { ConnectionOperationDeniedError, createConnectionOperationBroker } from "./workgraph-host/connection-operation-broker"
-import { createWorkGraphConnectionsPort } from "./workgraph-host/connections"
-import type { WorkGraphSessionGateway } from "./workgraph-host/local-execution"
+import { ConnectionOperationDeniedError, createConnectionOperationBroker } from "./hosts/workgraph/connection-operation-broker"
+import { createWorkGraphConnectionsPort } from "./hosts/workgraph/connections"
+import type { WorkGraphSessionGateway } from "./hosts/workgraph/local-execution"
 import {
   registerWorkGraphSessionAttribution,
   unregisterWorkGraphSessionAttribution,

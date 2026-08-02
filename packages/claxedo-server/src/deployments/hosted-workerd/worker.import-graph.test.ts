@@ -60,7 +60,7 @@ const FORBIDDEN_LOCAL = [
   "server-workgraph",
   "central-runtime",
   "central-session-runtime",
-  "workspace-runtime-integration/session-env",
+  "hosts/workspace-runtime/session-env",
   "channels/control-plane",
   "channels/dedup",
   "channels/delivery",
@@ -149,8 +149,8 @@ describe("worker import-graph", () => {
   test("entrypoints are actually reachable (sanity)", () => {
     expect(visitedRel).toContain("deployments/hosted-workerd/worker.ts")
     expect(visitedRel).toContain("deployments/hosted-shared/hosted-app.ts")
-    expect(visitedRel).toContain("workgraph-host/hosted.ts")
-    expect(visitedRel).toContain("workgraph-host/hosted-runtime.ts")
+    expect(visitedRel).toContain("hosts/workgraph/hosted.ts")
+    expect(visitedRel).toContain("hosts/workgraph/hosted-runtime.ts")
     expect(visitedRel).toContain("routes/documents.ts")
     expect(visitedRel).not.toContain("routes/docs.ts")
     expect(visitedRel).not.toContain("document-store.ts")

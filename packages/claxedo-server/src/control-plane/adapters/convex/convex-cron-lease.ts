@@ -14,7 +14,7 @@
 
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import type { CronLease } from "../../../workgraph-host/reconcile-serialize"
+import type { CronLease } from "../../../hosts/workgraph/reconcile-serialize"
 import { controlPlaneTimeoutMs, withTimeout } from "./timeout"
 import { withConvexRetry } from "./retry"
 

@@ -17,12 +17,12 @@ import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/ce
 import {
   createClaxedoSessionEnvFactory,
   type WorkspaceResolver,
-} from "../../workspace-runtime-integration/session-env"
+} from "../../hosts/workspace-runtime/session-env"
 import type { SandboxFetchOptions } from "../../sandbox-target-fetch"
 import { ControlPlaneAuthError } from "../../control-plane/auth"
-import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../connections-host/turn-credentials"
-import { createHostedWorkGraphRuntime } from "../../workgraph-host/hosted-runtime"
-import { createNodeSettlementDispatcher } from "../../workgraph-host/settlement-dispatcher"
+import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
+import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
+import { createNodeSettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 
 function centralStorePorts() {
   const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })

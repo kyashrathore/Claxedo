@@ -20,21 +20,21 @@ import {
   type ControlPlaneAuthConfig,
 } from "./control-plane/auth"
 import type { WorkspaceAuthority } from "./control-plane/authority"
-import type { WorkGraphSessionGateway } from "./workgraph-host/local-execution"
+import type { WorkGraphSessionGateway } from "./hosts/workgraph/local-execution"
 import type { ControlPlaneTelemetry } from "./control-plane/services"
 import {
   createWorkGraphOperationalReporter,
   instrumentWorkGraphCommands,
   workGraphHttpTelemetry,
-} from "./workgraph-host/operational-telemetry"
+} from "./hosts/workgraph/operational-telemetry"
 import {
   createWorkGraphChangeDoorbell,
   createWorkGraphChangeTipWatcher,
   instrumentAttentionDoorbell,
   instrumentWorkGraphChangeDoorbell,
-} from "./workgraph-host/change-doorbell"
+} from "./hosts/workgraph/change-doorbell"
 import { claxedoBus, type WorkgraphChangedEvent } from "./lib/bus"
-import { createLocalWorkGraphMasterRuntime } from "./workgraph-host/local-master-runtime"
+import { createLocalWorkGraphMasterRuntime } from "./hosts/workgraph/local-master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{
   authConfig: ControlPlaneAuthConfig
@@ -243,7 +243,7 @@ export async function createLocalEmbeddedWorkGraph(
     ...(input.executionCapabilities ? { executionCapabilities: input.executionCapabilities } : {}),
   })
   const intake = input.connections
-    ? await import("./workgraph-host/intake").then((host) =>
+    ? await import("./hosts/workgraph/intake").then((host) =>
         host.createWorkGraphIntakeHost({
           database: input.database,
           service,
