@@ -980,6 +980,17 @@ test.describe("real harness journeys @core @tier-real", () => {
     testInfo.setTimeout(240_000)
   })
 
+  test.afterEach(async ({}, testInfo) => {
+    // The server's stdout/stderr is buffered into `serverLog` and otherwise
+    // surfaced only on GATING boot failures. On a FAILED test it is the only
+    // record of what the engine actually did (or refused to do) on a CI
+    // runner nobody can shell into — the first tier-real CI red burned a full
+    // round because the picker said "No model results" and nothing said why.
+    if (testInfo.status !== testInfo.expectedStatus && serverLog) {
+      await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
+    }
+  })
+
   test("opencode harness (embedded engine) completes 3 scripted turns and survives reload — behaviors 1,6,9", async ({
     page,
   }) => {
