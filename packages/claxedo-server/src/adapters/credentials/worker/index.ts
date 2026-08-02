@@ -31,10 +31,10 @@
  * eliminates.
  */
 
-import type { ControlPlaneCredentials } from "../../authority/services"
-import type { CredentialMetadata, CredentialWrite, SecretBackend } from "../../adapters/credentials/types"
-import { createEncryptedCloudflareBackend } from "../../adapters/credentials/cloudflare"
-import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "../../adapters/credentials/envelope"
+import type { ControlPlaneCredentials } from "../../../authority/services"
+import type { CredentialMetadata, CredentialWrite, SecretBackend } from "../types"
+import { createEncryptedCloudflareBackend } from "../cloudflare"
+import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "../envelope"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 type StoredCredential = { meta: CredentialMetadata; secret: string }

@@ -162,7 +162,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "platform/auth/worker-credentials.ts",
+    module: "adapters/credentials/worker/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "hosted credential registry adapter",
     tests: ["authority/hosted-services.test.ts"],
@@ -182,13 +182,13 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",
     tests: [
       "platform/governance/architecture.test.ts",
-      "platform/http/proxy.timeout.test.ts",
+      "workspace/http/proxy.timeout.test.ts",
       "integration/control-plane.integration.test.ts",
     ],
   },
   {
     area: "host",
-    module: "platform/http/sandbox-target-fetch.ts",
+    module: "workspace/http/sandbox-target-fetch.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
@@ -234,13 +234,13 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "platform/http/proxy.ts",
+    module: "workspace/http/proxy.ts",
     status: OwnershipStatus.Canonical,
     owner: "Workspace Runtime proxy dispatcher",
     reason: "The local server dispatches runtime-owned routes to embedded or cloud Workspace Runtime hosts through this module.",
     tests: [
-      "platform/http/proxy.test.ts",
-      "platform/http/proxy.timeout.test.ts",
+      "workspace/http/proxy.test.ts",
+      "workspace/http/proxy.timeout.test.ts",
       "platform/governance/architecture.test.ts",
     ],
     routeSamples: [
@@ -252,7 +252,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "platform/governance/route-ownership.ts",
     status: OwnershipStatus.Canonical,
     owner: "central route ownership classifier",
-    tests: ["platform/http/proxy.test.ts"],
+    tests: ["workspace/http/proxy.test.ts"],
     routeSamples: [
       "/api/control",
       "/api/workspace",
@@ -279,7 +279,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Existing local OpenCode-compatible clients still call these paths.",
     removalCondition: "All local app and CLI callers use canonical authority/workspace-runtime routes.",
     tests: [
-      "platform/http/proxy.test.ts",
+      "workspace/http/proxy.test.ts",
       "platform/governance/architecture.test.ts",
     ],
     routeSamples: ["/command", "/mcp", "/agent"],

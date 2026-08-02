@@ -13,7 +13,7 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { createLocalWorkspaceRelayProxy, runtimeProxyResponseHeaders } from "./proxy"
-import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "../governance/route-ownership"
+import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "../../platform/governance/route-ownership"
 
 function classify(path: string) {
   return routeOwnership(path.split("?")[0])

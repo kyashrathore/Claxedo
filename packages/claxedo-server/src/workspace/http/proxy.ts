@@ -6,8 +6,8 @@ import { opencodeHeaders } from "../../opencode/auth"
 import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
 import { errorBody } from "../../routes/http"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
-import { routeOwnership, RouteHandler } from "../governance/route-ownership"
-import { normalizeClaxedoRegion, type ClaxedoRegion } from "../runtime/region"
+import { routeOwnership, RouteHandler } from "../../platform/governance/route-ownership"
+import { normalizeClaxedoRegion, type ClaxedoRegion } from "../../platform/runtime/region"
 import type { RelayProvider } from "../../adapters/relay"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]

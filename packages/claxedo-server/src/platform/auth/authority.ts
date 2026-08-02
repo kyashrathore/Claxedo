@@ -1,5 +1,4 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
-import type { ControlPlaneServices } from "../../authority/services"
 
 /**
  * Typed neutral authority port for the control plane.
@@ -333,7 +332,7 @@ export type WorkspaceAuthority = {
  * authority-required helper; it subsumes the copy-pasted per-route helpers that
  * previously guarded authority access in five route modules.
  */
-export function requireAuthority(services: ControlPlaneServices | undefined): WorkspaceAuthority {
+export function requireAuthority(services: { authority?: WorkspaceAuthority } | undefined): WorkspaceAuthority {
   if (services?.authority) return services.authority
   throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
 }

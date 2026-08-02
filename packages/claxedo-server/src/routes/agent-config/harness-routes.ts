@@ -32,7 +32,7 @@ import {
 } from "./harness"
 import { localAgentConfigAllowed } from "./local-auth"
 import type { AgentConfigRouteOptions } from "./extension-support"
-import type { SandboxFetchOptions } from "../../platform/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { isLoopbackLocalRequest } from "../local-only-projection"
 import { validatePiPromptModel } from "../../adapters/credentials/pi-provider-catalog"
 

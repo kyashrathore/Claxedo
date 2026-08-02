@@ -1,3 +1,4 @@
+import type { ControlPlaneTelemetry } from "../platform/telemetry/ports"
 import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/runtime-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../adapters/credentials/types"
@@ -50,9 +51,7 @@ export type ControlPlaneSandbox = {
   sandboxManager?: SandboxManager
 }
 
-export type ControlPlaneTelemetry = {
-  capture: (distinctId: string, event: string, properties?: Record<string, unknown>) => void
-}
+export type { ControlPlaneTelemetry }
 
 export type ControlPlaneLocalExecution = {
   enabled: boolean

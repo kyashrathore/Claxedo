@@ -13,7 +13,7 @@ import { anyApi } from "convex/server"
 import { requireExecutor, requireServiceToken } from "../../../authority/adapters/convex/workspace-authority/executor"
 import type { ConvexExecutor } from "../../../authority/adapters/convex/workspace-authority/types"
 import { controlPlaneTimeoutMs, withTimeout } from "../../../authority/adapters/convex/timeout"
-import type { LlmTurnRecord, UsageLedger } from "./metering"
+import type { LlmTurnRecord, UsageLedger } from "../../../platform/telemetry/product/metering"
 
 const usageApi = anyApi as unknown as {
   usageMetering: { recordLlmTurn: unknown; resolveWorkGraphAttribution: unknown }

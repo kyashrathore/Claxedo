@@ -55,7 +55,7 @@ import {
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../workspace/runtime-token-guards"
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
-import { recordSandboxLeaseTenant } from "../../platform/telemetry/product/convex-usage-ledger"
+import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"
 import { productIdentity } from "../../platform/telemetry/product/product"
 
 // `requireCloudWorkspaceEntitlement` (the D6/B4 paid-capability gate for both

@@ -24,8 +24,8 @@ const recordSandboxLeaseTenant = vi.hoisted(() =>
     }) => ({ stamped: true }),
   ),
 )
-vi.mock("../../platform/telemetry/product/convex-usage-ledger", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../platform/telemetry/product/convex-usage-ledger")>()),
+vi.mock("../../authority/adapters/convex/usage-ledger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../authority/adapters/convex/usage-ledger")>()),
   recordSandboxLeaseTenant,
 }))
 

@@ -8,8 +8,8 @@ import type {
   SessionEnvFileStat,
 } from "@claxedo/agent-sdk-runtime"
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime"
-import type { SandboxFetchOptions } from "../../platform/http/sandbox-target-fetch"
-import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
+import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
 import { ensureEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded-workspace-runtime"
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { resolveWorkspace } from "../../workspace/store"

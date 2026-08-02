@@ -1,6 +1,6 @@
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { Workspace } from "../../workspace/store"
-import { normalizeClaxedoRegion, type ClaxedoRegion } from "../runtime/region"
+import { normalizeClaxedoRegion, type ClaxedoRegion } from "../../platform/runtime/region"
 import type { RelayProvider, RelayTokenInput } from "../../adapters/relay"
 
 export type SandboxFetchOptions = {

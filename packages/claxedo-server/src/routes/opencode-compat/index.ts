@@ -4,7 +4,7 @@ import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "..
 import { putCredential, deleteCredentialsByProvider } from "../../adapters/credentials/registry"
 import { fanOutConfig } from "../../config-fanout"
 import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"
-import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
+import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
 import { listProjects, resolveWorkspace } from "../../workspace/store"
 import { controlPlaneRouteAuth } from "../control-plane-route-auth"
 import { errorBody } from "../http"

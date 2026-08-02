@@ -3,7 +3,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
 import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
 import { requireAuthority } from "../../platform/auth/authority"
-import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
+import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "./user-hosted"
 

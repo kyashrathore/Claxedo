@@ -9,7 +9,7 @@
 import { serve } from "@hono/node-server"
 import { createHostedApp } from "../hosted-shared/hosted-app"
 import { createCentralControlApp } from "../../central-runtime"
-import { createConvexUsageLedger } from "../../platform/telemetry/product/convex-usage-ledger"
+import { createConvexUsageLedger } from "../../authority/adapters/convex/usage-ledger"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
 import { composeHostedControlPlane, type HostedControlPlane, type HostedWorkerEnv } from "../../authority/hosted-services"
 import { createControlPlaneServices, defaultControlPlaneCredentials, type ControlPlaneServices } from "../../authority/services"
@@ -18,7 +18,7 @@ import {
   createClaxedoSessionEnvFactory,
   type WorkspaceResolver,
 } from "../../hosts/workspace-runtime/session-env"
-import type { SandboxFetchOptions } from "../../platform/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { ControlPlaneAuthError } from "../../platform/auth/auth"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"

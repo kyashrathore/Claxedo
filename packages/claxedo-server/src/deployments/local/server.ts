@@ -30,7 +30,7 @@ import { WorkspaceRoutes } from "../../routes/workspace/index"
 import { OpenCodeCompatRoutes } from "../../routes/opencode-compat/index"
 import { resolveHarnessId } from "../../routes/opencode-compat/provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../platform/http/proxy"
+import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../workspace/http/proxy"
 import { configureOpencodeMcpSync } from "../../opencode/mcp-sync"
 import {
   configureOpenCodeApplicationTools,
@@ -90,7 +90,7 @@ import { localRelayTargetExists, localRelayTargetLookup } from "../../routes/int
 import { BootstrapRoutes } from "../../routes/bootstrap"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "../../adapters/relay"
-import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
+import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
 import {
   ensureWorkspace,
