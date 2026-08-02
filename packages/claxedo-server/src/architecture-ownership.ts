@@ -49,27 +49,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     ],
   },
   {
-    area: "authority",
-    module: "cloud/authority.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired local workspace authority facade",
-    canonicalReplacement: "../../sandbox-manager/src/index.ts and sandbox-manager/stores/*",
-  },
-  {
-    area: "authority",
-    module: "cloud/authority-types.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired local workspace authority type shim",
-    canonicalReplacement: "../../sandbox-manager/src/lease-types.ts",
-  },
-  {
-    area: "authority",
-    module: "cloud/lifecycle",
-    status: OwnershipStatus.Deleted,
-    owner: "retired legacy authority lifecycle decision helpers",
-    canonicalReplacement: "../../sandbox-manager/src/lease-policy.ts plus sandbox-manager/index.ts",
-  },
-  {
     area: "lease",
     module: "../../sandbox-manager/src/lease-policy.ts",
     status: OwnershipStatus.Canonical,
@@ -137,27 +116,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     ],
   },
   {
-    area: "host",
-    module: "workspace-supervisor-remote-runtime.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired remote-runtime supervisor composer name",
-    canonicalReplacement: "workspace-supervisor-sandbox.ts",
-  },
-  {
-    area: "host",
-    module: "../../sandbox-manager/src/workspace-runtime-process.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired in-source sandbox live harness",
-    canonicalReplacement: "../../sandbox-manager/src/drivers/* launch @claxedo/workspace-runtime directly; scripts/sandbox/live/live-ui-test.ts exercises the product path",
-  },
-  {
-    area: "lease",
-    module: "runtime-lifecycle/index.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired RuntimeLifecycle export shim",
-    canonicalReplacement: "../../sandbox-manager/src/index.ts",
-  },
-  {
     area: "lease",
     module: "control-plane/http.ts",
     status: OwnershipStatus.Canonical,
@@ -213,20 +171,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "agent extension catalog",
     tests: ["agent-extensions/scan.test.ts"],
-  },
-  {
-    area: "registry",
-    module: "cloud/sandbox",
-    status: OwnershipStatus.Deleted,
-    owner: "retired legacy sandbox registry and provider experiments",
-    canonicalReplacement: "../../sandbox-manager/src/driver-catalog.ts plus sandbox-manager/drivers/*",
-  },
-  {
-    area: "registry",
-    module: "../../sandbox-manager/src/sandbox-pool.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired sandbox driver-pool facade",
-    canonicalReplacement: "../../sandbox-manager/src/driver-catalog.ts, sandbox-manager/driver-auth.ts, and sandbox-manager/drivers/*",
   },
   {
     area: "host",
@@ -367,20 +311,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Local server still exposes loopback-only projections for WorkGraph and related local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
     tests: ["routes/local-only-projection.test.ts"],
-  },
-  {
-    area: "projection",
-    module: "cloud/provider.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired sandbox driver wrapper",
-    canonicalReplacement: "../../sandbox-manager/src/drivers/* SandboxDriver implementations",
-  },
-  {
-    area: "host",
-    module: "harness/host.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "retired harness host wrapper",
-    canonicalReplacement: "../../workspace-runtime/src/workspace/host.ts",
   },
   // --- Unit 5: control-plane-owned route reorganization ---
   // MOVE: generic control-plane route modules whose import graph is
