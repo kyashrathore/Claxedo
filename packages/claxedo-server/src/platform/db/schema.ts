@@ -13,4 +13,4 @@ export { ClaxedoPreparedImageTable, ClaxedoRuntimeSnapshotTable } from "./prepar
 export { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "../../channels/delivery.sql"
 export { ClaxedoChannelRunAuditTable } from "../../channels/run-audit.sql"
 export { ClaxedoChannelPairingTable, ClaxedoChannelAllowTable, ClaxedoChannelIdentityTable } from "../../channels/access.sql"
-export { ClaxedoConnectionTable } from "./connection.sql"
+export { ClaxedoConnectionTable } from "../../connections/connection.sql"

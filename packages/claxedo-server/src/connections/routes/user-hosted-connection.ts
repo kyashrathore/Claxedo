@@ -9,12 +9,12 @@ import {
   configuredRuntimeAccessTokenSigner,
   relayRole,
   type WorkspaceRouteOptions,
-} from "./route-support"
+} from "../../routes/workspace/route-support"
 import {
   previousRuntimeAccessTokenError,
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
-} from "./runtime-token-guards"
+} from "../../routes/workspace/runtime-token-guards"
 
 export async function userHostedConnectionInfo(
   services: ControlPlaneServices | undefined,

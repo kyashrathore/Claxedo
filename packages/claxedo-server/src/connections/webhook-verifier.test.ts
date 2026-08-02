@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
-import type { ControlPlaneCredentials } from "../../authority/services"
+import type { ControlPlaneCredentials } from "../authority/services"
 import { createHostedConnectionWebhookVerifier } from "./webhook-verifier"
 
 const body = new TextEncoder().encode(JSON.stringify({ repository: { full_name: "claxedo/cloud" } }))

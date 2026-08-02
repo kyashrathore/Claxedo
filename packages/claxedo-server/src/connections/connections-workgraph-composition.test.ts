@@ -11,15 +11,15 @@ mkdirSync(root, { recursive: true })
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("../../adapters/credentials/store")
-const registry = await import("../../adapters/credentials/registry")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { createTestBackend, setBackendOverride } = await import("../adapters/credentials/store")
+const registry = await import("../adapters/credentials/registry")
+const { ClaxedoDB } = await import("../platform/db/db")
 ClaxedoDB.Drizzle()
 
 const { createConnectionsHost } = await import("./index")
 const { createConnectionStoreAdapter } = await import("./store-adapter")
-const { createWorkGraphConnectionsPort } = await import("../workgraph/connections")
-import type { ControlPlaneCredentials } from "../../authority/services"
+const { createWorkGraphConnectionsPort } = await import("../hosts/workgraph/connections")
+import type { ControlPlaneCredentials } from "../authority/services"
 
 function credentialsPort(): ControlPlaneCredentials {
   return {

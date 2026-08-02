@@ -39,7 +39,7 @@ import {
 import { addWorktree, cloneRepo, repoNameFromUrl } from "./git"
 import { heartbeatLocalHostLink, pauseLocalHostLink, registerLocalHostLink } from "./local-host-link-routes"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "./signed-access"
-import { workspaceConnectionRoutes } from "./connection-routes"
+import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"

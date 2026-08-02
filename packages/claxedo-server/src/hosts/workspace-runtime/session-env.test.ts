@@ -20,7 +20,7 @@ vi.mock("../../workspace/store", () => ({
 import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
 import type { Workspace } from "../../workspace/store"
-import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../connections/turn-credentials"
+import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import {
   disposeHydratedSessionDocuments,
   forgetHydratedSessionRuntime,

@@ -14,7 +14,7 @@ import { buildAssistantMessage, messageUpdated } from "@claxedo/agent-sdk-runtim
 import type { ControlPlaneServices } from "../../../authority/services"
 import { localOnlyAuthAdapter } from "../../auth/auth"
 import { createCentralSessionRuntime } from "../../../central-session-runtime"
-import { createConnectionTurnCredentials } from "../../../hosts/connections/turn-credentials"
+import { createConnectionTurnCredentials } from "../../../connections/turn-credentials"
 import {
   LLM_TURN_COMPLETED,
   SANDBOX_LEASE_CLOSED,

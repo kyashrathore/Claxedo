@@ -6,7 +6,7 @@ import type { RuntimeEventEnvelope } from "@claxedo/agent-sdk-runtime/runtime-ev
 import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput } from "@claxedo/agent-sdk-runtime"
 import { createCentralSessionRuntime } from "./central-session-runtime"
 import { createCentralControlApp } from "./central-runtime"
-import { createConnectionTurnCredentials } from "./hosts/connections/turn-credentials"
+import { createConnectionTurnCredentials } from "./connections/turn-credentials"
 import { piProviderCatalog } from "./adapters/credentials/pi-provider-catalog"
 
 function services(): ControlPlaneServices {

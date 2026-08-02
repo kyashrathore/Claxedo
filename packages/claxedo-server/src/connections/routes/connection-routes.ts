@@ -7,15 +7,15 @@ import {
 } from "../../platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { resolveWorkspace } from "../../workspace/store"
-import { isLoopbackLocalRequest } from "../local-only-projection"
+import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "./cloud-connection"
 import {
   connectionRateLimitError,
   signedOrError,
   userHostedConnectionInfo,
   type WorkspaceRouteOptions,
-} from "./user-hosted"
-import { syncWorkspaceAgentExtensionsForSignedUser } from "./signed-access"
+} from "../../routes/workspace/user-hosted"
+import { syncWorkspaceAgentExtensionsForSignedUser } from "../../routes/workspace/signed-access"
 
 const refreshConnectionBody = z.object({
   previousJti: z.string().optional(),

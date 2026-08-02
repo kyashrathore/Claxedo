@@ -25,9 +25,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
-import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../../routes/local-only-projection"
-import type { ControlPlaneCredentials } from "../../authority/services"
+} from "../platform/auth/auth"
+import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../routes/local-only-projection"
+import type { ControlPlaneCredentials } from "../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"

@@ -8,7 +8,7 @@ import {
   entitlementDecision,
   requireEntitlement,
 } from "./entitlement"
-import { hostedConnectionInfo } from "../routes/workspace/hosted-connection-info"
+import { hostedConnectionInfo } from "../connections/routes/hosted-connection-info"
 import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"

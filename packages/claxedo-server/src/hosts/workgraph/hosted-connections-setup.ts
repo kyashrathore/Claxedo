@@ -15,7 +15,7 @@ import { Hono, type Context } from "hono"
 import { anyApi, type FunctionReference } from "convex/server"
 import { controlPlaneAuthContext, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../platform/auth/auth"
 import { hostedOrgCredentials } from "../../adapters/credentials/worker/index"
-import { githubIntegrationForEnv } from "../connections/github-oauth"
+import { githubIntegrationForEnv } from "../../connections/github-oauth"
 import type { ControlPlaneCredentials } from "../../authority/services"
 
 type Executor = Readonly<{

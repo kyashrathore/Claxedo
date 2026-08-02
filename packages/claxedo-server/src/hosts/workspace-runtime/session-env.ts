@@ -14,7 +14,7 @@ import { ensureEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { resolveWorkspace } from "../../workspace/store"
 import type { Workspace } from "../../workspace/store"
-import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../connections/turn-credentials"
+import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments } from "../../documents/session-hydration"
 
 const SESSION_ENV_BASE = "/api/wr/session-env"
