@@ -19,7 +19,13 @@ const sessionId = "ses_claxedo_marketing"
 const screenshots = path.resolve(import.meta.dirname, "../../../claxedo-web/public/screenshots")
 
 test.describe.serial("@marketing deterministic public-site captures", () => {
-  test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 3, colorScheme: "dark" })
+  // 1728x1000 is a plain "more room for a marketing shot" bump. Note it does NOT by
+  // itself fix either layout problem the captures hit: the workspace panel takes a
+  // PERCENTAGE of the width, so widening the window scales both columns and leaves
+  // the composer's container query exactly as tripped, and the WorkGraph tile has a
+  // FIXED height, so extra width changes nothing about what its list clips. Both are
+  // fixed where they are caused — the panel resize below, and the fixture titles.
+  test.use({ viewport: { width: 1728, height: 1000 }, deviceScaleFactor: 3, colorScheme: "dark" })
 
   test("captures a seeded agent session and a chat-terminal split", async ({ page }) => {
     await seedProject(page)
@@ -38,6 +44,7 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     await installMarketingSessionList(page)
     await openWorkspace(page)
     await suppressCaptureOnlyConnectionNotice(page)
+    await expectDefaultTheme(page)
 
     const prompt = "Prepare the release verification flow and summarize the evidence for review."
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -47,12 +54,41 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     await expect(page).toHaveURL(new RegExp(`/(?:s/|session/)${sessionId}$`), { timeout: 20_000 })
     await expect(page.locator('[data-testid="review-pane-empty"]')).toBeHidden()
 
+    // The workspace panel rests at 70% of available width (workspace-panel.tsx
+    // `defaultWidth`), leaving the chat column at 440px — under the 560px container
+    // query in styles/index.css that collapses every composer control to a bare icon.
+    // The capture then shows a naked shield and a clipped "C." where "Approve for me"
+    // and the model name belong, so the panel has to be narrowed before the shot.
+    //
+    // Two ways NOT to do it. `Home` jumps to `minWidth`, which crushes the diff into
+    // an unreadable sliver. And stepping while re-reading the width bottoms out just
+    // the same: the panel animates over 120ms, so a read-after-press loop keeps
+    // seeing a stale width and keeps pressing. Compute the press count up front from
+    // the deficit (the separator moves a fixed RESIZE_KEY_STEP = 24px per
+    // ArrowRight), then poll the settled width. Blur so no focus ring is in frame.
+    const panelSeparator = page.getByRole("separator", { name: "Resize workspace panel" })
+    const composerWidth = () =>
+      page.evaluate(() => {
+        const frame = document.querySelector('[data-component="composer-frame"]')
+        return frame ? Math.round(frame.getBoundingClientRect().width) : 0
+      })
+    const TARGET_COMPOSER = 720
+    const presses = Math.ceil(Math.max(0, TARGET_COMPOSER - (await composerWidth())) / 24)
+    for (let step = 0; step < presses; step++) await panelSeparator.press("ArrowRight")
+    await expect.poll(composerWidth).toBeGreaterThan(640)
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+
     await page.locator("[data-claxedo]").screenshot({
       path: path.join(screenshots, "marketing-workspace.png"),
       animations: "disabled",
     })
 
-    await page.keyboard.press("Control+b")
+    // `claxedo.sidebar.toggle` is registered as "mod+b", and parseKeybind maps
+    // `mod` to Meta on macOS / Control elsewhere (providers/command-palette.tsx).
+    // A hardcoded "Control+b" therefore matches nothing on a mac, which is where
+    // this capture is normally run: the switcher never appears and the split
+    // capture dies at the assertion below. ControlOrMeta resolves per-platform.
+    await page.keyboard.press("ControlOrMeta+b")
     await expect(page.locator('[data-testid="compact-switcher"]')).toBeVisible()
     // "New Terminal" left the dropdown for its own button, which opens the
     // creator; the shell tile is the plain login shell the screenshot wants.
@@ -103,10 +139,26 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
 
     await page.goto("/workgraph")
     await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible({ timeout: 30_000 })
+    await expectDefaultTheme(page)
     await expect(page.getByRole("article", { name: "Stream Ship Claxedo Cloud" })).toBeVisible()
     await expect(page.getByRole("article", { name: "Stream Prepare desktop release" })).toBeVisible()
     await expect(page.getByRole("article", { name: "Stream Publish framework docs" })).toBeVisible()
-    await expect(page.getByText("Run cross-workspace access checks", { exact: true })).toBeVisible()
+    // What actually ruins this capture is a row SLICED by the tile's clip edge (the
+    // previous one shipped "checksums" cut through the middle). Assert that directly:
+    // every task row must be wholly inside the clipping container or wholly outside
+    // it. `toBeVisible` cannot express this — the tile clips with `overflow: hidden`,
+    // and a row cut in half is still "visible" to Playwright, so asserting on the
+    // last row's text passes while the picture is broken.
+    const slicedRows = await page.evaluate(() => {
+      const list = document.querySelector(".workgraph-streamcard-tasks")
+      if (!list) return ["no task list"]
+      const clip = list.getBoundingClientRect()
+      return Array.from(list.querySelectorAll(".workgraph-leaf"))
+        .map((row) => ({ text: row.textContent?.trim() ?? "", box: row.getBoundingClientRect() }))
+        .filter(({ box }) => box.top < clip.bottom - 1 && box.bottom > clip.bottom + 1)
+        .map(({ text }) => text)
+    })
+    expect(slicedRows, "task rows sliced by the stream card's clip edge").toEqual([])
     await expect(page.getByRole("complementary", { name: "Workspace panel" })).toBeHidden()
     await page.getByRole("button", { name: "Collapse Needs you" }).click()
     await expect(page.getByRole("button", { name: "Expand Needs you" })).toBeVisible()
@@ -279,6 +331,18 @@ async function installReviewApi(page: Page) {
   })
 }
 
+// These captures are the public site's product shots, so they must show the app's
+// DEFAULT theme — whatever `ThemeProvider defaultTheme` is set to in entry/app.tsx.
+// `seedProject` clears localStorage, so no stored `opencode-theme-id` can override
+// it here; this asserts the result rather than trusting that. Themes only differ by
+// colour, so a drift back to the old default would produce a perfectly valid-looking
+// screenshot in the wrong palette — nothing else in this file would catch it.
+async function expectDefaultTheme(page: Page) {
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.dataset.theme ?? ""))
+    .toBe("vercel")
+}
+
 async function suppressCaptureOnlyConnectionNotice(page: Page) {
   await page.addStyleTag({ content: '[data-claxedo] [role="status"] { display: none !important; }' })
 }
@@ -365,10 +429,21 @@ async function installWorkGraphApi(page: Page) {
   const records = [
     stream("stream_cloud", "Ship Claxedo Cloud", "Verify the product, publish the release, and preserve the evidence.", "paused", true),
     reviewTask,
-    task("task_continuity", "stream_cloud", "Verify desktop and browser continuity", "completed"),
-    task("task_checksums", "stream_cloud", "Publish release checksums", "pending"),
-    task("task_access", "stream_cloud", "Run cross-workspace access checks", "pending", ["task_checksums"]),
-    task("task_announce", "stream_cloud", "Prepare the launch announcement", "pending_approval"),
+    // This stream deliberately carries FEWER tasks than the card previews.
+    // `STREAM_CARD_TASK_PREVIEW` is 4, but the card is a fixed 17.5rem tile
+    // (workgraph.css `.workgraph-streamcard`) that clips its list, and the
+    // compiled-settings chip row above it now wraps to two lines. A 4th row no longer
+    // fits: it lands ON the clip edge and ships a word sliced through the middle,
+    // which is what the previous capture did with "checksums". Shortening titles only
+    // moves the slice around — the row count is the real constraint. Three rows plus
+    // "Show N more" reads as a populated stream anyway. The clip-edge assertion in
+    // the test enforces this, so adding a task here will fail the capture, not
+    // silently spoil it.
+    // Keep at least one `completed` task: the card footer shows a done/total
+    // fraction, and an all-pending stream renders "0/3", which reads as a stream
+    // where nothing has happened yet — not the picture the site wants.
+    task("task_continuity", "stream_cloud", "Verify continuity", "completed"),
+    task("task_announce", "stream_cloud", "Draft the announcement", "pending_approval"),
     stream("stream_desktop", "Prepare desktop release", "Package, sign, and verify the next desktop build.", "active"),
     task("task_package", "stream_desktop", "Package macOS and Linux builds", "active"),
     task("task_smoke", "stream_desktop", "Run installer smoke tests", "pending", ["task_package"]),
