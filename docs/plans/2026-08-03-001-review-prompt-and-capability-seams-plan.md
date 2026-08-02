@@ -5,6 +5,122 @@ through W10.3. Written after the owner reviewed the result and named what is
 still wrong. Every claim below is verified against the tree, with the command
 that verified it.
 
+## The eight themes
+
+Every ask in this thread reduces to one sentence:
+
+> **A name or a location is a claim. Where the claim is false, fix it. Where it
+> is true but unenforced, guard it.**
+
+Eight themes, each with the asks that produced it. Waves in Part 2 are tagged
+with the theme they serve, so nothing is fixed without knowing which invariant
+it defends.
+
+### T1 — Names must be literally true
+
+> "what does 'hosted' mean in a file name?" · "self-host to mean running
+> locally, that is entirely wrong" · "architecture.test? how can you have arch
+> test" · "backends? why is it plural?" · "operations/ what it means? why not
+> lib" · "proxy name need to be very explict of what it does" ·
+> "workspace/* workspace-runtime is confusing"
+
+Measured falsehoods today: `routes/` (25 of 49 files export no Hono app),
+`backends/` (2 of 4 are backends), `integration/` (0 of 10 are source),
+`architecture.test.ts` (1 of 15 tests cover `architecture.ts`), `proxy.ts`
+(3 transports, the name covers 1), `adapters/provider-auth` (adapts nothing
+external).
+
+Rule: a directory or file name is a falsifiable claim about its contents. If
+the claim cannot be made true, the name is wrong.
+
+### T2 — One concept, one implementation
+
+> "files tht need to be same everywhere but there are not reused" · "there are
+> multiple impls or dir looking like doing same thing" · "permission, auth, db
+> access ... if you have to make change it only happens at once place" ·
+> "errors, rate limit, retries, telemetry ... should be some top level concern"
+
+Measured: **12 auth combinations across 26 route files** from 10 entry points;
+**7 hand-rolled retry loops** with no shared helper; **68 error classes, 61
+extending raw `Error`**; `workGraphWorkspaceId` exported twice with
+incompatible outputs.
+
+Rule: a cross-cutting concern has exactly one implementation and one import
+path. Verified negatives worth keeping: DB access already satisfies this
+(0 route files touch `ClaxedoDB`), as do rate-limit and telemetry.
+
+### T3 — The tree teaches the architecture
+
+> "from looking at directory should be clear to user that claxedo server is
+> mostly how we are using many different claxedo packages" · "no idea what
+> layer/domains — storage, network, server, host, route, deploy target all
+> entangled" · "we need both -> Platform or core -> layer system then domains" ·
+> "maybe cf prefix or cf dir so it is clear these only work in cf deployment"
+
+Rule: `platform/` = layers, domains = features, `adapters/` = external
+backends, `hosts/` = external-package composition, `deployments/` = composition
+roots. Runtime-specific code carries `.cf.ts`. A newcomer should infer this
+from `ls`.
+
+### T4 — Justify every file individually
+
+> "why it exist should be question, and why it is logical to be in this group,
+> why its named like this should be questioned for every. please do this
+> exercise for entire src/*"
+
+Rule: no file is exempt because it is small, old, or was moved recently. This
+is the origin of the Part 1 prompt, and it is why that prompt is per-file
+rather than per-directory.
+
+### T5 — No legacy, no compat shims
+
+> "we don't need any backward compat so please remove anything like that" ·
+> "no backward compat is needed, remove what can be removed"
+
+Already applied: `opencode_url` (write-only at 6 sites), `configureOpenCodeCompat`,
+the `session-runners.json` format, the `DeploymentMode` alias. Rule: a
+deprecated path is deleted, not aliased. Exception that must be argued, not
+assumed: persisted DB/API strings (e.g. `access === "user-hosted"`) need a
+migration.
+
+### T6 — Test-only code is visibly test-only
+
+> "there are test files in normal code without no indication if they are test
+> only, and multiple categories of these test — drill/stress/maintenance/live" ·
+> "integration/ dir which is all tests, then there is governance -> these are
+> test only dir, but does feel like that"
+
+Measured: `integration/` is 0% source; `platform/governance/` mixes a
+4-production-importer module with a 0-importer test registry; 9 test suffixes
+exist and **none gates a runner** — `.e2e.test.ts` and `.miniflare.test.ts` run
+in the default suite.
+
+Rule: test-only code lives under a test-only path; a suffix that classifies
+must gate something.
+
+### T7 — Verify before asserting
+
+> "can you search convex's official docs around this" · "why not use
+> edge-runtime?" · "i don't think so? relay and workspace connect directly to
+> sandbox from client" · "how is proxy used? i don't think we forward requests"
+
+Every one of these caught a wrong claim of mine. See the corrections log below —
+four confident misreadings, all from pattern-matching a name or a single line
+instead of following the call graph.
+
+Rule: evidence is an import list, an export list, a caller count, or a quoted
+header. Never a filename. This applies to subagent reports too: verify before
+relaying.
+
+### T8 — Comments describe code, not history
+
+> "adding code comments about impl detail or whatever we have discussed in
+> session ... instead of about code, and also huge comments which are not really
+> some real insight"
+
+Measured: 106 comment lines added across the W10 waves; the worst is a 14-line
+block documenting a check that is not in the file. See W11.2c.
+
 ## The owner's findings, measured
 
 | # | Owner's words | Measurement |
@@ -205,7 +321,53 @@ rewrite, and two at once corrupt each other. This bit three times today.
 Waves are ordered by *value per unit of risk*, not by size. Each wave: typecheck
 → 4 sweeps → full suite → commit, with every guard fault-injected.
 
-## W11.0 — Delete the guard evasion (do this first)
+## Execution model — subagents, and the one thing that cannot be parallel
+
+**Use many subagents. Fan them out per area, not per wave.**
+
+Areas (one agent each, 10-14 total): `hosts/`, `authority/`, `platform/`,
+`adapters/`, `deployments/`, and one per domain — `workspace`, `documents`,
+`session`, `opencode`, `billing`, `connections`, `agent-config`, `channels`.
+
+Each gets the Part 1 prompt with its area substituted, plus the theme list
+above, and returns a per-file manifest. This is safe at any width: read-only
+agents cannot collide.
+
+**Analysis parallelizes. Moves do not.**
+
+Every move runs a repo-wide import rewrite. Two agents rewriting at once
+corrupt each other's output — this happened three times in the W10 waves, and
+twice more two agents edited the same file while each believed the other was
+the lead. Therefore:
+
+- fan out READ-ONLY reviewers freely; 14 at once is fine
+- apply moves SERIALLY, one wave at a time, one committer
+- the committer verifies each agent claim against the tree before acting on it
+  (T7 — several reviewer claims this session were overstated or wrong, and
+  several of mine were too)
+
+**Per-wave loop, unchanged from W10 and non-negotiable:**
+
+  1. fan out reviewers for the wave's area
+  2. verify their claims (`git show <sha>:<path>`, not working-tree state)
+  3. move serially
+  4. typecheck -> 4 sweeps -> full suite -> convex suite
+  5. fault-inject every guard added or edited; confirm RED, then revert
+  6. commit
+
+**Sweeps that must pass** (`vi.mock` resolution, `path.join`/`resolve`,
+variable-specifier dynamic imports, `readFile` anchored on `dirname`). Each
+exists because a silent breakage got through: a `vi.mock` that stops matching
+does not error, it just stops mocking; a stripped `.ts` in a `readFileSync`
+turns a guard into an ENOENT; a variable-specifier import is invisible to both
+tsc and the rewriter.
+
+**Guard discipline.** A green suite after a FAILED injection proves nothing —
+always confirm the injection applied before trusting the result. Two guards
+were silently disarmed by moves in the W10 waves; both only failed loudly
+because they asserted a positive.
+
+## W11.0 — Delete the guard evasion (do this first)  · T1, T7
 
 `platform/auth/request-timeout.ts:20` is `["C","ONVEX"].join("")` with a comment
 saying it exists "so this file carries no adapter token for the R8 guard to
@@ -220,7 +382,7 @@ in the adapter.
 Smallest wave here and the highest priority: a codebase that teaches people to
 route around its own lints will not hold any boundary this reorg built.
 
-## W11.1 — One auth seam (the wave that matters)
+## W11.1 — One auth seam (the wave that matters)  · T2
 
 Today: 10 entry points, 12 combinations, 26 route files. Target: **five named
 postures, one place each.**
@@ -245,7 +407,7 @@ Steps:
 
 Do NOT touch the DB layer in this wave. It is already correct.
 
-## W11.1b — One retry seam, one error base
+## W11.1b — One retry seam, one error base  · T2
 
 Same shape as W11.1, smaller and lower risk. Do it in the same stretch.
 
@@ -260,7 +422,7 @@ Same shape as W11.1, smaller and lower risk. Do it in the same stretch.
 Guard: no `for (let attempt` / `while (attempt` outside `platform/runtime/retry.ts`;
 no `extends Error` outside `platform/errors/`. Fault-inject both.
 
-## W11.2 — Make `routes/` mean one thing
+## W11.2 — Make `routes/` mean one thing  · T1, T3
 
 25 of 49 files are not routes. Move the non-Hono files out by kind:
 - business logic → the domain's `service.ts` (`extension-support.ts` 389L,
@@ -272,7 +434,7 @@ no `extends Error` outside `platform/errors/`. Fault-inject both.
 
 Then guard: every file under a `routes/` directory exports a Hono app.
 
-## W11.2b — Split `proxy.ts` by entrypoint, and close its test gap
+## W11.2b — Split `proxy.ts` by entrypoint, and close its test gap  · T1
 
 Not a rename — the file is two entrypoints serving three transports, and the
 owner's rule is that the name must state exactly what it does.
@@ -296,7 +458,7 @@ is the loopback REFUSAL. Since user-hosted is a live product surface, add a
 test that drives a successful shared-workspace request end to end. Do this
 BEFORE the split, so the split is verified by something other than typecheck.
 
-## W11.2c — Strip narrative comments
+## W11.2c — Strip narrative comments  · T8
 
 Owner: comments must be about the CODE, not about how the code came to be.
 Banned: session/plan history, wave numbers, decisions considered and rejected,
@@ -325,7 +487,7 @@ Rules to apply:
 Sweep every file touched between `4435449ac` and HEAD. Mechanical and low risk;
 run it after the structural waves so it only passes over the tree once.
 
-## W11.3 — Separate test-only from production
+## W11.3 — Separate test-only from production  · T6
 
 - `integration/` → `tests/integration/` (0 non-test files today).
 - `platform/governance/` splits by nature, which is what makes it confusing:
@@ -340,7 +502,7 @@ run it after the structural waves so it only passes over the tree once.
   `architecture.ts`'s unit test — 1 of its 15 tests touches that module.
   Same for `billing/architecture.test.ts` → `billing/invariants.test.ts`.
 
-## W11.4 — Fix directory names that lie
+## W11.4 — Fix directory names that lie  · T1, T3
 
 - `adapters/credentials` → `credentials/` (top-level domain; it has `routes/`,
   `operations/`, its own table).
@@ -354,7 +516,7 @@ run it after the structural waves so it only passes over the tree once.
 - `operations/verification-error.ts` → `types.ts` or the domain root. 11 lines of
   error types is not an operation.
 
-## W11.5 — `hosts/` boundary guard + drift
+## W11.5 — `hosts/` boundary guard + drift  · T3
 
 Verified: exactly **3 production violations** of hosts→deployments
 (`wakes/wake-settlement-dispatcher.ts`, `workgraph/hosted.ts`,
@@ -365,7 +527,7 @@ Also move the 3 drifted files with zero external-package imports:
 `agent-extensions/{catalog,scan,machine-scan}.ts` → `agent-config/` (their real
 consumer).
 
-## W11.6 — Extract the tenancy domain
+## W11.6 — Extract the tenancy domain  · T3, T4
 
 `authority/adapters/sqlite/workspace-authority.ts` (1156L) +
 `workspace-authority-store.ts` (436L) hold `ensurePersonalOrg`, `ensureProject`,
@@ -376,7 +538,7 @@ SQLite-ness is incidental to ~80% of the file."
 `authority/routes/session.ts` (already imports `../../session/meta`) to
 `session/routes/`. Largest wave; do it last, when the seams above are guarded.
 
-## W11.7 — Vocabulary
+## W11.7 — Vocabulary  · T1, T5
 
 Deferred to last because it is the widest diff and the least functional risk.
 - `hosted-` → `cloud-` (the codebase already says `cloud`:
@@ -396,7 +558,7 @@ Deferred to last because it is the widest diff and the least functional risk.
   into W11.2b — it is a real split with a test gap, not a rename. See the
   analysis above.
 
-## W11.8 — Docs, and a guard for them
+## W11.8 — Docs, and a guard for them  · T7
 
 **7 stale path references across 3 READMEs**, including ones written during this
 reorg: `authority/README.md` cites 4 files that moved to `platform/auth/` in
@@ -407,7 +569,7 @@ describe structure decay silently through exactly these moves.
 
 ---
 
-## W11.9 — Extend the `.cf.ts` convention
+## W11.9 — Extend the `.cf.ts` convention  · T3
 
 `platform/` is already CF-clean, so this is small: extract the R2 object-store
 code out of `documents/hosted-managed.ts` (it is buried at lines ~530-609 and
