@@ -10,6 +10,7 @@ import { navigationDecision, windowOpenDecision, type NavigationDecision } from 
 
 type Globals = {
   updaterEnabled: boolean
+  packaged: boolean
   wsl: boolean
   deepLinks?: string[]
   startupIsolationStage?: string
@@ -197,6 +198,7 @@ function injectGlobals(win: BrowserWindow, globals: Globals) {
     const deepLinks = globals.deepLinks ?? []
     const data = {
       updaterEnabled: globals.updaterEnabled,
+      packaged: globals.packaged,
       wsl: globals.wsl,
       deepLinks: Array.isArray(deepLinks) ? deepLinks.splice(0) : deepLinks,
       startupIsolationStage: globals.startupIsolationStage,
