@@ -1,4 +1,4 @@
-import type { SignedControlPlaneAuth } from "../control-plane/auth"
+import type { SignedControlPlaneAuth } from "../authority/auth"
 import {
   DocumentAgentOpenError,
   publishDocumentEvent,

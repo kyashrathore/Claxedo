@@ -5,8 +5,8 @@
  */
 
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { ControlPlaneTelemetry } from "../control-plane/services"
-import { sandboxRelayTargetLookup } from "../control-plane/sandbox-relay-target"
+import type { ControlPlaneTelemetry } from "../authority/services"
+import { sandboxRelayTargetLookup } from "../authority/sandbox-relay-target"
 import type { LocalRelayTargetExists, RelayTargetLookup } from "./internal-relay"
 
 export function localRelayTargetLookup(

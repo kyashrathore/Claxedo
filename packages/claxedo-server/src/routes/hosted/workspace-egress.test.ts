@@ -9,8 +9,8 @@ import {
   type SandboxEgressControl,
 } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
-import type { ClerkVerifier } from "../../control-plane/auth"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import type { ClerkVerifier } from "../../authority/auth"
+import type { ControlPlaneServices } from "../../authority/services"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 
 /**

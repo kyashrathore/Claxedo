@@ -18,7 +18,7 @@ class TestCompositionError extends Error {
   }
 }
 
-vi.mock("../../control-plane/hosted-services", () => ({
+vi.mock("../../authority/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => {
     throw new TestCompositionError("hosted_deployment_mode_required", "missing CLAXEDO_DEPLOYMENT_MODE")
   }),

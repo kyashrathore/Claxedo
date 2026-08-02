@@ -55,7 +55,7 @@ import {
 } from "./embedded-workspace-runtime"
 import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../governance/architecture"
-import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/central-store"
+import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { migrateCredentials } from "../../adapters/credentials/migrate"
 import { CredentialRoutes } from "../../routes/credential"
 import { ProviderAuthRoutes } from "../../routes/provider-auth"
@@ -66,29 +66,29 @@ import {
   createControlPlaneServices,
   type ControlPlaneRelay,
   type ControlPlaneServices,
-} from "../../control-plane/services"
+} from "../../authority/services"
 import {
   betterAuthAdapter,
   clerkAuthAdapter,
   controlPlaneAuthContext,
   ControlPlaneAuthError,
   signedCloudAuthRequested,
-} from "../../control-plane/auth"
+} from "../../authority/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "../../control-plane/deployment-mode"
+} from "../../authority/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../control-plane/adapters/convex/authority"
-import { createSqliteWorkspaceAuthority } from "../../control-plane/adapters/sqlite/workspace-authority"
-import { ControlPlaneHttpRoutes } from "../../control-plane/http"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/authority"
+import { createSqliteWorkspaceAuthority } from "../../authority/adapters/sqlite/workspace-authority"
+import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { createCentralControlApp } from "../../central-runtime"
-import { JwksRoutes } from "../../control-plane/routes/jwks"
+import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes } from "../../routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "../../routes/internal-relay-local"
 import { BootstrapRoutes } from "../../routes/bootstrap"
-import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../control-plane/runtime-access-token"
+import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../authority/runtime-access-token"
 import { createControlPlaneRelayProvider } from "../../adapters/relay"
 import { sandboxFetch } from "../../http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
@@ -544,7 +544,7 @@ export function createApp(
   // D9: the ONE global unsigned-local gate. In unsigned self-host mode this
   // is the PRIMARY gate — non-loopback requests are denied by default with an
   // explicit allowlist of machine-token/callback exceptions (see
-  // control-plane/deployment-mode.ts). The per-route loopback checks further
+  // authority/deployment-mode.ts). The per-route loopback checks further
   // down (connections gate, events allowLoopbackLocal, local-only
   // projections) are hereby demoted to defense-in-depth. In signed mode the
   // guard passes through and per-route bearer verification stays the gate.

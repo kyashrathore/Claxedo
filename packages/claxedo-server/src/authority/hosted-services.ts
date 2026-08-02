@@ -1,7 +1,7 @@
 /**
  * Worker-safe composition of the hosted control-plane services.
  *
- * This deliberately does NOT import `control-plane/services.ts` values
+ * This deliberately does NOT import `authority/services.ts` values
  * (`createHostedControlPlaneServices` / `defaultControlPlaneCredentials`),
  * because `defaultControlPlaneCredentials` lazily imports the local credential
  * registry (which pulls `fs`) — even an unused lazy chunk would land in the

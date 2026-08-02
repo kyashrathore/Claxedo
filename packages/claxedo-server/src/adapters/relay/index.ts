@@ -6,7 +6,7 @@ import {
   RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "../../control-plane/runtime-access-token"
+} from "../../authority/runtime-access-token"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RelayTargetLookup } from "../../routes/internal-relay"
 

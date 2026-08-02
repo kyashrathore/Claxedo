@@ -9,10 +9,10 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../control-plane/auth"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../../control-plane/services"
-import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../../control-plane/runtime-access-token"
-import type { ConnectionRateLimiter } from "../../control-plane/rate-limit"
+} from "../../authority/auth"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
+import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../../authority/runtime-access-token"
+import type { ConnectionRateLimiter } from "../../authority/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "../../region"
 
 export type WorkspaceRouteOptions = {

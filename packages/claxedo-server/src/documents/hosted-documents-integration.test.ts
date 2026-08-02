@@ -17,8 +17,8 @@ import {
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../workspace-runtime/src/index"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "../control-plane/auth"
-import type { ControlPlaneServices } from "../control-plane/services"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "../authority/auth"
+import type { ControlPlaneServices } from "../authority/services"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "../routes/documents"
 import { createHostedDocumentsBackend } from "./hosted-backend"
 import { createHostedLocalDocumentRelay } from "./hosted-local-relay"

@@ -6,7 +6,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../control-plane/auth"
+} from "../authority/auth"
 
 /**
  * The per-route bearer gate for control-plane routers that have no finer-grained

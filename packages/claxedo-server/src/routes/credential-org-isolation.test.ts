@@ -20,7 +20,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../control-plane/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "../authority/auth"
 
 const root = path.join(realpathSync(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -33,7 +33,7 @@ delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
 
 const { createTestBackend, setBackendOverride } = await import("../adapters/credentials/store")
 const registry = await import("../adapters/credentials/registry")
-const { defaultControlPlaneCredentials } = await import("../control-plane/services")
+const { defaultControlPlaneCredentials } = await import("../authority/services")
 const { CredentialRoutes } = await import("./credential")
 const { ClaxedoDB } = await import("../adapters/storage/db")
 const { SINGLE_TENANT_ORG } = await import("../adapters/storage/provider-credential.sql")

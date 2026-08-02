@@ -1,4 +1,4 @@
-export { bearerToken } from "../control-plane/auth"
+export { bearerToken } from "../authority/auth"
 
 export function errorBody(code: string, message: string, details?: Record<string, unknown>) {
   return {

@@ -18,8 +18,8 @@ import { configureOpenCodeEngine, opencodeRequest } from "./opencode/engine"
 import { ensureWorkspace } from "./workspace/store"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
 import { createApp } from "./deployments/local/server"
-import { createControlPlaneServices } from "./control-plane/services"
-import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
+import { createControlPlaneServices } from "./authority/services"
+import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store"
 
 const execFileAsync = promisify(execFile)
 

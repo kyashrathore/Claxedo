@@ -7,14 +7,14 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../control-plane/auth"
+} from "../authority/auth"
 import {
   requireAuthority,
   type ProjectAction,
   type ProjectId,
   type WorkspaceAuthority,
-} from "../control-plane/authority"
-import type { ControlPlaneServices } from "../control-plane/services"
+} from "../authority/authority"
+import type { ControlPlaneServices } from "../authority/services"
 import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../documents/backend"
 import type { DocumentIndexEntry } from "../documents/index-store"
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "../documents/errors"

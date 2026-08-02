@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import type { ClerkVerifier } from "../../control-plane/auth"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import type { ClerkVerifier } from "../../authority/auth"
+import type { ControlPlaneServices } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
+import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { countActiveForOrg } from "../../../../../convex/sandboxLeases"
 import { indexRangeBuilder } from "../../test-helpers/convex-index-harness"
@@ -311,7 +311,7 @@ describe("POST /create per-tenant concurrent lease cap", () => {
   test("both scopes go to ONE count — a union, never a sum", async () => {
     // `sandboxLeases.countActiveForOrg` takes both and counts a lease matching
     // either exactly once (pinned over a fake db in
-    // control-plane/convex-lease-owner-attribution.test.ts). The route must
+    // authority/convex-lease-owner-attribution.test.ts). The route must
     // therefore ask ONCE with both scopes, not add two separate counts together:
     // an org caller's own leases carry both columns, so summing would count each
     // of them twice and halve the effective cap.

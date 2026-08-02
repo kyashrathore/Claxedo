@@ -74,7 +74,7 @@ describe("Polar confinement (D4 addendum)", () => {
   })
 
   test("the storage-agnostic control-plane core stays Polar-free (R8's vendor-token rule)", () => {
-    const controlPlaneSrc = path.join(serverSrc, "control-plane")
+    const controlPlaneSrc = path.join(serverSrc, "authority")
     const offenders = walk(controlPlaneSrc)
       .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
       .filter((file) => /polar/i.test(fs.readFileSync(file, "utf8")))

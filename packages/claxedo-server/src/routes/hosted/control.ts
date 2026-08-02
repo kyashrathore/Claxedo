@@ -1,11 +1,11 @@
 import { Hono } from "hono"
-import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../../control-plane/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../../authority/auth"
 import {
   pullHostedControlSession as pullControlSession,
   pullHostedControlSessionMessages as pullControlSessionMessages,
-} from "../../control-plane/hosted-session-pull"
-import type { ControlPlaneServices } from "../../control-plane/services"
-import { requireAuthority } from "../../control-plane/authority"
+} from "../../authority/hosted-session-pull"
+import type { ControlPlaneServices } from "../../authority/services"
+import { requireAuthority } from "../../authority/authority"
 import {
   cachedIdempotency,
   idempotencyCacheKey,
@@ -13,7 +13,7 @@ import {
   lockKey,
   parseIdempotencyKey,
   serialized,
-} from "../../control-plane/http/idempotency"
+} from "../../authority/http/idempotency"
 import { rec, signedOrError, txt } from "../workspace/user-hosted"
 
 type Options = {

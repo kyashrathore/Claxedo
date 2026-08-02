@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
+import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
 import { HostedWorkGraphAdminRoutes } from "./workgraph-admin"
 
 describe("hosted WorkGraph reconciliation admin route", () => {

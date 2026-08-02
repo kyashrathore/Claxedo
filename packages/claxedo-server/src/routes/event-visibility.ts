@@ -1,5 +1,5 @@
 import type { ClaxedoEvent } from "../lib/bus"
-import type { ControlPlaneAuthContext } from "../control-plane/auth"
+import type { ControlPlaneAuthContext } from "../authority/auth"
 
 // Worker-safe home of the per-event visibility predicate. Both the local Node
 // bus SSE (`routes/events.ts`) and the hosted `LiveSyncRoom` Durable Object

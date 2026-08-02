@@ -234,13 +234,13 @@ describe("architecture boundaries", () => {
 
   test("keeps generic control-plane core free of Convex tokens (R8)", () => {
     // Ownership-first: Convex is Claxedo's storage *decision*; only the Convex
-    // (and the Worker composition) adapters under control-plane/adapters/* may
+    // (and the Worker composition) adapters under authority/adapters/* may
     // name it. Every other control-plane source file — imports, error codes,
     // field names, env names, comments — must be storage-agnostic. This is the
     // mechanical mirror of the kit's opencode.ai ban. Test files are excluded.
     // (Even the legacy backend-URL env aliases live in the Convex adapter now:
     // `convexAuthorityUrlFromEnv` — so this scan needs no carve-outs.)
-    const controlPlaneSrc = path.resolve(import.meta.dirname, "../control-plane")
+    const controlPlaneSrc = path.resolve(import.meta.dirname, "../authority")
     const offenders = walk(controlPlaneSrc)
       .filter((file) => file.endsWith(".ts"))
       .filter((file) => !file.endsWith(".test.ts"))

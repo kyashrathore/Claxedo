@@ -112,7 +112,7 @@ CLAXEDO_DEPLOYMENT_MODE = "hosted"
 CLAXEDO_TELEMETRY_MODE = "off"
 
 # W3.1 cross-isolate abuse limiter for the default request guard
-# (src/control-plane/request-guard.ts). Before this, every limiter in the control
+# (src/authority/request-guard.ts). Before this, every limiter in the control
 # plane counted in a per-isolate Map, so the effective budget was
 # `configured x live isolates` — it loosened exactly under load.
 #
@@ -125,7 +125,7 @@ CLAXEDO_TELEMETRY_MODE = "off"
 #
 # The counters are per-Cloudflare-location and eventually consistent, which is
 # the documented trade and the right one for an ABUSE limiter (see the W3.1
-# decision comment in src/control-plane/rate-limit.ts). `namespace_id` is an
+# decision comment in src/authority/rate-limit.ts). `namespace_id` is an
 # account-unique positive integer as a string; bindings that share it share
 # counters, so staging deliberately uses a DIFFERENT id to keep a staging load
 # test from spending production's budget.

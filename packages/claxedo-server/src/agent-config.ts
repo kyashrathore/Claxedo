@@ -48,10 +48,10 @@ import {
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
 } from "./hosts/agent-extensions/workspace"
-import { ControlPlaneAuthError } from "./control-plane/auth"
-import type { WorkspaceAuthority } from "./control-plane/authority"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./control-plane/adapters/convex/authority"
-import { createSqliteWorkspaceAuthority } from "./control-plane/adapters/sqlite/workspace-authority"
+import { ControlPlaneAuthError } from "./authority/auth"
+import type { WorkspaceAuthority } from "./authority/authority"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./authority/adapters/convex/authority"
+import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority"
 
 const log = Log.create({ service: "agent-config" })
 

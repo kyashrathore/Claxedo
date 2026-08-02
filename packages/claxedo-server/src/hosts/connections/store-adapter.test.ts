@@ -26,7 +26,7 @@ ClaxedoDB.Drizzle()
 
 const { createConnectionStoreAdapter, createCredentialStoreAdapter } = await import("./store-adapter")
 const { connectionStoreConformance, credentialStoreConformance } = await import("@claxedo/connections")
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 
 function credentialsPort(): ControlPlaneCredentials {
   return {

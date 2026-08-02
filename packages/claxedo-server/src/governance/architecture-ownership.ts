@@ -22,30 +22,30 @@ export type ArchitectureOwnershipEntry = {
 export const ARCHITECTURE_OWNERSHIP = [
   {
     area: "authority",
-    module: "control-plane/adapters/convex/authority/index.ts",
+    module: "authority/adapters/convex/authority/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane Convex authority adapter",
     tests: [
-      "control-plane/adapters/convex/authority/index.test.ts",
-      "control-plane/services.test.ts",
+      "authority/adapters/convex/authority/index.test.ts",
+      "authority/services.test.ts",
     ],
   },
   {
     area: "authority",
-    module: "control-plane/authority.ts",
+    module: "authority/authority.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane authority port",
     tests: [
-      "control-plane/services.test.ts",
+      "authority/services.test.ts",
     ],
   },
   {
     area: "authority",
-    module: "control-plane/adapters/worker/hosted-compose.ts",
+    module: "authority/adapters/worker/hosted-compose.ts",
     status: OwnershipStatus.Canonical,
     owner: "Worker hosted authority/lease composition adapter",
     tests: [
-      "control-plane/hosted-services.test.ts",
+      "authority/hosted-services.test.ts",
     ],
   },
   {
@@ -83,7 +83,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "SandboxLeaseStore hosted durable driver",
     tests: [
       "adapters/sandbox/stores/lease-store-equivalence.test.ts",
-      "control-plane/convex-policy/convex-sandbox-leases-policy.test.ts",
+      "authority/convex-policy/convex-sandbox-leases-policy.test.ts",
     ],
   },
   {
@@ -112,17 +112,17 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "The local Claxedo product path dogfoods SandboxManager and SandboxDriver directly for cloud workspaces.",
     tests: [
       "workspace/supervisor/cloud.test.ts",
-      "control-plane/services.test.ts",
+      "authority/services.test.ts",
     ],
   },
   {
     area: "lease",
-    module: "control-plane/http/index.ts",
+    module: "authority/http/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane runtime register and heartbeat routes",
     canonicalReplacement: "../../sandbox-manager/src/index.ts plus SandboxLeaseStore heartbeat/touch methods",
     reason: "Runtime register and heartbeat routes update the canonical SandboxManager lease; legacy cloud authority rows are no longer written.",
-    tests: ["control-plane/http/index.test.ts"],
+    tests: ["authority/http/index.test.ts"],
   },
   {
     area: "mirror",
@@ -160,10 +160,10 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "control-plane/worker-credentials.ts",
+    module: "authority/worker-credentials.ts",
     status: OwnershipStatus.Canonical,
     owner: "hosted credential registry adapter",
-    tests: ["control-plane/hosted-services.test.ts"],
+    tests: ["authority/hosted-services.test.ts"],
   },
   {
     area: "registry",
@@ -275,7 +275,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "OpenCode HTTP compatibility routes",
     canonicalReplacement: "Control-plane and workspace-runtime route domains in route-ownership.ts",
     reason: "Existing local OpenCode-compatible clients still call these paths.",
-    removalCondition: "All local app and CLI callers use canonical control-plane/workspace-runtime routes.",
+    removalCondition: "All local app and CLI callers use canonical authority/workspace-runtime routes.",
     tests: [
       "http/proxy.test.ts",
       "governance/architecture.test.ts",
@@ -284,22 +284,22 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
-    module: "control-plane/projection-store.ts",
+    module: "authority/projection-store.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane ProjectionStore",
     tests: [
-      "control-plane/projection-store.test.ts",
-      "control-plane/durable-state.test.ts",
+      "authority/projection-store.test.ts",
+      "authority/durable-state.test.ts",
     ],
   },
   {
     area: "projection",
-    module: "control-plane/durable-session-log.ts",
+    module: "authority/durable-session-log.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane DurableSessionLog",
     tests: [
-      "control-plane/durable-session-log.test.ts",
-      "control-plane/durable-state.test.ts",
+      "authority/durable-session-log.test.ts",
+      "authority/durable-state.test.ts",
     ],
   },
   {
@@ -314,25 +314,25 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   // --- Unit 5: control-plane-owned route reorganization ---
   // MOVE: generic control-plane route modules whose import graph is
-  // services/port-only and Worker-safe. Rehomed under control-plane/routes/.
+  // services/port-only and Worker-safe. Rehomed under authority/routes/.
   {
     area: "route",
-    module: "control-plane/routes/control-plane-session.ts",
+    module: "authority/routes/control-plane-session.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane session routes",
     reason:
-      "Unit 5 MOVE: imports only ControlPlaneServices, the authority port, control-plane/http, control-plane/auth, and type-only session-meta/session-list — no workspace-store, SQLite, or fs. Generic control-plane core, rehomed from routes/.",
-    tests: ["control-plane/routes/control-plane-session.test.ts"],
+      "Unit 5 MOVE: imports only ControlPlaneServices, the authority port, authority/http, authority/auth, and type-only session-meta/session-list — no workspace-store, SQLite, or fs. Generic control-plane core, rehomed from routes/.",
+    tests: ["authority/routes/control-plane-session.test.ts"],
     routeSamples: ["/api/control/sessions/s1/gateway"],
   },
   {
     area: "route",
-    module: "control-plane/routes/jwks.ts",
+    module: "authority/routes/jwks.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane JWKS route",
     reason:
-      "Unit 5 MOVE: serves control-plane signing keys; only dependency is control-plane/web-crypto plus jose/hono. Mounted by both server.ts and hosted-app.ts (already Worker-safe). Rehomed from routes/.",
-    tests: ["control-plane/routes/jwks.test.ts"],
+      "Unit 5 MOVE: serves control-plane signing keys; only dependency is authority/web-crypto plus jose/hono. Mounted by both server.ts and hosted-app.ts (already Worker-safe). Rehomed from routes/.",
+    tests: ["authority/routes/jwks.test.ts"],
     routeSamples: ["/.well-known/jwks.json"],
   },
   // DOCUMENT: generic-in-spirit route modules that stay under routes/ because
@@ -404,7 +404,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "provider auth method service (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict WRAP→DOCUMENT: the implementation is portable (only node:timers + a type import) but it is a service, not a route, so there is no control-plane/routes/ home; with 2 non-test importers (routes/provider-auth.ts, routes/bootstrap.ts) a barrel is not warranted. Left in place and documented.",
+      "Unit 5 verdict WRAP→DOCUMENT: the implementation is portable (only node:timers + a type import) but it is a service, not a route, so there is no authority/routes/ home; with 2 non-test importers (routes/provider-auth.ts, routes/bootstrap.ts) a barrel is not warranted. Left in place and documented.",
     tests: ["routes/provider-auth.test.ts"],
   },
   {

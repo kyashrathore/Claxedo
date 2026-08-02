@@ -14,12 +14,12 @@
  *   classes with NO org/user identifiers and no content. It keeps calling
  *   `ControlPlaneTelemetry.capture` directly and is exempt by construction.
  *
- * Worker-safe: the only dependency is a type. `control-plane/services.ts` must
+ * Worker-safe: the only dependency is a type. `authority/services.ts` must
  * never enter the Worker's runtime graph (it lazily reaches the fs-backed
  * credential registry), so the port arrives as `import type`.
  */
 
-import type { ControlPlaneTelemetry } from "../control-plane/services"
+import type { ControlPlaneTelemetry } from "../authority/services"
 
 /**
  * Where the deployment sits, as the product plane reports it. Distinct from

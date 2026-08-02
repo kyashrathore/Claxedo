@@ -12,7 +12,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("../adapters/credentials/store")
 const { putCredential, getCredential, resolveSecretById } = await import("../adapters/credentials/registry")
-const { defaultControlPlaneCredentials } = await import("../control-plane/services")
+const { defaultControlPlaneCredentials } = await import("../authority/services")
 const { CredentialRoutes } = await import("./credential")
 const { ClaxedoDB } = await import("../adapters/storage/db")
 

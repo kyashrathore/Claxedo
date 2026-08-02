@@ -66,8 +66,8 @@ const FORBIDDEN_LOCAL = [
   "channels/delivery",
   "channels/run-audit",
   "channels/whatsapp-baileys-auth-state",
-  "control-plane/adapters/sqlite/central-store",
-  "control-plane/adapters/sqlite/workspace-authority",
+  "authority/adapters/sqlite/central-store",
+  "authority/adapters/sqlite/workspace-authority",
 ]
 
 type ImportRef = { spec: string; typeOnly: boolean }
@@ -166,10 +166,10 @@ describe("worker import-graph", () => {
 
   test("the sqlite central-store adapter is a forbidden local module absent from the Worker graph", () => {
     // Plan provenance: unit1-pin. Unit 6 (R8b) renamed sync-db.ts to
-    // control-plane/adapters/sqlite/central-store.ts; the FORBIDDEN_LOCAL
+    // authority/adapters/sqlite/central-store.ts; the FORBIDDEN_LOCAL
     // entry followed the rename (never deleted), keeping the Worker boundary
     // closed around local sqlite-backed central persistence.
-    expect(FORBIDDEN_LOCAL).toContain("control-plane/adapters/sqlite/central-store")
+    expect(FORBIDDEN_LOCAL).toContain("authority/adapters/sqlite/central-store")
     expect(visitedRel.filter((rel) => rel.includes("central-store") || rel.includes("sync-db"))).toEqual([])
   })
 
@@ -179,11 +179,11 @@ describe("worker import-graph", () => {
     expect(leaked, `forbidden bare imports in the Worker graph: ${detail}`).toEqual([])
   })
 
-  test("the Worker graph does not statically import control-plane/services.ts (avoids lazy fs credential chunk)", () => {
+  test("the Worker graph does not statically import authority/services.ts (avoids lazy fs credential chunk)", () => {
     // services.ts itself is fine, but its defaultControlPlaneCredentials lazily
     // imports the local credential registry (fs). The hosted composition uses
     // only `import type` from services.ts, so it must not appear in the graph.
-    expect(visitedRel).not.toContain("control-plane/services.ts")
+    expect(visitedRel).not.toContain("authority/services.ts")
   })
 
   // The `.cf.ts` suffix marks a module that CANNOT run outside the Cloudflare

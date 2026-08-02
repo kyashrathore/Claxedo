@@ -7,8 +7,8 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../control-plane/auth"
-import type { ProjectAction, WorkspaceAuthority } from "../control-plane/authority"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../authority/auth"
+import type { ProjectAction, WorkspaceAuthority } from "../authority/authority"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../documents/local-managed"
 import {
   createLocalRepositoryFileAuthority,

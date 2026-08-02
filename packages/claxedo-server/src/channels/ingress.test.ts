@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { WhatsAppBaileysSocket } from "@claxedo/channels"
 import { createApp } from "../deployments/local/server"
-import { localOnlyAuthAdapter } from "../control-plane/auth"
-import type { ControlPlaneServices } from "../control-plane/services"
+import { localOnlyAuthAdapter } from "../authority/auth"
+import type { ControlPlaneServices } from "../authority/services"
 import { createCentralControlApp } from "../central-runtime"
 import { createControlPlaneChannels } from "./control-plane"
 import { ensureWorkspace } from "../workspace/store"
-import type { ControlPlaneAuthConfig } from "../control-plane/auth"
+import type { ControlPlaneAuthConfig } from "../authority/auth"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 
 afterEach(() => {

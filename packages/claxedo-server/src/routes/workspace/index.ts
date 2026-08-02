@@ -9,8 +9,8 @@ import {
 } from "@claxedo/sandbox-manager/driver-catalog"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
-import { type ControlPlaneServices } from "../../control-plane/services"
-import { requireAuthority } from "../../control-plane/authority"
+import { type ControlPlaneServices } from "../../authority/services"
+import { requireAuthority } from "../../authority/authority"
 import { workspaceBacking } from "../../workspace/store/backing"
 import { ensureHostForRepo } from "../../network/policy"
 import {
@@ -24,9 +24,9 @@ import {
 } from "../../workspace/store"
 import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
 import { Log } from "../../lib/log"
-import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../control-plane/auth"
-import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
-import { newWorkspaceId } from "../../control-plane/workspace-id"
+import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../authority/auth"
+import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
+import { newWorkspaceId } from "../../authority/workspace-id"
 import {
   apiError,
   captureWorkspaceTelemetry,

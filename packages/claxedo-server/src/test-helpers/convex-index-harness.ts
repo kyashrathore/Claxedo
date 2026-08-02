@@ -79,7 +79,7 @@ const schemaIndexes = parseSchemaIndexes()
  * `by_tenant`; no schema change was needed, because all three already carried a
  * `["organization_id", "owner_user_id", …]`-prefixed index. The invariant is now
  * asserted directly (see the cascade tests in
- * `control-plane/convex-unbounded-read-guard.test.ts`), which is strictly better
+ * `authority/convex-unbounded-read-guard.test.ts`), which is strictly better
  * than modelling the divergence here.
  *
  * An entry is a known BUG being tolerated, never an accepted exception — so

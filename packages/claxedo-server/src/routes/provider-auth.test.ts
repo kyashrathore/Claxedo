@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../control-plane/services"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import { createProviderAuthService } from "../adapters/provider-auth/service"
 import { ProviderAuthRoutes } from "./provider-auth"
 

@@ -11,7 +11,7 @@ import { api } from "../../../convex/_generated/api"
 import schema from "../../../convex/schema"
 import { createHostedWorkGraph } from "../src/hosts/workgraph/hosted"
 import type { ClaxedoEvent } from "../src/lib/bus"
-import type { WorkspaceAuthority } from "../src/control-plane/authority"
+import type { WorkspaceAuthority } from "../src/authority/authority"
 import type { LiveSyncRoomNamespace } from "../src/deployments/hosted-workerd/live-sync-room.cf"
 
 declare global {

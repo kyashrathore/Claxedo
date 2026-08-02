@@ -9,7 +9,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../control-plane/auth"
+} from "../authority/auth"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 
 // The per-event visibility predicate lives in the Worker-safe `event-visibility`

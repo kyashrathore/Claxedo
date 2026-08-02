@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../../control-plane/services"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
 import type { CredentialWrite } from "../credentials/types"
 import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 import { createProviderAuthService, ProviderAuthError } from "./service"

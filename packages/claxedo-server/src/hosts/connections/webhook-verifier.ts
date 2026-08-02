@@ -7,11 +7,11 @@ import {
   type ConnectionWebhookVerifier,
 } from "@claxedo/connections"
 import { anyApi, type FunctionReference } from "convex/server"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import {
   hostedCredentialsEnabled,
   hostedOrgCredentials,
-} from "../../control-plane/worker-credentials"
+} from "../../authority/worker-credentials"
 
 type Query = FunctionReference<"query">
 const api = anyApi as unknown as {

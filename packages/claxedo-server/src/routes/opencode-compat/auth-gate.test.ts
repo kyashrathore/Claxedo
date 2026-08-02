@@ -19,10 +19,10 @@ process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const { OpenCodeCompatRoutes } = await import("./index")
-const { ControlPlaneAuthError } = await import("../../control-plane/auth")
+const { ControlPlaneAuthError } = await import("../../authority/auth")
 const { RouteHandler, routeOwnership } = await import("../../governance/route-ownership")
-type ControlPlaneAuthConfig = import("../../control-plane/auth").ControlPlaneAuthConfig
-type ClerkVerifier = import("../../control-plane/auth").ClerkVerifier
+type ControlPlaneAuthConfig = import("../../authority/auth").ControlPlaneAuthConfig
+type ClerkVerifier = import("../../authority/auth").ClerkVerifier
 
 afterAll(async () => {
   process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR

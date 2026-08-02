@@ -3,7 +3,7 @@ import path from "node:path"
 
 /**
  * Shared primitives for the static guard tests (architecture.test.ts,
- * control-plane/central-store-boundary.test.ts). The Worker import-graph guard
+ * authority/central-store-boundary.test.ts). The Worker import-graph guard
  * keeps its own specialized transitive walker.
  */
 

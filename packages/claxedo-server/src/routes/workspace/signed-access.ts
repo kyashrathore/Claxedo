@@ -1,9 +1,9 @@
 import { workspaceAgentExtensionRecords } from "../../hosts/agent-extensions/workspace"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import type { SignedControlPlaneAuth } from "../../control-plane/auth"
-import type { ConnectionRateLimiter } from "../../control-plane/rate-limit"
-import type { ControlPlaneServices } from "../../control-plane/services"
-import { requireAuthority } from "../../control-plane/authority"
+import type { SignedControlPlaneAuth } from "../../authority/auth"
+import type { ConnectionRateLimiter } from "../../authority/rate-limit"
+import type { ControlPlaneServices } from "../../authority/services"
+import { requireAuthority } from "../../authority/authority"
 import { controlPlaneRateLimitError, rec, txt } from "./user-hosted"
 
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {

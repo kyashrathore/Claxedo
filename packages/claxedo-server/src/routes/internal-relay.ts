@@ -1,10 +1,10 @@
 import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 import { errorBody } from "./http"
-import { createConvexAuthority } from "../control-plane/adapters/convex/authority"
-import { ControlPlaneRequestTimeoutError } from "../control-plane/adapters/convex/timeout"
-import type { WorkspaceAuthority } from "../control-plane/services"
-import { timingSafeEqualStrings } from "../control-plane/web-crypto"
+import { createConvexAuthority } from "../authority/adapters/convex/authority"
+import { ControlPlaneRequestTimeoutError } from "../authority/adapters/convex/timeout"
+import type { WorkspaceAuthority } from "../authority/services"
+import { timingSafeEqualStrings } from "../authority/web-crypto"
 
 function clean(input: string | undefined) {
   const value = input?.trim()

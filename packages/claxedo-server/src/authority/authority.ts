@@ -6,7 +6,7 @@ import type { ControlPlaneServices } from "./services"
  *
  * This is the seam the generic control-plane core owns: routes and pull flows
  * depend on this capability, not on any particular authority storage. Claxedo's
- * storage-backed implementation lives behind `control-plane/adapters/*` and
+ * storage-backed implementation lives behind `authority/adapters/*` and
  * satisfies this structural type; alternative control-plane compositions can
  * inject a different implementation.
  *

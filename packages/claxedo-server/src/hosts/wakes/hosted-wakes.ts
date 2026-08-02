@@ -18,12 +18,12 @@ import {
   workGraphMasterLaneKey,
   workGraphMasterLaneWorkspace,
 } from "@claxedo/workgraph/contracts"
-import { clean } from "../../control-plane/adapters/worker/hosted-compose"
+import { clean } from "../../authority/adapters/worker/hosted-compose"
 import {
   composeHostedControlPlane,
   HostedWorkerCompositionError,
   type HostedWorkerEnv,
-} from "../../control-plane/hosted-services"
+} from "../../authority/hosted-services"
 import { createHostedWorkGraphRuntime } from "../workgraph/hosted-runtime"
 import { settlementTenantKey, type SettlementTenant } from "../workgraph/settlement-dispatcher"
 import { ConvexWakeStore } from "./convex-wake-store"

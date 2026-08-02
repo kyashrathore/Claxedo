@@ -9,11 +9,11 @@ import {
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../workspace-runtime/src/index"
-import type { SignedControlPlaneAuth } from "../control-plane/auth"
-import type { ControlPlaneServices } from "../control-plane/services"
+import type { SignedControlPlaneAuth } from "../authority/auth"
+import type { ControlPlaneServices } from "../authority/services"
 import { createHostedDocumentRuntimeBroker } from "./hosted-runtime-broker"
 import type { DocumentIndexEntry } from "./index-store"
-import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "../control-plane/runtime-access-token"
+import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "../authority/runtime-access-token"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {

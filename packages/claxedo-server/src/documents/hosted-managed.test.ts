@@ -15,7 +15,7 @@ import {
 import { createHostedDocumentIndex } from "./hosted-index"
 import type { DocumentIndexEntry } from "./index-store"
 import { createHostedDocumentsBackend } from "./hosted-backend"
-import { mintDocumentSessionToken } from "../control-plane/runtime-access-token"
+import { mintDocumentSessionToken } from "../authority/runtime-access-token"
 import { documentWorkspaceConformance } from "./port-conformance"
 import type { DocumentEntry } from "./port"
 import { MAX_SNAPSHOT_METADATA_BYTES } from "./snapshot-pins"

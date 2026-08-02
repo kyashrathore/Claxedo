@@ -5,8 +5,8 @@ import {
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
-import type { SignedControlPlaneAuth } from "../../control-plane/auth"
-import type { WorkspaceAuthority } from "../../control-plane/authority"
+import type { SignedControlPlaneAuth } from "../../authority/auth"
+import type { WorkspaceAuthority } from "../../authority/authority"
 import type { RelayProvider } from "../../adapters/relay"
 import type { ClaxedoRegion } from "../../region"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"

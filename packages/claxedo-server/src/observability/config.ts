@@ -17,7 +17,7 @@
  *
  * `resolveTelemetryKey` is the single place both opt-ins are applied, which is
  * what makes them total: posthog.ts, observability/node.ts,
- * control-plane/worker-telemetry.ts and worker.ts's sink registration all
+ * authority/worker-telemetry.ts and worker.ts's sink registration all
  * resolve their key through this module and inherit the gate.
  */
 
@@ -64,7 +64,7 @@ export function resolveRelease(env: ObservabilityEnv): string | undefined {
 
 /**
  * Deployment trust tag (D9). Absent env = "local", mirroring
- * control-plane/deployment-mode.ts's default — the tag must never throw, so
+ * authority/deployment-mode.ts's default — the tag must never throw, so
  * unlike deploymentMode() an unrecognized value is passed through verbatim
  * rather than rejected (observability reports posture, it does not enforce it).
  *

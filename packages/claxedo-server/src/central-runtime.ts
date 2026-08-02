@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
 import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
 import { createCentralSessionRuntime } from "./central-session-runtime"
-import { ControlPlaneSessionRoutes } from "./control-plane/routes/control-plane-session"
+import { ControlPlaneSessionRoutes } from "./authority/routes/control-plane-session"
 import { isLoopbackLocalRequest } from "./routes/local-only-projection"
 import {
   ControlPlaneAuthError,
@@ -12,18 +12,18 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
-} from "./control-plane/auth"
-import type { ControlPlaneServices } from "./control-plane/services"
-import { requireAuthority } from "./control-plane/authority"
+} from "./authority/auth"
+import type { ControlPlaneServices } from "./authority/services"
+import { requireAuthority } from "./authority/authority"
 import type { ConnectionTurnCredentials } from "./hosts/connections/turn-credentials"
 import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/session-env"
 import type { UsageLedger } from "./telemetry/metering"
 import type { ProductDeploymentMode } from "./telemetry/product"
 
 export { createCentralSessionRuntime } from "./central-session-runtime"
-export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./control-plane/auth"
-export { createControlPlaneServices } from "./control-plane/services"
-export type { ControlPlaneServices } from "./control-plane/services"
+export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./authority/auth"
+export { createControlPlaneServices } from "./authority/services"
+export type { ControlPlaneServices } from "./authority/services"
 
 export type CentralControlAppOptions = {
   authConfig?: ControlPlaneAuthConfig

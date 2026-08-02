@@ -34,7 +34,7 @@ import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "../../http/cors-origins"
 import { securityHeaders } from "../../http/security-headers"
-import { JwksRoutes } from "../../control-plane/routes/jwks"
+import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../../routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
@@ -45,25 +45,25 @@ import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNames
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import { HostedControlRoutes } from "../../routes/hosted/control"
-import { HostedWorkerCompositionError, type HostedControlPlane } from "../../control-plane/hosted-services"
-import { configureCliSessionTokenRegistry } from "../../control-plane/cli-session-registry"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
+import { configureCliSessionTokenRegistry } from "../../authority/cli-session-registry"
+import type { ControlPlaneServices } from "../../authority/services"
 import {
   createFixedWindowConnectionRateLimiter,
   createLayeredRateLimiter,
   type SharedRateLimitStore,
-} from "../../control-plane/rate-limit"
-import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../control-plane/request-guard"
+} from "../../authority/rate-limit"
+import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../authority/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../control-plane/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../authority/auth"
 import { deploymentCompatibilityReport } from "../../governance/deployment-compatibility"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "../../control-plane/deployment-mode"
+} from "../../authority/deployment-mode"
 import {
   createHostedWorkGraph,
   type HostedWorkGraph,
@@ -134,7 +134,7 @@ export type HostedAppOverrides = {
    *
    * Present on the Cloudflare Worker (adapted from the `[[ratelimits]]`
    * binding); ABSENT on Node/self-host and in tests, where the per-isolate fuse
-   * is the whole limiter. See control-plane/rate-limit.ts for why the degraded
+   * is the whole limiter. See authority/rate-limit.ts for why the degraded
    * mode is correct for a single-process topology rather than merely tolerated.
    */
   sharedRateLimitStore?: SharedRateLimitStore
@@ -399,7 +399,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   // route cannot ship without one: escaping the default requires a named entry
   // exemption (core list + each feature's own), which route-guard-inventory.test.ts reads.
   //
-  // The rate limit is layered (control-plane/rate-limit.ts): a per-isolate
+  // The rate limit is layered (authority/rate-limit.ts): a per-isolate
   // in-memory fuse first, then the cross-isolate shared store when one is
   // composed. `sharedRateLimitStore` is absent on Node/self-host, where a single
   // process makes the fuse the global limit anyway. This is ADDITIVE — the nine

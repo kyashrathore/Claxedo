@@ -11,7 +11,7 @@
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { reportError } from "../../observability/report"
-import { controlPlaneTimeoutMs, withTimeout } from "../../control-plane/adapters/convex/timeout"
+import { controlPlaneTimeoutMs, withTimeout } from "../../authority/adapters/convex/timeout"
 import type { SettlementDispatcher } from "../workgraph/settlement-dispatcher"
 import { dispatchWakeLaneNudge, type WakeLaneNamespace } from "../../deployments/hosted-workerd/wake-lane.cf"
 import { workGraphControlWake, workGraphSettleWake } from "./hosted-wakes"

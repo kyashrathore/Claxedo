@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { z } from "zod"
-import type { ControlPlaneServices } from "../control-plane/services"
+import type { ControlPlaneServices } from "../authority/services"
 import {
   createProviderAuthService,
   ProviderAuthError,
@@ -8,7 +8,7 @@ import {
 } from "../adapters/provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "./control-plane-route-auth"
 import { requestOrg } from "./credential"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../control-plane/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../authority/auth"
 import { SINGLE_TENANT_ORG } from "../adapters/storage/provider-credential.sql"
 import { errorBody } from "./http"
 

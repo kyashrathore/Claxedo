@@ -22,7 +22,7 @@ export {
   type ControlPlaneLocalExecution,
   type HostedControlPlaneServicesOptions,
   type WorkspaceAuthority,
-} from "./control-plane/services"
+} from "./authority/services"
 export {
   betterAuthAdapter,
   clerkAuthAdapter,
@@ -35,13 +35,13 @@ export {
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "./control-plane/auth"
+} from "./authority/auth"
 export {
   hostTunnelTokenSigner,
   runtimeAccessTokenSigner,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "./control-plane/runtime-access-token"
+} from "./authority/runtime-access-token"
 export {
   createControlPlaneRelayProvider,
   type ControlPlaneRelayProviderOptions,
@@ -112,8 +112,8 @@ export {
   WORKSPACE_RUNTIME_PORT,
   WORKSPACE_DIR,
 } from "@claxedo/sandbox-manager/defaults"
-export { createProjectionStore, type ProjectionStore } from "./control-plane/projection-store"
-export { createDurableSessionLog, type DurableSessionLog } from "./control-plane/durable-session-log"
+export { createProjectionStore, type ProjectionStore } from "./authority/projection-store"
+export { createDurableSessionLog, type DurableSessionLog } from "./authority/durable-session-log"
 export {
   claimChannelDelivery,
   countChannelDeliveriesByUserDay,

@@ -4,7 +4,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
 import { sandboxDriverRoutes } from "./sandbox-driver-routes"
-import type { ControlPlaneCredentials } from "../control-plane/services"
+import type { ControlPlaneCredentials } from "../authority/services"
 
 // Sandbox driver secrets have exactly one sink: the credential registry.
 //

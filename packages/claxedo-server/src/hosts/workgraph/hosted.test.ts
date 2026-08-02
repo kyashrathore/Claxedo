@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ConvexHttpClient } from "convex/browser"
 import type { ConnectionWebhookVerifier } from "@claxedo/connections"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { ExecutionCapabilitiesUnavailableError, type ExecutionCapabilitiesPort } from "@claxedo/workgraph/ports"
 import {
@@ -10,9 +10,9 @@ import {
   EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
   type CommandResult,
 } from "@claxedo/workgraph/contracts"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../control-plane/auth"
-import { createConvexAuthority } from "../../control-plane/adapters/convex/authority"
-import type { WorkspaceAuthority } from "../../control-plane/authority"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../authority/auth"
+import { createConvexAuthority } from "../../authority/adapters/convex/authority"
+import type { WorkspaceAuthority } from "../../authority/authority"
 import { createHostedWorkGraph } from "./hosted"
 import type { SettlementDispatcher } from "./settlement-dispatcher"
 import type { ClaxedoEvent } from "../../lib/bus"

@@ -19,8 +19,8 @@ import {
   CodeHostProviderError,
   CodeHostUnauthorizedError,
 } from "@claxedo/workgraph/connectors"
-import { clean, type HostedWorkerEnv } from "../../control-plane/adapters/worker/hosted-compose"
-import { hostedOrgCredentials } from "../../control-plane/worker-credentials"
+import { clean, type HostedWorkerEnv } from "../../authority/adapters/worker/hosted-compose"
+import { hostedOrgCredentials } from "../../authority/worker-credentials"
 import {
   ConnectionOperationDeniedError,
   createConnectionOperationBroker,

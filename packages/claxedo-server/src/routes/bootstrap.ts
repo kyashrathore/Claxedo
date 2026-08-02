@@ -9,7 +9,7 @@ import { providerAuthMethods } from "../adapters/provider-auth/service"
 import { listProjects } from "../workspace/store"
 import { dataDir, stateDir } from "../lib/paths"
 import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../opencode/engine"
-import type { ControlPlaneServices } from "../control-plane/services"
+import type { ControlPlaneServices } from "../authority/services"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -19,8 +19,8 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../control-plane/auth"
-import { requireAuthority } from "../control-plane/authority"
+} from "../authority/auth"
+import { requireAuthority } from "../authority/authority"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 
 type Options = {

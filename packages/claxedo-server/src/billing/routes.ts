@@ -32,10 +32,10 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../control-plane/auth"
-import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../control-plane/rate-limit"
-import type { RouteGuardExemption } from "../control-plane/request-guard"
-import { durableIdempotencyStore, type DurableIdempotencyStore } from "../control-plane/http/idempotency"
+} from "../authority/auth"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../authority/rate-limit"
+import type { RouteGuardExemption } from "../authority/request-guard"
+import { durableIdempotencyStore, type DurableIdempotencyStore } from "../authority/http/idempotency"
 import { polarWebhookCacheKey } from "./polar-webhook-dedup"
 import { reportPaymentError } from "../observability/report"
 import { createBillingStore, type BillingStore, type CheckoutContext } from "./store"
@@ -115,7 +115,7 @@ function clean(value?: string) {
 /**
  * Rate-limit key for the unauthenticated webhook: the caller's IP.
  *
- * Same derivation as `control-plane/request-guard.ts` `requestClientKey` and
+ * Same derivation as `authority/request-guard.ts` `requestClientKey` and
  * `routes/hosted-device-auth.ts` `rateLimitClientKey` — `cf-connecting-ip` is
  * set by Cloudflare and unspoofable on the Worker path, with the first
  * `x-forwarded-for` entry as the Node-container fallback. Taken on `Request`
@@ -196,7 +196,7 @@ export const POLAR_WEBHOOK_MAX_BODY_BYTES = 512 * 1024
 /**
  * This surface's W3.2 exemption from the app-wide default guard.
  *
- * Declared HERE rather than in `control-plane/request-guard.ts` because the
+ * Declared HERE rather than in `authority/request-guard.ts` because the
  * reason names the payment vendor, and `billing-architecture.test.ts` keeps the
  * vendor-agnostic control-plane core free of Polar tokens (R8). `hosted-app.ts`
  * merges it in through `hostedRouteGuardExemptions()`, so the exemption still

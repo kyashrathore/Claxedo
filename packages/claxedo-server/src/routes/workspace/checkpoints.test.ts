@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import type { ControlPlaneServices } from "../../authority/services"
 import { WorkspaceCheckpointRoutes } from "./checkpoints"
 
 function app() {

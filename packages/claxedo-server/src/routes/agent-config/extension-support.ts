@@ -11,8 +11,8 @@ import {
   sameSource,
 } from "@claxedo/agent-extensions"
 import { loadAgentExtensionsCatalog } from "../../hosts/agent-extensions/catalog"
-import type { ControlPlaneServices } from "../../control-plane/services"
-import { requireAuthority } from "../../control-plane/authority"
+import type { ControlPlaneServices } from "../../authority/services"
+import { requireAuthority } from "../../authority/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -20,7 +20,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../control-plane/auth"
+} from "../../authority/auth"
 import { dataDir } from "../../lib/paths"
 import {
   AgentExtensionConflictError,

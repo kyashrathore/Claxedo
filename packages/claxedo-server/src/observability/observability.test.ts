@@ -10,7 +10,7 @@ import {
 } from "./config"
 import { initNodeObservability } from "./node"
 import { initPostHog, shutdownPostHog } from "../observability/posthog"
-import { deploymentMode } from "../control-plane/deployment-mode"
+import { deploymentMode } from "../authority/deployment-mode"
 
 /**
  * Observability gates.
@@ -110,7 +110,7 @@ describe("resolveTelemetryKey / resolveTelemetryHost", () => {
  * CLAXEDO_TELEMETRY_MODE at the chokepoint every server-side sink resolves
  * through. resolveTelemetryKey folds both opt-ins into one answer, so proving
  * the gate here proves it for posthog.ts, observability/node.ts,
- * control-plane/worker-telemetry.ts, and worker.ts's sink registration; each of
+ * authority/worker-telemetry.ts, and worker.ts's sink registration; each of
  * those still gets its own end-to-end assertion below or in its own file.
  */
 describe("CLAXEDO_TELEMETRY_MODE", () => {

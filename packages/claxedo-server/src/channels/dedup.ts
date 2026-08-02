@@ -4,7 +4,7 @@ import {
   type DedupStore,
   type InboundEnvelope,
 } from "@claxedo/channels"
-import type { ProjectionStore } from "../control-plane/projection-store"
+import type { ProjectionStore } from "../authority/projection-store"
 
 const DEFAULT_WINDOWS = {
   github: 24 * 60 * 60 * 1000,

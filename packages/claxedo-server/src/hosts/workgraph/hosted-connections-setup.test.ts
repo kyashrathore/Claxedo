@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { githubIntegration } from "@claxedo/connections"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import { createHostedConnectionsSetup } from "./hosted-connections-setup"
 
 describe("hosted Connections setup", () => {

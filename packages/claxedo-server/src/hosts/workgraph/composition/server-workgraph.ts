@@ -18,10 +18,10 @@ import {
   controlPlaneAuthContext,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../../../control-plane/auth"
-import type { WorkspaceAuthority } from "../../../control-plane/authority"
+} from "../../../authority/auth"
+import type { WorkspaceAuthority } from "../../../authority/authority"
 import type { WorkGraphSessionGateway } from "../local-execution"
-import type { ControlPlaneTelemetry } from "../../../control-plane/services"
+import type { ControlPlaneTelemetry } from "../../../authority/services"
 import {
   createWorkGraphOperationalReporter,
   instrumentWorkGraphCommands,

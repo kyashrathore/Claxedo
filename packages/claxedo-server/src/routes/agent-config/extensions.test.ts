@@ -2,8 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "../../control-plane/auth"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import { localOnlyAuthAdapter, type ClerkVerifier } from "../../authority/auth"
+import type { ControlPlaneServices } from "../../authority/services"
 import { createAgentConfigRoutes } from "./index"
 import { AgentExtensionConflictError, installCachedAgentExtension } from "../../hosts/agent-extensions/install"
 import {

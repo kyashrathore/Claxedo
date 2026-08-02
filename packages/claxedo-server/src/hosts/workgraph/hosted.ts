@@ -17,12 +17,12 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../control-plane/auth"
+} from "../../authority/auth"
 import {
   HostedWorkerCompositionError,
   clean,
   type HostedWorkerEnv,
-} from "../../control-plane/adapters/worker/hosted-compose"
+} from "../../authority/adapters/worker/hosted-compose"
 import {
   createConvexWorkGraphArchivePort,
   createConvexWorkGraphActivityPorts,
@@ -35,17 +35,17 @@ import type { ConnectionWebhookVerifier } from "@claxedo/connections"
 import { createHostedAttentionAcknowledgementService } from "./hosted-attention"
 import { Hono } from "hono"
 import { createHostedConnectionWebhookVerifier } from "../connections/webhook-verifier"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createConvexWorkGraphOwnerDeletionPort } from "./convex-owner-deletion"
 import { createHostedOwnerDeletionExecution } from "./hosted-owner-deletion-execution"
-import type { WorkspaceAuthority } from "../../control-plane/authority"
+import type { WorkspaceAuthority } from "../../authority/authority"
 import type { RelayProvider } from "../../adapters/relay"
 import type { ClaxedoRegion } from "../../region"
 import { createHostedExecutionCapabilities } from "./hosted-execution-capabilities"
 import { anyApi, type FunctionReference } from "convex/server"
 import { workGraphConvexApi } from "./convex-api"
-import type { ControlPlaneTelemetry } from "../../control-plane/services"
+import type { ControlPlaneTelemetry } from "../../authority/services"
 import {
   createWorkGraphOperationalReporter,
   instrumentWorkGraphCommands,

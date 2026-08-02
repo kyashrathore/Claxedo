@@ -25,9 +25,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../control-plane/auth"
+} from "../../authority/auth"
 import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../../routes/local-only-projection"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"
@@ -80,7 +80,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   // Every route: control-plane auth, with unsigned-local accepted ONLY from
   // loopback. D9 NOTE: the PRIMARY unsigned-local gate is now the global
   // `unsignedLocalRequestGuard` mounted at the app-composition root
-  // (control-plane/deployment-mode.ts) — it rejects non-loopback unsigned
+  // (authority/deployment-mode.ts) — it rejects non-loopback unsigned
   // requests before any route handler runs. The loopback check below is
   // retained as defense-in-depth (these routes may be mounted without the
   // parent app), no longer the sole effective gate.

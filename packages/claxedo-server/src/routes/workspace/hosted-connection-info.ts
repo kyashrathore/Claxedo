@@ -1,6 +1,6 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../control-plane/auth"
-import type { ControlPlaneServices } from "../../control-plane/services"
-import { requireAuthority } from "../../control-plane/authority"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../authority/auth"
+import type { ControlPlaneServices } from "../../authority/services"
+import { requireAuthority } from "../../authority/authority"
 import { normalizeClaxedoRegion } from "../../region"
 import {
   apiError,

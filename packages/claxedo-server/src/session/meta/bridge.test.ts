@@ -36,7 +36,7 @@ const [
   { ClaxedoDB },
 ] = await Promise.all([
   import("../../deployments/local/server"),
-  import("../../control-plane/adapters/sqlite/central-store"),
+  import("../../authority/adapters/sqlite/central-store"),
   import("../../adapters/storage/db"),
 ])
 

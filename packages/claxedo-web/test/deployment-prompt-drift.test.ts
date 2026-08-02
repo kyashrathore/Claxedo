@@ -255,19 +255,19 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   // Each env var the prompt asserts must still be grep-findable in the file that
   // gives it meaning. If a var is renamed or its enforcement is deleted, this fails.
   const anchors: Record<string, string> = {
-    CLAXEDO_WORKSPACE_AUTHORITY_URL: "packages/claxedo-server/src/control-plane/adapters/convex/convex-authority.ts",
-    CLERK_JWT_ISSUER: "packages/claxedo-server/src/control-plane/auth.ts",
-    CLERK_ISSUER_URL: "packages/claxedo-server/src/control-plane/auth.ts",
-    CLERK_JWKS_URL: "packages/claxedo-server/src/control-plane/auth.ts",
-    CLERK_JWT_AUDIENCE: "packages/claxedo-server/src/control-plane/auth.ts",
-    CLAXEDO_SIGNED_CLOUD_AUTH: "packages/claxedo-server/src/control-plane/auth.ts",
-    CLAXEDO_DEPLOYMENT_MODE: "packages/claxedo-server/src/control-plane/deployment-mode.ts",
-    CLAXEDO_WORKSPACE_RELAY_URL: "packages/claxedo-server/src/control-plane/hosted-services.ts",
-    CLAXEDO_RELAY_RESOLVER_TOKEN: "packages/claxedo-server/src/control-plane/hosted-services.ts",
-    CLAXEDO_RUNTIME_ADMIN_TOKEN: "packages/claxedo-server/src/control-plane/hosted-services.ts",
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "packages/claxedo-server/src/control-plane/hosted-services.ts",
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "packages/claxedo-server/src/control-plane/routes/jwks.ts",
-    CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "packages/claxedo-server/src/control-plane/adapters/worker/hosted-compose.ts",
+    CLAXEDO_WORKSPACE_AUTHORITY_URL: "packages/claxedo-server/src/authority/adapters/convex/authority/index.ts",
+    CLERK_JWT_ISSUER: "packages/claxedo-server/src/authority/auth.ts",
+    CLERK_ISSUER_URL: "packages/claxedo-server/src/authority/auth.ts",
+    CLERK_JWKS_URL: "packages/claxedo-server/src/authority/auth.ts",
+    CLERK_JWT_AUDIENCE: "packages/claxedo-server/src/authority/auth.ts",
+    CLAXEDO_SIGNED_CLOUD_AUTH: "packages/claxedo-server/src/authority/auth.ts",
+    CLAXEDO_DEPLOYMENT_MODE: "packages/claxedo-server/src/authority/deployment-mode.ts",
+    CLAXEDO_WORKSPACE_RELAY_URL: "packages/claxedo-server/src/authority/hosted-services.ts",
+    CLAXEDO_RELAY_RESOLVER_TOKEN: "packages/claxedo-server/src/authority/hosted-services.ts",
+    CLAXEDO_RUNTIME_ADMIN_TOKEN: "packages/claxedo-server/src/authority/hosted-services.ts",
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "packages/claxedo-server/src/authority/hosted-services.ts",
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "packages/claxedo-server/src/authority/routes/jwks.ts",
+    CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "packages/claxedo-server/src/authority/adapters/worker/hosted-compose.ts",
     CLERK_WEBHOOK_SECRET: "convex/http.ts",
     CONVEX_DEPLOY_KEY: ".github/workflows/deploy-control-plane.yml",
     CLAXEDO_POSTHOG_KEY: "packages/claxedo-server/src/observability/config.ts",
@@ -319,10 +319,10 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   })
 
   test("the fail-closed error codes it quotes are the ones the worker really throws", async () => {
-    const hostedServices = await read("packages/claxedo-server/src/control-plane/hosted-services.ts")
-    const hostedCompose = await read("packages/claxedo-server/src/control-plane/adapters/worker/hosted-compose.ts")
-    const hostedApp = await read("packages/claxedo-server/src/hosted-app.ts")
-    const jwks = await read("packages/claxedo-server/src/control-plane/routes/jwks.ts")
+    const hostedServices = await read("packages/claxedo-server/src/authority/hosted-services.ts")
+    const hostedCompose = await read("packages/claxedo-server/src/authority/adapters/worker/hosted-compose.ts")
+    const hostedApp = await read("packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts")
+    const jwks = await read("packages/claxedo-server/src/authority/routes/jwks.ts")
     expect(hostedServices).toContain("hosted_auth_disabled")
     expect(hostedServices).toContain("hosted_token_reuse")
     expect(hostedCompose).toContain("hosted_dependency_missing")
@@ -334,15 +334,15 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   })
 
   test("says this is the hosted path only, and that absent mode means local", async () => {
-    const deploymentMode = await read("packages/claxedo-server/src/control-plane/deployment-mode.ts")
+    const deploymentMode = await read("packages/claxedo-server/src/authority/deployment-mode.ts")
     expect(deploymentMode).toContain('if (!raw || raw === "local") return "local"')
     expect(prompt).toContain("HOSTED PATH ONLY")
     expect(prompt).toContain("absent deployment mode means local")
   })
 
   test("only advertises verification endpoints the hosted app actually registers", async () => {
-    const hostedApp = await read("packages/claxedo-server/src/hosted-app.ts")
-    const jwks = await read("packages/claxedo-server/src/control-plane/routes/jwks.ts")
+    const hostedApp = await read("packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts")
+    const jwks = await read("packages/claxedo-server/src/authority/routes/jwks.ts")
     for (const route of ["/api/claxedo/health", "/api/claxedo/mode", "/api/claxedo/compatibility"]) {
       expect(`${route} registered: ${hostedApp.includes(`"${route}"`)}`).toBe(`${route} registered: true`)
       expect(`${route} in prompt: ${prompt.includes(route)}`).toBe(`${route} in prompt: true`)

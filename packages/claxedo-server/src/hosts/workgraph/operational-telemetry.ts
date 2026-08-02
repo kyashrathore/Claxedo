@@ -5,7 +5,7 @@ import type {
   WorkGraphCommandRequest,
   WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
-import type { ControlPlaneTelemetry } from "../../control-plane/services"
+import type { ControlPlaneTelemetry } from "../../authority/services"
 
 export type WorkGraphTelemetryEnv = Readonly<
   Record<string, string | undefined> & {

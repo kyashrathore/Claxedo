@@ -38,7 +38,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
-} from "../../control-plane/auth"
+} from "../../authority/auth"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 
 export type HostedShellRouteOptions = {

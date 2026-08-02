@@ -22,7 +22,7 @@
  * the same generator serves the Worker bundle and the Node server without
  * `node:crypto` ever entering the Worker's import graph
  * (`worker.import-graph.test.ts` enforces that). It is also storage-agnostic,
- * as everything outside `control-plane/adapters/*` must be (architecture R8).
+ * as everything outside `authority/adapters/*` must be (architecture R8).
  */
 
 /**

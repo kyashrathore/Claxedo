@@ -1,11 +1,11 @@
 import { Hono } from "hono"
 import { z } from "zod"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import type { ControlPlaneServices } from "../../authority/services"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-} from "../../control-plane/auth"
-import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
+} from "../../authority/auth"
+import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
 import { resolveWorkspace } from "../../workspace/store"
 import { isLoopbackLocalRequest } from "../local-only-projection"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "./cloud-connection"

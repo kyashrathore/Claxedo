@@ -1,7 +1,7 @@
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { defaultHomeRegion } from "../../region"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import type { ControlPlaneServices } from "../../authority/services"
 import {
   AdmissionAgentPlanSchema,
   DEFAULT_STREAM_CHARTER_HINTS,
@@ -13,7 +13,7 @@ import {
   resolvedPlacement,
   runSessionId,
 } from "@claxedo/workgraph/contracts"
-import { clean, type HostedWorkerEnv } from "../../control-plane/adapters/worker/hosted-compose"
+import { clean, type HostedWorkerEnv } from "../../authority/adapters/worker/hosted-compose"
 import { buildMasterPrompt, charterClause } from "@claxedo/workgraph"
 import { createWorkGraphOperationalReporter, type WorkGraphOperationalReporter, type WorkGraphReconciliationTrigger } from "./operational-telemetry"
 import { createWorkGraphConvexExecutor } from "./convex-store"

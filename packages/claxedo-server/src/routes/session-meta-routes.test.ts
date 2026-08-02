@@ -4,8 +4,8 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "../control-plane/auth"
-import type { ControlPlaneServices } from "../control-plane/services"
+import { localOnlyAuthAdapter, type ClerkVerifier } from "../authority/auth"
+import type { ControlPlaneServices } from "../authority/services"
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-routes-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })

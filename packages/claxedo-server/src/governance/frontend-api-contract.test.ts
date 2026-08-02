@@ -106,8 +106,8 @@ vi.mock("../opencode/auth", () => ({
 
 const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod] = await Promise.all([
   import("../deployments/local/server"),
-  import("../control-plane/services"),
-  import("../control-plane/adapters/sqlite/central-store"),
+  import("../authority/services"),
+  import("../authority/adapters/sqlite/central-store"),
   import("../routes/opencode-compat/index"),
   import("../agent-config"),
 ])

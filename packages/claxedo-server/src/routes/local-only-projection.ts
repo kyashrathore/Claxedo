@@ -7,7 +7,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../control-plane/auth"
+} from "../authority/auth"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig

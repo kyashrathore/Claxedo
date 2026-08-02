@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import { ActorIDSchema, ConnectionIDSchema, OwnerUserIDSchema, RequestIDSchema, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import {
   HostedConnectionCredentialUnavailableError,

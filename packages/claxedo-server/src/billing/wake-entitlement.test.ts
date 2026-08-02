@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { hostedConnectionInfo } from "../routes/workspace/hosted-connection-info"
-import type { ControlPlaneServices } from "../control-plane/services"
-import type { SignedControlPlaneAuth } from "../control-plane/auth"
+import type { ControlPlaneServices } from "../authority/services"
+import type { SignedControlPlaneAuth } from "../authority/auth"
 
 /**
  * F3 (adversarial-review): the cloud-workspace entitlement is enforced at

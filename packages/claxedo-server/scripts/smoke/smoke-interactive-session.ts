@@ -85,7 +85,7 @@ export function markerToken(runId: string) {
 
 /**
  * The runtime access token is minted with a signer-enforced TTL floor of 15
- * minutes (`control-plane/runtime-access-token.ts:51`), so a single token
+ * minutes (`authority/runtime-access-token.ts:51`), so a single token
  * comfortably outlives what remains of this smoke's budget once the sandbox is
  * ready — which is why there is no rotation loop here, unlike the app, whose
  * sessions are open-ended (`workspace-relay-connection.ts:315`).

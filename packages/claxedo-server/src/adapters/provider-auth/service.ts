@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./openai-oauth"
 

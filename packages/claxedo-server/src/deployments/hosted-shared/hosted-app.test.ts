@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createHostedApp } from "./hosted-app"
-import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../control-plane/hosted-services"
-import type { ControlPlaneServices } from "../../control-plane/services"
-import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
+import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
+import type { ControlPlaneServices } from "../../authority/services"
+import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
 import {
   createSandboxManager,
   type SandboxDriver,
@@ -15,7 +15,7 @@ import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "../../rou
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
-} from "../../control-plane/cli-session-registry"
+} from "../../authority/cli-session-registry"
 import { durableCliSessionTokenRegistry } from "../../test-helpers/cli-session-registry"
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"

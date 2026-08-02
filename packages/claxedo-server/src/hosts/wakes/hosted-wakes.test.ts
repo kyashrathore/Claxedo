@@ -14,7 +14,7 @@ import {
   workGraphSettleWake,
   workGraphMasterWake,
 } from "./hosted-wakes"
-import type { HostedWorkerEnv } from "../../control-plane/hosted-services"
+import type { HostedWorkerEnv } from "../../authority/hosted-services"
 
 const TENANT: SettlementTenant = { organizationId: "org_1", ownerUserId: "user_1" }
 

@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { errorBody } from "../http"
-import type { ControlPlaneTelemetry } from "../../control-plane/services"
+import type { ControlPlaneTelemetry } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { internalAdminAuthorized } from "../internal-admin-auth"
 import { emitSandboxLeaseClosed } from "../../telemetry/metering"

@@ -2,7 +2,7 @@
  * Billing state store — the Worker's ONLY doorway to the Convex billing
  * mirror (convex/billing.ts). Everything here rides the same service-token
  * calling convention as the control-plane Convex adapter
- * (`control-plane/adapters/convex/`): service reads/writes carry
+ * (`authority/adapters/convex/`): service reads/writes carry
  * CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN; the checkout context call runs as the
  * END USER (bearer token) through a builder-gated authedMutation.
  *
@@ -11,7 +11,7 @@
 
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import { controlPlaneTimeoutMs, withTimeout } from "../control-plane/adapters/convex/timeout"
+import { controlPlaneTimeoutMs, withTimeout } from "../authority/adapters/convex/timeout"
 
 export class BillingStoreUnavailableError extends Error {
   constructor(message: string) {

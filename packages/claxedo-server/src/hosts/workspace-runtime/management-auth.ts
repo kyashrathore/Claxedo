@@ -6,7 +6,7 @@ import {
   SupervisorBackplaneAuthError,
   verifySupervisorBackplaneToken,
   type SupervisorBackplaneVerifierKey,
-} from "../../control-plane/runtime-access-token"
+} from "../../authority/runtime-access-token"
 
 export function createClaxedoManagementAuth(input: {
   key: SupervisorBackplaneVerifierKey

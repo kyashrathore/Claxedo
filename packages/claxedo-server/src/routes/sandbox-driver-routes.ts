@@ -3,14 +3,14 @@ import { z } from "zod"
 import {
   defaultControlPlaneCredentials,
   type ControlPlaneServices,
-} from "../control-plane/services"
+} from "../authority/services"
 import {
   ControlPlaneAuthError,
   bearerToken,
   controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-} from "../control-plane/auth"
+} from "../authority/auth"
 import {
   isSandboxDriverID,
   listSandboxDrivers as listSandboxDriverCatalog,

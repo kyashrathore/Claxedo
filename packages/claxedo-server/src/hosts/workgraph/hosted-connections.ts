@@ -1,5 +1,5 @@
 import { connectionProviderId } from "@claxedo/connections"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import type { ConnectionsPort } from "@claxedo/workgraph"
 import type { ConnectionID, WorkGraphContext } from "@claxedo/workgraph/contracts"
 

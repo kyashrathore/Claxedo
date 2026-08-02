@@ -4,7 +4,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
   type SignedControlPlaneAuth,
-} from "../control-plane/auth"
+} from "../authority/auth"
 
 const enableBody = z.object({
   display_name: z.string().trim().min(1).max(120),

@@ -2,7 +2,7 @@ import {
   composeHostedControlPlane,
   HostedWorkerCompositionError,
   type HostedWorkerEnv,
-} from "../../control-plane/hosted-services"
+} from "../../authority/hosted-services"
 import { reportError } from "../../observability/report"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
 import {

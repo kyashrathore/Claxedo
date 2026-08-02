@@ -24,7 +24,7 @@ import {
   SWEEP_SUBREQUEST_BUDGET,
   workGraphWorkspaceId,
 } from "./hosted-runtime"
-import type { ControlPlaneServices } from "../../control-plane/services"
+import type { ControlPlaneServices } from "../../authority/services"
 import { StreamReplacementResetSchema, WorkGraphRunToolNames } from "@claxedo/workgraph/contracts"
 
 const querySingleTenant = async (_fn: unknown, args: Record<string, unknown>) =>

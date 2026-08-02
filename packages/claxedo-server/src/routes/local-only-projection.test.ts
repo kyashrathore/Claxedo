@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { serve } from "@hono/node-server"
 import { describe, expect, test } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../control-plane/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "../authority/auth"
 import {
   isLoopbackLocalRequest,
   localOnlyProjection,

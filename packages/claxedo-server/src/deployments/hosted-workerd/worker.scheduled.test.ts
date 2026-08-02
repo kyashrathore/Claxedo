@@ -24,7 +24,7 @@ vi.mock("../../billing/reconcile", () => ({
   runScheduledBillingReconciliation: (env: unknown) => runBillingSweep(env),
 }))
 
-vi.mock("../../control-plane/hosted-services", () => ({
+vi.mock("../../authority/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => ({})),
   HostedWorkerCompositionError: class HostedWorkerCompositionError extends Error {
     constructor(public readonly code: string, message: string) {

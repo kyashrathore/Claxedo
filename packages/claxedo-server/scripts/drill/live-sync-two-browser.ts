@@ -41,7 +41,7 @@
  *   request when hosted mode sees auth disabled). No env var relaxes any of
  *   them. `HostedShellRouteOptions` exposes `verifier` and `resolveOrgId` as
  *   injection points (`hosted-shell.ts:46, :67`) and `customVerifierAuthAdapter`
- *   exists for exactly this (`control-plane/auth.ts:179`), so the drill mounts
+ *   exists for exactly this (`authority/auth.ts:179`), so the drill mounts
  *   the genuine route with a synthetic identity provider. The bearer token IS
  *   the subject, matching `hosted-app.test.ts`'s `fakePlane`.
  * - **The app-shell rendering layer is not in the loop.** The viewer renders

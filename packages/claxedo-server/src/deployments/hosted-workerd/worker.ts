@@ -14,7 +14,7 @@
  *
  * Observability: error reporting is explicit, not a wrapper. `posthog-node` is
  * on the Worker's forbidden-import list, so exceptions leave over the same
- * fetch transport as analytics (control-plane/worker-telemetry.ts) and every
+ * fetch transport as analytics (authority/worker-telemetry.ts) and every
  * escape route is covered by hand: Hono's `onError` for route throws, the
  * composition guard below for boot failures, and a try/catch around `scheduled`
  * for cron failures. Options come from env bindings via observabilityOptions:
@@ -25,8 +25,8 @@
 
 import type { ExecutionContext, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedControlPlane, type HostedWorkerEnv } from "../../control-plane/hosted-services"
-import { workerErrorCapture } from "../../control-plane/worker-telemetry"
+import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedControlPlane, type HostedWorkerEnv } from "../../authority/hosted-services"
+import { workerErrorCapture } from "../../authority/worker-telemetry"
 import { createHostedApp, type HostedAppOverrides } from "../hosted-shared/hosted-app"
 import { runScheduledBillingReconciliation } from "../../billing/reconcile"
 import { reportError, setErrorReporterSink } from "../../observability/report"
@@ -34,9 +34,9 @@ import { observabilityOptions, type ObservabilityEnv } from "../../observability
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../http/security-headers"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
 import { leaseFencedReconcile, skipOverlappingReconcile } from "../../hosts/workgraph/reconcile-serialize"
-import { createConvexCronLease } from "../../control-plane/adapters/convex/cron-lease"
-import { createConvexIdempotencyStore } from "../../control-plane/adapters/convex/idempotency-store"
-import { setDurableIdempotencyStore } from "../../control-plane/http/idempotency"
+import { createConvexCronLease } from "../../authority/adapters/convex/cron-lease"
+import { createConvexIdempotencyStore } from "../../authority/adapters/convex/idempotency-store"
+import { setDurableIdempotencyStore } from "../../authority/http/idempotency"
 import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import {
   createCloudflareSettlementDispatcher,
@@ -48,13 +48,13 @@ import { WakeLane, type WakeLaneNamespace, type WakeLaneState } from "../../depl
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { composeHostedWakes } from "../../hosts/wakes/hosted-wakes"
 import { createWakeSettlementDispatcher } from "../../hosts/wakes/wake-settlement-dispatcher"
-import { clean } from "../../control-plane/adapters/worker/hosted-compose"
-import { cloudflareRateLimitStore, type CloudflareRateLimitBinding } from "../../control-plane/rate-limit"
+import { clean } from "../../authority/adapters/worker/hosted-compose"
+import { cloudflareRateLimitStore, type CloudflareRateLimitBinding } from "../../authority/rate-limit"
 import { createHostedDocumentsBackend } from "../../documents/hosted-backend"
 import { createHostedDocumentRuntimeBroker } from "../../documents/hosted-runtime-broker"
 import { createHostedLocalDocumentRelay } from "../../documents/hosted-local-relay"
 import type { R2BucketBinding } from "../../documents/hosted-managed"
-import type { SignedControlPlaneAuth } from "../../control-plane/auth"
+import type { SignedControlPlaneAuth } from "../../authority/auth"
 import type { DocumentIndexEntry } from "../../documents/index-store"
 
 export { WorkGraphSettler }

@@ -9,8 +9,8 @@ import {
   requireEntitlement,
 } from "./entitlement"
 import { hostedConnectionInfo } from "../routes/workspace/hosted-connection-info"
-import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../control-plane/auth"
-import type { ControlPlaneServices } from "../control-plane/services"
+import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../authority/auth"
+import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 // REAL Convex billing + orgs handlers — the same in-memory harness the D5/D6
 // policy suite exercises (convex-billing-policy.test.ts). Nothing here re-mocks

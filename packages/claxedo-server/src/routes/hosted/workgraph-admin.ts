@@ -1,6 +1,6 @@
 import { Hono } from "hono"
-import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../control-plane/rate-limit"
-import type { ControlPlaneTelemetry } from "../../control-plane/services"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../authority/rate-limit"
+import type { ControlPlaneTelemetry } from "../../authority/services"
 import { errorBody } from "../http"
 import { internalAdminAuthorized } from "../internal-admin-auth"
 

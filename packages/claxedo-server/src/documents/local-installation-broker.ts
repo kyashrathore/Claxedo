@@ -1,10 +1,10 @@
 import { Hono, type Context } from "hono"
-import { timingSafeEqualStrings } from "../control-plane/web-crypto"
+import { timingSafeEqualStrings } from "../authority/web-crypto"
 import { withDocumentOperation, type DocumentsBackend } from "./backend"
 import type { DocumentIndexEntry } from "./index-store"
 import type { DocumentVersion } from "./port"
 import { DocumentVersionConflictError } from "./errors"
-import { verifyDocumentRelayJobToken } from "../control-plane/runtime-access-token"
+import { verifyDocumentRelayJobToken } from "../authority/runtime-access-token"
 
 const MAX_BROKER_BODY_BYTES = 2 * 1024 * 1024 + 64 * 1024
 

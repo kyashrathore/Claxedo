@@ -1,7 +1,7 @@
-import type { SignedControlPlaneAuth } from "../../control-plane/auth"
-import type { ConnectionRateLimiter } from "../../control-plane/rate-limit"
-import type { ControlPlaneServices } from "../../control-plane/services"
-import { requireAuthority, type WorkspaceAuthority } from "../../control-plane/authority"
+import type { SignedControlPlaneAuth } from "../../authority/auth"
+import type { ConnectionRateLimiter } from "../../authority/rate-limit"
+import type { ControlPlaneServices } from "../../authority/services"
+import { requireAuthority, type WorkspaceAuthority } from "../../authority/authority"
 import { apiError, rec, txt } from "./route-support"
 
 export async function runtimeTokenOrgId(

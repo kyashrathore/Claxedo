@@ -11,7 +11,7 @@ import {
   type CredentialStorePort,
   type IntegrationCapability,
 } from "@claxedo/connections"
-import type { ControlPlaneCredentials } from "../../control-plane/services"
+import type { ControlPlaneCredentials } from "../../authority/services"
 import { ClaxedoDB } from "../../adapters/storage/db"
 import { ClaxedoConnectionTable } from "../../adapters/storage/connection.sql"
 

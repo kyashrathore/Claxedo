@@ -1,5 +1,5 @@
 import type { DocumentChangedEvent } from "../lib/bus"
-import type { SignedControlPlaneAuth } from "../control-plane/auth"
+import type { SignedControlPlaneAuth } from "../authority/auth"
 import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
 import type {
   DocumentActor,

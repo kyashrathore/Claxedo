@@ -11,7 +11,7 @@ import {
   type CommandResult,
   type WorkGraphRunOperationRequest,
 } from "@claxedo/workgraph/contracts"
-import { clean, type HostedWorkerEnv } from "../../control-plane/adapters/worker/hosted-compose"
+import { clean, type HostedWorkerEnv } from "../../authority/adapters/worker/hosted-compose"
 import { HostedTranscriptRetentionError, workGraphWorkspaceId } from "./hosted-runtime"
 
 type Mutation = FunctionReference<"mutation">
