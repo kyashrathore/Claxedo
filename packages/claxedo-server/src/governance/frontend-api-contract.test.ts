@@ -29,7 +29,7 @@ const sandboxEnsure = vi.fn(async (workspaceId: string) => ({
 }))
 const runtimeFetches: string[] = []
 
-vi.mock("./workspace/supervisor/supervisor", () => ({
+vi.mock("../workspace/supervisor/supervisor", () => ({
   ensureSupervisorSandbox,
   holdSupervisorSandbox: vi.fn(),
   releaseSupervisorSandbox: vi.fn(),
@@ -61,7 +61,7 @@ vi.mock("./workspace/supervisor/supervisor", () => ({
   })),
 }))
 
-vi.mock("./workspace/store/store", () => ({
+vi.mock("../workspace/store/store", () => ({
   resolveWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string }) =>
     workspaceRows.get(input.workspaceId ?? "") ?? workspaceRows.get(input.directory ?? "")),
   resolveWorkspaceByRepo: vi.fn(async () => undefined),
@@ -99,17 +99,17 @@ vi.mock("./workspace/store/store", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("./opencode/auth", () => ({
+vi.mock("../opencode/auth", () => ({
   configureOpenCodeAuth: vi.fn(),
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }))
 
 const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod] = await Promise.all([
-  import("./deployments/local/server"),
-  import("./control-plane/services"),
-  import("./control-plane/adapters/sqlite/central-store"),
-  import("./routes/opencode-compat"),
-  import("./agent-config"),
+  import("../deployments/local/server"),
+  import("../control-plane/services"),
+  import("../control-plane/adapters/sqlite/central-store"),
+  import("../routes/opencode-compat"),
+  import("../agent-config"),
 ])
 
 function seedSyntheticCloudWorkspace() {

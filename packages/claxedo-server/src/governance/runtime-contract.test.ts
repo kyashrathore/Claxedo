@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 
-const root = path.resolve(import.meta.dirname, "../../..")
+const root = path.resolve(import.meta.dirname, "../../../..")
 const dirs = [
   "packages/claxedo-server/src",
   "packages/workspace-runtime/src",

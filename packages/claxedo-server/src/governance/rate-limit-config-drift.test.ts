@@ -17,7 +17,7 @@
 import { describe, expect, test } from "vitest"
 import { readFile } from "node:fs/promises"
 
-const wrangler = () => readFile(new URL("../wrangler.toml", import.meta.url), "utf8")
+const wrangler = () => readFile(new URL("../../wrangler.toml", import.meta.url), "utf8")
 
 describe("shared rate-limit binding config", () => {
   test("production and staging BOTH declare the rate-limit binding", async () => {

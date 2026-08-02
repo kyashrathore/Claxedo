@@ -179,7 +179,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "embedded local Sandbox composer",
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",
     tests: [
-      "architecture.test.ts",
+      "governance/architecture.test.ts",
       "proxy.timeout.test.ts",
       "control-plane.integration.test.ts",
     ],
@@ -192,7 +192,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
     tests: [
       "routes/documents.test.ts",
-      "architecture.test.ts",
+      "governance/architecture.test.ts",
     ],
   },
   {
@@ -203,7 +203,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
     tests: [
       "agent-config.test.ts",
-      "architecture.test.ts",
+      "governance/architecture.test.ts",
     ],
   },
   {
@@ -239,7 +239,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     tests: [
       "proxy.test.ts",
       "proxy.timeout.test.ts",
-      "architecture.test.ts",
+      "governance/architecture.test.ts",
     ],
     routeSamples: [
       "/session/s1",
@@ -247,7 +247,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "route-ownership.ts",
+    module: "governance/route-ownership.ts",
     status: OwnershipStatus.Canonical,
     owner: "central route ownership classifier",
     tests: ["proxy.test.ts"],
@@ -278,7 +278,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     removalCondition: "All local app and CLI callers use canonical control-plane/workspace-runtime routes.",
     tests: [
       "proxy.test.ts",
-      "architecture.test.ts",
+      "governance/architecture.test.ts",
     ],
     routeSamples: ["/command", "/mcp", "/agent"],
   },

@@ -30,7 +30,7 @@ import {
   subscribeMessageReplay,
 } from "../../../cloud/message-replay"
 import { syncCloudMessages } from "../../../cloud/session-sync"
-import type { SessionWriteMode } from "../../../architecture"
+import type { SessionWriteMode } from "../../../governance/architecture"
 
 import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "../../durable-session-log"
 import { createProjectionStore, type ProjectionStore, type ProjectionStoreBackend } from "../../projection-store"

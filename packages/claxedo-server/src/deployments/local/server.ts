@@ -54,7 +54,7 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
 import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../architecture"
+import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../governance/architecture"
 import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/central-store"
 import { migrateCredentials } from "../../credentials/migrate"
 import { CredentialRoutes } from "../../routes/credential"

@@ -4,7 +4,7 @@ import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialS
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/discovery"
 import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "./auth"
 import type { DurableSessionLog } from "./durable-session-log"
-import type { SessionWriteMode } from "../architecture"
+import type { SessionWriteMode } from "../governance/architecture"
 import type { ProjectionStore } from "./projection-store"
 import type { WorkspaceAuthority } from "./authority"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "./runtime-access-token"

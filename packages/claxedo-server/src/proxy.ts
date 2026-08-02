@@ -6,7 +6,7 @@ import { opencodeHeaders } from "./opencode/auth"
 import { isLoopbackLocalRequest } from "./routes/local-only-projection"
 import { errorBody } from "./routes/http"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "./deployments/local/embedded-workspace-runtime"
-import { routeOwnership, RouteHandler } from "./route-ownership"
+import { routeOwnership, RouteHandler } from "./governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "./region"
 import type { RelayProvider } from "./relay-provider"
 

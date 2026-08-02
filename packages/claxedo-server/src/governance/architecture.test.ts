@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
 import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
 import { routeOwnership, RouteHandler } from "./route-ownership"
-import { importPattern, walk } from "./test-helpers/guards"
+import { importPattern, walk } from "../test-helpers/guards"
 
 describe("architecture boundaries", () => {
   test("classifies host primitive architecture modules with owners and removal conditions", () => {
@@ -16,7 +16,7 @@ describe("architecture boundaries", () => {
     expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([])
 
     for (const entry of entries) {
-      const target = path.resolve(import.meta.dirname, entry.module)
+      const target = path.resolve(import.meta.dirname, "..", entry.module)
       if (entry.status === OwnershipStatus.Deleted) {
         expect(fs.existsSync(target), `${entry.module} should stay deleted`).toBe(false)
         expect(entry.canonicalReplacement).toBeTruthy()
@@ -28,7 +28,7 @@ describe("architecture boundaries", () => {
       expect(entry.tests?.length, `${entry.module} needs active test coverage`).toBeGreaterThan(0)
       for (const testFile of entry.tests ?? []) {
         expect(
-          fs.existsSync(path.resolve(import.meta.dirname, testFile)),
+          fs.existsSync(path.resolve(import.meta.dirname, "..", testFile)),
           `${entry.module} test missing: ${testFile}`,
         ).toBe(true)
       }
@@ -65,7 +65,7 @@ describe("architecture boundaries", () => {
       // used to shape a config field) is not a violation — strip those lines
       // before scanning.
       const text = fs
-        .readFileSync(path.resolve(import.meta.dirname, file), "utf-8")
+        .readFileSync(path.resolve(import.meta.dirname, "..", file), "utf-8")
         .split("\n")
         .filter((line) => !/^\s*import\s+type\b/.test(line))
         .join("\n")
@@ -77,7 +77,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps workspace-runtime from importing claxedo-server", () => {
-    const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../workspace-runtime/src")
+    const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../workspace-runtime/src")
     const forbidden = ["@claxedo/server", "@opencode-ai/claxedo-server", "@claxedo/claxedo-server", "claxedo-server"]
     const offenders = walk(workspaceRuntimeSrc)
       .filter((file) => file.endsWith(".ts"))
@@ -94,7 +94,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps product strings and ambient policy env reads out of the workspace-runtime kit", () => {
-    const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../workspace-runtime/src")
+    const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../workspace-runtime/src")
     // Product domains and host-policy env flags are HOST decisions
     // (kit-seams plan, Classification Rule). The kit must not embed them:
     // CORS whitelists arrive via options.corsOrigin, compat via
@@ -115,7 +115,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps production source from importing legacy host-control modules", () => {
-    const serverSrc = path.resolve(import.meta.dirname)
+    const serverSrc = path.resolve(import.meta.dirname, "..")
     const forbiddenModules = [
       "cloud/authority",
       "cloud/lifecycle",
@@ -144,7 +144,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps SandboxDriver focused on host lifecycle", () => {
-    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../sandbox-manager/src/index.ts"), "utf8")
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../sandbox-manager/src/index.ts"), "utf8")
     const start = text.indexOf("export type SandboxDriver = {")
     const end = text.indexOf("\n\nexport type SandboxManager =", start)
     expect(start).toBeGreaterThanOrEqual(0)
@@ -168,7 +168,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps sandbox-manager public types from becoming sandbox handles", () => {
-    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../sandbox-manager/src/index.ts"), "utf8")
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../sandbox-manager/src/index.ts"), "utf8")
     const forbidden = [
       "executeCommand",
       "uploadFile",
@@ -187,7 +187,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps SandboxManager wired to a driver, not a provider object", () => {
-    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../sandbox-manager/src/index.ts"), "utf8")
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../sandbox-manager/src/index.ts"), "utf8")
     const start = text.indexOf("export type SandboxManagerOptions = {")
     const end = text.indexOf("\n\nfunction sandboxId", start)
     expect(start).toBeGreaterThanOrEqual(0)
@@ -200,7 +200,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps SandboxManager storage/auth pluggable", () => {
-    const serverSrc = path.resolve(import.meta.dirname)
+    const serverSrc = path.resolve(import.meta.dirname, "..")
     const genericRuntimeHostFiles = [
       "../../sandbox-manager/src/index.ts",
       "../../sandbox-manager/src/stores/memory.ts",
@@ -240,7 +240,7 @@ describe("architecture boundaries", () => {
     // mechanical mirror of the kit's opencode.ai ban. Test files are excluded.
     // (Even the legacy backend-URL env aliases live in the Convex adapter now:
     // `convexAuthorityUrlFromEnv` — so this scan needs no carve-outs.)
-    const controlPlaneSrc = path.resolve(import.meta.dirname, "control-plane")
+    const controlPlaneSrc = path.resolve(import.meta.dirname, "../control-plane")
     const offenders = walk(controlPlaneSrc)
       .filter((file) => file.endsWith(".ts"))
       .filter((file) => !file.endsWith(".test.ts"))
@@ -255,9 +255,9 @@ describe("architecture boundaries", () => {
 
   test("keeps API error response bodies structured", () => {
     const files = [
-      path.resolve(import.meta.dirname, "deployments/local/server.ts"),
-      path.resolve(import.meta.dirname, "proxy.ts"),
-      ...walk(path.resolve(import.meta.dirname, "routes")).filter((file) => file.endsWith(".ts")),
+      path.resolve(import.meta.dirname, "../deployments/local/server.ts"),
+      path.resolve(import.meta.dirname, "../proxy.ts"),
+      ...walk(path.resolve(import.meta.dirname, "../routes")).filter((file) => file.endsWith(".ts")),
     ]
     const rawScalarErrorBodies = files.flatMap((file) => {
       const text = fs.readFileSync(file, "utf-8")
@@ -271,7 +271,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps package Agent Extension lifecycle modules free of server dependencies", () => {
-    const root = path.resolve(import.meta.dirname, "../../agent-extensions/src")
+    const root = path.resolve(import.meta.dirname, "../../../agent-extensions/src")
     const lifecycleFiles = [
       "cache.ts",
       "facade.ts",
@@ -296,8 +296,8 @@ describe("architecture boundaries", () => {
 
 
   test("keeps WorkGraph out of Control Plane module load", () => {
-    const server = fs.readFileSync(path.resolve(import.meta.dirname, "deployments/local/server.ts"), "utf-8")
-    const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "server-workgraph.ts"), "utf-8")
+    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../deployments/local/server.ts"), "utf-8")
+    const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "../server-workgraph.ts"), "utf-8")
 
     expect(server).not.toMatch(/from ["']@claxedo\/workgraph["']/)
     expect(server).not.toMatch(/from ["']\.\/workgraph-execution["']/)

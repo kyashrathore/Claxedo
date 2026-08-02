@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import type { SessionWriteMode } from "./architecture"
+import type { SessionWriteMode } from "./governance/architecture"
 import {
   claimChannelDelivery,
   createHostedControlPlaneServices,

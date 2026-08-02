@@ -13,7 +13,7 @@ import {
   workspaceSupervisorServerUrl,
 } from "./workspace/supervisor/supervisor"
 import { getWorkspace } from "./workspace/store/store"
-import { RouteHandler, routeOwnership } from "./route-ownership"
+import { RouteHandler, routeOwnership } from "./governance/route-ownership"
 
 const log = Log.create({ service: "user-hosted-tunnel" })
 const sandboxManager = createWorkspaceSupervisorSandboxManager()

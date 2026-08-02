@@ -22,18 +22,18 @@
 
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { createHostedApp } from "./deployments/hosted-shared/hosted-app"
-import { sandboxRelayTargetLookup, type HostedControlPlane } from "./control-plane/hosted-services"
-import type { ControlPlaneServices } from "./control-plane/services"
-import { durableCliSessionTokenRegistry } from "./test-helpers/cli-session-registry"
+import { createHostedApp } from "../deployments/hosted-shared/hosted-app"
+import { sandboxRelayTargetLookup, type HostedControlPlane } from "../control-plane/hosted-services"
+import type { ControlPlaneServices } from "../control-plane/services"
+import { durableCliSessionTokenRegistry } from "../test-helpers/cli-session-registry"
 import {
   DEFAULT_MAX_BODY_BYTES,
   defaultRequestGuard,
   guardExemptionFor,
   hostedRouteGuardExemptions,
   pathMatchesPrefix,
-} from "./control-plane/request-guard"
-import { BILLING_WEBHOOK_GUARD_EXEMPTION } from "./billing/billing-routes"
+} from "../control-plane/request-guard"
+import { BILLING_WEBHOOK_GUARD_EXEMPTION } from "../billing/billing-routes"
 
 /**
  * The exemption set the hosted app actually composes: the core list plus every
