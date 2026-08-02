@@ -18,7 +18,6 @@ export default defineConfig({
     fileParallelism: false,
     exclude: [
       ...configDefaults.exclude,
-      "src/cloud/cloudflare-worker/.sandbox-build/**",
       "scripts/sandbox/cloudflare-worker/.sandbox-build/**",
     ],
   },

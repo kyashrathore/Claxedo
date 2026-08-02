@@ -1,6 +1,0 @@
-export * from "./env"
-export * from "./exposure"
-export * from "./management-auth"
-export * from "./routes"
-export * from "./runtime-config"
-export * from "./target"
