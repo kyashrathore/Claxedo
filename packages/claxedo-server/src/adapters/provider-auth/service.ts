@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import { SINGLE_TENANT_ORG } from "../../platform/db/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "../credentials/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./openai-oauth"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`

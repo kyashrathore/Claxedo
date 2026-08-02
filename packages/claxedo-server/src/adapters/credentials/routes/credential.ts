@@ -23,7 +23,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "../../../platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "../../../platform/db/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
 
 const putBody = z.object({
   provider_id: z.string().min(1),

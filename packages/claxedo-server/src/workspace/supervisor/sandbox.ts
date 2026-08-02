@@ -32,7 +32,7 @@ import { Log } from "../../platform/runtime/lib/log"
 import { defaultHomeRegion } from "../../platform/runtime/region"
 import { listPolicies } from "../../adapters/sandbox/network/policy"
 import { resolveSandboxNetworkPolicy } from "../../adapters/sandbox/network/resolve"
-import { insertSnapshot } from "../../platform/db/prepared-image.sql"
+import { insertSnapshot } from "./prepared-image.sql"
 import { updateWorkspace } from "../store"
 import {
   configToken,

@@ -1,4 +1,4 @@
-import { deleteLease, getLease, leaseTransaction, listLeases, upsertLease } from "../../../platform/db/workspace-lease.sql"
+import { deleteLease, getLease, leaseTransaction, listLeases, upsertLease } from "./lease.sql"
 import { applySandboxLeasePatch } from "@claxedo/sandbox-manager"
 import type { SandboxLeaseAcquireInput, SandboxLeaseAcquireResult, SandboxLeasePatch, SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
 import { normalizeClaxedoRegion } from "../../../platform/runtime/region"

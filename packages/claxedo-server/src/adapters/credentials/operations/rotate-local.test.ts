@@ -29,7 +29,7 @@ const { putCredential, listCredentials, deleteCredential } = await import("../re
 const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("../backends/envelope")
 const { rotateLocalCredentialKeys, localEnvelopePartition } = await import("./rotate-local")
 const { ClaxedoDB } = await import("../../../platform/db/db")
-const { ClaxedoProviderCredentialTable } = await import("../../../platform/db/provider-credential.sql")
+const { ClaxedoProviderCredentialTable } = await import("../provider-credential.sql")
 ClaxedoDB.Drizzle()
 
 import type { SecretBackend } from "../types"

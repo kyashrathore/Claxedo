@@ -4,7 +4,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 
 function migration(name: string) {
-  return readFileSync(path.join(import.meta.dirname, "claxedo-migration", name, "migration.sql"), "utf8")
+  return readFileSync(path.join(import.meta.dirname, "../../platform/db/claxedo-migration", name, "migration.sql"), "utf8")
 }
 
 function legacyTable() {
@@ -83,7 +83,7 @@ describe("credential org scope migration", () => {
   })
 
   test("repair heals a database whose migration ledger drifted past the org column", async () => {
-    const { repair } = await import("./repair")
+    const { repair } = await import("../../platform/db/repair")
     const sqlite = legacyTable()
 
     const fixed = repair(sqlite as never)

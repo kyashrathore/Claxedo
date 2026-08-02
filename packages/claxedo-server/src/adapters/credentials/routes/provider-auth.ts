@@ -9,7 +9,7 @@ import {
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../../routes/control-plane-route-auth"
 import { requestOrg } from "./credential"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../../../platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "../../../platform/db/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
 import { errorBody } from "../../../routes/http"
 
 const authorizeBody = z.object({

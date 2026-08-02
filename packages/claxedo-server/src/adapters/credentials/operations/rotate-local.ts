@@ -33,7 +33,7 @@
  */
 
 import { ClaxedoDB } from "../../../platform/db/db"
-import { ClaxedoProviderCredentialTable } from "../../../platform/db/provider-credential.sql"
+import { ClaxedoProviderCredentialTable } from "../provider-credential.sql"
 import { getBackend } from "../store"
 import { isEnvelopeBackend } from "../backends/envelope"
 import { listCloudflareCredentialRefs } from "../backends/cloudflare"

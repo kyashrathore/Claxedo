@@ -17,7 +17,7 @@ import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { createConvexLeaseStore } from "./convex"
 import { createSqliteLeaseStore } from "./sqlite"
 import { ClaxedoDB } from "../../../platform/db/db"
-import { deleteLease, getLease, upsertLease } from "../../../platform/db/workspace-lease.sql"
+import { deleteLease, getLease, upsertLease } from "./lease.sql"
 import * as convexSandboxLeases from "../../../../../../convex/sandboxLeases"
 
 const root = path.join(realpathSync(os.tmpdir()), `lease-store-equivalence-${randomUUID().slice(0, 8)}`)

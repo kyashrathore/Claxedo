@@ -36,7 +36,7 @@ const registry = await import("../registry")
 const { defaultControlPlaneCredentials } = await import("../../../authority/services")
 const { CredentialRoutes } = await import("./credential")
 const { ClaxedoDB } = await import("../../../platform/db/db")
-const { SINGLE_TENANT_ORG } = await import("../../../platform/db/provider-credential.sql")
+const { SINGLE_TENANT_ORG } = await import("../provider-credential.sql")
 
 const ORG_A = "org_a"
 const ORG_B = "org_b"

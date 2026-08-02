@@ -582,7 +582,7 @@ vi.mock("../../agent-config", () => ({
   getRuntimeConfigSnapshot: (...args: unknown[]) => (mockGetRuntimeConfigSnapshot as any)(...args),
 }))
 
-vi.mock("../../platform/db/prepared-image.sql", () => ({
+vi.mock("./prepared-image.sql", () => ({
   ClaxedoPreparedImageTable: {},
   ClaxedoRuntimeSnapshotTable: {},
   getPreparedImage: vi.fn(() => undefined),
