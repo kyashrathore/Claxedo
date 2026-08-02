@@ -9,10 +9,10 @@ const root = path.join(realpathSync(os.tmpdir()), `agent-config-secret-scope-${r
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("./adapters/credentials/store")
-const { putCredential } = await import("./adapters/credentials/registry")
-const { ClaxedoDB } = await import("./platform/db/db")
-const { getRuntimeConfigSnapshot, saveUserConfig } = await import("./agent-config")
+const { createTestBackend, setBackendOverride } = await import("../adapters/credentials/store")
+const { putCredential } = await import("../adapters/credentials/registry")
+const { ClaxedoDB } = await import("../platform/db/db")
+const { getRuntimeConfigSnapshot, saveUserConfig } = await import("./index")
 
 describe("runtime config secret scoping", () => {
   beforeEach(async () => {

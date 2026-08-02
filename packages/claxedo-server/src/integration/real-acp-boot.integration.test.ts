@@ -58,7 +58,7 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("../deployments/local/server.js"),
   import("../workspace/supervisor/index.js"),
   import("../workspace/store/index.js"),
-  import("../agent-config.js"),
+  import("../agent-config/index.js"),
   import("../deployments/local/embedded-workspace-runtime.js"),
 ])
 

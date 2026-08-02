@@ -16,7 +16,7 @@ import {
   type InstallFetchedAgentExtensionInput as PackageInstallFetchedAgentExtensionInput,
   type InstallGitHubAgentExtensionInput as PackageInstallGitHubAgentExtensionInput,
 } from "@claxedo/agent-extensions"
-import { fanOutConfig } from "../../config-fanout"
+import { fanOutConfig } from "../../agent-config/fanout"
 import { withDataRoot } from "./data-root"
 
 export type InstallCachedAgentExtensionInput = Omit<PackageInstallCachedAgentExtensionInput, "dataRoot"> & { dataRoot?: string }

@@ -49,7 +49,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps the server host bridge out of harness adapter execution", () => {
-    const files = ["deployments/local/embedded-workspace-runtime.ts", "workspace/http/sandbox-target-fetch.ts", "workspace/http/proxy.ts", "config-fanout.ts"]
+    const files = ["deployments/local/embedded-workspace-runtime.ts", "workspace/http/sandbox-target-fetch.ts", "workspace/http/proxy.ts", "agent-config/fanout.ts"]
     const forbidden = [
       "@claxedo/agent-sdk-runtime",
       "AcpHarnessAdapter",
@@ -292,7 +292,7 @@ describe("architecture boundaries", () => {
       "storage.ts",
       "workspace.ts",
     ]
-    const forbidden = ["../paths", "config-fanout", "workspace/supervisor", "ControlPlane", "Convex", "Hono"]
+    const forbidden = ["../paths", "agent-config/fanout", "workspace/supervisor", "ControlPlane", "Convex", "Hono"]
     const leaks = lifecycleFiles.flatMap((file) => {
       const text = fs.readFileSync(path.join(root, file), "utf-8")
       return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))

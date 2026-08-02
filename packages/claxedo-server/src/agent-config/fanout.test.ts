@@ -9,25 +9,25 @@ const mocks = {
   },
 }
 
-vi.mock("./workspace/supervisor", () => ({
+vi.mock("../workspace/supervisor", () => ({
   broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
 }))
 
-vi.mock("./deployments/local/embedded-workspace-runtime", () => ({
+vi.mock("../deployments/local/embedded-workspace-runtime", () => ({
   syncEmbeddedWorkspaceRuntimes: mocks.syncEmbeddedWorkspaceRuntimes,
 }))
 
-vi.mock("./opencode/mcp-sync", () => ({
+vi.mock("../opencode/mcp-sync", () => ({
   syncOpencodeMcpConfig: mocks.syncOpencodeMcpConfig,
 }))
 
-vi.mock("./platform/runtime/lib/log", () => ({
+vi.mock("../platform/runtime/lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },
 }))
 
-const { fanOutConfig } = await import("./config-fanout")
+const { fanOutConfig } = await import("./fanout")
 
 beforeEach(() => {
   vi.clearAllMocks()

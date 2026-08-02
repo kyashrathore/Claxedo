@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import os from "os"
 import { sameSource } from "@claxedo/agent-extensions"
-import { fanOutConfig } from "../../config-fanout"
+import { fanOutConfig } from "../fanout"
 import {
   AgentExtensionConflictError,
   disableAgentExtension,
@@ -22,7 +22,7 @@ import {
   workspaceAgentExtensionRecords,
 } from "../../hosts/agent-extensions/workspace"
 import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
-import { errorBody } from "../http"
+import { errorBody } from "../../routes/http"
 import { localAgentConfigAllowed } from "./local-auth"
 import {
   agentExtensionPolicyOverrides,

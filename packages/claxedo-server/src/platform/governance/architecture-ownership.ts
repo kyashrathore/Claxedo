@@ -199,12 +199,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "config-fanout.ts",
+    module: "agent-config/fanout.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox runtime config fan-out",
     reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
     tests: [
-      "agent-config.test.ts",
+      "agent-config/index.test.ts",
       "platform/governance/architecture.test.ts",
     ],
   },

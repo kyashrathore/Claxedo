@@ -5,10 +5,10 @@
  * after any MCP mutation. Called from agent-config routes.
  */
 
-import { broadcastRuntimeConfig } from "./workspace/supervisor"
-import { syncEmbeddedWorkspaceRuntimes } from "./deployments/local/embedded-workspace-runtime"
-import { syncOpencodeMcpConfig } from "./opencode/mcp-sync"
-import { Log } from "./platform/runtime/lib/log"
+import { broadcastRuntimeConfig } from "../workspace/supervisor"
+import { syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
+import { syncOpencodeMcpConfig } from "../opencode/mcp-sync"
+import { Log } from "../platform/runtime/lib/log"
 
 const log = Log.create({ service: "config-fanout" })
 

@@ -16,8 +16,8 @@
 import * as fs from "fs"
 import * as path from "path"
 import os from "os"
-import { Log } from "./platform/runtime/lib/log"
-import { dataDir } from "./platform/runtime/lib/paths"
+import { Log } from "../platform/runtime/lib/log"
+import { dataDir } from "../platform/runtime/lib/paths"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-manager/driver-catalog"
 import {
   bundledAcpBinary,
@@ -36,22 +36,22 @@ import {
   toOpencodeConfig,
   type ResolvedMcpServer,
 } from "@claxedo/workspace-runtime/config"
-import { resolveSecretsForScope } from "./adapters/credentials/registry"
+import { resolveSecretsForScope } from "../adapters/credentials/registry"
 import {
   getRuntimeAgentExtensionsSnapshot,
   type AgentExtensionPolicyOverride,
   type RuntimeAgentExtensionsSnapshot,
-} from "./hosts/agent-extensions/runtime-config"
+} from "../hosts/agent-extensions/runtime-config"
 import {
   readMirroredWorkspaceAgentExtensions,
   sameSource,
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
-} from "./hosts/agent-extensions/workspace"
-import { ControlPlaneAuthError } from "./platform/auth/auth"
-import type { WorkspaceAuthority } from "./platform/auth/authority"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./authority/adapters/convex/workspace-authority"
-import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority"
+} from "../hosts/agent-extensions/workspace"
+import { ControlPlaneAuthError } from "../platform/auth/auth"
+import type { WorkspaceAuthority } from "../platform/auth/authority"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../authority/adapters/convex/workspace-authority"
+import { createSqliteWorkspaceAuthority } from "../authority/adapters/sqlite/workspace-authority"
 
 const log = Log.create({ service: "agent-config" })
 
