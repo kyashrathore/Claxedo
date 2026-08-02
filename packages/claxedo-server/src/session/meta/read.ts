@@ -3,7 +3,7 @@ import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
   ClaxedoSessionTagTable,
-} from "../../platform/db/session-meta.sql"
+} from "../meta.sql"
 import type { SessionAttachment, SessionMeta } from "./types"
 import { host, ids, root, toolSandbox } from "./shape"
 

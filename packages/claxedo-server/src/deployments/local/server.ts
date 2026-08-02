@@ -25,7 +25,7 @@ import { createConnectionTurnCredentials } from "../../connections/turn-credenti
 import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes } from "../../agent-config/routes/index"
-import { SessionMetaRoutes } from "../../routes/session-meta"
+import { SessionMetaRoutes } from "../../session/routes/meta-routes"
 import { WorkspaceRoutes } from "../../routes/workspace/index"
 import { OpenCodeCompatRoutes } from "../../opencode/compat-routes/index"
 import { resolveHarnessId } from "../../opencode/compat-routes/provider-config"

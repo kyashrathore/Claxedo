@@ -16,7 +16,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 const [{ syncCloudMessages }, { ClaxedoDB }, { ClaxedoCloudMessageTable }] = await Promise.all([
   import("./sync"),
   import("../platform/db/db"),
-  import("../platform/db/cloud-session.sql"),
+  import("./cloud.sql"),
 ])
 
 beforeEach(() => {

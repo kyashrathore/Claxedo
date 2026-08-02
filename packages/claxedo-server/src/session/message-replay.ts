@@ -9,8 +9,8 @@
  */
 
 import { ClaxedoDB, and, desc, eq, gt } from "../platform/db/db"
-import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "../platform/db/cloud-session.sql"
-import { ClaxedoSessionMetaTable } from "../platform/db/session-meta.sql"
+import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
+import { ClaxedoSessionMetaTable } from "./meta.sql"
 
 function rec(input: unknown): Record<string, unknown> | undefined {
   return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined

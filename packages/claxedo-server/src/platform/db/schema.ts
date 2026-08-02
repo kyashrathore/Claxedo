@@ -1,11 +1,11 @@
 export { ClaxedoDocumentIndexTable, ClaxedoDocumentStatusTable, ClaxedoLocalProjectTable } from "../../documents/index.sql"
-export { ClaxedoTerminalSessionTable } from "./terminal-session.sql"
-export { ClaxedoCloudSessionTable, ClaxedoCloudMessageTable, ClaxedoCloudMessageEventTable } from "./cloud-session.sql"
+export { ClaxedoTerminalSessionTable } from "../../session/terminal.sql"
+export { ClaxedoCloudSessionTable, ClaxedoCloudMessageTable, ClaxedoCloudMessageEventTable } from "../../session/cloud.sql"
 export {
   ClaxedoSessionMetaTable,
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionTagTable,
-} from "./session-meta.sql"
+} from "../../session/meta.sql"
 export { ClaxedoProviderCredentialTable } from "./provider-credential.sql"
 export { ClaxedoNetworkPolicyTable } from "../../adapters/sandbox/network/policy.sql"
 export { ClaxedoWorkspaceLeaseTable, ClaxedoWorkspaceHoldTable } from "./workspace-lease.sql"

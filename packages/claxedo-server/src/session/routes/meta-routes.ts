@@ -9,11 +9,11 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../platform/auth/auth"
-import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority } from "../platform/auth/authority"
-import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "../session/meta"
-import { resolveWorkspace } from "../workspace/store"
+} from "../../platform/auth/auth"
+import type { ControlPlaneServices } from "../../authority/services"
+import { requireAuthority } from "../../platform/auth/authority"
+import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "../meta"
+import { resolveWorkspace } from "../../workspace/store"
 
 type Options = {
   services?: ControlPlaneServices

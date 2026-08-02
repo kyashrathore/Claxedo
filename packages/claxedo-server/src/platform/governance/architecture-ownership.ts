@@ -344,12 +344,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   // import evidence noted per Unit 5's decision rule.
   {
     area: "route",
-    module: "routes/session-meta.ts",
+    module: "session/routes/meta-routes.ts",
     status: OwnershipStatus.Canonical,
     owner: "local session-meta routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped MOVE→DOCUMENT: imports resolveWorkspace from ../workspace-store (FORBIDDEN_LOCAL, fs/child_process/sqlite). Not Worker-safe, so it stays a local control-plane route adapter under routes/.",
-    tests: ["routes/session-meta-routes.test.ts"],
+    tests: ["session/routes/meta-routes.test.ts"],
     routeSamples: ["/api/claxedo/session/s1/meta"],
   },
   {

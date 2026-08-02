@@ -35,8 +35,8 @@ const [
   import("./message-replay"),
   import("../platform/db/db"),
   import("../platform/runtime/lib/bus"),
-  import("../platform/db/cloud-session.sql"),
-  import("../platform/db/session-meta.sql"),
+  import("./cloud.sql"),
+  import("./meta.sql"),
 ])
 
 beforeEach(async () => {
