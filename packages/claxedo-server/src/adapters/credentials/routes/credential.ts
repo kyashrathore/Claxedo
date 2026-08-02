@@ -10,11 +10,11 @@ import { z } from "zod"
 import {
   defaultControlPlaneCredentials,
   type ControlPlaneCredentials,
-} from "../authority/services"
-import { errorBody } from "./http"
-import { timingSafeEqualStrings } from "../platform/auth/web-crypto"
-import { CredentialVerificationError, verifyCredential } from "../adapters/credentials/operations/verify"
-import { CredentialDiscoveryError } from "../adapters/credentials/operations/discovery"
+} from "../../../authority/services"
+import { errorBody } from "../../../routes/http"
+import { timingSafeEqualStrings } from "../../../platform/auth/web-crypto"
+import { CredentialVerificationError, verifyCredential } from "../operations/verify"
+import { CredentialDiscoveryError } from "../operations/discovery"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -22,8 +22,8 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
-} from "../platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "../platform/db/provider-credential.sql"
+} from "../../../platform/auth/auth"
+import { SINGLE_TENANT_ORG } from "../../../platform/db/provider-credential.sql"
 
 const putBody = z.object({
   provider_id: z.string().min(1),

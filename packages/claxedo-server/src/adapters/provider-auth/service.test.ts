@@ -3,7 +3,7 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../../author
 import type { CredentialWrite } from "../credentials/types"
 import { SINGLE_TENANT_ORG } from "../../platform/db/provider-credential.sql"
 import { createProviderAuthService, ProviderAuthError } from "./service"
-import { ProviderAuthRoutes } from "../../routes/provider-auth"
+import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })

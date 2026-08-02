@@ -4,7 +4,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
 import { sandboxDriverRoutes } from "./sandbox-driver-routes"
-import type { ControlPlaneCredentials } from "../authority/services"
+import type { ControlPlaneCredentials } from "../../../authority/services"
 
 // Sandbox driver secrets have exactly one sink: the credential registry.
 //
@@ -139,7 +139,7 @@ describe("sandbox driver credential codec round trip", () => {
 
   test.each(CASES)("$id survives write → store → launch-time read", async ({ id, auth }) => {
     const app = new Hono().route("/api/workspace", sandboxDriverRoutes(undefined, { fetch: ACCEPTED }))
-    const { sandboxDriverAuthManaged } = await import("../adapters/sandbox/driver-auth")
+    const { sandboxDriverAuthManaged } = await import("../driver-auth")
 
     const response = await app.request(`/api/workspace/drivers/${id}/auth`, {
       method: "PUT",
@@ -159,7 +159,7 @@ describe("sandbox driver credential codec round trip", () => {
 // API key as a side effect of a settings click they'd read as narrow.
 describe("sandbox driver credential removal is scoped to its own kind", () => {
   test("Remove deletes the sandbox credential and spares the model provider key", async () => {
-    const registry = await import("../adapters/credentials/registry")
+    const registry = await import("../../credentials/registry")
 
     await registry.putCredential({
       provider_id: "vercel",
@@ -185,7 +185,7 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
   })
 
   test("a sandbox lookup never resolves a model provider credential", async () => {
-    const registry = await import("../adapters/credentials/registry")
+    const registry = await import("../../credentials/registry")
 
     // A dedicated id: the round-trip suite above writes a sandbox_driver row
     // for every real driver into this same temp registry, so asserting the

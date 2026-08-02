@@ -9,7 +9,7 @@ import {
   WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH,
   WORKSPACE_SANDBOX_DRIVERS_PATH,
   workspaceSandboxDriverAuthPath,
-} from "../../../claxedo-app/src/platform/runtime/agent/workspace-control-paths"
+} from "../../../../../claxedo-app/src/platform/runtime/agent/workspace-control-paths"
 
 // Sandbox-driver client/server route contract.
 //
@@ -72,10 +72,10 @@ function serverSource(relative: string) {
 
 describe("sandbox driver client/server route contract", () => {
   test("server.ts still mounts the workspace routes under the prefix the client encodes", () => {
-    expect(serverSource("../deployments/local/server.ts")).toContain(`app.route("${MOUNT_PREFIX}", WorkspaceRoutes(`)
+    expect(serverSource("../../../deployments/local/server.ts")).toContain(`app.route("${MOUNT_PREFIX}", WorkspaceRoutes(`)
     // `sandboxDriverRoutes` is mounted at the WorkspaceRoutes root, so the
     // driver paths sit directly under MOUNT_PREFIX with no extra segment.
-    expect(serverSource("./workspace/index.ts")).toContain('.route("/", sandboxDriverRoutes(')
+    expect(serverSource("../../../routes/workspace/index.ts")).toContain('.route("/", sandboxDriverRoutes(')
   })
 
   test.each([

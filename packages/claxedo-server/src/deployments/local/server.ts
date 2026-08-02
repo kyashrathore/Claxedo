@@ -57,9 +57,9 @@ import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../platform/governance/architecture"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { migrateCredentials } from "../../adapters/credentials/operations/migrate"
-import { CredentialRoutes } from "../../routes/credential"
-import { ProviderAuthRoutes } from "../../routes/provider-auth"
-import { NetworkPolicyRoutes } from "../../routes/network-policy"
+import { CredentialRoutes } from "../../adapters/credentials/routes/credential"
+import { ProviderAuthRoutes } from "../../adapters/credentials/routes/provider-auth"
+import { NetworkPolicyRoutes } from "../../adapters/sandbox/network/network-policy-routes"
 import { ProjectRemoteRoutes } from "../../routes/project-remote"
 import {
   ControlPlaneCompositionError,

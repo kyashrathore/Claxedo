@@ -13,9 +13,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../platform/auth/auth"
-import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority } from "../platform/auth/authority"
+} from "../../../platform/auth/auth"
+import type { ControlPlaneServices } from "../../../authority/services"
+import { requireAuthority } from "../../../platform/auth/authority"
 import {
   createPolicy,
   deletePolicy,
@@ -24,9 +24,9 @@ import {
   resolveEffectivePolicy,
   updatePolicy,
   isTargetAllowed,
-} from "../adapters/sandbox/network/policy"
-import { DEFAULT_ALLOWLIST } from "../adapters/sandbox/network/types"
-import { errorBody } from "./http"
+} from "./policy"
+import { DEFAULT_ALLOWLIST } from "../../../adapters/sandbox/network/types"
+import { errorBody } from "../../../routes/http"
 
 const createBody = z.object({
   workspace_id: z.string().optional(),

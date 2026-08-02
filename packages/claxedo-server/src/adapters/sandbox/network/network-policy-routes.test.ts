@@ -5,17 +5,17 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "../platform/auth/auth"
-import type { ControlPlaneServices } from "../authority/services"
+import { localOnlyAuthAdapter, type ClerkVerifier } from "../../../platform/auth/auth"
+import type { ControlPlaneServices } from "../../../authority/services"
 
 const root = path.join(realpathSync(os.tmpdir()), `network-policy-routes-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { ClaxedoDB } = await import("../platform/db/db")
+const { ClaxedoDB } = await import("../../../platform/db/db")
 ClaxedoDB.Drizzle()
-const { NetworkPolicyRoutes } = await import("./network-policy")
+const { NetworkPolicyRoutes } = await import("./network-policy-routes")
 
 const authConfig = {
   enabled: true,

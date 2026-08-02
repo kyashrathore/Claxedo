@@ -354,12 +354,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/network-policy.ts",
+    module: "adapters/sandbox/network/network-policy-routes.ts",
     status: OwnershipStatus.Canonical,
     owner: "local network-policy routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped MOVE→DOCUMENT: transitively imports ../network/policy → ../adapters/storage/db (better-sqlite3 + fs). SQLite-coupled, so it stays a local control-plane route adapter under routes/.",
-    tests: ["routes/network-policy.test.ts"],
+    tests: ["adapters/sandbox/network/network-policy-routes.test.ts"],
     routeSamples: ["/api/claxedo/network-policy"],
   },
   {
@@ -407,7 +407,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "provider auth method service (Claxedo local adapter)",
     reason:
       "Unit 5 verdict WRAP→DOCUMENT: the implementation is portable (only node:timers + a type import) but it is a service, not a route, so there is no authority/routes/ home; with 2 non-test importers (routes/provider-auth.ts, routes/bootstrap.ts) a barrel is not warranted. Left in place and documented.",
-    tests: ["routes/provider-auth.test.ts"],
+    tests: ["adapters/credentials/routes/provider-auth.test.ts"],
   },
   {
     area: "registry",
