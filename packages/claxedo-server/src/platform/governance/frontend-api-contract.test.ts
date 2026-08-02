@@ -108,7 +108,7 @@ const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = 
   import("../../deployments/local/server"),
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
-  import("../../routes/opencode-compat/index"),
+  import("../../opencode/compat-routes/index"),
   import("../../agent-config"),
   import("../../opencode/engine"),
 ])

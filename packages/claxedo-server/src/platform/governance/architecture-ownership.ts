@@ -272,7 +272,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/opencode-compat/index.ts",
+    module: "opencode/compat-routes/index.ts",
     status: OwnershipStatus.Compatibility,
     owner: "OpenCode HTTP compatibility routes",
     canonicalReplacement: "Control-plane and workspace-runtime route domains in route-ownership.ts",

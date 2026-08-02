@@ -11,7 +11,7 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
-const { OpenCodeCompatRoutes } = await import("../routes/opencode-compat/index")
+const { OpenCodeCompatRoutes } = await import("./compat-routes/index")
 const { ensureWorkspace } = await import("../workspace/store")
 
 const app = new Hono()
