@@ -1,12 +1,12 @@
-import type { ClaxedoRegion } from "../../region"
-import { regionValue } from "../../region"
+import type { ClaxedoRegion } from "../../platform/runtime/region"
+import { regionValue } from "../../platform/runtime/region"
 import {
   clampTtlSeconds,
   HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS,
   RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "../../authority/runtime-access-token"
+} from "../../platform/auth/runtime-access-token"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RelayTargetLookup } from "../../routes/internal-relay"
 

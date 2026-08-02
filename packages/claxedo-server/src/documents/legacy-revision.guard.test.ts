@@ -9,7 +9,12 @@ describe("legacy document revision retirement", () => {
     const terms = [["document", "revision", "id"].join("_"), ["claxedo", "document", "revision"].join("_")]
     const offenders = roots
       .flatMap((root) => files(path.join(repository, root)))
-      .filter((file) => !file.includes(`${path.sep}storage${path.sep}claxedo-migration${path.sep}`))
+      // Applied migrations are history: they legitimately name the retired
+      // table/column because that is what they created at the time, and their
+      // text is hashed by the migration runner. Keyed on the migration
+      // directory alone — the parent (`storage/`, now `db/`) is incidental, and
+      // pinning it here silently un-excluded these files when the dir moved.
+      .filter((file) => !file.includes(`${path.sep}claxedo-migration${path.sep}`))
       .filter((file) => file !== import.meta.filename)
       .flatMap((file) => {
         const source = fs.readFileSync(file, "utf8")

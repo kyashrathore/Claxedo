@@ -7,7 +7,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
-} from "../auth"
+} from "../../platform/auth/auth"
 import type { Workspace } from "../../workspace/store"
 import { verifyWorkspaceRuntimeControlToken } from "../../workspace/supervisor"
 import {

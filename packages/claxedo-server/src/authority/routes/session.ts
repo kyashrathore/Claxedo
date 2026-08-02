@@ -10,8 +10,8 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../auth"
-import { requireAuthority } from "../authority"
+} from "../../platform/auth/auth"
+import { requireAuthority } from "../../platform/auth/authority"
 import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
 import {
   buildSessionListResponse,

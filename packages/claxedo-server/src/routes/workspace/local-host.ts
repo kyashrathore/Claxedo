@@ -1,8 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
 import { createPrivateKey, generateKeyPairSync, randomUUID, sign as signData, type JsonWebKey } from "node:crypto"
-import { Log } from "../../lib/log"
-import { dataDir } from "../../lib/paths"
+import { Log } from "../../platform/runtime/lib/log"
+import { dataDir } from "../../platform/runtime/lib/paths"
 import { rec, txt } from "./user-hosted"
 
 const log = Log.create({ service: "workspace-local-host" })

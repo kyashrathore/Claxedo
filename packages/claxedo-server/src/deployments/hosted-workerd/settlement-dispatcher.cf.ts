@@ -3,7 +3,7 @@ import {
   HostedWorkerCompositionError,
   type HostedWorkerEnv,
 } from "../../authority/hosted-services"
-import { reportError } from "../../observability/report"
+import { reportError } from "../../platform/telemetry/errors/report"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
 import {
   settlementTenantKey,

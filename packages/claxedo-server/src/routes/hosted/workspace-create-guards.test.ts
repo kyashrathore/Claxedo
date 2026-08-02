@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import type { ClerkVerifier } from "../../authority/auth"
+import type { ClerkVerifier } from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
+import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { countActiveForOrg } from "../../../../../convex/sandboxLeases"
 import { indexRangeBuilder } from "../../test-support/convex-index-harness"
@@ -24,8 +24,8 @@ const recordSandboxLeaseTenant = vi.hoisted(() =>
     }) => ({ stamped: true }),
   ),
 )
-vi.mock("../../telemetry/convex-usage-ledger", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../telemetry/convex-usage-ledger")>()),
+vi.mock("../../platform/telemetry/product/convex-usage-ledger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../platform/telemetry/product/convex-usage-ledger")>()),
   recordSandboxLeaseTenant,
 }))
 

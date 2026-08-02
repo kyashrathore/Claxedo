@@ -1,4 +1,4 @@
-import { claxedoBus } from "../../lib/bus"
+import { claxedoBus } from "../../platform/runtime/lib/bus"
 
 export type ProvisionStep = "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"
 

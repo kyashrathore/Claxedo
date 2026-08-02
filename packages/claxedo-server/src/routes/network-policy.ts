@@ -13,9 +13,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../authority/auth"
+} from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority } from "../authority/authority"
+import { requireAuthority } from "../platform/auth/authority"
 import {
   createPolicy,
   deletePolicy,

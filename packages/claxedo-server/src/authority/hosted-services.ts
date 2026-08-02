@@ -16,29 +16,29 @@
  * this module names no storage backend.
  */
 
-import { clerkAuthAdapter } from "./auth"
+import { clerkAuthAdapter } from "../platform/auth/auth"
 import {
   hostTunnelTokenSigner,
   RuntimeAccessTokenConfigurationError,
   runtimeAccessTokenAlgorithm,
   runtimeAccessTokenSigner,
-} from "./runtime-access-token"
-import { workerTelemetry } from "./worker-telemetry"
-import { workerCredentials } from "./worker-credentials"
+} from "../platform/auth/runtime-access-token"
+import { workerTelemetry } from "../platform/auth/worker-telemetry"
+import { workerCredentials } from "../platform/auth/worker-credentials"
 import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
 import type { ProjectionStore } from "./projection-store"
-import type { DurableSessionLog } from "./durable-session-log"
+import type { DurableSessionLog } from "../platform/auth/durable-session-log"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
 import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
-import { defaultHomeRegion, relayEndpointsFromEnv } from "../region"
+import { defaultHomeRegion, relayEndpointsFromEnv } from "../platform/runtime/region"
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import { createControlPlaneRelayProvider } from "../adapters/relay"
 import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
-import type { CliSessionTokenRegistry } from "./cli-session-registry"
+import type { CliSessionTokenRegistry } from "../platform/auth/cli-session-registry"
 import {
   HostedWorkerCompositionError,
   clean,

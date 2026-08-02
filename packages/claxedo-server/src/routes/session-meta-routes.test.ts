@@ -4,7 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "../authority/auth"
+import { localOnlyAuthAdapter, type ClerkVerifier } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-routes-${randomUUID().slice(0, 8)}`)
@@ -18,7 +18,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 // These modules share the storage and workspace dependency graph. Loading
 // them concurrently deadlocks Vitest's SSR module evaluator before collection.
-const { ClaxedoDB } = await import("../adapters/storage/db")
+const { ClaxedoDB } = await import("../platform/db/db")
 const { putSessionMeta, sessionMeta } = await import("../session/meta")
 const { ensureWorkspace } = await import("../workspace/store")
 const { SessionMetaRoutes } = await import("./session-meta")

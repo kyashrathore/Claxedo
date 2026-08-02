@@ -16,12 +16,12 @@ import type {
   ChannelIdentityBindingStore,
   PairingRequest,
 } from "@claxedo/channels"
-import { ClaxedoDB } from "../adapters/storage/db"
+import { ClaxedoDB } from "../platform/db/db"
 import {
   ClaxedoChannelAllowTable,
   ClaxedoChannelIdentityTable,
   ClaxedoChannelPairingTable,
-} from "../adapters/storage/channel-access.sql"
+} from "../platform/db/channel-access.sql"
 
 function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRequest {
   return {

@@ -35,7 +35,7 @@ const { createTestBackend, setBackendOverride } = await import("./store")
 const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("./registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
 const { saveUserConfig } = await import("../../agent-config")
-const { ClaxedoDB } = await import("../storage/db")
+const { ClaxedoDB } = await import("../../platform/db/db")
 ClaxedoDB.Drizzle()
 
 describe("syncLocalCredentials", () => {

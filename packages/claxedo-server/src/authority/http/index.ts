@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import type { ControlPlaneServices } from "../services"
-import type { ControlPlaneAuthContext } from "../auth"
+import type { ControlPlaneAuthContext } from "../../platform/auth/auth"
 import {
   assertRuntimeMutationAuth,
   authContext,

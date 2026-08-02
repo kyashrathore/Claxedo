@@ -1,10 +1,10 @@
-import { cleanString as clean } from "../../lib/strings"
+import { cleanString as clean } from "../../platform/runtime/lib/strings"
 import { Hono } from "hono"
 import { errorBody } from "../http"
 import type { ControlPlaneTelemetry } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { internalAdminAuthorized } from "../internal-admin-auth"
-import { emitSandboxLeaseClosed } from "../../telemetry/metering"
+import { emitSandboxLeaseClosed } from "../../platform/telemetry/product/metering"
 
 export type HostedSandboxAdminOptions = {
   adminToken?: string

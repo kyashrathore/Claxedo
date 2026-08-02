@@ -1,5 +1,5 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../auth"
-import { cliServiceUser, isCliAccessAuth } from "../../../cli-session-token"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../../platform/auth/auth"
+import { cliServiceUser, isCliAccessAuth } from "../../../../platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { projectResult, requireAllowed, requireExecutor, requireServiceToken } from "./executor"
 import type {

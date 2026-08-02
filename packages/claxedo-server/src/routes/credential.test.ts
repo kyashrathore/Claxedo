@@ -3,8 +3,8 @@ import { CredentialRoutes } from "./credential"
 import type { ControlPlaneCredentials } from "../authority/services"
 import type { CredentialHealth, CredentialMetadata } from "../adapters/credentials/types"
 import { CredentialDiscoveryError } from "../adapters/credentials/discovery"
-import { ControlPlaneAuthError } from "../authority/auth"
-import { SINGLE_TENANT_ORG } from "../adapters/storage/provider-credential.sql"
+import { ControlPlaneAuthError } from "../platform/auth/auth"
+import { SINGLE_TENANT_ORG } from "../platform/db/provider-credential.sql"
 
 function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())

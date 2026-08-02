@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError } from "../../authority/auth"
-import type { ClerkVerifier } from "../../authority/auth"
+import { ControlPlaneAuthError } from "../../platform/auth/auth"
+import type { ClerkVerifier } from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { CredentialMetadata } from "../../adapters/credentials/types"
 
@@ -165,9 +165,9 @@ vi.mock("../../user-hosted-tunnel", () => ({
   stopAllUserHostedWorkspaceTunnels: mocks.stopAllUserHostedWorkspaceTunnels,
 }))
 
-const { localOnlyAuthAdapter } = await import("../../authority/auth")
+const { localOnlyAuthAdapter } = await import("../../platform/auth/auth")
 const { WorkspaceRoutes } = await import("./index")
-const { createFixedWindowConnectionRateLimiter } = await import("../../authority/rate-limit")
+const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 
 const acceptedSandboxProbe = (async () =>
   ({ ok: true, status: 200, text: async () => "", body: undefined }) as unknown as Response) as unknown as typeof fetch

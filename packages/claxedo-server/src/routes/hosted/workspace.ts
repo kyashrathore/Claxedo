@@ -29,11 +29,11 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthConfig,
   controlPlaneAuthErrorBody,
-} from "../../authority/auth"
+} from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../authority/authority"
-import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../authority/rate-limit"
-import { newWorkspaceId } from "../../authority/workspace-id"
+import { requireAuthority } from "../../platform/auth/authority"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
+import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import {
   requireExecutor,
   requireServiceToken,
@@ -53,10 +53,10 @@ import {
   type WorkspaceRouteOptions,
 } from "../workspace/user-hosted"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../workspace/runtime-token-guards"
-import { normalizeClaxedoRegion } from "../../region"
-import { emitSandboxLeaseOpened } from "../../telemetry/metering"
-import { recordSandboxLeaseTenant } from "../../telemetry/convex-usage-ledger"
-import { productIdentity } from "../../telemetry/product"
+import { normalizeClaxedoRegion } from "../../platform/runtime/region"
+import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
+import { recordSandboxLeaseTenant } from "../../platform/telemetry/product/convex-usage-ledger"
+import { productIdentity } from "../../platform/telemetry/product/product"
 
 // `requireCloudWorkspaceEntitlement` (the D6/B4 paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake

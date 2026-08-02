@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError } from "../../auth"
+import { ControlPlaneAuthError } from "../../../platform/auth/auth"
 import {
   CONVEX_RETRY_BASE_DELAY_MS,
   CONVEX_RETRY_MAX_DELAY_MS,

@@ -23,7 +23,7 @@
  * org (member_count 1, seats_licensed 1 or absent) is never seat-limited.
  */
 
-import { reportPaymentError } from "../observability/report"
+import { reportPaymentError } from "../platform/telemetry/errors/report"
 import { createBillingStore, type BillingStore, type EntitlementState, type EntitlementStateRef } from "./store"
 
 export type EntitlementCapability = "cloud-workspace" | "hosted-connections"

@@ -1,11 +1,11 @@
 import { Hono } from "hono"
 import { z } from "zod"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../authority/authority"
+import { requireAuthority } from "../../platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-} from "../../authority/auth"
+} from "../../platform/auth/auth"
 import {
   apiError,
   signedOrError,

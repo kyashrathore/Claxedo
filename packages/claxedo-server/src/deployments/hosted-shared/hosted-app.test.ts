@@ -3,7 +3,7 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createHostedApp } from "./hosted-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
-import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
+import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import {
   createSandboxManager,
   type SandboxDriver,
@@ -15,7 +15,7 @@ import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "../../rou
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
-} from "../../authority/cli-session-registry"
+} from "../../platform/auth/cli-session-registry"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"

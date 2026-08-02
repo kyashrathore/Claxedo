@@ -20,7 +20,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../authority/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "../platform/auth/auth"
 
 const root = path.join(realpathSync(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -35,8 +35,8 @@ const { createTestBackend, setBackendOverride } = await import("../adapters/cred
 const registry = await import("../adapters/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../authority/services")
 const { CredentialRoutes } = await import("./credential")
-const { ClaxedoDB } = await import("../adapters/storage/db")
-const { SINGLE_TENANT_ORG } = await import("../adapters/storage/provider-credential.sql")
+const { ClaxedoDB } = await import("../platform/db/db")
+const { SINGLE_TENANT_ORG } = await import("../platform/db/provider-credential.sql")
 
 const ORG_A = "org_a"
 const ORG_B = "org_b"

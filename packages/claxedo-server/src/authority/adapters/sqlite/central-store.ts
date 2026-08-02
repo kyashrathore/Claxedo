@@ -30,9 +30,9 @@ import {
   subscribeMessageReplay,
 } from "../../../cloud/message-replay"
 import { syncCloudMessages } from "../../../cloud/session-sync"
-import type { SessionWriteMode } from "../../../governance/architecture"
+import type { SessionWriteMode } from "../../../platform/governance/architecture"
 
-import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "../../durable-session-log"
+import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "../../../platform/auth/durable-session-log"
 import { createProjectionStore, type ProjectionStore, type ProjectionStoreBackend } from "../../projection-store"
 
 // Claxedo's LOCAL central-store adapter: the control plane's central

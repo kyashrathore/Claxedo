@@ -4,7 +4,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { createEmbeddedAuth, embeddedAuthEnabled, EMBEDDED_AUTH_ISSUER, type EmbeddedAuth } from "./embedded-auth"
-import { betterAuthAdapter, controlPlaneAuthContext } from "../../authority/auth"
+import { betterAuthAdapter, controlPlaneAuthContext } from "../../platform/auth/auth"
 
 // W1 (self-host/hosted parity): embedded Better Auth gives a self-host box
 // real signup/login (signed mode) with NO Convex/Clerk. These tests exercise

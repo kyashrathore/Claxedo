@@ -1,8 +1,8 @@
 import fs from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
-import { claxedoBus, globalBus } from "../../lib/bus"
-import { dataDir } from "../../lib/paths"
+import { claxedoBus, globalBus } from "../../platform/runtime/lib/bus"
+import { dataDir } from "../../platform/runtime/lib/paths"
 import { gitRun } from "./git"
 
 function slug(input: string) {

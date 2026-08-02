@@ -1,7 +1,7 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../authority/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../authority/authority"
-import { normalizeClaxedoRegion } from "../../region"
+import { requireAuthority } from "../../platform/auth/authority"
+import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import {
   apiError,
   captureWorkspaceTelemetry,

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import { Hono } from "hono"
 
 const { ProviderAuthRoutes } = await import("./provider-auth")
-type ControlPlaneAuthConfig = import("../authority/auth").ControlPlaneAuthConfig
+type ControlPlaneAuthConfig = import("../platform/auth/auth").ControlPlaneAuthConfig
 
 // `deferToHarnessRoute` makes `/provider/auth` call `next()` so a LATER-mounted
 // OpenCode-compat route answers instead. That fall-through is the one shape

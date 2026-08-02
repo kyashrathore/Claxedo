@@ -29,7 +29,7 @@ import {
   type EmbeddedHost,
   type EmbeddedModule,
 } from "@opencode-ai/sdk-next/embedded"
-import { dataDir } from "../lib/paths"
+import { dataDir } from "../platform/runtime/lib/paths"
 import { opencodeHeaders } from "./auth"
 
 // Re-export so host modules that must NOT depend on @claxedo/agent-sdk-runtime
@@ -91,15 +91,6 @@ export function configureOpenCodeApplicationTools(
   if (loadedHost && factory)
     throw new Error("OpenCode application tools must be configured before the embedded engine starts")
   applicationTools = factory
-}
-
-/**
- * Back-compat: historical local callers/tests configured the opencode-compat
- * transport by URL. That is now an explicit external-URL opt-in on the engine
- * transport. Kept so the compat-route body and its URL-mode tests read the same.
- */
-export function configureOpenCodeCompat(url: string) {
-  configureOpenCodeEngine({ url })
 }
 
 // --- Embedded engine (lazy, memoized) ------------------------------------

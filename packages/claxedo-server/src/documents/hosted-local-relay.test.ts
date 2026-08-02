@@ -12,7 +12,7 @@ import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from
 import { createLocalDocumentJobState, LocalInstallationDocumentBroker } from "./local-installation-broker"
 import { createHostedLocalDocumentRelay } from "./hosted-local-relay"
 import type { DocumentIndexEntry } from "./index-store"
-import { documentRelayJobTokenAudience, mintDocumentRelayJobToken } from "../authority/runtime-access-token"
+import { documentRelayJobTokenAudience, mintDocumentRelayJobToken } from "../platform/auth/runtime-access-token"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../workspace-runtime/src/internal-secrets"
 

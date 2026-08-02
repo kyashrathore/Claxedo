@@ -12,7 +12,7 @@ const prevAcpDir = process.env.CLAXEDO_ACP_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./agent-config")
-const { ControlPlaneAuthError } = await import("./authority/auth")
+const { ControlPlaneAuthError } = await import("./platform/auth/auth")
 
 function unavailableWorkspaceAuthority() {
   return {

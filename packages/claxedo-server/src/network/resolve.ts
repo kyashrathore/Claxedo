@@ -8,7 +8,7 @@
 
 import { resolve4 } from "dns/promises"
 import { formatDaytonaAllowList } from "./daytona-allow-list"
-import { Log } from "../lib/log"
+import { Log } from "../platform/runtime/lib/log"
 import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST } from "./types"
 
 export { formatDaytonaAllowList }

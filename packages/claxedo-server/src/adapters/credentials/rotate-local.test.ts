@@ -23,13 +23,13 @@ const prevPartition = process.env.CLAXEDO_CREDENTIALS_ORG_ID
 process.env.CLAXEDO_DATA_DIR = root
 delete process.env.CLAXEDO_CREDENTIALS_ORG_ID
 
-const { dataDir } = await import("../../lib/paths")
+const { dataDir } = await import("../../platform/runtime/lib/paths")
 const { setBackendOverride } = await import("./store")
 const { putCredential, listCredentials, deleteCredential } = await import("./registry")
 const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("./envelope")
 const { rotateLocalCredentialKeys, localEnvelopePartition } = await import("./rotate-local")
-const { ClaxedoDB } = await import("../storage/db")
-const { ClaxedoProviderCredentialTable } = await import("../storage/provider-credential.sql")
+const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoProviderCredentialTable } = await import("../../platform/db/provider-credential.sql")
 ClaxedoDB.Drizzle()
 
 import type { SecretBackend } from "./types"

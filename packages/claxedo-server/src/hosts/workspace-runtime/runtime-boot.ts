@@ -13,7 +13,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
-import { allowedOriginPatterns } from "../../http/cors-origins"
+import { allowedOriginPatterns } from "../../platform/http/cors-origins"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,

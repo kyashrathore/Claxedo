@@ -14,7 +14,7 @@ const { createTestBackend, setBackendOverride } = await import("../adapters/cred
 const { putCredential, getCredential, resolveSecretById } = await import("../adapters/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../authority/services")
 const { CredentialRoutes } = await import("./credential")
-const { ClaxedoDB } = await import("../adapters/storage/db")
+const { ClaxedoDB } = await import("../platform/db/db")
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
 

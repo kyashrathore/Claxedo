@@ -13,8 +13,8 @@ import {
 } from "@claxedo/connections"
 import { Hono, type Context } from "hono"
 import { anyApi, type FunctionReference } from "convex/server"
-import { controlPlaneAuthContext, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../authority/auth"
-import { hostedOrgCredentials } from "../../authority/worker-credentials"
+import { controlPlaneAuthContext, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../platform/auth/auth"
+import { hostedOrgCredentials } from "../../platform/auth/worker-credentials"
 import { githubIntegrationForEnv } from "../connections/github-oauth"
 import type { ControlPlaneCredentials } from "../../authority/services"
 

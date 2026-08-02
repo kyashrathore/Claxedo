@@ -16,8 +16,8 @@
 import * as fs from "fs"
 import * as path from "path"
 import os from "os"
-import { Log } from "./lib/log"
-import { dataDir } from "./lib/paths"
+import { Log } from "./platform/runtime/lib/log"
+import { dataDir } from "./platform/runtime/lib/paths"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-manager/driver-catalog"
 import {
   bundledAcpBinary,
@@ -48,8 +48,8 @@ import {
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
 } from "./hosts/agent-extensions/workspace"
-import { ControlPlaneAuthError } from "./authority/auth"
-import type { WorkspaceAuthority } from "./authority/authority"
+import { ControlPlaneAuthError } from "./platform/auth/auth"
+import type { WorkspaceAuthority } from "./platform/auth/authority"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority"
 

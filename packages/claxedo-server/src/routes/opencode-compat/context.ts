@@ -4,7 +4,7 @@ import path from "path"
 import { HTTPException } from "hono/http-exception"
 import { normalizeHarnessIdentity, type SessionHarness } from "@claxedo/agent-sdk-runtime"
 import { defaultHarness } from "../../agent-config"
-import { dataDir, stateDir } from "../../lib/paths"
+import { dataDir, stateDir } from "../../platform/runtime/lib/paths"
 import { normalize } from "../../session/harness"
 import { contains } from "./git"
 

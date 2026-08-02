@@ -7,8 +7,8 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../authority/auth"
-import type { ProjectAction, WorkspaceAuthority } from "../authority/authority"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../platform/auth/auth"
+import type { ProjectAction, WorkspaceAuthority } from "../platform/auth/authority"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../documents/local-managed"
 import {
   createLocalRepositoryFileAuthority,
@@ -34,7 +34,7 @@ import {
 } from "../documents/index-store"
 import type { DocumentIndexEntry } from "../documents/index-store"
 import { setDocumentChangedSink, subscribeDocumentEvents } from "../documents/backend"
-import { ClaxedoDB } from "../adapters/storage/db"
+import { ClaxedoDB } from "../platform/db/db"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./documents"
 import { peerAddressStamp } from "./local-only-projection"
 import {

@@ -2,10 +2,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import type { SessionMeta } from "../session/meta"
-import type { SessionWriteMode } from "../governance/architecture"
-import { createDurableSessionLog } from "./durable-session-log"
+import type { SessionWriteMode } from "../platform/governance/architecture"
+import { createDurableSessionLog } from "../platform/auth/durable-session-log"
 import { createProjectionStore } from "./projection-store"
-import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "./auth"
+import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "../platform/auth/auth"
 import {
   ControlPlaneCompositionError,
   createControlPlaneServices,
@@ -908,7 +908,6 @@ describe("control-plane services", () => {
     const supervisorOptions = await import("../workspace/supervisor/options")
     supervisor.configureWorkspaceSupervisor({
       server_url: "http://127.0.0.1:0",
-      opencode_url: "http://127.0.0.1:0",
       default_sandbox_driver: "daytona",
     })
     expect(supervisorOptions.needWorkspaceSupervisorOptions().default_sandbox_driver).toBe("daytona")

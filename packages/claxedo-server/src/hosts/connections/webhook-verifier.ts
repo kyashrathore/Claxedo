@@ -11,7 +11,7 @@ import type { ControlPlaneCredentials } from "../../authority/services"
 import {
   hostedCredentialsEnabled,
   hostedOrgCredentials,
-} from "../../authority/worker-credentials"
+} from "../../platform/auth/worker-credentials"
 
 type Query = FunctionReference<"query">
 const api = anyApi as unknown as {

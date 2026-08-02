@@ -1,8 +1,8 @@
 import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
 import type { RelayTargetLookup } from "../routes/internal-relay"
 import type { ControlPlaneTelemetry } from "./services"
-import { emitSandboxLeaseClosed } from "../telemetry/metering"
-import { controlPlaneTimeoutMs, withTimeout } from "./request-timeout"
+import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
+import { controlPlaneTimeoutMs, withTimeout } from "../platform/auth/request-timeout"
 
 /**
  * Neutral resolver contract for a workspace's current user-hosted host. The

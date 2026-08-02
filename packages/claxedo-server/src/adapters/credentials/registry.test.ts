@@ -28,7 +28,7 @@ const {
 } = await import("./registry")
 
 // Force DB initialization
-const { ClaxedoDB } = await import("../storage/db")
+const { ClaxedoDB } = await import("../../platform/db/db")
 const { piCredentialProviderIDs, piRegistryCredentialProvider, piRegistryProviderConnected } = await import("../../adapters/credentials/pi-credentials")
 ClaxedoDB.Drizzle() // ensure initialized
 

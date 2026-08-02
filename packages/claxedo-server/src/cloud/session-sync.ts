@@ -1,5 +1,5 @@
-import { ClaxedoDB, eq } from "../adapters/storage/db"
-import { ClaxedoCloudMessageTable } from "../adapters/storage/cloud-session.sql"
+import { ClaxedoDB, eq } from "../platform/db/db"
+import { ClaxedoCloudMessageTable } from "../platform/db/cloud-session.sql"
 import type { Workspace } from "../workspace/store"
 
 function now() {

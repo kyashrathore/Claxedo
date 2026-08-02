@@ -4,7 +4,7 @@ import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "..
 import { putCredential, deleteCredentialsByProvider } from "../../adapters/credentials/registry"
 import { fanOutConfig } from "../../config-fanout"
 import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"
-import { sandboxFetch } from "../../http/sandbox-target-fetch"
+import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
 import { listProjects, resolveWorkspace } from "../../workspace/store"
 import { controlPlaneRouteAuth } from "../control-plane-route-auth"
 import { errorBody } from "../http"
@@ -15,10 +15,6 @@ import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, pr
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./proxy"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
 import { PI_LAUNCH_PROVIDERS } from "../../adapters/credentials/pi-credentials"
-
-// Back-compat: local callers/tests configure the compat transport by URL; this
-// maps onto the engine transport as an explicit external-URL opt-in.
-export { configureOpenCodeCompat } from "../../opencode/engine"
 
 function version(options: OpenCodeCompatRouteOptions) {
   return options.env?.npm_package_version || "1.0.0"

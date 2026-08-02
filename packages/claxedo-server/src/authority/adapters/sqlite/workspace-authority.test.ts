@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
-import type { SignedControlPlaneAuth } from "../../auth"
+import type { SignedControlPlaneAuth } from "../../../platform/auth/auth"
 import { createSqliteWorkspaceAuthority, localControlPlaneAuth } from "./workspace-authority"
 import { ensurePersonalOrg, ensureProject, openAuthorityDb, upsertUser } from "./workspace-authority-store"
 

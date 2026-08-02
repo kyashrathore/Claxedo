@@ -12,7 +12,7 @@ import {
 } from "@claxedo/agent-extensions"
 import { loadAgentExtensionsCatalog } from "../../hosts/agent-extensions/catalog"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../authority/authority"
+import { requireAuthority } from "../../platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -20,8 +20,8 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../authority/auth"
-import { dataDir } from "../../lib/paths"
+} from "../../platform/auth/auth"
+import { dataDir } from "../../platform/runtime/lib/paths"
 import {
   AgentExtensionConflictError,
   installGitHubAgentExtension,

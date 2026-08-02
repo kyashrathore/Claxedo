@@ -1,6 +1,6 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../auth"
-import type { OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "../../authority"
-import { randomToken } from "../../web-crypto"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../platform/auth/auth"
+import type { OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "../../../platform/auth/authority"
+import { randomToken } from "../../../platform/auth/web-crypto"
 import {
   authorizeProjectForUser,
   authorizeWorkspaceForUser,

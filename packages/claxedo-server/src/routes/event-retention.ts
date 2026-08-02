@@ -1,4 +1,4 @@
-import type { ClaxedoEvent } from "../lib/bus"
+import type { ClaxedoEvent } from "../platform/runtime/lib/bus"
 
 /**
  * SSE replay-retention policy for the CENTRAL event streams

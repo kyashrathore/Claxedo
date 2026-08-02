@@ -10,7 +10,7 @@
 
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import { reportError } from "../../observability/report"
+import { reportError } from "../../platform/telemetry/errors/report"
 import { controlPlaneTimeoutMs, withTimeout } from "../../authority/adapters/convex/timeout"
 import type { SettlementDispatcher } from "../workgraph/settlement-dispatcher"
 import { dispatchWakeLaneNudge, type WakeLaneNamespace } from "../../deployments/hosted-workerd/wake-lane.cf"

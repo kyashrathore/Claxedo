@@ -1,4 +1,4 @@
-import { reportError } from "../../observability/report"
+import { reportError } from "../../platform/telemetry/errors/report"
 
 export type SettlementTenant = {
   organizationId: string

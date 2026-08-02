@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, localOnlyAuthAdapter } from "../auth"
+import { ControlPlaneAuthError, localOnlyAuthAdapter } from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../services"
 
 const mocks = vi.hoisted(() => ({

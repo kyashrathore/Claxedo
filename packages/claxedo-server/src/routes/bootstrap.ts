@@ -7,7 +7,7 @@ import {
 } from "../agent-config"
 import { providerAuthMethods } from "../adapters/provider-auth/service"
 import { listProjects } from "../workspace/store"
-import { dataDir, stateDir } from "../lib/paths"
+import { dataDir, stateDir } from "../platform/runtime/lib/paths"
 import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../opencode/engine"
 import type { ControlPlaneServices } from "../authority/services"
 import {
@@ -19,8 +19,8 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../authority/auth"
-import { requireAuthority } from "../authority/authority"
+} from "../platform/auth/auth"
+import { requireAuthority } from "../platform/auth/authority"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 
 type Options = {

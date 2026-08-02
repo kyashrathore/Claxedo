@@ -6,8 +6,8 @@ import {
   ControlPlaneAuthError,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
-} from "../authority/auth"
-import { claxedoBus, createBus, type ClaxedoEvent } from "../lib/bus"
+} from "../platform/auth/auth"
+import { claxedoBus, createBus, type ClaxedoEvent } from "../platform/runtime/lib/bus"
 
 // Rubric S1: /api/claxedo/events must reject unauthenticated requests when
 // signed cloud auth is enabled, and must remain a pass-through when running

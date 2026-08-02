@@ -1,7 +1,7 @@
-import { defaultHomeRegion, normalizeClaxedoRegion } from "../region"
+import { defaultHomeRegion, normalizeClaxedoRegion } from "../platform/runtime/region"
 import type { Workspace } from "../workspace/store"
-import type { ControlPlaneAuthContext } from "./auth"
-import { requireAuthority } from "./authority"
+import type { ControlPlaneAuthContext } from "../platform/auth/auth"
+import { requireAuthority } from "../platform/auth/authority"
 import type { ControlPlaneServices } from "./services"
 
 class HostedSessionPullError extends Error {

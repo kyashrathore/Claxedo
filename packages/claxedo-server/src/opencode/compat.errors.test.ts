@@ -13,7 +13,8 @@ const prev = {
 process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
-const { configureOpenCodeCompat, OpenCodeCompatRoutes } = await import("../routes/opencode-compat/index")
+const { OpenCodeCompatRoutes } = await import("../routes/opencode-compat/index")
+const { configureOpenCodeEngine } = await import("./engine")
 const { saveCommand } = await import("../agent-config")
 const { ensureWorkspace } = await import("../workspace/store")
 
@@ -23,7 +24,7 @@ const originalFetch = globalThis.fetch
 
 afterEach(async () => {
   globalThis.fetch = originalFetch
-  configureOpenCodeCompat("http://127.0.0.1:4096")
+  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {
@@ -147,7 +148,7 @@ describe("opencode compat error model", () => {
   })
 
   test("provider endpoints fall back when central opencode is down", async () => {
-    configureOpenCodeCompat("http://127.0.0.1:1")
+    configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
 
     const provider = await app.request("/provider?runner=opencode")
     const providerAuth = await app.request("/provider/auth?runner=opencode")
@@ -177,7 +178,7 @@ describe("opencode compat error model", () => {
   })
 
   test("passive compat reads do not access central opencode", async () => {
-    configureOpenCodeCompat("http://127.0.0.1:1")
+    configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
     const touch = vi.fn()
     const passive = new Hono()
     passive.route("/", OpenCodeCompatRoutes({ onOpencodeAccess: touch }))

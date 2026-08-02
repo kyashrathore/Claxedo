@@ -1,7 +1,7 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../authority/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../authority/authority"
-import type { ClaxedoRegion } from "../../region"
+import { requireAuthority } from "../../platform/auth/authority"
+import type { ClaxedoRegion } from "../../platform/runtime/region"
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace, type Workspace } from "../../workspace/store"
 import {

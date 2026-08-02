@@ -13,7 +13,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
-import { createApp } from "./server.ts"
+import { createApp } from "./deployments/local/server"
 import { opencodeRequest } from "./opencode/engine.ts"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
@@ -288,7 +288,6 @@ const opencode = await forbiddenOpencodeServer()
 
 configureWorkspaceSupervisor({
   server_url: backendUrl,
-  opencode_url: opencode.url,
 })
 
 const workspace = await ensureWorkspace({

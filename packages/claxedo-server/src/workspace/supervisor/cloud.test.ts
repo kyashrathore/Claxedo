@@ -15,7 +15,7 @@
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
-import { claxedoBus, type ClaxedoEvent } from "../../lib/bus"
+import { claxedoBus, type ClaxedoEvent } from "../../platform/runtime/lib/bus"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -582,7 +582,7 @@ vi.mock("../../agent-config", () => ({
   getRuntimeConfigSnapshot: (...args: unknown[]) => (mockGetRuntimeConfigSnapshot as any)(...args),
 }))
 
-vi.mock("../../adapters/storage/prepared-image.sql", () => ({
+vi.mock("../../platform/db/prepared-image.sql", () => ({
   ClaxedoPreparedImageTable: {},
   ClaxedoRuntimeSnapshotTable: {},
   getPreparedImage: vi.fn(() => undefined),
@@ -693,7 +693,6 @@ describe("workspace-supervisor", () => {
 
     supervisor.configureWorkspaceSupervisor({
       server_url: "http://localhost:3000",
-      opencode_url: "http://localhost:4444",
       relay_url: "https://relay.example.test",
     })
   })
@@ -1129,7 +1128,6 @@ describe("workspace-supervisor", () => {
     test("local managed cloud runtime can start direct unsigned without relay auth", async () => {
       supervisor.configureWorkspaceSupervisor({
         server_url: "http://localhost:3000",
-        opencode_url: "http://localhost:4444",
       })
 
       await supervisor.ensureSupervisorSandbox("ws-missing-relay-auth")
@@ -1143,7 +1141,6 @@ describe("workspace-supervisor", () => {
     test("non-local managed cloud runtime fails closed when relay auth verification cannot be provisioned", async () => {
       supervisor.configureWorkspaceSupervisor({
         server_url: "https://control.example.test",
-        opencode_url: "https://app.example.test",
       })
 
       await expect(supervisor.ensureSupervisorSandbox("ws-missing-relay-auth")).rejects.toThrow(
@@ -1646,7 +1643,6 @@ describe("workspace-supervisor: expected wake behavior", () => {
     })
     supervisor.configureWorkspaceSupervisor({
       server_url: "http://localhost:3000",
-      opencode_url: "http://localhost:4444",
       relay_url: "https://relay.example.test",
     })
   })

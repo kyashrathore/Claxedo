@@ -1,4 +1,4 @@
-import type { SignedControlPlaneAuth } from "../../../auth"
+import type { SignedControlPlaneAuth } from "../../../../platform/auth/auth"
 import { convexApi } from "./api"
 import { requireAllowed, requireExecutor, requireServiceToken } from "./executor"
 import type { ConvexAuthorityInput } from "./types"

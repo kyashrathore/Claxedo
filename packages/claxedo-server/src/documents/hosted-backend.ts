@@ -5,8 +5,8 @@ import {
   hostedManagedRelativePath,
   type R2BucketBinding,
 } from "./hosted-managed"
-import { mintDocumentSessionToken, verifyDocumentSessionToken } from "../authority/runtime-access-token"
-import type { SignedControlPlaneAuth } from "../authority/auth"
+import { mintDocumentSessionToken, verifyDocumentSessionToken } from "../platform/auth/runtime-access-token"
+import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { DocumentIndexEntry } from "./index-store"
 
 export function createHostedDocumentsBackend(

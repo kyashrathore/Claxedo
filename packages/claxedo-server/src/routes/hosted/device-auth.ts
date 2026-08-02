@@ -18,9 +18,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../authority/auth"
-import { isCliRefreshToken, mintCliSessionTokens, refreshCliSessionTokens } from "../../authority/cli-session-token"
-import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../authority/rate-limit"
+} from "../../platform/auth/auth"
+import { isCliRefreshToken, mintCliSessionTokens, refreshCliSessionTokens } from "../../platform/auth/cli-session-token"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 
 export type HostedDeviceAuthProvider = {
   issuer: string

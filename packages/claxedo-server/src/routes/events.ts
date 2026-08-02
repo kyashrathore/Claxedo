@@ -1,6 +1,6 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { claxedoBus, type ClaxedoEvent } from "../lib/bus"
+import { claxedoBus, type ClaxedoEvent } from "../platform/runtime/lib/bus"
 import type { Context } from "hono"
 import {
   ControlPlaneAuthError,
@@ -9,7 +9,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../authority/auth"
+} from "../platform/auth/auth"
 import { isLoopbackLocalRequest } from "./local-only-projection"
 
 // The per-event visibility predicate lives in the Worker-safe `event-visibility`

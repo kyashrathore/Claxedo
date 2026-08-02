@@ -1,6 +1,6 @@
 import { importJWK } from "jose"
 import { createWorkspaceRelayBun, createWorkspaceRelayDirectory } from "@claxedo/workspace-relay"
-import { getLease } from "./adapters/storage/workspace-lease.sql.ts"
+import { getLease } from "./platform/db/workspace-lease.sql"
 import { resolveWorkspace } from "./workspace/store/index.ts"
 import { sandboxLeaseUrl } from "./adapters/sandbox/stores/sqlite-supervisor-state.ts"
 

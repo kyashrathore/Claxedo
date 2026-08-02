@@ -1,6 +1,6 @@
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import { defaultHomeRegion } from "../../region"
+import { defaultHomeRegion } from "../../platform/runtime/region"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   AdmissionAgentPlanSchema,

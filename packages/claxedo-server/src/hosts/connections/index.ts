@@ -25,7 +25,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../authority/auth"
+} from "../../platform/auth/auth"
 import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../../routes/local-only-projection"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"

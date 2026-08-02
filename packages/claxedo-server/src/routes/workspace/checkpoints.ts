@@ -1,9 +1,9 @@
 import { Hono } from "hono"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { SignedControlPlaneAuth } from "../../authority/auth"
-import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "../../authority/auth"
-import { requireAuthority } from "../../authority/authority"
-import { sandboxFetch } from "../../http/sandbox-target-fetch"
+import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
+import { requireAuthority } from "../../platform/auth/authority"
+import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "./user-hosted"
 

@@ -1,9 +1,9 @@
 import type { Context } from "hono"
 import { z } from "zod"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../authority/auth"
-import type { ConnectionRateLimiter } from "../../authority/rate-limit"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../authority/authority"
+import { requireAuthority } from "../../platform/auth/authority"
 import { resolveWorkspace } from "../../workspace/store"
 import { startUserHostedWorkspaceTunnel, stopUserHostedWorkspaceTunnel } from "../../user-hosted-tunnel"
 import {

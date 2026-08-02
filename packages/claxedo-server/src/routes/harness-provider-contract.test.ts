@@ -39,7 +39,8 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 mkdirSync(process.env.CLAXEDO_STATE_DIR, { recursive: true })
 
 const { Hono } = await import("hono")
-const { configureOpenCodeCompat, OpenCodeCompatRoutes } = await import("./opencode-compat/index")
+const { OpenCodeCompatRoutes } = await import("./opencode-compat/index")
+const { configureOpenCodeEngine } = await import("../opencode/engine")
 
 const ENGINE = "http://127.0.0.1:65501"
 
@@ -73,7 +74,7 @@ app.route("/", OpenCodeCompatRoutes())
 const originalFetch = globalThis.fetch
 
 beforeEach(() => {
-  configureOpenCodeCompat(ENGINE)
+  configureOpenCodeEngine({ url: ENGINE })
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
     if (url.pathname === "/provider") return Response.json(ENGINE_PROVIDER_CATALOG)
@@ -83,7 +84,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  configureOpenCodeCompat("http://127.0.0.1:4096")
+  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {

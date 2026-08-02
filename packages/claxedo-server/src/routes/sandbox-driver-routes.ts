@@ -10,7 +10,7 @@ import {
   controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-} from "../authority/auth"
+} from "../platform/auth/auth"
 import {
   isSandboxDriverID,
   listSandboxDrivers as listSandboxDriverCatalog,

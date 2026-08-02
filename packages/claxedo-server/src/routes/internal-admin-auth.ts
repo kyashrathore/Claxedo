@@ -1,4 +1,4 @@
-import { timingSafeEqualStrings } from "../authority/web-crypto"
+import { timingSafeEqualStrings } from "../platform/auth/web-crypto"
 
 export function internalAdminAuthorized(request: Request, expected: string | undefined) {
   const header = request.headers.get("authorization")

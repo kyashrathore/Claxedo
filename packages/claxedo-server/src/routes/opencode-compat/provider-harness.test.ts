@@ -23,7 +23,8 @@ const prevDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
-const { configureOpenCodeCompat, OpenCodeCompatRoutes } = await import("./index")
+const { OpenCodeCompatRoutes } = await import("./index")
+const { configureOpenCodeEngine } = await import("../../opencode/engine")
 const { ProviderAuthRoutes } = await import("../provider-auth")
 
 const ENGINE = "http://127.0.0.1:65500"
@@ -43,7 +44,7 @@ app.route("/", OpenCodeCompatRoutes())
 const originalFetch = globalThis.fetch
 
 beforeEach(() => {
-  configureOpenCodeCompat(ENGINE)
+  configureOpenCodeEngine({ url: ENGINE })
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
     if (url.pathname === "/config/providers") return Response.json(ENGINE_CONFIG_PROVIDERS)
@@ -54,7 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  configureOpenCodeCompat("http://127.0.0.1:4096")
+  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {

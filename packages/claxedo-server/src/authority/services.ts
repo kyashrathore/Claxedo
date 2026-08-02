@@ -2,17 +2,17 @@ import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/run
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../adapters/credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../adapters/credentials/discovery"
-import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "./auth"
-import type { DurableSessionLog } from "./durable-session-log"
-import type { SessionWriteMode } from "../governance/architecture"
+import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { DurableSessionLog } from "../platform/auth/durable-session-log"
+import type { SessionWriteMode } from "../platform/governance/architecture"
 import type { ProjectionStore } from "./projection-store"
-import type { WorkspaceAuthority } from "./authority"
-import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "./runtime-access-token"
+import type { WorkspaceAuthority } from "../platform/auth/authority"
+import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../platform/auth/runtime-access-token"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { ClaxedoRegion, ClaxedoRegionMap } from "../region"
+import type { ClaxedoRegion, ClaxedoRegionMap } from "../platform/runtime/region"
 import type { RelayProvider } from "../adapters/relay"
 
-export type { WorkspaceAuthority } from "./authority"
+export type { WorkspaceAuthority } from "../platform/auth/authority"
 
 export class ControlPlaneCompositionError extends Error {
   constructor(

@@ -1,4 +1,4 @@
-import { cleanString as clean } from "../../lib/strings"
+import { cleanString as clean } from "../../platform/runtime/lib/strings"
 import { randomUUID } from "crypto"
 import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import {
@@ -28,11 +28,11 @@ import { emitProvision } from "../../adapters/sandbox/provision-events"
 import { sandboxDriverAuthAsync } from "../../adapters/sandbox/driver-auth"
 import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { Log } from "../../lib/log"
-import { defaultHomeRegion } from "../../region"
+import { Log } from "../../platform/runtime/lib/log"
+import { defaultHomeRegion } from "../../platform/runtime/region"
 import { listPolicies } from "../../network/policy"
 import { resolveSandboxNetworkPolicy } from "../../network/resolve"
-import { insertSnapshot } from "../../adapters/storage/prepared-image.sql"
+import { insertSnapshot } from "../../platform/db/prepared-image.sql"
 import { updateWorkspace } from "../store"
 import {
   configToken,

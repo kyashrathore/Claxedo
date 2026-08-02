@@ -1,4 +1,4 @@
-import { Log } from "../../lib/log"
+import { Log } from "../../platform/runtime/lib/log"
 import type { LocalCredentialItem } from "./sync"
 import type { CredentialProbe } from "./discovery"
 import { CredentialVerificationError, verifyCredential } from "./verify"

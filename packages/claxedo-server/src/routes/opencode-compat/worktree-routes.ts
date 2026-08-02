@@ -5,7 +5,7 @@ import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolv
 import { errorBody } from "../http"
 import { workspaceInput } from "./context"
 import { contains, defaultBranch, gitRun, locate, shell, trees } from "./git"
-import { dataDir } from "../../lib/paths"
+import { dataDir } from "../../platform/runtime/lib/paths"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./worktree"
 import { provisionRegisteredWorktree, WorktreeProvisionError } from "../../workspace/worktree"
 

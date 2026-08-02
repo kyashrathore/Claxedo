@@ -12,16 +12,16 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
-} from "./authority/auth"
+} from "./platform/auth/auth"
 import type { ControlPlaneServices } from "./authority/services"
-import { requireAuthority } from "./authority/authority"
+import { requireAuthority } from "./platform/auth/authority"
 import type { ConnectionTurnCredentials } from "./hosts/connections/turn-credentials"
 import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/session-env"
-import type { UsageLedger } from "./telemetry/metering"
-import type { ProductDeploymentMode } from "./telemetry/product"
+import type { UsageLedger } from "./platform/telemetry/product/metering"
+import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 
 export { createCentralSessionRuntime } from "./central-session-runtime"
-export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./authority/auth"
+export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./platform/auth/auth"
 export { createControlPlaneServices } from "./authority/services"
 export type { ControlPlaneServices } from "./authority/services"
 

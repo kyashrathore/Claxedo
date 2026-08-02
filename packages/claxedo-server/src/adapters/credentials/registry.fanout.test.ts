@@ -18,7 +18,7 @@ const {
   resolveSecretsForScope,
   updateCredentialHealth,
 } = await import("./registry")
-const { ClaxedoDB } = await import("../storage/db")
+const { ClaxedoDB } = await import("../../platform/db/db")
 ClaxedoDB.Drizzle()
 
 describe("credential fanout fence", () => {

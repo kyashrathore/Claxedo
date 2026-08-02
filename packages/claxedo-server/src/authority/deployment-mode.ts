@@ -44,17 +44,15 @@
  */
 
 import type { MiddlewareHandler } from "hono"
-import type { ControlPlaneAuthConfig } from "./auth"
+import type { ControlPlaneAuthConfig } from "../platform/auth/auth"
 import { isLoopbackLocalRequest } from "../routes/local-only-projection"
 
 export const DEPLOYMENT_MODE_ENV = "CLAXEDO_DEPLOYMENT_MODE"
 
 /**
  * Trust posture: how requests are authenticated. Orthogonal to `DeploymentRuntime`.
- * `DeploymentMode` remains as the historical alias for this same axis.
  */
 export type Trust = "local" | "hosted"
-export type DeploymentMode = Trust
 
 /**
  * Execution runtime. Derived at each composition root (worker.ts -> "workerd";
@@ -249,7 +247,7 @@ function allowlisted(method: string, pathname: string): boolean {
 }
 
 export type UnsignedLocalGuardOptions = {
-  mode: DeploymentMode
+  mode: Trust
   authConfig: ControlPlaneAuthConfig
 }
 

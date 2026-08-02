@@ -1,4 +1,4 @@
-import { cleanString as clean } from "../../lib/strings"
+import { cleanString as clean } from "../../platform/runtime/lib/strings"
 import { getCredentialByProvider, resolveSecret } from "../credentials/registry"
 import {
   sandboxDriverAuth,

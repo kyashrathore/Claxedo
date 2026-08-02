@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ClerkVerifier } from "../../authority/auth"
+import type { ClerkVerifier } from "../../platform/auth/auth"
 import { HostedControlRoutes } from "./control"
 
 const authConfig = {

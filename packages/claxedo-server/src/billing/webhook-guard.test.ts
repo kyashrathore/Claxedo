@@ -26,7 +26,7 @@ import {
 } from "./routes"
 import type { BillingStore } from "./store"
 import { signStandardWebhook } from "./standard-webhooks"
-import { createFixedWindowConnectionRateLimiter } from "../authority/rate-limit"
+import { createFixedWindowConnectionRateLimiter } from "../platform/auth/rate-limit"
 
 const SECRET = "polar-test-secret"
 const ENV = {

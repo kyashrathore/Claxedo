@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { localOnlyAuthAdapter } from "./auth"
+import { localOnlyAuthAdapter } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "./services"
 
 // Unit 6 (R4) characterization pins for the CENTRAL storage boundary: the two

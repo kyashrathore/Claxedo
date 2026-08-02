@@ -21,15 +21,15 @@
 
 import { randomUUID } from "crypto"
 import { eq, and, desc, inArray, sql } from "drizzle-orm"
-import { ClaxedoDB } from "../storage/db"
-import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
+import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "../../platform/db/provider-credential.sql"
 import { getBackend } from "./store"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialWrite, CredentialStatus } from "./types"
-import { Log } from "../../lib/log"
+import { Log } from "../../platform/runtime/lib/log"
 import { ensurePresetForProvider, removeAutoPresetForProvider } from "../../network/policy"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
 
-export { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
+export { SINGLE_TENANT_ORG } from "../../platform/db/provider-credential.sql"
 
 const log = Log.create({ service: "credentials-registry" })
 const exclusiveAuthKinds = ["api_key", "oauth_token"] as const

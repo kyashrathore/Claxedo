@@ -11,7 +11,7 @@ import {
   listLeases,
   upsertHold,
   upsertLease,
-} from "../../storage/workspace-lease.sql"
+} from "../../../platform/db/workspace-lease.sql"
 import { createSqliteLeaseStore } from "./sqlite"
 import { sandboxLeaseStatus } from "./lease-status"
 export { sandboxLeaseStatus }

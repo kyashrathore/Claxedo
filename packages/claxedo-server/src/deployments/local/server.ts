@@ -13,16 +13,16 @@ import { createNodeWebSocket } from "@hono/node-ws"
 import { z } from "zod"
 import { optionalGit, setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import type { ProcessObserver } from "@claxedo/workspace-runtime"
-import { capture, initPostHog, shutdownPostHog } from "../../observability/posthog"
-import { initNodeObservability } from "../../observability/node"
-import { reportError } from "../../observability/report"
-import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../http/security-headers"
+import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/errors/posthog"
+import { initNodeObservability } from "../../platform/telemetry/errors/node"
+import { reportError } from "../../platform/telemetry/errors/report"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../platform/http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
 import { eventsHandler } from "../../routes/events"
 import { peerAddressStamp } from "../../routes/local-only-projection"
 import { createConnectionsHost } from "../../hosts/connections"
 import { createConnectionTurnCredentials } from "../../hosts/connections/turn-credentials"
-import { mirrorProcessEvents } from "../../lib/process-events"
+import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../routes/documents"
 import { AgentConfigRoutes } from "../../routes/agent-config/index"
 import { SessionMetaRoutes } from "../../routes/session-meta"
@@ -30,7 +30,7 @@ import { WorkspaceRoutes } from "../../routes/workspace/index"
 import { OpenCodeCompatRoutes } from "../../routes/opencode-compat/index"
 import { resolveHarnessId } from "../../routes/opencode-compat/provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../http/proxy"
+import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../platform/http/proxy"
 import { configureOpencodeMcpSync } from "../../opencode/mcp-sync"
 import {
   configureOpenCodeApplicationTools,
@@ -41,7 +41,7 @@ import {
   opencodeRequest,
 } from "../../opencode/engine"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
-import { claxedoBus, globalBus } from "../../lib/bus"
+import { claxedoBus, globalBus } from "../../platform/runtime/lib/bus"
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
@@ -54,7 +54,7 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
 import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../governance/architecture"
+import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../platform/governance/architecture"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { migrateCredentials } from "../../adapters/credentials/migrate"
 import { CredentialRoutes } from "../../routes/credential"
@@ -73,7 +73,7 @@ import {
   controlPlaneAuthContext,
   ControlPlaneAuthError,
   signedCloudAuthRequested,
-} from "../../authority/auth"
+} from "../../platform/auth/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,
@@ -88,9 +88,9 @@ import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes } from "../../routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "../../routes/internal-relay-local"
 import { BootstrapRoutes } from "../../routes/bootstrap"
-import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../authority/runtime-access-token"
+import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "../../adapters/relay"
-import { sandboxFetch } from "../../http/sandbox-target-fetch"
+import { sandboxFetch } from "../../platform/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
 import {
   ensureWorkspace,
@@ -100,7 +100,7 @@ import {
   resolveWorkspace,
   subscribeLocalWorkspaceChanges,
 } from "../../workspace/store"
-import { defaultHomeRegion, relayEndpointsFromEnv } from "../../region"
+import { defaultHomeRegion, relayEndpointsFromEnv } from "../../platform/runtime/region"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import {
@@ -115,8 +115,8 @@ import {
 } from "../../hosts/workgraph/composition/server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "../../central-session-runtime"
-import { dataDir } from "../../lib/paths"
-import { withDataDirOwnership } from "../../lib/data-dir-owner"
+import { dataDir } from "../../platform/runtime/lib/paths"
+import { withDataDirOwnership } from "../../platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "../../documents/local-backend"
 import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/local-installation-broker"
@@ -128,8 +128,8 @@ import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorksp
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "../../session/meta"
-import { llmTurnRecord, workGraphSessionAttribution } from "../../telemetry/metering"
-import { ClaxedoDB } from "../../adapters/storage/db"
+import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telemetry/product/metering"
+import { ClaxedoDB } from "../../platform/db/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace/local-host"
@@ -914,8 +914,8 @@ export function captureControlPlaneStartupTelemetry(
 }
 
 export function createDefaultLocalControlPlaneServices() {
-  // The Convex adapter owns the authority URL env names (neutral name +
-  // legacy aliases); the composition only threads the resolved presence.
+  // The Convex adapter owns the authority URL env name; the composition only
+  // threads the resolved presence.
   const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
   if (deploymentMode(process.env) === "hosted") {
@@ -1196,10 +1196,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   })
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
-    // opencode_url intentionally NOT forwarded: the supervisor never reads it,
-    // and a 127.0.0.1 URL is meaningless inside a sandbox (the sandbox adapter's
-    // supervised-spawn mode owns the runtime's opencode via SANDBOX env). See
-    // workspace-supervisor-runtime-env.ts — only server_url / relay auth is used.
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
     ...(services.sandbox.defaultDriver ? { default_sandbox_driver: services.sandbox.defaultDriver } : {}),
   })

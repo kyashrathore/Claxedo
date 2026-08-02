@@ -7,12 +7,6 @@ import {
 
 export type WorkspaceSupervisorOptions = {
   server_url: string
-  /**
-   * @deprecated Vestigial. The supervisor never reads this; the sandbox runtime
-   * owns opencode via SANDBOX env in supervised-spawn mode. Optional so embedded
-   * compositions (no local opencode URL) need not forward a meaningless value.
-   */
-  opencode_url?: string
   relay_url?: string
   default_sandbox_driver?: SandboxDriverID
 }

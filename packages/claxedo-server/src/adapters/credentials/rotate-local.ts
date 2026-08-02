@@ -32,8 +32,8 @@
  *    the old KEK, so they count against retiring it.
  */
 
-import { ClaxedoDB } from "../storage/db"
-import { ClaxedoProviderCredentialTable } from "../storage/provider-credential.sql"
+import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoProviderCredentialTable } from "../../platform/db/provider-credential.sql"
 import { getBackend } from "./store"
 import { isEnvelopeBackend } from "./envelope"
 import { listCloudflareCredentialRefs } from "./cloudflare"
@@ -42,7 +42,7 @@ import {
   type EnvelopeRotationEntry,
   type EnvelopeRotationReport,
 } from "./rotate"
-import { Log } from "../../lib/log"
+import { Log } from "../../platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-rotate-local" })
 

@@ -32,8 +32,8 @@
 
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
-import { allowedOriginPatterns } from "../../http/cors-origins"
-import { securityHeaders } from "../../http/security-headers"
+import { allowedOriginPatterns } from "../../platform/http/cors-origins"
+import { securityHeaders } from "../../platform/http/security-headers"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../../routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
@@ -46,18 +46,18 @@ import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
-import { configureCliSessionTokenRegistry } from "../../authority/cli-session-registry"
+import { configureCliSessionTokenRegistry } from "../../platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   createFixedWindowConnectionRateLimiter,
   createLayeredRateLimiter,
   type SharedRateLimitStore,
-} from "../../authority/rate-limit"
-import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../authority/request-guard"
+} from "../../platform/auth/rate-limit"
+import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../platform/auth/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../authority/auth"
-import { deploymentCompatibilityReport } from "../../governance/deployment-compatibility"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../platform/auth/auth"
+import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
@@ -81,7 +81,7 @@ import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/ho
 import { createHostedConnectionsSetup } from "../../hosts/workgraph/hosted-connections-setup"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "../../routes/documents"
 import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-telemetry"
-import { captureProduct, productIdentity } from "../../telemetry/product"
+import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex-store"
 

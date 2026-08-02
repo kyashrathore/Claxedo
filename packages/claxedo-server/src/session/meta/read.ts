@@ -1,9 +1,9 @@
-import { ClaxedoDB, inArray } from "../../adapters/storage/db"
+import { ClaxedoDB, inArray } from "../../platform/db/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
   ClaxedoSessionTagTable,
-} from "../../adapters/storage/session-meta.sql"
+} from "../../platform/db/session-meta.sql"
 import type { SessionAttachment, SessionMeta } from "./types"
 import { host, ids, root, toolSandbox } from "./shape"
 

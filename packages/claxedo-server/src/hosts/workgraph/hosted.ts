@@ -17,7 +17,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../authority/auth"
+} from "../../platform/auth/auth"
 import {
   HostedWorkerCompositionError,
   clean,
@@ -39,9 +39,9 @@ import type { ControlPlaneCredentials } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createConvexWorkGraphOwnerDeletionPort } from "./convex-owner-deletion"
 import { createHostedOwnerDeletionExecution } from "./hosted-owner-deletion-execution"
-import type { WorkspaceAuthority } from "../../authority/authority"
+import type { WorkspaceAuthority } from "../../platform/auth/authority"
 import type { RelayProvider } from "../../adapters/relay"
-import type { ClaxedoRegion } from "../../region"
+import type { ClaxedoRegion } from "../../platform/runtime/region"
 import { createHostedExecutionCapabilities } from "./hosted-execution-capabilities"
 import { anyApi, type FunctionReference } from "convex/server"
 import { workGraphConvexApi } from "./convex-api"
@@ -57,7 +57,7 @@ import {
   type SettlementTenant,
 } from "./settlement-dispatcher"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
-import type { WorkgraphChangedEvent } from "../../lib/bus"
+import type { WorkgraphChangedEvent } from "../../platform/runtime/lib/bus"
 
 // Command types whose successful application enqueues a control-effect outbox
 // row (interrupt_run / finalize_stream / cleanup_stream). These get an

@@ -21,7 +21,7 @@ vi.mock("./opencode/mcp-sync", () => ({
   syncOpencodeMcpConfig: mocks.syncOpencodeMcpConfig,
 }))
 
-vi.mock("./lib/log", () => ({
+vi.mock("./platform/runtime/lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },

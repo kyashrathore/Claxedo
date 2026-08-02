@@ -1,6 +1,6 @@
 import { startServer } from "./server"
-import { getPostHog } from "../../observability/posthog"
-import { reportError } from "../../observability/report"
+import { getPostHog } from "../../platform/telemetry/errors/posthog"
+import { reportError } from "../../platform/telemetry/errors/report"
 
 /**
  * A fatal exception is the one event guaranteed to be lost: the buffered client

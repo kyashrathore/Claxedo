@@ -48,7 +48,7 @@ describe("Documents replacement staleness guard", () => {
         return fs.existsSync(source) ? sourceFiles(source) : []
       })
       .concat(sourceFiles(path.join(repository, "packages/claxedo-app/public/demo")))
-      .filter((file) => !file.includes(`${path.sep}storage${path.sep}claxedo-migration${path.sep}`))
+      .filter((file) => !file.includes(`${path.sep}claxedo-migration${path.sep}`))
       .filter((file) => file !== import.meta.filename)
       .map((file) => ({ relativePath: path.relative(repository, file), source: fs.readFileSync(file, "utf8") }))
 

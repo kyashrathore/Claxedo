@@ -15,7 +15,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../lib/bus"
+import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../platform/runtime/lib/bus"
 
 const root = path.join(realpathSync(os.tmpdir()), `wt-events-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR

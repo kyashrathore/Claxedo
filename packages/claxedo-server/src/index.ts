@@ -35,13 +35,13 @@ export {
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "./authority/auth"
+} from "./platform/auth/auth"
 export {
   hostTunnelTokenSigner,
   runtimeAccessTokenSigner,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "./authority/runtime-access-token"
+} from "./platform/auth/runtime-access-token"
 export {
   createControlPlaneRelayProvider,
   type ControlPlaneRelayProviderOptions,
@@ -113,7 +113,7 @@ export {
   WORKSPACE_DIR,
 } from "@claxedo/sandbox-manager/defaults"
 export { createProjectionStore, type ProjectionStore } from "./authority/projection-store"
-export { createDurableSessionLog, type DurableSessionLog } from "./authority/durable-session-log"
+export { createDurableSessionLog, type DurableSessionLog } from "./platform/auth/durable-session-log"
 export {
   claimChannelDelivery,
   countChannelDeliveriesByUserDay,
@@ -143,9 +143,9 @@ export {
   stopAllUserHostedWorkspaceTunnels,
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel"
-export { initPostHog, shutdownPostHog, capture, getPostHog } from "./observability/posthog"
-export { claxedoBus } from "./lib/bus"
-export type { ClaxedoEvent, PtyInfo } from "./lib/bus"
+export { initPostHog, shutdownPostHog, capture, getPostHog } from "./platform/telemetry/errors/posthog"
+export { claxedoBus } from "./platform/runtime/lib/bus"
+export type { ClaxedoEvent, PtyInfo } from "./platform/runtime/lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"
-export { ClaxedoDB } from "./adapters/storage/db"
-export { dataDir, stateDir } from "./lib/paths"
+export { ClaxedoDB } from "./platform/db/db"
+export { dataDir, stateDir } from "./platform/runtime/lib/paths"

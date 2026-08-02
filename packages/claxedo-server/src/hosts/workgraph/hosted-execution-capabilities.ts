@@ -5,10 +5,10 @@ import {
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
-import type { SignedControlPlaneAuth } from "../../authority/auth"
-import type { WorkspaceAuthority } from "../../authority/authority"
+import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { WorkspaceAuthority } from "../../platform/auth/authority"
 import type { RelayProvider } from "../../adapters/relay"
-import type { ClaxedoRegion } from "../../region"
+import type { ClaxedoRegion } from "../../platform/runtime/region"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"
 
 type HostedExecutionCapabilitiesInput = Readonly<{

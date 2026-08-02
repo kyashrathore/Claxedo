@@ -14,7 +14,7 @@ const centralStoreFiles = [
   "http/session-pull.ts",
   "hosted-session-pull.ts",
   "projection-store.ts",
-  "durable-session-log.ts",
+  "../platform/auth/durable-session-log.ts",
 ]
 
 // Runtime execution-store symbols the central seam must not touch. These live in

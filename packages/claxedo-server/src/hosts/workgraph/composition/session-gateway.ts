@@ -19,7 +19,7 @@ import type { WorkGraphSessionGateway } from "../local-execution"
 import {
   registerWorkGraphSessionAttribution,
   unregisterWorkGraphSessionAttribution,
-} from "../../../telemetry/metering"
+} from "../../../platform/telemetry/product/metering"
 
 type SessionV2WorkGraphGatewayOptions = (Readonly<{
   connections?: undefined

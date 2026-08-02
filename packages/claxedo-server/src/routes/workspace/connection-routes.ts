@@ -4,8 +4,8 @@ import type { ControlPlaneServices } from "../../authority/services"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-} from "../../authority/auth"
-import { createFixedWindowConnectionRateLimiter } from "../../authority/rate-limit"
+} from "../../platform/auth/auth"
+import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { resolveWorkspace } from "../../workspace/store"
 import { isLoopbackLocalRequest } from "../local-only-projection"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "./cloud-connection"

@@ -48,8 +48,8 @@ import {
   llmTurnRecord,
   workGraphSessionAttribution,
   type UsageLedger,
-} from "./telemetry/metering"
-import type { ProductDeploymentMode, ProductIdentity } from "./telemetry/product"
+} from "./platform/telemetry/product/metering"
+import type { ProductDeploymentMode, ProductIdentity } from "./platform/telemetry/product/product"
 
 type SourceChannel = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 

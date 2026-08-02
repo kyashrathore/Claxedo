@@ -267,7 +267,6 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
     const address = await waitForServerAddress(controlPlane)
     configureWorkspaceSupervisor({
       server_url: `http://127.0.0.1:${address.port}`,
-      opencode_url: opencode.url,
     })
 
     const relay = await startRelayFixture({

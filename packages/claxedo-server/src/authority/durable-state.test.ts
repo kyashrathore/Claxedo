@@ -17,8 +17,8 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 const [{ createSqliteCentralStore }, , , { ClaxedoDB }, { createProjectionDedupStore }] = await Promise.all([
   import("./adapters/sqlite/central-store"),
   import("./projection-store"),
-  import("./durable-session-log"),
-  import("../adapters/storage/db"),
+  import("../platform/auth/durable-session-log"),
+  import("../platform/db/db"),
   import("../channels/dedup"),
 ])
 

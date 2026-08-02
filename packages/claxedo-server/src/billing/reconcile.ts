@@ -13,7 +13,7 @@
  * state ever downgrades an org; a reconciliation failure never does.
  */
 
-import { reportPaymentError } from "../observability/report"
+import { reportPaymentError } from "../platform/telemetry/errors/report"
 import { createBillingStore, type BillingStore } from "./store"
 import { customerStateToApplyArgs, type PolarProductConfig } from "./apply-polar-state"
 import {

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter } from "./authority/auth"
+import { localOnlyAuthAdapter } from "./platform/auth/auth"
 import type { ControlPlaneServices } from "./authority/services"
 import type { RuntimeEventEnvelope } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput } from "@claxedo/agent-sdk-runtime"

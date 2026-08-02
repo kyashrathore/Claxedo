@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm"
-import { ClaxedoDB } from "../adapters/storage/db"
-import { ClaxedoChannelRunAuditTable } from "../adapters/storage/channel-run-audit.sql"
-import { ClaxedoChannelStateTable } from "../adapters/storage/channel-delivery.sql"
+import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoChannelRunAuditTable } from "../platform/db/channel-run-audit.sql"
+import { ClaxedoChannelStateTable } from "../platform/db/channel-delivery.sql"
 
 export type ChannelRunAuditInput = {
   sessionId: string

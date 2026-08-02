@@ -1,4 +1,4 @@
-import { dataDir } from "../../lib/paths"
+import { dataDir } from "../../platform/runtime/lib/paths"
 
 /**
  * Default `dataRoot` to the server's data dir.

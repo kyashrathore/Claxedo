@@ -6,7 +6,7 @@ import {
   type SessionHarness as AgentSessionHarness,
   normalizeHarnessIdentity,
 } from "@claxedo/agent-sdk-runtime"
-import { dataDir } from "../../lib/paths"
+import { dataDir } from "../../platform/runtime/lib/paths"
 import { defaultHarness, type UserAgentConfig } from "../../agent-config"
 
 export type SessionHarness = NonNullable<UserAgentConfig["harness"]>
@@ -38,10 +38,6 @@ function filePath(root = rootDir()) {
   return path.join(root, "session-harnesses.json")
 }
 
-function legacyFilePath(root = rootDir()) {
-  return path.join(root, "session-runners.json")
-}
-
 function key(workspaceId: string, sessionId: string) {
   return `${workspaceId}:${sessionId}`
 }
@@ -63,26 +59,15 @@ function load() {
   if (previous && loadedAt - cacheLoadedAt < CACHE_TTL_MS) return previous
   try {
     const next = new Map<string, Row>()
-    const file = filePath(root)
-    const legacyFile = legacyFilePath(root)
-    const rows = JSON.parse(fs.readFileSync(fs.existsSync(file) ? file : legacyFile, "utf8")) as Array<Row | {
+    const rows = JSON.parse(fs.readFileSync(filePath(root), "utf8")) as Array<Row | {
       workspaceId: string
       sessionId: string
-      runner?: unknown
       harness?: AgentSessionHarness
       updatedAt?: number
     }>
     for (const row of rows) {
       if (!row?.workspaceId || !row?.sessionId) continue
-      const config = "config" in row
-        ? row.config?.harness
-          ? row.config
-          : legacyConfig((row.config as { runner?: unknown } | undefined)?.runner)
-        : row.harness
-        ? { harness: row.harness }
-        : row.runner
-        ? legacyConfig(row.runner)
-        : undefined
+      const config = "config" in row ? row.config : row.harness ? { harness: row.harness } : undefined
       if (!config?.harness?.id) continue
       next.set(key(row.workspaceId, row.sessionId), {
         workspaceId: row.workspaceId,
@@ -116,22 +101,6 @@ export function normalize(input: SessionHarness): SessionHarness {
     auth: {},
     harness: input,
   })
-}
-
-function legacyConfig(input: unknown): SessionConfig | undefined {
-  const identity = normalizeHarnessIdentity(input)
-  if (!identity) return
-  const row = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {}
-  return {
-    harness: {
-      id: identity.id,
-      access: identity.access,
-      ...(typeof row.binary === "string" ? { connection: { kind: "process" as const, binary: row.binary } } : {}),
-    },
-    ...(typeof row.model === "string" ? { model: { providerID: identity.id, modelID: row.model } } : {}),
-    variant: null,
-    agent: null,
-  }
 }
 
 export function getSessionConfig(workspaceId: string, sessionId: string) {

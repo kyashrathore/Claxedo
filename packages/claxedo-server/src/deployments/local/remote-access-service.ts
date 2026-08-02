@@ -1,6 +1,6 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../authority/auth"
-import type { WorkspaceAuthority } from "../../authority/authority"
-import type { HostTunnelTokenSigner } from "../../authority/runtime-access-token"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { WorkspaceAuthority } from "../../platform/auth/authority"
+import type { HostTunnelTokenSigner } from "../../platform/auth/runtime-access-token"
 import type { RemoteAccessService } from "../../routes/remote-access"
 import type { LocalHostIdentity } from "../../routes/workspace/local-host"
 
