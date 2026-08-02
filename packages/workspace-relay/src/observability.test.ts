@@ -38,7 +38,7 @@ describe("relayTelemetryOptions", () => {
     expect(relayTelemetryOptions({ ...ON, POSTHOG_KEY: "phc_fallback" })).toEqual({
       key: "phc_fallback",
       host: "https://us.i.posthog.com",
-      tags: { unit: "relay", deployment_mode: "self-host" },
+      tags: { unit: "relay", deployment_mode: "local" },
     })
   })
 
@@ -86,9 +86,9 @@ describe("relayTelemetryOptions", () => {
     expect(relayTelemetryOptions(base)?.release).toBeUndefined()
   })
 
-  test("deployment mode: absent → self-host (D9 default), value lowercased", () => {
+  test("deployment mode: absent → local (D9 default), value lowercased", () => {
     const base = { ...ON, CLAXEDO_POSTHOG_KEY: "phc_abc123" }
-    expect(relayTelemetryOptions(base)?.tags.deployment_mode).toBe("self-host")
+    expect(relayTelemetryOptions(base)?.tags.deployment_mode).toBe("local")
     expect(
       relayTelemetryOptions({ ...base, CLAXEDO_DEPLOYMENT_MODE: "HOSTED" })?.tags.deployment_mode,
     ).toBe("hosted")

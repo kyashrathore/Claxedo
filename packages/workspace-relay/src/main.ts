@@ -65,7 +65,7 @@ function requireEnv(name: string) {
  * host — NOT the legacy `app.posthog.com` default some SDKs ship). Release =
  * git SHA passed by the D11 deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA`
  * accepted as alias); captures are tagged unit=relay + deployment_mode
- * (absent → "self-host", mirroring D9's default).
+ * (absent → "local", mirroring D9's default).
  *
  * `posthog-node` runs fine on Bun (`Bun.serve`), unlike the Cloudflare
  * Worker, which keeps it off its import graph entirely (see worker.ts).
@@ -108,7 +108,7 @@ export function relayTelemetryOptions(env: RelayObservabilityEnv): RelayTelemetr
     ...(release ? { release } : {}),
     tags: {
       unit: "relay",
-      deployment_mode: clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "self-host",
+      deployment_mode: clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local",
     },
   }
 }

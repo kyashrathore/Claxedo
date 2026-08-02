@@ -134,13 +134,30 @@ fly deploy -c <app>.fly.toml --remote-only
 open https://<app>.fly.dev
 ```
 
+## Two axes: who operates it, and how it authenticates
+
+**Self-hosting** — what this guide covers — means *you* operate the deployment.
+It says nothing about how requests are authenticated. That is a separate axis,
+`CLAXEDO_DEPLOYMENT_MODE`:
+
+| Value | Meaning |
+| --- | --- |
+| `local` (default when unset) | unsigned, loopback-only. Zero config. |
+| `hosted` | signed multi-tenant auth. Fails closed at boot if misconfigured. |
+
+So a self-hosted Fly machine can run in **either** mode: `local` for a private
+single-user box, or `hosted` once you put it on a public domain with signed auth.
+"Self-hosted" and "hosted" are not opposites — they answer different questions.
+
+The retired value `self-host` is rejected at boot with an error naming `local`.
+
 ## The default: unsigned, single-user
 
 Out of the box the instance is unsigned and single-user. The SQLite workspace
 authority is the default backend, so there is **no Convex and no Clerk** and no
 extra secrets to provision. `CLAXEDO_DEPLOYMENT_MODE` is deliberately left
-unset — absent mode means self-host by design; never set it to `hosted` on a
-self-host machine.
+unset — absent mode means `local` by design. Set it to `hosted` only once signed
+auth is fully configured.
 
 Volume and data:
 

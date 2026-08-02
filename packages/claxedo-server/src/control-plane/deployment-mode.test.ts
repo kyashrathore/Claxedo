@@ -57,13 +57,13 @@ function guardedApp(options: Parameters<typeof unsignedLocalRequestGuard>[0]) {
 
 describe("deploymentMode", () => {
   test("defaults to self-host when absent or blank (zero-config self-host DX)", () => {
-    expect(deploymentMode({})).toBe("self-host")
-    expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "" })).toBe("self-host")
-    expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "  " })).toBe("self-host")
+    expect(deploymentMode({})).toBe("local")
+    expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "" })).toBe("local")
+    expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "  " })).toBe("local")
   })
 
   test("accepts the two explicit modes (trimmed, case-insensitive)", () => {
-    expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "self-host" })).toBe("self-host")
+    expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "local" })).toBe("local")
     expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: "hosted" })).toBe("hosted")
     expect(deploymentMode({ [DEPLOYMENT_MODE_ENV]: " Hosted " })).toBe("hosted")
   })
@@ -71,7 +71,7 @@ describe("deploymentMode", () => {
   test("throws on unknown values instead of silently falling open", () => {
     expect(() => deploymentMode({ [DEPLOYMENT_MODE_ENV]: "production" })).toThrowError(DeploymentModeError)
     expect(() => deploymentMode({ [DEPLOYMENT_MODE_ENV]: "production" })).toThrowError(
-      /must be "self-host" or "hosted"; got "production"/,
+      /must be "local" or "hosted"; got "production"/,
     )
   })
 })
@@ -182,7 +182,7 @@ describe("hosted boot requirements (fail-closed boot)", () => {
 
 describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () => {
   test("self-host unsigned: loopback requests keep working exactly as today", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: unsignedLocalConfig })
+    const app = guardedApp({ mode: "local", authConfig: unsignedLocalConfig })
     for (const url of [
       "http://127.0.0.1/api/control/sessions",
       "http://localhost:3001/api/claxedo/agent-config/commands",
@@ -195,7 +195,7 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
   })
 
   test("self-host unsigned: non-loopback requests are denied by default (403)", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: unsignedLocalConfig })
+    const app = guardedApp({ mode: "local", authConfig: unsignedLocalConfig })
     for (const url of [
       "http://cp.example.test/api/control/sessions",
       "http://192.168.1.20:3001/session",
@@ -208,7 +208,7 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
   })
 
   test("self-host unsigned: loopback Host with a non-loopback Origin stays denied (browser cross-origin posture preserved)", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: unsignedLocalConfig })
+    const app = guardedApp({ mode: "local", authConfig: unsignedLocalConfig })
     const res = await app.request("http://127.0.0.1/api/control/sessions", {
       headers: { origin: "https://evil.example.test" },
     })
@@ -216,7 +216,7 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
   })
 
   test("self-host unsigned: allowlisted machine/callback routes stay reachable non-loopback (their own gates apply)", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: unsignedLocalConfig })
+    const app = guardedApp({ mode: "local", authConfig: unsignedLocalConfig })
     for (const [method, url] of [
       ["GET", "http://cp.example.test/api/claxedo/health"],
       ["GET", "http://cp.example.test/global/health"],
@@ -232,7 +232,7 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
   })
 
   test("self-host unsigned: the allowlist does not leak beyond its exact/method shape", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: unsignedLocalConfig })
+    const app = guardedApp({ mode: "local", authConfig: unsignedLocalConfig })
     // POST to a GET-only exact entry, and a non-allowlisted sibling path.
     for (const [method, url] of [
       ["POST", "http://cp.example.test/api/claxedo/health"],
@@ -245,7 +245,7 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
   })
 
   test("self-host misconfigured: non-loopback answers 503 (signed requested but broken), loopback still passes", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: misconfiguredConfig })
+    const app = guardedApp({ mode: "local", authConfig: misconfiguredConfig })
     const remote = await app.request("http://cp.example.test/api/control/sessions")
     expect(remote.status).toBe(503)
     expect(await remote.json()).toMatchObject({ error: { code: "signed_cloud_auth_disabled" } })
@@ -254,7 +254,7 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
   })
 
   test("signed deployment: the guard passes through; per-route bearer verification stays the gate", async () => {
-    const app = guardedApp({ mode: "self-host", authConfig: enabledConfig })
+    const app = guardedApp({ mode: "local", authConfig: enabledConfig })
     expect((await app.request("http://cp.example.test/api/control/sessions")).status).toBe(200)
     const hosted = guardedApp({ mode: "hosted", authConfig: enabledConfig })
     expect((await hosted.request("http://cp.example.test/api/control/sessions")).status).toBe(200)
@@ -361,7 +361,7 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
   test("invalid mode value refuses to boot loudly", async () => {
     const { createDefaultLocalControlPlaneServices } = await import("../server")
     await withEnv({ CLAXEDO_DEPLOYMENT_MODE: "prod" }, () => {
-      expect(() => createDefaultLocalControlPlaneServices()).toThrowError(/must be "self-host" or "hosted"/)
+      expect(() => createDefaultLocalControlPlaneServices()).toThrowError(/must be "local" or "hosted"/)
     })
   })
 })

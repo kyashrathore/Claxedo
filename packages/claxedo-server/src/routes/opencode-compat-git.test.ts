@@ -248,7 +248,7 @@ describe("the worktree surface is unreachable from off-box in unsigned self-host
     const inner = new Hono()
     inner.use(
       unsignedLocalRequestGuard({
-        mode: "self-host",
+        mode: "local",
         authConfig: { enabled: false, mode: "local-only", reason: "signed/cloud auth is disabled" },
       }),
     )

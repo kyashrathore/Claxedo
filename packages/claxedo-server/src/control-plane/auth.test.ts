@@ -425,7 +425,7 @@ describe("deployment mode matrix", () => {
   })
 
   test("absent mode = self-host: auth config resolution is byte-for-byte today's behavior", async () => {
-    expect(deploymentMode({})).toBe("self-host")
+    expect(deploymentMode({})).toBe("local")
     // Zero-config env resolves the exact same unsigned-local pass-through.
     const config = controlPlaneAuthConfig({})
     expect(config).toEqual({
@@ -439,7 +439,7 @@ describe("deployment mode matrix", () => {
     })
   })
 
-  function guardedApp(mode: "self-host" | "hosted", authConfig: Parameters<typeof unsignedLocalRequestGuard>[0]["authConfig"]) {
+  function guardedApp(mode: "local" | "hosted", authConfig: Parameters<typeof unsignedLocalRequestGuard>[0]["authConfig"]) {
     const app = new Hono()
     app.use(unsignedLocalRequestGuard({ mode, authConfig }))
     app.all("*", (c) => c.json({ served: true }))
@@ -447,7 +447,7 @@ describe("deployment mode matrix", () => {
   }
 
   test("global guard rejects non-loopback unsigned in self-host; loopback keeps working", async () => {
-    const app = guardedApp("self-host", {
+    const app = guardedApp("local", {
       enabled: false,
       mode: "local-only",
       reason: "signed/cloud auth is disabled",

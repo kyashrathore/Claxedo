@@ -63,13 +63,18 @@ export function resolveRelease(env: ObservabilityEnv): string | undefined {
 }
 
 /**
- * Deployment-mode tag (D9). Absent env = "self-host", mirroring
+ * Deployment trust tag (D9). Absent env = "local", mirroring
  * control-plane/deployment-mode.ts's default — the tag must never throw, so
  * unlike deploymentMode() an unrecognized value is passed through verbatim
  * rather than rejected (observability reports posture, it does not enforce it).
+ *
+ * That pass-through is precisely why this function had to be renamed in the
+ * SAME commit as the enum: left behind, it would have kept emitting the retired
+ * "self-host" tag forever — corrupting telemetry silently instead of failing
+ * loudly like the boot path does.
  */
 export function deploymentModeTag(env: ObservabilityEnv): string {
-  return clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "self-host"
+  return clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "local"
 }
 
 /**
@@ -121,6 +126,19 @@ export type ObservabilityOptions = {
   tags: Record<string, string>
 }
 
+/**
+ * Execution runtime for this unit. DERIVED from the unit, never read from the
+ * environment — the Worker is the only workerd unit, everything else is Node.
+ * Adds no operator surface.
+ *
+ * Paired with `deployment_mode` (trust) this makes `node-hosted` and
+ * `workerd-hosted` distinguishable in telemetry. "hosted" alone says nothing
+ * about where code runs: hosted-app.ts serves both.
+ */
+export function deploymentRuntimeTag(unit: ObservabilityUnit): "node" | "workerd" {
+  return unit === "worker" ? "workerd" : "node"
+}
+
 export function observabilityOptions(env: ObservabilityEnv, unit: ObservabilityUnit): ObservabilityOptions {
   const key = resolveTelemetryKey(env)
   const release = resolveRelease(env)
@@ -132,6 +150,7 @@ export function observabilityOptions(env: ObservabilityEnv, unit: ObservabilityU
     tags: {
       unit,
       deployment_mode: deploymentModeTag(env),
+      deployment_runtime: deploymentRuntimeTag(unit),
       ...(release ? { release } : {}),
     },
   }

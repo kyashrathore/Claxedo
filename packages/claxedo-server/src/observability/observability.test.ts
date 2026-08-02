@@ -10,6 +10,7 @@ import {
 } from "./config"
 import { initNodeObservability } from "./node"
 import { initPostHog, shutdownPostHog } from "../posthog"
+import { deploymentMode } from "../control-plane/deployment-mode"
 
 /**
  * Observability gates.
@@ -82,7 +83,12 @@ describe("observabilityOptions", () => {
     expect(options.key).toBe("phc_abc")
     expect(options.release).toBe("abc123")
     expect(options.host).toBe("https://us.i.posthog.com")
-    expect(options.tags).toEqual({ unit: "worker", deployment_mode: "hosted", release: "abc123" })
+    expect(options.tags).toEqual({
+      unit: "worker",
+      deployment_mode: "hosted",
+      deployment_runtime: "workerd",
+      release: "abc123",
+    })
   })
 })
 
@@ -164,13 +170,28 @@ describe("resolveRelease", () => {
 })
 
 describe("deploymentModeTag", () => {
-  test("absent mode = self-host (D9 default); hosted passes through lowercased", () => {
-    expect(deploymentModeTag({})).toBe("self-host")
+  test("absent mode = local (D9 default); hosted passes through lowercased", () => {
+    expect(deploymentModeTag({})).toBe("local")
     expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: "HOSTED" })).toBe("hosted")
   })
 
   test("never throws on unrecognized values (reports posture, does not enforce it)", () => {
     expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: "banana" })).toBe("banana")
+  })
+
+  test("its default agrees with the Trust enum, so a rename cannot silently skew telemetry", () => {
+    // This tag pass-through is deliberate (it must never throw), which is
+    // exactly what makes it dangerous during a rename: left behind, it would
+    // keep emitting a retired value forever while the boot path failed loudly.
+    // Pin the default to a value deploymentMode() actually accepts.
+    const tagDefault = deploymentModeTag({})
+    expect(deploymentMode({ CLAXEDO_DEPLOYMENT_MODE: tagDefault })).toBe(tagDefault)
+
+    // And every Trust value must survive the round trip.
+    for (const trust of ["local", "hosted"] as const) {
+      expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: trust })).toBe(trust)
+      expect(deploymentMode({ CLAXEDO_DEPLOYMENT_MODE: trust })).toBe(trust)
+    }
   })
 })
 
@@ -236,6 +257,7 @@ describe("initNodeObservability", () => {
     expect(postHogMock.captureException).toHaveBeenCalledWith(err, "system", {
       unit: "server",
       deployment_mode: "hosted",
+      deployment_runtime: "node",
       release: "deadbeef",
       source: "server_route",
       path: "/x",
@@ -249,7 +271,13 @@ describe("initNodeObservability", () => {
     // Exact key set: base tags + caller tags/extra. If an SDK upgrade or a
     // future integration ever starts attaching request context (headers,
     // cookies, bodies — where live credentials ride), this fails loudly.
-    expect(Object.keys(properties).sort()).toEqual(["deployment_mode", "path", "source", "unit"])
+    expect(Object.keys(properties).sort()).toEqual([
+      "deployment_mode",
+      "deployment_runtime",
+      "path",
+      "source",
+      "unit",
+    ])
     for (const forbidden of ["request", "headers", "cookies", "query_string", "data", "body"]) {
       expect(properties).not.toHaveProperty(forbidden)
     }
@@ -261,7 +289,8 @@ describe("initNodeObservability", () => {
     reportPaymentError(err, { tags: { user_id: "user_42" } })
     expect(postHogMock.captureException).toHaveBeenCalledWith(err, "user_42", {
       unit: "server",
-      deployment_mode: "self-host",
+      deployment_mode: "local",
+      deployment_runtime: "node",
       user_id: "user_42",
       page_class: "payment",
     })

@@ -1,13 +1,25 @@
 /**
- * Explicit deployment mode and the global unsigned-local gate.
+ * Explicit deployment trust posture and the global unsigned-local gate.
  *
- * Today "hosted" is an emergent property of which env vars happen to be set:
- * a hosted deployment that LOSES `CLAXEDO_SIGNED_CLOUD_AUTH` boots green and
- * serves every request as the trusted unsigned-local owner. This module makes
- * the deployment's identity an explicit fact the system knows:
+ * TWO ORTHOGONAL AXES. Conflating them is how this file's vocabulary drifted:
  *
- * - `CLAXEDO_DEPLOYMENT_MODE=self-host` (default when absent) keeps today's
- *   behavior bit-for-bit: zero-config boot, unsigned-local, loopback-guarded.
+ * - TRUST (`local` | `hosted`, this module) — how requests are authenticated.
+ * - RUNTIME (`node` | `workerd`, see `deploymentRuntime`) — where it executes.
+ *
+ * "Self-hosting" is neither: it describes WHO OPERATES the deployment, and is
+ * documentation vocabulary only, never a value here. A user self-hosting on a
+ * public domain with signed auth is `trust=hosted, runtime=node` — a real shape
+ * the old `self-host | hosted` enum could not express, which is why
+ * `public-docs` had to warn operators away from the word "hosted" while
+ * documenting a hosted remote deployment on Fly.
+ *
+ * Today "hosted" is otherwise an emergent property of which env vars happen to
+ * be set: a hosted deployment that LOSES `CLAXEDO_SIGNED_CLOUD_AUTH` boots
+ * green and serves every request as the trusted unsigned-local owner. This
+ * module makes the deployment's identity an explicit fact the system knows:
+ *
+ * - `CLAXEDO_DEPLOYMENT_MODE=local` (default when absent) keeps today's
+ *   behavior bit-for-bit: zero-config boot, unsigned, loopback-guarded.
  *   The OSS quickstart never sets the flag.
  * - `CLAXEDO_DEPLOYMENT_MODE=hosted` fails CLOSED at boot: the composition
  *   refuses to start unless signed auth is fully configured and a workspace
@@ -15,6 +27,10 @@
  *   deployment that cannot authenticate must be DOWN, not open — ordinary
  *   uptime monitoring then converts a lost env var into a visible outage
  *   instead of a silent breach.
+ *
+ * NO BACKWARD COMPATIBILITY: the former `self-host` value is invalid and throws
+ * at boot naming `local`. An accepted-but-deprecated alias would reintroduce
+ * exactly the silent-drift surface this rename removes.
  *
  * The request-time counterpart is `unsignedLocalRequestGuard`: one global
  * middleware at the app-composition root that is the PRIMARY unsigned-local
@@ -33,7 +49,20 @@ import { isLoopbackLocalRequest } from "../routes/local-only-projection"
 
 export const DEPLOYMENT_MODE_ENV = "CLAXEDO_DEPLOYMENT_MODE"
 
-export type DeploymentMode = "self-host" | "hosted"
+/**
+ * Trust posture: how requests are authenticated. Orthogonal to `DeploymentRuntime`.
+ * `DeploymentMode` remains as the historical alias for this same axis.
+ */
+export type Trust = "local" | "hosted"
+export type DeploymentMode = Trust
+
+/**
+ * Execution runtime. Derived at each composition root (worker.ts -> "workerd";
+ * main.ts / hosted-node.ts -> "node"), never read from the environment, so it
+ * adds no operator surface. Exists so `node-hosted` and `workerd-hosted` are
+ * distinguishable — "hosted" alone says nothing about where code runs.
+ */
+export type DeploymentRuntime = "node" | "workerd"
 
 export type DeploymentEnv = Record<string, string | undefined>
 
@@ -56,19 +85,30 @@ function clean(input?: string) {
 }
 
 /**
- * Resolve the deployment mode. Absent/blank = `self-host` (zero-config
- * self-host DX unchanged). Any value other than the two known modes throws:
- * a typo in a deploy manifest must be a boot failure, not a silent fallback
- * to the open posture.
+ * Resolve the trust posture. Absent/blank = `local` (zero-config DX unchanged).
+ * Any other value throws: a typo in a deploy manifest must be a boot failure,
+ * not a silent fallback to the open posture.
+ *
+ * The retired `self-host` value is called out by name in the error, because
+ * that is the one stale value an existing deployment is likely to carry.
  */
-export function deploymentMode(env: DeploymentEnv = process.env): DeploymentMode {
+export function deploymentMode(env: DeploymentEnv = process.env): Trust {
   const raw = clean(env[DEPLOYMENT_MODE_ENV])?.toLowerCase()
-  if (!raw || raw === "self-host") return "self-host"
+  if (!raw || raw === "local") return "local"
   if (raw === "hosted") return "hosted"
+  if (raw === "self-host") {
+    throw new DeploymentModeError(
+      "deployment_mode_invalid",
+      `${DEPLOYMENT_MODE_ENV}="self-host" was renamed to "local". Self-hosting describes who ` +
+        "operates a deployment, not how its requests are authenticated — a self-hosted instance " +
+        'with signed auth is "hosted". Unset the variable, or set it to "local", for the ' +
+        "unsigned loopback-only posture.",
+    )
+  }
   throw new DeploymentModeError(
     "deployment_mode_invalid",
-    `${DEPLOYMENT_MODE_ENV} must be "self-host" or "hosted"; got "${raw}". ` +
-      "Unset it (or set self-host) for the zero-config self-host posture; set hosted only in hosted deploy manifests.",
+    `${DEPLOYMENT_MODE_ENV} must be "local" or "hosted"; got "${raw}". ` +
+      "Unset it (or set local) for the zero-config unsigned posture; set hosted only in hosted deploy manifests.",
   )
 }
 
@@ -119,10 +159,10 @@ export function hostedBootRequirementFailures(
     )
   }
   if (flagEnabled(env.CLAXEDO_EMBEDDED_AUTH)) {
-    // The embedded Better Auth issuer is a SELF-HOST affordance (signed mode
+    // The embedded Better Auth issuer is a LOCAL-trust affordance (signed mode
     // with no hosted storage backend or IdP). In hosted mode it would silently
     // displace the hosted issuer (the composition prefers it): hard conflict.
-    failures.push("embedded self-host auth is enabled (unset CLAXEDO_EMBEDDED_AUTH; hosted mode requires the hosted issuer)")
+    failures.push("embedded local auth is enabled (unset CLAXEDO_EMBEDDED_AUTH; hosted mode requires the hosted issuer)")
   }
   // When hosted credential storage is turned on, the credential backend must resolve to
   // the envelope-encrypted Cloudflare KV path — the store selects KV only when
@@ -173,13 +213,13 @@ type AllowlistEntry = {
   method?: string
   exact?: string
   prefix?: string
-  /** Why this route may be reached by a non-loopback caller in unsigned self-host mode. */
+  /** Why this route may be reached by a non-loopback caller in unsigned local mode. */
   why: string
 }
 
 /**
  * The explicit, auditable allowlist of routes that stay reachable for a
- * NON-loopback caller in unsigned self-host mode. Every entry must carry its
+ * NON-loopback caller in unsigned local mode. Every entry must carry its
  * own gate — the guard is not that gate, it only documents why the route may
  * opt out of it. (Design doc: "an allowlist of exceptions is auditable; a
  * scatter of guards is not.")

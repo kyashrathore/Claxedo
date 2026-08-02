@@ -22,7 +22,7 @@ READ THIS BEFORE TOUCHING CLOUDFLARE — two non-Cloudflare services are mandato
 
 If I cannot supply working Convex and Clerk configuration, stop and tell me — do not start deploying Workers.
 
-THIS BUTTON SERVES THE HOSTED PATH ONLY. packages/claxedo-server/wrangler.toml hardcodes CLAXEDO_DEPLOYMENT_MODE = "hosted" and CLAXEDO_SIGNED_CLOUD_AUTH = "1" in [vars]. An absent deployment mode means self-host by design, and the hosted app refuses to start in that state (hosted_deployment_mode_required). A Convex-free and Clerk-free self-host is a genuinely different deployment shape that this prompt does not cover; say so rather than improvising a hybrid.
+THIS BUTTON SERVES THE HOSTED PATH ONLY. packages/claxedo-server/wrangler.toml hardcodes CLAXEDO_DEPLOYMENT_MODE = "hosted" and CLAXEDO_SIGNED_CLOUD_AUTH = "1" in [vars]. An absent deployment mode means local by design, and the hosted app refuses to start in that state (hosted_deployment_mode_required). A Convex-free and Clerk-free self-hosted install (trust=local) is a genuinely different deployment shape that this prompt does not cover; say so rather than improvising a hybrid.
 
 THE RELEASE IS FOUR ORDERED UNITS. Deploy most-backward-compatible first, and never reorder them.
 

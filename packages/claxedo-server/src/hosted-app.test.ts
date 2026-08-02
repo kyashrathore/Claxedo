@@ -1470,14 +1470,22 @@ describe("hosted shell boot surface", () => {
     expect(() => createHostedApp(plane)).toThrowError(/CLAXEDO_DEPLOYMENT_MODE=hosted/)
   })
 
-  test("refuses to compose when CLAXEDO_DEPLOYMENT_MODE is self-host or invalid", () => {
-    const selfHost = fakePlane()
-    selfHost.env = { CLAXEDO_DEPLOYMENT_MODE: "self-host" }
-    expect(() => createHostedApp(selfHost)).toThrowError(/CLAXEDO_DEPLOYMENT_MODE=hosted/)
+  test("refuses to compose when CLAXEDO_DEPLOYMENT_MODE is local or invalid", () => {
+    const local = fakePlane()
+    local.env = { CLAXEDO_DEPLOYMENT_MODE: "local" }
+    expect(() => createHostedApp(local)).toThrowError(/CLAXEDO_DEPLOYMENT_MODE=hosted/)
 
     const typo = fakePlane()
     typo.env = { CLAXEDO_DEPLOYMENT_MODE: "production" }
-    expect(() => createHostedApp(typo)).toThrowError(/must be "self-host" or "hosted"/)
+    expect(() => createHostedApp(typo)).toThrowError(/must be "local" or "hosted"/)
+  })
+
+  test("rejects the retired self-host value by name, pointing at local", () => {
+    // A stale deploy manifest is the one place "self-host" survives. It must
+    // fail loudly with the replacement named, never fall back to an open posture.
+    const retired = fakePlane()
+    retired.env = { CLAXEDO_DEPLOYMENT_MODE: "self-host" }
+    expect(() => createHostedApp(retired)).toThrowError(/was renamed to "local"/)
   })
 
   test("refuses to compose without signed auth or a workspace authority, naming every missing piece", () => {

@@ -333,11 +333,11 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
     }
   })
 
-  test("says this is the hosted path only, and that absent mode means self-host", async () => {
+  test("says this is the hosted path only, and that absent mode means local", async () => {
     const deploymentMode = await read("packages/claxedo-server/src/control-plane/deployment-mode.ts")
-    expect(deploymentMode).toContain('if (!raw || raw === "self-host") return "self-host"')
+    expect(deploymentMode).toContain('if (!raw || raw === "local") return "local"')
     expect(prompt).toContain("HOSTED PATH ONLY")
-    expect(prompt).toContain("absent deployment mode means self-host")
+    expect(prompt).toContain("absent deployment mode means local")
   })
 
   test("only advertises verification endpoints the hosted app actually registers", async () => {
