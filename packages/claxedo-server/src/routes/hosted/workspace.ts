@@ -51,8 +51,8 @@ import {
   signedOrError,
   txt,
   type WorkspaceRouteOptions,
-} from "../workspace/user-hosted"
-import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../workspace/runtime-token-guards"
+} from "../../workspace/routes/user-hosted"
+import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/routes/runtime-token-guards"
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
 import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"

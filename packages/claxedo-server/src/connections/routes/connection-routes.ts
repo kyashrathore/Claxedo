@@ -14,8 +14,8 @@ import {
   signedOrError,
   userHostedConnectionInfo,
   type WorkspaceRouteOptions,
-} from "../../routes/workspace/user-hosted"
-import { syncWorkspaceAgentExtensionsForSignedUser } from "../../routes/workspace/signed-access"
+} from "../../workspace/routes/user-hosted"
+import { syncWorkspaceAgentExtensionsForSignedUser } from "../../workspace/routes/signed-access"
 
 const refreshConnectionBody = z.object({
   previousJti: z.string().optional(),

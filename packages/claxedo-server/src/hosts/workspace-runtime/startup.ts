@@ -4,7 +4,7 @@ import path from "path"
 let versionCache: string | undefined
 
 export function workspaceRuntimeRoot() {
-  return path.resolve(import.meta.dirname, "../../workspace-runtime")
+  return path.resolve(import.meta.dirname, "../../../../workspace-runtime")
 }
 
 /**
@@ -16,7 +16,7 @@ export function workspaceRuntimeRoot() {
  * it via Claxedo's own boot policy (`runtime-boot.ts`).
  */
 export function claxedoWorkspaceRuntimeEntry() {
-  return path.resolve(import.meta.dirname, "hosts/workspace-runtime/host-entry.ts")
+  return path.resolve(import.meta.dirname, "host-entry.ts")
 }
 
 export function workspaceRuntimeVersion() {

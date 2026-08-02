@@ -13,7 +13,7 @@ import {
   relayRole,
   workspaceOpenAuthorizationError,
   type WorkspaceRouteOptions,
-} from "../../routes/workspace/user-hosted"
+} from "../../workspace/routes/user-hosted"
 
 export async function cloudConnectionInfo(
   services: ControlPlaneServices | undefined,

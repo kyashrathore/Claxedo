@@ -26,7 +26,7 @@ import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes } from "../../agent-config/routes/index"
 import { SessionMetaRoutes } from "../../session/routes/meta-routes"
-import { WorkspaceRoutes } from "../../routes/workspace/index"
+import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "../../opencode/compat-routes/index"
 import { resolveHarnessId } from "../../opencode/compat-routes/provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
@@ -91,7 +91,7 @@ import { BootstrapRoutes } from "../../routes/bootstrap"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "../../adapters/relay"
 import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
-import { WorkspaceCheckpointRoutes } from "../../routes/workspace/checkpoints"
+import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
   ensureWorkspace,
   getWorkspaceByDirectory,
@@ -114,7 +114,7 @@ import {
   requireLocalWorkGraphRepositoryDirectory,
 } from "../../hosts/workgraph/composition/server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
-import { centralModelBackend } from "../../central-session-runtime"
+import { centralModelBackend } from "../../session/runtime"
 import { dataDir } from "../../platform/runtime/lib/paths"
 import { withDataDirOwnership } from "../../platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "../../documents/local-backend"
@@ -132,7 +132,7 @@ import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telem
 import { ClaxedoDB } from "../../platform/db/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
-import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace/local-host"
+import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/routes/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 
 const execFileAsync = promisify(execFile)

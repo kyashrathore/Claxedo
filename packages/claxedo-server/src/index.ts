@@ -6,7 +6,7 @@ export {
   startServer,
   type ControlPlaneStackOptions,
 } from "./deployments/local/server"
-export { createCentralSessionRuntime } from "./central-session-runtime"
+export { createCentralSessionRuntime } from "./session/runtime"
 export {
   ControlPlaneCompositionError,
   createControlPlaneServices,

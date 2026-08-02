@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import fs from "fs"
-import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeVersion } from "./workspace-runtime-startup"
+import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeVersion } from "./startup"
 
 describe("workspace-runtime startup contract", () => {
   test("resolves a semver runtime version for image keying", () => {

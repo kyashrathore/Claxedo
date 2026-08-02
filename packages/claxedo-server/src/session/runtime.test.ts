@@ -1,13 +1,13 @@
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter } from "./platform/auth/auth"
-import type { ControlPlaneServices } from "./authority/services"
+import { localOnlyAuthAdapter } from "../platform/auth/auth"
+import type { ControlPlaneServices } from "../authority/services"
 import type { RuntimeEventEnvelope } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput } from "@claxedo/agent-sdk-runtime"
-import { createCentralSessionRuntime } from "./central-session-runtime"
-import { createCentralControlApp } from "./central-runtime"
-import { createConnectionTurnCredentials } from "./connections/turn-credentials"
-import { piProviderCatalog } from "./adapters/credentials/pi-provider-catalog"
+import { createCentralSessionRuntime } from "./runtime"
+import { createCentralControlApp } from "../central-runtime"
+import { createConnectionTurnCredentials } from "../connections/turn-credentials"
+import { piProviderCatalog } from "../adapters/credentials/pi-provider-catalog"
 
 function services(): ControlPlaneServices {
   return {

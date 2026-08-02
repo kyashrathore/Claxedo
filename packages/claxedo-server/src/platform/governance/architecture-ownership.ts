@@ -392,12 +392,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/workspace/index.ts",
+    module: "workspace/routes/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "local workspace routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict DOCUMENT: imports ../workspace-store and ../workspace-supervisor (both FORBIDDEN_LOCAL). Local-only workspace-store coupling, so the workspace* route family stays in place under routes/.",
-    tests: ["routes/workspace/index.test.ts"],
+    tests: ["workspace/routes/index.test.ts"],
     routeSamples: ["/api/workspace"],
   },
   {

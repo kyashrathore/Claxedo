@@ -42,7 +42,7 @@ import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "./signe
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../adapters/sandbox/routes/sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
-import { authenticatedGitHubCloneSource } from "../repository-clone"
+import { authenticatedGitHubCloneSource } from "../../routes/repository-clone"
 
 const createBody = z
   .object({

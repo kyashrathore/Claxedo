@@ -6,7 +6,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { build as esbuildBuild } from "esbuild"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
-import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeRoot, workspaceRuntimeVersion } from "../../src/workspace-runtime-startup"
+import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeRoot, workspaceRuntimeVersion } from "../../src/hosts/workspace-runtime/startup"
 
 type Exec = (cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) => void
 

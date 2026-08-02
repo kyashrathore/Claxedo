@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono"
 import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
-import { createCentralSessionRuntime } from "./central-session-runtime"
+import { createCentralSessionRuntime } from "./session/runtime"
 import { ControlPlaneSessionRoutes } from "./authority/routes/session"
 import { isLoopbackLocalRequest } from "./routes/local-only-projection"
 import {
@@ -20,7 +20,7 @@ import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/sessio
 import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 
-export { createCentralSessionRuntime } from "./central-session-runtime"
+export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./platform/auth/auth"
 export { createControlPlaneServices } from "./authority/services"
 export type { ControlPlaneServices } from "./authority/services"
