@@ -9,7 +9,7 @@ const root = path.join(realpathSync(os.tmpdir()), `session-harness-test-${random
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const mod = await import("./session-harness")
+const mod = await import("./harness")
 
 function file() {
   return path.join(root, "agent-core", "session-harnesses.json")

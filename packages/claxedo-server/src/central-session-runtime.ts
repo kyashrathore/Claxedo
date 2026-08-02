@@ -38,7 +38,7 @@ import {
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import { createSessionRoutes, runtimeEventsHandler, type RuntimeSessionBusEvent } from "@claxedo/workspace-runtime/routes"
 import type { ControlPlaneServices } from "./control-plane/services"
-import type { SessionMeta } from "./session-meta"
+import type { SessionMeta } from "./session/meta/meta"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { piRegistryCredentialProvider } from "./pi-credentials"
 import { piProviderCatalog, validatePiPromptModel } from "./pi-provider-catalog"

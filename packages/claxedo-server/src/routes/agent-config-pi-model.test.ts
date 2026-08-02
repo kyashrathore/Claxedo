@@ -18,7 +18,7 @@ process.env.ANTHROPIC_API_KEY = "test-key"
 
 const [{ createAgentConfigRoutes }, { putSessionMeta, sessionMeta }, { piProviderCatalog }, { ClaxedoDB }] = await Promise.all([
   import("./agent-config"),
-  import("../session-meta"),
+  import("../session/meta/meta"),
   import("../pi-provider-catalog"),
   import("../storage/db"),
 ])

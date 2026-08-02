@@ -1,5 +1,5 @@
-import type { SessionAttachment, SessionToolSandbox } from "./session-meta-types"
-import type { Workspace } from "./workspace-store"
+import type { SessionAttachment, SessionToolSandbox } from "./types"
+import type { Workspace } from "../../workspace-store"
 
 const KINDS = new Set(["review", "page", "planner"])
 

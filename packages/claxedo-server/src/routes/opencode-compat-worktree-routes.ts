@@ -7,7 +7,7 @@ import { workspaceInput } from "./opencode-compat-context"
 import { contains, defaultBranch, gitRun, locate, shell, trees } from "./opencode-compat-git"
 import { dataDir } from "../lib/paths"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./opencode-compat-worktree"
-import { provisionRegisteredWorktree, WorktreeProvisionError } from "../worktree-service"
+import { provisionRegisteredWorktree, WorktreeProvisionError } from "../worktree/service"
 
 type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
 

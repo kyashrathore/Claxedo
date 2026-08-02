@@ -5,7 +5,7 @@ import { HTTPException } from "hono/http-exception"
 import { normalizeHarnessIdentity, type SessionHarness } from "@claxedo/agent-sdk-runtime"
 import { defaultHarness } from "../agent-config"
 import { dataDir, stateDir } from "../lib/paths"
-import { normalize } from "../session-harness"
+import { normalize } from "../session/harness/harness"
 import { contains } from "./opencode-compat-git"
 
 export type OpenCodeCompatRequestContext = {

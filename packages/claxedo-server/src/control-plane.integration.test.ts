@@ -857,7 +857,7 @@ describe("control plane integration", () => {
   })
 
   test("lists experimental sessions through the sandbox", async () => {
-    const ws = await workspace("session-meta")
+    const ws = await workspace("session/meta/meta")
     const rootRes = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

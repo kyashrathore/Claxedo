@@ -11,7 +11,7 @@ vi.mock("../../workspace-store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-vi.mock("../../harness-resolution", () => ({
+vi.mock("../../session/harness/resolution", () => ({
   resolveHarnessHostForRequest: mocks.resolveHarnessHostForRequest,
 }))
 

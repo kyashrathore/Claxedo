@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { randomUUID } from "node:crypto"
 import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
 import type { ControlPlaneServices } from "../services"
-import type { SessionMeta } from "../../session-meta"
+import type { SessionMeta } from "../../session/meta/meta"
 import { resolveSessionGateway } from "../http"
 import {
   ControlPlaneAuthError,

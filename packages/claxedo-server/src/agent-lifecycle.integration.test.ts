@@ -771,7 +771,7 @@ describe("agent lifecycle integration", () => {
         updated_at: Date.now(),
       })
 
-      const runner = await import("./session-harness.js")
+      const runner = await import("./session/harness/harness.js")
       runner.setSessionHarness(ws.id, "ses_duplicate", {
         id: "claude",
         access: "acp",

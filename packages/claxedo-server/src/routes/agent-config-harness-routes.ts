@@ -11,10 +11,10 @@ import {
   saveUserConfig,
 } from "../agent-config"
 import { fanOutConfig } from "../config-fanout"
-import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "../session-harness"
+import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "../session/harness/harness"
 import { resolveWorkspace } from "../workspace-store"
-import { resolveHarnessForRequest } from "../harness-resolution"
-import { sessionMeta } from "../session-meta"
+import { resolveHarnessForRequest } from "../session/harness/resolution"
+import { sessionMeta } from "../session/meta/meta"
 import { errorBody } from "./http"
 import {
   cloudRuntimeSessionHarness,

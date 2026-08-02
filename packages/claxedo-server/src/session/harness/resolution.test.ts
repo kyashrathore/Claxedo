@@ -9,9 +9,9 @@ const root = path.join(realpathSync(os.tmpdir()), `harness-resolution-test-${ran
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const workspace = await import("./workspace-store")
-const sessionHarness = await import("./session-harness")
-const resolution = await import("./harness-resolution")
+const workspace = await import("../../workspace-store")
+const sessionHarness = await import("./harness")
+const resolution = await import("./resolution")
 
 describe("runner resolution", () => {
   beforeEach(async () => {

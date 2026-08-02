@@ -1,4 +1,4 @@
-import type { SessionMeta } from "./session-meta"
+import type { SessionMeta } from "./session/meta/meta"
 
 export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"

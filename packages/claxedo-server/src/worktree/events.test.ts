@@ -15,15 +15,15 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "./lib/bus"
+import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../lib/bus"
 
 const root = path.join(realpathSync(os.tmpdir()), `wt-events-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 // Import route builder after env is set
-const { OpenCodeCompatRoutes } = await import("./routes/opencode-compat")
-const { ensureWorkspace } = await import("./workspace-store")
+const { OpenCodeCompatRoutes } = await import("../routes/opencode-compat")
+const { ensureWorkspace } = await import("../workspace-store")
 
 // Build a minimal Hono app with compat routes + SSE event handler
 const { Hono } = await import("hono")

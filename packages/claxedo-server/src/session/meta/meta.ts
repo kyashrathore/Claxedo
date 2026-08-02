@@ -1,16 +1,16 @@
-import { ClaxedoDB, eq, inArray } from "./storage/db"
+import { ClaxedoDB, eq, inArray } from "../../storage/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
   ClaxedoSessionTagTable,
-} from "./storage/session-meta.sql"
-import { GLOBAL_SHOW_TAG } from "./session-meta-types"
+} from "../../storage/session-meta.sql"
+import { GLOBAL_SHOW_TAG } from "./types"
 import type {
   SessionAttachment,
   SessionMeta,
   SessionMetaNavigationListInput,
   SessionToolSandbox,
-} from "./session-meta-types"
+} from "./types"
 import {
   host,
   ids,
@@ -21,22 +21,22 @@ import {
   sessionMetaSyncRow,
   storedSessionRef,
   txt,
-} from "./session-meta-shape"
+} from "./shape"
 import {
   safeMetaRead,
   sessionMetaMapByRef,
   sessionMetaMapBySessionId,
-} from "./session-meta-read"
-import type { Workspace } from "./workspace-store"
+} from "./read"
+import type { Workspace } from "../../workspace-store"
 
-export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./session-meta-types"
+export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
 export type {
   SessionAttachment,
   SessionMeta,
   SessionMetaNavigationListInput,
   SessionToolSandbox,
-} from "./session-meta-types"
-export { parseSessionMeta } from "./session-meta-shape"
+} from "./types"
+export { parseSessionMeta } from "./shape"
 
 export async function syncSessionMetas(ws: Workspace | undefined, input: unknown[]) {
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))

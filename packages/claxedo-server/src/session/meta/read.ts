@@ -1,11 +1,11 @@
-import { ClaxedoDB, inArray } from "./storage/db"
+import { ClaxedoDB, inArray } from "../../storage/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
   ClaxedoSessionTagTable,
-} from "./storage/session-meta.sql"
-import type { SessionAttachment, SessionMeta } from "./session-meta-types"
-import { host, ids, root, toolSandbox } from "./session-meta-shape"
+} from "../../storage/session-meta.sql"
+import type { SessionAttachment, SessionMeta } from "./types"
+import { host, ids, root, toolSandbox } from "./shape"
 
 type StoredSessionMeta = typeof ClaxedoSessionMetaTable.$inferSelect
 
