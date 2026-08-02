@@ -181,6 +181,11 @@ the filename; that error has already been made in this codebase twice.
        LOCAL_ONLY | SIGNED_USER | SERVICE_TOKEN | INTERNAL_ADMIN | PUBLIC
      If it does not fit exactly one, that is a finding — say why.
 
+  5. ARE ITS COMMENTS ABOUT THE CODE? Flag any comment that narrates history
+     (a wave number, a prior attempt, a rejected alternative), restates the
+     line below it, or documents something not in the file. Comments earn their
+     place by stating a constraint a reader cannot see.
+
 Also report: files >400 lines doing more than one job (name the jobs);
 same-name/different-semantics pairs; test files whose location or name no
 longer matches their subject.
@@ -290,6 +295,35 @@ forward through either entrypoint; the only relay assertion in `proxy.test.ts`
 is the loopback REFUSAL. Since user-hosted is a live product surface, add a
 test that drives a successful shared-workspace request end to end. Do this
 BEFORE the split, so the split is verified by something other than typecheck.
+
+## W11.2c — Strip narrative comments
+
+Owner: comments must be about the CODE, not about how the code came to be.
+Banned: session/plan history, wave numbers, decisions considered and rejected,
+war stories, and restatements of what the line below already says.
+
+106 comment lines were added across the W10 waves and many fail that test. The
+worst example — `platform/governance/platform-boundary.test.ts` carries a
+14-line block documenting a check that **is not in the file**, explaining why it
+was written, run, and deleted. Its 22-line header states a 2-line rule and then
+recounts "three passes each optimized a different axis." Same file: `// This
+file lives at src/platform/governance/, so src/ is two levels up` above
+`path.resolve(import.meta.dirname, "../..")`.
+
+Trimming that one file: 116 -> 64 lines, identical assertions.
+
+Rules to apply:
+- Delete any comment naming a wave, a session, a prior attempt, or a rejected
+  alternative.
+- Delete any comment that restates the adjacent line.
+- Keep comments that state a constraint a reader cannot see: why a guard's
+  window is 400 chars, why a specifier is duplicated across two call sites, why
+  a type-only import still counts as a violation.
+- Where the reason for a decision genuinely matters, it belongs in the commit
+  message or this plan — not the source.
+
+Sweep every file touched between `4435449ac` and HEAD. Mechanical and low risk;
+run it after the structural waves so it only passes over the tree once.
 
 ## W11.3 — Separate test-only from production
 
