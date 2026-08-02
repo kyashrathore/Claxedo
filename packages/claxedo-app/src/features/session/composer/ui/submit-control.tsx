@@ -119,22 +119,22 @@ export function PromptSubmitControl(props: {
         forceOpen={flash() && actionable()}
         value={tipContent()}
       >
-        <div class="flex items-center gap-2">
-          <Show when={props.booting()}>
-            <div class="flex items-center gap-1.5 rounded-md border border-border-base bg-surface-raised-base px-2 py-1 text-12-medium text-text-weak">
-              <Spinner class="size-3.5 shrink-0" />
-              <span>{props.bootText()}</span>
-            </div>
-          </Show>
+        {/* Booting lives inside the send button — a spinner where the arrow
+            will be — rather than as a chip beside it. The circle is the same
+            control the boot is delaying, so it is the honest place to say so;
+            the words stay in the tooltip. Both states share the DOM node and
+            cross-fade so the arrow's arrival reads as the button waking up. */}
+        <div class="relative">
           <IconButton
             data-action="prompt-submit"
+            data-booting={props.booting() || undefined}
             type="submit"
             disabled={props.disabled()}
             tabIndex={props.excludeFromTab() ? -1 : undefined}
             onClick={explain}
             icon={props.busy() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
             variant="primary"
-            class="size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"
+            class="size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35 [&[data-booting]>[data-component=icon]]:opacity-0 [&>[data-component=icon]]:transition-opacity [&>[data-component=icon]]:duration-150"
             classList={{ "opacity-50": actionable() }}
             aria-label={
               props.busy()
@@ -154,6 +154,9 @@ export function PromptSubmitControl(props: {
                       : props.sendLabel
             }
           />
+          <Show when={props.booting()}>
+            <Spinner class="pointer-events-none absolute inset-0 m-auto size-3.5 text-v2-icon-icon-inverse" />
+          </Show>
         </div>
       </Tooltip>
     </>
