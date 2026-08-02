@@ -10,7 +10,7 @@ import type {
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime"
 import type { SandboxFetchOptions } from "../sandbox-target-fetch"
 import { sandboxFetch } from "../sandbox-target-fetch"
-import { ensureEmbeddedWorkspaceRuntime } from "../embedded-workspace-runtime"
+import { ensureEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
 import { normalizeClaxedoRegion } from "../region"
 import { resolveWorkspace } from "../workspace/store/store"
 import type { Workspace } from "../workspace/store/store"

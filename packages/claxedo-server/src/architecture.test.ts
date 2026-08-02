@@ -49,7 +49,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps the server host bridge out of harness adapter execution", () => {
-    const files = ["embedded-workspace-runtime.ts", "sandbox-target-fetch.ts", "proxy.ts", "config-fanout.ts"]
+    const files = ["deployments/local/embedded-workspace-runtime.ts", "sandbox-target-fetch.ts", "proxy.ts", "config-fanout.ts"]
     const forbidden = [
       "@claxedo/agent-sdk-runtime",
       "AcpHarnessAdapter",
@@ -255,7 +255,7 @@ describe("architecture boundaries", () => {
 
   test("keeps API error response bodies structured", () => {
     const files = [
-      path.resolve(import.meta.dirname, "server.ts"),
+      path.resolve(import.meta.dirname, "deployments/local/server.ts"),
       path.resolve(import.meta.dirname, "proxy.ts"),
       ...walk(path.resolve(import.meta.dirname, "routes")).filter((file) => file.endsWith(".ts")),
     ]
@@ -296,7 +296,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps WorkGraph out of Control Plane module load", () => {
-    const server = fs.readFileSync(path.resolve(import.meta.dirname, "server.ts"), "utf-8")
+    const server = fs.readFileSync(path.resolve(import.meta.dirname, "deployments/local/server.ts"), "utf-8")
     const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "server-workgraph.ts"), "utf-8")
 
     expect(server).not.toMatch(/from ["']@claxedo\/workgraph["']/)
@@ -304,6 +304,6 @@ describe("architecture boundaries", () => {
     expect(serverWorkgraph).not.toMatch(/^import (?!type\b).*from ["']@claxedo\/workgraph["']/m)
     expect(serverWorkgraph).not.toMatch(/from ["']\.\/workgraph-execution["']/)
     expect(serverWorkgraph).toContain('import("@claxedo/workgraph")')
-    expect(server).toContain('import("./workgraph-session-gateway")')
+    expect(server).toContain('import("../../workgraph-session-gateway")')
   })
 })

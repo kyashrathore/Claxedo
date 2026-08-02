@@ -131,11 +131,11 @@ delete process.env.OPENAI_API_KEY
 delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("./server.js"),
+  import("./deployments/local/server.js"),
   import("./workspace/supervisor/supervisor.js"),
   import("./workspace/store/store.js"),
   import("./agent-config.js"),
-  import("./embedded-workspace-runtime.js"),
+  import("./deployments/local/embedded-workspace-runtime.js"),
 ])
 
 const fakeBinaryPath = path.resolve(__dirname, "fixtures/fake-acp.ts")

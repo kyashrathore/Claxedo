@@ -1,6 +1,6 @@
 # Cloudflare Worker config for the hosted Claxedo control plane.
 #
-# This deploys ONLY the Worker-safe hosted control plane (src/worker.ts →
+# This deploys ONLY the Worker-safe hosted control plane (src/deployments/hosted-workerd/worker.ts →
 # src/hosted-app.ts). The local Node server (src/server.ts) is unaffected and is
 # never bundled here.
 #
@@ -15,7 +15,7 @@
 # by src/worker.import-graph.test.ts.
 
 name = "claxedo-control-plane"
-main = "src/worker.ts"
+main = "src/deployments/hosted-workerd/worker.ts"
 # HELD at 2025-05-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
 # Nothing here needs a newer default, and the ~60 flags that turned on between
 # 2025-05-01 and today include several this Worker cannot verify locally:
@@ -40,7 +40,7 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 enabled = true
 
 # D13 sandbox lease reaper: drives the
-# driver-side reconciliation sweep — the `scheduled` handler in src/worker.ts
+# driver-side reconciliation sweep — the `scheduled` handler in src/deployments/hosted-workerd/worker.ts
 # calls sandbox GC and the bounded WorkGraph reconciler. Operators and the
 # deployment smoke can invoke that same reconciler through the rate-limited,
 # selector-free `/internal/workgraph/reconcile` route with

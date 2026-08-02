@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 
 describe("Claxedo server WorkGraph reachability", () => {
   it("mounts only the embedded v2 service from production startup", () => {
-    const server = fs.readFileSync(path.join(import.meta.dirname, "server.ts"), "utf8")
+    const server = fs.readFileSync(path.join(import.meta.dirname, "deployments/local/server.ts"), "utf8")
     const composition = fs.readFileSync(path.join(import.meta.dirname, "server-workgraph.ts"), "utf8")
 
     expect(server).toContain("mountLazyEmbeddedWorkGraph(")

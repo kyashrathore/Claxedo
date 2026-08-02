@@ -22,7 +22,7 @@
 
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { createHostedApp } from "./hosted-app"
+import { createHostedApp } from "./deployments/hosted-shared/hosted-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "./control-plane/hosted-services"
 import type { ControlPlaneServices } from "./control-plane/services"
 import { durableCliSessionTokenRegistry } from "./test-helpers/cli-session-registry"

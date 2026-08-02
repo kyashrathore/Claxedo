@@ -76,4 +76,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3001/api/claxedo/health || exit 1
 
 WORKDIR /app/packages/claxedo-server
-CMD ["node", "--conditions=development", "--import", "../workspace-runtime/src/text-imports.mjs", "--import", "tsx", "src/main.ts"]
+CMD ["node", "--conditions=development", "--import", "../workspace-runtime/src/text-imports.mjs", "--import", "tsx", "src/deployments/local/main.ts"]

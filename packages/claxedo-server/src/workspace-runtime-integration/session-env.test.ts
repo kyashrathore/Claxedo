@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   embeddedFetch: vi.fn(),
 }))
 
-vi.mock("../embedded-workspace-runtime", () => ({
+vi.mock("../deployments/local/embedded-workspace-runtime", () => ({
   ensureEmbeddedWorkspaceRuntime: mocks.ensureEmbeddedWorkspaceRuntime,
 }))
 

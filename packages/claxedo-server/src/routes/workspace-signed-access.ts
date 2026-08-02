@@ -101,7 +101,7 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
   const overrides = policyOverrides as import("../agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
   const records = workspaceAgentExtensionRecords(installs)
   const supervisorMod = "../workspace/supervisor/supervisor"
-  const embeddedMod = "../embedded-workspace-runtime"
+  const embeddedMod = "../deployments/local/embedded-workspace-runtime"
   const [{ syncWorkspaceRuntimeAgentExtensions }, { syncEmbeddedWorkspaceRuntimeAgentExtensions }] = await Promise.all([
     import(/* @vite-ignore */ supervisorMod),
     import(/* @vite-ignore */ embeddedMod),

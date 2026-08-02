@@ -132,11 +132,11 @@ process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "..
 process.env.POSTHOG_KEY = ""
 
 // Vitest can deadlock resolving this graph when these top-level imports run concurrently.
-const serverMod = await import("./server")
+const serverMod = await import("./deployments/local/server")
 const supervisor = await import("./workspace/supervisor/supervisor")
 const store = await import("./workspace/store/store")
 const agent = await import("./agent-config")
-const embedded = await import("./embedded-workspace-runtime")
+const embedded = await import("./deployments/local/embedded-workspace-runtime")
 const opauth = await import("./opencode/auth")
 
 const upstreamProvider = {

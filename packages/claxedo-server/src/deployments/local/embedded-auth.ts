@@ -5,8 +5,8 @@ import Database from "better-sqlite3"
 import { betterAuth, type BetterAuthOptions } from "better-auth"
 import { bearer } from "better-auth/plugins"
 import { getMigrations } from "better-auth/db/migration"
-import { dataDir } from "./lib/paths"
-import type { BetterAuthVerifier } from "./control-plane/auth"
+import { dataDir } from "../../lib/paths"
+import type { BetterAuthVerifier } from "../../control-plane/auth"
 
 /**
  * Embedded Better Auth for self-host boxes (W1 of the self-host/hosted-parity

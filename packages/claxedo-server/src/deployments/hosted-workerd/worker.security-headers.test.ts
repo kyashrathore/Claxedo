@@ -18,18 +18,18 @@ class TestCompositionError extends Error {
   }
 }
 
-vi.mock("./control-plane/hosted-services", () => ({
+vi.mock("../../control-plane/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => {
     throw new TestCompositionError("hosted_deployment_mode_required", "missing CLAXEDO_DEPLOYMENT_MODE")
   }),
   HostedWorkerCompositionError: TestCompositionError,
 }))
 
-vi.mock("./hosted-app", () => ({
+vi.mock("../hosted-shared/hosted-app", () => ({
   createHostedApp: vi.fn(() => ({ fetch: vi.fn(async () => new Response("unreachable")) })),
 }))
 
-vi.mock("./workgraph-host/hosted-runtime", () => ({
+vi.mock("../../workgraph-host/hosted-runtime", () => ({
   createHostedWorkGraphRuntime: vi.fn(() => undefined),
   createHostedSessionTranscriptRetention: vi.fn(() => undefined),
 }))

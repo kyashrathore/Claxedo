@@ -29,7 +29,7 @@ await Promise.all([
 ])
 
 const [{ createApp, createDefaultLocalControlPlaneServices }, { ClaxedoDB }] = await Promise.all([
-  import("./server"),
+  import("./deployments/local/server"),
   import("./storage/db"),
 ])
 

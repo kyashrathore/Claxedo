@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { WhatsAppBaileysSocket } from "@claxedo/channels"
-import { createApp } from "../server"
+import { createApp } from "../deployments/local/server"
 import { localOnlyAuthAdapter } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { createCentralControlApp } from "../central-runtime"

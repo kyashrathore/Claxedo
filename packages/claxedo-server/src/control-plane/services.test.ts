@@ -393,7 +393,7 @@ describe("control-plane services", () => {
   })
 
   test("server composition uses createApp with explicit services", () => {
-    const file = path.resolve(import.meta.dirname, "../server.ts")
+    const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
     const text = fs.readFileSync(file, "utf8")
 
     expect(text).toContain("export function createApp(")
@@ -442,7 +442,7 @@ describe("control-plane services", () => {
     // Deployer trap: signed auth enabled + no authority previously answered 503
     // on every request; the default local composition must refuse to boot with
     // an actionable message instead.
-    const { createDefaultLocalControlPlaneServices } = await import("../server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
     const previous = {
       signed: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
       authority: process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL,
@@ -474,7 +474,7 @@ describe("control-plane services", () => {
   })
 
   test("local composition does not expose signers from a private key without its public pair", async () => {
-    const { createDefaultLocalControlPlaneServices } = await import("../server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
     const previous = {
       privateKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
       publicKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
@@ -495,7 +495,7 @@ describe("control-plane services", () => {
 
   test("agent session routes are no longer owned by the control plane", () => {
     const route = path.resolve(import.meta.dirname, "../routes/agent-session.ts")
-    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../server.ts"), "utf8")
+    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../deployments/local/server.ts"), "utf8")
 
     expect(fs.existsSync(route)).toBe(false)
     expect(server).not.toContain("AgentSessionRoutes(")
@@ -504,8 +504,8 @@ describe("control-plane services", () => {
 
   test("runtime-facing server files do not reach around control-plane ports", () => {
     const files = [
-      path.resolve(import.meta.dirname, "../server.ts"),
-      path.resolve(import.meta.dirname, "../embedded-workspace-runtime.ts"),
+      path.resolve(import.meta.dirname, "../deployments/local/server.ts"),
+      path.resolve(import.meta.dirname, "../deployments/local/embedded-workspace-runtime.ts"),
     ]
 
     for (const file of files) {
@@ -545,7 +545,7 @@ describe("control-plane services", () => {
   })
 
   test("createApp accepts an injected ControlPlaneServices and returns app + websocket", async () => {
-    const { createApp } = await import("../server")
+    const { createApp } = await import("../deployments/local/server")
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync), {
       authority: null,
@@ -603,7 +603,7 @@ describe("control-plane services", () => {
   })
 
   test("createApp gates remote central runtime routes with signed auth", async () => {
-    const { createApp } = await import("../server")
+    const { createApp } = await import("../deployments/local/server")
     const sync = fakeSync()
     const authorizeSessionRead = vi.fn(async () => {})
     const services = createControlPlaneServices(fakePorts(sync), {
@@ -800,7 +800,7 @@ describe("control-plane services", () => {
   })
 
   test("createApp gates remote central runtime events with signed auth", async () => {
-    const { createApp } = await import("../server")
+    const { createApp } = await import("../deployments/local/server")
     const built = createApp(createControlPlaneServices(fakePorts(), { authority: null }))
 
     // D9: in an unsigned-local deployment a REMOTE caller is now denied by
@@ -816,7 +816,7 @@ describe("control-plane services", () => {
   })
 
   test("createApp rejects hosted services so hosted security hooks cannot be bypassed", async () => {
-    const { createApp } = await import("../server")
+    const { createApp } = await import("../deployments/local/server")
     expect(() =>
       createApp(createHostedControlPlaneServices(fakePorts(), hostedOptions()))
     ).toThrow(new ControlPlaneCompositionError(
@@ -826,7 +826,7 @@ describe("control-plane services", () => {
   })
 
   test("startup telemetry captures non-secret control-plane composition facts", async () => {
-    const { captureControlPlaneStartupTelemetry } = await import("../server")
+    const { captureControlPlaneStartupTelemetry } = await import("../deployments/local/server")
     const capture = vi.fn()
     const services = createHostedControlPlaneServices(fakePorts(), hostedOptions({
       telemetry: { capture },
@@ -854,7 +854,7 @@ describe("control-plane services", () => {
   })
 
   test("startup telemetry failures do not fail server startup", async () => {
-    const { captureControlPlaneStartupTelemetry } = await import("../server")
+    const { captureControlPlaneStartupTelemetry } = await import("../deployments/local/server")
     const services = createControlPlaneServices(fakePorts(), {
       authority: null,
       telemetry: {
@@ -873,7 +873,7 @@ describe("control-plane services", () => {
   })
 
   test("startServer is a thin wrapper that composes the default local stack", () => {
-    const file = path.resolve(import.meta.dirname, "../server.ts")
+    const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
     const text = fs.readFileSync(file, "utf8")
 
     // startServer configures local service defaults, then delegates to
@@ -885,7 +885,7 @@ describe("control-plane services", () => {
   })
 
   test("lower-level stack startup accepts injected services and centralizes shutdown cleanup", () => {
-    const file = path.resolve(import.meta.dirname, "../server.ts")
+    const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
     const text = fs.readFileSync(file, "utf8")
 
     expect(text).toContain("export function startControlPlaneStack(options: ControlPlaneStackOptions)")

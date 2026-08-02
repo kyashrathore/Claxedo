@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
-import type { DocumentIndexEntry } from "./documents/index-store"
-import type { ControlPlaneServices } from "./control-plane/services"
+import type { DocumentIndexEntry } from "../../documents/index-store"
+import type { ControlPlaneServices } from "../../control-plane/services"
 
 /**
  * Worker entrypoint behavior: the ExecutionContext must be passed through to
@@ -42,7 +42,7 @@ const createHostedApp = vi.fn((
   },
 ) => ({ fetch: appFetch }))
 
-vi.mock("./control-plane/hosted-services", () => ({
+vi.mock("../../control-plane/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => ({
     services: { authority: { authorizeSessionRead, openWorkspace } },
   })),
@@ -53,15 +53,15 @@ vi.mock("./control-plane/hosted-services", () => ({
   },
 }))
 
-vi.mock("./hosted-app", () => ({
+vi.mock("../hosted-shared/hosted-app", () => ({
   createHostedApp,
 }))
 
-vi.mock("./billing/reconcile", () => ({
+vi.mock("../../billing/reconcile", () => ({
   runScheduledBillingReconciliation: runBillingSweep,
 }))
 
-vi.mock("./workgraph-host/hosted-runtime", () => ({
+vi.mock("../../workgraph-host/hosted-runtime", () => ({
   createHostedWorkGraphRuntime: vi.fn(() => ({ listStaleTenants, reconcile })),
 }))
 

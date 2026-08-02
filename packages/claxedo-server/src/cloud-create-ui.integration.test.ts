@@ -197,7 +197,7 @@ process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "..
 process.env.POSTHOG_KEY = ""
 
 const [serverMod, store, agent] = await Promise.all([
-  import("./server"),
+  import("./deployments/local/server"),
   import("./workspace/store/store"),
   import("./agent-config"),
 ])

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createHostedApp } from "./hosted-app"
-import { sandboxRelayTargetLookup, type HostedControlPlane } from "./control-plane/hosted-services"
-import type { ControlPlaneServices } from "./control-plane/services"
-import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
+import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../control-plane/hosted-services"
+import type { ControlPlaneServices } from "../../control-plane/services"
+import { createFixedWindowConnectionRateLimiter } from "../../control-plane/rate-limit"
 import {
   createSandboxManager,
   type SandboxDriver,
@@ -11,15 +11,15 @@ import {
   type SandboxManager,
 } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
-import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/hosted-device-auth"
+import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "../../routes/hosted-device-auth"
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
-} from "./control-plane/cli-session-registry"
-import { durableCliSessionTokenRegistry } from "./test-helpers/cli-session-registry"
-import { LiveSyncRoom, type LiveSyncRoomNamespace } from "./deployments/hosted-workerd/live-sync-room.cf"
+} from "../../control-plane/cli-session-registry"
+import { durableCliSessionTokenRegistry } from "../../test-helpers/cli-session-registry"
+import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
-import type { DocumentsRouteBackend } from "./routes/documents"
+import type { DocumentsRouteBackend } from "../../routes/documents"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount

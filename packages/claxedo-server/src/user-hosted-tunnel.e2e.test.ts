@@ -13,11 +13,11 @@ import {
   mintRuntimeAccessToken,
 } from "@claxedo/workspace-relay"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace/supervisor/supervisor"
-import { configureEmbeddedWorkspaceRuntime } from "./embedded-workspace-runtime"
+import { configureEmbeddedWorkspaceRuntime } from "./deployments/local/embedded-workspace-runtime"
 import { configureOpenCodeEngine, opencodeRequest } from "./opencode/engine"
 import { ensureWorkspace } from "./workspace/store/store"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
-import { createApp } from "./server"
+import { createApp } from "./deployments/local/server"
 import { createControlPlaneServices } from "./control-plane/services"
 import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
 

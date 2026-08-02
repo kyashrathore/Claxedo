@@ -56,9 +56,9 @@
     "node": ">=22 <25"
   },
   "scripts": {
-    "dev": "CLAXEDO_WAKES=${CLAXEDO_WAKES:-1} node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx --watch src/main.ts",
-    "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/main.ts",
-    "start:hosted": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/hosted-node.ts",
+    "dev": "CLAXEDO_WAKES=${CLAXEDO_WAKES:-1} node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx --watch src/deployments/local/main.ts",
+    "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/local/main.ts",
+    "start:hosted": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/hosted-node/hosted-node.ts",
     "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
     "deploy:hosted": "bun run scripts/deploy/deploy-hosted.ts",

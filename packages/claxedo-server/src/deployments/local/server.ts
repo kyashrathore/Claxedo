@@ -13,25 +13,25 @@ import { createNodeWebSocket } from "@hono/node-ws"
 import { z } from "zod"
 import { optionalGit, setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import type { ProcessObserver } from "@claxedo/workspace-runtime"
-import { capture, initPostHog, shutdownPostHog } from "./posthog"
-import { initNodeObservability } from "./observability/node"
-import { reportError } from "./observability/report"
-import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "./security-headers"
-import { configureAgentConfig, defaultHarness, loadUserConfig } from "./agent-config"
-import { eventsHandler } from "./routes/events"
-import { peerAddressStamp } from "./routes/local-only-projection"
-import { createConnectionsHost } from "./connections-host/connections-host"
-import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
-import { mirrorProcessEvents } from "./process-events"
-import { DocumentsRoutes } from "./routes/documents"
-import { AgentConfigRoutes } from "./routes/agent-config"
-import { SessionMetaRoutes } from "./routes/session-meta"
-import { WorkspaceRoutes } from "./routes/workspace"
-import { OpenCodeCompatRoutes } from "./routes/opencode-compat"
-import { resolveHarnessId } from "./routes/opencode-compat-provider-config"
+import { capture, initPostHog, shutdownPostHog } from "../../posthog"
+import { initNodeObservability } from "../../observability/node"
+import { reportError } from "../../observability/report"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../security-headers"
+import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
+import { eventsHandler } from "../../routes/events"
+import { peerAddressStamp } from "../../routes/local-only-projection"
+import { createConnectionsHost } from "../../connections-host/connections-host"
+import { createConnectionTurnCredentials } from "../../connections-host/turn-credentials"
+import { mirrorProcessEvents } from "../../process-events"
+import { DocumentsRoutes } from "../../routes/documents"
+import { AgentConfigRoutes } from "../../routes/agent-config"
+import { SessionMetaRoutes } from "../../routes/session-meta"
+import { WorkspaceRoutes } from "../../routes/workspace"
+import { OpenCodeCompatRoutes } from "../../routes/opencode-compat"
+import { resolveHarnessId } from "../../routes/opencode-compat-provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "./proxy"
-import { configureOpencodeMcpSync } from "./opencode/mcp-sync"
+import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../proxy"
+import { configureOpencodeMcpSync } from "../../opencode/mcp-sync"
 import {
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
@@ -39,59 +39,59 @@ import {
   drainOpenCodeEngine,
   opencodeEngineMode,
   opencodeRequest,
-} from "./opencode/engine"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode/events"
-import { claxedoBus, globalBus } from "./lib/bus"
+} from "../../opencode/engine"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
+import { claxedoBus, globalBus } from "../../lib/bus"
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
   shutdownWorkspaceSupervisor,
-} from "./workspace/supervisor/supervisor"
+} from "../../workspace/supervisor/supervisor"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
-import { configureOpenCodeAuth, opencodeHeaders } from "./opencode/auth"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
-import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
-import { migrateCredentials } from "./credentials/migrate"
-import { CredentialRoutes } from "./routes/credential"
-import { ProviderAuthRoutes } from "./routes/provider-auth"
-import { NetworkPolicyRoutes } from "./routes/network-policy"
-import { ProjectRemoteRoutes } from "./routes/project-remote"
+import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
+import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../architecture"
+import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/central-store"
+import { migrateCredentials } from "../../credentials/migrate"
+import { CredentialRoutes } from "../../routes/credential"
+import { ProviderAuthRoutes } from "../../routes/provider-auth"
+import { NetworkPolicyRoutes } from "../../routes/network-policy"
+import { ProjectRemoteRoutes } from "../../routes/project-remote"
 import {
   ControlPlaneCompositionError,
   createControlPlaneServices,
   type ControlPlaneRelay,
   type ControlPlaneServices,
-} from "./control-plane/services"
+} from "../../control-plane/services"
 import {
   betterAuthAdapter,
   clerkAuthAdapter,
   controlPlaneAuthContext,
   ControlPlaneAuthError,
   signedCloudAuthRequested,
-} from "./control-plane/auth"
+} from "../../control-plane/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "./control-plane/deployment-mode"
+} from "../../control-plane/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./control-plane/adapters/convex/convex-authority"
-import { createSqliteWorkspaceAuthority } from "./control-plane/adapters/sqlite/workspace-authority"
-import { ControlPlaneHttpRoutes } from "./control-plane/http"
-import { createCentralControlApp } from "./central-runtime"
-import { JwksRoutes } from "./control-plane/routes/jwks"
-import { InternalRelayResolverRoutes } from "./routes/internal-relay"
-import { localRelayTargetExists, localRelayTargetLookup } from "./routes/internal-relay-local"
-import { BootstrapRoutes } from "./routes/bootstrap"
-import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
-import { createControlPlaneRelayProvider } from "./relay-provider"
-import { sandboxFetch } from "./sandbox-target-fetch"
-import { WorkspaceCheckpointRoutes } from "./routes/workspace-checkpoints"
+import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../control-plane/adapters/convex/convex-authority"
+import { createSqliteWorkspaceAuthority } from "../../control-plane/adapters/sqlite/workspace-authority"
+import { ControlPlaneHttpRoutes } from "../../control-plane/http"
+import { createCentralControlApp } from "../../central-runtime"
+import { JwksRoutes } from "../../control-plane/routes/jwks"
+import { InternalRelayResolverRoutes } from "../../routes/internal-relay"
+import { localRelayTargetExists, localRelayTargetLookup } from "../../routes/internal-relay-local"
+import { BootstrapRoutes } from "../../routes/bootstrap"
+import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../control-plane/runtime-access-token"
+import { createControlPlaneRelayProvider } from "../../relay-provider"
+import { sandboxFetch } from "../../sandbox-target-fetch"
+import { WorkspaceCheckpointRoutes } from "../../routes/workspace-checkpoints"
 import {
   ensureWorkspace,
   getWorkspaceByDirectory,
@@ -99,41 +99,41 @@ import {
   listWorkspaces,
   resolveWorkspace,
   subscribeLocalWorkspaceChanges,
-} from "./workspace/store/store"
-import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
-import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels/control-plane"
-import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
+} from "../../workspace/store/store"
+import { defaultHomeRegion, relayEndpointsFromEnv } from "../../region"
+import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
+import { mountWorkspaceRuntimePtyWebSocketProxy } from "../../server-workspace-pty-proxy"
 import {
   createClaxedoSessionEnvFactory,
   prepareWorkspaceRuntimeSession,
-} from "./workspace-runtime-integration/session-env"
+} from "../../workspace-runtime-integration/session-env"
 import {
   createLocalEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
   recordLocalWorkGraphLlmUsage,
   requireLocalWorkGraphRepositoryDirectory,
-} from "./server-workgraph"
-import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
-import { centralModelBackend } from "./central-session-runtime"
-import { dataDir } from "./lib/paths"
-import { withDataDirOwnership } from "./data-dir-owner"
-import { createLocalDocumentsBackend } from "./documents/local-backend"
-import { setDocumentChangedSink } from "./documents/backend"
-import { LocalInstallationDocumentBroker } from "./documents/local-installation-broker"
-import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
-import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
-import { createSqlitePullRequestEffects } from "./workgraph-host/sqlite-pull-request-effects"
-import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "./workgraph-agent-tools"
-import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree/service"
+} from "../../server-workgraph"
+import { mountLocalOnlyUsageLimits } from "../../server-usage-limits"
+import { centralModelBackend } from "../../central-session-runtime"
+import { dataDir } from "../../lib/paths"
+import { withDataDirOwnership } from "../../data-dir-owner"
+import { createLocalDocumentsBackend } from "../../documents/local-backend"
+import { setDocumentChangedSink } from "../../documents/backend"
+import { LocalInstallationDocumentBroker } from "../../documents/local-installation-broker"
+import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../workgraph-host/local-execution"
+import { createLocalExecutionCapabilities } from "../../workgraph-host/local-execution-capabilities"
+import { createSqlitePullRequestEffects } from "../../workgraph-host/sqlite-pull-request-effects"
+import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../workgraph-agent-tools"
+import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "../../worktree/service"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
-import { sessionMeta } from "./session/meta/meta"
-import { llmTurnRecord, workGraphSessionAttribution } from "./telemetry/metering"
-import { ClaxedoDB } from "./storage/db"
-import { RemoteAccessRoutes } from "./routes/remote-access"
-import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
-import { localHostIdentity, registrationPayload, signHostPayload } from "./routes/workspace-local-host"
-import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "./user-hosted-tunnel"
+import { sessionMeta } from "../../session/meta/meta"
+import { llmTurnRecord, workGraphSessionAttribution } from "../../telemetry/metering"
+import { ClaxedoDB } from "../../storage/db"
+import { RemoteAccessRoutes } from "../../routes/remote-access"
+import { createRemoteAccessService, unavailableRemoteAccessService } from "../../remote-access-service"
+import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace-local-host"
+import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 
 const execFileAsync = promisify(execFile)
 
@@ -1141,7 +1141,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // the first turn — mutations after this keep the two in step (see
     // credentials/engine-bridge.ts). Deferred and non-blocking: it boots the
     // engine lazily and must not gate server startup.
-    void import("./credentials/engine-bridge")
+    void import("../../credentials/engine-bridge")
       .then((bridge) => bridge.syncCredentialsToEngine())
       .catch(() => {})
   }
@@ -1276,7 +1276,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     workgraphRuntimes.set(directory, loading)
     return loading
   }
-  const workgraphSessionModule = import("./workgraph-session-gateway")
+  const workgraphSessionModule = import("../../workgraph-session-gateway")
   const workgraphBindings = workgraphSessionModule.then((gateway) =>
     gateway.createFileWorkGraphSessionBindingStore(path.join(dataDir(), "workgraph-session-bindings.json")),
   )
@@ -1581,7 +1581,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   let unsubscribeWorkGraphSessionIntake = () => {}
   if (!services.auth.config.enabled && services.auth.config.mode === "local-only") {
-    void Promise.all([workgraph, import("./workgraph-host/session-intake")]).then(([embedded, intake]) => {
+    void Promise.all([workgraph, import("../../workgraph-host/session-intake")]).then(([embedded, intake]) => {
       unsubscribeWorkGraphSessionIntake = intake.subscribeSessionIntake({
         events: globalBus,
         opencodeRequest,

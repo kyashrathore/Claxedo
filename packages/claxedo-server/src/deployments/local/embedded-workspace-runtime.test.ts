@@ -9,9 +9,9 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
-import type { OpencodeEvent } from "./opencode/events"
-import type { OpenCodeRequestFn } from "./opencode/engine"
-import type { Workspace } from "./workspace/store/store"
+import type { OpencodeEvent } from "../../opencode/events"
+import type { OpenCodeRequestFn } from "../../opencode/engine"
+import type { Workspace } from "../../workspace/store/store"
 
 async function makeWorkspaceRoot(prefix: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))

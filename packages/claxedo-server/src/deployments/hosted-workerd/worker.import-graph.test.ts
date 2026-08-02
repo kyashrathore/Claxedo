@@ -3,7 +3,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 // Recursive file listing. Aliased because this module already has a local
 // `walk()` that walks the IMPORT graph rather than the filesystem.
-import { walk as walkAll } from "./test-helpers/guards"
+import { walk as walkAll } from "../../test-helpers/guards"
 
 /**
  * Worker import-graph guard.
@@ -21,8 +21,8 @@ import { walk as walkAll } from "./test-helpers/guards"
  * Dynamic `import("...")` IS followed, because the bundler still emits the chunk.
  */
 
-const SRC = path.resolve(import.meta.dirname)
-const ENTRYPOINTS = ["worker.ts", "hosted-app.ts"]
+const SRC = path.resolve(import.meta.dirname, "../..")
+const ENTRYPOINTS = ["deployments/hosted-workerd/worker.ts", "deployments/hosted-shared/hosted-app.ts"]
 
 // Node-only / heavy packages that must never reach the Worker bundle.
 const FORBIDDEN_BARE = [
@@ -135,20 +135,20 @@ describe("worker import-graph", () => {
       .filter((spec) => spec === "@claxedo/sandbox-manager" || spec.startsWith("@claxedo/sandbox-manager/"))
     expect(sandboxManagerSpecs.length).toBeGreaterThan(0)
 
-    const sandboxManagerSrc = path.resolve(import.meta.dirname, "../../sandbox-manager/src")
+    const sandboxManagerSrc = path.resolve(import.meta.dirname, "../../../../sandbox-manager/src")
     const sandboxManagerImportsDaytona = fs
       .readdirSync(sandboxManagerSrc)
       .filter((name) => name.endsWith(".ts"))
       .some((name) => fs.readFileSync(path.join(sandboxManagerSrc, name), "utf8").includes('"@daytona/sdk"'))
     expect(sandboxManagerImportsDaytona).toBe(true)
 
-    const wrangler = fs.readFileSync(path.resolve(import.meta.dirname, "../wrangler.toml"), "utf8")
+    const wrangler = fs.readFileSync(path.resolve(import.meta.dirname, "../../../wrangler.toml"), "utf8")
     expect(wrangler).toContain('compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]')
   })
 
   test("entrypoints are actually reachable (sanity)", () => {
-    expect(visitedRel).toContain("worker.ts")
-    expect(visitedRel).toContain("hosted-app.ts")
+    expect(visitedRel).toContain("deployments/hosted-workerd/worker.ts")
+    expect(visitedRel).toContain("deployments/hosted-shared/hosted-app.ts")
     expect(visitedRel).toContain("workgraph-host/hosted.ts")
     expect(visitedRel).toContain("workgraph-host/hosted-runtime.ts")
     expect(visitedRel).toContain("routes/documents.ts")

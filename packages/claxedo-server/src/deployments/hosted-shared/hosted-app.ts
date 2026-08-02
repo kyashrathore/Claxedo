@@ -32,58 +32,58 @@
 
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
-import { allowedOriginPatterns } from "./cors-origins"
-import { securityHeaders } from "./security-headers"
-import { JwksRoutes } from "./control-plane/routes/jwks"
-import { InternalRelayResolverRoutes, type RelayTargetLookup } from "./routes/internal-relay"
-import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./routes/hosted-workspace"
-import { WorkspaceCheckpointRoutes } from "./routes/workspace-checkpoints"
-import { signedOrError } from "./routes/workspace-user-hosted"
-import { HostedDeviceAuthRoutes } from "./routes/hosted-device-auth"
-import { HostedShellRoutes } from "./routes/hosted-shell"
-import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "./deployments/hosted-workerd/live-sync-room.cf"
-import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
-import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
-import { HostedControlRoutes } from "./routes/hosted-control"
-import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
-import { configureCliSessionTokenRegistry } from "./control-plane/cli-session-registry"
-import type { ControlPlaneServices } from "./control-plane/services"
+import { allowedOriginPatterns } from "../../cors-origins"
+import { securityHeaders } from "../../security-headers"
+import { JwksRoutes } from "../../control-plane/routes/jwks"
+import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../../routes/internal-relay"
+import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted-workspace"
+import { WorkspaceCheckpointRoutes } from "../../routes/workspace-checkpoints"
+import { signedOrError } from "../../routes/workspace-user-hosted"
+import { HostedDeviceAuthRoutes } from "../../routes/hosted-device-auth"
+import { HostedShellRoutes } from "../../routes/hosted-shell"
+import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
+import { HostedSandboxAdminRoutes } from "../../routes/hosted-sandbox-admin"
+import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted-workgraph-admin"
+import { HostedControlRoutes } from "../../routes/hosted-control"
+import { HostedWorkerCompositionError, type HostedControlPlane } from "../../control-plane/hosted-services"
+import { configureCliSessionTokenRegistry } from "../../control-plane/cli-session-registry"
+import type { ControlPlaneServices } from "../../control-plane/services"
 import {
   createFixedWindowConnectionRateLimiter,
   createLayeredRateLimiter,
   type SharedRateLimitStore,
-} from "./control-plane/rate-limit"
-import { defaultRequestGuard, hostedRouteGuardExemptions } from "./control-plane/request-guard"
-import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "./billing/billing-routes"
-import { createEntitlementGate, type EntitlementGate } from "./billing/entitlement"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "./control-plane/auth"
-import { deploymentCompatibilityReport } from "./deployment-compatibility"
+} from "../../control-plane/rate-limit"
+import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../control-plane/request-guard"
+import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/billing-routes"
+import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../control-plane/auth"
+import { deploymentCompatibilityReport } from "../../deployment-compatibility"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "./control-plane/deployment-mode"
+} from "../../control-plane/deployment-mode"
 import {
   createHostedWorkGraph,
   type HostedWorkGraph,
   type HostedWorkGraphOwnerActivation,
-} from "./workgraph-host/hosted"
+} from "../../workgraph-host/hosted"
 import {
   createHostedConnectionOperationExecutor,
   createHostedConnectionOperationHandler,
-} from "./workgraph-host/hosted-connection-operation"
+} from "../../workgraph-host/hosted-connection-operation"
 import {
   createHostedRunOperationExecutor,
   createHostedRunOperationHandler,
-} from "./workgraph-host/hosted-run-operation"
-import { createHostedSessionTranscriptRetention } from "./workgraph-host/hosted-runtime"
-import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/documents"
-import { workGraphHttpTelemetry } from "./workgraph-host/operational-telemetry"
-import { captureProduct, productIdentity } from "./telemetry/product"
-import type { SettlementDispatcher } from "./workgraph-host/settlement-dispatcher"
-import type { WorkGraphConvexExecutor } from "./workgraph-host/convex-store"
+} from "../../workgraph-host/hosted-run-operation"
+import { createHostedSessionTranscriptRetention } from "../../workgraph-host/hosted-runtime"
+import { createHostedConnectionsSetup } from "../../workgraph-host/hosted-connections-setup"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "../../routes/documents"
+import { workGraphHttpTelemetry } from "../../workgraph-host/operational-telemetry"
+import { captureProduct, productIdentity } from "../../telemetry/product"
+import type { SettlementDispatcher } from "../../workgraph-host/settlement-dispatcher"
+import type { WorkGraphConvexExecutor } from "../../workgraph-host/convex-store"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */

@@ -55,11 +55,11 @@ process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "15000"
 process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "1000"
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("./server.js"),
+  import("./deployments/local/server.js"),
   import("./workspace/supervisor/supervisor.js"),
   import("./workspace/store/store.js"),
   import("./agent-config.js"),
-  import("./embedded-workspace-runtime.js"),
+  import("./deployments/local/embedded-workspace-runtime.js"),
 ])
 
 const realBinary = path.resolve(__dirname, "../../workspace-runtime/node_modules/.bin/claude-agent-acp")

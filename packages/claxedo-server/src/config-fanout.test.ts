@@ -13,7 +13,7 @@ vi.mock("./workspace/supervisor/supervisor", () => ({
   broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
 }))
 
-vi.mock("./embedded-workspace-runtime", () => ({
+vi.mock("./deployments/local/embedded-workspace-runtime", () => ({
   syncEmbeddedWorkspaceRuntimes: mocks.syncEmbeddedWorkspaceRuntimes,
 }))
 
@@ -49,7 +49,7 @@ describe("fanOutConfig", () => {
     expect(mocks.syncOpencodeMcpConfig).toHaveBeenCalledOnce()
     expect(mocks.log.warn).toHaveBeenCalledOnce()
     expect(mocks.log.warn).toHaveBeenCalledWith("config fan-out target failed", {
-      target: "embedded-workspace-runtime",
+      target: "deployments/local/embedded-workspace-runtime",
     })
     expect(JSON.stringify(mocks.log.warn.mock.calls)).not.toContain("sk-secret")
   })

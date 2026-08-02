@@ -20,7 +20,7 @@ vi.mock("../control-plane/hosted-services", () => ({
   },
 }))
 
-vi.mock("../hosted-app", () => ({
+vi.mock("../deployments/hosted-shared/hosted-app", () => ({
   createHostedApp: vi.fn(() => ({ fetch: appFetch })),
 }))
 
@@ -47,7 +47,7 @@ beforeEach(() => {
 
 describe("worker scheduled billing sweep", () => {
   test("runs the billing reconciliation with the Worker env after the GC dispatch", async () => {
-    const worker = (await import("../worker")).default as unknown as ScheduledWorker
+    const worker = (await import("../deployments/hosted-workerd/worker")).default as unknown as ScheduledWorker
     const env = { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret", CLAXEDO_POLAR_ACCESS_TOKEN: "polar_tok" }
 
     await worker.scheduled(controller, env, runtimeCtx())
@@ -58,7 +58,7 @@ describe("worker scheduled billing sweep", () => {
   })
 
   test("a failed GC still records the cron failure AND still runs the billing sweep (F17: independent sweeps)", async () => {
-    const worker = (await import("../worker")).default as unknown as ScheduledWorker
+    const worker = (await import("../deployments/hosted-workerd/worker")).default as unknown as ScheduledWorker
     appFetch.mockImplementation(async () => new Response("nope", { status: 501 }))
 
     // F17: a persistently-failing sandbox GC must NOT starve the billing

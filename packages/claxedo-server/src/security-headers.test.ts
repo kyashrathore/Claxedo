@@ -187,7 +187,7 @@ describe("hosted-app mounts the middleware outermost", () => {
     // Source-level ratchet, same idiom as architecture.test.ts's mount pins:
     // the guarantee is "no hosted route can miss these", which only holds if
     // the middleware is composed once, at the top, ahead of CORS.
-    const source = fs.readFileSync(path.resolve(import.meta.dirname, "hosted-app.ts"), "utf-8")
+    const source = fs.readFileSync(path.resolve(import.meta.dirname, "deployments/hosted-shared/hosted-app.ts"), "utf-8")
     // The CORS *mount*, not `corsMiddleware`'s definition further up the file.
     const corsMount = source.indexOf("app.use(\n    corsMiddleware(")
 

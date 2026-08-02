@@ -1,6 +1,6 @@
 import type { createNodeWebSocket } from "@hono/node-ws"
 import type { Context, Hono as HonoType, Next } from "hono"
-import { connectEmbeddedWorkspacePty } from "./embedded-workspace-runtime"
+import { connectEmbeddedWorkspacePty } from "./deployments/local/embedded-workspace-runtime"
 import {
   resolveWorkspaceRuntimeHit,
   resolveWorkspaceRuntimeHitForWorkspaceId,

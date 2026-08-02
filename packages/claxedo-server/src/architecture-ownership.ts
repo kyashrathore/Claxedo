@@ -174,7 +174,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "embedded-workspace-runtime.ts",
+    module: "deployments/local/embedded-workspace-runtime.ts",
     status: OwnershipStatus.Canonical,
     owner: "embedded local Sandbox composer",
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",

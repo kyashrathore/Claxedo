@@ -20,11 +20,11 @@ const runBillingSweep = vi.fn(async (_env: unknown) => {})
 // F17: the billing reconciliation sweep is mocked so the test can assert it
 // runs (or not) independently of the sandbox GC pass. Env lacks a Polar token
 // anyway, so the real sweep is a no-op — this just makes the call observable.
-vi.mock("./billing/reconcile", () => ({
+vi.mock("../../billing/reconcile", () => ({
   runScheduledBillingReconciliation: (env: unknown) => runBillingSweep(env),
 }))
 
-vi.mock("./control-plane/hosted-services", () => ({
+vi.mock("../../control-plane/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => ({})),
   HostedWorkerCompositionError: class HostedWorkerCompositionError extends Error {
     constructor(public readonly code: string, message: string) {
@@ -33,7 +33,7 @@ vi.mock("./control-plane/hosted-services", () => ({
   },
 }))
 
-vi.mock("./hosted-app", () => ({
+vi.mock("../hosted-shared/hosted-app", () => ({
   createHostedApp: vi.fn(() => ({ fetch: appFetch })),
 }))
 

@@ -39,7 +39,7 @@ import {
   revokeSession,
   rotate,
 } from "../../../../convex/cliSessionTokens"
-import { createHostedApp } from "../hosted-app"
+import { createHostedApp } from "../deployments/hosted-shared/hosted-app"
 import { HostedDeviceAuthRoutes } from "../routes/hosted-device-auth"
 import {
   cliSessionHandler,

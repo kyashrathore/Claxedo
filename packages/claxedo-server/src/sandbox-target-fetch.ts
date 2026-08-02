@@ -22,7 +22,7 @@ export async function sandboxFetch(
   options: SandboxFetchOptions = {},
 ) {
   if (ws.kind !== "cloud") {
-    const embeddedMod = "./embedded-workspace-runtime"
+    const embeddedMod = "./deployments/local/embedded-workspace-runtime"
     const { ensureEmbeddedWorkspaceRuntime } = await import(/* @vite-ignore */ embeddedMod)
     const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
     return runtime.app.fetch(new Request(new URL(path, "http://embedded-workspace-runtime.local"), init))

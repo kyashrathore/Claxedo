@@ -39,7 +39,7 @@ import {
   type AgentExtensionPolicyOverride,
 } from "../agent-extensions/runtime-config"
 import { syncWorkspaceRuntimeAgentExtensions } from "../workspace/supervisor/supervisor"
-import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../embedded-workspace-runtime"
+import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../deployments/local/embedded-workspace-runtime"
 import { errorBody } from "./http"
 
 type WorkspaceExtensionScope = {

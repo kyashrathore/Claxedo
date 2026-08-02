@@ -7,22 +7,22 @@
  */
 
 import { serve } from "@hono/node-server"
-import { createHostedApp } from "./hosted-app"
-import { createCentralControlApp } from "./central-runtime"
-import { createConvexUsageLedger } from "./telemetry/convex-usage-ledger"
-import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels/control-plane"
-import { composeHostedControlPlane, type HostedControlPlane, type HostedWorkerEnv } from "./control-plane/hosted-services"
-import { createControlPlaneServices, defaultControlPlaneCredentials, type ControlPlaneServices } from "./control-plane/services"
-import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
+import { createHostedApp } from "../hosted-shared/hosted-app"
+import { createCentralControlApp } from "../../central-runtime"
+import { createConvexUsageLedger } from "../../telemetry/convex-usage-ledger"
+import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
+import { composeHostedControlPlane, type HostedControlPlane, type HostedWorkerEnv } from "../../control-plane/hosted-services"
+import { createControlPlaneServices, defaultControlPlaneCredentials, type ControlPlaneServices } from "../../control-plane/services"
+import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/central-store"
 import {
   createClaxedoSessionEnvFactory,
   type WorkspaceResolver,
-} from "./workspace-runtime-integration/session-env"
-import type { SandboxFetchOptions } from "./sandbox-target-fetch"
-import { ControlPlaneAuthError } from "./control-plane/auth"
-import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
-import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
-import { createNodeSettlementDispatcher } from "./workgraph-host/settlement-dispatcher"
+} from "../../workspace-runtime-integration/session-env"
+import type { SandboxFetchOptions } from "../../sandbox-target-fetch"
+import { ControlPlaneAuthError } from "../../control-plane/auth"
+import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../connections-host/turn-credentials"
+import { createHostedWorkGraphRuntime } from "../../workgraph-host/hosted-runtime"
+import { createNodeSettlementDispatcher } from "../../workgraph-host/settlement-dispatcher"
 
 function centralStorePorts() {
   const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
