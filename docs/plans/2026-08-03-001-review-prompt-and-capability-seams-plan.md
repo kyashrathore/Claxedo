@@ -57,45 +57,63 @@ R2 object-store code should be extracted to a marked file (it is already the
 subject of `documents/r2-conditional-object-store.miniflare.test.ts`, a test with
 no matching source file).
 
-### `workspace/http/proxy.ts` — one name over two mechanisms
+### `workspace/http/proxy.ts` — two entrypoints, three transports, one bad name
 
-The owner said "I don't think we forward requests to any other process, don't
-know why that exists." Traced end to end, and the answer is: **half the time
-we don't.**
+Corrected twice during review; recording the final reading and both errors.
 
-How it is wired — `deployments/local/server.ts:723` mounts it as a GLOBAL
-fall-through middleware (`app.use`), not a route. Every request hits:
+The file has TWO entrypoints doing different jobs, and the name covers neither
+well:
 
-```ts
-if (!runtimeOwned(pathname)) return next()   // almost everything exits here
-```
+**A. `workspaceRuntimeProxy`** — global fall-through middleware
+(`deployments/local/server.ts:723`, `app.use`, not a route). Claims only paths
+the ownership registry marks `SandboxRuntime`: `/api/wr/*`, `/find`, `/file`,
+`/lsp`, `/vcs`. **No control-plane endpoint is ever proxied.** Then:
+- `ws.kind !== "cloud"` -> `embedded()` — in-process dispatch, no network
+- cloud -> `fetch()` to the sandbox, or to the relay when `hit.relay` is set
 
-`runtimeOwned` consults the route-ownership registry for
-`RouteHandler.SandboxRuntime`, which claims only the workspace-runtime's own
-API surface: `/api/wr/{pty,process,diff,git,session-env,health,capabilities,
-events,hook/*}`, `/find`, `/file`, `/lsp`, `/vcs`. No control-plane endpoint is
-proxied — the owner's instinct that the control plane doesn't proxy is correct.
+**B. `localWorkspaceRelayProxy`** — mounted at `/workspaces/:workspaceId/*`
+(server.ts:668-669). This is the one that matters and the one I initially
+misread: it makes the LOCAL server answer on the same URL shape the hosted
+relay uses, gated on `isLoopbackLocalRequest`. That is the **user-hosted**
+path — a user sharing their local workspace for remote access. `access` is a
+three-way (`workspace/routes/index.ts:85`): `cloud` | `user-hosted` | `local`,
+and user-hosted requires signed auth exactly like cloud
+(`requireSigned: access === "cloud" || access === "user-hosted"`).
 
-Then it branches on workspace kind, and the two branches are different things:
+So there are three transports behind one filename:
 
-| | local workspace | cloud workspace |
+| transport | when | mechanism |
 |---|---|---|
-| mechanism | `embedded()` — in-process dispatch | `proxy()` — `await fetch(req)` |
-| network | none | remote sandbox over HTTP |
-| token | none | short-lived owner RAT minted per request |
-| is it a proxy? | **no** | yes |
+| embedded | local workspace | in-process, no network |
+| relay-shaped local endpoint | **user-hosted** (shared local workspace) | serves relay URL shape from the local server |
+| forward | cloud workspace | `fetch()` to relay or sandbox |
 
-So `proxy.ts` names ONE of its two branches, and the local path — the one an
-OSS user runs — never proxies anything. That is why the name reads as wrong.
+**Two corrections to my own earlier readings in this session:**
+1. First I said "the name is right, the location is wrong" — from finding
+   `await fetch(req)` without checking which branch reaches it.
+2. Then I said the relay branch looked unexercised, because the only relay
+   assertion in `proxy.test.ts` is a REFUSAL
+   (`workspace_relay_local_loopback_required`). That refusal is not evidence of
+   dead code — it is `localWorkspaceRelayProxy`'s loopback guard, i.e. the
+   user-hosted path defending itself. The owner corrected this: user-hosted is
+   a live product surface.
 
-Fix is a rename that covers both, not just a move: `runtime-dispatch.ts`, with
-`embedded` and `forward` as named strategies inside. Location is also wrong —
-`workspace/http/` is imported by 5+ other domains, so it is not the workspace
-domain's HTTP. → `workspace/runtime-dispatch/`.
+**Rename, per the owner: the name must state exactly what it does.** "proxy"
+describes one of three transports. Split the file by entrypoint:
 
-Correction to an earlier assessment in this session: I first reported "the name
-is right, the location is wrong." That was too generous — it was based on
-finding `await fetch(req)` without checking which branch reaches it.
+- `workspace/runtime-dispatch/middleware.ts` — the fall-through
+  (`workspaceRuntimeProxy`), with `embedded` and `forward` as named strategies.
+- `workspace/runtime-dispatch/shared-workspace-endpoint.ts` — the
+  `/workspaces/:id/*` surface (`localWorkspaceRelayProxy`). Its current name is
+  actively misleading: it is not proxying TO a relay, it is BEING the relay
+  surface for a shared local workspace.
+
+Both out of `workspace/http/` (imported by 5+ other domains, so not the
+workspace domain's own HTTP).
+
+Test gap to close alongside: no test asserts a SUCCESSFUL relay forward through
+either entrypoint. `sandbox-target-fetch.test.ts:63` asserts one, but that is a
+different module.
 
 ### Core business logic vs utils
 
