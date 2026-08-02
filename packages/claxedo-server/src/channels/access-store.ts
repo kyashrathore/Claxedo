@@ -21,7 +21,7 @@ import {
   ClaxedoChannelAllowTable,
   ClaxedoChannelIdentityTable,
   ClaxedoChannelPairingTable,
-} from "../platform/db/channel-access.sql"
+} from "./access.sql"
 
 function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRequest {
   return {

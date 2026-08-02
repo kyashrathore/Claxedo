@@ -37,15 +37,34 @@ function platformFiles() {
   return walk(PLATFORM).filter((file) => file.endsWith(".ts") || file.endsWith(".mjs"))
 }
 
+/**
+ * The one sanctioned inversion, and why it is narrow.
+ *
+ * Each domain owns its own table definitions (`channels/delivery.sql.ts`), so a
+ * change to that domain touches one directory. But drizzle needs a single place
+ * that names every table — the migration generator and `ClaxedoDB` both read
+ * the whole schema. So `platform/db/schema.ts` is a BARREL: it re-exports the
+ * domains' tables and holds no logic of its own.
+ *
+ * This is a dependency inversion, not a leak, because the direction of KNOWLEDGE
+ * still runs the right way — the barrel names modules, the domains never learn
+ * about the barrel. It is scoped to this single file, and only for `*.sql`
+ * targets: schema.ts importing a domain's SERVICE would still fail, which is the
+ * failure mode worth guarding.
+ */
+const SCHEMA_BARREL = path.join("platform", "db", "schema.ts")
+
 function escapes(file: string) {
   const text = fs.readFileSync(file, "utf8")
+  const rel = path.relative(SRC, file)
   const out: string[] = []
   for (const match of text.matchAll(RELATIVE_IMPORT)) {
     const target = path.relative(SRC, path.resolve(path.dirname(file), match[1]!))
     // Leaves src/ entirely (sibling packages, repo-root convex/) — not a domain.
     if (target.startsWith("..")) continue
     if (target.split(path.sep)[0] === "platform") continue
-    out.push(`${path.relative(SRC, file)} -> ${target}`)
+    if (rel === SCHEMA_BARREL && target.endsWith(".sql")) continue
+    out.push(`${rel} -> ${target}`)
   }
   return out
 }

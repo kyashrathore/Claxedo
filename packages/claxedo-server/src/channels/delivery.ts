@@ -1,6 +1,6 @@
 import { and, count as countFn, eq, gte, isNull, lt } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db/db"
-import { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "../platform/db/channel-delivery.sql"
+import { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "./delivery.sql"
 
 export type ChannelDeliveryDecision =
   | { ok: true; duplicate: false }
