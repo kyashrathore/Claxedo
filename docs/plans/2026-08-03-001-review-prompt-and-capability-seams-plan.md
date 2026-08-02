@@ -57,21 +57,45 @@ R2 object-store code should be extracted to a marked file (it is already the
 subject of `documents/r2-conditional-object-store.miniflare.test.ts`, a test with
 no matching source file).
 
-### `workspace/http/proxy.ts` — the name is right, the location is wrong
+### `workspace/http/proxy.ts` — one name over two mechanisms
 
-The owner's read was that this is misnamed because nothing forwards requests.
-**Checked, and it does forward:** line 214 `const res = await fetch(req)`, after
-reconstructing the request against `hit.url` (a remote sandbox) or
-`http://embedded-workspace-runtime.local`, minting an owner token, and setting
-`x-forwarded-by`. It streams the response back. It is a genuine HTTP reverse
-proxy and `proxy` is the honest word for it.
+The owner said "I don't think we forward requests to any other process, don't
+know why that exists." Traced end to end, and the answer is: **half the time
+we don't.**
 
-What IS wrong is where it lives. `workspace/http/` is imported by 5+ other
-domains, so it is not the workspace domain's HTTP — it is shared runtime-proxy
-infra parked inside a domain. → `platform/http/runtime-proxy/` (it is
-domain-agnostic transport once `resolveWorkspaceRuntimeHit` is passed in), or
-keep it domain-side and rename to `workspace/runtime-proxy/` so the name stops
-competing with `workspace/routes/`.
+How it is wired — `deployments/local/server.ts:723` mounts it as a GLOBAL
+fall-through middleware (`app.use`), not a route. Every request hits:
+
+```ts
+if (!runtimeOwned(pathname)) return next()   // almost everything exits here
+```
+
+`runtimeOwned` consults the route-ownership registry for
+`RouteHandler.SandboxRuntime`, which claims only the workspace-runtime's own
+API surface: `/api/wr/{pty,process,diff,git,session-env,health,capabilities,
+events,hook/*}`, `/find`, `/file`, `/lsp`, `/vcs`. No control-plane endpoint is
+proxied — the owner's instinct that the control plane doesn't proxy is correct.
+
+Then it branches on workspace kind, and the two branches are different things:
+
+| | local workspace | cloud workspace |
+|---|---|---|
+| mechanism | `embedded()` — in-process dispatch | `proxy()` — `await fetch(req)` |
+| network | none | remote sandbox over HTTP |
+| token | none | short-lived owner RAT minted per request |
+| is it a proxy? | **no** | yes |
+
+So `proxy.ts` names ONE of its two branches, and the local path — the one an
+OSS user runs — never proxies anything. That is why the name reads as wrong.
+
+Fix is a rename that covers both, not just a move: `runtime-dispatch.ts`, with
+`embedded` and `forward` as named strategies inside. Location is also wrong —
+`workspace/http/` is imported by 5+ other domains, so it is not the workspace
+domain's HTTP. → `workspace/runtime-dispatch/`.
+
+Correction to an earlier assessment in this session: I first reported "the name
+is right, the location is wrong." That was too generous — it was based on
+finding `await fetch(req)` without checking which branch reaches it.
 
 ### Core business logic vs utils
 
@@ -288,9 +312,10 @@ Deferred to last because it is the widest diff and the least functional risk.
 - `store` means 5 things. Rule: `<domain>/store.ts` = own persistence;
   `-adapter` only for external-port implementations;
   `adapters/credentials/store.ts` (a backend selector) → `backend-registry.ts`.
-- `workspace/http/` → `workspace/runtime-proxy/` (or `platform/http/runtime-proxy/`).
-  The dir name currently competes with `workspace/routes/` while holding neither
-  routes nor workspace-specific transport.
+- `workspace/http/proxy.ts` → `workspace/runtime-dispatch/`. Two renames in one:
+  the dir stops competing with `workspace/routes/`, and the file stops naming
+  only its cloud branch (the local branch dispatches in-process and proxies
+  nothing). See the analysis above.
 
 ## W11.9 — Extend the `.cf.ts` convention
 
